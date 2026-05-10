@@ -272,7 +272,7 @@ class MerchantShopMixin:
         for room in (
             rooms_source.values() if hasattr(rooms_source, "values") else rooms_source
         ):
-            if isinstance(room, str):
+            if isinstance(room, (str, dict)):
                 continue
             for obj in getattr(room, "objects_here", getattr(room, "objects", [])):
                 if hasattr(obj, "inventory") and hasattr(obj, "merchant"):

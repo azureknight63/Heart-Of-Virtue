@@ -15,6 +15,7 @@ from .npc_availability import npc_availability_bp
 from .dialogue_context import dialogue_context_bp
 from .logs import logs_bp
 from .feedback import feedback_bp
+from .shop import shop_bp
 
 __all__ = [
     "auth_bp",
@@ -32,4 +33,5 @@ __all__ = [
     "dialogue_context_bp",
     "logs_bp",
     "feedback_bp",
+    "shop_bp",
 ]

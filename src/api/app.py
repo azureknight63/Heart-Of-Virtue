@@ -247,6 +247,7 @@ def create_app(config_class=None):
         dialogue_context_bp,
         logs_bp,
         feedback_bp,
+        shop_bp,
     )
     from src.api.routes.npc_chat import npc_chat_bp
 
@@ -266,6 +267,7 @@ def create_app(config_class=None):
     app.register_blueprint(npc_chat_bp, url_prefix="/api/npc/chat")
     app.register_blueprint(logs_bp, url_prefix="/api/logs")
     app.register_blueprint(feedback_bp, url_prefix="/api/feedback")
+    app.register_blueprint(shop_bp, url_prefix="/api/shop")
 
     # Register error handlers from dedicated module
     from src.api.handlers.error_handler import register_error_handlers

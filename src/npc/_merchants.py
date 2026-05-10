@@ -221,6 +221,19 @@ class JamboHealsU(Merchant):
             intelligence=14,
         )
 
+    def initialize_shop(self):
+        """Override to set the canonical shop name used by both terminal and web API."""
+        if self.inventory is None:
+            self.inventory = []
+        try:
+            from interface import ShopInterface as Shop
+        except Exception:
+            Shop = None
+        if Shop:
+            self.shop = Shop(merchant=self, player=None, shop_name="Jambo Heals U")
+        else:
+            self.shop = None
+
     def talk(self, player):  # pragma: no cover - simple flavor
         print(
             "Jambo chuckles: 'Feeling a bit under the weather, friend? Well no worry; Jambo Heals U! "
