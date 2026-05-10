@@ -531,6 +531,127 @@ Key capabilities:
 
 ---
 
+## Acceptance Test Skill
+
+**Developer-focused test infrastructure generator.** The `/acceptance-test` skill generates minimal test setup (maps, scenarios, config, scripts) for rapid feature validation. Integrates with the bug-hunt harness (in-process) and browser testing (gstack /qa), letting you catch bugs fast without manual setup.
+
+Use when you need to:
+- Validate a new feature works end-to-end
+- Create a reproducible test case for a bug
+- Set up fast, automated feature regression tests
+- Test combat mechanics, NPC behavior, quest logic, inventory systems, etc.
+
+```bash
+/acceptance-test
+feature: "cooldown drain on passive moves"
+
+/acceptance-test
+feature: "quest completion triggers NPC dialogue"
+worktree: true
+
+/acceptance-test
+feature: "combat status effect stacking"
+worktree: false
+```
+
+**Output**: A complete test directory at `tests/acceptance/<feature-slug>/` containing:
+1. **config.ini** — Game configuration (player stats, starting map, debug flags)
+2. **run.sh** — Test runner script (in-process or browser modes)
+3. **test_plan.json** — Browser test plan for gstack /qa
+4. **acceptance-test-<slug>.json** — Minimal test map (2 tiles)
+5. **acceptance_test_<slug>.py** — Scenario class (extends harness.scenarios.Scenario)
+6. **README.md** — Usage guide and customization instructions
+
+### Running the Test
+
+**In-process (fast, no servers needed):**
+```bash
+cd tests/acceptance/<feature-slug>
+./run.sh
+```
+Output: Console report with any bugs found. Uses the existing bug-hunt harness.
+
+**Browser-based (full UI testing):**
+```bash
+cd tests/acceptance/<feature-slug>
+./run.sh --browser
+```
+Starts API + frontend servers, then runs via gstack /qa. Catches JS errors, rendering bugs, console noise.
+
+**Manual dev testing:**
+Edit `config.ini` to customize player stats, starting map, debug flags. Then:
+```bash
+CONFIG_FILE=tests/acceptance/<feature-slug>/config.ini python tools/run_api.py
+```
+
+### Customization
+
+**Edit the scenario class** to add feature-specific assertions:
+- `tools/harness/scenarios/acceptance_test_<slug>.py`
+- The `run(client)` method is where you add test logic
+- Use `self._bug(...)` to flag issues; return `List[BugReport]`
+
+**Edit the config file** to adjust:
+- Player starting stats (hp, strength, finesse, speed, etc.)
+- Debug logging (debug_mode, log_combat_moves, etc.)
+- NPC AI difficulty, arena size, starting positions
+
+**Edit the test map** (if needed):
+- `src/resources/maps/acceptance-test-<slug>.json`
+- Default: 2-tile arena (staging area + test zone)
+- Add NPCs, items, objects as needed for your feature
+
+### Integration with bug-hunt harness
+
+Once your scenario is tested and working, register it in:
+**tools/harness/scenarios/__init__.py**
+
+Add:
+```python
+from .acceptance_test_<slug> import SomeFeatureNameScenario
+
+_ALL_SCENARIOS = [
+    ...
+    SomeFeatureNameScenario(),
+]
+```
+
+Then it becomes part of the standard harness:
+```bash
+python tools/bug_hunt.py --scenario <slug>
+python tools/bug_hunt.py --headless --output bugs.json
+```
+
+### Example Workflow
+
+1. **Generate test infrastructure:**
+   ```bash
+   /acceptance-test
+   feature: "interrupt move during cast"
+   ```
+
+2. **Run in-process to catch basic bugs:**
+   ```bash
+   cd tests/acceptance/interrupt-move-during-cast
+   ./run.sh
+   ```
+
+3. **Fix config.ini and scenario logic:**
+   - Adjust player stats, NPC placement
+   - Add assertions for interrupt mechanics
+   - Test locally with the runner script
+
+4. **Run browser tests to catch UI bugs:**
+   ```bash
+   ./run.sh --browser
+   ```
+
+5. **Register in harness for regression testing:**
+   - Add to `tools/harness/scenarios/__init__.py`
+   - Now part of `python tools/bug_hunt.py`
+
+---
+
 ## Code Review Gate
 
 **Always use the `code_reviewer` skill** whenever code changes are made. After any task that introduces code changes, invoke the skill to perform an automated review, then manually verify critical dimensions if needed.
