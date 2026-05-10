@@ -42,12 +42,11 @@ function WeightBar({ current, max, pendingDelta, isMobile }) {
           <span style={{ color: colors.text.main, fontWeight: 'bold' }}>{current.toFixed(1)}</span>
           {pendingDelta !== 0 && (
             <>
-              <span style={{ color: colors.text.dim }}>+</span>
               <span style={{
                 color: isSellDelta ? colors.primary : isOverweight ? colors.danger : colors.secondary,
                 fontWeight: 'bold',
               }}>
-                ({isSellDelta ? '−' : '+'}{Math.abs(pendingDelta).toFixed(2)})
+                {isSellDelta ? '(−' : '(+'}{Math.abs(pendingDelta).toFixed(2)})
               </span>
               {!isMobile && (
                 <span style={{ color: colors.text.dim, fontSize: '0.58rem' }}>

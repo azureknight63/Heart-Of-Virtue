@@ -4832,6 +4832,7 @@ class GameService:
             merchant.update_goods()
 
         current_tick = self._game_tick(player)
+        ShopSerializer.flush_stale_buyback(merchant, current_tick)
         shop_state = ShopSerializer.serialize_state(merchant, player, current_tick)
         sell_inventory = ShopSerializer.serialize_player_sellable(
             player, shop_state["sell_modifier"]
@@ -4909,6 +4910,7 @@ class GameService:
         transfer_item(merchant, player, target_item, quantity)
 
         current_tick = self._game_tick(player)
+        ShopSerializer.flush_stale_buyback(merchant, current_tick)
         shop_state = ShopSerializer.serialize_state(merchant, player, current_tick)
         sell_inventory = ShopSerializer.serialize_player_sellable(
             player, shop_state["sell_modifier"]
@@ -4995,28 +4997,25 @@ class GameService:
         transfer_gold(merchant.inventory, player.inventory, total_offer)
         transfer_item(player, merchant, target_item, quantity)
 
-        # The item is now in merchant.inventory — record its new id for buyback.
-        # transfer_item() moves the same Python object for non-stackables (id
-        # unchanged) but creates a new object for partial stack splits (new id).
-        # We prefer a new-id match (split case) and fall back to the original id
-        # (moved-object case) so the ledger always references the correct object.
-        transferred_item = None
-        for item in getattr(merchant, "inventory", []):
-            if (
-                getattr(item, "name", None) == item_name
-                and str(id(item)) != item_id  # could be same object; use it if so
-            ) or str(id(item)) == item_id:
-                if getattr(item, "name", None) == item_name:
-                    transferred_item = item
-                    break
-
-        new_item_id = str(id(transferred_item)) if transferred_item else item_id
+        # For full-stack sells, transfer_item moves the same Python object so its
+        # id is unchanged and still present in merchant.inventory. For partial-stack
+        # splits, a new object is created and appended, but stack_inv_items may
+        # immediately merge it into an existing same-name item. In that case the
+        # original id is gone — fall back to the first name-matching merchant item.
+        if any(str(id(i)) == item_id for i in getattr(merchant, "inventory", [])):
+            buyback_item_id = item_id
+        else:
+            buyback_item_id = next(
+                (str(id(i)) for i in getattr(merchant, "inventory", [])
+                 if getattr(i, "name", None) == item_name),
+                item_id,
+            )
 
         if not hasattr(merchant, "_buyback_ledger"):
             merchant._buyback_ledger = []
 
         merchant._buyback_ledger.append({
-            "item_id": new_item_id,
+            "item_id": buyback_item_id,
             "item_name": item_name,
             "buyback_price": unit_offer,
             "weight": item_weight,
@@ -5030,6 +5029,7 @@ class GameService:
         })
 
         current_tick = self._game_tick(player)
+        ShopSerializer.flush_stale_buyback(merchant, current_tick)
         shop_state = ShopSerializer.serialize_state(merchant, player, current_tick)
         sell_inventory = ShopSerializer.serialize_player_sellable(
             player, shop_state["sell_modifier"]
@@ -5070,12 +5070,9 @@ class GameService:
         if merchant.shop is None:
             merchant.initialize_shop()
 
-        # Flush stale entries first
+        # Flush stale entries before ledger lookup
         current_tick = self._game_tick(player)
-        ledger = getattr(merchant, "_buyback_ledger", [])
-        merchant._buyback_ledger = [
-            e for e in ledger if e["beat_acquired"] >= current_tick
-        ]
+        ShopSerializer.flush_stale_buyback(merchant, current_tick)
 
         # Find the ledger entry
         entry = None

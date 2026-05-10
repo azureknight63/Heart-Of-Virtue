@@ -61,6 +61,18 @@ class ShopSerializer:
     """Serialize merchant shop state for the web API."""
 
     @staticmethod
+    def flush_stale_buyback(merchant: Any, current_game_tick: int) -> None:
+        """Remove buyback ledger entries that were acquired before the current game tick.
+
+        Separated from serialize_state so callers can flush before performing
+        ledger lookups (e.g. shop_buyback) without coupling flush to serialization.
+        """
+        ledger: List[Dict] = getattr(merchant, "_buyback_ledger", [])
+        merchant._buyback_ledger = [
+            e for e in ledger if e["beat_acquired"] >= current_game_tick
+        ]
+
+    @staticmethod
     def serialize_state(
         merchant: Any,
         player: Any,
@@ -68,8 +80,8 @@ class ShopSerializer:
     ) -> Dict:
         """Return the full shop state for GET /api/shop/state.
 
-        Flushes stale buyback entries (beat_acquired < current_game_tick) as a
-        side effect so callers don't have to do it separately.
+        Does NOT flush the buyback ledger — callers are responsible for calling
+        flush_stale_buyback(merchant, tick) before serialize_state if needed.
 
         Args:
             merchant: Merchant NPC instance (has .shop, .inventory, ._buyback_ledger).
@@ -84,14 +96,10 @@ class ShopSerializer:
         sell_mod = getattr(shop, "sell_modifier", 0.5) if shop else 0.5
         shop_name = getattr(shop, "title", None) or f"{merchant.name}'s Shop"
 
-        # Flush stale buyback entries in-place
-        ledger: List[Dict] = getattr(merchant, "_buyback_ledger", [])
-        active_ledger = [e for e in ledger if e["beat_acquired"] >= current_game_tick]
-        merchant._buyback_ledger = active_ledger
-
         # Serialize regular stock (exclude Gold items)
         merchant_inv = getattr(merchant, "inventory", [])
-        buyback_ids = {e["item_id"] for e in active_ledger}
+        ledger: List[Dict] = getattr(merchant, "_buyback_ledger", [])
+        buyback_ids = {e["item_id"] for e in ledger}
         stock = [
             _serialize_shop_item(item, buy_mod)
             for item in merchant_inv
@@ -100,7 +108,7 @@ class ShopSerializer:
         ]
 
         # Serialize buyback items
-        buyback_items = [_serialize_buyback_item(e) for e in active_ledger]
+        buyback_items = [_serialize_buyback_item(e) for e in ledger]
 
         player_inv = getattr(player, "inventory", [])
         player.refresh_weight()
