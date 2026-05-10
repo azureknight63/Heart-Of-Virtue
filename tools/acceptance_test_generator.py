@@ -13,10 +13,8 @@ Usage:
 
 import argparse
 import json
-import re
 import textwrap
 from pathlib import Path
-from typing import Optional
 import sys
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -39,7 +37,7 @@ class TestArtifact:
 
 
 class AcceptanceTestMapBuilder:
-    """Generates minimal test maps (2-4 tiles) for feature testing."""
+    """Generates minimal test maps (2 tiles) for feature testing."""
 
     def __init__(self, feature_name: str, feature_desc: str):
         self.feature_name = feature_name
