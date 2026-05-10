@@ -215,6 +215,10 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
                 except Exception:
                     from tiles import MapTile as tile_cls  # fallback
             tile_instance = tile_cls(self, this_map, x, y)
+            # Store tile name from JSON title; only if the class didn't set its own.
+            # MapTile.__init__ never sets self.name, so getattr returns None for generic tiles.
+            if not getattr(tile_instance, "name", None):
+                tile_instance.name = title
             # Override description from JSON only if one was provided (tile subclasses
             # may hardcode their own description via super().__init__; respect that as default)
             if description:
