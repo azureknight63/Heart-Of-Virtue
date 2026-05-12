@@ -744,6 +744,9 @@ class SessionManager:
             # Apply game config if available
             if self.game_config and hasattr(player, "game_config"):
                 player.game_config = self.game_config
+                if getattr(self.game_config, "skipdialog", False):
+                    player.skip_dialog = True
+                    print("[SessionManager] [OK] skip_dialog=True (skipdialog in config)", flush=True)
                 if self.game_config.starting_exp > 0:
                     player.apply_starting_experience(self.game_config.starting_exp)
                     print(

@@ -709,7 +709,7 @@ class GameService:
                     def mock_input(prompt=""):
                         if prompt:
                             f.write(str(prompt) + "\n")
-                        return "1"  # Default to first option
+                        return "a"  # Default to first option (avoids infinite loops on a/b menus)
 
                     target_modules = self._get_event_target_modules(
                         event, include_animations=True
@@ -1844,7 +1844,7 @@ class GameService:
                     def mock_input(prompt=""):
                         if prompt:
                             f.write(str(prompt) + "\n")
-                        return "1"
+                        return "a"  # Default to first option (avoids infinite loops on a/b menus)
 
                     target_modules = self._get_event_target_modules(
                         event, include_animations=True
