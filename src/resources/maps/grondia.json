@@ -88,9 +88,7 @@
           "announce": "A low stone rack of mineral rods stands near the dais.",
           "keywords": [
             "light",
-            "pray",
-            "use",
-            "examine"
+            "pray"
           ],
           "events": [],
           "tile": null,
@@ -216,10 +214,7 @@
           "discovery_message": "a low polished plinth!",
           "announce": "A low polished plinth stands at the center of the chamber.",
           "keywords": [
-            "pray",
-            "examine",
-            "touch",
-            "use"
+            "pray"
           ],
           "events": [],
           "tile": null,
@@ -247,11 +242,6 @@
           ],
           "stock_count": 10,
           "inventory": [
-            {
-              "__class__": "CrystalTear",
-              "__module__": "items",
-              "props": {}
-            },
             {
               "__class__": "GronditeMarkToken",
               "__module__": "items",
@@ -747,11 +737,6 @@
             },
             {
               "__class__": "ElderWritOfCleansing",
-              "__module__": "items",
-              "props": {}
-            },
-            {
-              "__class__": "CrystalTear",
               "__module__": "items",
               "props": {}
             }
@@ -2442,9 +2427,11 @@
           "stock_count": 10,
           "inventory": [
             {
-              "__class__": "CrystalTear",
+              "__class__": "Gold",
               "__module__": "items",
-              "props": {}
+              "props": {
+                "amt": 23
+              }
             }
           ],
           "name": "Handcart",
@@ -2502,11 +2489,6 @@
           ],
           "stock_count": 10,
           "inventory": [
-            {
-              "__class__": "CrystalTear",
-              "__module__": "items",
-              "props": {}
-            },
             {
               "__class__": "Gold",
               "__module__": "items",
