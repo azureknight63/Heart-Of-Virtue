@@ -66,6 +66,20 @@ def register_error_handlers(app):
             404,
         )
 
+    @app.errorhandler(405)
+    def method_not_allowed(error):
+        """Handle 405 Method Not Allowed errors."""
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "error": "Method not allowed",
+                    "message": str(error),
+                }
+            ),
+            405,
+        )
+
     @app.errorhandler(422)
     def unprocessable_entity(error):
         """Handle 422 Unprocessable Entity errors."""
