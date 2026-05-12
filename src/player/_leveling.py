@@ -9,12 +9,13 @@ from neotermcolor import colored, cprint
 class PlayerLevelingMixin:
     """Experience gain, leveling-up, and skill-tree learning for the Player."""
 
-    def gain_exp(self, amt, exp_type="Basic"):
+    def gain_exp(self, amt, exp_type="Basic", api_mode=False):
         """
         Give the player amt exp, then check to see if he gained a level and act accordingly
         Also adds exp to the designated skill tree subtype. All abilities under that subtype gain the exp and are
         learned if possible.
         EXP is always added to the "Basic" subtype regardless of the subtype declared.
+        Pass api_mode=True from any non-combat API caller to use the non-blocking level-up path.
         """
 
         if exp_type not in self.skill_exp:
@@ -48,7 +49,7 @@ class PlayerLevelingMixin:
             self.exp += amt
 
         # In API mode (frontend), do not prompt for input during level-up.
-        if hasattr(self, "_combat_adapter"):
+        if api_mode or hasattr(self, "_combat_adapter"):
             events = []
             while self.exp >= self.exp_to_level:
                 events.append(self._level_up_api())

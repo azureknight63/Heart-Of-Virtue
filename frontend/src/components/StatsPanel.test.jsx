@@ -7,7 +7,7 @@ describe('StatsPanel', () => {
     name: 'Hero',
     level: 5,
     exp: 1200,
-    exp_to_next: 2000,
+    max_exp: 2000,
     hp: 80,
     max_hp: 100,
     fatigue: 40,
@@ -62,7 +62,7 @@ describe('StatsPanel', () => {
     render(<StatsPanel player={mockPlayer} />);
 
     expect(screen.getByText(/📊 CHARACTER STATS/i)).toBeDefined();
-    expect(screen.getByText(/Level/i)).toBeDefined();
+    expect(screen.getByText('Level')).toBeDefined();
     expect(screen.getAllByText(/5/i).length).toBeGreaterThan(0);
 
     // Check attributes

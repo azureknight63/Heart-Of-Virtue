@@ -70,6 +70,30 @@ export default function StatsPanel({ player, onClose }) {
           ))}
         </div>
 
+        {/* EXP Progress */}
+        {player.max_exp > 0 && (
+          <GamePanel padding="sm" style={{ borderColor: colors.alpha.secondary[30] }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+              <GameText variant="muted" size="xs" style={{ textTransform: 'uppercase', letterSpacing: '1px' }}>Experience</GameText>
+              <GameText size="xs" style={{ fontFamily: fonts.main, color: colors.text.highlight }}>
+                {player.exp || 0} / {player.max_exp}
+              </GameText>
+            </div>
+            <div style={{ height: '6px', backgroundColor: 'rgba(0,0,0,0.4)', borderRadius: '3px', overflow: 'hidden' }}>
+              <div style={{
+                height: '100%',
+                width: `${Math.min(100, ((player.exp || 0) / player.max_exp) * 100)}%`,
+                backgroundColor: '#cc88ff',
+                borderRadius: '3px',
+                transition: 'width 0.3s ease',
+              }} />
+            </div>
+            <GameText variant="dim" size="xs" style={{ marginTop: '4px' }}>
+              {Math.max(0, player.max_exp - (player.exp || 0))} EXP to next level
+            </GameText>
+          </GamePanel>
+        )}
+
         {/* Attributes Section */}
         <GamePanel
           style={{
