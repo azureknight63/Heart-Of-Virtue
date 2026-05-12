@@ -13,6 +13,7 @@ import RightPanel from '../components/RightPanel'
 import EventManager from '../components/EventManager'
 import CombatManager from '../components/CombatManager'
 import GameOverScreen from '../components/GameOverScreen'
+import LevelUpModal from '../components/LevelUpModal'
 import BetaEndDialog from '../components/BetaEndDialog'
 import FeedbackDialog from '../components/FeedbackDialog'
 import MobileTabBar, { MOBILE_TAB_BAR_HEIGHT } from '../components/MobileTabBar'
@@ -634,6 +635,14 @@ export default function GamePage() {
         onCollectLoot={handleCollectLoot}
         onSkipLoot={handleSkipLoot}
       />
+
+      {/* Level-up modal for EXP gained outside of combat */}
+      {!showVictoryDialog && !showDefeatDialog && (player?.pending_attribute_points ?? 0) > 0 && (
+        <LevelUpModal
+          player={player}
+          onAllocatePoints={handleAllocatePoints}
+        />
+      )}
 
       {/* Game Over Screen - shown when Jean dies via narrative event */}
       {showGameOver && <GameOverScreen message={gameOverMessage} />}
