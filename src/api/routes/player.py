@@ -407,6 +407,11 @@ def allocate_level_up_points():
         )
         player.pending_attribute_points = remaining - amount_int
 
+        # Clear stale level-up events once all points are spent so they don't
+        # accumulate across sessions and re-trigger SFX on future status polls.
+        if player.pending_attribute_points == 0 and hasattr(player, "pending_level_ups"):
+            player.pending_level_ups = []
+
         # Refresh derived stats if available
         try:
             from src.functions import refresh_stat_bonuses

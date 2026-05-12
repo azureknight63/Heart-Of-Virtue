@@ -119,7 +119,8 @@ class RewardDistributionSerializer:
             },
             "player_state_after": {
                 "gold": getattr(player, "gold", 0),
-                "experience": getattr(player, "experience", 0),
+                "exp": int(getattr(player, "exp", 0) or 0),
+                "exp_to_level": int(getattr(player, "exp_to_level", 0) or 0),
                 "level": getattr(player, "level", 1),
                 "inventory_count": len(getattr(player, "inventory", [])),
                 "inventory_weight": getattr(player, "inventory_weight", 0),
@@ -150,7 +151,7 @@ class RewardDistributionSerializer:
 
         return {
             "xp_gained": xp_gained,
-            "total_experience": getattr(player, "experience", 0),
+            "total_exp": int(getattr(player, "exp", 0) or 0),
             "old_level": old_level,
             "new_level": current_level,
             "current_level": current_level,
@@ -227,19 +228,10 @@ class RewardDistributionSerializer:
 
     @staticmethod
     def _xp_to_next_level(player: "Player") -> int:
-        """Calculate XP needed to next level.
-
-        Args:
-            player: Player object
-
-        Returns:
-            XP needed for next level (or 0 if max level)
-        """
-        # Simple formula: level * 100 XP per level
-        current_level = getattr(player, "level", 1)
-        current_xp = getattr(player, "experience", 0)
-        xp_for_level = current_level * 100
-        return max(0, xp_for_level - current_xp)
+        """Calculate EXP needed to next level using the unified leveling formula."""
+        exp_to_level = int(getattr(player, "exp_to_level", 0) or 0)
+        current_exp = int(getattr(player, "exp", 0) or 0)
+        return max(0, exp_to_level - current_exp)
 
 
 class RewardConditionValidator:
@@ -422,7 +414,8 @@ class LevelingProgressSerializer:
         """
         return {
             "level": getattr(player, "level", 1),
-            "experience": getattr(player, "experience", 0),
+            "exp": int(getattr(player, "exp", 0) or 0),
+            "exp_to_level": int(getattr(player, "exp_to_level", 0) or 0),
             "quests_completed": quests_completed,
             "gold": getattr(player, "gold", 0),
             "playtime_hours": getattr(player, "playtime_hours", 0),

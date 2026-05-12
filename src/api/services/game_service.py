@@ -2355,6 +2355,11 @@ class GameService:
             "level": getattr(player, "level", 1),
             "exp": getattr(player, "exp", 0),
             "max_exp": getattr(player, "exp_to_level", 100),
+            "exp_to_next_level": int(
+                max(0, (getattr(player, "exp_to_level", 0) or 0) - (getattr(player, "exp", 0) or 0))
+            ),
+            "pending_attribute_points": int(getattr(player, "pending_attribute_points", 0) or 0),
+            "pending_level_ups": list(getattr(player, "pending_level_ups", None) or []),
             "hp": getattr(player, "hp", 0),
             "max_hp": getattr(player, "maxhp", 0),
             "fatigue": getattr(player, "fatigue", 0),
@@ -3617,23 +3622,21 @@ class GameService:
         # Distribute rewards to player
         old_level = getattr(player, "level", 1)
         old_gold = getattr(player, "gold", 0)
-        old_xp = getattr(player, "experience", 0)
 
         # Award gold
         player.gold = old_gold + final_rewards["gold"]
 
-        # Award experience and check for level up
-        player.experience = old_xp + final_rewards["experience"]
-        new_level = old_level
-        level_up = False
+        # Award experience via the unified leveling system
+        level_up_events = player.gain_exp(
+            final_rewards["experience"], exp_type="Basic", api_mode=True
+        )
+        level_up = bool(level_up_events)
+        new_level = getattr(player, "level", 1)
 
-        # Simple leveling: 100 XP per level
-        while player.experience >= new_level * 100:
-            new_level += 1
-            level_up = True
-
-        if level_up:
-            player.level = new_level
+        if level_up_events:
+            if not hasattr(player, "pending_level_ups"):
+                player.pending_level_ups = []
+            player.pending_level_ups.extend(level_up_events)
 
         # Award items (simplified - just add to inventory if space)
         inventory = getattr(player, "inventory", [])
@@ -3665,10 +3668,16 @@ class GameService:
 
         # Add level up info if applicable
         if level_up:
-            level_up_info = LevelingProgressSerializer.serialize_level_up(
-                player, old_level, new_level, final_rewards["experience"]
-            )
-            distribution_result["level_up"] = level_up_info
+            distribution_result["level_up"] = {
+                "level_up": True,
+                "old_level": old_level,
+                "new_level": new_level,
+                "xp_gained": final_rewards["experience"],
+                "level_up_events": level_up_events,
+                "pending_attribute_points": int(
+                    getattr(player, "pending_attribute_points", 0) or 0
+                ),
+            }
 
         # Add conditions info
         distribution_result["conditions_applied"] = conditions_met
@@ -3705,46 +3714,42 @@ class GameService:
         return {"success": True, "gold_update": result}
 
     def award_experience(
-        self, player: "player_module.Player", amount: int
+        self, player: "player_module.Player", amount: int, exp_type: str = "Basic"
     ) -> Dict[str, Any]:
-        """Award experience to player.
+        """Award experience to player via the unified leveling system.
 
         Args:
             player: Player object
             amount: Experience amount to award
+            exp_type: Skill tree track to credit (default "Basic")
 
         Returns:
             Dictionary with experience update and level up info if applicable
         """
-        from src.api.serializers.quest_rewards import (
-            RewardDistributionSerializer,
-            LevelingProgressSerializer,
-        )
-
         old_level = getattr(player, "level", 1)
-        old_xp = getattr(player, "experience", 0)
 
-        player.experience = old_xp + amount
-        new_level = old_level
-        level_up = False
+        level_up_events = player.gain_exp(amount, exp_type=exp_type, api_mode=True)
+        level_up = bool(level_up_events)
+        new_level = getattr(player, "level", 1)
 
-        # Simple leveling: 100 XP per level
-        while player.experience >= new_level * 100:
-            new_level += 1
-            level_up = True
+        if level_up_events:
+            if not hasattr(player, "pending_level_ups"):
+                player.pending_level_ups = []
+            player.pending_level_ups.extend(level_up_events)
 
-        if level_up:
-            player.level = new_level
-
-        result = RewardDistributionSerializer.serialize_xp_gain(
-            player, amount, level_up=level_up, old_level=old_level
-        )
-
-        if level_up:
-            level_up_info = LevelingProgressSerializer.serialize_level_up(
-                player, old_level, new_level, amount
-            )
-            result["level_up"] = level_up_info
+        result = {
+            "xp_gained": amount,
+            "exp_type": exp_type,
+            "total_exp": int(getattr(player, "exp", 0) or 0),
+            "exp_to_level": int(getattr(player, "exp_to_level", 0) or 0),
+            "old_level": old_level,
+            "new_level": new_level,
+            "level_up": level_up,
+            "level_up_events": level_up_events or [],
+            "pending_attribute_points": int(
+                getattr(player, "pending_attribute_points", 0) or 0
+            ),
+        }
 
         return {"success": True, "experience_update": result}
 
