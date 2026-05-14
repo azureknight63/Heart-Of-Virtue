@@ -135,7 +135,7 @@ startmap = test_map
         assert any('/api/inventory' in rule for rule in rules)
         assert any('/api/equipment' in rule for rule in rules)
         assert any('/api/combat' in rule for rule in rules)
-        assert any('/api/player' in rule for rule in rules)
+        assert any('/api/status' in rule for rule in rules)  # player routes use /api/status prefix
         assert any('/api/saves' in rule for rule in rules)
 
 
