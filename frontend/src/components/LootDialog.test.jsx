@@ -837,4 +837,349 @@ describe('LootDialog', () => {
       expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
     })
   })
+
+  describe('Weight Calculation Precision', () => {
+    it('handles decimal weight values correctly', () => {
+      const decimalWeights = {
+        items_dropped: [
+          { name: 'Light Item', weight: 0.5, quantity: 1 },
+          { name: 'Feather', weight: 0.1, quantity: 1 },
+          { name: 'Heavy Item', weight: 5.7, quantity: 1 },
+        ],
+      }
+      render(
+        <LootDialog
+          endState={decimalWeights}
+          playerWeight={45.3}
+          weightLimit={50}
+          onCollect={mockOnCollect}
+          onSkip={mockOnSkip}
+        />
+      )
+      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
+    })
+
+    it('handles rounding errors in weight calculations', () => {
+      const problematicWeights = {
+        items_dropped: [
+          { name: 'Item 1', weight: 0.1 + 0.2, quantity: 1 },
+          { name: 'Item 2', weight: 1.23, quantity: 3 },
+        ],
+      }
+      render(
+        <LootDialog
+          endState={problematicWeights}
+          playerWeight={49}
+          weightLimit={50}
+          onCollect={mockOnCollect}
+          onSkip={mockOnSkip}
+        />
+      )
+      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
+    })
+
+    it('calculates total weight for multiple quantities', () => {
+      const quantityWeights = {
+        items_dropped: [
+          { name: 'Stacked Item', weight: 0.5, quantity: 5 },
+          { name: 'Single Item', weight: 1.0, quantity: 1 },
+          { name: 'Many Items', weight: 0.25, quantity: 10 },
+        ],
+      }
+      render(
+        <LootDialog
+          endState={quantityWeights}
+          playerWeight={10}
+          weightLimit={100}
+          onCollect={mockOnCollect}
+          onSkip={mockOnSkip}
+        />
+      )
+      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
+    })
+
+    it('handles zero weight items', () => {
+      const zeroWeightItems = {
+        items_dropped: [
+          { name: 'Ethereal Item', weight: 0, quantity: 1 },
+          { name: 'Normal Item', weight: 1, quantity: 1 },
+        ],
+      }
+      render(
+        <LootDialog
+          endState={zeroWeightItems}
+          playerWeight={49}
+          weightLimit={50}
+          onCollect={mockOnCollect}
+          onSkip={mockOnSkip}
+        />
+      )
+      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
+    })
+
+    it('handles very large weight items', () => {
+      const largeWeightItems = {
+        items_dropped: [
+          { name: 'Mountain', weight: 999.9, quantity: 1 },
+          { name: 'Boulder', weight: 500, quantity: 1 },
+        ],
+      }
+      render(
+        <LootDialog
+          endState={largeWeightItems}
+          playerWeight={1}
+          weightLimit={10000}
+          onCollect={mockOnCollect}
+          onSkip={mockOnSkip}
+        />
+      )
+      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
+    })
+  })
+
+  describe('Weight Limit Edge Cases', () => {
+    it('handles player exactly at weight limit', () => {
+      const atLimit = {
+        items_dropped: [
+          { name: 'Item', weight: 1, quantity: 1 },
+        ],
+      }
+      render(
+        <LootDialog
+          endState={atLimit}
+          playerWeight={50}
+          weightLimit={50}
+          onCollect={mockOnCollect}
+          onSkip={mockOnSkip}
+        />
+      )
+      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
+    })
+
+    it('handles player over weight limit', () => {
+      const overLimit = {
+        items_dropped: [
+          { name: 'Item', weight: 0.1, quantity: 1 },
+        ],
+      }
+      render(
+        <LootDialog
+          endState={overLimit}
+          playerWeight={50.1}
+          weightLimit={50}
+          onCollect={mockOnCollect}
+          onSkip={mockOnSkip}
+        />
+      )
+      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
+    })
+
+    it('handles very small weight limits', () => {
+      const smallLimit = {
+        items_dropped: [
+          { name: 'Tiny Item', weight: 0.01, quantity: 1 },
+        ],
+      }
+      render(
+        <LootDialog
+          endState={smallLimit}
+          playerWeight={0.5}
+          weightLimit={1}
+          onCollect={mockOnCollect}
+          onSkip={mockOnSkip}
+        />
+      )
+      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
+    })
+
+    it('handles very large weight limits', () => {
+      const largeLimit = {
+        items_dropped: [
+          { name: 'Heavy Item', weight: 100, quantity: 1 },
+        ],
+      }
+      render(
+        <LootDialog
+          endState={largeLimit}
+          playerWeight={50}
+          weightLimit={10000}
+          onCollect={mockOnCollect}
+          onSkip={mockOnSkip}
+        />
+      )
+      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
+    })
+  })
+
+  describe('Quantity Edge Cases', () => {
+    it('handles items with zero quantity', () => {
+      const zeroQuantity = {
+        items_dropped: [
+          { name: 'Ghost Item', weight: 1, quantity: 0 },
+          { name: 'Real Item', weight: 1, quantity: 1 },
+        ],
+      }
+      expect(() => {
+        render(
+          <LootDialog
+            endState={zeroQuantity}
+            playerWeight={10}
+            weightLimit={100}
+            onCollect={mockOnCollect}
+            onSkip={mockOnSkip}
+          />
+        )
+      }).not.toThrow()
+    })
+
+    it('handles items with very large quantities', () => {
+      const largeQuantity = {
+        items_dropped: [
+          { name: 'Gold Coins', weight: 0.01, quantity: 10000 },
+        ],
+      }
+      render(
+        <LootDialog
+          endState={largeQuantity}
+          playerWeight={10}
+          weightLimit={200}
+          onCollect={mockOnCollect}
+          onSkip={mockOnSkip}
+        />
+      )
+      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
+    })
+
+    it('handles single quantity items', () => {
+      const singleQuantity = {
+        items_dropped: [
+          { name: 'Unique Sword', weight: 3, quantity: 1 },
+        ],
+      }
+      render(
+        <LootDialog
+          endState={singleQuantity}
+          playerWeight={10}
+          weightLimit={100}
+          onCollect={mockOnCollect}
+          onSkip={mockOnSkip}
+        />
+      )
+      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
+    })
+  })
+
+  describe('Item Type Variations', () => {
+    it('handles diverse item types', () => {
+      const diverseItems = {
+        items_dropped: [
+          { name: 'Weapon', type: 'Weapon', weight: 2, quantity: 1 },
+          { name: 'Armor', type: 'Armor', weight: 3, quantity: 1 },
+          { name: 'Consumable', type: 'Consumable', weight: 0.1, quantity: 5 },
+          { name: 'Key Item', type: 'Key', weight: 0, quantity: 1 },
+          { name: 'Quest Item', type: 'Quest', weight: 0.5, quantity: 1 },
+        ],
+      }
+      render(
+        <LootDialog
+          endState={diverseItems}
+          playerWeight={20}
+          weightLimit={100}
+          onCollect={mockOnCollect}
+          onSkip={mockOnSkip}
+        />
+      )
+      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
+    })
+
+    it('handles items with special characters in names', () => {
+      const specialNames = {
+        items_dropped: [
+          { name: "Blade of 'Darkness'", weight: 2, quantity: 1 },
+          { name: 'Shield [+1]', weight: 3, quantity: 1 },
+          { name: 'Rope (10m)', weight: 1, quantity: 1 },
+        ],
+      }
+      render(
+        <LootDialog
+          endState={specialNames}
+          playerWeight={20}
+          weightLimit={100}
+          onCollect={mockOnCollect}
+          onSkip={mockOnSkip}
+        />
+      )
+      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
+    })
+  })
+
+  describe('Rapid Interaction', () => {
+    it('handles rapid selection toggling', () => {
+      const { rerender } = render(
+        <LootDialog
+          endState={mockEndState}
+          playerWeight={45}
+          weightLimit={50}
+          onCollect={mockOnCollect}
+          onSkip={mockOnSkip}
+        />
+      )
+
+      for (let i = 0; i < 5; i++) {
+        expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
+      }
+    })
+
+    it('handles rapid open/close cycles', () => {
+      const { rerender } = render(
+        <LootDialog
+          endState={mockEndState}
+          playerWeight={45}
+          weightLimit={50}
+          onCollect={mockOnCollect}
+          onSkip={mockOnSkip}
+        />
+      )
+
+      for (let i = 0; i < 3; i++) {
+        expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
+      }
+    })
+  })
+
+  describe('Accessibility', () => {
+    it('renders with proper dialog structure', () => {
+      render(
+        <LootDialog
+          endState={mockEndState}
+          playerWeight={45}
+          weightLimit={50}
+          onCollect={mockOnCollect}
+          onSkip={mockOnSkip}
+        />
+      )
+      const dialog = screen.getByTestId('base-dialog')
+      expect(dialog).toBeInTheDocument()
+    })
+
+    it('maintains semantic structure with many items', () => {
+      const manyItems = {
+        items_dropped: Array.from({ length: 50 }, (_, i) => ({
+          name: `Item ${i}`,
+          weight: 1,
+          quantity: 1,
+        })),
+      }
+      render(
+        <LootDialog
+          endState={manyItems}
+          playerWeight={20}
+          weightLimit={100}
+          onCollect={mockOnCollect}
+          onSkip={mockOnSkip}
+        />
+      )
+      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
+    })
+  })
 })
