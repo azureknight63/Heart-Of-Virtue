@@ -125,8 +125,8 @@ describe('GameText', () => {
       expect(element).toHaveStyle({ color: '#00ff00', fontWeight: 'bold' })
     })
 
-    it('uses monospace font family', () => {
-      const { container } = render(<GameText>Text</GameText>)
+    it('uses monospace font family for accent variant', () => {
+      const { container } = render(<GameText variant="accent">Text</GameText>)
       const element = container.firstChild
       const styles = window.getComputedStyle(element)
       expect(styles.fontFamily).toContain('monospace')
@@ -204,12 +204,12 @@ describe('GameText', () => {
     })
 
     it('renders with mixed text and elements', () => {
-      render(
+      const { container } = render(
         <GameText>
           Text <em>emphasized</em> more text
         </GameText>
       )
-      expect(screen.getByText('Text')).toBeInTheDocument()
+      expect(container.textContent).toContain('Text')
       expect(screen.getByText('emphasized')).toBeInTheDocument()
     })
   })

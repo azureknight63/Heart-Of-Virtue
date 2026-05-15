@@ -112,7 +112,7 @@ describe('GamePanel', () => {
         </GamePanel>
       )
       const panel = container.firstChild
-      expect(panel).toHaveClass('bg-')
+      expect(panel).toHaveClass('bg-neutral-900')
     })
 
     it('has border styling', () => {
@@ -153,7 +153,7 @@ describe('GamePanel', () => {
         </GamePanel>
       )
       const panel = container.firstChild
-      expect(panel).toHaveClass('p-')
+      expect(panel).toHaveClass('p-lg')
     })
 
     it('applies custom className', () => {

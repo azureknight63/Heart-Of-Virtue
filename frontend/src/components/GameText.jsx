@@ -42,7 +42,7 @@ export default function GameText({
         fontSize: sizeMap[size] || sizeMap.md,
         fontWeight: weight,
         textAlign: align,
-        fontFamily: variant === 'accent' || variant === 'primary' ? fonts.main : 'inherit',
+        fontFamily: variant === 'accent' || variant === 'primary' ? fonts.main : '"Courier New", monospace',
         margin: 0,
         ...style
     }

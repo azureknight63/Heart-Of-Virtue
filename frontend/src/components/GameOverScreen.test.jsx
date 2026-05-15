@@ -1,12 +1,18 @@
 import React from 'react'
-import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
+import { render, screen, waitFor, act } from '@testing-library/react'
 import { BrowserRouter } from 'react-router-dom'
 import GameOverScreen from './GameOverScreen'
 
 describe('GameOverScreen', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.useFakeTimers()
+  })
+
+  afterEach(() => {
+    vi.runOnlyPendingTimers()
+    vi.useRealTimers()
   })
 
   const renderWithRouter = (component) => {
@@ -32,6 +38,11 @@ describe('GameOverScreen', () => {
 
     it('renders main menu button', () => {
       renderWithRouter(<GameOverScreen />)
+      // Button appears after 1500ms delay
+      act(() => {
+        vi.advanceTimersByTime(1500)
+        vi.runAllTimers()
+      })
       expect(screen.getByText(/MAIN MENU/i)).toBeInTheDocument()
     })
 
@@ -84,6 +95,10 @@ describe('GameOverScreen', () => {
   describe('Button Styling', () => {
     it('main menu button is a button element', () => {
       renderWithRouter(<GameOverScreen />)
+      act(() => {
+        vi.advanceTimersByTime(1500)
+        vi.runAllTimers()
+      })
       const menuButton = screen.getByText(/MAIN MENU/i)
       expect(menuButton.tagName).toBe('BUTTON')
     })
@@ -92,6 +107,10 @@ describe('GameOverScreen', () => {
       const { container } = renderWithRouter(
         <GameOverScreen />
       )
+      act(() => {
+        vi.advanceTimersByTime(1500)
+        vi.runAllTimers()
+      })
       const buttons = container.querySelectorAll('button')
       expect(buttons.length).toBeGreaterThan(0)
     })
@@ -125,6 +144,10 @@ describe('GameOverScreen', () => {
         )
       }
 
+      act(() => {
+        vi.advanceTimersByTime(1500)
+        vi.runAllTimers()
+      })
       expect(screen.getByText(/MAIN MENU/i)).toBeInTheDocument()
     })
   })
@@ -147,6 +170,10 @@ describe('GameOverScreen', () => {
 
     it('buttons are keyboard accessible', () => {
       renderWithRouter(<GameOverScreen />)
+      act(() => {
+        vi.advanceTimersByTime(1500)
+        vi.runAllTimers()
+      })
       const menuButton = screen.getByText(/MAIN MENU/i)
       expect(menuButton.tagName).toBe('BUTTON')
     })

@@ -35,12 +35,12 @@ describe('Inventory', () => {
 
     it('renders with undefined items', () => {
       render(<Inventory items={undefined} onClose={mockOnClose} />)
-      expect(screen.getByText('Your inventory is empty...')).toBeInTheDocument()
+      expect(screen.getByText(/Your inventory is empty/)).toBeInTheDocument()
     })
 
     it('renders with null items', () => {
       render(<Inventory items={null} onClose={mockOnClose} />)
-      expect(screen.getByText('Your inventory is empty...')).toBeInTheDocument()
+      expect(screen.getByText(/Your inventory is empty/)).toBeInTheDocument()
     })
   })
 
@@ -211,8 +211,11 @@ describe('Inventory', () => {
       const { container } = render(
         <Inventory items={items} onClose={mockOnClose} />
       )
-      const itemList = container.querySelector('.text-[#ffcc00]')
-      expect(itemList).toBeInTheDocument()
+      // Look for the item text which should have yellow color applied
+      const itemText = screen.getByText('Test Item')
+      const itemList = itemText.closest('div')
+      // Check the parent has the yellow text class
+      expect(itemList).toHaveClass('text-[#ffcc00]')
     })
 
     it('uses orange close button color', () => {

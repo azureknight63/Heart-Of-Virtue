@@ -98,7 +98,7 @@ describe('BaseDialog', () => {
         </BaseDialog>
       )
       const overlay = container.querySelector('.modal-overlay')
-      expect(overlay).toHaveStyle('backdropFilter: none')
+      expect(overlay.style.backdropFilter).toBe('none')
     })
   })
 
