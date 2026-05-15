@@ -297,11 +297,17 @@ describe('NpcChatPanel', () => {
         />
       )
 
+      // Wait for buttons to appear
       await waitFor(() => {
         const buttons = screen.getAllByTestId('game-button')
-        fireEvent.click(buttons[0])
+        expect(buttons.length).toBeGreaterThan(0)
       })
 
+      // Click the first button
+      const buttons = screen.getAllByTestId('game-button')
+      fireEvent.click(buttons[0])
+
+      // Wait for the respond to be called
       await waitFor(() => {
         expect(npcChat.respond).toHaveBeenCalled()
       })

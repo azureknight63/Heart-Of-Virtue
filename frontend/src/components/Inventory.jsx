@@ -12,7 +12,7 @@ export default function Inventory({ items, onClose }) {
             {item.quantity > 1 && <span className="text-[#ffaa00]">x{item.quantity}</span>}
           </div>
         ))}
-        {!items || items.length === 0 && (
+        {(!items || items.length === 0) && (
           <p className="text-[#ff6600] italic">Your inventory is empty...</p>
         )}
       </div>
