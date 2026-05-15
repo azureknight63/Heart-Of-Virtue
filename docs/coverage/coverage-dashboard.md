@@ -218,6 +218,28 @@ Update these badges on each PR merge via workflow automation.
 - **GitHub Actions Workflows**: `.github/workflows/test-coverage.yml`
 - **CI/CD Config**: See CLAUDE.md "Testing" section
 
+## Setting Up Pre-Commit Hook
+
+The pre-commit hook prevents accidental commits of code that breaks tests. Set it up once:
+
+```bash
+# From project root
+cat > .git/hooks/pre-commit << 'EOF'
+#!/bin/bash
+set -e
+echo "🧪 Running pre-commit tests..."
+python -m pytest -q --tb=line || exit 1
+echo "✅ Tests passed! Commit proceeding..."
+EOF
+
+chmod +x .git/hooks/pre-commit
+```
+
+Then on every `git commit`:
+- Hook runs `python -m pytest -q` (~2-3 seconds)
+- If tests fail, commit is blocked
+- To bypass: `git commit --no-verify` (use sparingly)
+
 ## FAQ
 
 **Q: Why is story/ coverage so low?**
@@ -242,3 +264,11 @@ A: The workflow fails and posts a comment with the coverage summary. You must ei
 
 **Q: Do merge commits reset the trend?**
 A: No. Coverage is measured on the merged code, so trends are continuous.
+
+**Q: How do I set up GitHub branch protection?**
+A: After pushing this workflow, configure in GitHub Settings → Branches:
+1. Go to your repo Settings → Branches
+2. Add rule for `master` / `develop`
+3. Require status check: "Test Coverage" (or "backend-coverage" and "frontend-coverage")
+4. Require branches to be up to date before merging
+5. Optionally: require code reviews, dismiss stale reviews on push
