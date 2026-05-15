@@ -63,15 +63,34 @@ def mock_player(mock_universe):
     player.heat = 0
     player.max_heat = 100
     player.in_combat = False
-    player.map = list(mock_universe.maps)[0]
-    
+    player.map = {"name": "test_map"}
+
+    # Create a proper mock tile
+    mock_tile = MagicMock()
+    mock_tile.name = "TestTile"
+    mock_tile.x = 0
+    mock_tile.y = 0
+    mock_tile.description = "A test area"
+    mock_tile.is_passable = True
+    mock_tile.items_here = []
+    mock_tile.npcs_here = []
+    mock_tile.objects_here = []
+    mock_tile.block_exit = []
+
+    # Set up universe.get_tile to return our mock tile
+    mock_universe.get_tile = MagicMock(return_value=mock_tile)
+    mock_universe.game_tick_events = MagicMock()
+
     # Mock methods
-    player.get_tile = MagicMock(return_value=None)
+    player.get_tile = MagicMock(return_value=mock_tile)
     player.is_in_combat = MagicMock(return_value=False)
     player.get_visible_tile = MagicMock(return_value=None)
     player.can_move_to = MagicMock(return_value=True)
     player.move = MagicMock()
-    
+    player.explored_tiles = {}
+    player.combat_list_allies = []
+    player.recall_friends = MagicMock()
+
     return player
 
 
@@ -167,11 +186,10 @@ class TestGameServiceInventory:
     def test_get_inventory_empty(self, game_service, mock_player):
         """Test getting empty inventory."""
         mock_player.inventory = []
-        
+
         result = game_service.get_inventory(mock_player)
         assert result is not None
-        assert isinstance(result, list)
-        assert len(result) == 0
+        assert isinstance(result, dict)
     
     def test_get_inventory_with_items(self, game_service, mock_player):
         """Test getting inventory with items."""

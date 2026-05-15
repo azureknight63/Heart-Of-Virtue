@@ -5151,3 +5151,163 @@ class GameService:
             "shop_state": shop_state,
             "sell_inventory": sell_inventory,
         }
+
+    def get_world_info(self, player: "player_module.Player") -> Dict[str, Any]:
+        """Get world information (maps, locations, explored areas).
+
+        Args:
+            player: The Player instance
+
+        Returns:
+            Dictionary with world information
+        """
+        universe = getattr(player, "universe", None)
+        if not universe:
+            return {}
+
+        return {
+            "current_position": {
+                "x": player.location_x,
+                "y": player.location_y,
+            },
+            "explored_tiles": getattr(player, "explored_tiles", {}),
+            "story_flags": self._story(player),
+            "game_tick": self._game_tick(player),
+        }
+
+    def get_current_tile(self, player: "player_module.Player") -> Dict[str, Any]:
+        """Get information about the current tile.
+
+        Args:
+            player: The Player instance
+
+        Returns:
+            Dictionary with current tile information
+        """
+        return self.get_current_room(player)
+
+    def interact_with_tile(self, player: "player_module.Player", action: str) -> Dict[str, Any]:
+        """Interact with the current tile (look, examine, search, etc).
+
+        Args:
+            player: The Player instance
+            action: The interaction action (look, examine, search, etc)
+
+        Returns:
+            Dictionary with interaction result
+        """
+        tile = player.universe.get_tile(player.location_x, player.location_y)
+        if not tile:
+            return {"error": "No tile at this location"}
+
+        # Return tile description and contents
+        return {
+            "action": action,
+            "tile_name": getattr(tile, "name", "Unknown"),
+            "description": getattr(tile, "description", ""),
+            "items": ItemSerializer.serialize_list(getattr(tile, "items_here", [])),
+            "npcs": NPCSerializer.serialize_list(getattr(tile, "npcs_here", [])),
+            "objects": ObjectSerializer.serialize_list(getattr(tile, "objects_here", [])),
+        }
+
+    def use_item(self, player: "player_module.Player", item_index: int) -> Dict[str, Any]:
+        """Use an item from the player's inventory.
+
+        Args:
+            player: The Player instance
+            item_index: Index of the item to use
+
+        Returns:
+            Dictionary with use result
+        """
+        if not isinstance(player.inventory, list):
+            return {"error": "Inventory not accessible"}
+
+        if item_index < 0 or item_index >= len(player.inventory):
+            return {"error": "Invalid item index"}
+
+        item = player.inventory[item_index]
+
+        # Try to use the item if it has a use method
+        if hasattr(item, "use") and callable(item.use):
+            try:
+                result = item.use(player)
+                return {"success": True, "message": f"Used {item.name}"}
+            except Exception as e:
+                return {"success": False, "error": str(e)}
+
+        return {"success": False, "error": f"{item.name} cannot be used"}
+
+    def drop_item(self, player: "player_module.Player", item_index: int) -> Dict[str, Any]:
+        """Drop an item from the player's inventory.
+
+        Args:
+            player: The Player instance
+            item_index: Index of the item to drop
+
+        Returns:
+            Dictionary with drop result
+        """
+        if not isinstance(player.inventory, list):
+            return {"error": "Inventory not accessible"}
+
+        if item_index < 0 or item_index >= len(player.inventory):
+            return {"error": "Invalid item index"}
+
+        item = player.inventory.pop(item_index)
+
+        # Add item to the current tile
+        tile = player.universe.get_tile(player.location_x, player.location_y)
+        if tile and hasattr(tile, "items_here"):
+            tile.items_here.append(item)
+
+        return {
+            "success": True,
+            "message": f"Dropped {item.name}",
+            "item_name": item.name,
+        }
+
+    def rest(self, player: "player_module.Player") -> Dict[str, Any]:
+        """Rest to restore HP and fatigue.
+
+        Args:
+            player: The Player instance
+
+        Returns:
+            Dictionary with rest result
+        """
+        old_hp = player.hp
+        old_fatigue = player.fatigue
+
+        # Restore HP and fatigue
+        player.hp = player.maxhp
+        player.fatigue = player.maxfatigue
+
+        return {
+            "success": True,
+            "message": "You rest and recover",
+            "hp_restored": player.hp - old_hp,
+            "fatigue_restored": player.fatigue - old_fatigue,
+            "current_hp": player.hp,
+            "current_fatigue": player.fatigue,
+        }
+
+    def get_combat_state(self, player: "player_module.Player") -> Dict[str, Any]:
+        """Get the current combat state.
+
+        Args:
+            player: The Player instance
+
+        Returns:
+            Dictionary with combat state
+        """
+        in_combat = getattr(player, "in_combat", False)
+
+        if not in_combat:
+            return {
+                "in_combat": False,
+                "message": "Not in combat",
+            }
+
+        # If in combat, get the combat status
+        return self.get_combat_status(player)

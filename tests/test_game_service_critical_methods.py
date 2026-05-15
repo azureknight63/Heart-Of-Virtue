@@ -26,13 +26,35 @@ def mock_player():
     player.maxhp = 100
     player.fatigue = 50
     player.maxfatigue = 100
-    player.map = {}
+
+    # Mock universe with get_tile method
     player.universe = MagicMock()
     player.universe.story = {}
     player.universe.game_tick = 0
+    player.universe.game_tick_events = MagicMock()
+
+    # Create mock tile
+    mock_tile = MagicMock()
+    mock_tile.name = "TestTile"
+    mock_tile.x = 5
+    mock_tile.y = 5
+    mock_tile.description = "A test area"
+    mock_tile.is_passable = True
+    mock_tile.items_here = []
+    mock_tile.npcs_here = []
+    mock_tile.objects_here = []
+    mock_tile.block_exit = []
+
+    # Set up universe.get_tile to return our mock tile
+    player.universe.get_tile = MagicMock(return_value=mock_tile)
+
+    player.map = {"name": "test_map"}
     player.inventory = []
     player.eq_weapon = None
     player.eq_armor = None
+    player.explored_tiles = {}
+    player.combat_list_allies = []
+
     return player
 
 
@@ -111,11 +133,11 @@ class TestGameServiceEquipItem:
 
 class TestGameServiceInteraction:
     """Tests for interact_with_target() method - object/NPC interaction."""
-    
+
     def test_interact_with_target_returns_dict(self, game_service, mock_player):
         """Verify interact_with_target returns a dictionary."""
         mock_target = MagicMock()
-        result = game_service.interact_with_target(mock_player, mock_target)
+        result = game_service.interact_with_target(mock_player, mock_target, "talk")
         assert isinstance(result, dict)
 
 
