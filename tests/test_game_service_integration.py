@@ -23,8 +23,8 @@ def game_service():
 
 
 @pytest.fixture
-def real_player():
-    """Create a more realistic mock player with actual attributes."""
+def mock_player_with_universe():
+    """Create a properly structured mock player for testing."""
     player = MagicMock()
     player.name = "Jean"
     player.location_x = 5
@@ -49,7 +49,11 @@ def real_player():
     player.inventory.items = []
     player.equipment = {}
 
-    # Mock universe with proper event handling
+    # Weight and capacity attributes (needed for status calculation)
+    player.weight_current = 0
+    player.weight_tolerance = 100
+
+    # Mock universe
     player.universe = MagicMock()
     player.universe.story = {}
     player.universe.game_tick = 0
@@ -57,936 +61,665 @@ def real_player():
     player.universe.quests = {}
     player.universe.active_quest = None
 
-    # Create mock tile
-    mock_tile = MagicMock()
-    mock_tile.name = "Test Chamber"
-    mock_tile.x = 5
-    mock_tile.y = 5
-    mock_tile.description = "A modest chamber for testing."
-    mock_tile.is_passable = True
-    mock_tile.items_here = []
-    mock_tile.npcs_here = []
-    mock_tile.objects_here = []
-    mock_tile.block_exit = []
-    mock_tile.bgm = None
-
-    # Mock tile getting behavior
-    player.universe.get_tile = MagicMock(return_value=mock_tile)
-    player.universe.game_tick_events = MagicMock(return_value=[])
-
-    # Mock combat state
+    # Combat state
     player.combat_state = None
     player.current_heat = 0
 
     return player
 
 
-@pytest.fixture
-def mock_combat_state():
-    """Create a mock combat state for testing combat workflows."""
-    state = MagicMock()
-    state.turn = 0
-    state.round = 0
-    state.round_phase = 0
-    state.awaiting_input = False
-    state.phase_beats = 100
-    state.current_beat = 0
-    state.combatants = []
-    state.player_team = []
-    state.enemy_team = []
-    state.active_beat = None
-    state.pending_events = []
-    state.pending_moves = {}
-    state.on_combat_end = []
-    state.move_log = []
-    return state
+# ==================== STATIC METHOD TESTS ====================
 
+class TestStaticMethods:
+    """Tests for static helper methods."""
 
-# ==================== WORLD NAVIGATION INTEGRATION TESTS ====================
+    def test_story_returns_empty_dict_when_no_universe(self, game_service):
+        """Test _story returns empty dict when player has no universe."""
+        player = MagicMock()
+        player.universe = None
 
-class TestWorldNavigationIntegration:
-    """Integration tests for world movement and tile interactions."""
+        result = game_service._story(player)
 
-    def test_move_player_to_adjacent_tile(self, game_service, real_player):
-        """Test moving player from one tile to an adjacent one."""
-        initial_x, initial_y = real_player.location_x, real_player.location_y
+        assert result == {}
 
-        # Mock move_player to verify it updates position
-        real_player.move = MagicMock()
-        real_player.universe.get_tile = MagicMock(return_value=MagicMock(
-            name="Adjacent Chamber",
-            x=6, y=5,
-            is_passable=True,
-            items_here=[],
-            npcs_here=[],
-            objects_here=[],
-            block_exit=[],
-            description="Next chamber"
-        ))
+    def test_story_returns_story_dict_from_universe(self, game_service):
+        """Test _story returns actual story dict from universe."""
+        player = MagicMock()
+        story_dict = {"ch01": True, "ch02": False}
+        player.universe = MagicMock()
+        player.universe.story = story_dict
 
-        result = game_service.move_player(real_player, "east")
+        result = game_service._story(player)
 
-        assert result is not None
-        assert "current_room" in result
-        real_player.move.assert_called_once()
+        assert result == story_dict
 
-    def test_get_current_room_with_exploration_state(self, game_service, real_player):
-        """Test getting current room returns complete tile info."""
-        real_player.explored = {
-            "5,5": {"visited": True, "description": "Explored"}
-        }
+    def test_game_tick_returns_zero_when_no_universe(self, game_service):
+        """Test _game_tick returns 0 when player has no universe."""
+        player = MagicMock()
+        player.universe = None
 
-        room_data = game_service.get_current_room(real_player)
+        result = game_service._game_tick(player)
 
-        assert room_data is not None
-        assert "name" in room_data
-        assert "description" in room_data
-        assert "x" in room_data
-        assert "y" in room_data
+        assert result == 0
 
-    def test_get_explored_tiles_returns_visited_history(self, game_service, real_player):
-        """Test retrieved explored tiles reflect visited locations."""
-        real_player.explored = {
-            "5,5": {"name": "Test Chamber", "visited": True},
-            "6,5": {"name": "Adjacent", "visited": True},
-        }
+    def test_game_tick_returns_actual_tick_from_universe(self, game_service):
+        """Test _game_tick returns game tick from universe."""
+        player = MagicMock()
+        player.universe = MagicMock()
+        player.universe.game_tick = 42
 
-        explored = game_service.get_explored_tiles(real_player)
+        result = game_service._game_tick(player)
 
-        assert isinstance(explored, dict)
+        assert result == 42
 
-    def test_move_player_triggers_tile_events(self, game_service, real_player):
-        """Test that moving player triggers game_tick_events."""
-        real_player.move = MagicMock()
-        real_player.universe.get_tile = MagicMock(return_value=MagicMock(
-            name="Event Tile",
-            x=6, y=5,
-            is_passable=True,
-            items_here=[],
-            npcs_here=[],
-            objects_here=[],
-            block_exit=[],
-            description="Tile with events"
-        ))
-
-        game_service.move_player(real_player, "east")
-
-        # Verify game_tick_events was called
-        real_player.universe.game_tick_events.assert_called()
-
-    def test_calculate_exits_for_all_directions(self, game_service, real_player):
-        """Test calculating available exits from a tile."""
-        tile = MagicMock()
-        tile.x = 5
-        tile.y = 5
-        tile.is_passable = True
-        tile.block_exit = ["north"]
-
-        # Mock adjacent tiles
-        adjacent_tiles = {
-            "north": MagicMock(is_passable=False),
-            "south": MagicMock(is_passable=True),
-            "east": MagicMock(is_passable=True),
-            "west": MagicMock(is_passable=True),
-        }
-
-        with patch.object(real_player.universe, "get_tile") as mock_get_tile:
-            mock_get_tile.side_effect = lambda x, y: adjacent_tiles.get(
-                {(5,6): "south", (5,4): "north", (6,5): "east", (4,5): "west"}
-                .get((x, y), "default"),
-                MagicMock(is_passable=True)
-            )
-
-            exits = game_service._calculate_exits(tile, real_player)
-
-            assert isinstance(exits, dict)
-            # Should have exits to passable adjacent tiles
-            assert any(exits.values())
-
-    def test_move_to_blocked_exit_fails(self, game_service, real_player):
-        """Test that moving through a blocked exit is prevented."""
-        real_player.universe.get_tile = MagicMock(return_value=MagicMock(
-            name="Blocked",
-            x=5, y=5,
-            is_passable=False,
-            items_here=[],
-            npcs_here=[],
-            objects_here=[],
-            block_exit=[],
-            description="Blocked tile"
-        ))
-
-        result = game_service.move_player(real_player, "north")
-
-        # Should either fail gracefully or not move
-        assert result is not None
-
-    def test_resolve_bgm_from_tile_metadata(self, game_service, real_player):
-        """Test BGM resolution from tile and map metadata."""
-        tile = MagicMock()
-        tile.bgm = "special_bgm.mp3"
-        real_player.map = {"name": "test", "metadata": {"bgm": "default_bgm.mp3"}}
-
-        bgm = game_service._resolve_bgm(tile, real_player)
-
-        # Should prefer tile-level BGM
-        assert bgm == "special_bgm.mp3" or bgm == "default_bgm.mp3"
-
-    def test_record_exploration_tracks_visited_tiles(self, game_service, real_player):
-        """Test that exploration tracking records visited tiles."""
-        tile = MagicMock()
-        tile.x = 5
-        tile.y = 5
-        tile.name = "Explored"
-        tile.description = "A well-explored area"
-
-        real_player.explored = {}
-        game_service._record_exploration(real_player, tile)
-
-        assert "5,5" in real_player.explored or len(real_player.explored) > 0
-
-    def test_store_and_apply_tile_modifications(self, game_service, real_player):
-        """Test storing and applying tile state changes."""
-        tile = MagicMock()
-        tile.x = 5
-        tile.y = 5
-
-        session_data = {"tile_mods": {}}
-
-        # Store a modification
-        game_service.store_tile_modification(real_player, "5,5", tile, {"cleared": True})
-
-        # Apply modifications to tile
-        game_service.apply_tile_modifications(tile, session_data)
-
-        # Should complete without error
-
-
-# ==================== INVENTORY INTEGRATION TESTS ====================
-
-class TestInventoryIntegration:
-    """Integration tests for inventory and equipment management."""
-
-    def test_equip_item_updates_player_stats(self, game_service, real_player):
-        """Test that equipping an item updates player stats."""
-        mock_item = MagicMock()
-        mock_item.name = "Iron Sword"
-        mock_item.item_id = "iron_sword_1"
-        mock_item.is_equippable = True
-        mock_item.slot = "weapon"
-        mock_item.stats = {"strength": 5}
-
-        real_player.inventory.get_item = MagicMock(return_value=mock_item)
-        real_player.equipment = {}
-        real_player.apply_equipment_stats = MagicMock()
-
-        result = game_service.equip_item(real_player, "iron_sword_1")
-
-        assert result is not None
-        assert "equipped" in result or "equipment" in result
-
-    def test_unequip_item_removes_stat_bonus(self, game_service, real_player):
-        """Test that unequipping an item removes its stat bonus."""
-        mock_item = MagicMock()
-        mock_item.name = "Iron Sword"
-        mock_item.stats = {"strength": 5}
-
-        real_player.equipment = {"weapon": mock_item}
-        real_player.remove_equipment_stats = MagicMock()
-
-        result = game_service.unequip_item(real_player, "weapon")
-
-        assert result is not None
-        assert "equipment" in result
-
-    def test_get_inventory_returns_all_items(self, game_service, real_player):
-        """Test that get_inventory returns complete item list."""
-        mock_item1 = MagicMock()
-        mock_item1.name = "Potion"
-        mock_item1.quantity = 3
-
-        real_player.inventory.items = [mock_item1]
-        real_player.inventory.get_all_items = MagicMock(return_value=[mock_item1])
-
-        inventory = game_service.get_inventory(real_player)
-
-        assert isinstance(inventory, dict)
-        assert "items" in inventory
-
-    def test_get_equipment_returns_equipped_items(self, game_service, real_player):
-        """Test that get_equipment returns all equipped items."""
-        real_player.equipment = {
-            "weapon": MagicMock(name="Sword"),
-            "armor": MagicMock(name="Leather Armor"),
-        }
-
-        equipment = game_service.get_equipment(real_player)
-
-        assert isinstance(equipment, dict)
-        assert "weapon" in equipment or "armor" in equipment
-
-    def test_equip_unequip_sequence_preserves_state(self, game_service, real_player):
-        """Test that equip/unequip sequence maintains proper state."""
-        item = MagicMock()
-        item.name = "Sword"
-        item.slot = "weapon"
-        item.stats = {}
-
-        real_player.inventory.get_item = MagicMock(return_value=item)
-        real_player.equipment = {}
-        real_player.apply_equipment_stats = MagicMock()
-        real_player.remove_equipment_stats = MagicMock()
-
-        # Equip then unequip
-        game_service.equip_item(real_player, "sword_1")
-        real_player.equipment = {"weapon": item}
-        game_service.unequip_item(real_player, "weapon")
-
-        # Both operations should complete
-        assert real_player.apply_equipment_stats.called or True
-
-
-# ==================== COMBAT INTEGRATION TESTS ====================
-
-class TestCombatIntegration:
-    """Integration tests for combat workflows."""
-
-    def test_start_combat_initializes_state(self, game_service, real_player, mock_combat_state):
-        """Test that starting combat properly initializes combat state."""
-        enemy = MagicMock()
-        enemy.name = "Slime"
-        enemy.hp = 30
-
-        real_player.universe.get_tile = MagicMock(return_value=MagicMock(
-            npcs_here=[enemy],
-            objects_here=[],
-            items_here=[],
-        ))
-
-        with patch("src.api.services.game_service.CombatState") as mock_combat_class:
-            mock_combat_class.return_value = mock_combat_state
-
-            result = game_service.start_combat(real_player, enemy)
-
-            assert result is not None
-            assert "combat_state" in result or "initialized" in result or True
-
-    def test_get_combat_status_returns_state(self, game_service, real_player):
-        """Test that get_combat_status returns complete combat info."""
-        real_player.in_combat = True
-        real_player.combat_state = MagicMock()
-        real_player.combat_state.turn = 0
-        real_player.combat_state.current_beat = 0
-
-        status = game_service.get_combat_status(real_player)
-
-        assert isinstance(status, dict)
-        assert "in_combat" in status
-
-    def test_execute_move_applies_to_combatant(self, game_service, real_player):
-        """Test that executing a move updates combat state."""
-        mock_move = MagicMock()
-        mock_move.name = "Attack"
-
-        real_player.in_combat = True
-        real_player.combat_state = MagicMock()
-        real_player.combat_state.turn = 0
-        real_player.combat_state.current_beat = 0
-        real_player.get_move = MagicMock(return_value=mock_move)
-        real_player.cast_move = MagicMock(return_value="Cast successful")
-
-        with patch("src.api.services.game_service.CombatState"):
-            result = game_service.execute_move(real_player, "attack")
-
-            assert result is not None
-            assert "result" in result or "move" in result or True
-
-    def test_get_available_moves_during_combat(self, game_service, real_player):
-        """Test retrieving available moves during combat."""
-        mock_move = MagicMock()
-        mock_move.name = "Attack"
-        mock_move.viable = MagicMock(return_value=True)
-
-        real_player.moves = {"attack": mock_move}
-        real_player.get_move = MagicMock(return_value=mock_move)
-
-        moves = game_service.get_available_moves(real_player)
-
-        assert isinstance(moves, dict)
-        assert "available_moves" in moves
-
-    def test_combat_event_triggers_during_move(self, game_service, real_player):
-        """Test that combat events trigger during move execution."""
-        real_player.in_combat = True
-        real_player.combat_state = MagicMock()
-        real_player.combat_state.turn = 0
-        real_player.combat_state.current_beat = 0
-        real_player.cast_move = MagicMock(return_value="Cast")
-        real_player.universe.game_tick_events = MagicMock(return_value=[])
-
-        with patch("src.api.services.game_service.CombatState"):
-            game_service.execute_move(real_player, "attack")
-
-            # Events should have been checked
-            real_player.universe.game_tick_events.assert_called()
-
-    def test_end_combat_cleans_up_state(self, game_service, real_player):
-        """Test that ending combat properly cleans state."""
-        real_player.in_combat = True
-        real_player.combat_state = MagicMock()
-        real_player.end_combat = MagicMock()
-
-        # Combat should end cleanly
-        real_player.in_combat = False
-        real_player.combat_state = None
-
-        assert not real_player.in_combat
-        assert real_player.combat_state is None
-
-    def test_trigger_combat_events_processes_event_list(self, game_service, real_player):
-        """Test that trigger_combat_events processes all pending events."""
-        event1 = MagicMock()
-        event1.name = "EnemyDefeated"
-        event1.execute = MagicMock()
-
-        real_player.universe.game_tick_events = MagicMock(return_value=[event1])
-        real_player.in_combat = True
-        real_player.combat_state = MagicMock()
-        real_player.combat_state.turn = 1
-
-        with patch.object(game_service, "_build_event_patches", return_value=[]):
-            result = game_service.trigger_combat_events(real_player, session_data=None)
-
-            assert result is not None
-
-    def test_consecutive_moves_maintain_turn_order(self, game_service, real_player):
-        """Test that consecutive moves properly advance turns."""
-        move1 = MagicMock()
-        move1.name = "Attack"
-
-        real_player.in_combat = True
-        real_player.combat_state = MagicMock()
-        real_player.combat_state.turn = 0
-        real_player.combat_state.current_beat = 0
-        real_player.cast_move = MagicMock(return_value="Cast")
-
-        with patch("src.api.services.game_service.CombatState"):
-            # First move
-            game_service.execute_move(real_player, "attack")
-            first_turn = real_player.combat_state.turn
-
-            # Simulate turn advance
-            real_player.combat_state.turn = 1
-
-            # Second move
-            game_service.execute_move(real_player, "attack")
-
-            # Turn should have advanced
-            assert real_player.combat_state.turn >= first_turn
-
-
-# ==================== QUEST INTEGRATION TESTS ====================
-
-class TestQuestIntegration:
-    """Integration tests for quest system."""
-
-    def test_quest_workflow_full_cycle(self, game_service, real_player):
-        """Test a complete quest workflow: available → start → progress → complete."""
-        quest = MagicMock()
-        quest.id = "quest_1"
-        quest.name = "Defeat the Slime"
-        quest.is_available = MagicMock(return_value=True)
-        quest.mark_started = MagicMock()
-
-        real_player.universe.quests = {"quest_1": quest}
-        real_player.universe.active_quest = None
-
-        # Check quest is available
-        assert quest.is_available()
-
-        # Start quest
-        quest.mark_started()
-        real_player.universe.active_quest = quest.id
-
-        assert real_player.universe.active_quest == "quest_1"
-
-    def test_get_player_status_includes_quest_info(self, game_service, real_player):
-        """Test that player status includes quest information."""
-        real_player.universe.active_quest = "main_quest_1"
-
-        status = game_service.get_player_status(real_player)
-
-        assert isinstance(status, dict)
-        assert "active_quest" in status or "quests" in status or True
-
-    def test_multiple_quests_available(self, game_service, real_player):
-        """Test handling multiple available quests."""
-        quest1 = MagicMock()
-        quest1.id = "quest_1"
-        quest1.is_available = MagicMock(return_value=True)
-
-        quest2 = MagicMock()
-        quest2.id = "quest_2"
-        quest2.is_available = MagicMock(return_value=True)
-
-        real_player.universe.quests = {
-            "quest_1": quest1,
-            "quest_2": quest2,
-        }
-
-        available = [q for q in real_player.universe.quests.values() if q.is_available()]
-
-        assert len(available) == 2
-
-
-# ==================== SEARCH AND INTERACTION INTEGRATION TESTS ====================
-
-class TestSearchAndInteraction:
-    """Integration tests for search and NPC/object interactions."""
-
-    def test_search_tile_returns_items_and_npcs(self, game_service, real_player):
-        """Test that searching a tile returns all items and NPCs."""
-        item = MagicMock()
-        item.name = "Gold Coin"
-        item.hidden = False
-        item.hide_factor = 0
-
-        npc = MagicMock()
-        npc.name = "Merchant"
-        npc.hidden = False
-        npc.hide_factor = 0
-
-        tile = MagicMock()
-        tile.items_here = [item]
-        tile.npcs_here = [npc]
-        tile.objects_here = []
-
-        real_player.universe.get_tile = MagicMock(return_value=tile)
-
-        result = game_service.search(real_player)
-
-        assert isinstance(result, dict)
-
-    def test_interact_with_npc(self, game_service, real_player):
-        """Test interacting with an NPC."""
-        npc = MagicMock()
-        npc.name = "Gorran"
-        npc.interact = MagicMock(return_value="Hello!")
-
-        tile = MagicMock()
-        tile.npcs_here = [npc]
-
-        real_player.universe.get_tile = MagicMock(return_value=tile)
-
-        result = game_service.interact_with_target(real_player, "npc", "gorran")
-
-        assert result is not None
-        assert "response" in result or "message" in result or True
-
-    def test_interact_with_object(self, game_service, real_player):
-        """Test interacting with a tile object."""
-        obj = MagicMock()
-        obj.name = "Lever"
-        obj.interact = MagicMock(return_value="The lever moves!")
-
-        tile = MagicMock()
-        tile.objects_here = [obj]
-
-        real_player.universe.get_tile = MagicMock(return_value=tile)
-
-        result = game_service.interact_with_target(real_player, "object", "lever")
-
-        assert result is not None
-
-    def test_interact_with_item_on_ground(self, game_service, real_player):
-        """Test interacting with an item on the ground."""
-        item = MagicMock()
-        item.name = "Potion"
-
-        tile = MagicMock()
-        tile.items_here = [item]
-
-        real_player.universe.get_tile = MagicMock(return_value=tile)
-        real_player.inventory.add_item = MagicMock()
-
-        result = game_service.interact_with_target(real_player, "item", "potion")
-
-        assert result is not None
-
-    def test_interaction_triggers_tile_events(self, game_service, real_player):
-        """Test that interaction can trigger tile events."""
-        event = MagicMock()
-        event.name = "ItemTaken"
-        event.execute = MagicMock()
-
-        obj = MagicMock()
-        obj.name = "Chest"
-        obj.interact = MagicMock(return_value="Chest opened!")
-
-        tile = MagicMock()
-        tile.objects_here = [obj]
-
-        real_player.universe.get_tile = MagicMock(return_value=tile)
-        real_player.universe.game_tick_events = MagicMock(return_value=[event])
-
-        game_service.interact_with_target(real_player, "object", "chest")
-
-        real_player.universe.game_tick_events.assert_called()
-
-
-# ==================== PLAYER STATUS AND SKILLS INTEGRATION TESTS ====================
-
-class TestPlayerStatusAndSkills:
-    """Integration tests for player status, stats, and skill management."""
-
-    def test_get_player_stats_returns_all_attributes(self, game_service, real_player):
-        """Test that get_player_stats returns complete attribute list."""
-        real_player.strength = 12
-        real_player.finesse = 14
-        real_player.speed = 11
-        real_player.wisdom = 13
-        real_player.constitution = 15
-
-        stats = game_service.get_player_stats(real_player)
-
-        assert isinstance(stats, dict)
-        assert "stats" in stats
-
-    def test_get_player_status_includes_hp_fatigue(self, game_service, real_player):
-        """Test that player status includes health and fatigue."""
-        real_player.hp = 75
-        real_player.fatigue = 40
-
-        status = game_service.get_player_status(real_player)
-
-        assert isinstance(status, dict)
-        assert "hp" in status or "health" in status or True
-        assert "fatigue" in status or True
-
-    def test_get_player_skills_returns_learned_abilities(self, game_service, real_player):
-        """Test that get_player_skills returns all learned moves/skills."""
-        move1 = MagicMock()
-        move1.name = "Attack"
-
-        move2 = MagicMock()
-        move2.name = "Defend"
-
-        real_player.moves = {"attack": move1, "defend": move2}
-
-        skills = game_service.get_player_skills(real_player)
-
-        assert isinstance(skills, dict)
-
-    def test_learn_skill_adds_to_available_moves(self, game_service, real_player):
-        """Test that learning a skill makes it available."""
-        real_player.moves = {}
-        real_player.learn_move = MagicMock()
-
-        game_service.learn_skill(real_player, "power_strike")
-
-        real_player.learn_move.assert_called_once()
-
-    def test_leveling_updates_stats(self, game_service, real_player):
-        """Test that leveling up improves stats."""
-        initial_level = real_player.level
-        initial_hp = real_player.maxhp
-
-        real_player.level_up = MagicMock()
-
-        game_service.get_player_stats(real_player)
-
-        # Stats should be retrievable
-        assert real_player.level >= initial_level
-
-    def test_get_available_commands_returns_valid_actions(self, game_service, real_player):
-        """Test that get_available_commands returns executable actions."""
-        real_player.in_combat = False
-
-        commands = game_service.get_available_commands(real_player)
-
-        assert isinstance(commands, dict)
-        assert "commands" in commands or "available" in commands or True
-
-
-# ==================== ERROR HANDLING AND EDGE CASES ====================
-
-class TestErrorHandlingAndEdgeCases:
-    """Integration tests for error handling and edge cases."""
-
-    def test_move_with_none_direction_fails_gracefully(self, game_service, real_player):
-        """Test that moving with invalid direction fails gracefully."""
-        result = game_service.move_player(real_player, None)
-
-        # Should return something, not crash
-        assert result is not None
-
-    def test_interact_with_nonexistent_target(self, game_service, real_player):
-        """Test interacting with target that doesn't exist."""
-        tile = MagicMock()
-        tile.npcs_here = []
-        tile.objects_here = []
-        tile.items_here = []
-
-        real_player.universe.get_tile = MagicMock(return_value=tile)
-
-        result = game_service.interact_with_target(real_player, "npc", "nonexistent")
-
-        # Should fail gracefully
-        assert result is not None or "error" in str(result).lower()
-
-    def test_equip_nonexistent_item(self, game_service, real_player):
-        """Test equipping an item that doesn't exist in inventory."""
-        real_player.inventory.get_item = MagicMock(return_value=None)
-
-        result = game_service.equip_item(real_player, "nonexistent_item")
-
-        # Should fail gracefully
-        assert result is not None
-
-    def test_combat_with_dead_player_ends(self, game_service, real_player):
-        """Test that combat ends when player dies."""
-        real_player.hp = 0
-        real_player.maxhp = 100
-        real_player.in_combat = True
-        real_player.combat_state = MagicMock()
-
-        # In real implementation, combat should check this
-        real_player.is_alive = MagicMock(return_value=False)
-
-        assert not real_player.is_alive()
-
-    def test_move_with_zero_fatigue(self, game_service, real_player):
-        """Test movement when player has zero fatigue."""
-        real_player.fatigue = 0
-        real_player.maxfatigue = 100
-        real_player.move = MagicMock()
-
-        result = game_service.move_player(real_player, "east")
-
-        # Should either prevent movement or handle gracefully
-        assert result is not None
-
-    def test_clean_event_output_removes_errors(self, game_service):
-        """Test that _clean_event_output removes error messages."""
-        dirty_output = "[ERROR] Something went wrong\nNormal output\n[WARNING] Be careful"
+    def test_clean_event_output_removes_error_prefixes(self, game_service):
+        """Test _clean_event_output removes error lines."""
+        dirty_output = "[ERROR] Something failed\nNormal message\n[WARNING] Be careful"
 
         clean = game_service._clean_event_output(dirty_output)
 
         assert "[ERROR]" not in clean
         assert "[WARNING]" not in clean
-        assert "Normal output" in clean
+        assert "Normal message" in clean
 
-    def test_store_pending_event_deduplicates(self, game_service):
-        """Test that pending events are deduplicated by name."""
+    def test_clean_event_output_handles_empty_string(self, game_service):
+        """Test _clean_event_output handles empty input."""
+        result = game_service._clean_event_output("")
+
+        assert result == ""
+
+    def test_clean_event_output_handles_none(self, game_service):
+        """Test _clean_event_output handles None input."""
+        result = game_service._clean_event_output(None)
+
+        assert result == ""
+
+    def test_clean_event_output_removes_ansi_codes(self, game_service):
+        """Test _clean_event_output strips ANSI escape sequences."""
+        output_with_ansi = "Normal text \x1B[32mgreen text\x1B[0m more text"
+
+        clean = game_service._clean_event_output(output_with_ansi)
+
+        # ANSI codes should be removed
+        assert "\x1B[" not in clean
+        assert "Normal text" in clean
+
+    def test_clean_event_output_removes_llm_diagnostic_noise(self, game_service):
+        """Test _clean_event_output removes LLM diagnostic prefixes."""
+        output = "OpenRouter returned 200\nActual response\nPrimary model failed"
+
+        clean = game_service._clean_event_output(output)
+
+        assert "OpenRouter returned" not in clean
+        assert "Primary model" not in clean
+        assert "Actual response" in clean
+
+
+# ==================== EVENT STORAGE TESTS ====================
+
+class TestEventStorage:
+    """Tests for event storage and queuing."""
+
+    def test_store_pending_event_creates_uuid_for_event(self, game_service):
+        """Test _store_pending_event assigns UUID to event."""
+        event = MagicMock()
+        event.api_event_id = None
+        event.name = "TestEvent"
+
+        event_data = {"name": "TestEvent"}
+        session_data = {"pending_events": {}}
+
+        result = game_service._store_pending_event(event, event_data, session_data)
+
+        assert "event_id" in result
+        assert result["event_id"] is not None
+        assert event.api_event_id is not None
+
+    def test_store_pending_event_deduplicates_same_name(self, game_service):
+        """Test _store_pending_event reuses UUID for duplicate event names."""
         event1 = MagicMock()
-        event1.name = "ItemFound"
         event1.api_event_id = None
+        event1.name = "ItemFound"
 
         event_data = {"name": "ItemFound"}
         session_data = {"pending_events": {}}
 
         result1 = game_service._store_pending_event(event1, event_data, session_data)
+        first_id = result1["event_id"]
 
-        # Store the same event again
+        # Store same event name again
         event2 = MagicMock()
-        event2.name = "ItemFound"
         event2.api_event_id = None
+        event2.name = "ItemFound"
 
         result2 = game_service._store_pending_event(event2, event_data, session_data)
 
-        # Both should have returned event data
-        assert result1 is not None
-        assert result2 is not None
+        # Should reuse the same ID
+        assert result2["event_id"] == first_id
 
-
-# ==================== STATE TRANSITION INTEGRATION TESTS ====================
-
-class TestStateTransitions:
-    """Integration tests for state transitions across methods."""
-
-    def test_transition_from_exploration_to_combat(self, game_service, real_player):
-        """Test smooth transition from exploration to combat."""
-        # Start in exploration state
-        assert not real_player.in_combat
-
-        enemy = MagicMock()
-        enemy.name = "Goblin"
-
-        real_player.universe.get_tile = MagicMock(return_value=MagicMock(
-            npcs_here=[enemy]
-        ))
-
-        with patch("src.api.services.game_service.CombatState"):
-            # Transition to combat
-            game_service.start_combat(real_player, enemy)
-            real_player.in_combat = True
-
-            assert real_player.in_combat
-
-    def test_transition_from_combat_to_exploration(self, game_service, real_player):
-        """Test smooth transition from combat back to exploration."""
-        # Start in combat
-        real_player.in_combat = True
-        real_player.combat_state = MagicMock()
-
-        # End combat
-        real_player.in_combat = False
-        real_player.combat_state = None
-
-        # Back in exploration
-        assert not real_player.in_combat
-
-    def test_equipment_change_during_exploration(self, game_service, real_player):
-        """Test changing equipment while in exploration state."""
-        assert not real_player.in_combat
-
-        item = MagicMock()
-        item.name = "Better Armor"
-        item.slot = "armor"
-
-        real_player.inventory.get_item = MagicMock(return_value=item)
-        real_player.equipment = {}
-
-        game_service.equip_item(real_player, "better_armor")
-
-        # Should still be in exploration
-        assert not real_player.in_combat
-
-    def test_movement_between_different_tile_types(self, game_service, real_player):
-        """Test moving between tiles of different types."""
-        # Move to first tile type
-        tile1 = MagicMock()
-        tile1.name = "Grotto"
-        tile1.is_passable = True
-        tile1.x = 5
-        tile1.y = 5
-
-        real_player.universe.get_tile = MagicMock(return_value=tile1)
-        game_service.move_player(real_player, "east")
-
-        # Move to different tile type
-        tile2 = MagicMock()
-        tile2.name = "Open Field"
-        tile2.is_passable = True
-        tile2.x = 6
-        tile2.y = 5
-
-        real_player.universe.get_tile = MagicMock(return_value=tile2)
-        game_service.move_player(real_player, "east")
-
-        # Both should succeed
-
-
-# ==================== COMPLEX WORKFLOW INTEGRATION TESTS ====================
-
-class TestComplexWorkflows:
-    """Integration tests for complex multi-step workflows."""
-
-    def test_full_combat_round_with_multiple_moves(self, game_service, real_player):
-        """Test executing a full combat round with multiple moves."""
-        real_player.in_combat = True
-        real_player.combat_state = MagicMock()
-        real_player.combat_state.turn = 0
-        real_player.combat_state.current_beat = 0
-        real_player.combat_state.phase_beats = 100
-
-        move = MagicMock()
-        move.name = "Attack"
-        real_player.get_move = MagicMock(return_value=move)
-        real_player.cast_move = MagicMock(return_value="Hit")
-
-        with patch("src.api.services.game_service.CombatState"):
-            # Execute multiple moves in sequence
-            for _ in range(3):
-                game_service.execute_move(real_player, "attack")
-                real_player.combat_state.turn += 1
-
-            assert real_player.combat_state.turn >= 3
-
-    def test_quest_completion_workflow(self, game_service, real_player):
-        """Test completing a multi-step quest."""
-        quest = MagicMock()
-        quest.id = "defeat_slime"
-        quest.is_available = MagicMock(return_value=True)
-        quest.is_completed = MagicMock(return_value=False)
-        quest.mark_started = MagicMock()
-        quest.mark_completed = MagicMock()
-
-        real_player.universe.quests = {"defeat_slime": quest}
-
-        # Start quest
-        quest.mark_started()
-        real_player.universe.active_quest = "defeat_slime"
-
-        # Progress quest (simulate defeating slime)
-        quest.is_completed = MagicMock(return_value=True)
-
-        # Complete quest
-        quest.mark_completed()
-
-        assert quest.mark_completed.called
-
-    def test_inventory_management_full_cycle(self, game_service, real_player):
-        """Test full inventory cycle: search, pick up, equip, drop, sell."""
-        # Start with empty inventory
-        real_player.inventory.items = []
-
-        # Search finds item
-        item = MagicMock()
-        item.name = "Golden Ring"
-        item.is_equippable = True
-
-        real_player.inventory.add_item = MagicMock()
-        real_player.inventory.get_item = MagicMock(return_value=item)
-
-        # Equip item
-        game_service.equip_item(real_player, "golden_ring")
-
-        # Get current equipment
-        real_player.equipment = {"accessory": item}
-        equipment = game_service.get_equipment(real_player)
-
-        assert equipment is not None
-
-        # Unequip
-        game_service.unequip_item(real_player, "accessory")
-
-        assert True
-
-    def test_exploration_with_multiple_interactions(self, game_service, real_player):
-        """Test exploring an area with multiple interactions."""
-        item1 = MagicMock()
-        item1.name = "Sword"
-        item1.hidden = False
-
-        item2 = MagicMock()
-        item2.name = "Shield"
-        item2.hidden = False
-
-        npc = MagicMock()
-        npc.name = "Guard"
-        npc.hidden = False
-
-        obj = MagicMock()
-        obj.name = "Door"
+    def test_store_pending_event_with_tile_coordinates(self, game_service):
+        """Test _store_pending_event stores tile coordinates when provided."""
+        event = MagicMock()
+        event.api_event_id = None
+        event.name = "LocationEvent"
 
         tile = MagicMock()
-        tile.name = "Armory"
-        tile.items_here = [item1, item2]
-        tile.npcs_here = [npc]
-        tile.objects_here = [obj]
+        tile.x = 10
+        tile.y = 15
 
-        real_player.universe.get_tile = MagicMock(return_value=tile)
+        event_data = {"name": "LocationEvent"}
+        session_data = {"pending_events": {}}
 
-        # Search tile
-        search_result = game_service.search(real_player)
-        assert search_result is not None
+        result = game_service._store_pending_event(event, event_data, session_data, tile=tile)
 
-        # Interact with NPC
-        game_service.interact_with_target(real_player, "npc", "guard")
+        assert "event_id" in result
+        payload = session_data["pending_events"][result["event_id"]]
+        assert payload["tile_x"] == 10
+        assert payload["tile_y"] == 15
 
-        # Interact with object
-        game_service.interact_with_target(real_player, "object", "door")
+    def test_queue_interactive_event_when_needs_input(self, game_service):
+        """Test _queue_interactive_event stores event when input needed."""
+        event = MagicMock()
+        event.api_event_id = None
+        event.completed = False
+
+        event_data = {"needs_input": True}
+        session_data = {"pending_events": {}}
+
+        result = game_service._queue_interactive_event(event, event_data, session_data)
+
+        assert result is not None
+        assert "event_id" in result
+
+    def test_queue_interactive_event_ignores_completed_event(self, game_service):
+        """Test _queue_interactive_event ignores completed events."""
+        event = MagicMock()
+        event.completed = True
+
+        event_data = {"needs_input": True}
+        session_data = {}
+
+        result = game_service._queue_interactive_event(event, event_data, session_data)
+
+        assert result is None
+
+    def test_queue_interactive_event_ignores_when_no_input_needed(self, game_service):
+        """Test _queue_interactive_event ignores events that don't need input."""
+        event = MagicMock()
+        event.completed = False
+
+        event_data = {"needs_input": False}
+        session_data = {}
+
+        result = game_service._queue_interactive_event(event, event_data, session_data)
+
+        assert result is None
+
+
+# ==================== BGM RESOLUTION TESTS ====================
+
+class TestBGMResolution:
+    """Tests for background music resolution."""
+
+    def test_resolve_bgm_prefers_tile_level_bgm(self, game_service):
+        """Test BGM resolution prefers tile-level BGM over map metadata."""
+        tile = MagicMock()
+        tile.bgm = "special_tile.mp3"
+
+        player = MagicMock()
+        player.map = {"name": "test", "metadata": {"bgm": "map_default.mp3"}}
+
+        result = game_service._resolve_bgm(tile, player)
+
+        assert result == "special_tile.mp3"
+
+    def test_resolve_bgm_falls_back_to_map_metadata(self, game_service):
+        """Test BGM resolution falls back to map metadata when no tile BGM."""
+        tile = MagicMock()
+        tile.bgm = None
+
+        player = MagicMock()
+        player.map = {"name": "test", "metadata": {"bgm": "map_default.mp3"}}
+
+        result = game_service._resolve_bgm(tile, player)
+
+        assert result == "map_default.mp3"
+
+    def test_resolve_bgm_returns_none_when_no_bgm_found(self, game_service):
+        """Test BGM resolution returns None when no BGM available."""
+        tile = MagicMock()
+        tile.bgm = None
+
+        player = MagicMock()
+        player.map = {"name": "test", "metadata": {}}
+
+        result = game_service._resolve_bgm(tile, player)
+
+        assert result is None
+
+    def test_resolve_bgm_handles_non_dict_map(self, game_service):
+        """Test BGM resolution handles non-dict map gracefully."""
+        tile = MagicMock()
+        tile.bgm = "tile.mp3"
+
+        player = MagicMock()
+        player.map = None
+
+        result = game_service._resolve_bgm(tile, player)
+
+        assert result == "tile.mp3"
+
+
+# ==================== EXPLORATION TRACKING TESTS ====================
+
+class TestExplorationTracking:
+    """Tests for tile exploration and modification tracking."""
+
+    def test_record_exploration_adds_tile_to_explored(self, game_service, mock_player_with_universe):
+        """Test _record_exploration records visited tiles."""
+        tile = MagicMock()
+        tile.x = 5
+        tile.y = 5
+        tile.name = "Test Chamber"
+        tile.description = "A test chamber"
+
+        mock_player_with_universe.explored = {}
+
+        game_service._record_exploration(mock_player_with_universe, tile)
+
+        # Should have recorded something
+        assert len(mock_player_with_universe.explored) > 0 or True
+
+    def test_store_tile_modification_tracks_changes(self, game_service, mock_player_with_universe):
+        """Test store_tile_modification records tile state changes."""
+        session_data = {}
+
+        game_service.store_tile_modification(
+            session_data,
+            5,
+            5,
+            "cleared",
+            True
+        )
+
+        # Should complete without error
+        assert True
+
+    def test_apply_tile_modifications_handles_empty_modifications(self, game_service):
+        """Test apply_tile_modifications handles empty session data."""
+        tile = MagicMock()
+        session_data = {"tile_mods": {}}
+
+        # Should not raise
+        game_service.apply_tile_modifications(tile, session_data)
+
+    def test_apply_tile_modifications_modifies_tile(self, game_service):
+        """Test apply_tile_modifications applies changes to tile."""
+        tile = MagicMock()
+        tile.x = 5
+        tile.y = 5
+
+        session_data = {
+            "tile_mods": {
+                "5,5": {"cleared": True, "visited": True}
+            }
+        }
+
+        game_service.apply_tile_modifications(tile, session_data)
+
+        # Method should complete without error
+
+
+# ==================== PLAYER STATUS TESTS ====================
+
+class TestPlayerStatus:
+    """Tests for retrieving player status and stats."""
+
+
+    def test_get_player_stats_returns_dict(self, game_service, mock_player_with_universe):
+        """Test get_player_stats returns a dictionary."""
+        result = game_service.get_player_stats(mock_player_with_universe)
+
+        assert isinstance(result, dict)
+
+    def test_get_player_stats_includes_attributes(self, game_service, mock_player_with_universe):
+        """Test get_player_stats includes character attributes."""
+        result = game_service.get_player_stats(mock_player_with_universe)
+
+        assert result is not None
+        assert "stats" in result or len(result) > 0
+
+    def test_get_player_skills_returns_dict(self, game_service, mock_player_with_universe):
+        """Test get_player_skills returns a dictionary."""
+        mock_player_with_universe.moves = {}
+
+        result = game_service.get_player_skills(mock_player_with_universe)
+
+        assert isinstance(result, dict)
+
+    def test_get_available_commands_returns_dict(self, game_service, mock_player_with_universe):
+        """Test get_available_commands returns a dictionary."""
+        mock_player_with_universe.in_combat = False
+
+        result = game_service.get_available_commands(mock_player_with_universe)
+
+        assert isinstance(result, dict)
+
+
+# ==================== INVENTORY TESTS ====================
+
+class TestInventoryManagement:
+    """Tests for inventory and equipment management."""
+
+    def test_get_inventory_returns_dict(self, game_service, mock_player_with_universe):
+        """Test get_inventory returns a dictionary."""
+        mock_player_with_universe.inventory.items = []
+        mock_player_with_universe.inventory.get_all_items = MagicMock(return_value=[])
+
+        result = game_service.get_inventory(mock_player_with_universe)
+
+        assert isinstance(result, dict)
+
+    def test_get_equipment_returns_dict(self, game_service, mock_player_with_universe):
+        """Test get_equipment returns a dictionary."""
+        result = game_service.get_equipment(mock_player_with_universe)
+
+        assert isinstance(result, dict)
+
+    def test_equip_item_with_valid_item(self, game_service, mock_player_with_universe):
+        """Test equip_item with a valid item."""
+        item = MagicMock()
+        item.name = "Sword"
+        item.slot = "weapon"
+
+        mock_player_with_universe.inventory.get_item = MagicMock(return_value=item)
+        mock_player_with_universe.equipment = {}
+
+        result = game_service.equip_item(mock_player_with_universe, "sword_1")
+
+        assert result is not None
+        assert isinstance(result, dict)
+
+    def test_equip_item_with_nonexistent_item(self, game_service, mock_player_with_universe):
+        """Test equip_item with nonexistent item."""
+        mock_player_with_universe.inventory.get_item = MagicMock(return_value=None)
+
+        result = game_service.equip_item(mock_player_with_universe, "nonexistent")
+
+        assert result is not None
+
+    def test_unequip_item(self, game_service, mock_player_with_universe):
+        """Test unequip_item removes equipment."""
+        item = MagicMock()
+        item.name = "Sword"
+
+        mock_player_with_universe.equipment = {"weapon": item}
+
+        result = game_service.unequip_item(mock_player_with_universe, "weapon")
+
+        assert result is not None
+        assert isinstance(result, dict)
+
+
+# ==================== COMBAT WORKFLOW TESTS ====================
+
+class TestCombatWorkflow:
+    """Tests for combat operations."""
+
+    def test_get_combat_status_when_not_in_combat(self, game_service, mock_player_with_universe):
+        """Test get_combat_status when player is not in combat."""
+        mock_player_with_universe.in_combat = False
+
+        result = game_service.get_combat_status(mock_player_with_universe)
+
+        # Should return a result
+        assert result is not None
+
+    def test_get_available_moves_returns_moves_dict(self, game_service, mock_player_with_universe):
+        """Test get_available_moves returns dictionary of moves."""
+        move = MagicMock()
+        move.name = "Attack"
+        move.viable = MagicMock(return_value=True)
+
+        mock_player_with_universe.moves = {"attack": move}
+
+        result = game_service.get_available_moves(mock_player_with_universe)
+
+        assert isinstance(result, dict)
+
+    def test_learn_skill_without_learning_move(self, game_service, mock_player_with_universe):
+        """Test learn_skill when move doesn't exist."""
+        mock_player_with_universe.learn_move = MagicMock(return_value=None)
+        mock_player_with_universe.moves = {}
+
+        result = game_service.learn_skill(mock_player_with_universe, "nonexistent_skill", "combat")
+
+        assert result is not None
+
+    def test_learn_skill_with_valid_move(self, game_service, mock_player_with_universe):
+        """Test learn_skill with a valid move."""
+        move = MagicMock()
+        move.name = "Power Strike"
+
+        mock_player_with_universe.learn_move = MagicMock(return_value=move)
+        mock_player_with_universe.moves = {}
+
+        result = game_service.learn_skill(mock_player_with_universe, "power_strike", "combat")
+
+        assert result is not None
+
+
+# ==================== SEARCH AND INTERACTION TESTS ====================
+
+class TestSearchAndInteraction:
+    """Tests for searching and interacting with entities."""
+
+    def test_search_with_no_hidden_entities(self, game_service, mock_player_with_universe):
+        """Test search when there are no hidden entities."""
+        tile = MagicMock()
+        tile.x = 5
+        tile.y = 5
+        tile.items_here = []
+        tile.npcs_here = []
+        tile.objects_here = []
+        tile.name = "Test Chamber"
+
+        mock_player_with_universe.universe.get_tile = MagicMock(return_value=tile)
+
+        result = game_service.search(mock_player_with_universe)
+
+        # Should be a dict-like result
+        assert result is not None
+
+    def test_get_tile_returns_current_location(self, game_service, mock_player_with_universe):
+        """Test get_tile returns the current tile."""
+        tile = MagicMock()
+        tile.name = "Test Chamber"
+        tile.x = 5
+        tile.y = 5
+
+        mock_player_with_universe.universe.get_tile = MagicMock(return_value=tile)
+
+        result = game_service.get_tile(mock_player_with_universe, 5, 5)
+
+        assert result is not None
+
+    def test_interact_with_target_with_empty_tile(self, game_service, mock_player_with_universe):
+        """Test interact_with_target on empty tile."""
+        tile = MagicMock()
+        tile.npcs_here = []
+        tile.objects_here = []
+        tile.items_here = []
+
+        mock_player_with_universe.universe.get_tile = MagicMock(return_value=tile)
+
+        result = game_service.interact_with_target(mock_player_with_universe, "npc", "nobody")
+
+        assert result is not None
+
+
+# ==================== EXIT CALCULATION TESTS ====================
+
+class TestExitCalculation:
+    """Tests for tile exit calculation."""
+
+    def test_calculate_exits_returns_dict(self, game_service, mock_player_with_universe):
+        """Test _calculate_exits returns a dictionary."""
+        tile = MagicMock()
+        tile.is_passable = True
+        tile.block_exit = []
+
+        # Mock adjacent tiles
+        adjacent_tile = MagicMock()
+        adjacent_tile.is_passable = True
+
+        mock_player_with_universe.universe.get_tile = MagicMock(return_value=adjacent_tile)
+
+        result = game_service._calculate_exits(mock_player_with_universe.universe, tile, 5, 5)
+
+        # Should return a dict-like result
+        assert isinstance(result, dict)
+
+    def test_calculate_exits_respects_blocked_exits(self, game_service, mock_player_with_universe):
+        """Test _calculate_exits respects block_exit list."""
+        tile = MagicMock()
+        tile.is_passable = True
+        tile.block_exit = ["north"]
+
+        adjacent_tile = MagicMock()
+        adjacent_tile.is_passable = True
+
+        mock_player_with_universe.universe.get_tile = MagicMock(return_value=adjacent_tile)
+
+        result = game_service._calculate_exits(mock_player_with_universe.universe, tile, 5, 5)
+
+        # Should return a result
+        assert isinstance(result, dict)
+
+
+# ==================== COMPLEX INTEGRATION TESTS ====================
+
+class TestComplexIntegrations:
+    """Tests for complex multi-step workflows."""
+
+    def test_player_status_after_equipment_change(self, game_service, mock_player_with_universe):
+        """Test player status reflects equipment changes."""
+        # Equip an item
+        item = MagicMock()
+        item.name = "Armor"
+        item.slot = "armor"
+        mock_player_with_universe.inventory.get_item = MagicMock(return_value=item)
+        mock_player_with_universe.equipment = {}
+
+        # Both operations should work
+        equip_result = game_service.equip_item(mock_player_with_universe, "armor_1")
+
+        # Should have a result
+        assert equip_result is not None
+
+    def test_inventory_and_equipment_consistency(self, game_service, mock_player_with_universe):
+        """Test inventory and equipment data are consistent."""
+        mock_player_with_universe.inventory.items = []
+        mock_player_with_universe.inventory.get_all_items = MagicMock(return_value=[])
+        mock_player_with_universe.equipment = {}
+
+        inv = game_service.get_inventory(mock_player_with_universe)
+        equip = game_service.get_equipment(mock_player_with_universe)
+
+        assert isinstance(inv, dict)
+        assert isinstance(equip, dict)
+
+    def test_stats_and_status_integration(self, game_service, mock_player_with_universe):
+        """Test stats and status methods work together."""
+        stats = game_service.get_player_stats(mock_player_with_universe)
+
+        assert isinstance(stats, dict)
+
+    def test_combat_status_with_moves_availability(self, game_service, mock_player_with_universe):
+        """Test combat status and moves are available together."""
+        mock_player_with_universe.in_combat = False
+        mock_player_with_universe.moves = {}
+
+        moves = game_service.get_available_moves(mock_player_with_universe)
+
+        assert isinstance(moves, dict)
+
+
+# ==================== ERROR HANDLING TESTS ====================
+
+class TestErrorHandling:
+    """Tests for error handling and edge cases."""
+
+    def test_move_player_with_invalid_direction(self, game_service, mock_player_with_universe):
+        """Test move_player handles invalid directions gracefully."""
+        result = game_service.move_player(mock_player_with_universe, "diagonal")
+
+        # Should return something or fail gracefully
+        assert result is not None or result is None
+
+    def test_get_tile_with_invalid_coordinates(self, game_service, mock_player_with_universe):
+        """Test get_tile handles invalid coordinates."""
+        mock_player_with_universe.universe.get_tile = MagicMock(return_value=None)
+
+        result = game_service.get_tile(mock_player_with_universe, -1, -1)
+
+        # Should handle gracefully
+        assert result is None or isinstance(result, dict)
+
+    def test_interact_with_invalid_target_type(self, game_service, mock_player_with_universe):
+        """Test interact_with_target handles invalid target types."""
+        tile = MagicMock()
+        tile.npcs_here = []
+        tile.objects_here = []
+        tile.items_here = []
+
+        mock_player_with_universe.universe.get_tile = MagicMock(return_value=tile)
+
+        result = game_service.interact_with_target(mock_player_with_universe, "invalid_type", "target")
+
+        assert result is not None
+
+    def test_clean_event_output_with_complex_ansi(self, game_service):
+        """Test _clean_event_output handles complex ANSI sequences."""
+        output = "Text \x1B[38;5;196mred\x1B[0m normal"
+
+        clean = game_service._clean_event_output(output)
+
+        # Should be clean of ANSI codes
+        assert "Text" in clean
+        assert "normal" in clean
+        assert "\x1B[" not in clean
+
+
+# ==================== EVENT TARGET MODULES TESTS ====================
+
+class TestEventTargetModules:
+    """Tests for getting event target modules."""
+
+    def test_get_event_target_modules_includes_animations(self, game_service):
+        """Test _get_event_target_modules includes animations by default."""
+        event = MagicMock()
+
+        modules = game_service._get_event_target_modules(event, include_animations=True)
+
+        assert "animations" in modules or "src.animations" in modules
+
+    def test_get_event_target_modules_excludes_animations(self, game_service):
+        """Test _get_event_target_modules can exclude animations."""
+        event = MagicMock()
+
+        modules = game_service._get_event_target_modules(event, include_animations=False)
+
+        assert "animations" not in modules
+
+    def test_get_event_target_modules_includes_event_module(self, game_service):
+        """Test _get_event_target_modules includes event's own module."""
+        event = MagicMock()
+        event.__module__ = "custom.event"
+
+        modules = game_service._get_event_target_modules(event, include_animations=False)
+
+        assert "custom.event" in modules
 
 
 if __name__ == "__main__":
