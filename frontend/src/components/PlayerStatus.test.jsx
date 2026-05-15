@@ -149,7 +149,8 @@ describe('PlayerStatus', () => {
         intelligence: 0
       };
       render(<PlayerStatus player={zeroStats} />);
-      expect(screen.getAllByText('0').length).toBeGreaterThan(0);
+      // Check that zero values are rendered somewhere
+      expect(screen.getByText(/0 \/ 100/)).toBeDefined();
     });
   });
 
