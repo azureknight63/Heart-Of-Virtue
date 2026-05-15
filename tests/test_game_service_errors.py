@@ -238,26 +238,30 @@ class TestDropItemErrors:
         assert result["error"] == "Invalid item index"
 
     def test_drop_item_no_universe(self, game_service, mock_player):
-        """Test drop_item when universe is None - catches AttributeError."""
+        """Test drop_item when universe is None - now returns error gracefully."""
         item = MagicMock()
         item.name = "Item"
         mock_player.inventory = [item]
         mock_player.universe = None
 
-        # This should raise AttributeError since universe is None
-        with pytest.raises(AttributeError):
-            result = game_service.drop_item(mock_player, 0)
+        # FIX 1: Now returns error instead of raising AttributeError
+        result = game_service.drop_item(mock_player, 0)
+        assert "error" in result
+        assert "universe" in result["error"].lower()
 
     def test_drop_item_no_tile_found(self, game_service, mock_player, mock_tile):
-        """Test drop_item when get_tile returns None."""
+        """Test drop_item when get_tile returns None - now returns error gracefully."""
         item = MagicMock()
         item.name = "Item"
         mock_player.inventory = [item]
         mock_player.universe.get_tile = MagicMock(return_value=None)
 
+        # FIX 1: Now returns error to prevent item loss
         result = game_service.drop_item(mock_player, 0)
-        # Should still succeed, just not add to tile
-        assert result["success"] is True or "error" not in result
+        assert "error" in result
+        assert "location" in result["error"].lower()
+        # Verify item was not removed from inventory
+        assert item in mock_player.inventory
 
     def test_drop_item_success(self, game_service, mock_player, mock_tile):
         """Test successful item drop."""
@@ -556,11 +560,12 @@ class TestGetCurrentRoomErrors:
     """Test error handling in get_current_room method."""
 
     def test_get_current_room_no_universe(self, game_service, mock_player):
-        """Test get_current_room when universe is None - catches AttributeError."""
+        """Test get_current_room when universe is None - now returns error gracefully."""
         mock_player.universe = None
-        # This should raise AttributeError since universe is None
-        with pytest.raises(AttributeError):
-            result = game_service.get_current_room(mock_player)
+        # FIX 4: Now returns error instead of raising AttributeError
+        result = game_service.get_current_room(mock_player)
+        assert "error" in result
+        assert "universe" in result["error"].lower()
 
     def test_get_current_room_tile_not_found(self, game_service, mock_player):
         """Test get_current_room when get_tile returns None."""
@@ -582,11 +587,12 @@ class TestMovePlayerErrors:
         assert result is not None
 
     def test_move_player_no_universe(self, game_service, mock_player):
-        """Test move_player when universe is None - catches AttributeError."""
+        """Test move_player when universe is None - now returns error gracefully."""
         mock_player.universe = None
-        # This should raise AttributeError since universe is None
-        with pytest.raises(AttributeError):
-            result = game_service.move_player(mock_player, "north")
+        # FIX 5: Now returns error instead of raising AttributeError
+        result = game_service.move_player(mock_player, "north")
+        assert "error" in result
+        assert "universe" in result["error"].lower()
 
     def test_move_player_blocked_exit(self, game_service, mock_player, mock_tile):
         """Test move_player when exit doesn't exist - allows free movement."""
@@ -665,17 +671,18 @@ class TestCollectCombatLootErrors:
         assert result is not None
 
     def test_collect_loot_none_items(self, game_service, mock_player):
-        """Test collect_combat_loot with None items - raises TypeError."""
-        # Should raise TypeError when iterating None
-        with pytest.raises(TypeError):
-            result = game_service.collect_combat_loot(mock_player, None)
+        """Test collect_combat_loot with None items - now returns error gracefully."""
+        # FIX 3: Now handles None gracefully instead of raising TypeError
+        result = game_service.collect_combat_loot(mock_player, None)
+        assert result["success"] is True
+        assert result["collected"] == []
 
 
 class TestStateRecovery:
     """Test state recovery after errors."""
 
     def test_inventory_consistency_after_drop_error(self, game_service, mock_player):
-        """Test that drop_item pops before checking universe (not consistent)."""
+        """Test that drop_item maintains inventory consistency after error."""
         item = MagicMock()
         item.name = "Item"
         mock_player.inventory = [item]
@@ -684,14 +691,14 @@ class TestStateRecovery:
         mock_player.universe = None
         initial_count = len(mock_player.inventory)
 
-        # drop_item pops the item BEFORE calling get_tile, so it will be removed
-        # This is an error path we should flag for production hardening
-        with pytest.raises(AttributeError):
-            result = game_service.drop_item(mock_player, 0)
+        # FIX 1: Now checks universe BEFORE popping item
+        result = game_service.drop_item(mock_player, 0)
+        assert "error" in result
 
-        # After error, item was already popped from inventory (BAD)
-        # This is a state consistency bug - item is lost if get_tile fails
-        assert len(mock_player.inventory) == initial_count - 1
+        # After error, item is still in inventory (GOOD - fixed)
+        # FIX 1 ensures item is not lost if universe is missing
+        assert len(mock_player.inventory) == initial_count
+        assert item in mock_player.inventory
 
     def test_equipment_consistency_after_equip_error(self, game_service, mock_player):
         """Test that equipment remains consistent after equip error."""
