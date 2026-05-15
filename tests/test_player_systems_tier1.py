@@ -299,6 +299,27 @@ class TestPlayerProgressionAndLeveling:
         assert new_category in player.skill_exp
         assert player.skill_exp[new_category] == 10
 
+    def test_gain_experience_multiple_levelups_api_mode(self, player):
+        """Verify gain_exp can trigger level-ups in api_mode and return events."""
+        initial_level = player.level
+
+        # Gain a large amount of experience to trigger at least one level-up
+        amount = player.exp_to_level * 2  # Enough for 2 level-ups
+
+        # Call with api_mode=True which returns a list of level-up events
+        events = player.gain_exp(amount, exp_type="Basic", api_mode=True)
+
+        # Verify level-ups occurred and events returned
+        assert events is not None
+        assert isinstance(events, list)
+        assert len(events) >= 1  # Should have at least one level-up event
+        assert player.level > initial_level
+        # Verify each event has expected structure
+        for event in events:
+            assert "level_up" in event
+            assert event["level_up"] is True
+            assert "new_level" in event
+
     def test_level_up_increases_stats(self, player):
         """Verify leveling grants stat increases and attribute points."""
         initial_level = player.level
@@ -923,3 +944,52 @@ class TestPlayerLocationTracking:
         # Fatigue may be boosted by equipment, so just verify it equals maxfatigue
         assert player.fatigue == player.maxfatigue
         assert player.fatigue >= 150  # At least the base amount
+
+
+class TestPlayerMerchandiseHandling:
+    """Tests for merchandise item handling."""
+
+    @pytest.fixture
+    def player(self):
+        p = Player()
+        p.current_room = MagicMock()
+        p.current_room.items_here = []
+        p.map = None  # tile_exists will fail gracefully
+        p.location_x = 0
+        p.location_y = 0
+        return p
+
+    def test_drop_merchandise_items_no_map(self, player):
+        """Verify drop_merchandise_items handles missing map gracefully."""
+        # Add a merchandise item
+        merch = MagicMock()
+        merch.merchandise = True
+        merch.name = "Unpaid Goods"
+        player.inventory.append(merch)
+
+        # With map=None, this should return early
+        player.drop_merchandise_items()
+
+        # Should still be in inventory since tile_exists failed
+        assert merch in player.inventory
+
+    def test_drop_merchandise_items_with_merchandise(self, player):
+        """Verify merchandise items are identified and dropped."""
+        # Create a merchandise item
+        merch = MagicMock()
+        merch.merchandise = True
+        merch.name = "Unpaid Goods"
+        merch.stack_grammar = MagicMock()
+
+        # Mock a valid tile
+        tile = MagicMock()
+        tile.items_here = []
+
+        player.inventory.append(merch)
+
+        # Mock tile_exists to return a valid tile
+        with patch('player._inventory.tile_exists', return_value=tile):
+            player.drop_merchandise_items()
+
+        # Merchandise should be dropped to the tile
+        assert merch in tile.items_here or merch not in player.inventory
