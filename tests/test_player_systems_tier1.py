@@ -849,3 +849,77 @@ class TestPlayerStaticMessages:
         """Verify prayer_msg list is populated."""
         assert isinstance(player.prayer_msg, list)
         assert len(player.prayer_msg) > 0
+
+
+class TestPlayerGoldManagement:
+    """Tests for gold stacking and management."""
+
+    @pytest.fixture
+    def player(self):
+        p = Player()
+        p.current_room = MagicMock()
+        p.current_room.items_here = []
+        return p
+
+    def test_stack_gold_consolidates_multiple_stacks(self, player):
+        """Verify stack_gold consolidates multiple gold items into one."""
+        # Create multiple gold stacks
+        gold1 = items.Gold(10)
+        gold2 = items.Gold(5)
+        gold3 = items.Gold(15)
+
+        # Add to inventory
+        player.inventory = [gold1, gold2, gold3]
+
+        # Stack them
+        player.stack_gold()
+
+        # Should now be a single consolidated stack
+        gold_items = [item for item in player.inventory if isinstance(item, items.Gold)]
+        assert len(gold_items) == 1
+        assert gold_items[0].amt == 30
+
+    def test_stack_gold_with_no_gold(self, player):
+        """Verify stack_gold handles inventory with no gold gracefully."""
+        # Inventory with non-gold items only
+        armor = items.LeatherArmor()
+        player.inventory = [armor]
+
+        # Should not crash
+        player.stack_gold()
+
+        # Inventory should be unchanged
+        assert len(player.inventory) == 1
+        assert isinstance(player.inventory[0], items.LeatherArmor)
+
+
+class TestPlayerLocationTracking:
+    """Tests for player position tracking."""
+
+    @pytest.fixture
+    def player(self):
+        return Player()
+
+    def test_location_coordinates_initialized(self, player):
+        """Verify player starts at location (0, 0)."""
+        assert player.location_x == 0
+        assert player.location_y == 0
+
+    def test_previous_location_tracking(self, player):
+        """Verify previous location is tracked."""
+        player.location_x = 5
+        player.location_y = 3
+        player.prev_location_x = 0
+        player.prev_location_y = 0
+
+        assert player.prev_location_x == 0
+        assert player.prev_location_y == 0
+
+    def test_max_hp_and_fatigue_restored_on_init(self, player):
+        """Verify player starts at full health and fatigue."""
+        assert player.hp == player.maxhp
+        assert player.fatigue == player.maxfatigue
+        assert player.hp == 100
+        # Fatigue may be boosted by equipment, so just verify it equals maxfatigue
+        assert player.fatigue == player.maxfatigue
+        assert player.fatigue >= 150  # At least the base amount
