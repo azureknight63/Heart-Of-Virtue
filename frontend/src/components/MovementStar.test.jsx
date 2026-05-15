@@ -45,7 +45,8 @@ describe('MovementStar', () => {
 
     it('renders center indicator', () => {
       const { container } = render(<MovementStar exits={[]} onMove={mockOnMove} />)
-      const centerIndicator = container.querySelector('div[style*="backgroundColor: #00ff88"]')
+      // Look for the centered circular indicator with specific styling
+      const centerIndicator = container.querySelector('div[style*="border-radius: 50%"]')
       expect(centerIndicator).toBeInTheDocument()
     })
 

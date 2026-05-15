@@ -190,7 +190,7 @@ describe('GameButton', () => {
         </GameButton>
       )
       const button = container.querySelector('button')
-      expect(button).not.toHaveProperty('onclick')
+      expect(button).toHaveAttribute('disabled')
     })
   })
 
