@@ -65,7 +65,7 @@ class TestQuestRewardGameService:
     @pytest.mark.skipif(not FLASK_AVAILABLE, reason="Flask not available")
     def test_get_quest_rewards_active_quest(self, mock_universe, mock_player):
         """Test getting rewards for an active quest."""
-        game_service = GameService(mock_universe)
+        game_service = GameService()
 
         # Add active quest
         quest = {
@@ -91,7 +91,7 @@ class TestQuestRewardGameService:
     @pytest.mark.skipif(not FLASK_AVAILABLE, reason="Flask not available")
     def test_get_quest_rewards_completed_quest(self, mock_universe, mock_player):
         """Test getting rewards for a completed quest."""
-        game_service = GameService(mock_universe)
+        game_service = GameService()
 
         # Add completed quest
         quest = {
@@ -115,7 +115,7 @@ class TestQuestRewardGameService:
     @pytest.mark.skipif(not FLASK_AVAILABLE, reason="Flask not available")
     def test_get_quest_rewards_not_found(self, mock_universe, mock_player):
         """Test getting rewards for non-existent quest."""
-        game_service = GameService(mock_universe)
+        game_service = GameService()
 
         result = game_service.get_quest_rewards(mock_player, "nonexistent")
 
@@ -125,7 +125,7 @@ class TestQuestRewardGameService:
     @pytest.mark.skipif(not FLASK_AVAILABLE, reason="Flask not available")
     def test_complete_quest_normal_difficulty(self, mock_universe, mock_player):
         """Test completing a quest with normal difficulty."""
-        game_service = GameService(mock_universe)
+        game_service = GameService()
 
         # Add quest
         quest = {
@@ -157,7 +157,7 @@ class TestQuestRewardGameService:
     @pytest.mark.skipif(not FLASK_AVAILABLE, reason="Flask not available")
     def test_complete_quest_hard_difficulty(self, mock_universe, mock_player):
         """Test completing a quest with hard difficulty (1.5x multiplier)."""
-        game_service = GameService(mock_universe)
+        game_service = GameService()
 
         quest = {
             "id": "quest_2",
@@ -183,7 +183,7 @@ class TestQuestRewardGameService:
     @pytest.mark.skipif(not FLASK_AVAILABLE, reason="Flask not available")
     def test_complete_quest_no_death_bonus(self, mock_universe, mock_player):
         """Test no-death bonus multiplier (1.2x)."""
-        game_service = GameService(mock_universe)
+        game_service = GameService()
 
         quest = {
             "id": "quest_3",
@@ -204,7 +204,7 @@ class TestQuestRewardGameService:
     @pytest.mark.skipif(not FLASK_AVAILABLE, reason="Flask not available")
     def test_complete_quest_bonus_objectives(self, mock_universe, mock_player):
         """Test bonus objectives multiplier (1.25x)."""
-        game_service = GameService(mock_universe)
+        game_service = GameService()
 
         quest = {
             "id": "quest_4",
@@ -229,7 +229,7 @@ class TestQuestRewardGameService:
     @pytest.mark.skipif(not FLASK_AVAILABLE, reason="Flask not available")
     def test_award_gold(self, mock_universe, mock_player):
         """Test awarding gold."""
-        game_service = GameService(mock_universe)
+        game_service = GameService()
 
         old_gold = mock_player.gold
         result = game_service.award_gold(mock_player, 500)
@@ -241,7 +241,7 @@ class TestQuestRewardGameService:
     @pytest.mark.skipif(not FLASK_AVAILABLE, reason="Flask not available")
     def test_award_experience_no_level_up(self, mock_universe, mock_player):
         """Test awarding experience without leveling up."""
-        game_service = GameService(mock_universe)
+        game_service = GameService()
 
         mock_player.level = 5
         mock_player.experience = 450  # Need 500 for next level
@@ -256,7 +256,7 @@ class TestQuestRewardGameService:
     @pytest.mark.skipif(not FLASK_AVAILABLE, reason="Flask not available")
     def test_award_experience_with_level_up(self, mock_universe, mock_player):
         """Test awarding experience with level up."""
-        game_service = GameService(mock_universe)
+        game_service = GameService()
 
         mock_player.level = 5
         mock_player.experience = 450
@@ -274,7 +274,7 @@ class TestQuestRewardGameService:
     @pytest.mark.skipif(not FLASK_AVAILABLE, reason="Flask not available")
     def test_award_item_success(self, mock_universe, mock_player):
         """Test awarding item to inventory."""
-        game_service = GameService(mock_universe)
+        game_service = GameService()
 
         result = game_service.award_item(
             mock_player, "sword_1", "Iron Sword", quantity=1
@@ -287,7 +287,7 @@ class TestQuestRewardGameService:
     @pytest.mark.skipif(not FLASK_AVAILABLE, reason="Flask not available")
     def test_award_item_inventory_full(self, mock_universe, mock_player):
         """Test awarding item when inventory is full."""
-        game_service = GameService(mock_universe)
+        game_service = GameService()
 
         # Fill inventory
         mock_player.inventory = [{"id": f"item_{i}", "name": f"Item {i}"} for i in range(20)]
@@ -302,7 +302,7 @@ class TestQuestRewardGameService:
     @pytest.mark.skipif(not FLASK_AVAILABLE, reason="Flask not available")
     def test_award_reputation(self, mock_universe, mock_player):
         """Test awarding reputation with NPC."""
-        game_service = GameService(mock_universe)
+        game_service = GameService()
 
         result = game_service.award_reputation(
             mock_player, "npc_dragon_slayer", "Dragon Slayer Guild", 50
@@ -314,7 +314,7 @@ class TestQuestRewardGameService:
     @pytest.mark.skipif(not FLASK_AVAILABLE, reason="Flask not available")
     def test_award_reputation_negative(self, mock_universe, mock_player):
         """Test losing reputation with NPC."""
-        game_service = GameService(mock_universe)
+        game_service = GameService()
 
         # First award positive reputation
         game_service.award_reputation(mock_player, "npc_guild", "Fighters Guild", 100)
@@ -330,7 +330,7 @@ class TestQuestRewardGameService:
     @pytest.mark.skipif(not FLASK_AVAILABLE, reason="Flask not available")
     def test_get_player_progression(self, mock_universe, mock_player):
         """Test getting player progression."""
-        game_service = GameService(mock_universe)
+        game_service = GameService()
 
         # Add completed quests
         mock_player.completed_quests = [
@@ -347,7 +347,7 @@ class TestQuestRewardGameService:
     @pytest.mark.skipif(not FLASK_AVAILABLE, reason="Flask not available")
     def test_complete_quest_nightmare_multiplier(self, mock_universe, mock_player):
         """Test nightmare difficulty multiplier (2.0x)."""
-        game_service = GameService(mock_universe)
+        game_service = GameService()
 
         quest = {
             "id": "nightmare_quest",
@@ -367,7 +367,7 @@ class TestQuestRewardGameService:
     @pytest.mark.skipif(not FLASK_AVAILABLE, reason="Flask not available")
     def test_complete_quest_easy_multiplier(self, mock_universe, mock_player):
         """Test easy difficulty multiplier (0.5x)."""
-        game_service = GameService(mock_universe)
+        game_service = GameService()
 
         quest = {
             "id": "easy_quest",
@@ -387,7 +387,7 @@ class TestQuestRewardGameService:
     @pytest.mark.skipif(not FLASK_AVAILABLE, reason="Flask not available")
     def test_complete_quest_with_items(self, mock_universe, mock_player):
         """Test completing quest with item rewards."""
-        game_service = GameService(mock_universe)
+        game_service = GameService()
 
         quest = {
             "id": "item_quest",
@@ -412,7 +412,7 @@ class TestQuestRewardGameService:
     @pytest.mark.skipif(not FLASK_AVAILABLE, reason="Flask not available")
     def test_complete_quest_with_reputation(self, mock_universe, mock_player):
         """Test completing quest with reputation rewards."""
-        game_service = GameService(mock_universe)
+        game_service = GameService()
 
         quest = {
             "id": "rep_quest",
@@ -435,7 +435,7 @@ class TestQuestRewardGameService:
     @pytest.mark.skipif(not FLASK_AVAILABLE, reason="Flask not available")
     def test_award_multiple_experience_levels(self, mock_universe, mock_player):
         """Test awarding enough experience to level up multiple times."""
-        game_service = GameService(mock_universe)
+        game_service = GameService()
 
         mock_player.level = 5
         mock_player.experience = 0

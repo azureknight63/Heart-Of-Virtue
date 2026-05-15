@@ -24,7 +24,8 @@ def universe():
 @pytest.fixture
 def game_service(universe):
     """Create a GameService instance."""
-    return GameService(universe)
+    # GameService.__init__() takes no arguments; it accesses universe via player.universe
+    return GameService()
 
 
 @pytest.fixture
