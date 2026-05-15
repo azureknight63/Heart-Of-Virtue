@@ -440,9 +440,11 @@ class TestDialogueRoutes:
         """Test selecting a dialogue choice."""
         session_id, player, session_manager = authenticated_session
 
-        response = client.post('/api/dialogue/select',
-                             json={'choice_id': 'nonexistent'},
-                             headers={'Authorization': f'Bearer {session_id}'})
+        response = client.post(
+            '/api/dialogue/select',
+            json={'choice_id': 'nonexistent'},
+            headers={'Authorization': f'Bearer {session_id}'}
+        )
         assert response.status_code in [400, 404]
 
 
@@ -453,30 +455,38 @@ class TestErrorHandling:
         """Test request with missing JSON body."""
         session_id, player, session_manager = authenticated_session
 
-        response = client.post('/api/world/move',
-                             headers={'Authorization': f'Bearer {session_id}'})
+        response = client.post(
+            '/api/world/move',
+            headers={'Authorization': f'Bearer {session_id}'}
+        )
         assert response.status_code in [400, 415, 404, 500]
 
     def test_invalid_json(self, client, authenticated_session):
         """Test request with invalid JSON."""
         session_id, player, session_manager = authenticated_session
 
-        response = client.post('/api/world/move',
-                             data='invalid json',
-                             content_type='application/json',
-                             headers={'Authorization': f'Bearer {session_id}'})
+        response = client.post(
+            '/api/world/move',
+            data='invalid json',
+            content_type='application/json',
+            headers={'Authorization': f'Bearer {session_id}'}
+        )
         assert response.status_code in [400, 415, 404, 500]
 
     def test_expired_session(self, client):
         """Test request with expired session."""
-        response = client.get('/api/world/room',
-                            headers={'Authorization': 'Bearer expired_session_id'})
+        response = client.get(
+            '/api/world/room',
+            headers={'Authorization': 'Bearer expired_session_id'}
+        )
         assert response.status_code in [401, 404]
 
     def test_malformed_auth_header(self, client):
         """Test request with malformed auth header."""
-        response = client.get('/api/world/room',
-                            headers={'Authorization': 'InvalidBearer token'})
+        response = client.get(
+            '/api/world/room',
+            headers={'Authorization': 'InvalidBearer token'}
+        )
         assert response.status_code in [401, 404]
 
     def test_missing_auth_header(self, client):
