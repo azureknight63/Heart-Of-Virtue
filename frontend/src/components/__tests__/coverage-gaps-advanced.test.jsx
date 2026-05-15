@@ -110,97 +110,97 @@ describe('Advanced Coverage Gap Tests', () => {
   })
 
   describe('StatsPanel Coverage', () => {
-    it('renders stats with zero values', () => {
+    it('returns null when player is not provided', () => {
       const { container } = render(
-        <StatsPanel
-          stats={{
-            health: 0,
-            stamina: 0,
-            strength: 0,
-            finesse: 0,
-            speed: 0,
-            resolve: 0
-          }}
-        />
+        <div>
+          <StatsPanel player={null} />
+        </div>
       )
-      expect(container).toBeTruthy()
+      expect(container.querySelector('[role="dialog"]')).not.toBeInTheDocument()
     })
 
-    it('renders stats with high values', () => {
+    it('renders with minimal player data', () => {
       const { container } = render(
         <StatsPanel
-          stats={{
-            health: 999,
-            stamina: 999,
-            strength: 999,
-            finesse: 999,
-            speed: 999,
-            resolve: 999
-          }}
-        />
-      )
-      expect(container).toBeTruthy()
-    })
-
-    it('renders stats with negative values (edge case)', () => {
-      const { container } = render(
-        <StatsPanel
-          stats={{
-            health: -10,
-            stamina: -5,
+          player={{
+            hp: 50,
+            max_hp: 100,
+            fatigue: 30,
+            max_fatigue: 50,
+            protection: 5,
+            level: 1,
+            attack_damage_min: 5,
+            attack_damage_max: 10,
+            hit_accuracy: 75,
+            evasion_chance: 20,
             strength: 10,
             finesse: 10,
             speed: 10,
-            resolve: 10
+            endurance: 10,
+            charisma: 10,
+            intelligence: 10,
+            faith: 10
           }}
+          onClose={vi.fn()}
         />
       )
-      expect(container).toBeTruthy()
+      expect(container.querySelector('[role="dialog"]')).toBeInTheDocument()
     })
 
-    it('renders stats with null/undefined', () => {
+    it('renders with high stat values', () => {
       const { container } = render(
         <StatsPanel
-          stats={{
-            health: undefined,
-            stamina: null,
+          player={{
+            hp: 999,
+            max_hp: 999,
+            fatigue: 999,
+            max_fatigue: 999,
+            protection: 99,
+            level: 99,
+            attack_damage_min: 99,
+            attack_damage_max: 199,
+            hit_accuracy: 999,
+            evasion_chance: 999,
+            strength: 99,
+            finesse: 99,
+            speed: 99,
+            endurance: 99,
+            charisma: 99,
+            intelligence: 99,
+            faith: 99
+          }}
+          onClose={vi.fn()}
+        />
+      )
+      expect(container.querySelector('[role="dialog"]')).toBeInTheDocument()
+    })
+
+    it('renders with zero stat values', () => {
+      const { container } = render(
+        <StatsPanel
+          player={{
+            hp: 0,
+            max_hp: 100,
+            fatigue: 0,
+            max_fatigue: 50,
+            protection: 0,
+            level: 0,
+            attack_damage_min: 0,
+            attack_damage_max: 0,
+            hit_accuracy: 0,
+            evasion_chance: 0,
             strength: 0,
             finesse: 0,
             speed: 0,
-            resolve: 0
+            endurance: 0,
+            charisma: 0,
+            intelligence: 0,
+            faith: 0
           }}
+          onClose={vi.fn()}
         />
       )
-      expect(container).toBeTruthy()
-    })
-
-    it('renders with partial stats object', () => {
-      const { container } = render(
-        <StatsPanel
-          stats={{
-            health: 50,
-            stamina: 50,
-            strength: 50
-          }}
-        />
-      )
-      expect(container).toBeTruthy()
-    })
-
-    it('renders with all stats present', () => {
-      const { container } = render(
-        <StatsPanel
-          stats={{
-            health: 100,
-            stamina: 100,
-            strength: 100,
-            finesse: 100,
-            speed: 100,
-            resolve: 100
-          }}
-        />
-      )
-      expect(container.firstChild).toBeTruthy()
+      expect(container.querySelector('[role="dialog"]')).toBeInTheDocument()
     })
   })
 
