@@ -37,6 +37,13 @@ from src.items import Item, Gold, Restorative, Draught, Antidote, Rock, Spear, S
 import moves  # type: ignore
 
 
+@pytest.fixture(autouse=True)
+def mock_time_sleep():
+    """Mock time.sleep to avoid delays in all tests in this file."""
+    with patch('time.sleep'):
+        yield
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # FRIENDS TESTS (_friends.py)
 # ─────────────────────────────────────────────────────────────────────────────
