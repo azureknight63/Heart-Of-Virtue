@@ -197,3 +197,37 @@ def isinstance_by_class_name(obj, *class_names):
 
 # Monkey-patch isinstance for test convenience (optional, can be used via explicit function call)
 # Actually, don't do this - it might break other code. Users should use the function explicitly.
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# NPC and Player Fixtures for Performance Optimization
+# ─────────────────────────────────────────────────────────────────────────────
+# These fixtures are available to all tests. Use them to reduce repeated setup
+# overhead when creating NPCs and Players for testing.
+
+@pytest.fixture
+def player():
+    """Create a fresh Player instance for testing."""
+    from src.player import Player
+    return Player()
+
+
+@pytest.fixture
+def slime_npc():
+    """Create a Slime NPC for combat testing."""
+    from src.npc._enemies import Slime
+    return Slime()
+
+
+@pytest.fixture
+def mynx_npc():
+    """Create a Mynx NPC for dialogue/interaction testing."""
+    from src.npc._friends import Mynx
+    return Mynx()
+
+
+@pytest.fixture
+def gorran_npc():
+    """Create a Gorran NPC for ally testing."""
+    from src.npc._friends import Gorran
+    return Gorran()
