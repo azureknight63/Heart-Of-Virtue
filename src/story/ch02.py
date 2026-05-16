@@ -935,7 +935,7 @@ class AfterKingSlimeReturn(Event):
         ):
             self.pass_conditions_to_process()
 
-    def process(self):
+    def process(self, user_input=None):
         # Check if Jean actually has the MineralFragment
         has_fragment = any(
             i.__class__.__name__ == "MineralFragment" for i in self.player.inventory
@@ -943,35 +943,48 @@ class AfterKingSlimeReturn(Event):
         if not has_fragment:
             return
 
-        time.sleep(1)
-        print_slow(
-            "Votha Krr rises from his throne as Jean enters. His deep-set eyes take in the "
-            "bleeding finger, the fragment in Jean's hand, and Jean's expression — all at once.",
-            delay=0.03,
-        )
-        time.sleep(1.5)
+        if user_input is None:
+            # First pass: display narration and present the choice prompt
+            time.sleep(1)
+            print_slow(
+                "Votha Krr rises from his throne as Jean enters. His deep-set eyes take in the "
+                "bleeding finger, the fragment in Jean's hand, and Jean's expression — all at once.",
+                delay=0.03,
+            )
+            time.sleep(1.5)
 
-        dialogue(
-            "Votha Krr",
-            "The pools are clean, little one. You have done well.",
-            "green",
-        )
-        time.sleep(1)
-        print_slow(
-            "Jean still holds the mineral fragment. The cut on his finger has stopped bleeding "
-            "but hasn't stopped hurting.",
-            delay=0.03,
-        )
-        time.sleep(1)
-        print(colored("[a]", "magenta") + " Hand it over.")
-        print(colored("[b]", "magenta") + ' "What is this thing, exactly?"')
-        print(
-            colored("[c]", "magenta")
-            + " [Set it on the edge of the throne without a word.]"
-        )
-        _frag_choice = ""
-        while _frag_choice not in ["a", "b", "c"]:
-            _frag_choice = input("Choice: ").strip().lower()
+            dialogue(
+                "Votha Krr",
+                "The pools are clean, little one. You have done well.",
+                "green",
+            )
+            time.sleep(1)
+            print_slow(
+                "Jean still holds the mineral fragment. The cut on his finger has stopped bleeding "
+                "but hasn't stopped hurting.",
+                delay=0.03,
+            )
+            time.sleep(1)
+
+            # Signal the API that we need input before continuing
+            self.needs_input = True
+            self.input_type = "choice"
+            self.input_prompt = ""
+            self.input_options = [
+                {"value": "a", "label": "Hand it over."},
+                {"value": "b", "label": '"What is this thing, exactly?"'},
+                {"value": "c", "label": "[Set it on the edge of the throne without a word.]"},
+            ]
+            return
+
+        # Second pass: user has made their choice
+        _frag_choice = str(user_input).strip().lower()
+        # Normalise numeric frontend fallbacks (e.g. "0"/"1"/"2") to letter values
+        _map = {"0": "a", "1": "b", "2": "c"}
+        _frag_choice = _map.get(_frag_choice, _frag_choice)
+        if _frag_choice not in ("a", "b", "c"):
+            _frag_choice = "a"
+
         if _frag_choice == "a":
             print_slow("Jean holds it out. Votha takes it from his hand.", delay=0.03)
         elif _frag_choice == "b":
@@ -1051,8 +1064,9 @@ class AfterKingSlimeReturn(Event):
             delay=0.03,
         )
         time.sleep(1.5)
-        time.sleep(0.5)
-        await_input()
 
+        self.needs_input = False
+        self.completed = True
         self.player.universe.story["votha_krr_response_given"] = "1"
         self.tile.remove_event(self.name)
+

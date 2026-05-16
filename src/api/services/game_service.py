@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Dict, Any, Optional, List
 from unittest.mock import patch
 
 from src.api.constants import ITEM_USE_RANGE
+from src.functions import check_for_combat
 from src.interface import get_gold
 
 if TYPE_CHECKING:
@@ -612,8 +613,6 @@ class GameService:
             )
 
         # Check for combat initiation
-        from src.functions import check_for_combat
-
         combat_enemies = check_for_combat(player)
 
         combat_started = False
@@ -979,8 +978,6 @@ class GameService:
 
         # Check for combat after event processing (in case event spawned enemies)
         # ONLY if the event doesn't still need input (wait for final resolution before continuing combat flow)
-        from src.functions import check_for_combat
-
         combat_enemies = check_for_combat(player)
 
         if combat_enemies and not result.get("needs_input", False):
@@ -1551,8 +1548,6 @@ class GameService:
                 pass
 
         # Check for combat initiation
-        from src.functions import check_for_combat
-
         combat_enemies = check_for_combat(player)
 
         combat_started = False
@@ -1955,33 +1950,39 @@ class GameService:
         if not enemy:
             return {"error": "Enemy not found"}
 
-        # Sync player.current_room so check_for_combat can find all NPCs in the room.
-        # start_combat() looks up the tile via universe.get_tile() but player.current_room
-        # is what check_for_combat() reads — without this sync it returns an empty list.
+        # Ensure player.current_room is set to the resolved tile so that downstream
+        # code (NPC death cleanup, event callbacks) always has a valid room reference.
+        # Fall back to the existing player.current_room when universe.get_tile() returned
+        # None (e.g. out-of-bounds coordinates) — at least one of the two will be valid
+        # because we already found `enemy` through one of those two paths above.
+        if tile is None:
+            tile = getattr(player, "current_room", None)
         if tile is not None:
             player.current_room = tile
 
-        # Mark the attacked enemy as aggro so check_for_combat() picks it up.
-        # Some enemies in the room may already be aggro (they announced themselves
-        # in the combat log); the clicked one may not have been flagged yet because
-        # the player initiated combat before entering the tile normally.
+        # Mark the attacked enemy as aggro so it is always included in the combat roster.
+        # Some enemies may already be aggro from room-entry announcements; the clicked one
+        # may not be if the player attacked before passive detection triggered.
         enemy.aggro = True
         enemy.in_combat = True
 
-        # Gather ALL aggro enemies currently in the room (including the clicked one
-        # and any room-mates that were already aggro'd).  This mirrors exactly what
-        # move_player() does and prevents the "one enemy enters, rest stay in room"
-        # bug that left the game stuck in combat after defeating the lone enrollee.
-        from src.functions import check_for_combat
-
-        all_enemies = check_for_combat(player)
-
-        # Fallback: if check_for_combat returns nothing (e.g. finesse check passed for
-        # all others), ensure at least the clicked enemy is included.
-        if not all_enemies:
-            all_enemies = [enemy]
-        elif enemy not in all_enemies:
-            all_enemies.insert(0, enemy)
+        # Collect ALL aggro, non-friend NPCs from the tile directly — bypassing the random
+        # finesse roll used by check_for_combat().  When the player deliberately chooses to
+        # attack, stealth detection is irrelevant: every hostile creature in the room joins.
+        # This mirrors what move_player() achieves in practice and prevents the
+        # "one enemy enters, rest stay" bug that left combat stuck after the first kill.
+        tile_npcs = getattr(player.current_room, "npcs_here", []) if player.current_room else []
+        all_enemies = [
+            npc for npc in tile_npcs
+            if not getattr(npc, "friend", False)
+            and getattr(npc, "aggro", False)
+            and npc is not enemy  # enemy already forced-aggro above; prepend it below
+        ]
+        # Prepend the clicked enemy so it leads the combat roster regardless of list order.
+        all_enemies.insert(0, enemy)
+        # Propagate in_combat flag to every enrolled hostile (check_for_combat does the same).
+        for e in all_enemies:
+            e.in_combat = True
 
         result = self._initialize_combat(player, all_enemies, session_id=session_id)
 

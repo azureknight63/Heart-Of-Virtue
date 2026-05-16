@@ -1816,6 +1816,24 @@ class ApiCombatAdapter:
             if has_lurker_event and not lurker_still_present:
                 self.player.combat_end_summary["beta_end"] = True
 
+        # Reset any surviving tile NPCs that still carry aggro/in_combat flags from
+        # this encounter.  Enemies that were defeated are already removed from the
+        # tile by their death handler, but NPCs spawned mid-fight (e.g. by
+        # PulsingGlandEvent) that were enrolled and defeated leave their flags set.
+        # Any NPC still on the tile with aggro=True after victory is stale state
+        # that would re-trigger combat on the next get_combat_status() poll.
+        if tile:
+            for npc in list(getattr(tile, "npcs_here", [])):
+                # Leave friendly/merchant NPCs untouched.
+                if getattr(npc, "friend", False):
+                    continue
+                npc.aggro = False
+                npc.in_combat = False
+
+        # Clear the player's own combat lists so a stale adapter cannot resume.
+        self.player.combat_list = []
+        self.player.combat_list_allies = [self.player]
+
     def _get_available_moves(self) -> List[Dict[str, Any]]:
         """Get list of all moves for the player with availability status."""
         moves = []
