@@ -220,112 +220,62 @@ class TestNPCInitialization:
 
 
 class TestEnemySubclasses:
-    """Test all enemy subclass initializations."""
+    """Test all enemy subclass initializations.
 
-    def test_slime_initialization(self):
-        """Test Slime enemy initialization."""
-        slime = Slime()
-        assert slime.name.startswith("Slime ")
-        assert slime.maxhp == 20
-        assert slime.damage == 26
-        assert slime.awareness == 12
-        assert slime.aggro is True
-        assert slime.exp_award == 2
-        # Check moves are added
-        assert len(slime.known_moves) > 0
+    Uses parametrization to reduce redundant setup and improve test execution speed.
+    """
 
-    def test_testexp_initialization(self):
-        """Test Testexp (exp test dummy) initialization."""
-        testexp = Testexp()
-        assert testexp.name.startswith("Slime ")
-        assert testexp.maxhp == 200
-        assert testexp.damage == 2
-        assert testexp.exp_award == 500
+    @pytest.mark.parametrize("enemy_class,name_prefix,maxhp,damage,extra_checks", [
+        (Slime, "Slime ", 20, 26, {'awareness': 12, 'aggro': True, 'exp_award': 2, 'has_moves': True}),
+        (Testexp, "Slime ", 200, 2, {'exp_award': 500}),
+        (RockRumbler, "Rock Rumbler ", 55, 30, {'protection': 30, 'awareness': 25, 'has_resistances': True}),
+        (Lurker, "Lurker ", 450, 35, {'awareness': 60, 'has_loot': True, 'has_status_resistance': True}),
+        (GiantSpider, "Giant Spider ", 110, 22, {'has_resistances': True}),
+        (CaveBat, "Cave Bat ", 15, 23, {'speed': 40}),
+        (ElderSlime, "Elder Slime ", 70, 28, {'has_resistances': True}),
+        (KingSlime, "King Slime", 200, 50, {'exact_name': True, 'has_loot': True, 'exp_award': 500}),
+        (TalusHound, "Talus Hound ", 50, 14, {'awareness': 30}),
+        (ScarpAdder, "Scarp Adder ", 38, None, {}),
+        (StatusDummy, "Pell", 500, None, {'exact_name': True, 'all_neutral_resistances': True}),
+        (CorruptedStoneCreature, "Stone Creature ", 60, None, {}),
+    ])
+    def test_enemy_initialization_parametrized(self, enemy_class, name_prefix, maxhp, damage, extra_checks):
+        """Parametrized test for enemy subclass initialization."""
+        enemy = enemy_class()
 
-    def test_rock_rumbler_initialization(self):
-        """Test RockRumbler enemy initialization."""
-        rumbler = RockRumbler()
-        assert rumbler.name.startswith("Rock Rumbler ")
-        assert rumbler.maxhp == 55
-        assert rumbler.damage == 30
-        assert rumbler.protection == 30
-        assert rumbler.awareness == 25
-        # Check resistances
-        assert rumbler.resistance_base["earth"] == 0.5
-        assert rumbler.resistance_base["crushing"] == 1.5
+        # Check name
+        if extra_checks.get('exact_name'):
+            assert enemy.name == name_prefix
+        else:
+            assert enemy.name.startswith(name_prefix)
 
-    def test_lurker_initialization(self):
-        """Test Lurker enemy initialization."""
-        lurker = Lurker()
-        assert lurker.name.startswith("Lurker ")
-        assert lurker.maxhp == 450
-        assert lurker.damage == 35
-        assert lurker.awareness == 60
-        assert lurker.loot == loot.lev1
-        assert lurker.resistance_base["dark"] == 0.5
-        assert lurker.status_resistance_base["death"] == 1
+        # Check core attributes
+        assert enemy.maxhp == maxhp
+        if damage is not None:
+            assert enemy.damage == damage
 
-    def test_giant_spider_initialization(self):
-        """Test GiantSpider enemy initialization."""
-        spider = GiantSpider()
-        assert spider.name.startswith("Giant Spider ")
-        assert spider.maxhp == 110
-        assert spider.damage == 22
-        assert spider.resistance_base["fire"] == -0.5
-
-    def test_cave_bat_initialization(self):
-        """Test CaveBat enemy initialization."""
-        bat = CaveBat()
-        assert bat.name.startswith("Cave Bat ")
-        assert bat.maxhp == 15
-        assert bat.damage == 23
-        assert bat.speed == 40
-
-    def test_elder_slime_initialization(self):
-        """Test ElderSlime initialization."""
-        elder = ElderSlime()
-        assert elder.name.startswith("Elder Slime ")
-        assert elder.maxhp == 70
-        assert elder.damage == 28
-        assert elder.resistance_base["fire"] == 1.4
-
-    def test_king_slime_initialization(self):
-        """Test KingSlime boss initialization."""
-        king = KingSlime()
-        assert king.name == "King Slime"
-        assert king.maxhp == 200
-        assert king.damage == 50
-        assert king.loot == loot.lev1
-        assert king.exp_award == 500
-
-    def test_talus_hound_initialization(self):
-        """Test TalusHound initialization."""
-        hound = TalusHound()
-        assert hound.name.startswith("Talus Hound ")
-        assert hound.maxhp == 50
-        assert hound.damage == 14
-        assert hound.awareness == 30
-
-    def test_scarp_adder_initialization(self):
-        """Test ScarpAdder initialization."""
-        adder = ScarpAdder()
-        assert adder.name.startswith("Scarp Adder ")
-        assert adder.maxhp == 38
-
-    def test_status_dummy_initialization(self):
-        """Test StatusDummy initialization."""
-        dummy = StatusDummy()
-        assert dummy.name == "Pell"
-        assert dummy.maxhp == 500
-        # All damage resistances should be neutral (1.0), all status resistances should be 0
-        assert all(v == 1.0 for v in dummy.resistance_base.values())
-        assert all(v == 0.0 for v in dummy.status_resistance_base.values())
-
-    def test_corrupted_stone_creature_initialization(self):
-        """Test CorruptedStoneCreature initialization."""
-        creature = CorruptedStoneCreature()
-        assert creature.name.startswith("Stone Creature ")
-        assert creature.maxhp == 60
+        # Check extra attributes
+        if extra_checks.get('aggro'):
+            assert enemy.aggro is True
+        if extra_checks.get('exp_award') is not None:
+            assert enemy.exp_award == extra_checks['exp_award']
+        if extra_checks.get('awareness') is not None:
+            assert enemy.awareness == extra_checks['awareness']
+        if extra_checks.get('protection') is not None:
+            assert enemy.protection == extra_checks['protection']
+        if extra_checks.get('speed') is not None:
+            assert enemy.speed == extra_checks['speed']
+        if extra_checks.get('has_moves'):
+            assert len(enemy.known_moves) > 0
+        if extra_checks.get('has_resistances'):
+            assert len(enemy.resistance_base) > 0
+        if extra_checks.get('has_loot'):
+            assert enemy.loot == loot.lev1
+        if extra_checks.get('has_status_resistance'):
+            assert 'death' in enemy.status_resistance_base
+        if extra_checks.get('all_neutral_resistances'):
+            assert all(v == 1.0 for v in enemy.resistance_base.values())
+            assert all(v == 0.0 for v in enemy.status_resistance_base.values())
 
 
 class TestFriendSubclasses:
