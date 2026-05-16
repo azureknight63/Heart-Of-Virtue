@@ -988,7 +988,8 @@ class TestPlayerMerchandiseHandling:
         player.inventory.append(merch)
 
         # Mock tile_exists to return a valid tile
-        with patch('player._inventory.tile_exists', return_value=tile):
+        with patch('player._inventory.tile_exists', return_value=tile), \
+             patch('time.sleep'):  # Mock sleep to avoid delays
             player.drop_merchandise_items()
 
         # Merchandise should be dropped to the tile

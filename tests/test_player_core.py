@@ -440,7 +440,8 @@ class TestPlayerCore:
             assert player.universe.game_tick == 1
 
         # Move to non-existent tile
-        with patch('player._movement.tile_exists', return_value=None):
+        with patch('player._movement.tile_exists', return_value=None), \
+             patch('time.sleep'):  # Mock sleep to avoid 1s delay
             player.move(1, 0)
             assert player.location_x == 1 # Stayed at 1 because move failed and it reverted
             assert player.location_y == 0
