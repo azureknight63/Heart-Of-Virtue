@@ -593,5 +593,112 @@ class TestWhisperingStatue(unittest.TestCase):
         self.assertEqual(len(options), 3)
 
 
+class TestCh01GorranCautionJunction(unittest.TestCase):
+    """Test Ch01GorranCautionJunction event."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        from story.ch01 import Ch01GorranCautionJunction
+
+        self.player = Mock()
+        self.tile = Mock()
+        self.Ch01GorranCautionJunction = Ch01GorranCautionJunction
+
+    def test_gorran_caution_junction_init(self):
+        """Test Ch01GorranCautionJunction initialization."""
+        event = self.Ch01GorranCautionJunction(
+            player=self.player, tile=self.tile, repeat=False
+        )
+        self.assertEqual(event.name, "Ch01_Gorran_Caution_Junction")
+
+
+class TestCh01GorranMarkings(unittest.TestCase):
+    """Test Ch01GorranMarkings event."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        from story.ch01 import Ch01GorranMarkings
+
+        self.player = Mock()
+        self.tile = Mock()
+        self.Ch01GorranMarkings = Ch01GorranMarkings
+
+    def test_gorran_markings_init(self):
+        """Test Ch01GorranMarkings initialization."""
+        event = self.Ch01GorranMarkings(
+            player=self.player, tile=self.tile, repeat=False
+        )
+        self.assertEqual(event.name, "Ch01_Gorran_Markings")
+
+
+class TestCh01GorranDarkChamber(unittest.TestCase):
+    """Test Ch01GorranDarkChamber event."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        from story.ch01 import Ch01GorranDarkChamber
+
+        self.player = Mock()
+        self.player.universe = Mock()
+        self.player.universe.story = {}
+        self.tile = Mock()
+        self.Ch01GorranDarkChamber = Ch01GorranDarkChamber
+
+    def test_gorran_dark_chamber_init(self):
+        """Test Ch01GorranDarkChamber initialization."""
+        event = self.Ch01GorranDarkChamber(
+            player=self.player, tile=self.tile, repeat=False
+        )
+        self.assertEqual(event.name, "Ch01_Gorran_Dark_Chamber")
+
+
+class TestCh01GorranFirstWord(unittest.TestCase):
+    """Test Ch01GorranFirstWord event."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        from story.ch01 import Ch01GorranFirstWord
+
+        self.player = Mock()
+        self.player.skip_dialog = False
+        self.player.universe = Mock()
+        self.player.universe.story = {
+            "gorran_first": "1",
+            "gorran_language_stage": "0",
+        }
+        self.tile = Mock()
+        self.tile.remove_event = Mock()
+        self.Ch01GorranFirstWord = Ch01GorranFirstWord
+
+    def test_gorran_first_word_init(self):
+        """Test Ch01GorranFirstWord initialization."""
+        event = self.Ch01GorranFirstWord(
+            player=self.player, tile=self.tile, repeat=False
+        )
+        self.assertEqual(event.name, "Ch01_Gorran_First_Word")
+
+
+class TestFlareArrowImpact(unittest.TestCase):
+    """Test FlareArrowImpact effect."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        from story.effects import FlareArrowImpact
+
+        self.player = Mock()
+        self.target = Mock()
+        self.move = Mock()
+        self.move.user = Mock()
+        self.move.user.name = "Archer"
+        self.move.target = self.target
+        self.FlareArrowImpact = FlareArrowImpact
+
+    def test_flare_arrow_impact_init(self):
+        """Test FlareArrowImpact initialization."""
+        effect = self.FlareArrowImpact(player=self.player, move=self.move)
+        self.assertEqual(effect.name, "FlareArrowImpact")
+        self.assertEqual(effect.move, self.move)
+
+
 if __name__ == "__main__":
     unittest.main()
