@@ -396,8 +396,9 @@ class TestGronditeConclaveElder:
         # Verify dialogue was printed
         assert mock_print.call_count > 0
 
+    @patch('time.sleep')
     @patch('builtins.print')
-    def test_conclave_elder_talk_subsequent(self, mock_print):
+    def test_conclave_elder_talk_subsequent(self, mock_print, mock_sleep):
         """Test GronditeConclaveElder talk() on subsequent encounters."""
         npc = GronditeConclaveElder()
         player = MagicMock()
@@ -407,8 +408,9 @@ class TestGronditeConclaveElder:
         npc.talk(player)
         assert mock_print.call_count > 0
 
+    @patch('time.sleep')
     @patch('builtins.print')
-    def test_conclave_elder_talk_no_universe(self, mock_print):
+    def test_conclave_elder_talk_no_universe(self, mock_print, mock_sleep):
         """Test GronditeConclaveElder talk() with no universe."""
         npc = GronditeConclaveElder()
         player = MagicMock()
