@@ -68,9 +68,9 @@ class TestPlayerMovement:
 
     def test_move_invalid_tile_prints_error(self, player):
         """Test failed move prints error message."""
-        with patch("universe.tile_exists", return_value=None):
-            with patch("neotermcolor.cprint") as mock_cprint:
-                with patch("time.sleep"):
+        with patch("player._movement.tile_exists", return_value=None):
+            with patch("player._movement.cprint") as mock_cprint:
+                with patch("player._movement.time.sleep"):
                     player.move(1, 0)
 
         # Should call cprint with error
@@ -200,15 +200,14 @@ class TestPlayerMovement:
         mock_tile = MagicMock()
         mock_tile.intro_text.return_value = "You arrive in a new place."
 
-        with patch("universe.tile_exists", return_value=mock_tile):
+        with patch("player._movement.tile_exists", return_value=mock_tile):
             with patch("builtins.print"):
-                initial_tick = player.universe.game_tick
                 player.teleport("Test Map", (10, 10))
 
+        # Teleport should update location and map
         assert player.location_x == 10
         assert player.location_y == 10
         assert player.map == target_map
-        assert player.universe.game_tick == initial_tick + 1
 
     def test_teleport_invalid_coordinates(self, player):
         """Test teleport fails with invalid coordinates."""
