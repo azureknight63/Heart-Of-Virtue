@@ -3568,7 +3568,6 @@ class GameService:
         from src.api.serializers.quest_rewards import (
             RewardConditionValidator,
             RewardDistributionSerializer,
-            LevelingProgressSerializer,
         )
 
         # Find and remove quest from active quests
