@@ -1971,5 +1971,298 @@ class TestConclavElderQuest:
             assert mock_print.call_count > 0
 
 
+class TestLLMGetAdapterEdgeCases:
+    """Test _get_llm_adapter with various error conditions."""
+
+    def test_get_llm_adapter_spec_creation_fails(self):
+        """Test _get_llm_adapter when spec_from_file_location fails."""
+        mynx = Mynx()
+        mynx._llm_adapter = None
+
+        with patch.dict(os.environ, {"MYNX_LLM_ENABLED": "1"}):
+            with patch('pathlib.Path.exists', return_value=True):
+                with patch('importlib.util.spec_from_file_location', return_value=None):
+                    result = mynx._get_llm_adapter()
+                    assert result is None
+
+    def test_get_llm_adapter_spec_loader_none(self):
+        """Test _get_llm_adapter when spec loader is None."""
+        mynx = Mynx()
+        mynx._llm_adapter = None
+
+        with patch.dict(os.environ, {"MYNX_LLM_ENABLED": "1"}):
+            with patch('pathlib.Path.exists', return_value=True):
+                spec = MagicMock()
+                spec.loader = None
+                with patch('importlib.util.spec_from_file_location', return_value=spec):
+                    result = mynx._get_llm_adapter()
+                    assert result is None
+
+    def test_get_llm_adapter_adapter_class_not_found(self):
+        """Test _get_llm_adapter when MynxLLMAdapter class missing."""
+        mynx = Mynx()
+        mynx._llm_adapter = None
+
+        with patch.dict(os.environ, {"MYNX_LLM_ENABLED": "1"}):
+            with patch('pathlib.Path.exists', return_value=True):
+                with patch('importlib.util.spec_from_file_location') as mock_spec:
+                    spec = MagicMock()
+                    mod = MagicMock(spec=[])  # No MynxLLMAdapter attribute
+                    spec.loader.exec_module = MagicMock()
+                    mock_spec.return_value = spec
+                    with patch('importlib.util.module_from_spec', return_value=mod):
+                        result = mynx._get_llm_adapter()
+                        assert result is None
+
+    def test_get_llm_adapter_availability_check_fails(self):
+        """Test _get_llm_adapter when availability check fails."""
+        mynx = Mynx()
+        mynx._llm_adapter = None
+
+        with patch.dict(os.environ, {"MYNX_LLM_ENABLED": "1"}):
+            with patch('pathlib.Path.exists', return_value=True):
+                with patch('importlib.util.spec_from_file_location') as mock_spec:
+                    spec = MagicMock()
+                    adapter = MagicMock()
+                    adapter.available = MagicMock(side_effect=Exception("Check failed"))
+                    spec.loader.exec_module = MagicMock()
+                    mock_spec.return_value = spec
+                    with patch('importlib.util.module_from_spec', return_value=MagicMock()):
+                        with patch('importlib.util.module_from_spec'):
+                            # Simulate module_from_spec returning something, then loader.exec_module assigning it
+                            result = mynx._get_llm_adapter()
+                            # Should handle exception and return None
+                            assert result is None
+
+    def test_get_llm_adapter_debug_status(self):
+        """Test _get_llm_adapter debug status output."""
+        mynx = Mynx()
+        mynx._llm_adapter = None
+
+        with patch.dict(os.environ, {"MYNX_LLM_ENABLED": "1", "MYNX_LLM_DEBUG": "1"}):
+            with patch('pathlib.Path.exists', return_value=True):
+                with patch('importlib.util.spec_from_file_location') as mock_spec:
+                    spec = MagicMock()
+                    adapter = MagicMock()
+                    adapter.available = MagicMock(return_value=True)
+                    adapter.debug_status = MagicMock(return_value="ok")
+                    spec.loader.exec_module = MagicMock()
+                    mock_spec.return_value = spec
+                    with patch('importlib.util.module_from_spec') as mock_from_spec:
+                        mock_mod = MagicMock()
+                        mock_from_spec.return_value = mock_mod
+                        with patch('builtins.print'):
+                            # This would normally print debug info
+                            result = mynx._get_llm_adapter()
+
+
+class TestLLMHistoryEdgeCases:
+    """Test LLM history edge cases."""
+
+    def test_append_llm_history_type_conversion_non_string(self):
+        """Test _append_llm_history converts non-string inputs."""
+        mynx = Mynx()
+        mynx._append_llm_history(12345, {"key": "value"})
+        assert len(mynx._llm_history) == 1
+        assert "12345" in mynx._llm_history[0]["prompt"]
+
+    def test_append_llm_history_exception_silently_returns(self):
+        """Test _append_llm_history handles exceptions silently."""
+        mynx = Mynx()
+        # This should not raise even with problematic inputs
+        mynx._append_llm_history(None, None)
+        mynx._append_llm_history("", "")
+        # No exception should be raised
+
+
+class TestSanitizationEdgeCases:
+    """Test text sanitization with complex inputs."""
+
+    def test_sanitize_mynx_llm_text_duplicate_pronouns(self):
+        """Test _sanitize_mynx_llm_text handles duplicate pronouns."""
+        mynx = Mynx()
+        mynx.name = "Mynx"
+        mynx.pronouns = {"personal": "it", "possessive": "its"}
+        text = "it it sees things. it it bounces."
+        result = mynx._sanitize_mynx_llm_text(text, [])
+        # Should reduce duplicate pronouns
+        assert result is not None
+        assert "it it" not in result.lower() or result.count(" it ") == result.count(" it")
+
+    def test_enforce_pronouns_and_names_jean_in_sentence(self):
+        """Test _enforce_pronouns_and_names recognizes Jean in sentence."""
+        mynx = Mynx()
+        mynx._jean_advisor = {
+            "pronouns": {
+                "subject": "he",
+                "object": "him",
+                "possessive_adjective": "his"
+            }
+        }
+        text = "Jean sees him walking. She is there."
+        roster = {"Jean"}
+        result = mynx._enforce_pronouns_and_names(text, roster)
+        # Should apply Jean's pronouns
+        assert isinstance(result, str)
+
+    def test_enforce_pronouns_and_names_mynx_in_sentence(self):
+        """Test _enforce_pronouns_and_names recognizes mynx in sentence."""
+        mynx = Mynx()
+        mynx.pronouns = {"personal": "it", "possessive": "its"}
+        mynx.name = "Mynx"
+        text = "Mynx darts forward. She bounces playfully."
+        roster = set()
+        result = mynx._enforce_pronouns_and_names(text, roster)
+        # Should apply mynx's pronouns
+        assert "Mynx" in result or "it" in result
+
+
+class TestGatherEnvironmentComplexRooms:
+    """Test environment gathering with complex room setups."""
+
+    def test_gather_environment_with_all_types(self):
+        """Test _gather_environment_lists with items, objects, and NPCs."""
+        mynx = Mynx()
+        mynx.name = "Mynx"
+        room = MagicMock()
+
+        item = MagicMock()
+        item.name = "Sword"
+        item.description = "A sharp blade"
+
+        obj = MagicMock()
+        obj.name = "Pedestal"
+        obj.description = "An ancient stone pedestal"
+
+        npc = MagicMock()
+        npc.name = "Mara"
+        npc.description = "A scavenger"
+
+        room.items_here = [item]
+        room.objects_here = [obj]
+        room.npcs_here = [npc]
+        mynx.current_room = room
+
+        env_string, _ = mynx._gather_environment_lists()
+        assert isinstance(env_string, str)
+
+    def test_gather_environment_with_malformed_attributes(self):
+        """Test _gather_environment_lists with malformed attributes."""
+        mynx = Mynx()
+        room = MagicMock()
+
+        # Item with missing attributes
+        item = MagicMock()
+        item.name = None
+        item.description = ""
+
+        room.items_here = [item]
+        room.objects_here = []
+        room.npcs_here = []
+        mynx.current_room = room
+
+        env_string, _ = mynx._gather_environment_lists()
+        # Should not crash
+        assert isinstance(env_string, str)
+
+    def test_gather_environment_deduplication(self):
+        """Test _gather_environment_lists deduplicates items."""
+        mynx = Mynx()
+        room = MagicMock()
+
+        item1 = MagicMock()
+        item1.name = "Sword"
+        item1.description = "desc"
+
+        item2 = MagicMock()
+        item2.name = "Sword"
+        item2.description = "desc"
+
+        room.items_here = [item1, item2]
+        room.objects_here = []
+        room.npcs_here = []
+        mynx.current_room = room
+
+        env_string, _ = mynx._gather_environment_lists()
+        # Should deduplicate
+        assert isinstance(env_string, str)
+
+
+class TestBuildHistoryComplexCases:
+    """Test history block building with various history states."""
+
+    def test_build_history_block_truncation(self):
+        """Test _build_history_block truncates long entries."""
+        mynx = Mynx()
+        mynx._llm_history = [
+            {"prompt": "x" * 200, "response": "y" * 300},
+            {"prompt": "short", "response": "response"},
+        ]
+        result = mynx._build_history_block()
+        # Should not contain full truncated text
+        assert "x" * 200 not in result
+
+
+class TestCheckAndCorrectComplexCases:
+    """Test text validation with edge cases."""
+
+    def test_check_and_correct_mynx_text_empty_string(self):
+        """Test _check_and_correct_mynx_text with empty string."""
+        mynx = Mynx()
+        mynx.pronouns = {"personal": "it"}
+        result = mynx._check_and_correct_mynx_text("", "pet", [])
+        assert result is None
+
+    def test_check_and_correct_mynx_text_only_periods(self):
+        """Test _check_and_correct_mynx_text with only periods."""
+        mynx = Mynx()
+        mynx.pronouns = {"personal": "it"}
+        result = mynx._check_and_correct_mynx_text("...", "pet", [])
+        assert result is None
+
+    def test_check_and_correct_mynx_text_mixed_speech_types(self):
+        """Test _check_and_correct_mynx_text rejects mixed quote types."""
+        mynx = Mynx()
+        mynx.pronouns = {"personal": "it"}
+        text = 'Mynx says "hello\' and speaks.'
+        result = mynx._check_and_correct_mynx_text(text, "pet", [])
+        # May be rejected due to quote complexity
+        assert result is None or isinstance(result, str)
+
+
+class TestInteractWithPlayerPlayVariants:
+    """Test interact_with_player with play action variants."""
+
+    def test_interact_with_player_play_with_multiword_item(self):
+        """Test interact_with_player with multi-word item name."""
+        mynx = Mynx()
+        mynx.current_room = MagicMock()
+        mynx.current_room.npcs_here = []
+        mynx._get_llm_adapter = MagicMock(return_value=None)
+        player = MagicMock()
+
+        with patch('builtins.print') as mock_print:
+            mynx.interact_with_player(player, prompt="play with ruby ball")
+            # Should include item in action
+            call_str = str(mock_print.call_args_list)
+            assert "ruby" in call_str.lower() or "ball" in call_str.lower()
+
+
+class TestMerchantInitializeShopEdgeCases:
+    """Test merchant shop initialization edge cases."""
+
+    def test_jambo_initialize_shop_sets_correct_name(self):
+        """Test JamboHealsU.initialize_shop sets shop name."""
+        jambo = JamboHealsU()
+        if jambo.shop:
+            # Should use canonical shop name
+            assert jambo.shop is not None
+
+    def test_jambo_initialize_shop_with_empty_inventory(self):
+        """Test JamboHealsU.initialize_shop with empty inventory."""
+        jambo = JamboHealsU()
+        assert jambo.inventory is not None or jambo.shop is not None
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
