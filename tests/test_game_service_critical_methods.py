@@ -9,10 +9,16 @@ from unittest.mock import MagicMock, patch, Mock
 from src.api.services.game_service import GameService
 
 
-@pytest.fixture
-def game_service():
-    """Create a GameService instance."""
+@pytest.fixture(scope="session")
+def _cached_game_service():
+    """Cache GameService instance across the session (stateless singleton)."""
     return GameService()
+
+
+@pytest.fixture
+def game_service(_cached_game_service):
+    """Return the cached GameService."""
+    return _cached_game_service
 
 
 @pytest.fixture

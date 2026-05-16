@@ -19,15 +19,21 @@ from src.api.services.game_service import GameService
 # ========================= FIXTURES =========================
 
 
-@pytest.fixture
-def game_service():
-    """Create a GameService instance."""
+@pytest.fixture(scope="session")
+def _cached_game_service():
+    """Cache GameService instance across the session (stateless singleton)."""
     return GameService()
 
 
 @pytest.fixture
-def complete_mock_universe():
-    """Create a universe with full story and game tick support."""
+def game_service(_cached_game_service):
+    """Return the cached GameService."""
+    return _cached_game_service
+
+
+@pytest.fixture(scope="session")
+def _cached_complete_mock_universe():
+    """Cache universe mock across session (immutable in tests)."""
     universe = MagicMock()
     universe.story = {
         "ch01_gorran_encountered": False,
@@ -48,6 +54,12 @@ def complete_mock_universe():
 
     universe.get_tile = MagicMock(return_value=test_tile)
     return universe
+
+
+@pytest.fixture
+def complete_mock_universe(_cached_complete_mock_universe):
+    """Return cached universe (used as dependency for player fixture)."""
+    return _cached_complete_mock_universe
 
 
 @pytest.fixture

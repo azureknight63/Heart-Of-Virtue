@@ -94,10 +94,16 @@ def mock_player(mock_universe):
     return player
 
 
-@pytest.fixture
-def game_service():
-    """Create GameService instance."""
+@pytest.fixture(scope="session")
+def _cached_game_service():
+    """Cache GameService instance across the session (stateless singleton)."""
     return GameService()
+
+
+@pytest.fixture
+def game_service(_cached_game_service):
+    """Return the cached GameService."""
+    return _cached_game_service
 
 
 class TestGameServiceWorldInfo:

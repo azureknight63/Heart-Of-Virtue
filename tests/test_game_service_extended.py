@@ -17,15 +17,21 @@ from unittest.mock import MagicMock, Mock, patch, PropertyMock
 from src.api.services.game_service import GameService
 
 
-@pytest.fixture
-def game_service():
-    """Create GameService instance."""
+@pytest.fixture(scope="session")
+def _cached_game_service():
+    """Cache GameService instance across the session (stateless singleton)."""
     return GameService()
 
 
 @pytest.fixture
-def realistic_mock_universe():
-    """Create a realistic mock universe with game_tick and story."""
+def game_service(_cached_game_service):
+    """Return the cached GameService (function-scoped to isolate mocks)."""
+    return _cached_game_service
+
+
+@pytest.fixture(scope="session")
+def _cached_mock_universe():
+    """Cache universe mock across session (immutable in tests)."""
     universe = MagicMock()
     universe.story = {}
     universe.game_tick = 100
@@ -43,6 +49,12 @@ def realistic_mock_universe():
 
     universe.get_tile = MagicMock(return_value=test_tile)
     return universe
+
+
+@pytest.fixture
+def realistic_mock_universe(_cached_mock_universe):
+    """Return cached universe (used as dependency for player fixture)."""
+    return _cached_mock_universe
 
 
 @pytest.fixture
