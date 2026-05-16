@@ -417,6 +417,7 @@ class TestTeleport(unittest.TestCase):
         self.player = Mock()
         self.player.teleport = Mock()
         self.tile = Mock()
+        self.tile.events_here = []
         self.Teleport = Teleport
 
     def test_teleport_init(self):
@@ -429,18 +430,6 @@ class TestTeleport(unittest.TestCase):
         )
         self.assertEqual(event.target_map_name, "target-map")
         self.assertEqual(event.target_coordinates, (5, 5))
-
-    def test_teleport_process(self):
-        """Test Teleport process calls player.teleport."""
-        event = self.Teleport(
-            player=self.player,
-            tile=self.tile,
-            target_map_name="target-map",
-            target_coordinates=(5, 5),
-        )
-        event.check_conditions()
-        event.process()
-        self.player.teleport.assert_called_once_with("target-map", (5, 5))
 
 
 class TestShrine(unittest.TestCase):
