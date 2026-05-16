@@ -179,6 +179,12 @@ class CombatStateSerializer:
                         {
                             "name": getattr(item, "name", "Unknown"),
                             "quantity": getattr(item, "count", 1),
+                            "type": type(item).__name__,
+                            "subtype": getattr(item, "subtype", None),
+                            "weight": getattr(item, "weight", None),
+                            "value": getattr(item, "value", None),
+                            "enchantment_count": getattr(item, "_enchantment_count", getattr(item, "enchantment_count", 0)),
+                            "description": getattr(item, "description", ""),
                         }
                     )
         return drops

@@ -1933,6 +1933,7 @@ class GameService:
         """Start combat with a specific enemy (e.g. from dialogue/interaction)."""
         # Find enemy in current room
         enemy = None
+        tile = None
 
         # 1. Try universe tile
         if hasattr(player, "universe") and player.universe:
@@ -1954,7 +1955,35 @@ class GameService:
         if not enemy:
             return {"error": "Enemy not found"}
 
-        result = self._initialize_combat(player, [enemy], session_id=session_id)
+        # Sync player.current_room so check_for_combat can find all NPCs in the room.
+        # start_combat() looks up the tile via universe.get_tile() but player.current_room
+        # is what check_for_combat() reads — without this sync it returns an empty list.
+        if tile is not None:
+            player.current_room = tile
+
+        # Mark the attacked enemy as aggro so check_for_combat() picks it up.
+        # Some enemies in the room may already be aggro (they announced themselves
+        # in the combat log); the clicked one may not have been flagged yet because
+        # the player initiated combat before entering the tile normally.
+        enemy.aggro = True
+        enemy.in_combat = True
+
+        # Gather ALL aggro enemies currently in the room (including the clicked one
+        # and any room-mates that were already aggro'd).  This mirrors exactly what
+        # move_player() does and prevents the "one enemy enters, rest stay in room"
+        # bug that left the game stuck in combat after defeating the lone enrollee.
+        from src.functions import check_for_combat
+
+        all_enemies = check_for_combat(player)
+
+        # Fallback: if check_for_combat returns nothing (e.g. finesse check passed for
+        # all others), ensure at least the clicked enemy is included.
+        if not all_enemies:
+            all_enemies = [enemy]
+        elif enemy not in all_enemies:
+            all_enemies.insert(0, enemy)
+
+        result = self._initialize_combat(player, all_enemies, session_id=session_id)
 
         # _initialize_combat returns None in the idempotency branch (already in combat
         # with the same enemy set).  Treat this as a graceful no-op.

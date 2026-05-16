@@ -160,7 +160,7 @@ class TestCombatantSerializer:
         class MockInventory:
             pass
 
-        class MockPlayer:
+        class Player:
             name = "Jean"
             level = 10
             health = 80
@@ -176,7 +176,7 @@ class TestCombatantSerializer:
             equipped = {"weapon": None, "body": None}
             resistances = {"fire": 1.0}
 
-        player = MockPlayer()
+        player = Player()
         result = CombatantSerializer.serialize_combatant(player)
 
         assert result["name"] == "Jean"
