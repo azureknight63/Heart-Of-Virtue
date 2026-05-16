@@ -646,9 +646,9 @@ class TestAfterTheRumblerFight(unittest.TestCase):
             mock_pass.assert_called_once()
 
     def test_after_rumbler_fight_check_conditions_false(self):
-        """Test check_conditions when condition not met."""
+        """Test check_conditions when in combat."""
         event = AfterTheRumblerFight(self.player, self.tile, params=None)
-        self.player.universe.story = {}
+        self.player.in_combat = True
         with patch.object(event, 'pass_conditions_to_process') as mock_pass:
             event.check_conditions()
             mock_pass.assert_not_called()
@@ -656,8 +656,11 @@ class TestAfterTheRumblerFight(unittest.TestCase):
     def test_after_rumbler_fight_process(self):
         """Test process method."""
         event = AfterTheRumblerFight(self.player, self.tile, params=None)
-        with patch('story.ch01.cprint'):
-            event.process()
+        self.tile.npcs_here = []
+        with patch('story.ch01.dialogue'):
+            with patch('src.functions.await_input'):
+                with patch('time.sleep'):
+                    event.process()
 
 
 class TestAfterGorranIntro(unittest.TestCase):
@@ -687,8 +690,12 @@ class TestAfterGorranIntro(unittest.TestCase):
     def test_after_gorran_intro_process(self):
         """Test process method."""
         event = AfterGorranIntro(self.player, self.tile, params=None)
-        with patch('story.ch01.cprint'):
-            event.process()
+        self.player.combat_list_allies = []
+        self.tile.npcs_here = [Mock(name="Gorran", friend=False)]
+        with patch('builtins.print'):
+            with patch('src.functions.await_input'):
+                with patch('time.sleep'):
+                    event.process()
 
 
 class TestCh01GorranCautionJunction(unittest.TestCase):
@@ -704,12 +711,11 @@ class TestCh01GorranCautionJunction(unittest.TestCase):
     def test_gorran_caution_junction_init(self):
         """Test Gorran caution junction event init."""
         event = Ch01GorranCautionJunction(self.player, self.tile, params=None)
-        self.assertEqual(event.name, "Ch01_Gorran_CautionJunction")
+        self.assertEqual(event.name, "Ch01_Gorran_Caution_Junction")
 
     def test_gorran_caution_junction_check_conditions(self):
         """Test check_conditions."""
         event = Ch01GorranCautionJunction(self.player, self.tile, params=None)
-        self.player.universe.story = {"gorran_intro": "1"}
         with patch.object(event, 'pass_conditions_to_process') as mock_pass:
             event.check_conditions()
             mock_pass.assert_called_once()
@@ -717,8 +723,9 @@ class TestCh01GorranCautionJunction(unittest.TestCase):
     def test_gorran_caution_junction_process(self):
         """Test process method."""
         event = Ch01GorranCautionJunction(self.player, self.tile, params=None)
-        with patch('story.ch01.cprint'):
-            event.process()
+        with patch('time.sleep'):
+            with patch('neotermcolor.cprint'):
+                event.process()
 
 
 class TestCh01GorranMarkings(unittest.TestCase):
@@ -764,12 +771,11 @@ class TestCh01GorranDarkChamber(unittest.TestCase):
     def test_gorran_dark_chamber_init(self):
         """Test Gorran dark chamber event init."""
         event = Ch01GorranDarkChamber(self.player, self.tile, params=None)
-        self.assertEqual(event.name, "Ch01_Gorran_DarkChamber")
+        self.assertEqual(event.name, "Ch01_Gorran_Dark_Chamber")
 
     def test_gorran_dark_chamber_check_conditions(self):
         """Test check_conditions."""
         event = Ch01GorranDarkChamber(self.player, self.tile, params=None)
-        self.player.universe.story = {"gorran_markings": "1"}
         with patch.object(event, 'pass_conditions_to_process') as mock_pass:
             event.check_conditions()
             mock_pass.assert_called_once()
@@ -777,8 +783,10 @@ class TestCh01GorranDarkChamber(unittest.TestCase):
     def test_gorran_dark_chamber_process(self):
         """Test process method."""
         event = Ch01GorranDarkChamber(self.player, self.tile, params=None)
-        with patch('story.ch01.cprint'):
-            event.process()
+        with patch('time.sleep'):
+            with patch('neotermcolor.cprint'):
+                event.process()
+                self.assertEqual(self.player.universe.story["gorran_dark_chamber_seen"], "1")
 
 
 class TestCh01GorranFirstWord(unittest.TestCase):
@@ -798,9 +806,9 @@ class TestCh01GorranFirstWord(unittest.TestCase):
         self.assertEqual(event.name, "Ch01_Gorran_FirstWord")
 
     def test_gorran_first_word_check_conditions(self):
-        """Test check_conditions."""
+        """Test check_conditions checks gates."""
         event = Ch01GorranFirstWord(self.player, self.tile, params=None)
-        self.player.universe.story = {"dark_chamber": "1"}
+        self.player.universe.story = {"gorran_first": "1", "gorran_language_stage": "0"}
         with patch.object(event, 'pass_conditions_to_process') as mock_pass:
             event.check_conditions()
             mock_pass.assert_called_once()
@@ -808,8 +816,9 @@ class TestCh01GorranFirstWord(unittest.TestCase):
     def test_gorran_first_word_process(self):
         """Test process method."""
         event = Ch01GorranFirstWord(self.player, self.tile, params=None)
-        with patch('story.ch01.cprint'):
-            event.process()
+        with patch('time.sleep'):
+            with patch('neotermcolor.cprint'):
+                event.process()
 
 
 # ============================================================================
