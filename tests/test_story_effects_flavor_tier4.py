@@ -1268,8 +1268,8 @@ class TestMaybeExploreFlavor(unittest.TestCase):
 
         with patch("story.gorran_flavor.random.random", return_value=0.99):
             gorran_flavor.maybe_explore_flavor(self.player)
-        # Should not update story when skipped
-        self.assertNotIn("gorran_explore_last_tick", self.player.universe.story)
+        # Should not change story when skipped by random
+        self.assertEqual(self.player.universe.story["gorran_explore_last_tick"], "90")
 
     def test_explore_flavor_invalid_last_tick(self):
         """Test maybe_explore_flavor handles invalid last_tick."""
