@@ -35,15 +35,16 @@ class TestSession:
 
     def test_session_update_access_time(self):
         """Test updating session access time."""
+        from unittest.mock import patch
+
         now = datetime.now()
         session = Session("sess_123", "player_456", "testuser", now)
         original_expires = session.expires_at
 
-        # Wait a tiny bit and update
-        import time
-
-        time.sleep(0.01)
-        session.update_access_time()
+        # Mock datetime.now() to ensure elapsed time between calls
+        with patch('src.api.services.session_manager.datetime') as mock_datetime:
+            mock_datetime.now.side_effect = [now, now + timedelta(seconds=1)]
+            session.update_access_time()
 
         assert session.last_accessed > now
         assert session.expires_at > original_expires

@@ -38,7 +38,7 @@ class TestGameServiceInventory:
     @pytest.fixture
     def game_service(self):
         """Create GameService instance for testing."""
-        service = GameService(TestingConfig)
+        service = GameService()
         yield service
 
     @pytest.fixture
