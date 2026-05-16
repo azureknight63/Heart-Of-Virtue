@@ -35,15 +35,18 @@ class TestSession:
 
     def test_session_update_access_time(self):
         """Test updating session access time."""
-        from unittest.mock import patch
+        from unittest.mock import patch, MagicMock
 
         now = datetime.now()
         session = Session("sess_123", "player_456", "testuser", now)
         original_expires = session.expires_at
 
-        # Mock datetime.now() to ensure elapsed time between calls
+        # Mock datetime.now() and timedelta to simulate time passage
+        future_time = now + timedelta(seconds=1)
         with patch('src.api.services.session_manager.datetime') as mock_datetime:
-            mock_datetime.now.side_effect = [now, now + timedelta(seconds=1)]
+            # Make sure we return the correct values for datetime.now() calls
+            mock_datetime.now.return_value = future_time
+            mock_datetime.side_effect = lambda *args, **kw: datetime(*args, **kw)
             session.update_access_time()
 
         assert session.last_accessed > now
