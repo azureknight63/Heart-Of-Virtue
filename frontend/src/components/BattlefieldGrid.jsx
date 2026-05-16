@@ -30,18 +30,13 @@ const CAMERA_EPSILON = 0.004; // settle threshold (cells)
 
 /**
  * Snap a float camera origin to the nearest valid integer cell.
- * When the map is smaller than the viewport we skip edge-clamping so Jean stays
- * centered; the surrounding "off-map" cells simply render as empty.
+ * Jean is always centered — no edge-clamping — so off-map cells render as
+ * empty/dimmed rather than the camera stopping short near map edges.
  */
-const computeSnapOrigin = (cam, cols, mapSz) => {
-  if (mapSz < cols) {
-    return { leftX: Math.round(cam.x), topY: Math.round(cam.y) };
-  }
-  return {
-    leftX: Math.round(Math.max(0, Math.min(mapSz - cols, cam.x))),
-    topY:  Math.round(Math.min(mapSz - 1, Math.max(cols - 1, cam.y))),
-  };
-};
+const computeSnapOrigin = (cam) => ({
+  leftX: Math.round(cam.x),
+  topY:  Math.round(cam.y),
+});
 
 // ---------------------------------------------------------------------------
 // Pure helpers — module level, stable references, never re-created
@@ -764,23 +759,7 @@ function BattlefieldGrid({
     const el = gridContainerRef.current;
     if (!el) return;
 
-    const onTouchStart = (e) => {
-      if (e.touches.length !== 1) return;
-      if (panDecayRafRef.current) {
-        cancelAnimationFrame(panDecayRafRef.current);
-        panDecayRafRef.current = null;
-      }
-      touchStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-    };
-
-    const onTouchMove = (e) => {
-      if (!touchStartRef.current || e.touches.length !== 1) return;
-      e.preventDefault();
-      const dx = e.touches[0].clientX - touchStartRef.current.x;
-      const dy = e.touches[0].clientY - touchStartRef.current.y;
-      touchStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-
-      // Clamp to ~40% of container dims so the map never flies off-screen
+    const applyDelta = (dx, dy) => {
       const { width, height } = el.getBoundingClientRect();
       const maxX = width * 0.4;
       const maxY = height * 0.4;
@@ -791,9 +770,44 @@ function BattlefieldGrid({
       applyPanTransform();
     };
 
+    // Touch handlers
+    const onTouchStart = (e) => {
+      if (e.touches.length !== 1) return;
+      if (panDecayRafRef.current) { cancelAnimationFrame(panDecayRafRef.current); panDecayRafRef.current = null; }
+      touchStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    };
+    const onTouchMove = (e) => {
+      if (!touchStartRef.current || e.touches.length !== 1) return;
+      e.preventDefault();
+      const dx = e.touches[0].clientX - touchStartRef.current.x;
+      const dy = e.touches[0].clientY - touchStartRef.current.y;
+      touchStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+      applyDelta(dx, dy);
+    };
     const onTouchEnd = () => {
       touchStartRef.current = null;
-      // Smoothly decay pan offset back to (0, 0)
+      if (panDecayRafRef.current) cancelAnimationFrame(panDecayRafRef.current);
+      panDecayRafRef.current = requestAnimationFrame(decayPan);
+    };
+
+    // Mouse drag handlers
+    const onMouseDown = (e) => {
+      if (e.button !== 0) return;
+      if (panDecayRafRef.current) { cancelAnimationFrame(panDecayRafRef.current); panDecayRafRef.current = null; }
+      touchStartRef.current = { x: e.clientX, y: e.clientY };
+      el.style.cursor = 'grabbing';
+    };
+    const onMouseMove = (e) => {
+      if (!touchStartRef.current) return;
+      const dx = e.clientX - touchStartRef.current.x;
+      const dy = e.clientY - touchStartRef.current.y;
+      touchStartRef.current = { x: e.clientX, y: e.clientY };
+      applyDelta(dx, dy);
+    };
+    const onMouseUp = () => {
+      if (!touchStartRef.current) return;
+      touchStartRef.current = null;
+      el.style.cursor = '';
       if (panDecayRafRef.current) cancelAnimationFrame(panDecayRafRef.current);
       panDecayRafRef.current = requestAnimationFrame(decayPan);
     };
@@ -801,13 +815,27 @@ function BattlefieldGrid({
     el.addEventListener('touchstart', onTouchStart, { passive: true });
     el.addEventListener('touchmove', onTouchMove, { passive: false });
     el.addEventListener('touchend', onTouchEnd, { passive: true });
+    el.addEventListener('mousedown', onMouseDown);
+    // mousemove/mouseup on window so drag works when cursor leaves the grid
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
     return () => {
       el.removeEventListener('touchstart', onTouchStart);
       el.removeEventListener('touchmove', onTouchMove);
       el.removeEventListener('touchend', onTouchEnd);
+      el.removeEventListener('mousedown', onMouseDown);
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
       if (panDecayRafRef.current) cancelAnimationFrame(panDecayRafRef.current);
     };
   }, [applyPanTransform, decayPan]);
+
+  // Reset pan when a new combat begins (combat_id change or combat becoming active)
+  useEffect(() => {
+    if (panDecayRafRef.current) { cancelAnimationFrame(panDecayRafRef.current); panDecayRafRef.current = null; }
+    touchPanRef.current = { x: 0, y: 0 };
+    applyPanTransform();
+  }, [combat?.combat_id, combat?.combat_active, applyPanTransform]);
 
   const handleGridClick = useCallback((e) => {
     if (e.target === e.currentTarget) setSelectedEntity(null);
@@ -958,7 +986,7 @@ function BattlefieldGrid({
       cameraRef.current = { x: tgt.x, y: tgt.y };
       cameraRafRef.current = null;
       contentDivRef.current.style.transform = '';
-      const snap = computeSnapOrigin(cameraRef.current, VIEW_SIZE, mapSizeRef.current);
+      const snap = computeSnapOrigin(cameraRef.current);
       if (!snapCellRef.current || snap.leftX !== snapCellRef.current.leftX || snap.topY !== snapCellRef.current.topY) {
         snapCellRef.current = snap;
         setSnapState({ ...snap });
@@ -968,7 +996,7 @@ function BattlefieldGrid({
 
     // Lerp one step toward target
     cameraRef.current = { x: cam.x + dx * CAMERA_LERP, y: cam.y + dy * CAMERA_LERP };
-    const snap = computeSnapOrigin(cameraRef.current, VIEW_SIZE, mapSizeRef.current);
+    const snap = computeSnapOrigin(cameraRef.current);
 
     // Sub-cell offset: shift the content div to cover the fractional remainder
     // fracX > 0 ⇒ shift right (snap over-stepped left);  fracY < 0 ⇒ shift up
@@ -998,23 +1026,17 @@ function BattlefieldGrid({
       return;
     }
 
-    // Jean must always be centered. For maps smaller than the viewport we
-    // skip edge-clamping and let the map float in the center; the surrounding
-    // cells render as empty.
-    const mapFitsInView = resolvedMapSize >= VIEW_SIZE;
-    const tgtX = mapFitsInView
-      ? Math.max(0, Math.min(resolvedMapSize - VIEW_SIZE, playerPos.x - HALF_VIEW))
-      : playerPos.x - HALF_VIEW;
-    const tgtY = mapFitsInView
-      ? Math.min(resolvedMapSize - 1, Math.max(VIEW_SIZE - 1, playerPos.y + HALF_VIEW))
-      : playerPos.y + HALF_VIEW;
+    // Jean is always centered — no edge-clamping. Off-map cells at the
+    // edges render dimmed so players can see the map boundary.
+    const tgtX = playerPos.x - HALF_VIEW;
+    const tgtY = playerPos.y + HALF_VIEW;
     targetCamRef.current = { x: tgtX, y: tgtY };
 
     const snapImmediately = () => {
       if (cameraRafRef.current) { cancelAnimationFrame(cameraRafRef.current); cameraRafRef.current = null; }
       cameraRef.current = { x: tgtX, y: tgtY };
       if (contentDivRef.current) contentDivRef.current.style.transform = '';
-      const snap = computeSnapOrigin(cameraRef.current, VIEW_SIZE, resolvedMapSize);
+      const snap = computeSnapOrigin(cameraRef.current);
       snapCellRef.current = snap;
       setSnapState({ ...snap });
     };
@@ -1059,11 +1081,8 @@ function BattlefieldGrid({
   } else if (snapState) {
     leftX = snapState.leftX;
     topY  = snapState.topY;
-  } else if (resolvedMapSize >= VIEW_SIZE) {
-    leftX = Math.max(0, Math.min(resolvedMapSize - VIEW_SIZE, playerPos.x - HALF_VIEW));
-    topY  = Math.min(resolvedMapSize - 1, Math.max(VIEW_SIZE - 1, playerPos.y + HALF_VIEW));
   } else {
-    // Small-map fallback: center Jean even if the map is smaller than the view
+    // Pre-snapState fallback — Jean always centered, no edge-clamping
     leftX = playerPos.x - HALF_VIEW;
     topY  = playerPos.y + HALF_VIEW;
   }
@@ -1176,7 +1195,7 @@ function BattlefieldGrid({
     <div
       ref={gridContainerRef}
       onClick={handleGridClick}
-      style={{ position: 'relative', width: '100%', height: '100%', backgroundColor: colors.bg.main, overflow: 'hidden', touchAction: 'none' }}
+      style={{ position: 'relative', width: '100%', height: '100%', backgroundColor: colors.bg.main, overflow: 'hidden', touchAction: 'none', cursor: 'grab' }}
     >
       {/*
         panLayerRef: touch-drag pan offset layer. Translates independently of the
