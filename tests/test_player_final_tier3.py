@@ -14,26 +14,12 @@ Target: 100% coverage on src/player/*
 Expected: 150+ tests covering ALL untested lines, boundary conditions, error paths
 """
 
-import pytest
-pytestmark = pytest.mark.skip(reason="Mock setup errors - MagicMock attributes cause TypeError in combat logic")
-
-import sys
-import os
-from pathlib import Path
-from unittest.mock import MagicMock, patch, PropertyMock, call, ANY
-
-# Add src to path
-ROOT = Path(__file__).resolve().parent.parent
-SRC_DIR = ROOT / "src"
-if str(SRC_DIR) not in sys.path:
-    sys.path.insert(0, str(SRC_DIR))
-
+from unittest.mock import MagicMock, patch
 import pytest
 from player import Player
 import items
-import states
-import moves
-import random
+
+pytestmark = pytest.mark.skip(reason="Mock setup errors - MagicMock attributes cause TypeError in combat logic")
 
 
 class TestPlayerMovement:

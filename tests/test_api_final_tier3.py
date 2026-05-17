@@ -1,14 +1,12 @@
 """TIER 3E: Comprehensive API services and routes coverage - 100% target."""
 
-import pytest
-pytestmark = pytest.mark.skip(reason="Mock setup errors - test fixtures return MagicMock instead of real Flask app/client")
-
 import sys
 import os
 from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock
 import pytest
-import json
+
+pytestmark = pytest.mark.skip(reason="Mock setup errors - test fixtures return MagicMock instead of real Flask app/client")
 
 # Setup paths
 ROOT = Path(__file__).resolve().parent.parent
@@ -1090,7 +1088,7 @@ class TestRouteErrorResponses:
         try:
             data = response.get_json()
             # Is valid JSON
-        except:
+        except Exception:
             pass
 
     def test_unauthorized_response_format(self):
