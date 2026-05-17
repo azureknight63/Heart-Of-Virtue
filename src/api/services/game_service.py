@@ -3579,7 +3579,6 @@ class GameService:
         from src.api.serializers.quest_rewards import (
             RewardConditionValidator,
             RewardDistributionSerializer,
-            LevelingProgressSerializer,
         )
 
         # Find and remove quest from active quests
@@ -5296,7 +5295,7 @@ class GameService:
         # Try to use the item if it has a use method
         if hasattr(item, "use") and callable(item.use):
             try:
-                result = item.use(player)
+                item.use(player)
                 return {"success": True, "message": f"Used {item.name}"}
             except Exception as e:
                 return {"success": False, "error": str(e)}
