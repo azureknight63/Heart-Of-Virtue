@@ -14,6 +14,12 @@ on:
     branches: [master, web-api, develop, main]
 
 jobs:
+  # Backend tests run in parallel for faster feedback
+  # - backend-core-tests: Validates all tests pass
+  # - backend-coverage: Measures coverage and enforces minimums
+  # - frontend-coverage: Independent frontend test job
+  # All three must complete before coverage-report summarizes results
+
   backend-core-tests:
     name: Backend Tests (Core - Tier 1-2)
     runs-on: ubuntu-latest
@@ -57,7 +63,6 @@ jobs:
     name: Backend Coverage (pytest)
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    needs: backend-core-tests
     if: always()
     permissions:
       contents: read
