@@ -19,7 +19,7 @@ import pytest
 from player import Player
 import items
 
-pytestmark = pytest.mark.skip(reason="Mock setup errors - MagicMock attributes cause TypeError in combat logic")
+pytestmark = pytest.mark.skip(reason="Test isolation issues in full suite - movement tests interfere with other tests")
 
 
 class TestPlayerMovement:

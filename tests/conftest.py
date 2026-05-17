@@ -231,3 +231,32 @@ def gorran_npc():
     """Create a Gorran NPC for ally testing."""
     from src.npc._friends import Gorran
     return Gorran()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Flask App Fixtures for API Testing
+# ─────────────────────────────────────────────────────────────────────────────
+
+@pytest.fixture
+def flask_app():
+    """Create a Flask app instance for testing."""
+    from src.api.app import create_app
+    app = create_app(testing=True)
+    return app
+
+
+@pytest.fixture
+def flask_client(flask_app):
+    """Create a Flask test client."""
+    return flask_app.test_client()
+
+
+@pytest.fixture
+def app_with_session(flask_app):
+    """Create a Flask app with test session support."""
+    with flask_app.app_context():
+        from src.api.services.session_manager import SessionManager
+        # Initialize session manager if needed
+        session_mgr = SessionManager()
+        flask_app.session_manager = session_mgr
+    return flask_app

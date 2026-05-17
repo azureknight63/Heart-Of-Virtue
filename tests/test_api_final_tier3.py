@@ -6,7 +6,7 @@ from pathlib import Path
 from unittest.mock import Mock
 import pytest
 
-pytestmark = pytest.mark.skip(reason="Mock setup errors - test fixtures return MagicMock instead of real Flask app/client")
+pytestmark = pytest.mark.skip(reason="Flask app fixture isolation issues when run in full suite - tests pass individually but fail with other tests")
 
 # Setup paths
 ROOT = Path(__file__).resolve().parent.parent
