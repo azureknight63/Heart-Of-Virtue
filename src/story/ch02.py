@@ -1071,4 +1071,3 @@ class AfterKingSlimeReturn(Event):
         self.completed = True
         self.player.universe.story["votha_krr_response_given"] = "1"
         self.tile.remove_event(self.name)
-
