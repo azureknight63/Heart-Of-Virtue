@@ -941,6 +941,8 @@ class AfterKingSlimeReturn(Event):
             i.__class__.__name__ == "MineralFragment" for i in self.player.inventory
         )
         if not has_fragment:
+            # If pass-1 somehow set needs_input, clear it so no stale prompt lingers.
+            self.needs_input = False
             return
 
         if user_input is None:
@@ -980,8 +982,8 @@ class AfterKingSlimeReturn(Event):
         # Second pass: user has made their choice
         _frag_choice = str(user_input).strip().lower()
         # Normalise numeric frontend fallbacks (e.g. "0"/"1"/"2") to letter values
-        _map = {"0": "a", "1": "b", "2": "c"}
-        _frag_choice = _map.get(_frag_choice, _frag_choice)
+        _choice_map = {"0": "a", "1": "b", "2": "c"}
+        _frag_choice = _choice_map.get(_frag_choice, _frag_choice)
         if _frag_choice not in ("a", "b", "c"):
             _frag_choice = "a"
 
