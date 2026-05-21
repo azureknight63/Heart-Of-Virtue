@@ -121,88 +121,86 @@ class Ch02GuideToCitadel(
     def process(self):
         if not self.player.skip_dialog:
             print(
-                "Gorran turns. His great head swings toward the passage that leads into the city.\n"
-                "He makes a sound — short, low, the kind that doesn't require translation — and moves.\n"
-                "Not wanting to disappoint his new friend, Jean follows him through the passageway.\n\n"
+                "Gorran turned. His great head swung toward the passage that led into the city.\n"
+                "He made a sound — short, low, the kind that doesn't require translation — and moved.\n"
+                "Not wanting to disappoint his new friend, Jean followed him through the passageway.\n\n"
             )
             time.sleep(0.5)
             # Describe the surroundings as they walk. Include descriptions of the Arcology through which they pass.
             # There will be several Grondites milling about with their daily concerns.
             # Gorran can only communicate in grunts and gestures, so Jean must rely on his own observations.
             print(
-                "The passageway opens into a large cavern, the walls of which are covered in strange, glowing \n"
-                "symbols. The air is thick with the smell of damp earth and moss. \n"
-                "Gorran leads Jean through the cavern, "
-                "pointing out various features of the Grondite settlement as they go."
+                "The passageway opened into a large cavern, the walls of which were covered in strange, glowing "
+                "symbols. The air was thick with the smell of damp earth and moss. "
+                "Gorran led Jean through the cavern, "
+                "pointing out various features of the Grondite settlement as they went."
             )
             time.sleep(2)
             print(
-                "From the ceiling at various intervals hang clusters of red crystals, casting a steady glow on the \n"
-                "streets below. Gorran stops in front of a large, stone archway. \n"
-                "The archway is covered in the same glowing symbols as the walls of the cavern. \n"
-                "Gorran gestures for Jean to follow him through the archway."
+                "From the ceiling at various intervals hung clusters of red crystals, casting a steady glow on the "
+                "streets below. Gorran stopped in front of a large stone archway, its surface etched with the same "
+                "glowing symbols as the cavern walls. He gestured for Jean to follow."
             )
             await_input()
             print(
-                "As Jean steps through the archway, he is struck by the sheer size of the cavern beyond. \n"
-                "The ceiling is so high that it is lost in darkness, \nand the walls are so far away that "
-                "they seem to be a part of the very rock itself. "
-                "The floor is covered in a thick layer of moss, \nand the air is filled with the sound of dripping water "
+                "Jean stepped through. The cavern beyond was vast — the ceiling lost in darkness, "
+                "the walls so far away they seemed part of the rock itself. "
+                "The floor was covered in a thick layer of moss, and the air was filled with the sound of dripping water "
                 "and the heavy bustle of the city's stony inhabitants."
             )
             time.sleep(2)
             print(
-                "After walking at length, Gorran stops in front of a large, stone building. "
+                "After walking at length, Gorran stopped in front of a large, stone building."
             )
             print(
-                "The Citadel rises before them, an immense structure carved directly from the cavern's living stone. \n"
-                "Its walls are etched with intricate, ancient depictions of Grondia's history. \n"
-                "Massive pillars support the vaulted entrance, and the air hums with a quiet energy. \n"
-                "Jean feels a sense of both wonder and trepidation as he gazes up at the fortress, \n"
-                "realizing that this place has stood for countless generations, \n"
+                "The Citadel rose before them, an immense structure carved directly from the cavern's living stone. "
+                "Its walls were etched with intricate, ancient depictions of Grondia's history. "
+                "Massive pillars supported the vaulted entrance, and the air hummed with a quiet energy. "
+                "Jean felt a sense of both wonder and trepidation as he gazed up at the fortress, "
+                "realizing that this place had stood for countless generations, "
                 "guarding secrets as old as the earth itself."
             )
             await_input()
             print(
-                "Gorran turns to Jean, his expression serious. He gestures towards the Citadel, \n"
-                "indicating that this is where they must go next. \n"
-                "Jean nods, understanding that this is a place of great importance to the Grondites, \n"
+                "Gorran turned to Jean, his expression serious. He gestured toward the Citadel, "
+                "indicating that this was where they needed to go. "
+                "Jean nodded, understanding this was a place of great importance to the Grondites, "
                 "and perhaps to his own journey as well."
-            )
-            time.sleep(4)
-            print(
-                "Gorran leads Jean into the Citadel, where they are greeted by a group of Grondites. \n"
-                "They are dressed in simple, yet sturdy clothing, and they regard Jean with curiosity. \n"
-                "Gorran addresses the Grondites in their peculiar language of grunts and groans, \n"
-                "apparently explaining that he is a friend and ally - or, at the very least, not an enemy."
-            )
-            time.sleep(4)
-            print(
-                "The Grondites nod in understanding, and one of them steps forward to address Jean. \n"
-                "He speaks in a deep, rumbling voice, gesturing towards the interior of the Citadel. \n"
-                "Gorran nods his great head and sets off into the depths of the Citadel, \n"
-                "motioning for Jean to follow. "
             )
             await_input()
             print(
-                "As they walk through the Citadel, Jean is struck by the sheer scale of the place. \n"
-                "The halls are vast and echo with the sound of their footsteps. "
-                "The walls are adorned with intricate carvings and murals, \ndepicting scenes from Grondia's history "
-                "much like the ones on the walls outside. \n"
-                "Jean's first thought is not of the carvings. It is of the air — steady, slow-moving, \n"
-                "cool at his feet and perceptibly warmer at his shoulders. Convection, working the way \n"
-                "it's supposed to, on a scale he has never encountered. He wants to find where it rises. \n"
-                "Then Gorran makes a sound and Jean remembers to look at the walls."
+                "Gorran led Jean into the Citadel, where they were greeted by a group of Grondites. "
+                "They were dressed in simple, yet sturdy clothing, and they regarded Jean with curiosity. "
+                "Gorran addressed the Grondites in their peculiar language of grunts and groans, "
+                "apparently explaining that he was a friend and ally — or, at the very least, not an enemy."
+            )
+            time.sleep(2)
+            print(
+                "The Grondites nodded in understanding, and one of them stepped forward to address Jean. "
+                "He spoke in a deep, rumbling voice, gesturing toward the interior of the Citadel. "
+                "Gorran nodded his great head and set off into the depths of the Citadel, "
+                "motioning for Jean to follow."
+            )
+            await_input()
+            print(
+                "As they walked through the Citadel, Jean was struck by the sheer scale of the place. "
+                "The halls were vast and echoed with the sound of their footsteps. "
+                "The walls were adorned with intricate carvings and murals, depicting scenes from Grondia's history "
+                "much like the ones on the walls outside. "
+                "Jean's first thought was not of the carvings. It was the air — steady, slow-moving, "
+                "cool at his feet and perceptibly warmer at his shoulders. Convection, working the way "
+                "it's supposed to, on a scale he had never encountered. He wanted to find where it rose. "
+                "Then Gorran made a sound and Jean remembered to look at the walls."
             )
             time.sleep(4)
             print(
-                "Gorran leads Jean to a large chamber at the heart of the Citadel where a group of Grondite elders \n"
-                "are gathered. They are seated on stone thrones, their faces lined with age and wisdom. \n"
-                "Gorran speaks to them in their language, and they regard Jean with a mixture of curiosity and respect. \n"
-                "One of the elders stands and approaches Jean. Much to Jean's surprise, the elder extends a \n"
-                "burly, unyielding hand in greeting. Taking it, Jean has the sensation of grasping a \n"
-                "piece of the mountain itself. The elder's grip is firm, but not painful, \n"
-                "and Jean feels a sense of connection to this ancient being."
+                "Gorran led Jean to a large chamber at the heart of the Citadel where a group of Grondite elders "
+                "were gathered. They were seated on stone thrones, their faces lined with age and wisdom. "
+                "Gorran spoke to them in their language, and they regarded Jean with a mixture of curiosity and respect. "
+                "One of the elders stood and approached Jean. Much to Jean's surprise, the elder extended a "
+                "burly, unyielding hand in greeting. Taking it, Jean had the sensation of grasping a "
+                "piece of the mountain itself. The elder's grip was firm, but not painful, "
+                "and Jean felt a sense of connection to this ancient being."
             )
             await_input()
             print(
@@ -216,26 +214,26 @@ class Ch02GuideToCitadel(
             )
             time.sleep(1)
             print(
-                "Jean nods, grateful for the warm welcome. He can feel the weight of the elder's gaze upon him, \n"
-                "and he knows that he is in the presence of someone who has seen much in their long life. \n"
-                "The elder gestures for Jean to sit on a nearby stool, also made from stone. Jean does so, \n"
+                "Jean nodded, grateful for the warm welcome. He could feel the weight of the elder's gaze upon him, "
+                "and he knew he was in the presence of someone who had seen much in their long life. "
+                "The elder gestured for Jean to sit on a nearby stool, also made from stone. Jean did so, "
                 "feeling awkward and out of place on the hard, cold seat."
             )
-            time.sleep(5)
+            await_input()
             print(
-                "Gorran comes over and stands beside Jean, his massive frame casting a shadow over the elder.\n"
-                "The elder looks up at Gorran and speaks in a low, rumbling voice. \n"
-                "Gorran rumbles briefly in reply, then turns and strides out of the chamber.\n"
-                "The elder turns back to Jean, his expression serious."
+                "Gorran came over and stood beside Jean, his massive frame casting a shadow over the elder. "
+                "The elder looked up at Gorran and spoke in a low, rumbling voice. "
+                "Gorran rumbled briefly in reply, then turned and strode out of the chamber. "
+                "The elder turned back to Jean, his expression serious."
             )
             time.sleep(5)
             print(
-                "Now having gotten a chance to look at the elder, Jean can see that he is a bit smaller in form \n"
-                "than Gorran, though still quite large by human standards. Rather than the craggy, harsh exterior \n"
-                "of other Golemites, this elder has a smooth, almost polished appearance. It's clear that many \n"
-                "years of erosion have worn away the rough edges of his form, much like stones in a riverbed. \n"
-                "His eyes are deep-set and wise, and they seem to hold a depth of knowledge that speaks of \n"
-                "centuries of experience. He opens his mouth to speak."
+                "Now having gotten a chance to look at the elder, Jean could see he was a bit smaller in form "
+                "than Gorran, though still quite large by human standards. Rather than the craggy, harsh exterior "
+                "of other Golemites, this elder had a smooth, almost polished appearance. Many years of erosion "
+                "had worn away the rough edges of his form, much like stones in a riverbed. "
+                "His eyes were deep-set and wise, and they seemed to hold a depth of knowledge that spoke of "
+                "centuries of experience. He opened his mouth to speak."
             )
             await_input()
             dialogue(
@@ -247,8 +245,7 @@ class Ch02GuideToCitadel(
             )
             time.sleep(2)
             print(
-                "With that, a rolling rumble of laughter erupts from the elder's mouth like the aftershocks of an "
-                "earthquake. "
+                "With that, a rolling rumble of laughter erupted from the elder's mouth like the aftershocks of an earthquake."
             )
             time.sleep(2)
             dialogue(
@@ -259,14 +256,14 @@ class Ch02GuideToCitadel(
             )
             time.sleep(2)
             print(
-                "Jean pauses for a long moment, unsure of how to answer. If he's honest with himself, he doesn't \n"
-                "really know how to answer any of those questions. He furrows his brow, troubled by this sudden \n"
-                "consternation. He takes a deep breath, trying to gather his thoughts."
+                "Jean paused for a long moment, unsure of how to answer. If he was honest with himself, he didn't "
+                "really know how to answer any of those questions. He furrowed his brow, troubled by this sudden "
+                "consternation. He took a deep breath, trying to gather his thoughts."
             )
             time.sleep(3)
             dialogue("Jean", "I am Jean. Jean Claire.", "cyan")
             time.sleep(1)
-            print("He stops there. Votha Krr waits, unhurried as erosion.")
+            print("He stopped there. Votha Krr waited, unhurried as erosion.")
             time.sleep(2)
             dialogue(
                 "Jean",
@@ -277,7 +274,7 @@ class Ch02GuideToCitadel(
             )
             time.sleep(2)
             print(
-                "Votha Krr does not nod. He regards Jean with those deep-set eyes — "
+                "Votha Krr did not nod. He regarded Jean with those deep-set eyes — "
                 "patient, unhurried, the way a canyon regards a river."
             )
             time.sleep(3)
@@ -288,7 +285,7 @@ class Ch02GuideToCitadel(
                 "green",
             )
             time.sleep(1)
-            print("He tilts his great head, just slightly.")
+            print("He tilted his great head, just slightly.")
             time.sleep(1)
             dialogue(
                 "Votha Krr",
@@ -296,12 +293,12 @@ class Ch02GuideToCitadel(
                 "green",
             )
             time.sleep(2)
-            print("Jean opens his mouth. Closes it. The chamber is very quiet.")
+            print("Jean opened his mouth. Closed it. The chamber was very quiet.")
             time.sleep(2)
             dialogue("Jean", "No. I didn't.", "cyan")
             time.sleep(2)
             print(
-                "Something passes across Votha Krr's expression — not pity, not recognition. "
+                "Something passed across Votha Krr's expression — not pity, not recognition. "
                 "Something older than both."
             )
             time.sleep(2)
@@ -312,7 +309,7 @@ class Ch02GuideToCitadel(
             )
             time.sleep(2)
             print(
-                "He settles back in his throne, the stone of him indistinguishable from the stone beneath him."
+                "He settled back in his throne, the stone of him indistinguishable from the stone beneath him."
             )
             time.sleep(1)
             dialogue(
@@ -325,7 +322,7 @@ class Ch02GuideToCitadel(
                 "green",
             )
             time.sleep(1.5)
-            print("He watches Jean's face. Jean isn't showing much.")
+            print("He watched Jean's face. Jean wasn't showing much.")
             time.sleep(1)
             print(colored("[a]", "magenta") + ' "Tell me more."')
             print(colored("[b]", "magenta") + ' "I\'ll take a look at it."')
@@ -335,7 +332,7 @@ class Ch02GuideToCitadel(
 
             if _quest_choice == "a":
                 time.sleep(1)
-                print("Votha Krr's expression darkens, and he continues.")
+                print("Votha Krr's expression darkened, and he continued.")
                 time.sleep(1)
                 dialogue(
                     "Votha Krr",
@@ -382,7 +379,7 @@ class Ch02GuideToCitadel(
                 )
                 time.sleep(2)
                 print(
-                    "Jean is quiet, but his mind is already moving — tracing the shape of the problem. "
+                    "Jean was quiet, but his mind was already moving — tracing the shape of the problem. "
                     "An infestation with a center. Corrupted channels. A source."
                 )
                 time.sleep(2)
@@ -400,11 +397,11 @@ class Ch02GuideToCitadel(
                 )
                 time.sleep(1)
                 print(
-                    "Jean nods slowly. He's had that kind of job before. Somewhere, in some life, he's gone "
+                    "Jean nodded slowly. He'd had that kind of job before. Somewhere, in some life, he'd gone "
                     "after the source and let the symptoms take care of themselves."
                 )
                 time.sleep(1)
-                print("He doesn't ask himself why he's so sure of that.")
+                print("He didn't ask himself why he was so sure of that.")
                 time.sleep(2)
                 dialogue("Jean", "Alright. I'll take a look at it.", "cyan")
                 time.sleep(1)
@@ -428,9 +425,9 @@ class Ch02GuideToCitadel(
                 time.sleep(1)
         if not self.player.skip_dialog:
             print(
-                "Votha Krr waves a hand, and a Grondite attendant steps forward, carrying a small bundle of supplies. "
+                "Votha Krr waved a hand, and a Grondite attendant stepped forward, carrying a small bundle of supplies."
             )
-            print("The attendant hands the bundle to Jean, who takes it gratefully.")
+            print("The attendant handed the bundle to Jean, who took it gratefully.")
         # Add 5 Antidotes and 2 Restoratives to the player's inventory
         loot = [items.Antidote(5), items.Restorative(2)]
         self.player.add_items_to_inventory(loot)
@@ -451,7 +448,7 @@ class Ch02GuideToCitadel(
             )
             time.sleep(1)
             print(
-                "He pauses. Those deep-set eyes hold Jean's for a moment longer than necessary."
+                "He paused. Those deep-set eyes held Jean's for a moment longer than necessary."
             )
             time.sleep(1)
             dialogue(
@@ -462,7 +459,7 @@ class Ch02GuideToCitadel(
             )
             time.sleep(1)
             print(
-                "He says it the same way he said it the first time. Like a door left open."
+                "He said it the same way he'd said it the first time. Like a door left open."
             )
 
         # At the end of the sequence, don't forget to teleport to the Citadel tile.
@@ -501,14 +498,14 @@ class Ch02ArenaEntrance(Event):
     def process(self):
         if not self.player.skip_dialog:
             print_slow(
-                "The corridor narrows and the smell changes — thick with something sweet and wrong, "
+                "The corridor narrowed and the smell changed — thick with something sweet and wrong, "
                 "like rot and copper together.",
                 delay=0.03,
             )
             time.sleep(1)
             print_slow(
-                "Jean came this way alone. The passageway behind him is empty. "
-                "Gorran's footsteps stopped at the last junction — the air grew too heavy, "
+                "Jean came this way alone. The passageway behind him was empty. "
+                "Gorran's footsteps had stopped at the last junction — the air grew too heavy, "
                 "the corruption too dense for stone to tolerate, and Gorran knew it "
                 "before Jean did. He made one sound, low and short, and did not follow.",
                 delay=0.03,
@@ -516,28 +513,28 @@ class Ch02ArenaEntrance(Event):
             time.sleep(1.5)
             await_input()
             print_slow(
-                "The arena opens before him. A circular cavern, pools filling it wall to wall — "
-                "churning, pulsating green that moves with its own slow intention. "
-                "The smell is overwhelming. The light casts no shadows.",
+                "The arena opened before him. A circular cavern, pools filling it wall to wall — "
+                "churning, pulsating green that moved with its own slow intention. "
+                "The smell was overwhelming. The light cast no shadows.",
                 delay=0.03,
             )
             time.sleep(1)
             print_slow(
-                "At the far end, something large rises from the center of the pools. "
-                "It has no face, no shape that lends itself to naming — only mass, and a slow "
-                "purposeful movement. Within that mass, something that does not belong: "
+                "At the far end, something large rose from the center of the pools. "
+                "It had no face, no shape that lent itself to naming — only mass, and a slow "
+                "purposeful movement. Within that mass, something that did not belong: "
                 "a glint, sharp and pale, glimpsed through the churning surface. "
                 "Consumed. Held. Not yet dissolved.",
                 delay=0.03,
             )
             time.sleep(1.5)
             print_slow(
-                "Jean has cleared drains before. Found the blockage. Removed what had lodged "
-                "where it shouldn't be. This is the same job.",
+                "Jean had cleared drains before. Found the blockage. Removed what had lodged "
+                "where it shouldn't be. This was the same job.",
                 delay=0.04,
             )
             time.sleep(1)
-            print_slow("He tells himself that.", delay=0.05)
+            print_slow("He told himself that.", delay=0.05)
             time.sleep(1)
             await_input()
         self.player.universe.story["arena_entered"] = "1"
@@ -573,37 +570,37 @@ class AfterDefeatingKingSlime(Event):
     def process(self):
         time.sleep(1)
         print_slow(
-            "The churning stills. A deep, resonant silence settles over the cavern.",
+            "The churning stilled. A deep, resonant silence settled over the cavern.",
             delay=0.04,
         )
         time.sleep(1)
         print_slow(
-            "Then — gradually — the green recedes. Ripple by ripple, the corruption dissolves "
+            "Then — gradually — the green receded. Ripple by ripple, the corruption dissolved "
             "outward from the center, the thick slime thinning and clearing until clean, "
-            "luminescent blue water fills the chamber.",
+            "luminescent blue water filled the chamber.",
             delay=0.03,
         )
         time.sleep(1.5)
         print_slow(
-            "The central stone island is exactly what it always was. "
-            "The light here is steady and quiet, blue-white, older than the corruption that hid it.",
+            "The central stone island was exactly what it always had been. "
+            "The light was steady and quiet, blue-white, older than the corruption that had hidden it.",
             delay=0.03,
         )
         time.sleep(1)
         print_slow(
-            "On the island, something catches the light. "
+            "On the island, something caught the light. "
             "Impossibly sharp. Impossibly beautiful.",
             delay=0.04,
         )
         time.sleep(1.5)
         print_slow(
-            "Jean stands in the clearing water. It's cold — rising back toward its natural level, "
-            "lapping at his boots. The fight is over. There is nothing left in the room that needs him.",
+            "Jean stood in the clearing water. It was cold — rising back toward its natural level, "
+            "lapping at his boots. The fight was over. There was nothing left in the room that needed him.",
             delay=0.03,
         )
         time.sleep(1)
         print_slow(
-            "He doesn't know what to do with his hands when they aren't needed.",
+            "He didn't know what to do with his hands when they weren't needed.",
             delay=0.04,
         )
         time.sleep(2)
@@ -646,30 +643,30 @@ class AfterDefeatingKingSlime(Event):
             delay=0.04,
         )
         time.sleep(0.5)
-        print_slow("Gorran rounds the archway and stops.", delay=0.05)
+        print_slow("Gorran rounded the archway and stopped.", delay=0.05)
         time.sleep(1)
         print_slow(
-            "He looks at the pools. Clean, blue, still. His great head moves slowly across the chamber, "
-            "taking in what it was and what it is now.",
+            "He looked at the pools. Clean, blue, still. His great head moved slowly across the chamber, "
+            "taking in what it had been and what it was now.",
             delay=0.03,
         )
         time.sleep(1.5)
         print_slow(
-            "He makes no sound. He just stands there in the entrance to the arena, "
+            "He made no sound. He just stood there in the entrance to the arena, "
             "looking at the water the way someone looks at something they thought was gone.",
             delay=0.03,
         )
         time.sleep(1)
         print_slow(
-            "Then, slowly, he walks to the edge of the nearest pool and lowers himself to one knee. "
-            "He extends one wide hand over the surface. Doesn't touch it. Just holds his palm there, "
+            "Then, slowly, he walked to the edge of the nearest pool and lowered himself to one knee. "
+            "He extended one wide hand over the surface. Didn't touch it. Just held his palm there, "
             "feeling the cold rise off it.",
             delay=0.03,
         )
         time.sleep(2)
         print_slow(
             "A sound from him — low and long, held in the chest. Not quite a word. "
-            "He stays like that for a moment, hand over the water. Then he straightens.",
+            "He stayed like that for a moment, hand over the water. Then he straightened.",
             delay=0.04,
         )
         time.sleep(1)
@@ -816,15 +813,15 @@ class Ch02FragmentReminder(Event):
             print_slow("A rumble from behind — low, insistent.", delay=0.04)
             time.sleep(1)
             print_slow(
-                "Gorran stands at the entrance to the corridor, one hand braced against the arch. "
-                "He is looking at the island.",
+                "Gorran stood at the entrance to the corridor, one hand braced against the arch. "
+                "He was looking at the island.",
                 delay=0.03,
             )
             time.sleep(1)
-            print_slow("Jean follows his gaze.", delay=0.05)
+            print_slow("Jean followed his gaze.", delay=0.05)
             time.sleep(1)
             print_slow(
-                "The fragment is still there. He walked out without it.",
+                "The fragment was still there. He'd walked out without it.",
                 delay=0.03,
             )
             time.sleep(1.5)
@@ -891,10 +888,10 @@ class Ch02KingSlimeMemoryFlash(MemoryFlash):
         aftermath = [
             "Silence.",
             "",
-            "Jean is standing on the stone island. The water around it is blue.",
-            "The fragment is in their hand, still sharp, still bright.",
+            "Jean stood on the stone island. The water around it was blue.",
+            "The fragment was in his hand, still sharp, still bright.",
             "",
-            "The bleeding finger is real. Everything else is gone.",
+            "The bleeding finger was real. Everything else was gone.",
         ]
         super().__init__(
             player=player,
@@ -949,7 +946,7 @@ class AfterKingSlimeReturn(Event):
             # First pass: display narration and present the choice prompt
             time.sleep(1)
             print_slow(
-                "Votha Krr rises from his throne as Jean enters. His deep-set eyes take in the "
+                "Votha Krr rose from his throne as Jean entered. His deep-set eyes took in the "
                 "bleeding finger, the fragment in Jean's hand, and Jean's expression — all at once.",
                 delay=0.03,
             )
@@ -962,8 +959,8 @@ class AfterKingSlimeReturn(Event):
             )
             time.sleep(1)
             print_slow(
-                "Jean still holds the mineral fragment. The cut on his finger has stopped bleeding "
-                "but hasn't stopped hurting.",
+                "Jean still held the mineral fragment. The cut on his finger had stopped bleeding "
+                "but hadn't stopped hurting.",
                 delay=0.03,
             )
             time.sleep(1)
@@ -988,7 +985,7 @@ class AfterKingSlimeReturn(Event):
             _frag_choice = "a"
 
         if _frag_choice == "a":
-            print_slow("Jean holds it out. Votha takes it from his hand.", delay=0.03)
+            print_slow("Jean held it out. Votha took it from his hand.", delay=0.03)
         elif _frag_choice == "b":
             dialogue("Jean", "What is this thing, exactly?", "cyan")
             time.sleep(0.5)
@@ -1001,7 +998,7 @@ class AfterKingSlimeReturn(Event):
                 "green",
             )
             time.sleep(1)
-            print_slow("He takes the fragment from Jean's hand.", delay=0.03)
+            print_slow("He took the fragment from Jean's hand.", delay=0.03)
         else:
             print_slow(
                 "Jean sets the fragment on the armrest of the throne without looking at Votha. "
@@ -1011,12 +1008,12 @@ class AfterKingSlimeReturn(Event):
             )
         time.sleep(1)
         print_slow(
-            "Votha regards the fragment for a single moment — then places it in his mouth.",
+            "Votha regarded the fragment for a single moment — then placed it in his mouth.",
             delay=0.03,
         )
         time.sleep(1)
         print_slow(
-            "A soft, contented rumble escapes him. The fragment is gone.",
+            "A soft, contented rumble escaped him. The fragment was gone.",
             delay=0.04,
         )
 
@@ -1034,8 +1031,8 @@ class AfterKingSlimeReturn(Event):
         )
         time.sleep(1)
         print_slow(
-            "He studies Jean's face. Then — the bleeding finger. "
-            "He regards it for a moment without comment.",
+            "He studied Jean's face. Then — the bleeding finger. "
+            "He regarded it for a moment without comment.",
             delay=0.03,
         )
         time.sleep(1.5)
@@ -1046,7 +1043,7 @@ class AfterKingSlimeReturn(Event):
         )
         time.sleep(1)
         print_slow(
-            "He says it simply. As an observation, not a compliment.", delay=0.03
+            "He said it simply. As an observation, not a compliment.", delay=0.03
         )
         time.sleep(1.5)
         dialogue(
@@ -1060,8 +1057,8 @@ class AfterKingSlimeReturn(Event):
         )
         time.sleep(1)
         print_slow(
-            "He does not elaborate. When Jean opens his mouth, Votha Krr's only answer "
-            "is to press two fingers briefly to his own chest — over the place a human "
+            "He did not elaborate. When Jean opened his mouth, Votha Krr's only answer "
+            "was to press two fingers briefly to his own chest — over the place a human "
             "would call the heart — and then withdraw.",
             delay=0.03,
         )

@@ -34,11 +34,11 @@ class GorranGestureEvent(Event):
             print("\n")
             time.sleep(0.3)
             print_slow(
-                "Gorran pauses at the gate as it seals. His palm rests flat against the stone — "
-                "one breath, maybe two. Then he turns without a word and follows.\n"
+                "Gorran paused at the gate as it sealed. His palm rested flat against the stone — "
+                "one breath, maybe two. Then he turned without a word and followed.\n"
             )
             time.sleep(1)
-            print_slow("Jean does not ask him.\n")
+            print_slow("Jean did not ask him.\n")
             time.sleep(0.5)
 
 
@@ -65,16 +65,16 @@ class EasternRoadTurnbackEvent(Event):
         if not self.player.skip_dialog:
             print("\n")
             time.sleep(0.3)
-            print_slow("Jean stands at the edge of the road east.\n")
+            print_slow("Jean stood at the edge of the road east.\n")
             time.sleep(1)
             print_slow(
-                "The Plains are out there — open ground, light, the kind of distance you could "
-                "just keep walking into. For a moment the road pulls at him in a way he doesn't examine.\n"
+                "The Plains were out there — open ground, light, the kind of distance you could "
+                "just keep walking into. For a moment the road pulled at him in a way he didn't examine.\n"
             )
             time.sleep(1.5)
             print_slow(
-                "Then Gorran's boots scrape gravel behind him, and whatever the feeling was, "
-                "it passes.\n"
+                "Then Gorran's boots scraped gravel behind him, and whatever the feeling was, "
+                "it passed.\n"
             )
             time.sleep(1)
             print_slow(colored("South. That's where this goes.", "cyan") + "\n")
@@ -125,24 +125,24 @@ class NomadCampArrivalEvent(Event):
         print("\n")
         time.sleep(0.5)
         print_slow(
-            "Jean smells the camp before he sees it — woodsmoke, dried meat, the particular "
-            "warmth of a fire that has been maintained rather than lit. The sound of the river "
-            "is constant behind it.",
+            "Jean smelled the camp before he saw it — woodsmoke, dried meat, the particular "
+            "warmth of a fire that had been maintained rather than lit. The sound of the river "
+            "was constant behind it.",
             delay=0.03,
         )
         time.sleep(1)
         print_slow(
-            "A woman is watching them from the camp's edge. She clocked them while they were "
-            "still fifty paces out — Jean is sure of it — but by the time he reaches the fire "
-            "ring she is already back to what she was doing, crouched over a pack, sorting "
+            "A woman was watching them from the camp's edge. She had clocked them while they were "
+            "still fifty paces out — Jean was sure of it — but by the time he reached the fire "
+            "ring she was already back to what she had been doing, crouched over a pack, sorting "
             "something with methodical attention.",
             delay=0.03,
         )
         time.sleep(1)
         print_slow(
-            "The camp is neat. Lean-tos of oiled canvas over light poles, angled correctly "
+            "The camp was neat. Lean-tos of oiled canvas over light poles, angled correctly "
             "against the prevailing wind. A fire built in an established ring, its stones "
-            "black with years of use. These are people who know how to be somewhere without "
+            "black with years of use. These were people who knew how to be somewhere without "
             "being of it.",
             delay=0.03,
         )
@@ -150,9 +150,9 @@ class NomadCampArrivalEvent(Event):
         await_input()
 
         print_slow(
-            "The woman doesn't look up. Her eyes find Jean for one flat second — taking in "
+            "The woman didn't look up. Her eyes found Jean for one flat second — taking in "
             "his gear, his bearing, the large stone figure standing slightly behind him — "
-            "and return to the pack.",
+            "and returned to the pack.",
             delay=0.03,
         )
         time.sleep(1)
@@ -161,32 +161,32 @@ class NomadCampArrivalEvent(Event):
         print_slow("Not a greeting. A question with a purpose.", delay=0.04)
         time.sleep(1)
         print_slow(
-            "When Jean says yes, she names a number. Flat, fair, not open to discussion. "
-            "She doesn't look up when she says it. She's already back to the pack before "
-            "the last word has settled.",
+            "When Jean said yes, she named a number. Flat, fair, not open to discussion. "
+            "She didn't look up when she said it. She was already back to the pack before "
+            "the last word had settled.",
             delay=0.03,
         )
         time.sleep(1.5)
         await_input()
 
         print_slow(
-            "An older man is tending the fire — unhurried, each movement economical in the "
-            "way of someone who has done this ten thousand times. He gives Jean one look "
-            "when Jean approaches: the look of someone who has seen desperate people cross "
-            "this river before, heading west, and knows most of them aren't running toward "
+            "An older man was tending the fire — unhurried, each movement economical in the "
+            "way of someone who has done this ten thousand times. He gave Jean one look "
+            "when Jean approached: the look of someone who had seen desperate people cross "
+            "this river before, heading west, and knew most of them weren't running toward "
             "something.",
             delay=0.03,
         )
         time.sleep(1.5)
         print_slow(
-            "He doesn't offer this observation aloud. He picks up a bowl and fills it from "
-            "the pot and holds it out. It is not a question.",
+            "He didn't offer this observation aloud. He picked up a bowl and filled it from "
+            "the pot and held it out. It was not a question.",
             delay=0.04,
         )
         time.sleep(1)
         print_slow(
-            "Gorran stands where Jean left him, still, watching the fire without watching "
-            "it. His presence has settled into the camp's edge the way large stones settle: "
+            "Gorran stood where Jean had left him, still, watching the fire without watching "
+            "it. His presence had settled into the camp's edge the way large stones settle: "
             "without effort, without apology.",
             delay=0.03,
         )
@@ -194,23 +194,23 @@ class NomadCampArrivalEvent(Event):
         await_input()
 
         print_slow(
-            "A girl — young, dark-haired, openly curious — is at the camp's far edge. She "
-            "is not approaching Gorran. She is simply standing at a distance that is "
+            "A girl — young, dark-haired, openly curious — was at the camp's far edge. She "
+            "was not approaching Gorran. She was simply standing at a distance that was "
             "technically not approaching, watching him with the focused intensity of someone "
             "doing serious research.",
             delay=0.03,
         )
         time.sleep(1)
         print_slow(
-            "She asks Mara something in a low voice. Something about Golemites. Whether "
-            "they sleep. Whether they eat. Whether the sound they make is a language or "
+            "She asked Mara something in a low voice. Something about Golemites. Whether "
+            "they slept. Whether they ate. Whether the sound they made was a language or "
             "just a sound.",
             delay=0.03,
         )
         time.sleep(1)
         print_slow(
-            "Gorran can almost certainly hear her. He gives no indication of this. He "
-            "allows her attention with the patient forbearance of a very old, very large "
+            "Gorran could almost certainly hear her. He gave no indication of this. He "
+            "allowed her attention with the patient forbearance of a very old, very large "
             "thing being studied by a small one.",
             delay=0.03,
         )
@@ -222,23 +222,23 @@ class NomadCampArrivalEvent(Event):
             item.__class__.__name__ == "Mace" for item in self.player.inventory
         )
         print_slow(
-            "A while later — Jean is sitting with the bowl, Gorran nearby, the fire "
-            "between them and the river — Mara speaks without looking up from what she "
-            "is sorting.",
+            "A while later — Jean was sitting with the bowl, Gorran nearby, the fire "
+            "between them and the river — Mara spoke without looking up from what she "
+            "was sorting.",
             delay=0.03,
         )
         time.sleep(1)
         if has_mace:
             print_slow(
-                "Her eyes track to Jean's mace for just a moment. Then back to her work.",
+                "Her eyes tracked to Jean's mace for just a moment. Then back to her work.",
                 delay=0.04,
             )
             time.sleep(0.5)
             dialogue("Mara", "That's religious kit.", "cyan")
         else:
             print_slow(
-                "Her eyes move across Jean — his posture, his hands, the way his weight "
-                "sits — and return to her work.",
+                "Her eyes moved across Jean — his posture, his hands, the way his weight "
+                "sat — and returned to her work.",
                 delay=0.04,
             )
             time.sleep(0.5)
@@ -249,7 +249,7 @@ class NomadCampArrivalEvent(Event):
         dialogue("Jean", "It was.", "cyan")
         time.sleep(1)
         print_slow(
-            "She doesn't follow up. She files it. The sorting continues.",
+            "She didn't follow up. She filed it. The sorting continued.",
             delay=0.04,
         )
         time.sleep(1.5)
