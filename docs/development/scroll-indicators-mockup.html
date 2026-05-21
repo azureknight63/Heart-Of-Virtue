@@ -1,0 +1,757 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Scroll Indicators Mockup — Heart of Virtue</title>
+<style>
+  /* ── Reset & Base ─────────────────────────────────────────────── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #0a0a0a;
+    color: #e0e0e0;
+    font-family: 'Courier New', monospace;
+    padding: 24px;
+    min-height: 100vh;
+  }
+
+  /* ── Page Layout ──────────────────────────────────────────────── */
+  h1 {
+    color: #00ff88;
+    font-size: 1.1rem;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    border-bottom: 1px solid rgba(0,255,136,0.3);
+    padding-bottom: 10px;
+    margin-bottom: 6px;
+  }
+  .subtitle {
+    color: #888;
+    font-size: 0.72rem;
+    margin-bottom: 28px;
+    letter-spacing: 1px;
+  }
+  .section-title {
+    color: #ffaa00;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    margin-bottom: 14px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid rgba(255,170,0,0.2);
+  }
+  .section { margin-bottom: 40px; }
+  .annotation {
+    color: #ffaa00;
+    font-size: 0.68rem;
+    line-height: 1.6;
+    margin-top: 10px;
+    max-width: 680px;
+  }
+  .annotation b { color: #ffcc00; }
+
+  /* ── State grid ───────────────────────────────────────────────── */
+  .state-grid {
+    display: flex;
+    gap: 20px;
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+  .state-col {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .state-label {
+    color: #888;
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+  }
+
+  /* ── Scroll Indicator animation ───────────────────────────────── */
+  @keyframes pulse-indicator {
+    0%, 100% { opacity: 0.45; }
+    50%       { opacity: 0.85; }
+  }
+  .scroll-indicator-label {
+    animation: pulse-indicator 1.8s ease-in-out infinite;
+    color: #00ff88;
+    font-size: 0.62rem;
+    letter-spacing: 1.5px;
+    text-align: center;
+    pointer-events: none;
+    white-space: nowrap;
+    font-family: 'Courier New', monospace;
+  }
+
+  /* ── Room Description Panel (CollapsibleRoomDescription) ──────── */
+
+  /* Outer frame — mirrors LeftPanel wrapper */
+  .room-panel-frame {
+    width: 240px;
+    background: #0a0a0a;
+    border: 1px solid rgba(0,255,136,0.25);
+    border-radius: 6px;
+    overflow: hidden;
+    box-shadow: 0 0 14px -4px rgba(0,255,136,0.15);
+  }
+
+  /* Collapsible header button */
+  .room-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: none;
+    border: none;
+    border-bottom: 1px solid rgba(0,255,136,0.2);
+    padding: 6px 8px;
+    color: #00ff88;
+    font-family: 'Courier New', monospace;
+    font-size: 11px;
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    width: 100%;
+    text-align: left;
+    cursor: pointer;
+  }
+  .room-panel-header .chevron {
+    font-size: 10px;
+    opacity: 0.7;
+    transform: rotate(180deg);
+    display: inline-block;
+  }
+
+  /* The scrollable wrapper — maxHeight: 200px mirrors the live component */
+  .room-scroll-outer {
+    position: relative;     /* anchor for absolute overlays */
+    max-height: 160px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(0,255,136,0.3) transparent;
+  }
+
+  /* Inner RoomContents box */
+  .room-contents {
+    border-left: 4px solid #00ff88;
+    background: rgba(0,100,50,0.2);
+    padding: 10px;
+    color: #00ddaa;
+    font-size: 14px;
+    line-height: 1.6;
+    font-family: Georgia, 'Times New Roman', serif;
+  }
+  .room-contents .entity-npc   { color: #00ff88; font-style: italic; }
+  .room-contents .entity-item  { color: #00ccff; font-style: italic; }
+  .room-contents .entity-obj   { color: #ffaa00; font-style: italic; }
+  .room-contents .nothing-here { color: #666; font-style: italic; font-size: 14px; }
+
+  /* ── Shared Scroll Indicator Overlay ──────────────────────────── */
+
+  /* Bottom fade + label */
+  .scroll-fade-bottom {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: 52px;
+    background: linear-gradient(
+      to bottom,
+      transparent 0%,
+      rgba(0, 20, 10, 0.92) 62%,
+      rgba(0, 20, 10, 1) 100%
+    );
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    padding-bottom: 5px;
+    pointer-events: none;
+    z-index: 10;
+  }
+
+  /* Top fade + label */
+  .scroll-fade-top {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 52px;
+    background: linear-gradient(
+      to top,
+      transparent 0%,
+      rgba(0, 20, 10, 0.92) 62%,
+      rgba(0, 20, 10, 1) 100%
+    );
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding-top: 5px;
+    pointer-events: none;
+    z-index: 10;
+  }
+
+  /* ── CombatLog Panel ───────────────────────────────────────────── */
+
+  .combat-log-frame {
+    width: 260px;
+    background: rgba(0,0,0,0.7);
+    border: 1px solid rgba(255,170,0,0.3);
+    border-radius: 4px;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+    overflow: hidden;
+  }
+  .combat-log-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 4px 12px;
+    background: rgba(0,0,0,0.3);
+    border-bottom: 1px solid rgba(255,170,0,0.1);
+    cursor: pointer;
+  }
+  .combat-log-header span {
+    color: #ffaa00;
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+  .combat-log-content-outer {
+    position: relative;
+    height: 120px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255,170,0,0.3) transparent;
+  }
+  .combat-log-content {
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-family: 'Courier New', monospace;
+  }
+  .log-entry { font-size: 12px; line-height: 1.4; }
+  .log-entry .ts { opacity: 0.45; margin-right: 6px; color: #888; font-size: 11px; }
+  .log-damage  { color: #ff4444; }
+  .log-heal    { color: #00ff88; }
+  .log-ability { color: #00ccff; }
+  .log-system  { color: #ffcc00; }
+  .log-info    { color: #888; }
+
+  /* CombatLog fade uses dark panel bg */
+  .combat-fade-bottom {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: 44px;
+    background: linear-gradient(
+      to bottom,
+      transparent 0%,
+      rgba(0, 0, 0, 0.88) 60%,
+      rgba(0, 0, 0, 1) 100%
+    );
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    padding-bottom: 4px;
+    pointer-events: none;
+    z-index: 10;
+  }
+  .combat-fade-top {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 44px;
+    background: linear-gradient(
+      to top,
+      transparent 0%,
+      rgba(0, 0, 0, 0.88) 60%,
+      rgba(0, 0, 0, 1) 100%
+    );
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding-top: 4px;
+    pointer-events: none;
+    z-index: 10;
+  }
+  .combat-log-indicator .scroll-indicator-label { color: #ffaa00; }
+
+  /* ── Annotated Anatomy Section ────────────────────────────────── */
+  .anatomy-frame {
+    width: 300px;
+    position: relative;
+  }
+  .arrow-annotation {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+  }
+  .arrow-line {
+    flex: 1;
+    height: 1px;
+    background: rgba(255,170,0,0.4);
+    position: relative;
+  }
+  .arrow-line::after {
+    content: '';
+    position: absolute;
+    right: -1px; top: -3px;
+    border-left: 5px solid rgba(255,170,0,0.6);
+    border-top: 3px solid transparent;
+    border-bottom: 3px solid transparent;
+  }
+  .ann-tag {
+    color: #ffaa00;
+    font-size: 0.62rem;
+    white-space: nowrap;
+    letter-spacing: 0.5px;
+  }
+
+  /* ── Separator ────────────────────────────────────────────────── */
+  .divider {
+    border: none;
+    border-top: 1px solid rgba(255,170,0,0.1);
+    margin: 32px 0;
+  }
+
+  /* ── Component behavior key ───────────────────────────────────── */
+  .behavior-table {
+    border-collapse: collapse;
+    font-size: 0.72rem;
+    color: #e0e0e0;
+  }
+  .behavior-table th {
+    color: #ffaa00;
+    text-align: left;
+    padding: 4px 16px 4px 0;
+    font-weight: bold;
+    text-transform: uppercase;
+    font-size: 0.65rem;
+    letter-spacing: 1px;
+    border-bottom: 1px solid rgba(255,170,0,0.2);
+  }
+  .behavior-table td {
+    padding: 5px 16px 5px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+    vertical-align: top;
+    line-height: 1.5;
+  }
+  .behavior-table td:first-child { color: #00ff88; }
+  .check { color: #00ff88; }
+  .cross { color: #ff4444; }
+</style>
+</head>
+<body>
+
+<h1>Scroll Indicators — UI Mockup</h1>
+<p class="subtitle">Branch: claude/room-description-scroll-indicators-m8JNK &nbsp;·&nbsp; CollapsibleRoomDescription + CombatLog + all scrollable panels</p>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- SECTION 1: State variations — Room Description                 -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-title">1 · Room Description — All 4 States</div>
+
+  <div class="state-grid">
+
+    <!-- ── State A: No overflow ── -->
+    <div class="state-col">
+      <div class="state-label">A · No overflow</div>
+      <div class="room-panel-frame">
+        <div class="room-panel-header">
+          Stone Antechamber
+          <span class="chevron">▼</span>
+        </div>
+        <div class="room-scroll-outer" style="max-height:160px;">
+          <!-- No indicators shown — content fits -->
+          <div class="room-contents">
+            A low archway leads into the keep proper. The floor is worn smooth by centuries of boots.
+            <div class="nothing-here" style="margin-top:8px;">(Nothing else here...)</div>
+          </div>
+        </div>
+      </div>
+      <div class="annotation">No indicators. Content fits within<br>the panel height.</div>
+    </div>
+
+    <!-- ── State B: Overflow bottom ── -->
+    <div class="state-col">
+      <div class="state-label">B · Overflow — bottom</div>
+      <div class="room-panel-frame">
+        <div class="room-panel-header">
+          The Dark Grotto
+          <span class="chevron">▼</span>
+        </div>
+        <!-- Outer scroll container — position:relative anchors overlays -->
+        <div class="room-scroll-outer" style="max-height:160px; overflow:hidden;">
+          <div class="room-contents">
+            Moisture beads on every surface here. The smell of mineral water and deep earth is
+            overwhelming. Strange luminescent fungi cling to the lower walls, casting a cold
+            blue-green light that makes every shadow writhe and shift.
+            <span class="entity-obj" style="display:block;margin-top:8px;">
+              The wall depression is slick with condensation, its edges worn smooth as though
+              many hands have traced it before Jean's.
+            </span>
+            <span class="entity-item" style="display:block;margin-top:8px;">
+              A tallow candle stub sits in a crude iron bracket. Its wick is still warm.
+            </span>
+          </div>
+          <!-- BOTTOM indicator only — content below the visible edge -->
+          <div class="scroll-fade-bottom">
+            <div class="scroll-indicator-label">▼ &nbsp; scroll &nbsp; ▼</div>
+          </div>
+        </div>
+      </div>
+      <div class="annotation">
+        <b>Bottom indicator only.</b> User is at the top<br>
+        of the content. Gradient fade + pulsing label<br>
+        signals there is more text below.
+      </div>
+    </div>
+
+    <!-- ── State C: Scrolled middle ── -->
+    <div class="state-col">
+      <div class="state-label">C · Scrolled — middle</div>
+      <div class="room-panel-frame">
+        <div class="room-panel-header">
+          The Dark Grotto
+          <span class="chevron">▼</span>
+        </div>
+        <div class="room-scroll-outer" style="max-height:160px; overflow:hidden;">
+          <div class="room-contents">
+            <!-- Simulated mid-scroll: top and bottom both visible -->
+            <span class="entity-obj" style="display:block;">
+              The wall depression is slick with condensation, its edges worn smooth.
+            </span>
+            <span class="entity-item" style="display:block;margin-top:8px;">
+              A tallow candle stub sits in a crude iron bracket. Its wick is still warm.
+            </span>
+            <span class="entity-npc" style="display:block;margin-top:8px;">
+              The hermit crouches near the far wall, muttering something about tides.
+            </span>
+          </div>
+          <!-- TOP indicator — something above -->
+          <div class="scroll-fade-top">
+            <div class="scroll-indicator-label">▲ &nbsp; scroll &nbsp; ▲</div>
+          </div>
+          <!-- BOTTOM indicator — something below -->
+          <div class="scroll-fade-bottom">
+            <div class="scroll-indicator-label">▼ &nbsp; scroll &nbsp; ▼</div>
+          </div>
+        </div>
+      </div>
+      <div class="annotation">
+        <b>Both indicators active.</b> Content exists<br>
+        above and below the visible window.
+      </div>
+    </div>
+
+    <!-- ── State D: Scrolled to end ── -->
+    <div class="state-col">
+      <div class="state-label">D · Scrolled to end</div>
+      <div class="room-panel-frame">
+        <div class="room-panel-header">
+          The Dark Grotto
+          <span class="chevron">▼</span>
+        </div>
+        <div class="room-scroll-outer" style="max-height:160px; overflow:hidden;">
+          <div class="room-contents">
+            <!-- Simulated bottom-of-scroll: only top indicator -->
+            <span class="entity-npc" style="display:block;">
+              The hermit crouches near the far wall, muttering something about tides.
+            </span>
+            <div class="nothing-here" style="margin-top:8px;">(Nothing else here...)</div>
+          </div>
+          <!-- TOP indicator only — user is at the bottom -->
+          <div class="scroll-fade-top">
+            <div class="scroll-indicator-label">▲ &nbsp; scroll &nbsp; ▲</div>
+          </div>
+        </div>
+      </div>
+      <div class="annotation">
+        <b>Top indicator only.</b> User has reached<br>
+        the bottom of the content. Bottom<br>
+        indicator disappears.
+      </div>
+    </div>
+
+  </div><!-- /state-grid -->
+</div><!-- /section -->
+
+<hr class="divider">
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- SECTION 2: CombatLog with scroll indicators                    -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-title">2 · CombatLog — Same Treatment, Orange Palette</div>
+
+  <div class="state-grid">
+
+    <!-- CombatLog: overflow bottom (new messages below) -->
+    <div class="state-col">
+      <div class="state-label">Overflow — bottom (new entries below)</div>
+      <div class="combat-log-frame">
+        <div class="combat-log-header">
+          <span>Combat Log</span>
+          <span style="color:#ffaa00;font-size:0.7rem;">▼</span>
+        </div>
+        <div class="combat-log-content-outer">
+          <div class="combat-log-content">
+            <div class="log-entry"><span class="ts">[00:01]</span><span class="log-system">Combat begins! Jean faces the Lurker.</span></div>
+            <div class="log-entry"><span class="ts">[00:02]</span><span class="log-ability">Jean uses Thrust.</span></div>
+            <div class="log-entry"><span class="ts">[00:02]</span><span class="log-damage">Lurker takes 14 damage.</span></div>
+            <div class="log-entry"><span class="ts">[00:03]</span><span class="log-info">Lurker growls and shifts position.</span></div>
+          </div>
+          <!-- Bottom indicator: more entries scrolled below -->
+          <div class="combat-fade-bottom combat-log-indicator">
+            <div class="scroll-indicator-label" style="color:#ffaa00;">▼ &nbsp; scroll &nbsp; ▼</div>
+          </div>
+        </div>
+      </div>
+      <div class="annotation">
+        CombatLog indicator uses <b style="color:#ffaa00;">orange</b> to match its<br>
+        existing border and header palette.<br>
+        Gradient fades to the panel's dark bg color.
+      </div>
+    </div>
+
+    <!-- CombatLog: scrolled middle -->
+    <div class="state-col">
+      <div class="state-label">Scrolled — middle</div>
+      <div class="combat-log-frame">
+        <div class="combat-log-header">
+          <span>Combat Log</span>
+          <span style="color:#ffaa00;font-size:0.7rem;">▼</span>
+        </div>
+        <div class="combat-log-content-outer">
+          <div class="combat-log-content">
+            <div class="log-entry"><span class="ts">[00:04]</span><span class="log-damage">Lurker strikes Jean for 8 damage.</span></div>
+            <div class="log-entry"><span class="ts">[00:05]</span><span class="log-heal">Jean rests. Recovers 5 HP.</span></div>
+            <div class="log-entry"><span class="ts">[00:06]</span><span class="log-ability">Jean uses Riposte.</span></div>
+            <div class="log-entry"><span class="ts">[00:06]</span><span class="log-damage">Lurker takes 22 damage (critical).</span></div>
+          </div>
+          <div class="combat-fade-top combat-log-indicator">
+            <div class="scroll-indicator-label" style="color:#ffaa00;">▲ &nbsp; scroll &nbsp; ▲</div>
+          </div>
+          <div class="combat-fade-bottom combat-log-indicator">
+            <div class="scroll-indicator-label" style="color:#ffaa00;">▼ &nbsp; scroll &nbsp; ▼</div>
+          </div>
+        </div>
+      </div>
+      <div class="annotation">Both top and bottom orange indicators active.</div>
+    </div>
+
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- SECTION 3: Anatomy close-up                                    -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-title">3 · Anatomy — How the Overlay is Built</div>
+
+  <div style="display:flex; gap:32px; flex-wrap:wrap; align-items:flex-start;">
+
+    <!-- Enlarged room panel with callouts -->
+    <div style="position:relative; width:280px;">
+      <div class="room-panel-frame" style="width:100%;">
+        <div class="room-panel-header">
+          The Dark Grotto
+          <span class="chevron">▼</span>
+        </div>
+        <div class="room-scroll-outer" style="max-height:160px; overflow:hidden; position:relative;">
+          <div class="room-contents">
+            Moisture beads on every surface. The smell of mineral water and deep earth is
+            overwhelming. Strange luminescent fungi cling to the walls.
+            <span class="entity-obj" style="display:block;margin-top:8px;">
+              The wall depression is slick with condensation.
+            </span>
+            <span class="entity-item" style="display:block;margin-top:8px;">
+              A tallow candle stub sits in a crude iron bracket.
+            </span>
+          </div>
+
+          <!-- Bottom indicator (with extra border for anatomy callout) -->
+          <div class="scroll-fade-bottom" style="outline: 1px dashed rgba(255,170,0,0.5);">
+            <div class="scroll-indicator-label">▼ &nbsp; scroll &nbsp; ▼</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Callout lines -->
+      <div style="position:absolute; right:-120px; top:82px; display:flex; align-items:center; gap:4px; pointer-events:none;">
+        <div style="width:110px; height:1px; background:rgba(255,170,0,0.4); position:relative;">
+          <div style="position:absolute;left:0;top:-3px;border-right:5px solid rgba(255,170,0,0.6);border-top:3px solid transparent;border-bottom:3px solid transparent;"></div>
+        </div>
+        <span class="ann-tag">position:absolute overlay<br>height: 52px<br>pointer-events: none</span>
+      </div>
+
+      <div style="position:absolute; right:-120px; top:118px; display:flex; align-items:center; gap:4px; pointer-events:none;">
+        <div style="width:110px; height:1px; background:rgba(255,170,0,0.4); position:relative;">
+          <div style="position:absolute;left:0;top:-3px;border-right:5px solid rgba(255,170,0,0.6);border-top:3px solid transparent;border-bottom:3px solid transparent;"></div>
+        </div>
+        <span class="ann-tag">▼ scroll ▼ label<br>pulsing opacity 0.45→0.85<br>1.8s ease-in-out loop</span>
+      </div>
+    </div>
+
+    <!-- Technical spec table -->
+    <div style="margin-top:4px;">
+      <table class="behavior-table">
+        <thead>
+          <tr>
+            <th>Property</th>
+            <th>Value</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Gradient (room)</td>
+            <td style="color:#e0e0e0;">transparent → rgba(0,20,10,1) · 52px tall</td>
+          </tr>
+          <tr>
+            <td>Gradient (log)</td>
+            <td style="color:#e0e0e0;">transparent → rgba(0,0,0,1) · 44px tall</td>
+          </tr>
+          <tr>
+            <td>Label color (room)</td>
+            <td style="color:#00ff88;">#00ff88 · primary</td>
+          </tr>
+          <tr>
+            <td>Label color (log)</td>
+            <td style="color:#ffaa00;">#ffaa00 · secondary</td>
+          </tr>
+          <tr>
+            <td>Label font size</td>
+            <td style="color:#e0e0e0;">0.62rem · letter-spacing 1.5px</td>
+          </tr>
+          <tr>
+            <td>Animation</td>
+            <td style="color:#e0e0e0;">opacity 0.45↔0.85 · 1.8s ease-in-out · infinite</td>
+          </tr>
+          <tr>
+            <td>Pointer events</td>
+            <td style="color:#e0e0e0;">none (scroll still works through overlay)</td>
+          </tr>
+          <tr>
+            <td>z-index</td>
+            <td style="color:#e0e0e0;">10 (above text, below modal/tooltips)</td>
+          </tr>
+          <tr>
+            <td>Bottom triggers</td>
+            <td style="color:#e0e0e0;">scrollTop + clientHeight &lt; scrollHeight − 4px</td>
+          </tr>
+          <tr>
+            <td>Top triggers</td>
+            <td style="color:#e0e0e0;">scrollTop &gt; 4px</td>
+          </tr>
+          <tr>
+            <td>Scroll event</td>
+            <td style="color:#e0e0e0;">onScroll + ResizeObserver on content</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- SECTION 4: Dynamic behaviour key                               -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-title">4 · Dynamic Behaviour — When Each Indicator Is Shown</div>
+
+  <table class="behavior-table" style="margin-bottom:12px;">
+    <thead>
+      <tr>
+        <th>Scroll position</th>
+        <th style="color:#00ff88;">▲ top indicator</th>
+        <th style="color:#00ff88;">▼ bottom indicator</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Content fits (no overflow)</td>
+        <td><span class="cross">✗ hidden</span></td>
+        <td><span class="cross">✗ hidden</span></td>
+      </tr>
+      <tr>
+        <td>At top (scrollTop ≤ 4px)</td>
+        <td><span class="cross">✗ hidden</span></td>
+        <td><span class="check">✓ visible</span></td>
+      </tr>
+      <tr>
+        <td>Middle (scrolled partway)</td>
+        <td><span class="check">✓ visible</span></td>
+        <td><span class="check">✓ visible</span></td>
+      </tr>
+      <tr>
+        <td>At bottom (fully scrolled)</td>
+        <td><span class="check">✓ visible</span></td>
+        <td><span class="cross">✗ hidden</span></td>
+      </tr>
+      <tr>
+        <td>Panel collapsed / hidden</td>
+        <td><span class="cross">✗ n/a</span></td>
+        <td><span class="cross">✗ n/a</span></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="annotation">
+    <b>Implementation hook:</b> A custom <code style="color:#00ccff;">useScrollIndicators(ref)</code> hook
+    returns <code style="color:#00ccff;">{ showTop, showBottom }</code> booleans.<br>
+    Attach a scroll listener + ResizeObserver on the container ref.
+    Re-check on content changes (location prop, log prop).<br>
+    The hook is reusable across CollapsibleRoomDescription, CombatLog, Inventory, NpcChatPanel, and
+    any future scrollable panel — no per-component code duplication.
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- SECTION 5: Panels at a glance                                  -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-title">5 · All Panels — Colour Palette at a Glance</div>
+  <div style="display:flex; gap:16px; flex-wrap:wrap; align-items:center;">
+
+    <!-- Room description chip -->
+    <div style="border:1px solid rgba(0,255,136,0.35); border-radius:5px; padding:8px 14px; font-size:0.72rem; display:flex; flex-direction:column; gap:5px; background:rgba(0,255,136,0.04);">
+      <span style="color:#00ff88; font-weight:bold; text-transform:uppercase; letter-spacing:1px;">Room Description</span>
+      <span style="color:#888;">Gradient bg: rgba(0,20,10,1)</span>
+      <span style="color:#00ff88; animation: pulse-indicator 1.8s ease-in-out infinite; display:inline-block;">▼ scroll ▼</span>
+    </div>
+
+    <!-- CombatLog chip -->
+    <div style="border:1px solid rgba(255,170,0,0.35); border-radius:5px; padding:8px 14px; font-size:0.72rem; display:flex; flex-direction:column; gap:5px; background:rgba(255,170,0,0.04);">
+      <span style="color:#ffaa00; font-weight:bold; text-transform:uppercase; letter-spacing:1px;">Combat Log</span>
+      <span style="color:#888;">Gradient bg: rgba(0,0,0,1)</span>
+      <span style="color:#ffaa00; animation: pulse-indicator 1.8s ease-in-out infinite; display:inline-block;">▼ scroll ▼</span>
+    </div>
+
+    <!-- Inventory chip -->
+    <div style="border:1px solid rgba(0,204,255,0.35); border-radius:5px; padding:8px 14px; font-size:0.72rem; display:flex; flex-direction:column; gap:5px; background:rgba(0,204,255,0.04);">
+      <span style="color:#00ccff; font-weight:bold; text-transform:uppercase; letter-spacing:1px;">Inventory</span>
+      <span style="color:#888;">Gradient bg: rgba(0,0,0,1)</span>
+      <span style="color:#00ccff; animation: pulse-indicator 1.8s ease-in-out infinite; display:inline-block;">▼ scroll ▼</span>
+    </div>
+
+    <!-- NPC Chat chip -->
+    <div style="border:1px solid rgba(255,204,0,0.35); border-radius:5px; padding:8px 14px; font-size:0.72rem; display:flex; flex-direction:column; gap:5px; background:rgba(255,204,0,0.04);">
+      <span style="color:#ffcc00; font-weight:bold; text-transform:uppercase; letter-spacing:1px;">NPC Chat Panel</span>
+      <span style="color:#888;">Gradient bg: rgba(0,0,0,1)</span>
+      <span style="color:#ffcc00; animation: pulse-indicator 1.8s ease-in-out infinite; display:inline-block;">▼ scroll ▼</span>
+    </div>
+
+  </div>
+  <div class="annotation" style="margin-top:14px;">
+    Each panel uses the <b>same gradient + label structure</b> but tinted to its own accent colour.<br>
+    The <code style="color:#00ccff;">useScrollIndicators</code> hook is colour-agnostic — the indicator color is passed as a prop.
+  </div>
+</div>
+
+</body>
+</html>
