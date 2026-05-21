@@ -2,6 +2,7 @@ import logging
 import uuid
 import contextlib
 import io
+import itertools
 import re
 from typing import TYPE_CHECKING, Dict, Any, Optional, List
 from unittest.mock import patch
@@ -123,6 +124,31 @@ class GameService:
         if hasattr(event, "__module__"):
             modules.append(event.__module__)
         return modules
+
+    # Priority-ordered responses that cover all known menu formats in story events.
+    # The cycle lets a single mock_input function terminate *any* while-loop guard
+    # within at most len(_MOCK_INPUT_CYCLE) calls: letter menus (a/b/c), numeric
+    # menus (1/2/3), and legacy zero-indexed menus (0).
+    _MOCK_INPUT_CYCLE = ["a", "1", "b", "2", "c", "3", "0", "n", "y"]
+
+    @staticmethod
+    def _make_mock_input(output_buffer: io.StringIO):
+        """Return a mock_input closure backed by a cycling response list.
+
+        Writes the prompt to output_buffer (so it appears in captured event
+        output), then returns the next value from _MOCK_INPUT_CYCLE.  Using a
+        cycle means repeated calls within the same event processing invocation
+        will try different values, so any while-loop with a finite valid-input
+        set will terminate even if the first choice isn't accepted.
+        """
+        _cycle = itertools.cycle(GameService._MOCK_INPUT_CYCLE)
+
+        def mock_input(prompt=""):
+            if prompt:
+                output_buffer.write(str(prompt) + "\n")
+            return next(_cycle)
+
+        return mock_input
 
     def _build_event_patches(
         self, target_modules, mock_input, mock_cprint, mock_print_slow
@@ -716,10 +742,7 @@ class GameService:
                     def mock_print_slow(text, speed="slow"):
                         f.write(str(text) + "\n")
 
-                    def mock_input(prompt=""):
-                        if prompt:
-                            f.write(str(prompt) + "\n")
-                        return "1"  # Default to first option
+                    mock_input = self._make_mock_input(f)
 
                     target_modules = self._get_event_target_modules(
                         event, include_animations=True
@@ -1847,10 +1870,7 @@ class GameService:
                     def mock_print_slow(text, speed="slow"):
                         f.write(str(text) + "\n")
 
-                    def mock_input(prompt=""):
-                        if prompt:
-                            f.write(str(prompt) + "\n")
-                        return "1"
+                    mock_input = self._make_mock_input(f)
 
                     target_modules = self._get_event_target_modules(
                         event, include_animations=True

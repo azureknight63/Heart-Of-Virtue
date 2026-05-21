@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import apiClient from '../api/client'
+import { player as playerApi } from '../api/endpoints'
 
 export default function ItemDetailDialog({ item, player, onClose, onBack, onRefetch, onItemRemoved, onItemUpdated, combatMode = false }) {
   const [isLoading, setIsLoading] = useState(false)
@@ -16,7 +17,7 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
     if (showAllyPicker && combatMode) {
       const fetchFreshPartyMembers = async () => {
         try {
-          const response = await apiClient.get('/player/status')
+          const response = await playerApi.getStatus()
           if (response.data?.status?.party_members) {
             setFreshPartyMembers(response.data.status.party_members)
           }
