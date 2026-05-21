@@ -465,7 +465,7 @@ class Ch02GuideToCitadel(
                 "He says it the same way he said it the first time. Like a door left open."
             )
 
-        # At the end of the sequence, don't forget to teleport to the Citadel tile.
+        self.player.teleport("grondia", (10, 5))
 
         #  Remove this event from the tile
         self.tile.remove_event(self.name)
@@ -1071,4 +1071,3 @@ class AfterKingSlimeReturn(Event):
         self.completed = True
         self.player.universe.story["votha_krr_response_given"] = "1"
         self.tile.remove_event(self.name)
-
