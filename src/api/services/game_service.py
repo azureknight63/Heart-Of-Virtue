@@ -2499,7 +2499,7 @@ class GameService:
         stats["weight"] = weight
         stats["max_weight"] = max_weight
         stats["gold"] = get_gold(getattr(player, "inventory", []))
-        stats["protection"] = getattr(player, "protection", 0)
+        stats["protection"] = round(getattr(player, "protection", 0))
 
         # Calculate combat stats
         weapon = getattr(player, "eq_weapon", None)
