@@ -2,6 +2,8 @@ import { useState, useRef, useEffect } from 'react'
 import DOMPurify from 'dompurify'
 import { colors, spacing, fonts, shadows } from '../styles/theme'
 import GameText from './GameText'
+import ScrollFadeIndicator from './ScrollFadeIndicator'
+import useScrollIndicators from '../hooks/useScrollIndicators'
 
 const LOG_ENTRY_COLORS = {
   damage: colors.danger,
@@ -17,6 +19,7 @@ export default function CombatLog({ log, className = '', allowResize = true, isM
   const [isResizing, setIsResizing] = useState(false)
   const logRef = useRef(null)
   const contentRef = useRef(null)
+  const { showTop, showBottom, check } = useScrollIndicators(contentRef)
 
   const handleMouseDown = () => {
     if (allowResize) setIsResizing(true)
@@ -48,7 +51,8 @@ export default function CombatLog({ log, className = '', allowResize = true, isM
     if (contentRef.current) {
       contentRef.current.scrollTop = contentRef.current.scrollHeight
     }
-  }, [log, isMyTurn])
+    check()
+  }, [log, isMyTurn, check])
 
   return (
     <div
@@ -88,42 +92,50 @@ export default function CombatLog({ log, className = '', allowResize = true, isM
 
       {!isCollapsed && (
         <>
-          <div
-            ref={contentRef}
-            style={{
-              flex: 1,
-              overflowY: 'auto',
-              padding: spacing.sm,
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '4px',
-              fontFamily: fonts.main,
-              scrollbarWidth: 'thin',
-              scrollbarColor: `${colors.border.main} transparent`,
-              WebkitOverflowScrolling: 'touch',
-              touchAction: 'pan-y',
-            }}
-          >
-            {log?.length === 0 && (
-              <GameText variant="muted" size="sm" align="center" style={{ fontStyle: 'italic', padding: spacing.sm }}>
-                Combat started...
-              </GameText>
-            )}
-            {log?.filter(entry => entry.type !== 'animation').map((entry, idx) => {
-              const textColor = LOG_ENTRY_COLORS[entry.type] || colors.text.main
+          <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
+            <div
+              ref={contentRef}
+              style={{
+                height: '100%',
+                overflowY: 'auto',
+                padding: spacing.sm,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '4px',
+                fontFamily: fonts.main,
+                scrollbarWidth: 'thin',
+                scrollbarColor: `${colors.border.main} transparent`,
+                WebkitOverflowScrolling: 'touch',
+                touchAction: 'pan-y',
+              }}
+            >
+              {log?.length === 0 && (
+                <GameText variant="muted" size="sm" align="center" style={{ fontStyle: 'italic', padding: spacing.sm }}>
+                  Combat started...
+                </GameText>
+              )}
+              {log?.filter(entry => entry.type !== 'animation').map((entry, idx) => {
+                const textColor = LOG_ENTRY_COLORS[entry.type] || colors.text.main
 
-              return (
-                <div key={entry.id ?? `${entry.timestamp}-${idx}`} style={{ fontSize: '13px', lineHeight: '1.4' }}>
-                  <span style={{ opacity: 0.5, marginRight: spacing.sm, color: colors.text.muted, fontSize: '11px' }}>
-                    [{entry.timestamp || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}]
-                  </span>
-                  <span
-                    style={{ color: textColor }}
-                    dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(entry.message) }}
-                  />
-                </div>
-              )
-            })}
+                return (
+                  <div key={entry.id ?? `${entry.timestamp}-${idx}`} style={{ fontSize: '13px', lineHeight: '1.4' }}>
+                    <span style={{ opacity: 0.5, marginRight: spacing.sm, color: colors.text.muted, fontSize: '11px' }}>
+                      [{entry.timestamp || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}]
+                    </span>
+                    <span
+                      style={{ color: textColor }}
+                      dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(entry.message) }}
+                    />
+                  </div>
+                )
+              })}
+            </div>
+            {showTop && (
+              <ScrollFadeIndicator position="top" color={colors.secondary} bgColor="#030303" />
+            )}
+            {showBottom && (
+              <ScrollFadeIndicator position="bottom" color={colors.secondary} bgColor="#030303" />
+            )}
           </div>
           {allowResize && (
             <div

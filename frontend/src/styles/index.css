@@ -641,3 +641,12 @@ body.damage-flash-active::before {
   100% { opacity: 0.3; transform: scale(0.8); }
 }
 
+@keyframes scroll-indicator-pulse {
+  0%, 100% { opacity: 0.45; }
+  50%       { opacity: 0.85; }
+}
+
+.scroll-indicator-label {
+  animation: scroll-indicator-pulse 1.8s ease-in-out infinite;
+}
+

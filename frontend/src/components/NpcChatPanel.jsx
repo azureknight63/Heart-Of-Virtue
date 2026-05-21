@@ -3,6 +3,8 @@ import npcChat from '../api/npcChat'
 import BaseDialog from './BaseDialog'
 import GameButton from './GameButton'
 import TypewriterOutput from './TypewriterOutput'
+import ScrollFadeIndicator from './ScrollFadeIndicator'
+import useScrollIndicators from '../hooks/useScrollIndicators'
 import { colors, spacing, fonts } from '../styles/theme'
 
 /**
@@ -23,6 +25,10 @@ export default function NpcChatPanel({ npcId, npcName, onClose }) {
   const [error, setError] = useState(null)
   const [latestNpcText, setLatestNpcText] = useState(null)
   const retryFnRef = useRef(null)
+  const messagesRef = useRef(null)
+  const { showTop, showBottom, check } = useScrollIndicators(messagesRef)
+
+  useEffect(() => { check() }, [messages, check])
 
   // On mount, open the conversation
   useEffect(() => {
@@ -167,11 +173,12 @@ export default function NpcChatPanel({ npcId, npcName, onClose }) {
       </div>
 
       {/* Messages Area */}
+      <div style={{ position: 'relative', marginBottom: spacing.md }}>
       <div
+        ref={messagesRef}
         style={{
           maxHeight: '280px',
           overflowY: 'auto',
-          marginBottom: spacing.md,
           display: 'flex',
           flexDirection: 'column',
           gap: spacing.md,
@@ -257,6 +264,13 @@ export default function NpcChatPanel({ npcId, npcName, onClose }) {
             }}
           />
         )}
+      </div>
+      {showTop && (
+        <ScrollFadeIndicator position="top" color={colors.secondary} bgColor="#0a0a0a" />
+      )}
+      {showBottom && (
+        <ScrollFadeIndicator position="bottom" color={colors.secondary} bgColor="#0a0a0a" />
+      )}
       </div>
 
       {/* Error State */}
