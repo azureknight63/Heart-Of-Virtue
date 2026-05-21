@@ -349,7 +349,16 @@ class StMichael(Shrine):
         )
         # Declare input requirements for API mode
         self.input_type = "choice"
-        self.input_prompt = "Selection:"
+        self.input_prompt = "TELL ME THE INSTRUMENT OF JUSTICE THOU DESIREST."
+        self.description = (
+            "This, particularly, is a shrine to Saint Michael the Archangel. "
+            "There is a small statue depicting St Michael spearing a vicious dragon. "
+            "An inscription on the shrine reads:\n\n"
+            "Sáncte Míchael Archángele, defénde nos in proélio...\n\n"
+            "Suddenly, Jean has the feeling of intense heat all around him. "
+            "He hears a voice echoing inside his head.\n\n"
+            "CHILD, THY FAITH PRESERVES THEE. TELL ME THE INSTRUMENT OF JUSTICE THOU DESIREST."
+        )
         # Generate weapon choices at init time
         self._generate_weapon_choices()
 
@@ -391,42 +400,32 @@ class StMichael(Shrine):
         return self.input_options
 
     def process(self, user_input=None):
-        print("This, particularly, is a shrine to Saint Michael the Archangel.")
-        print("There is a small statue depicting St Michael spearing a vicious dragon.")
-        print("""An inscription on the shrine reads,
+        if user_input is None:
+            # Terminal path: print prose + choices and collect input directly
+            print("This, particularly, is a shrine to Saint Michael the Archangel.")
+            print("There is a small statue depicting St Michael spearing a vicious dragon.")
+            print("""An inscription on the shrine reads,
 
         Sáncte Míchael Archángele, defénde nos in proélio, cóntra nequítiam et insídias diáboli ésto præsídium.
         Ímperet ílli Déus, súpplices deprecámur: tuque, prínceps milítiæ cæléstis, Sátanam aliósque spíritus malígnos,
         qui ad perditiónem animárum pervagántur in múndo, divína virtúte, in inférnum detrúde. Ámen.
 
         """)
-        print(
-            "Suddenly, Jean has the feeling of intense heat all around him. "
-            "He hears a voice echoing inside his head."
-        )
-        time.sleep(2)
-        cprint(
-            """CHILD, THY FAITH PRESERVES THEE. TELL ME THE INSTRUMENT OF JUSTICE THOU DESIREST.""",
-            "red",
-        )
-
-        for i, choice in enumerate(self.available_choices):
-            print("{}: {}".format(i, choice[0]))
-
-        if user_input is None:
+            print(
+                "Suddenly, Jean has the feeling of intense heat all around him. "
+                "He hears a voice echoing inside his head."
+            )
+            time.sleep(2)
+            cprint(
+                """CHILD, THY FAITH PRESERVES THEE. TELL ME THE INSTRUMENT OF JUSTICE THOU DESIREST.""",
+                "red",
+            )
+            for i, choice in enumerate(self.available_choices):
+                print("{}: {}".format(i, choice[0]))
             self.needs_input = True
             return
 
         selection = user_input
-        if selection is None:
-            # Fallback for terminal mode, but skip await_input if in API mode (user_input provided)
-            # Actually, just remove the blocking await_input as well
-            # functions.await_input()
-            try:
-                selection = input(colored("Selection: ", "cyan"))
-            except (EOFError, OSError, ValueError):
-                # Default to first option if no input available
-                selection = "0"
 
         if functions.is_input_integer(selection):
             selection = int(selection)
