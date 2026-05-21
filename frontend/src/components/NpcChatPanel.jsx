@@ -274,7 +274,7 @@ export default function NpcChatPanel({ npcId, npcName, onClose }) {
           }}
         >
           {error}
-          {retryFn && (
+          {retryFnRef.current && (
             <div style={{ marginTop: spacing.sm }}>
               <GameButton
                 variant="secondary"

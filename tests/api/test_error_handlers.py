@@ -67,6 +67,12 @@ class TestErrorHandlers:
 
             abort(429)
 
+        @app.route("/test_500")
+        def test_500():
+            from flask import abort
+
+            abort(500)
+
         @app.route("/test_503")
         def test_503():
             from flask import abort
@@ -76,6 +82,8 @@ class TestErrorHandlers:
         @app.route("/test_exception")
         def test_exception():
             raise Exception("Test exception")
+
+        return app
 
     @pytest.fixture
     def client(self, app):

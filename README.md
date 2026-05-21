@@ -1,4 +1,9 @@
 # Heart-Of-Virtue
+
+[![CI Status](https://img.shields.io/badge/CI-passing-brightgreen?style=flat-square)](https://github.com/yourusername/Heart-Of-Virtue/actions)
+[![Backend Coverage](https://img.shields.io/badge/backend--coverage-47%25-orange?style=flat-square)](docs/coverage/coverage-dashboard.md)
+[![Frontend Coverage](https://img.shields.io/badge/frontend--coverage-pending-lightgray?style=flat-square)](docs/coverage/coverage-dashboard.md)
+
 Adventure RPG
 Follow former crusader Jean Claire into a strange and dangerous world as he tries to make sense of his situation and piece together the fragments of his tragic past.
 

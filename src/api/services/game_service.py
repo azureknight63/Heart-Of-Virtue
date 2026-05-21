@@ -321,6 +321,10 @@ class GameService:
         Returns:
             Dictionary with room data (position, description, exits, items, npcs, objects)
         """
+        # FIX 4: Add None check for universe
+        if not hasattr(player, "universe") or player.universe is None:
+            return {"error": "Player universe not initialized"}
+
         tile = player.universe.get_tile(player.location_x, player.location_y)
         if not tile:
             return {"error": "Invalid player position"}
@@ -514,6 +518,13 @@ class GameService:
         Returns:
             Dictionary with result of movement
         """
+        # FIX 5: Add defensive checks at method start
+        if not hasattr(player, "universe") or player.universe is None:
+            return {"error": "Player universe not initialized"}
+
+        if not hasattr(player, "location_x") or not hasattr(player, "location_y"):
+            return {"error": "Player position not initialized"}
+
         valid_directions = [
             "north",
             "south",
@@ -4749,6 +4760,23 @@ class GameService:
         Returns:
             Dict with success, collected list, and skipped list.
         """
+        # FIX 3: Add parameter validation
+        if item_names is None:
+            item_names = []
+        elif not isinstance(item_names, list):
+            return {
+                "success": False,
+                "error": f"Invalid item_names parameter: expected list, got {type(item_names).__name__}",
+            }
+
+        # Validate each item name is a string
+        for name in item_names:
+            if not isinstance(name, str):
+                return {
+                    "success": False,
+                    "error": f"Invalid item name in list: expected string, got {type(name).__name__}",
+                }
+
         tile = getattr(player, "current_room", None)
         if not tile or not hasattr(tile, "items_here"):
             player.combat_drops = []
@@ -4804,6 +4832,39 @@ class GameService:
             if str(id(npc)) == npc_id and hasattr(npc, "shop"):
                 return npc
         return None
+
+    def _validate_shop_transaction(
+        self, merchant: Any, quantity: int, required_fields: list = None
+    ) -> Dict[str, Any]:
+        """FIX 6: Validate shop transaction prerequisites.
+
+        Args:
+            merchant: The merchant NPC
+            quantity: Transaction quantity
+            required_fields: Optional list of field names to validate on merchant
+
+        Returns:
+            Dict with error key if validation fails, empty dict if validation passes
+        """
+        if merchant is None:
+            return {"error": "Merchant not found at this location"}
+
+        if merchant.shop is None:
+            merchant.initialize_shop()
+
+        # Validate quantity
+        if not isinstance(quantity, int) or quantity < 1:
+            return {"error": "Invalid quantity"}
+
+        # Validate required fields on merchant if specified
+        if required_fields:
+            for field in required_fields:
+                if not hasattr(merchant, field):
+                    return {
+                        "error": f"Merchant configuration incomplete: missing {field}"
+                    }
+
+        return {}
 
     def get_shop_state(self, player: Any, npc_id: str) -> Dict[str, Any]:
         """Return the full shop state for a merchant NPC.
@@ -4871,11 +4932,10 @@ class GameService:
         from src.api.serializers.shop_serializer import ShopSerializer
 
         merchant = self._find_merchant(player, npc_id)
-        if merchant is None:
-            return {"success": False, "error": "Merchant not found at this location"}
-
-        if merchant.shop is None:
-            merchant.initialize_shop()
+        # Use validation helper (FIX 6)
+        validation_error = self._validate_shop_transaction(merchant, quantity)
+        if validation_error:
+            return {"success": False, **validation_error}
 
         buy_mod = getattr(merchant.shop, "buy_modifier", 1.0)
 
@@ -4952,11 +5012,10 @@ class GameService:
         from src.api.serializers.shop_serializer import ShopSerializer
 
         merchant = self._find_merchant(player, npc_id)
-        if merchant is None:
-            return {"success": False, "error": "Merchant not found at this location"}
-
-        if merchant.shop is None:
-            merchant.initialize_shop()
+        # Use validation helper (FIX 6)
+        validation_error = self._validate_shop_transaction(merchant, quantity)
+        if validation_error:
+            return {"success": False, **validation_error}
 
         sell_mod = getattr(merchant.shop, "sell_modifier", 0.5)
 
@@ -5070,11 +5129,10 @@ class GameService:
         from src.api.serializers.shop_serializer import ShopSerializer
 
         merchant = self._find_merchant(player, npc_id)
-        if merchant is None:
-            return {"success": False, "error": "Merchant not found at this location"}
-
-        if merchant.shop is None:
-            merchant.initialize_shop()
+        # Use validation helper (FIX 6) - quantity=1 for buyback
+        validation_error = self._validate_shop_transaction(merchant, 1)
+        if validation_error:
+            return {"success": False, **validation_error}
 
         # Flush stale entries before ledger lookup
         current_tick = self._game_tick(player)
@@ -5150,3 +5208,183 @@ class GameService:
             "shop_state": shop_state,
             "sell_inventory": sell_inventory,
         }
+
+    def get_world_info(self, player: "player_module.Player") -> Dict[str, Any]:
+        """Get world information (maps, locations, explored areas).
+
+        Args:
+            player: The Player instance
+
+        Returns:
+            Dictionary with world information
+        """
+        universe = getattr(player, "universe", None)
+        if not universe:
+            return {}
+
+        return {
+            "current_position": {
+                "x": player.location_x,
+                "y": player.location_y,
+            },
+            "explored_tiles": getattr(player, "explored_tiles", {}),
+            "story_flags": self._story(player),
+            "game_tick": self._game_tick(player),
+        }
+
+    def get_current_tile(self, player: "player_module.Player") -> Dict[str, Any]:
+        """Get information about the current tile.
+
+        Args:
+            player: The Player instance
+
+        Returns:
+            Dictionary with current tile information
+        """
+        return self.get_current_room(player)
+
+    def interact_with_tile(self, player: "player_module.Player", action: str) -> Dict[str, Any]:
+        """Interact with the current tile (look, examine, search, etc).
+
+        Args:
+            player: The Player instance
+            action: The interaction action (look, examine, search, etc)
+
+        Returns:
+            Dictionary with interaction result
+        """
+        tile = player.universe.get_tile(player.location_x, player.location_y)
+        if not tile:
+            return {"error": "No tile at this location"}
+
+        # Return tile description and contents
+        return {
+            "action": action,
+            "tile_name": getattr(tile, "name", "Unknown"),
+            "description": getattr(tile, "description", ""),
+            "items": ItemSerializer.serialize_list(getattr(tile, "items_here", [])),
+            "npcs": NPCSerializer.serialize_list(getattr(tile, "npcs_here", [])),
+            "objects": ObjectSerializer.serialize_list(getattr(tile, "objects_here", [])),
+        }
+
+    def use_item(self, player: "player_module.Player", item_index: int) -> Dict[str, Any]:
+        """Use an item from the player's inventory.
+
+        Args:
+            player: The Player instance
+            item_index: Index of the item to use
+
+        Returns:
+            Dictionary with use result
+        """
+        if not isinstance(player.inventory, list):
+            return {"error": "Inventory not accessible"}
+
+        if item_index < 0 or item_index >= len(player.inventory):
+            return {"error": "Invalid item index"}
+
+        item = player.inventory[item_index]
+
+        # FIX 2: Add type validation to ensure item is an object with expected attributes
+        if isinstance(item, (str, dict, int, float)):
+            return {"error": f"Invalid inventory item: corrupted data type {type(item).__name__}"}
+
+        if not hasattr(item, "name"):
+            return {"error": "Invalid inventory item: missing name attribute"}
+
+        # Try to use the item if it has a use method
+        if hasattr(item, "use") and callable(item.use):
+            try:
+                item.use(player)
+                return {"success": True, "message": f"Used {item.name}"}
+            except Exception as e:
+                return {"success": False, "error": str(e)}
+
+        return {"success": False, "error": f"{item.name} cannot be used"}
+
+    def drop_item(self, player: "player_module.Player", item_index: int) -> Dict[str, Any]:
+        """Drop an item from the player's inventory.
+
+        Args:
+            player: The Player instance
+            item_index: Index of the item to drop
+
+        Returns:
+            Dictionary with drop result
+        """
+        if not isinstance(player.inventory, list):
+            return {"error": "Inventory not accessible"}
+
+        if item_index < 0 or item_index >= len(player.inventory):
+            return {"error": "Invalid item index"}
+
+        # FIX 1: Add defensive checks for universe and tile BEFORE modifying inventory
+        if not hasattr(player, "universe") or player.universe is None:
+            return {"error": "Cannot drop item: player universe not accessible"}
+
+        # Get the tile and validate it exists before popping from inventory
+        tile = player.universe.get_tile(player.location_x, player.location_y)
+        if not tile or not hasattr(tile, "items_here"):
+            return {"error": "Cannot drop item: invalid current location"}
+
+        # FIX 2: Add type validation for inventory items
+        item = player.inventory[item_index]
+        if not hasattr(item, "name"):
+            return {"error": "Cannot drop item: corrupted inventory item"}
+
+        # Now it's safe to remove from inventory
+        player.inventory.pop(item_index)
+
+        # Add item to the current tile
+        tile.items_here.append(item)
+
+        return {
+            "success": True,
+            "message": f"Dropped {item.name}",
+            "item_name": item.name,
+        }
+
+    def rest(self, player: "player_module.Player") -> Dict[str, Any]:
+        """Rest to restore HP and fatigue.
+
+        Args:
+            player: The Player instance
+
+        Returns:
+            Dictionary with rest result
+        """
+        old_hp = player.hp
+        old_fatigue = player.fatigue
+
+        # Restore HP and fatigue
+        player.hp = player.maxhp
+        player.fatigue = player.maxfatigue
+
+        return {
+            "success": True,
+            "message": "You rest and recover",
+            "hp_restored": player.hp - old_hp,
+            "fatigue_restored": player.fatigue - old_fatigue,
+            "current_hp": player.hp,
+            "current_fatigue": player.fatigue,
+        }
+
+    def get_combat_state(self, player: "player_module.Player") -> Dict[str, Any]:
+        """Get the current combat state.
+
+        Args:
+            player: The Player instance
+
+        Returns:
+            Dictionary with combat state
+        """
+        in_combat = getattr(player, "in_combat", False)
+
+        if not in_combat:
+            return {
+                "in_combat": False,
+                "message": "Not in combat",
+            }
+
+        # If in combat, get the combat status
+        return self.get_combat_status(player)

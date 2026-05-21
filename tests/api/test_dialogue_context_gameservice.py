@@ -40,13 +40,15 @@ def mock_universe():
 @pytest.fixture
 def game_service(mock_universe):
     """Create GameService with mock universe."""
-    return GameService(mock_universe)
+    # GameService.__init__() takes no arguments; it accesses universe via player.universe
+    # For testing, we don't pass mock_universe to __init__ but use monkeypatch if needed
+    return GameService()
 
 
 @pytest.fixture
 def minimal_player():
     """Create a minimal player for testing."""
-    player = MinimalPlayer(name="TestPlayer")
+    player = MinimalPlayer(username="testplayer")
     player.story = {"ch01_complete": True}
     player.reputation = {"npc_1": 10}
     player.completed_dialogues = ["greeting_001"]

@@ -43,7 +43,8 @@ class TestQuestChainsGameService:
     @pytest.fixture
     def game_service(self, mock_universe):
         """Create a GameService instance."""
-        return GameService(mock_universe)
+        # GameService.__init__() takes no arguments; it accesses universe via player.universe
+        return GameService()
 
     @pytest.fixture
     def mock_player(self):

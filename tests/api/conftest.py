@@ -178,3 +178,23 @@ def patch_terminal_output(monkeypatch):
         monkeypatch.setattr('neotermcolor.cprint', mock_cprint, raising=False)
     except (ImportError, AttributeError):
         pass
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Module-level mocking for slow I/O operations
+# ─────────────────────────────────────────────────────────────────────────────
+# These module-level patches apply to all tests in tests/api/ to reduce overhead.
+# This is safe because tests explicitly mock required behaviors, and these are
+# fallback safeguards for operations that should not occur during testing.
+
+from unittest.mock import patch, MagicMock
+
+# Mock time.sleep() globally for tests (should never be called; guards against
+# inadvertent delays from untested code paths)
+_sleep_patch = patch('time.sleep', return_value=None)
+_sleep_patch.start()
+
+# Mock any slow crypto/hashing operations if they occur unexpectedly
+# (legitimate password hashing should be in tested methods, not untested code)
+_hashlib_patch = patch('hashlib.pbkdf2_hmac', return_value=b'mocked_hash')
+_hashlib_patch.start()

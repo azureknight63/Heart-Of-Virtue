@@ -3,8 +3,12 @@ import { colors, fonts } from '../styles/theme'
 export const MOBILE_TAB_BAR_HEIGHT = '56px'
 
 function MobileTabBar({ activeTab, onTabChange, mode }) {
-  const isCharActive = activeTab === 'character'
-  const isMapActive = activeTab === 'map'
+  const isExploration = mode === 'exploration'
+  const tab1Key = isExploration ? 'character' : 'combat'
+  const tab2Key = isExploration ? 'map' : 'battlefield'
+
+  const isTab1Active = activeTab === tab1Key
+  const isTab2Active = activeTab === tab2Key
 
   const tabStyle = (active, accentColor) => ({
     flex: 1,
@@ -40,13 +44,13 @@ function MobileTabBar({ activeTab, onTabChange, mode }) {
       zIndex: 1000,
       paddingBottom: 'env(safe-area-inset-bottom)',
     }}>
-      <button onClick={() => onTabChange('character')} style={tabStyle(isCharActive, colors.primary)}>
+      <button onClick={() => onTabChange(tab1Key)} style={tabStyle(isTab1Active, colors.primary)}>
         <span style={{ fontSize: '20px', lineHeight: 1 }}>🧝</span>
-        <span>{mode === 'combat' ? 'COMBAT' : 'CHARACTER'}</span>
+        <span>{isExploration ? 'CHARACTER' : 'COMBAT'}</span>
       </button>
-      <button onClick={() => onTabChange('map')} style={tabStyle(isMapActive, colors.secondary)}>
+      <button onClick={() => onTabChange(tab2Key)} style={tabStyle(isTab2Active, colors.secondary)}>
         <span style={{ fontSize: '20px', lineHeight: 1 }}>🗺️</span>
-        <span>{mode === 'combat' ? 'BATTLEFIELD' : 'MAP'}</span>
+        <span>{isExploration ? 'MAP' : 'BATTLEFIELD'}</span>
       </button>
     </div>
   )

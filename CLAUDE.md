@@ -92,14 +92,109 @@ python -m pytest -q
 # Backend with coverage
 python -m pytest --cov=src --cov=ai --cov-report=term-missing
 
+# Backend with HTML coverage report
+python -m pytest --cov=src --cov=ai --cov-report=html
+# Then open htmlcov/index.html
+
 # Frontend
 cd frontend && npm test
+
+# Frontend with coverage
+cd frontend && npm test -- --run --coverage
+# View at frontend/coverage/index.html
 ```
 
 Use `python -m pytest` rather than bare `pytest` — the virtualenv may not expose the
 `pytest` binary on PATH, causing silent import failures.
 
 The `tests/api/`, `tests/broken/`, and `tests/uat/` directories are excluded from the default run. Don't add them to standard test runs.
+
+## Test Coverage Strategy
+
+### Coverage Targets
+
+| Layer | Current | Target | CI Minimum |
+|-------|---------|--------|-----------|
+| Backend (Python) | 47% | 60% | 55% |
+| Frontend (React) | ~75% | 85% | 80% |
+| Total Tests | 1,308 | 1,500+ | - |
+
+### Backend Coverage Enforcement
+
+**CI/CD Rule**: Every PR and push to `master`, `develop`, or `web-api` must pass coverage checks:
+- Minimum 55% coverage (via `--cov-fail-under=55`)
+- All tests must pass
+- Coverage must not decrease from the previous commit
+
+Run locally before pushing:
+```bash
+python -m pytest \
+  --cov=src \
+  --cov=ai \
+  --cov-report=term-missing \
+  --cov-fail-under=55 \
+  -q
+```
+
+**High-coverage areas** (>70%):
+- `src/api/routes/` — REST endpoints well-tested
+- `src/api/services/` — Core game logic
+- `src/universe.py` — World/map system
+
+**Low-coverage areas** (<50%):
+- `src/story/` — Narrative intentionally sparse (hard to test story paths)
+- `ai/` — LLM integration, fallback behavior
+- `src/states.py` — Status effects (needs 20+ new tests)
+- `src/npc.py` — NPC AI behavior (needs edge case tests)
+
+### Frontend Coverage Enforcement
+
+**CI/CD Rule**: Frontend tests must pass with ~80%+ coverage:
+- Run via `npm test -- --run --coverage` in CI
+- No hard threshold yet (frontend tests still maturing)
+- Target: 85%+ by v0.1
+
+High-coverage components (>80%):
+- `pages/` — Login, menu, game pages
+- `hooks/useApi` — API integration
+
+Low-coverage components (<75%):
+- `NpcChatPanel.jsx` — Complex async state (target: 80%)
+- `MobileTabBar.jsx` — Touch interactions (target: 85%)
+
+### Pre-Commit Hook (Local)
+
+A pre-commit hook (`.git/hooks/pre-commit`) runs quick tests before each commit:
+- Runs `python -m pytest -q` (~2-3 seconds)
+- Fails commit if tests fail
+- Bypass with `git commit --no-verify` (use sparingly)
+
+The hook is installed automatically the first time you clone. If missing, manually set up:
+```bash
+cat > .git/hooks/pre-commit << 'EOF'
+#!/bin/bash
+set -e
+echo "🧪 Running pre-commit tests..."
+python -m pytest -q --tb=line || exit 1
+echo "✅ Tests passed!"
+EOF
+chmod +x .git/hooks/pre-commit
+```
+
+### Coverage Dashboard
+
+See `docs/coverage/coverage-dashboard.md` for:
+- Detailed coverage by module
+- Monthly trend tracking
+- Improvement plan with effort estimates
+- Badge and reporting setup
+
+### Why These Numbers?
+
+- **55% minimum**: Catches major regressions (broken imports, syntax, obvious bugs)
+- **60% target**: High confidence in core logic (combat, inventory, movement)
+- **80%+ frontend**: User-facing code must be reliable
+- **Story intentionally low**: Narrative branches are hard to test; we focus on mechanics
 
 ## Coding Conventions
 

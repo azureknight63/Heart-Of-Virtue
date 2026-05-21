@@ -197,3 +197,66 @@ def isinstance_by_class_name(obj, *class_names):
 
 # Monkey-patch isinstance for test convenience (optional, can be used via explicit function call)
 # Actually, don't do this - it might break other code. Users should use the function explicitly.
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# NPC and Player Fixtures for Performance Optimization
+# ─────────────────────────────────────────────────────────────────────────────
+# These fixtures are available to all tests. Use them to reduce repeated setup
+# overhead when creating NPCs and Players for testing.
+
+@pytest.fixture
+def player():
+    """Create a fresh Player instance for testing."""
+    from src.player import Player
+    return Player()
+
+
+@pytest.fixture
+def slime_npc():
+    """Create a Slime NPC for combat testing."""
+    from src.npc._enemies import Slime
+    return Slime()
+
+
+@pytest.fixture
+def mynx_npc():
+    """Create a Mynx NPC for dialogue/interaction testing."""
+    from src.npc._friends import Mynx
+    return Mynx()
+
+
+@pytest.fixture
+def gorran_npc():
+    """Create a Gorran NPC for ally testing."""
+    from src.npc._friends import Gorran
+    return Gorran()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Flask App Fixtures for API Testing
+# ─────────────────────────────────────────────────────────────────────────────
+
+@pytest.fixture
+def flask_app():
+    """Create a Flask app instance for testing."""
+    from src.api.app import create_app
+    app = create_app(testing=True)
+    return app
+
+
+@pytest.fixture
+def flask_client(flask_app):
+    """Create a Flask test client."""
+    return flask_app.test_client()
+
+
+@pytest.fixture
+def app_with_session(flask_app):
+    """Create a Flask app with test session support."""
+    with flask_app.app_context():
+        from src.api.services.session_manager import SessionManager
+        # Initialize session manager if needed
+        session_mgr = SessionManager()
+        flask_app.session_manager = session_mgr
+    return flask_app
