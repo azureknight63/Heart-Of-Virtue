@@ -1971,9 +1971,8 @@ class GameService:
         # attack, stealth detection is irrelevant: every hostile creature in the room joins.
         # This mirrors what move_player() achieves in practice and prevents the
         # "one enemy enters, rest stay" bug that left combat stuck after the first kill.
-        tile_npcs = getattr(player.current_room, "npcs_here", []) if player.current_room else []
         all_enemies = [
-            npc for npc in tile_npcs
+            npc for npc in getattr(tile, "npcs_here", [])
             if not getattr(npc, "friend", False)
             and getattr(npc, "aggro", False)
             and npc is not enemy  # enemy already forced-aggro above; prepend it below

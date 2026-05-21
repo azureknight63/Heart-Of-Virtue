@@ -1804,6 +1804,8 @@ class ApiCombatAdapter:
         # Check for beta end: player just defeated the Lurker in Verdette Caverns.
         # Mirrors AfterDefeatingLurker.check_conditions() — no Lurker on tile,
         # but that tile still carries the AfterDefeatingLurker event marker.
+        # Re-read current_room here (not the `tile` used for item lookups above)
+        # in case exp processing or level-up callbacks updated the player's location.
         tile = getattr(self.player, "current_room", None)
         if tile:
             has_lurker_event = any(
@@ -1831,6 +1833,7 @@ class ApiCombatAdapter:
                 npc.in_combat = False
 
         # Clear the player's own combat lists so a stale adapter cannot resume.
+        # Invariant: combat_list_allies[0] is always the player (mirrors _initialize_combat).
         self.player.combat_list = []
         self.player.combat_list_allies = [self.player]
 
