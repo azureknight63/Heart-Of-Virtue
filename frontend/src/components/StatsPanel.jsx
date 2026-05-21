@@ -33,7 +33,7 @@ export default function StatsPanel({ player, onClose }) {
   const coreStats = [
     { label: 'HP', val: `${player.hp}/${player.max_hp}`, color: colors.danger, icon: '❤️' },
     { label: 'Fatigue', val: `${player.fatigue}/${player.max_fatigue}`, color: colors.gold, icon: '🔋' },
-    { label: 'Protection', val: player.protection || 0, color: colors.info, icon: '🛡️' },
+    { label: 'Protection', val: Math.round(player.protection || 0), color: colors.info, icon: '🛡️' },
     { label: 'Level', val: player.level || 1, color: '#cc88ff', icon: '⭐' },
     { label: 'Attack', val: `${player.attack_damage_min}-${player.attack_damage_max}`, color: colors.secondary, icon: '⚔️' },
     { label: 'Accuracy', val: `${player.hit_accuracy}%`, color: colors.primary, icon: '🎯' },

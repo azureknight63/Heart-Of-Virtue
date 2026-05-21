@@ -493,6 +493,7 @@ class Ch02GuideToCitadel(
                 )
 
             # Remove this event from the tile
+            self.player.teleport("grondia", (10, 5))
             self.tile.remove_event(self.name)
             self.needs_input = False
             self.completed = True
@@ -1098,4 +1099,3 @@ class AfterKingSlimeReturn(Event):
         self.completed = True
         self.player.universe.story["votha_krr_response_given"] = "1"
         self.tile.remove_event(self.name)
-
