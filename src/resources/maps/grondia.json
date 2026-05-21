@@ -951,7 +951,9 @@
             "enter",
             "go",
             "leave",
-            "exit"
+            "exit",
+            "tent",
+            "jambo"
           ],
           "events": [],
           "tile": null,

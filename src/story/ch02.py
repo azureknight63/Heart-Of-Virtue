@@ -114,7 +114,7 @@ class Ch02GuideToCitadel(
             name=name, player=player, tile=tile, repeat=repeat, params=params
         )
 
-    def check_combat_conditions(self):
+    def check_conditions(self):
         if len(self.player.combat_list) == 0:
             self.pass_conditions_to_process()
 
@@ -329,9 +329,9 @@ class Ch02GuideToCitadel(
             time.sleep(1)
             print(colored("[a]", "magenta") + ' "Tell me more."')
             print(colored("[b]", "magenta") + ' "I\'ll take a look at it."')
-            _quest_choice = ""
-            while _quest_choice not in ["a", "b"]:
-                _quest_choice = input("Choice: ").strip().lower()
+            _quest_choice = input("Choice: ").strip().lower()
+            if _quest_choice not in ["a", "b"]:
+                _quest_choice = "a"
 
             if _quest_choice == "a":
                 time.sleep(1)
