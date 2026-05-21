@@ -401,7 +401,7 @@ function ItemCard({ item, onClick, isShop }) {
       <div style={{ fontSize: '10px', color: colors.text.muted, display: 'flex', justifyContent: 'space-between' }}>
         <span>{item.subtype || item.maintype}</span>
         {item.damage && <span style={{ color: colors.danger }}>{getItemIcon(item)}{Math.round(item.damage)}</span>}
-        {item.protection && <span style={{ color: colors.text.highlight }}>🛡️{item.protection}</span>}
+        {item.protection && <span style={{ color: colors.text.highlight }}>🛡️{Math.round(item.protection)}</span>}
       </div>
 
       <div style={{
