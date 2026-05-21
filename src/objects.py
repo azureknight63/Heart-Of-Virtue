@@ -820,6 +820,11 @@ class Passageway(Object):
         self.keywords.append("enter")
         self.action_aliases.extend(["go", "leave", "exit"])
         self.keywords.extend(self.action_aliases)
+        _name_words = name.lower().replace("'s", "").replace("'", "").split()
+        for _word in _name_words:
+            if len(_word) > 3 and _word.isalpha() and not hasattr(self, _word):
+                setattr(self, _word, self.enter)
+                self.keywords.append(_word)
         self.events_before = events_before if events_before is not None else []
         self.events_after = events_after if events_after is not None else []
         self.teleport_map = teleport_map if teleport_map is not None else ""
