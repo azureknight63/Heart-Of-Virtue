@@ -4,6 +4,8 @@ import GameButton from './GameButton'
 import GameText from './GameText'
 import GameInput from './GameInput'
 import TypewriterOutput from './TypewriterOutput'
+import ScrollFadeIndicator from './ScrollFadeIndicator'
+import useScrollIndicators from '../hooks/useScrollIndicators'
 import { colors, spacing, commonStyles, fonts } from '../styles/theme'
 import { cleanTerminalLineBreaks } from '../utils/entityUtils'
 
@@ -24,6 +26,7 @@ function EventDialog({ event, history = [], onClose, onSubmitInput }) {
 
     const inputRef = useRef(null)
     const dialogRef = useRef(null)
+    const { showTop, showBottom, check: checkScroll, ref: scrollRef } = useScrollIndicators()
 
     // Earthbound-style damage effect: shake screen + red flash
     const handleDamageHit = useCallback(() => {
@@ -331,25 +334,29 @@ function EventDialog({ event, history = [], onClose, onSubmitInput }) {
                         </pre>
                     </div>
                 ) : (
-                    <TypewriterOutput
-                        text={eventText}
-                        speed={25}
-                        onComplete={() => {
-                            setIsComplete(true)
-                            if (needsInput) setShowInput(true)
-                        }}
-                        onDamageHit={handleDamageHit}
-                        style={{
-                            padding: spacing.lg,
-                            flex: 1,
-                            maxHeight: '450px',
-                            overflowY: 'auto',
-                            border: `2px solid ${colors.secondary}`,
-                            color: colors.success,
-                            whiteSpace: 'pre-wrap',
-                            fontSize: '16px',
-                        }}
-                    />
+                    <div style={{ position: 'relative', flex: 1 }}>
+                        <div ref={scrollRef} style={{ maxHeight: '450px', overflowY: 'auto' }}>
+                            <TypewriterOutput
+                                text={eventText}
+                                speed={25}
+                                onComplete={() => {
+                                    setIsComplete(true)
+                                    if (needsInput) setShowInput(true)
+                                    checkScroll()
+                                }}
+                                onDamageHit={handleDamageHit}
+                                style={{
+                                    padding: spacing.lg,
+                                    border: `2px solid ${colors.secondary}`,
+                                    color: colors.success,
+                                    whiteSpace: 'pre-wrap',
+                                    fontSize: '16px',
+                                }}
+                            />
+                        </div>
+                        {showTop && <ScrollFadeIndicator position="top" color={colors.secondary} bgColor="rgb(5, 10, 5)" />}
+                        {showBottom && <ScrollFadeIndicator position="bottom" color={colors.secondary} bgColor="rgb(5, 10, 5)" />}
+                    </div>
                 )}
 
                 {/* Input Section */}
