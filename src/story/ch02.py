@@ -4,7 +4,6 @@ Chapter 02 events
 
 from src.events import Event, dialogue
 from src.functions import print_slow, await_input
-from neotermcolor import colored
 import time
 from src import items
 from src.story.effects import MemoryFlash
