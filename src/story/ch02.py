@@ -127,6 +127,7 @@ class Ch02GuideToCitadel(
         if self.player.skip_dialog:
             loot = [items.Antidote(5), items.Restorative(2)]
             self.player.add_items_to_inventory(loot)
+            self.player.teleport("grondia", (10, 5))
             self.needs_input = False
             self.completed = True
             self.tile.remove_event(self.name)
@@ -367,6 +368,7 @@ class Ch02GuideToCitadel(
 
         # Stage 8 — Cleanup
         if self._stage == 8:
+            self.player.teleport("grondia", (10, 5))
             self.needs_input = False
             self.completed = True
             self.tile.remove_event(self.name)
@@ -972,4 +974,3 @@ class AfterKingSlimeReturn(Event):
         self.completed = True
         self.player.universe.story["votha_krr_response_given"] = "1"
         self.tile.remove_event(self.name)
-

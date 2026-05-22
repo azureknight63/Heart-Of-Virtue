@@ -70,7 +70,7 @@ class InventoryItemSerializer:
             "type": item_type,
             "maintype": maintype,
             "subtype": getattr(item, "subtype", ""),
-            "quantity": getattr(item, "quantity", 1),
+            "quantity": getattr(item, "count", getattr(item, "quantity", 1)),
             "rarity": getattr(item, "rarity", "common"),
             "weight": getattr(item, "weight", 0.0),
             "value": getattr(item, "value", 0),
@@ -99,7 +99,7 @@ class InventoryItemSerializer:
             "Gloves",
             "Accessory",
         ] or maintype in ["Armor", "Boots", "Helm", "Gloves", "Accessory"]:
-            item_data["protection"] = getattr(item, "protection", 0)
+            item_data["protection"] = round(getattr(item, "protection", 0))
 
         # Add composable effects array for usable (consumable) items
         if item_data["can_use"]:
@@ -178,7 +178,7 @@ class EquipmentSlotSerializer:
             "equipped": True,
             "item_name": getattr(item, "name", "Unknown"),
             "item_type": item.__class__.__name__,
-            "armor": getattr(item, "armor", 0),
+            "armor": round(getattr(item, "armor", 0)),
             "damage": round(getattr(item, "damage", 0)),
             "weight": getattr(item, "weight", 0.0),
             "value": getattr(item, "value", 0),
@@ -298,7 +298,7 @@ class ItemDetailSerializer:
             "name": getattr(item, "name", "Unknown Item"),
             "type": item.__class__.__name__,
             "description": getattr(item, "description", ""),
-            "quantity": getattr(item, "quantity", 1),
+            "quantity": getattr(item, "count", getattr(item, "quantity", 1)),
             "rarity": getattr(item, "rarity", "common"),
             "weight": getattr(item, "weight", 0.0),
             "value": getattr(item, "value", 0),
@@ -308,7 +308,7 @@ class ItemDetailSerializer:
             "can_use": hasattr(item, "use"),
             "can_drop": True,  # Most items can be dropped
             "stats": {
-                "armor": getattr(item, "armor", 0),
+                "armor": round(getattr(item, "armor", 0)),
                 "damage": round(getattr(item, "damage", 0)),
                 "magic_attack": getattr(item, "magic_attack", 0),
                 "magic_defense": getattr(item, "magic_defense", 0),
