@@ -25,8 +25,7 @@ export default function NpcChatPanel({ npcId, npcName, onClose }) {
   const [error, setError] = useState(null)
   const [latestNpcText, setLatestNpcText] = useState(null)
   const retryFnRef = useRef(null)
-  const messagesRef = useRef(null)
-  const { showTop, showBottom, check } = useScrollIndicators(messagesRef)
+  const { showTop, showBottom, check, ref: messagesRef } = useScrollIndicators()
 
   useEffect(() => { check() }, [messages, check])
 
@@ -253,6 +252,7 @@ export default function NpcChatPanel({ npcId, npcName, onClose }) {
           <TypewriterOutput
             text={latestNpcText}
             speed={20}
+            onComplete={check}
             style={{
               marginTop: spacing.sm,
               padding: spacing.md,

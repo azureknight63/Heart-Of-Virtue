@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import RoomContents from './RoomContents'
 import ScrollFadeIndicator from './ScrollFadeIndicator'
 import useScrollIndicators from '../hooks/useScrollIndicators'
@@ -6,12 +6,21 @@ import { colors, fonts, accessibility } from '../styles/theme'
 
 export default function CollapsibleRoomDescription({ location, onInteract, defaultOpen = true }) {
   const [isOpen, setIsOpen] = useState(defaultOpen)
-  const scrollContainerRef = useRef(null)
-  const { showTop, showBottom, check } = useScrollIndicators(scrollContainerRef)
+  // containerRef holds the DOM node for imperative scrollTop resets without
+  // making it a reactive dep (avoids spurious effect re-runs on every render).
+  const containerRef = useRef(null)
+  const { showTop, showBottom, check, ref: scrollIndicatorRef } = useScrollIndicators()
+
+  // Merged callback ref: keeps containerRef.current in sync AND wires the
+  // scroll-indicator hook so it re-subscribes whenever the panel opens/closes.
+  const scrollContainerRef = useCallback(node => {
+    containerRef.current = node
+    scrollIndicatorRef(node)
+  }, [scrollIndicatorRef])
 
   useEffect(() => {
-    if (isOpen && scrollContainerRef.current) {
-      scrollContainerRef.current.scrollTop = 0
+    if (isOpen && containerRef.current) {
+      containerRef.current.scrollTop = 0
     }
     check()
   }, [location, isOpen, check])

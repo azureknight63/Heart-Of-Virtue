@@ -3,23 +3,29 @@ import { useState, useEffect, useCallback } from 'react'
 /**
  * Tracks whether a scrollable element has content above or below the visible window.
  *
- * Returns { showTop, showBottom, check } where check() can be called imperatively
- * after content changes that wouldn't trigger a scroll or resize event (e.g. when
- * the parent resets scrollTop=0 programmatically before the DOM has updated).
+ * Attach the returned `ref` callback directly to the scrollable DOM element.
+ * The hook re-subscribes automatically whenever the element mounts or unmounts,
+ * which fixes the case where a scroll container is conditionally rendered (e.g. a
+ * collapsible panel that starts closed — defaultOpen=false).
+ *
+ * Returns { showTop, showBottom, check, ref }
+ *   ref   — callback ref to attach to the scrollable element
+ *   check — call imperatively after programmatic scrollTop resets
  */
-export default function useScrollIndicators(scrollRef) {
+export default function useScrollIndicators() {
+  const [el, setEl] = useState(null)
   const [showTop, setShowTop] = useState(false)
   const [showBottom, setShowBottom] = useState(false)
 
+  const ref = useCallback(node => setEl(node), [])
+
   const check = useCallback(() => {
-    const el = scrollRef.current
     if (!el) return
     setShowTop(el.scrollTop > 4)
     setShowBottom(el.scrollTop + el.clientHeight < el.scrollHeight - 4)
-  }, [scrollRef])
+  }, [el])
 
   useEffect(() => {
-    const el = scrollRef.current
     if (!el) return
     check()
     el.addEventListener('scroll', check, { passive: true })
@@ -29,7 +35,7 @@ export default function useScrollIndicators(scrollRef) {
       el.removeEventListener('scroll', check)
       ro.disconnect()
     }
-  }, [scrollRef, check])
+  }, [el, check])
 
-  return { showTop, showBottom, check }
+  return { showTop, showBottom, check, ref }
 }

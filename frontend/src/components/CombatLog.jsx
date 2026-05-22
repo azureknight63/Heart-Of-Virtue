@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import DOMPurify from 'dompurify'
 import { colors, spacing, fonts, shadows } from '../styles/theme'
 import GameText from './GameText'
@@ -19,7 +19,14 @@ export default function CombatLog({ log, className = '', allowResize = true, isM
   const [isResizing, setIsResizing] = useState(false)
   const logRef = useRef(null)
   const contentRef = useRef(null)
-  const { showTop, showBottom, check } = useScrollIndicators(contentRef)
+  const { showTop, showBottom, check, ref: scrollIndicatorRef } = useScrollIndicators()
+
+  // Merged callback ref: keeps contentRef.current for imperative auto-scroll
+  // AND wires the indicator hook so it re-subscribes after collapse/expand cycles.
+  const setContentRef = useCallback(node => {
+    contentRef.current = node
+    scrollIndicatorRef(node)
+  }, [scrollIndicatorRef])
 
   const handleMouseDown = () => {
     if (allowResize) setIsResizing(true)
@@ -94,7 +101,7 @@ export default function CombatLog({ log, className = '', allowResize = true, isM
         <>
           <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
             <div
-              ref={contentRef}
+              ref={setContentRef}
               style={{
                 height: '100%',
                 overflowY: 'auto',

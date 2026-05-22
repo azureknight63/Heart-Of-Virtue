@@ -1,17 +1,16 @@
-import { useRef, useEffect } from 'react'
+import { useEffect } from 'react'
 import useScrollIndicators from '../hooks/useScrollIndicators'
 import ScrollFadeIndicator from './ScrollFadeIndicator'
 
 export default function Inventory({ items, onClose }) {
-  const scrollRef = useRef(null)
-  const { showTop, showBottom, check } = useScrollIndicators(scrollRef)
+  const { showTop, showBottom, check, ref } = useScrollIndicators()
 
   useEffect(() => { check() }, [items, check])
 
   return (
     <div style={{ position: 'relative' }}>
       <div
-        ref={scrollRef}
+        ref={ref}
         data-testid="inventory-scroll"
         className="bg-[rgba(50,20,0,0.2)] border border-[#cc8800] rounded px-2 py-1.5 max-h-40 overflow-y-auto"
       >
