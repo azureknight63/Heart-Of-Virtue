@@ -64,8 +64,6 @@ export default function RoomContents({ location, onInteract }) {
   return (
     <div className="border-l-4 border-lime rounded px-2.5 py-2.5 text-lime text-sm leading-relaxed font-serif" style={{
       backgroundColor: 'rgba(0,100,50,0.2)',
-      maxHeight: '30vh',
-      overflowY: 'auto',
     }}>
       {/* Room narrative and content all together */}
 
