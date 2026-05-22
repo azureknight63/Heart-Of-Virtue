@@ -122,6 +122,16 @@ class Ch02GuideToCitadel(
         if not hasattr(self, "_stage"):
             self._stage = 1
 
+        # Terminal mode is not supported for this staged event.
+        # Terminal play is planned for deprecation; skip_dialog fast-path handles automation.
+        if self.player.skip_dialog:
+            loot = [items.Antidote(5), items.Restorative(2)]
+            self.player.add_items_to_inventory(loot)
+            self.needs_input = False
+            self.completed = True
+            self.tile.remove_event(self.name)
+            return
+
         # Stage 1 — The approach: following Gorran through the settlement to the archway
         if self._stage == 1:
             self.needs_input = True
@@ -242,9 +252,8 @@ class Ch02GuideToCitadel(
             self.needs_input = True
             self.input_type = "choice"
             self.description = (
-                "Jean paused for a long moment, unsure of how to answer. If he was honest with himself, "
-                "he didn't really know how to answer any of those questions. He furrowed his brow, troubled "
-                "by this sudden consternation. He took a deep breath, trying to gather his thoughts.\n\n"
+                "Jean paused. He wasn't sure how to answer — not any of those questions. "
+                "He took a deep breath, trying to gather his thoughts.\n\n"
                 "Jean: \"I am Jean. Jean Claire.\"\n\n"
                 "He stopped there. Votha Krr waited, unhurried as erosion.\n\n"
                 "Jean: \"As for the rest — I can fight. I'm good with my hands. "
@@ -283,8 +292,6 @@ class Ch02GuideToCitadel(
             _choice = _choice_map.get(_choice, _choice)
             if _choice not in ("a", "b"):
                 _choice = "a"
-            self._quest_choice = _choice
-
             self.needs_input = True
             self.input_type = "choice"
             self.input_prompt = ""
