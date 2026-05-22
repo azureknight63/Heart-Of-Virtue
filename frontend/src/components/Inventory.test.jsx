@@ -118,35 +118,31 @@ describe('Inventory', () => {
 
   describe('Styling', () => {
     it('applies custom styling classes', () => {
-      const { container } = render(
+      const { getByTestId } = render(
         <Inventory items={[]} onClose={mockOnClose} />
       )
-      const wrapper = container.firstChild
-      expect(wrapper).toHaveClass('bg-[rgba(50,20,0,0.2)]')
+      expect(getByTestId('inventory-scroll')).toHaveClass('bg-[rgba(50,20,0,0.2)]')
     })
 
     it('has orange border color styling', () => {
-      const { container } = render(
+      const { getByTestId } = render(
         <Inventory items={[]} onClose={mockOnClose} />
       )
-      const wrapper = container.firstChild
-      expect(wrapper).toHaveClass('border-[#cc8800]')
+      expect(getByTestId('inventory-scroll')).toHaveClass('border-[#cc8800]')
     })
 
     it('has overflow-y-auto for scrolling', () => {
-      const { container } = render(
+      const { getByTestId } = render(
         <Inventory items={[]} onClose={mockOnClose} />
       )
-      const wrapper = container.firstChild
-      expect(wrapper).toHaveClass('overflow-y-auto')
+      expect(getByTestId('inventory-scroll')).toHaveClass('overflow-y-auto')
     })
 
     it('has max-height constraint', () => {
-      const { container } = render(
+      const { getByTestId } = render(
         <Inventory items={[]} onClose={mockOnClose} />
       )
-      const wrapper = container.firstChild
-      expect(wrapper).toHaveClass('max-h-40')
+      expect(getByTestId('inventory-scroll')).toHaveClass('max-h-40')
     })
   })
 
