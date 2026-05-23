@@ -2886,11 +2886,14 @@ class GameService:
                 # phantom combat with no enemies.
                 player.in_combat = False
                 player.combat_list = []
-                # Preserve living allies (e.g. Gorran) — same pattern as _initialize_combat.
+                # Preserve only living allies — dead allies must not be re-injected into
+                # rooms via recall_friends or re-enrolled in the next combat.
                 existing_allies = [
                     a for a in getattr(player, "combat_list_allies", [])
-                    if a is not player
+                    if a is not player and a.is_alive()
                 ]
+                for ally in existing_allies:
+                    ally.in_combat = False
                 player.combat_list_allies = [player] + existing_allies
                 player.current_move = None
                 # Strip non-persistent status effects that should have been cleared at
@@ -3016,9 +3019,10 @@ class GameService:
 
         # Set combat lists on player (required by adapter)
         player.combat_list = enemies
-        # Preserve existing party members (e.g. Gorran already recruited) — only player is reset
+        # Preserve existing living party members — dead allies must not be re-enrolled.
         existing_allies = [
-            a for a in getattr(player, "combat_list_allies", []) if a is not player
+            a for a in getattr(player, "combat_list_allies", [])
+            if a is not player and a.is_alive()
         ]
         player.combat_list_allies = [player] + existing_allies
         player.in_combat = True
