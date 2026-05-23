@@ -169,7 +169,7 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
         setActionMessage('✗ ' + (data.error || 'Cannot read this item'))
       }
     } catch (err) {
-      setActionMessage('✗ ' + (err.response?.data?.error || err.message))
+      setActionMessage('✗ ' + (err.response?.data?.error || err.message || 'Unknown error'))
     } finally {
       setIsLoading(false)
     }
