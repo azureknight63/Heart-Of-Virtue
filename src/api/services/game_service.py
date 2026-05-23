@@ -2886,10 +2886,23 @@ class GameService:
                 # phantom combat with no enemies.
                 player.in_combat = False
                 player.combat_list = []
-                player.combat_list_allies = [player]
+                # Preserve living allies (e.g. Gorran) — same pattern as _initialize_combat.
+                existing_allies = [
+                    a for a in getattr(player, "combat_list_allies", [])
+                    if a is not player
+                ]
+                player.combat_list_allies = [player] + existing_allies
                 player.current_move = None
+                # Strip non-persistent status effects that should have been cleared at
+                # combat end (mirrors combat.py line 624 which the API adapter never runs).
+                player.states = [
+                    s for s in getattr(player, "states", [])
+                    if getattr(s, "persistent", True)
+                ]
                 if hasattr(player, "_combat_adapter"):
                     del player._combat_adapter
+                if hasattr(player, "combat_adapter_state"):
+                    del player.combat_adapter_state
                 if hasattr(player, "_combat_deferred_enemies"):
                     del player._combat_deferred_enemies
                 if hasattr(player, "combat_end_summary"):

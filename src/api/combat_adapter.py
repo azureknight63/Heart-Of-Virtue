@@ -1150,10 +1150,6 @@ class ApiCombatAdapter:
                 self.player.combat_beat, "You have been defeated!", "system"
             )
 
-            # Clear combat lists so any subsequent autosave doesn't preserve stale enemies
-            self.player.combat_list = []
-            self.player.combat_list_allies = [self.player]
-
             # Set end-of-combat summary for defeat so frontend can show a game-over dialog
             try:
                 import uuid
@@ -1174,6 +1170,16 @@ class ApiCombatAdapter:
 
             result = self.get_combat_state()
             result["beat_states"] = beat_states
+
+            # Clear enemies after the state snapshot so the defeat payload shows who killed
+            # the player rather than an empty battlefield. Preserve living allies (e.g. Gorran)
+            # so the party roster survives defeat — mirrors _handle_victory and _initialize_combat.
+            self.player.combat_list = []
+            existing_allies = [
+                a for a in self.player.combat_list_allies if a is not self.player
+            ]
+            self.player.combat_list_allies = [self.player] + existing_allies
+
             return result
 
         # Evaluate all combat events one final time when enemies are defeated
@@ -1857,10 +1863,13 @@ class ApiCombatAdapter:
                 npc.aggro = False
                 npc.in_combat = False
 
-        # Clear the player's own combat lists so a stale adapter cannot resume.
-        # Invariant: combat_list_allies[0] is always the player (mirrors _initialize_combat).
+        # Clear enemies; preserve living allies (e.g. Gorran) so the party roster
+        # survives the fight. Invariant: combat_list_allies[0] is always the player.
         self.player.combat_list = []
-        self.player.combat_list_allies = [self.player]
+        existing_allies = [
+            a for a in self.player.combat_list_allies if a is not self.player
+        ]
+        self.player.combat_list_allies = [self.player] + existing_allies
 
     def _get_available_moves(self) -> List[Dict[str, Any]]:
         """Get list of all moves for the player with availability status."""
