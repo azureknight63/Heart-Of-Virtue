@@ -443,6 +443,191 @@ describe('ItemDetailDialog', () => {
     });
   });
 
+  // ---------------------------------------------------------------------------
+  // Book reading (handleRead)
+  // ---------------------------------------------------------------------------
+  describe('book reading', () => {
+    const bookItem = {
+      id: 42,
+      name: "Jambo's Business Wisdom",
+      maintype: 'Book',
+      subtype: 'Book',
+      value: 5,
+      weight: 2,
+      description: 'A merchant tome.',
+      can_read: true,
+      can_equip: false,
+      can_use: false,
+      can_drop: true,
+      is_equipped: false,
+    }
+
+    it('shows the Read button for book items', () => {
+      render(
+        <ItemDetailDialog
+          item={bookItem}
+          player={mockPlayer}
+          onBack={mockOnBack}
+        />
+      )
+      expect(screen.getByText(/Read/i)).toBeDefined()
+    })
+
+    it('does not show Read button for non-book items', () => {
+      render(
+        <ItemDetailDialog
+          item={mockItem}
+          player={mockPlayer}
+          onBack={mockOnBack}
+        />
+      )
+      expect(screen.queryByText(/📖/)).toBeNull()
+    })
+
+    it('opens BookReaderDialog with stripped title and content on success', async () => {
+      apiClient.post.mockResolvedValue({
+        data: {
+          success: true,
+          message: "--- Jambo's Business Wisdom ---\n\nBuy low, sell high.\n\n--- Jambo's Business Wisdom ---",
+        },
+      })
+
+      render(
+        <ItemDetailDialog
+          item={bookItem}
+          player={mockPlayer}
+          onBack={mockOnBack}
+        />
+      )
+
+      fireEvent.click(screen.getByText(/Read/i))
+
+      await waitFor(() => {
+        expect(apiClient.post).toHaveBeenCalledWith('/inventory/use', { item_id: 42 })
+        // Book content visible (wrapper lines stripped)
+        expect(screen.getByText(/Buy low, sell high\./i)).toBeDefined()
+        // CLOSE BOOK button confirms BookReaderDialog is open
+        expect(screen.getByText('CLOSE BOOK')).toBeDefined()
+        // Wrapper lines must NOT appear in the reader
+        expect(screen.queryByText(/^---/)).toBeNull()
+      })
+    })
+
+    it('closes BookReaderDialog when CLOSE BOOK is clicked', async () => {
+      apiClient.post.mockResolvedValue({
+        data: {
+          success: true,
+          message: "--- Title ---\n\nSome text.\n\n--- Title ---",
+        },
+      })
+
+      render(
+        <ItemDetailDialog
+          item={bookItem}
+          player={mockPlayer}
+          onBack={mockOnBack}
+        />
+      )
+
+      fireEvent.click(screen.getByText(/Read/i))
+      await waitFor(() => expect(screen.getByText('CLOSE BOOK')).toBeDefined())
+
+      fireEvent.click(screen.getByText('CLOSE BOOK'))
+      expect(screen.queryByText('CLOSE BOOK')).toBeNull()
+    })
+
+    it('shows error message when API returns failure', async () => {
+      apiClient.post.mockResolvedValue({
+        data: { success: false, error: 'Cannot read a blank book.' },
+      })
+
+      render(
+        <ItemDetailDialog
+          item={bookItem}
+          player={mockPlayer}
+          onBack={mockOnBack}
+        />
+      )
+
+      fireEvent.click(screen.getByText(/Read/i))
+
+      await waitFor(() => {
+        expect(screen.getByText(/Cannot read a blank book\./i)).toBeDefined()
+        expect(screen.queryByText('CLOSE BOOK')).toBeNull()
+      })
+    })
+
+    it('shows error message on network failure', async () => {
+      apiClient.post.mockRejectedValue(new Error('Network timeout'))
+
+      render(
+        <ItemDetailDialog
+          item={bookItem}
+          player={mockPlayer}
+          onBack={mockOnBack}
+        />
+      )
+
+      fireEvent.click(screen.getByText(/Read/i))
+
+      await waitFor(() => {
+        expect(screen.getByText(/✗.*Network timeout/i)).toBeDefined()
+        expect(screen.queryByText('CLOSE BOOK')).toBeNull()
+      })
+    })
+
+    it('shows "Unknown error" instead of "undefined" when thrown value has no message', async () => {
+      // Simulate a non-Error throw (e.g. rejected promise with a plain object)
+      const nonError = { code: 'WEIRD' } // no .message, no .response
+      apiClient.post.mockRejectedValue(nonError)
+
+      render(
+        <ItemDetailDialog
+          item={bookItem}
+          player={mockPlayer}
+          onBack={mockOnBack}
+        />
+      )
+
+      fireEvent.click(screen.getByText(/Read/i))
+
+      await waitFor(() => {
+        expect(screen.queryByText(/undefined/i)).toBeNull()
+        expect(screen.getByText(/✗.*Unknown error/i)).toBeDefined()
+      })
+    })
+
+    it('clears a previous error message when Read is clicked again', async () => {
+      // First call fails
+      apiClient.post.mockRejectedValueOnce(new Error('First failure'))
+      // Second call succeeds
+      apiClient.post.mockResolvedValueOnce({
+        data: {
+          success: true,
+          message: "--- Book ---\n\nContent here.\n\n--- Book ---",
+        },
+      })
+
+      render(
+        <ItemDetailDialog
+          item={bookItem}
+          player={mockPlayer}
+          onBack={mockOnBack}
+        />
+      )
+
+      fireEvent.click(screen.getByText(/Read/i))
+      await waitFor(() => expect(screen.getByText(/✗.*First failure/i)).toBeDefined())
+
+      // Second attempt should clear the error and open the reader
+      fireEvent.click(screen.getByText(/Read/i))
+      await waitFor(() => {
+        expect(screen.queryByText(/First failure/i)).toBeNull()
+        expect(screen.getByText('CLOSE BOOK')).toBeDefined()
+      })
+    })
+  })
+
   it('handles mouse events on buttons', () => {
     render(
       <ItemDetailDialog
