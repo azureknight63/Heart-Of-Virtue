@@ -94,6 +94,18 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
     )
   }, [combat?.log, displayedLog])
 
+  // Detect page reload during combat: all logs pending on first batch (no logs displayed yet)
+  const isPageReloadRecovery = useRef(false)
+  useEffect(() => {
+    // If we have pending logs but haven't displayed ANY yet, it's a reload recovery
+    if (displayedLog.length === 0 && pendingLogEntries.length > 0) {
+      isPageReloadRecovery.current = true
+    } else if (displayedLog.length > 0) {
+      // Once we've displayed any logs normally, no longer in reload recovery
+      isPageReloadRecovery.current = false
+    }
+  }, [displayedLog.length, pendingLogEntries.length])
+
   // Determine if we are effectively busy
   const isBusyProcessing = isProcessingLog || pendingLogEntries.length > 0
 
@@ -144,6 +156,7 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
       const delayPerLine = 400 // ms per line
       let currentIndex = 0
       const currentPending = pendingLogEntries // capture for closure
+      const skipDelays = isPageReloadRecovery.current
 
       // Function to process one line at a time
       const processNextLine = () => {
@@ -152,6 +165,7 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
         if (currentIndex >= currentPending.length) {
           // All lines processed
           setIsProcessingLog(false)
+          isPageReloadRecovery.current = false
           return
         }
 
@@ -179,8 +193,8 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
           onLogProgress(beatIndex)
         }
 
-        // Play SFX (skip for animation-only entries)
-        if (!isAnimationEntry) {
+        // Play SFX (skip for animation-only entries, and skip all SFX during reload recovery)
+        if (!isAnimationEntry && !skipDelays) {
           if (msg.includes('attacks')) playSFX('attack_swipe')
           else if (msg.includes('hit') || msg.includes('damage')) playSFX('attack_hit')
           else if (msg.includes('miss')) playSFX('attack_miss')
@@ -207,18 +221,25 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
 
         currentIndex++
 
-        // For animation entries, hold the log reveal for the animation's
-        // duration so the next (outcome) line doesn't appear before the
-        // player sees the swing/impact. Fall back to 0 when we don't know
-        // the animation type.
-        const animDuration = isAnimationEntry
-          ? getAnimationDuration(entry.animation?.type)
-          : 0
-        const nextDelay = isAnimationEntry
-          ? animDuration
-          : (msg.includes('victory') ? 2000 : delayPerLine)
-        if (isMounted) {
-          timeoutId = setTimeout(processNextLine, nextDelay)
+        // For page reloads, display all logs instantly without delays
+        if (skipDelays) {
+          if (isMounted) {
+            timeoutId = setTimeout(processNextLine, 0)
+          }
+        } else {
+          // For animation entries, hold the log reveal for the animation's
+          // duration so the next (outcome) line doesn't appear before the
+          // player sees the swing/impact. Fall back to 0 when we don't know
+          // the animation type.
+          const animDuration = isAnimationEntry
+            ? getAnimationDuration(entry.animation?.type)
+            : 0
+          const nextDelay = isAnimationEntry
+            ? animDuration
+            : (msg.includes('victory') ? 2000 : delayPerLine)
+          if (isMounted) {
+            timeoutId = setTimeout(processNextLine, nextDelay)
+          }
         }
       }
 
