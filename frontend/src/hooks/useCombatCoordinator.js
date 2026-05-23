@@ -39,6 +39,9 @@ export function useCombatCoordinator({
     const [lastEndStateId, setLastEndStateId] = useState(
         () => sessionStorage.getItem('hov_last_end_state_id')
     )
+    // True from when the end-state timer is scheduled until the dialog fires.
+    // Lets GamePage keep mode='combat' during the delay without relying on lastEndStateId.
+    const [endStatePending, setEndStatePending] = useState(false)
 
     // Combat log processing state
     const [isCombatLogProcessing, setIsCombatLogProcessing] = useState(false)
@@ -67,10 +70,12 @@ export function useCombatCoordinator({
                 // Mark handled immediately so re-renders don't schedule a second timer
                 setLastEndStateId(maybeEnd.id)
                 sessionStorage.setItem('hov_last_end_state_id', maybeEnd.id)
+                setEndStatePending(true)
 
                 const isVictory = maybeEnd.status === 'victory'
                 endStateTimerRef.current = setTimeout(() => {
                     endStateTimerRef.current = null
+                    setEndStatePending(false)
                     if (isVictory) {
                         setShowVictoryDialog(true)
                         // Play fanfare as a one-shot sting (non-looping)
@@ -173,6 +178,7 @@ export function useCombatCoordinator({
         showLootDialog,
         endState,
         lastEndStateId,
+        endStatePending,
         isCombatLogProcessing,
         currentLogIndex,
         hoveredTargetId,

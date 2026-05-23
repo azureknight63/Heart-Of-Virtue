@@ -66,6 +66,7 @@ export default function GamePage() {
     showLootDialog,
     endState,
     lastEndStateId,
+    endStatePending,
     isCombatLogProcessing,
     currentLogIndex,
     hoveredTargetId,
@@ -337,10 +338,12 @@ export default function GamePage() {
       if (maybeEnd && (maybeEnd.status === 'victory' || maybeEnd.status === 'defeat')) {
         setEndState(maybeEnd)
 
-        // Keep mode locked to 'combat' while the dialog is open or pending.
-        // Once closed, lastEndStateId catches up and we switch back to exploration.
-        const isDialogActive = showVictoryDialog || showDefeatDialog || maybeEnd.id !== lastEndStateId;
-        
+        // Keep mode locked to 'combat' while the dialog is pending (timer running)
+        // or while the dialog is open. endStatePending bridges the gap between when
+        // lastEndStateId is updated (immediately, to prevent duplicate timers) and
+        // when showVictoryDialog/showDefeatDialog becomes true (after the delay).
+        const isDialogActive = showVictoryDialog || showDefeatDialog || endStatePending;
+
         if (isDialogActive) {
           setMode('combat')
         } else {
@@ -355,7 +358,7 @@ export default function GamePage() {
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [inCombat, combat, eventQueue, currentEvent, lastEndStateId, showVictoryDialog, showDefeatDialog])
+  }, [inCombat, combat, eventQueue, currentEvent, endStatePending, showVictoryDialog, showDefeatDialog])
 
   /**
    * Manage SFX when modes change
