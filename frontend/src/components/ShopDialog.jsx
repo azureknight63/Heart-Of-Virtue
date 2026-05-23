@@ -269,7 +269,7 @@ function QtyPicker({ value, max, onChange, isMobile }) {
  *   isMobile   {boolean}
  */
 export default function ShopDialog({ npcId, npcName, initialTab = 'buy', player, onClose, onRefetch, isMobile }) {
-  const { shopState, sellInventory, isLoading, error, txnMessage, buy, sell, buyback } = useShop(npcId)
+  const { shopState, sellInventory, isLoading, error, txnMessage, welcomeMessage, buy, sell, buyback } = useShop(npcId)
 
   const [activeTab, setActiveTab] = useState(initialTab)
   const [selectedId, setSelectedId] = useState(null)
@@ -399,6 +399,23 @@ export default function ShopDialog({ npcId, npcName, initialTab = 'buy', player,
       zIndex={1500}
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: spacing.sm }}>
+
+        {/* Merchandise Transfer Dialog — shown when items were silently returned to the shop on open */}
+        {welcomeMessage && (
+          <div style={{
+            whiteSpace: 'pre-line',
+            background: 'rgba(255,204,0,0.06)',
+            border: '1px solid rgba(255,204,0,0.35)',
+            borderRadius: '6px',
+            padding: '10px 14px',
+            color: colors.gold,
+            fontSize: '0.78rem',
+            lineHeight: '1.55',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.25)',
+          }}>
+            {welcomeMessage}
+          </div>
+        )}
 
         {/* NPC Strip */}
         <div style={{

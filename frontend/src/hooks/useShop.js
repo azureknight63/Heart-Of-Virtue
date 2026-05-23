@@ -17,6 +17,7 @@ export function useShop(npcId) {
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState(null)
   const [txnMessage, setTxnMessage] = useState(null)
+  const [welcomeMessage, setWelcomeMessage] = useState(null)
 
   const refresh = useCallback(async () => {
     if (!npcId) return
@@ -28,6 +29,7 @@ export function useShop(npcId) {
       if (data.success) {
         setShopState(data.shop_state)
         setSellInventory(data.sell_inventory || [])
+        setWelcomeMessage(data.message || null)
       } else {
         setError(data.error || 'Failed to load shop')
       }
@@ -71,5 +73,5 @@ export function useShop(npcId) {
   const buyback = (itemId) =>
     _handleTxn(() => shopApi.buyback(npcId, itemId), 'gold_spent')
 
-  return { shopState, sellInventory, isLoading, error, txnMessage, buy, sell, buyback, refresh }
+  return { shopState, sellInventory, isLoading, error, txnMessage, welcomeMessage, buy, sell, buyback, refresh }
 }

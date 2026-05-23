@@ -36,6 +36,7 @@ def _serialize_shop_item(item: Any, price_modifier: float) -> Dict:
         "is_stackable": count > 1,
         "power": getattr(item, "power", None),
         "is_buyback": False,
+        "merchandise": getattr(item, "merchandise", False),
     }
 
 
@@ -54,6 +55,7 @@ def _serialize_buyback_item(entry: Dict) -> Dict:
         "is_stackable": entry["count"] > 1,
         "power": entry.get("power"),
         "is_buyback": True,
+        "merchandise": True,
     }
 
 
@@ -96,7 +98,8 @@ class ShopSerializer:
         sell_mod = getattr(shop, "sell_modifier", 0.5) if shop else 0.5
         shop_name = getattr(shop, "title", None) or f"{merchant.name}'s Shop"
 
-        # Serialize regular stock (exclude Gold items)
+        # Serialize regular stock (exclude Gold items and non-merchandise items;
+        # only merchandise==True items belong in the BUY tab)
         merchant_inv = getattr(merchant, "inventory", [])
         ledger: List[Dict] = getattr(merchant, "_buyback_ledger", [])
         buyback_ids = {e["item_id"] for e in ledger}
@@ -105,6 +108,7 @@ class ShopSerializer:
             for item in merchant_inv
             if getattr(item, "name", None) != "Gold"
             and str(id(item)) not in buyback_ids
+            and getattr(item, "merchandise", False)
         ]
 
         # Serialize buyback items
@@ -146,6 +150,9 @@ class ShopSerializer:
             if getattr(item, "name", None) == "Gold":
                 continue
             if getattr(item, "is_equipped", False) or getattr(item, "isequipped", False):
+                continue
+            # Merchandise items belong to the shop (BUY tab); exclude from SELL tab
+            if getattr(item, "merchandise", False):
                 continue
             base_value = getattr(item, "value", 0)
             if not base_value:

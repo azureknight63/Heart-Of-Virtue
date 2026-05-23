@@ -353,10 +353,43 @@ def transfer_item(
         def is_merchant(ent):
             return hasattr(ent, "shop")
 
-        if is_player(item_target) and is_merchant(item_source):
-            obj.merchandise = False
-        elif is_player(item_source) and is_merchant(item_target):
-            obj.merchandise = True
+        def is_merchant_container(ent):
+            return hasattr(ent, "merchant") and bool(getattr(ent, "merchant", ""))
+
+        if is_player(item_target):
+            if is_merchant(item_source):
+                # Purchased from a merchant NPC -> no longer merchandise
+                obj.merchandise = False
+            else:
+                # Check if we are in a shop (looting a shop container or player on a shop map)
+                is_in_shop = False
+                if is_merchant_container(item_source):
+                    is_in_shop = True
+                else:
+                    current_map = getattr(item_target, "map", None)
+                    if not current_map and hasattr(item_target, "current_room") and item_target.current_room:
+                        current_map = getattr(item_target.current_room, "map", None)
+                    if current_map and hasattr(current_map, "get"):
+                        map_name = current_map.get("name")
+                        if isinstance(map_name, str) and "shop" in map_name.lower():
+                            is_in_shop = True
+                obj.merchandise = is_in_shop
+        elif is_player(item_source):
+            if is_merchant(item_target) or is_merchant_container(item_target):
+                # Sold/placed into a merchant/shop container -> becomes merchandise
+                obj.merchandise = True
+            else:
+                # Sold/placed into a container inside a shop map -> becomes merchandise
+                is_in_shop = False
+                current_map = getattr(item_source, "map", None)
+                if not current_map and hasattr(item_source, "current_room") and item_source.current_room:
+                    current_map = getattr(item_source.current_room, "map", None)
+                if current_map and hasattr(current_map, "get"):
+                    map_name = current_map.get("name")
+                    if isinstance(map_name, str) and "shop" in map_name.lower():
+                        is_in_shop = True
+                if is_in_shop:
+                    obj.merchandise = True
 
     # Ensure qty is at least 1
     if qty < 1:

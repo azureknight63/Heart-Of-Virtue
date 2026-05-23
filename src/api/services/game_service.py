@@ -4954,6 +4954,29 @@ class GameService:
         if not non_gold and hasattr(merchant, "update_goods"):
             merchant.update_goods()
 
+        # Transfer any merchandise items the player is carrying to the merchant's
+        # stock (silently for the API — no terminal prints or sleeps). Capture the
+        # generated flavor phrases so the frontend can display them as a dialog.
+        collected_messages: list = []
+        if hasattr(merchant, "_collect_player_merchandise"):
+            collected_messages = merchant._collect_player_merchandise(player, silent=True)
+        else:
+            # Fallback for test environments with fake merchants
+            merchant_name = getattr(merchant, "name", "Merchant")
+            for it in list(getattr(player, "inventory", [])):
+                if getattr(it, "merchandise", False):
+                    try:
+                        player.inventory.remove(it)
+                    except ValueError:
+                        continue
+                    if not hasattr(merchant, "inventory") or merchant.inventory is None:
+                        merchant.inventory = []
+                    merchant.inventory.append(it)
+                    collected_messages.append(
+                        f"{merchant_name.split(' ')[0]} deftly takes the "
+                        f"{getattr(it, 'name', 'item')} and adds it to the display."
+                    )
+
         current_tick = self._game_tick(player)
         ShopSerializer.flush_stale_buyback(merchant, current_tick)
         shop_state = ShopSerializer.serialize_state(merchant, player, current_tick)
@@ -4961,10 +4984,13 @@ class GameService:
             player, shop_state["sell_modifier"]
         )
 
+        message = "\n".join(collected_messages) if collected_messages else None
+
         return {
             "success": True,
             "shop_state": shop_state,
             "sell_inventory": sell_inventory,
+            "message": message,
         }
 
     def shop_buy(

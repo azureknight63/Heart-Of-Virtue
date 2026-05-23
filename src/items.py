@@ -271,6 +271,16 @@ class Item:
 
     def take(self, player: "Player", quantity: Optional[int] = None) -> None:
         """Take the item from the ground."""
+        # Determine if the player is currently in a shop map
+        is_in_shop = False
+        current_map = getattr(player, "map", None)
+        if not current_map and hasattr(player, "current_room") and player.current_room:
+            current_map = getattr(player.current_room, "map", None)
+        if current_map and hasattr(current_map, "get"):
+            map_name = current_map.get("name")
+            if isinstance(map_name, str) and "shop" in map_name.lower():
+                is_in_shop = True
+
         if hasattr(self, "count") and getattr(self, "count") > 1:
             while True:
                 if quantity is not None:
@@ -310,6 +320,8 @@ class Item:
 
                             if take_count == getattr(self, "count"):
                                 # Take all
+                                if hasattr(self, "merchandise"):
+                                    self.merchandise = is_in_shop
                                 player.inventory.append(self)
                                 if self in player.current_room.items_here:
                                     player.current_room.items_here.remove(self)
@@ -333,6 +345,8 @@ class Item:
                                 # Update the new item's description based on count
                                 if hasattr(new_item, "stack_grammar"):
                                     new_item.stack_grammar()
+                                if hasattr(new_item, "merchandise"):
+                                    new_item.merchandise = is_in_shop
                                 player.inventory.append(new_item)
                                 cprint(
                                     f"{player.name} picks up {take_count} x {self.name}.",
@@ -366,6 +380,8 @@ class Item:
                 return
 
         # Add to inventory
+        if hasattr(self, "merchandise"):
+            self.merchandise = is_in_shop
         player.inventory.append(self)
 
         # Remove from room

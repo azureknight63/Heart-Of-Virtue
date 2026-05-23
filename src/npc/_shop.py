@@ -54,14 +54,23 @@ class MerchantShopMixin:
 
     # ── Player-merchandise absorption ─────────────────────────────────────────
 
-    def _collect_player_merchandise(self, player):
+    def _collect_player_merchandise(self, player, silent=False):
         """Pull any merchandise items the player is carrying into the merchant's stock with flavor text.
 
         Rationale: If Jean brings unpaid shop goods to the merchant, presume intent to purchase and
         surface them in the Buy menu. Similar pacing & flavor to player.drop_merchandise_items().
+
+        Args:
+            player: The Player instance whose inventory is scanned.
+            silent: When True, suppress terminal prints and time.sleep calls. The collected
+                    dialogue phrases are still returned regardless of this flag.
+
+        Returns:
+            list[str]: Flavor phrases generated for each collected item (empty list if none).
         """
+        collected_messages = []
         if not player or not hasattr(player, "inventory"):
-            return
+            return collected_messages
         phrases = [
             "{merchant} arches a brow: 'Ahh, eyeing the {item}, are we? I'll just set that out proper.'",
             "{merchant} deftly takes the {item} and adds it to the display.",
@@ -114,11 +123,14 @@ class MerchantShopMixin:
                     merchant=self.name.split(" ")[0],
                     item=getattr(it, "name", "item"),
                 )
-                print(msg)
-                time.sleep(0.15)
+                collected_messages.append(msg)
+                if not silent:
+                    print(msg)
+                    time.sleep(0.15)
                 took_any = True
-        if took_any:
+        if took_any and not silent:
             time.sleep(0.25)
+        return collected_messages
 
     # ── Shop initialisation ────────────────────────────────────────────────────
 
