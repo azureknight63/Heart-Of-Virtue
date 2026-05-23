@@ -1078,9 +1078,10 @@ function BattlefieldGrid({
   if (isFullMode) {
     leftX = 0;
     topY = resolvedMapSize - 1;
-  } else if (snapState) {
-    leftX = snapState.leftX;
-    topY  = snapState.topY;
+  } else if (snapCellRef.current) {
+    // Use the ref directly (always current) instead of state (which may lag during RAF)
+    leftX = snapCellRef.current.leftX;
+    topY  = snapCellRef.current.topY;
   } else {
     // Pre-snapState fallback — Jean always centered, no edge-clamping
     leftX = playerPos.x - HALF_VIEW;
