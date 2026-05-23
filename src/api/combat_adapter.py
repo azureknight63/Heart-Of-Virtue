@@ -766,6 +766,7 @@ class ApiCombatAdapter:
         # Check if move needs distance input (e.g., Tactical Positioning)
         if hasattr(pending_move, "needs_distance_input") and pending_move.needs_distance_input:
             self.input_type = "number_input"
+            self.awaiting_input = True
             self.available_options = {
                 "prompt": "Enter the desired distance (0-100):",
                 "min": pending_move.mvrange[0] if hasattr(pending_move, "mvrange") else 0,
@@ -821,6 +822,10 @@ class ApiCombatAdapter:
         """Handle player entering a numeric value."""
         if self.input_type != "number_input":
             return {"error": "Not expecting number input"}
+
+        # Ensure value is an integer
+        if not isinstance(value, int) or isinstance(value, bool):
+            return {"error": "Invalid numeric value"}
 
         # Reconstruct pending move
         if self.pending_move_index is None:
