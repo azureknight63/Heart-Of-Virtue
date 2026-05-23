@@ -172,6 +172,7 @@ export function useCombatCoordinator({
         showDefeatDialog,
         showLootDialog,
         endState,
+        lastEndStateId,
         isCombatLogProcessing,
         currentLogIndex,
         hoveredTargetId,
