@@ -749,6 +749,7 @@ class TacticalPositioning(Move):
         self.distance = 0
         self.target_dist_final = None
         self.fatigue_per_beat = 1
+        self.needs_distance_input = True
         self.evaluate()
 
     def viable(self):

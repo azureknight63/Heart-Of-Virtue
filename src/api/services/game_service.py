@@ -2173,6 +2173,9 @@ class GameService:
                         "target_id": target_id,
                     }
                     result = adapter.process_command(target_command)
+                    # Note: If the move needs additional input after targeting (e.g., distance),
+                    # result will now contain that input_type (e.g., 'number_input') and will be
+                    # returned to the client for further input.
 
             return result
 
