@@ -376,23 +376,22 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
             </div>
           )}
 
-          {/* Equipped Status */}
-          {item.is_equipped && (
-            <div style={{
-              backgroundColor: 'rgba(0, 50, 0, 0.6)',
-              padding: '6px',
-              textAlign: 'center',
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'center',
-              gridColumn: '1 / -1',
-            }}>
-              <div style={{ color: '#00ff88', fontWeight: 'bold', fontSize: '14px' }}>
-                ✓ Equipped
-              </div>
-            </div>
-          )}
         </div>
+
+        {/* Equipped Status — outside the grid to avoid auto-fit column count distortion */}
+        {item.is_equipped && (
+          <div style={{
+            backgroundColor: 'rgba(0, 50, 0, 0.6)',
+            border: '1px solid #664400',
+            borderRadius: '3px',
+            padding: '6px',
+            textAlign: 'center',
+          }}>
+            <div style={{ color: '#00ff88', fontWeight: 'bold', fontSize: '14px' }}>
+              ✓ Equipped
+            </div>
+          </div>
+        )}
 
         {/* Merchandise Callout */}
         {item.is_merchandise && (
