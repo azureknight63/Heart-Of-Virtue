@@ -536,6 +536,7 @@ class Fervent(State):
             world=False,
             statustype="enraged",
             persistent=False,
+            description="Strength +30%, Finesse +15%. Endurance -3. Drains HP and Fatigue every few beats.",
         )
         self.tick = 0
         self.execute_on = 5
