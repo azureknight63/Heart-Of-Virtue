@@ -264,6 +264,10 @@ class EventSerializer:
         """
         event_data = EventSerializer.serialize(event)
 
+        # Preserve API event ID if set (critical for multi-stage events)
+        if hasattr(event, "api_event_id") and event.api_event_id:
+            event_data["event_id"] = event.api_event_id
+
         # Check if event requires input
         needs_input = EventSerializer._detect_input_requirement(event)
         event_data["needs_input"] = needs_input
