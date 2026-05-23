@@ -1061,8 +1061,19 @@ class Turn(Move):
         return best_direction
 
     def prep(self, user):
-        """Prep stage - prompt for direction and announce the turn."""
-        self._prompt_direction_selection()
+        """Prep stage - prompt for direction if not already selected and announce the turn."""
+        # Only prompt if direction hasn't been selected yet.
+        # In terminal mode, direction is selected at combat.py:530-535 before cast().
+        # In API mode, direction is set by combat_adapter.py:801 before advance().
+        if not self.target_direction:
+            try:
+                self._prompt_direction_selection()
+            except EOFError:
+                # Headless context (API/testing): no stdin available.
+                # Default to North if direction wasn't pre-selected.
+                self.target_direction = positions.Direction.N
+                cprint(f"{user.name} defaults to facing North.", "yellow")
+
         if self.target_direction:
             cprint(f"{user.name} begins to turn...", "cyan")
 
