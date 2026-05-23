@@ -4,7 +4,6 @@ Chapter 02 events
 
 from src.events import Event, dialogue
 from src.functions import print_slow, await_input
-import sys
 import time
 from src import items
 from src.story.effects import MemoryFlash
@@ -474,45 +473,32 @@ class AfterDefeatingKingSlime(Event):
             self.pass_conditions_to_process()
 
     def process(self):
-        interactive = sys.stdout.isatty()
-
-        if interactive:
-            time.sleep(1)
-            print_slow(
-                "The churning stilled. A deep, resonant silence settled over the cavern.",
-                delay=0.04,
-            )
-            time.sleep(1)
-            print_slow(
-                "Then — gradually — the green receded. Ripple by ripple, the corruption dissolved "
-                "outward from the center, the thick slime thinning and clearing until clean, "
-                "luminescent blue water filled the chamber.",
-                delay=0.03,
-            )
-            time.sleep(1.5)
-            print_slow(
-                "The central stone island was exactly what it always had been. "
-                "The light was steady and quiet, blue-white, older than the corruption that had hidden it.",
-                delay=0.03,
-            )
-            time.sleep(1)
-            print_slow(
-                "On the island, something caught the light. "
-                "Impossibly sharp. Impossibly beautiful.",
-                delay=0.04,
-            )
-            time.sleep(1.5)
-            print_slow(
-                "Jean stood in the clearing water. It was cold — rising back toward its natural level, "
-                "lapping at his boots. The fight was over. There was nothing left in the room that needed him.",
-                delay=0.03,
-            )
-            time.sleep(1)
-            print_slow(
-                "He didn't know what to do with his hands when they weren't needed.",
-                delay=0.04,
-            )
-            time.sleep(2)
+        time.sleep(1)
+        print_slow("The churning stilled. A deep, resonant silence settled over the cavern.")
+        time.sleep(1)
+        print_slow(
+            "Then — gradually — the green receded. Ripple by ripple, the corruption dissolved "
+            "outward from the center, the thick slime thinning and clearing until clean, "
+            "luminescent blue water filled the chamber."
+        )
+        time.sleep(1.5)
+        print_slow(
+            "The central stone island was exactly what it always had been. "
+            "The light was steady and quiet, blue-white, older than the corruption that had hidden it."
+        )
+        time.sleep(1)
+        print_slow(
+            "On the island, something caught the light. "
+            "Impossibly sharp. Impossibly beautiful."
+        )
+        time.sleep(1.5)
+        print_slow(
+            "Jean stood in the clearing water. It was cold — rising back toward its natural level, "
+            "lapping at his boots. The fight was over. There was nothing left in the room that needed him."
+        )
+        time.sleep(1)
+        print_slow("He didn't know what to do with his hands when they weren't needed.")
+        time.sleep(2)
 
         # Update the arena tile description to reflect the cleansed state
         self.tile.spawn_object(
@@ -546,40 +532,32 @@ class AfterDefeatingKingSlime(Event):
                     break
 
         # Narrate Gorran's arrival and his reaction to the cleansed pools
-        if interactive:
-            time.sleep(1)
-            print_slow(
-                "Then — footsteps. Heavy, deliberate, from the corridor entrance.",
-                delay=0.04,
-            )
-            time.sleep(0.5)
-            print_slow("Gorran rounded the archway and stopped.", delay=0.05)
-            time.sleep(1)
-            print_slow(
-                "He looked at the pools. Clean, blue, still. His great head moved slowly across the chamber, "
-                "taking in what it had been and what it was now.",
-                delay=0.03,
-            )
-            time.sleep(1.5)
-            print_slow(
-                "He made no sound. He just stood there in the entrance to the arena, "
-                "looking at the water the way someone looks at something they thought was gone.",
-                delay=0.03,
-            )
-            time.sleep(1)
-            print_slow(
-                "Then, slowly, he walked to the edge of the nearest pool and lowered himself to one knee. "
-                "He extended one wide hand over the surface. Didn't touch it. Just held his palm there, "
-                "feeling the cold rise off it.",
-                delay=0.03,
-            )
-            time.sleep(2)
-            print_slow(
-                "A sound from him — low and long, held in the chest. Not quite a word. "
-                "He stayed like that for a moment, hand over the water. Then he straightened.",
-                delay=0.04,
-            )
-            time.sleep(1)
+        time.sleep(1)
+        print_slow("Then — footsteps. Heavy, deliberate, from the corridor entrance.")
+        time.sleep(0.5)
+        print_slow("Gorran rounded the archway and stopped.")
+        time.sleep(1)
+        print_slow(
+            "He looked at the pools. Clean, blue, still. His great head moved slowly across the chamber, "
+            "taking in what it had been and what it was now."
+        )
+        time.sleep(1.5)
+        print_slow(
+            "He made no sound. He just stood there in the entrance to the arena, "
+            "looking at the water the way someone looks at something they thought was gone."
+        )
+        time.sleep(1)
+        print_slow(
+            "Then, slowly, he walked to the edge of the nearest pool and lowered himself to one knee. "
+            "He extended one wide hand over the surface. Didn't touch it. Just held his palm there, "
+            "feeling the cold rise off it."
+        )
+        time.sleep(2)
+        print_slow(
+            "A sound from him — low and long, held in the chest. Not quite a word. "
+            "He stayed like that for a moment, hand over the water. Then he straightened."
+        )
+        time.sleep(1)
 
         self._cleanse_pool_tiles(self.player, current_map)
 

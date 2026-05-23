@@ -2345,6 +2345,33 @@ class GameService:
                 ):
                     adapter.refresh_suggestions()
 
+        # After combat ends, surface any post-combat tile events (e.g.
+        # AfterDefeatingKingSlime) through the standard trigger_tile_events
+        # pipeline so print_slow output is captured as event dialog text.
+        # The flag prevents re-firing on subsequent polls; the event removes
+        # itself from tile.events_here, so duplicate calls are also harmless.
+        _adapter = getattr(player, "_combat_adapter", None)
+        if (
+            _adapter is not None
+            and not getattr(player, "in_combat", False)
+            and not getattr(_adapter, "_post_combat_tile_events_fired", False)
+        ):
+            _adapter._post_combat_tile_events_fired = True
+            _tile = getattr(player, "current_room", None)
+            if _tile:
+                try:
+                    post_events = self.trigger_tile_events(player, _tile, session_data)
+                    if post_events:
+                        if not hasattr(player, "combat_adapter_state"):
+                            player.combat_adapter_state = {}
+                        existing = player.combat_adapter_state.get(
+                            "events_triggered", []
+                        )
+                        existing.extend(post_events)
+                        player.combat_adapter_state["events_triggered"] = existing
+                except Exception:
+                    _log.exception("Post-combat tile event processing failed")
+
         return player._combat_adapter.get_combat_state()
 
     def get_available_moves(self, player: "player_module.Player") -> Dict[str, Any]:

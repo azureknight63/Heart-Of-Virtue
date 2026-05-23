@@ -1839,29 +1839,6 @@ class ApiCombatAdapter:
             if has_lurker_event and not lurker_still_present:
                 self.player.combat_end_summary["beta_end"] = True
 
-            # Fire AfterDefeatingKingSlime if King Slime was just defeated.
-            # Mirrors combat.py's post-victory evaluate_events() call for this event.
-            king_slime_event = next(
-                (
-                    e
-                    for e in getattr(tile, "events_here", [])
-                    if e.__class__.__name__ == "AfterDefeatingKingSlime"
-                ),
-                None,
-            )
-            if king_slime_event:
-                king_still_alive = any(
-                    n.__class__.__name__ == "KingSlime"
-                    for n in getattr(tile, "npcs_here", [])
-                )
-                if not king_still_alive:
-                    try:
-                        king_slime_event.check_conditions()
-                    except Exception as e:
-                        logger.warning(
-                            "AfterDefeatingKingSlime event failed: %s", e
-                        )
-
         # Reset any surviving tile NPCs that still carry aggro/in_combat flags from
         # this encounter.  Enemies that were defeated are already removed from the
         # tile by their death handler, but NPCs spawned mid-fight (e.g. by
