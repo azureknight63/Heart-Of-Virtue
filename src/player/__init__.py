@@ -288,14 +288,22 @@ maintenant et à l'heure de notre mort. Amen.""",
         self.fatigue = self.maxfatigue
 
     def apply_starting_experience(self, exp_value: int):
-        """Apply starting experience to all skill categories if exp_value > 0.
+        """Apply starting experience to all skill categories and trigger level-ups if needed.
 
         Args:
-            exp_value: The experience value to set for each skill category
+            exp_value: The experience value to set for leveling and each skill category
         """
-        if exp_value > 0 and hasattr(self, "skilltree") and hasattr(self, "skill_exp"):
-            for category in self.skilltree.subtypes.keys():
-                self.skill_exp[category] = exp_value
+        if exp_value > 0:
+            # Set main character experience and trigger level-ups
+            self.exp = exp_value
+            level_up_events = []
+            while self.exp >= self.exp_to_level:
+                level_up_events.append(self._level_up_api())
+
+            # Set experience for skill tree learning
+            if hasattr(self, "skilltree") and hasattr(self, "skill_exp"):
+                for category in self.skilltree.subtypes.keys():
+                    self.skill_exp[category] = exp_value
 
     def apply_state(self, state):
         """Apply a status effect, compounding or refreshing an existing one if present."""
