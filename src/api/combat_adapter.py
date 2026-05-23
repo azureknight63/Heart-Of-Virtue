@@ -1150,6 +1150,10 @@ class ApiCombatAdapter:
                 self.player.combat_beat, "You have been defeated!", "system"
             )
 
+            # Clear combat lists so any subsequent autosave doesn't preserve stale enemies
+            self.player.combat_list = []
+            self.player.combat_list_allies = [self.player]
+
             # Set end-of-combat summary for defeat so frontend can show a game-over dialog
             try:
                 import uuid

@@ -2880,6 +2880,21 @@ class GameService:
                     if start_tile:
                         player.current_room = start_tile
 
+                # Reset transient combat state so the player never loads mid-fight.
+                # Saves captured during combat (e.g. autosave every 20 ticks) or after
+                # a defeat whose cleanup was interrupted would otherwise resume into a
+                # phantom combat with no enemies.
+                player.in_combat = False
+                player.combat_list = []
+                player.combat_list_allies = [player]
+                player.current_move = None
+                if hasattr(player, "_combat_adapter"):
+                    del player._combat_adapter
+                if hasattr(player, "_combat_deferred_enemies"):
+                    del player._combat_deferred_enemies
+                if hasattr(player, "combat_end_summary"):
+                    del player.combat_end_summary
+
             return player
         except Exception as e:
             print(f"Error loading save {save_id}: {e}")
