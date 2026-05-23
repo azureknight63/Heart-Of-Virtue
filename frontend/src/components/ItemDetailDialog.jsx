@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import apiClient from '../api/client'
 import { player as playerApi } from '../api/endpoints'
+import BookReaderDialog from './BookReaderDialog'
 
 export default function ItemDetailDialog({ item, player, onClose, onBack, onRefetch, onItemRemoved, onItemUpdated, combatMode = false }) {
   const [isLoading, setIsLoading] = useState(false)
@@ -9,6 +10,7 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
   const [actionResult, setActionResult] = useState(null)
   const [showAllyPicker, setShowAllyPicker] = useState(false)
   const [freshPartyMembers, setFreshPartyMembers] = useState(null)
+  const [bookReaderData, setBookReaderData] = useState(null)
 
   const partyMembers = freshPartyMembers || player?.party_members || []
   const hasPartyMembers = partyMembers.length > 0
@@ -144,7 +146,34 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
   }
 
   const handleUse = makeItemActionHandler('use', 'Item used!', 'Cannot use this item', true)
-  const handleRead = makeItemActionHandler('read', 'Book opened!', 'Cannot read this item', false)
+
+  const handleCloseBook = useCallback(() => setBookReaderData(null), [])
+
+  const handleRead = async () => {
+    setIsLoading(true)
+    setActionMessage('')
+    try {
+      const response = await apiClient.post('/inventory/use', { item_id: item.id })
+      const data = response.data || response
+      if (data.success) {
+        // Strip the "--- Title ---" header/footer the backend wraps around book text
+        const lines = (data.message || '').split('\n')
+        const wrapperRe = /^---\s.+\s---$/
+        let start = 0
+        let end = lines.length - 1
+        if (wrapperRe.test(lines[start]?.trim())) start++
+        if (wrapperRe.test(lines[end]?.trim())) end--
+        const cleanText = lines.slice(start, end + 1).join('\n').trim()
+        setBookReaderData({ title: item.name, text: cleanText || data.message })
+      } else {
+        setActionMessage('✗ ' + (data.error || 'Cannot read this item'))
+      }
+    } catch (err) {
+      setActionMessage('✗ ' + (err.response?.data?.error || err.message))
+    } finally {
+      setIsLoading(false)
+    }
+  }
 
   const handleDrop = async () => {
     setIsLoading(true)
@@ -981,6 +1010,14 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
             </button>
           </div>
         </div>
+      )}
+
+      {bookReaderData && (
+        <BookReaderDialog
+          title={bookReaderData.title}
+          text={bookReaderData.text}
+          onClose={handleCloseBook}
+        />
       )}
     </div>
   )
