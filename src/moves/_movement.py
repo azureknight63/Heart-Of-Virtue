@@ -1061,7 +1061,8 @@ class Turn(Move):
         return best_direction
 
     def prep(self, user):
-        """Prep stage - announce the turn."""
+        """Prep stage - prompt for direction and announce the turn."""
+        self._prompt_direction_selection()
         if self.target_direction:
             cprint(f"{user.name} begins to turn...", "cyan")
 
