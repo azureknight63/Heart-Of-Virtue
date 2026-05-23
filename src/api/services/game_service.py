@@ -1594,6 +1594,9 @@ class GameService:
                     round_number=getattr(player, "combat_round", 1),
                 )
 
+        # Detect if player teleported
+        teleported = _post_map_name != _pre_map_name or player.location_x != _pre_x or player.location_y != _pre_y
+
         return {
             "success": True,
             "message": clean_output,
@@ -1607,6 +1610,7 @@ class GameService:
                 "locked": getattr(target, "locked", False),
                 "state": getattr(target, "state", ""),
             },
+            "teleported": teleported,
         }
 
     # ========================

@@ -255,6 +255,18 @@ function InteractPanel({
                 if (onTypingChange) onTypingChange(true)
                 setInteractionHistory(prev => [...prev, message])
 
+                // If a teleport occurred, close the dialog immediately
+                if (data.teleported) {
+                    if (onRefetch) await onRefetch()
+                    if (onInteractionComplete) onInteractionComplete()
+                    // Close the dialog after a brief delay to show the message
+                    setTimeout(() => {
+                        onClose()
+                    }, 800)
+                    setLoading(false)
+                    return
+                }
+
                 // Update local object state immediately from the response so action
                 // buttons (e.g. "open" after "unlock") appear without requiring a
                 // back-and-re-select round trip.
