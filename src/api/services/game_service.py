@@ -2357,8 +2357,17 @@ class GameService:
             and not getattr(_adapter, "_post_combat_tile_events_fired", False)
         ):
             _adapter._post_combat_tile_events_fired = True
-            _tile = getattr(player, "current_room", None)
+            # Use the tile captured at victory time, not the current room —
+            # the player may have moved before this poll.
+            _tile = getattr(_adapter, "_combat_tile", None) or getattr(
+                player, "current_room", None
+            )
             if _tile:
+                if session_data is None:
+                    _log.warning(
+                        "post-combat tile events fired without session_data; "
+                        "interactive events cannot be queued"
+                    )
                 try:
                     post_events = self.trigger_tile_events(player, _tile, session_data)
                     if post_events:
@@ -3037,6 +3046,11 @@ class GameService:
             )
         elif session_id:
             player._combat_adapter.session_id = session_id
+
+        # Reset post-combat state so events fire correctly after this combat's
+        # victory even when the adapter object is reused across fights.
+        player._combat_adapter._post_combat_tile_events_fired = False
+        player._combat_adapter._combat_tile = None
 
         # Initialize combat through the adapter
         # This will set up all combat state, process initial NPC turns if needed,
