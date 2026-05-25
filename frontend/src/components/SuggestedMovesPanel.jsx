@@ -3,7 +3,7 @@ import { colors } from '../styles/theme'
 
 const STORAGE_KEY = 'hov_tactical_advisor_collapsed'
 
-export default function SuggestedMovesPanel({ suggestions = [], suggestionsLoading = false, lastOutcome = "", lastMoveViable = false, onSuggestClick, isPlayerTurn = false, onTargetHover, isMobile = false }) {
+export default function SuggestedMovesPanel({ suggestions = [], suggestionsLoading = false, lastOutcome = "", lastMoveViable = false, onSuggestClick, isPlayerTurn = false, onTargetHover, isMobile = false, onPause, onRequestSuggestions }) {
     const [isVisible, setIsVisible] = useState(false)
     const [isCollapsed, setIsCollapsed] = useState(() => {
         try { return localStorage.getItem(STORAGE_KEY) === 'true' } catch { return false }
@@ -14,17 +14,28 @@ export default function SuggestedMovesPanel({ suggestions = [], suggestionsLoadi
 
     useEffect(() => {
         if (isPlayerTurn) {
+            // Sync paused state with backend at the start of each player turn
+            onPause?.(isCollapsed)
             const timer = setTimeout(() => setIsVisible(true), 500)
             return () => clearTimeout(timer)
         } else {
             setIsVisible(false)
             setMobileExpanded(false)
         }
-    }, [isPlayerTurn])
+    }, [isPlayerTurn]) // eslint-disable-line react-hooks/exhaustive-deps
 
     useEffect(() => {
         try { localStorage.setItem(STORAGE_KEY, String(isCollapsed)) } catch {}
     }, [isCollapsed])
+
+    const handleDesktopToggle = async () => {
+        const newCollapsed = !isCollapsed
+        setIsCollapsed(newCollapsed)
+        try { await onPause?.(newCollapsed) } catch {}
+        if (!newCollapsed && isPlayerTurn) {
+            onRequestSuggestions?.()
+        }
+    }
 
     if (!isPlayerTurn) return null
 
@@ -98,7 +109,7 @@ export default function SuggestedMovesPanel({ suggestions = [], suggestionsLoadi
         }}>
             {/* Header */}
             <div
-                onClick={isMobile ? () => setMobileExpanded(false) : () => setIsCollapsed(prev => !prev)}
+                onClick={isMobile ? () => setMobileExpanded(false) : handleDesktopToggle}
                 style={{
                     padding: '12px',
                     backgroundColor: `${colors.primary}22`,

@@ -80,6 +80,7 @@ export const combat = {
     return apiClient.post('/combat/move', payload)
   },
   collectLoot: (itemNames) => apiClient.post('/combat/collect-loot', { item_names: itemNames }),
+  pauseSuggestions: (paused) => apiClient.post('/combat/suggestions/pause', { paused }),
 }
 
 // Inventory endpoints
