@@ -1737,6 +1737,10 @@ class ApiCombatAdapter:
         self.awaiting_input = False
         self.player.fatigue = self.player.maxfatigue
 
+        # Snapshot the tile where victory occurred so post-combat events fire on
+        # the right tile even if the player moves before the next status poll.
+        self._combat_tile = getattr(self.player, "current_room", None)
+
         # Calculate exp
         exp_summary = []
         exp_gained: Dict[str, int] = {}
