@@ -1,8 +1,13 @@
 import { useState, useEffect } from 'react'
 import { colors } from '../styles/theme'
 
+const STORAGE_KEY = 'hov_tactical_advisor_collapsed'
+
 export default function SuggestedMovesPanel({ suggestions = [], suggestionsLoading = false, lastOutcome = "", lastMoveViable = false, onSuggestClick, isPlayerTurn = false, onTargetHover, isMobile = false }) {
     const [isVisible, setIsVisible] = useState(false)
+    const [isCollapsed, setIsCollapsed] = useState(() => {
+        try { return localStorage.getItem(STORAGE_KEY) === 'true' } catch { return false }
+    })
     const [hoveredSuggestionName, setHoveredSuggestionName] = useState(null)
     const [hoveredRepeatBtn, setHoveredRepeatBtn] = useState(false)
     const [mobileExpanded, setMobileExpanded] = useState(false)
@@ -16,6 +21,10 @@ export default function SuggestedMovesPanel({ suggestions = [], suggestionsLoadi
             setMobileExpanded(false)
         }
     }, [isPlayerTurn])
+
+    useEffect(() => {
+        try { localStorage.setItem(STORAGE_KEY, String(isCollapsed)) } catch {}
+    }, [isCollapsed])
 
     if (!isPlayerTurn) return null
 
@@ -89,16 +98,17 @@ export default function SuggestedMovesPanel({ suggestions = [], suggestionsLoadi
         }}>
             {/* Header */}
             <div
-                onClick={isMobile ? () => setMobileExpanded(false) : undefined}
+                onClick={isMobile ? () => setMobileExpanded(false) : () => setIsCollapsed(prev => !prev)}
                 style={{
                     padding: '12px',
                     backgroundColor: `${colors.primary}22`,
-                    borderBottom: `1px solid ${colors.primary}44`,
+                    borderBottom: isCollapsed && !isMobile ? 'none' : `1px solid ${colors.primary}44`,
                     display: 'flex',
                     alignItems: 'center',
                     gap: '8px',
-                    cursor: isMobile ? 'pointer' : 'default',
-                    touchAction: isMobile ? 'manipulation' : undefined,
+                    cursor: 'pointer',
+                    touchAction: 'manipulation',
+                    userSelect: 'none',
                 }}
             >
                 <div style={{
@@ -112,13 +122,13 @@ export default function SuggestedMovesPanel({ suggestions = [], suggestionsLoadi
                 <span style={{ color: colors.primary, fontWeight: 'bold', fontSize: '14px', letterSpacing: '1px', flex: 1 }}>
                     TACTICAL ADVISOR
                 </span>
-                {isMobile && (
-                    <span style={{ color: colors.primary, fontSize: '12px', opacity: 0.7 }}>▲</span>
-                )}
+                <span style={{ color: colors.primary, fontSize: '12px', opacity: 0.7 }}>
+                    {isMobile ? '▲' : (isCollapsed ? '▼' : '▲')}
+                </span>
             </div>
 
-            {/* Outcome Section & Repeat Action */}
-            {lastOutcome && (
+            {/* Body — hidden when collapsed on desktop */}
+            {(!isCollapsed || isMobile) && lastOutcome && (
                 <div style={{
                     padding: '10px 12px',
                     fontSize: '11px',
@@ -162,8 +172,8 @@ export default function SuggestedMovesPanel({ suggestions = [], suggestionsLoadi
                 </div>
             )}
 
-            {/* Suggestions List */}
-            <div style={{
+            {/* Suggestions List + Footer — hidden when collapsed on desktop */}
+            {(!isCollapsed || isMobile) && <div style={{
                 padding: '12px',
                 overflowY: 'auto',
                 display: 'flex',
@@ -268,9 +278,9 @@ export default function SuggestedMovesPanel({ suggestions = [], suggestionsLoadi
                         </div>
                     )})
                 )}
-            </div>
+            </div>}
 
-            <div style={{
+            {(!isCollapsed || isMobile) && <div style={{
                 padding: '10px',
                 textAlign: 'center',
                 fontSize: '9px',
@@ -278,7 +288,7 @@ export default function SuggestedMovesPanel({ suggestions = [], suggestionsLoadi
                 borderTop: '1px solid rgba(0, 255, 136, 0.1)'
             }}>
                 NEURAL TACTICAL ENGINE ACTIVE
-            </div>
+            </div>}
         </div>
     )
 }
