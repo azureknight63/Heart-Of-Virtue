@@ -1170,6 +1170,19 @@ class ApiCombatAdapter:
 
             result = self.get_combat_state()
             result["beat_states"] = beat_states
+
+            # Clear enemies after the state snapshot so the defeat payload shows who killed
+            # the player rather than an empty battlefield. Preserve only living allies
+            # (e.g. Gorran) so dead allies don't haunt subsequent rooms via recall_friends.
+            self.player.combat_list = []
+            existing_allies = [
+                a for a in self.player.combat_list_allies
+                if a is not self.player and a.is_alive()
+            ]
+            for ally in existing_allies:
+                ally.in_combat = False
+            self.player.combat_list_allies = [self.player] + existing_allies
+
             return result
 
         # Evaluate all combat events one final time when enemies are defeated
@@ -1857,10 +1870,19 @@ class ApiCombatAdapter:
                 npc.aggro = False
                 npc.in_combat = False
 
-        # Clear the player's own combat lists so a stale adapter cannot resume.
-        # Invariant: combat_list_allies[0] is always the player (mirrors _initialize_combat).
+        # Clear enemies; preserve only living allies so the party roster survives the
+        # fight without dead NPCs haunting recall_friends or the next combat's grid sizing.
+        # Also clear in_combat on surviving allies — the tile-reset loop above only touches
+        # non-friend NPCs, leaving friend=True allies with in_combat=True after every fight.
+        # Invariant: combat_list_allies[0] is always the player.
         self.player.combat_list = []
-        self.player.combat_list_allies = [self.player]
+        existing_allies = [
+            a for a in self.player.combat_list_allies
+            if a is not self.player and a.is_alive()
+        ]
+        for ally in existing_allies:
+            ally.in_combat = False
+        self.player.combat_list_allies = [self.player] + existing_allies
 
     def _get_available_moves(self) -> List[Dict[str, Any]]:
         """Get list of all moves for the player with availability status."""

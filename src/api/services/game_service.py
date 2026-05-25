@@ -2916,6 +2916,37 @@ class GameService:
                     if start_tile:
                         player.current_room = start_tile
 
+                # Reset transient combat state so the player never loads mid-fight.
+                # Saves captured during combat (e.g. autosave every 20 ticks) or after
+                # a defeat whose cleanup was interrupted would otherwise resume into a
+                # phantom combat with no enemies.
+                player.in_combat = False
+                player.combat_list = []
+                # Preserve only living allies — dead allies must not be re-injected into
+                # rooms via recall_friends or re-enrolled in the next combat.
+                existing_allies = [
+                    a for a in getattr(player, "combat_list_allies", [])
+                    if a is not player and a.is_alive()
+                ]
+                for ally in existing_allies:
+                    ally.in_combat = False
+                player.combat_list_allies = [player] + existing_allies
+                player.current_move = None
+                # Strip non-persistent status effects that should have been cleared at
+                # combat end (mirrors combat.py line 624 which the API adapter never runs).
+                player.states = [
+                    s for s in getattr(player, "states", [])
+                    if getattr(s, "persistent", True)
+                ]
+                if hasattr(player, "_combat_adapter"):
+                    del player._combat_adapter
+                if hasattr(player, "combat_adapter_state"):
+                    del player.combat_adapter_state
+                if hasattr(player, "_combat_deferred_enemies"):
+                    del player._combat_deferred_enemies
+                if hasattr(player, "combat_end_summary"):
+                    del player.combat_end_summary
+
             return player
         except Exception as e:
             print(f"Error loading save {save_id}: {e}")
@@ -3024,9 +3055,10 @@ class GameService:
 
         # Set combat lists on player (required by adapter)
         player.combat_list = enemies
-        # Preserve existing party members (e.g. Gorran already recruited) — only player is reset
+        # Preserve existing living party members — dead allies must not be re-enrolled.
         existing_allies = [
-            a for a in getattr(player, "combat_list_allies", []) if a is not player
+            a for a in getattr(player, "combat_list_allies", [])
+            if a is not player and a.is_alive()
         ]
         player.combat_list_allies = [player] + existing_allies
         player.in_combat = True
