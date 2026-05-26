@@ -13,8 +13,9 @@ export default function SuggestedMovesPanel({ suggestions = [], suggestionsLoadi
 
     useEffect(() => {
         if (isPlayerTurn) {
-            // Sync paused state with backend at the start of each player turn
-            onPause?.(isCollapsed)
+            // Sync paused state with backend at the start of each player turn.
+            // Can't await in useEffect; chain .catch so the rejection is handled.
+            onPause?.(isCollapsed)?.catch(() => {})
             const timer = setTimeout(() => setIsVisible(true), 500)
             return () => clearTimeout(timer)
         } else {
@@ -29,8 +30,9 @@ export default function SuggestedMovesPanel({ suggestions = [], suggestionsLoadi
     const handleToggle = async () => {
         const newCollapsed = !isCollapsed
         setIsCollapsed(newCollapsed)
-        try { await onPause?.(newCollapsed) } catch {}
-        if (!newCollapsed && isPlayerTurn) {
+        let pauseOk = false
+        try { await onPause?.(newCollapsed); pauseOk = true } catch {}
+        if (pauseOk && !newCollapsed && isPlayerTurn) {
             onRequestSuggestions?.()
         }
     }

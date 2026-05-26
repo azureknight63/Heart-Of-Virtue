@@ -339,6 +339,8 @@ maintenant et à l'heure de notre mort. Amen.""",
         """
         state = self.__dict__.copy()
         state.pop("_combat_adapter", None)
+        # Transient API-layer suggestion state — regenerated each session, not part of the save
+        state.pop("suggestions_paused", None)
         return state
 
     def get_hp_pcnt(self):

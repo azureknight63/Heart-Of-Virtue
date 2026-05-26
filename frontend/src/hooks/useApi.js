@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import apiEndpoints from '../api/endpoints'
 import { useAuthContext } from '../context/AuthContext'
 
@@ -123,8 +123,11 @@ export const useCombat = () => {
   const [combat, setCombat] = useState(null)
   const [loading, setLoading] = useState(false)
   const [inCombat, setInCombat] = useState(false)
+  const fetchInFlight = useRef(false)
 
   const fetchCombatStatus = useCallback(async () => {
+    if (fetchInFlight.current) return
+    fetchInFlight.current = true
     try {
       setLoading(true)
       const response = await apiEndpoints.combat.getStatus()
@@ -137,6 +140,7 @@ export const useCombat = () => {
       console.error('Combat status error:', err)
     } finally {
       setLoading(false)
+      fetchInFlight.current = false
     }
   }, [])
 
