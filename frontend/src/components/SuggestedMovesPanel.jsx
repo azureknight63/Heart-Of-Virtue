@@ -10,7 +10,6 @@ export default function SuggestedMovesPanel({ suggestions = [], suggestionsLoadi
     })
     const [hoveredSuggestionName, setHoveredSuggestionName] = useState(null)
     const [hoveredRepeatBtn, setHoveredRepeatBtn] = useState(false)
-    const [mobileExpanded, setMobileExpanded] = useState(false)
 
     useEffect(() => {
         if (isPlayerTurn) {
@@ -20,7 +19,6 @@ export default function SuggestedMovesPanel({ suggestions = [], suggestionsLoadi
             return () => clearTimeout(timer)
         } else {
             setIsVisible(false)
-            setMobileExpanded(false)
         }
     }, [isPlayerTurn]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -28,7 +26,7 @@ export default function SuggestedMovesPanel({ suggestions = [], suggestionsLoadi
         try { localStorage.setItem(STORAGE_KEY, String(isCollapsed)) } catch {}
     }, [isCollapsed])
 
-    const handleDesktopToggle = async () => {
+    const handleToggle = async () => {
         const newCollapsed = !isCollapsed
         setIsCollapsed(newCollapsed)
         try { await onPause?.(newCollapsed) } catch {}
@@ -39,11 +37,11 @@ export default function SuggestedMovesPanel({ suggestions = [], suggestionsLoadi
 
     if (!isPlayerTurn) return null
 
-    // Mobile collapsed view — just a compact tap-to-expand header
-    if (isMobile && !mobileExpanded) {
+    // Mobile collapsed view — compact tap-to-expand strip
+    if (isMobile && isCollapsed) {
         return (
             <div
-                onClick={() => setMobileExpanded(true)}
+                onClick={handleToggle}
                 style={{
                     width: '100%',
                     backgroundColor: 'rgba(10, 15, 10, 0.9)',
@@ -109,11 +107,11 @@ export default function SuggestedMovesPanel({ suggestions = [], suggestionsLoadi
         }}>
             {/* Header */}
             <div
-                onClick={isMobile ? () => setMobileExpanded(false) : handleDesktopToggle}
+                onClick={handleToggle}
                 style={{
                     padding: '12px',
                     backgroundColor: `${colors.primary}22`,
-                    borderBottom: isCollapsed && !isMobile ? 'none' : `1px solid ${colors.primary}44`,
+                    borderBottom: isCollapsed ? 'none' : `1px solid ${colors.primary}44`,
                     display: 'flex',
                     alignItems: 'center',
                     gap: '8px',
@@ -138,8 +136,8 @@ export default function SuggestedMovesPanel({ suggestions = [], suggestionsLoadi
                 </span>
             </div>
 
-            {/* Body — hidden when collapsed on desktop */}
-            {(!isCollapsed || isMobile) && lastOutcome && (
+            {/* Body — hidden when collapsed */}
+            {!isCollapsed && lastOutcome && (
                 <div style={{
                     padding: '10px 12px',
                     fontSize: '11px',
@@ -183,8 +181,8 @@ export default function SuggestedMovesPanel({ suggestions = [], suggestionsLoadi
                 </div>
             )}
 
-            {/* Suggestions List + Footer — hidden when collapsed on desktop */}
-            {(!isCollapsed || isMobile) && <div style={{
+            {/* Suggestions List + Footer — hidden when collapsed */}
+            {!isCollapsed && <div style={{
                 padding: '12px',
                 overflowY: 'auto',
                 display: 'flex',
@@ -291,7 +289,7 @@ export default function SuggestedMovesPanel({ suggestions = [], suggestionsLoadi
                 )}
             </div>}
 
-            {(!isCollapsed || isMobile) && <div style={{
+            {!isCollapsed && <div style={{
                 padding: '10px',
                 textAlign: 'center',
                 fontSize: '9px',
