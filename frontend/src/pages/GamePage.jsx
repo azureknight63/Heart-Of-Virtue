@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { usePlayer, useWorld, useCombat, useExploration, useAutosave } from '../hooks/useApi'
 import { useEventManager } from '../hooks/useEventManager'
 import { useCombatCoordinator } from '../hooks/useCombatCoordinator'
@@ -415,6 +415,14 @@ export default function GamePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location])
 
+  const handleAdvisorPause = useCallback(async (paused) => {
+    try { await combatApi.pauseSuggestions(paused) } catch {}
+  }, [])
+
+  const handleAdvisorRequestSuggestions = useCallback(() => {
+    fetchCombatStatus()
+  }, [fetchCombatStatus])
+
   // Loading state
   if ((playerLoading && !player) || (worldLoading && !location)) {
     return (
@@ -580,6 +588,8 @@ export default function GamePage() {
           onDisplayedLogCountChange={setDisplayedLogCount}
           onTargetHover={setHoveredTargetId}
           onMoveSubmitted={isMobile ? () => setActiveMobileTab('map') : undefined}
+          onAdvisorPause={handleAdvisorPause}
+          onAdvisorRequestSuggestions={handleAdvisorRequestSuggestions}
         />
       </div>
 

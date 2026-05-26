@@ -1572,6 +1572,9 @@ class ApiCombatAdapter:
 
         logger = logging.getLogger(__name__)
 
+        if getattr(self.player, "suggestions_paused", False):
+            return
+
         # Set loading state
         self.player.suggestions_loading = True
         self.player.suggested_moves = []  # Clear previous suggestions while loading

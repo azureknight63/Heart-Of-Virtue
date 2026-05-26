@@ -1,29 +1,49 @@
 import { useState, useEffect } from 'react'
 import { colors } from '../styles/theme'
 
-export default function SuggestedMovesPanel({ suggestions = [], suggestionsLoading = false, lastOutcome = "", lastMoveViable = false, onSuggestClick, isPlayerTurn = false, onTargetHover, isMobile = false }) {
+const STORAGE_KEY = 'hov_tactical_advisor_collapsed'
+
+export default function SuggestedMovesPanel({ suggestions = [], suggestionsLoading = false, lastOutcome = "", lastMoveViable = false, onSuggestClick, isPlayerTurn = false, onTargetHover, isMobile = false, onPause, onRequestSuggestions }) {
     const [isVisible, setIsVisible] = useState(false)
+    const [isCollapsed, setIsCollapsed] = useState(() => {
+        try { return localStorage.getItem(STORAGE_KEY) === 'true' } catch { return false }
+    })
     const [hoveredSuggestionName, setHoveredSuggestionName] = useState(null)
     const [hoveredRepeatBtn, setHoveredRepeatBtn] = useState(false)
-    const [mobileExpanded, setMobileExpanded] = useState(false)
 
     useEffect(() => {
         if (isPlayerTurn) {
+            // Sync paused state with backend at the start of each player turn.
+            // Can't await in useEffect; chain .catch so the rejection is handled.
+            onPause?.(isCollapsed)?.catch(() => {})
             const timer = setTimeout(() => setIsVisible(true), 500)
             return () => clearTimeout(timer)
         } else {
             setIsVisible(false)
-            setMobileExpanded(false)
         }
-    }, [isPlayerTurn])
+    }, [isPlayerTurn]) // eslint-disable-line react-hooks/exhaustive-deps
+
+    useEffect(() => {
+        try { localStorage.setItem(STORAGE_KEY, String(isCollapsed)) } catch {}
+    }, [isCollapsed])
+
+    const handleToggle = async () => {
+        const newCollapsed = !isCollapsed
+        setIsCollapsed(newCollapsed)
+        let pauseOk = false
+        try { await onPause?.(newCollapsed); pauseOk = true } catch {}
+        if (pauseOk && !newCollapsed && isPlayerTurn) {
+            onRequestSuggestions?.()
+        }
+    }
 
     if (!isPlayerTurn) return null
 
-    // Mobile collapsed view — just a compact tap-to-expand header
-    if (isMobile && !mobileExpanded) {
+    // Mobile collapsed view — compact tap-to-expand strip
+    if (isMobile && isCollapsed) {
         return (
             <div
-                onClick={() => setMobileExpanded(true)}
+                onClick={handleToggle}
                 style={{
                     width: '100%',
                     backgroundColor: 'rgba(10, 15, 10, 0.9)',
@@ -89,16 +109,17 @@ export default function SuggestedMovesPanel({ suggestions = [], suggestionsLoadi
         }}>
             {/* Header */}
             <div
-                onClick={isMobile ? () => setMobileExpanded(false) : undefined}
+                onClick={handleToggle}
                 style={{
                     padding: '12px',
                     backgroundColor: `${colors.primary}22`,
-                    borderBottom: `1px solid ${colors.primary}44`,
+                    borderBottom: isCollapsed ? 'none' : `1px solid ${colors.primary}44`,
                     display: 'flex',
                     alignItems: 'center',
                     gap: '8px',
-                    cursor: isMobile ? 'pointer' : 'default',
-                    touchAction: isMobile ? 'manipulation' : undefined,
+                    cursor: 'pointer',
+                    touchAction: 'manipulation',
+                    userSelect: 'none',
                 }}
             >
                 <div style={{
@@ -112,13 +133,13 @@ export default function SuggestedMovesPanel({ suggestions = [], suggestionsLoadi
                 <span style={{ color: colors.primary, fontWeight: 'bold', fontSize: '14px', letterSpacing: '1px', flex: 1 }}>
                     TACTICAL ADVISOR
                 </span>
-                {isMobile && (
-                    <span style={{ color: colors.primary, fontSize: '12px', opacity: 0.7 }}>▲</span>
-                )}
+                <span style={{ color: colors.primary, fontSize: '12px', opacity: 0.7 }}>
+                    {isMobile ? '▲' : (isCollapsed ? '▼' : '▲')}
+                </span>
             </div>
 
-            {/* Outcome Section & Repeat Action */}
-            {lastOutcome && (
+            {/* Body — hidden when collapsed */}
+            {!isCollapsed && lastOutcome && (
                 <div style={{
                     padding: '10px 12px',
                     fontSize: '11px',
@@ -162,8 +183,8 @@ export default function SuggestedMovesPanel({ suggestions = [], suggestionsLoadi
                 </div>
             )}
 
-            {/* Suggestions List */}
-            <div style={{
+            {/* Suggestions List + Footer — hidden when collapsed */}
+            {!isCollapsed && <div style={{
                 padding: '12px',
                 overflowY: 'auto',
                 display: 'flex',
@@ -268,9 +289,9 @@ export default function SuggestedMovesPanel({ suggestions = [], suggestionsLoadi
                         </div>
                     )})
                 )}
-            </div>
+            </div>}
 
-            <div style={{
+            {!isCollapsed && <div style={{
                 padding: '10px',
                 textAlign: 'center',
                 fontSize: '9px',
@@ -278,7 +299,7 @@ export default function SuggestedMovesPanel({ suggestions = [], suggestionsLoadi
                 borderTop: '1px solid rgba(0, 255, 136, 0.1)'
             }}>
                 NEURAL TACTICAL ENGINE ACTIVE
-            </div>
+            </div>}
         </div>
     )
 }

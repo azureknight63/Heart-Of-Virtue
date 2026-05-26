@@ -31,7 +31,7 @@ const BETA_MODE = import.meta.env.VITE_BETA_MODE === 'true'
  */
 const KEEP_TAB_MOVES = new Set(['Check'])
 
-function LeftPanel({ player, location, mode, combat, isEventDialogActive = false, isMobile, onMove, onRefetch, onEventsTriggered, onInteractionComplete, onInteractionTypingChange, onInteractionClose, onCombatAction, onLogProgress, onLogProcessingChange, onDisplayedLogCountChange, onTargetHover, onMoveSubmitted }) {
+function LeftPanel({ player, location, mode, combat, isEventDialogActive = false, isMobile, onMove, onRefetch, onEventsTriggered, onInteractionComplete, onInteractionTypingChange, onInteractionClose, onCombatAction, onLogProgress, onLogProcessingChange, onDisplayedLogCountChange, onTargetHover, onMoveSubmitted, onAdvisorPause, onAdvisorRequestSuggestions }) {
   const notifyMoveSubmitted = () => { if (onMoveSubmitted) onMoveSubmitted() }
 
   const [showInventory, setShowInventory] = useState(false)
@@ -747,6 +747,8 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
             }
             isPlayerTurn={isMyTurn}
             onTargetHover={onTargetHover}
+            onPause={onAdvisorPause}
+            onRequestSuggestions={onAdvisorRequestSuggestions}
             onSuggestClick={(s) => {
               if (s.move_name === 'repeat_last') {
                 // Use explicit tracking fields from backend

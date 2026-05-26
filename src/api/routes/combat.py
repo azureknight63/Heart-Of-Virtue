@@ -227,6 +227,28 @@ def get_combat_status():
         )
 
 
+@combat_bp.route("/suggestions/pause", methods=["POST"])
+def toggle_suggestions_pause():
+    """Pause or resume Tactical Advisor suggestion generation for this session."""
+    try:
+        session_manager, session, player, error = get_session_and_player(request)
+        if error:
+            return error
+
+        data = request.get_json() or {}
+        paused = bool(data.get("paused", False))
+        player.suggestions_paused = paused
+        if not paused:
+            # Clear stale data so the next status poll triggers a fresh fetch
+            player.suggested_moves = []
+            player.suggestions_loading = False
+        return jsonify({"success": True, "paused": paused}), 200
+
+    except Exception:
+        logger.exception("Unhandled error in toggle_suggestions_pause")
+        return jsonify({"success": False, "error": "An internal error occurred"}), 500
+
+
 @combat_bp.route("/log", methods=["GET"])
 def get_combat_log():
     """Get full combat log.
