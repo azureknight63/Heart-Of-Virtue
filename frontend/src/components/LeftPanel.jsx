@@ -382,16 +382,18 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
     }
   }, [combat?.input_type, combat?.awaiting_input, isProcessingLog, combat?.end_state, isEventDialogActive])
 
-  // Close combat moves panel when not in move selection mode or when combat has ended
+  // Manage combat moves panel visibility when player turn state changes
   useEffect(() => {
     if (mode === 'combat') {
-      // If we're in combat but not in move selection (e.g. processing log or enemy turn),
-      // or if combat has ended, ensure the move panel is closed.
-      if (!(combat?.input_type === 'move_selection' && combat.awaiting_input && !isProcessingLog && !combat?.end_state)) {
+      const inPlayerTurn = combat?.input_type === 'move_selection' && combat.awaiting_input && !isProcessingLog && !combat?.end_state
+      if (!inPlayerTurn) {
         setShowCombatMoves(false)
+      } else if (combatMovesCategory !== null) {
+        // Player's turn is back — restore panel if a category was selected
+        setShowCombatMoves(true)
       }
     }
-  }, [combat?.input_type, combat?.awaiting_input, isProcessingLog, combat?.end_state, mode])
+  }, [combat?.input_type, combat?.awaiting_input, isProcessingLog, combat?.end_state, mode, combatMovesCategory])
 
   // Show check dialog when check_data is available
   useEffect(() => {
