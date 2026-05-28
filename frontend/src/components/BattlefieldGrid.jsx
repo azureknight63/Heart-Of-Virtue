@@ -685,6 +685,7 @@ function BattlefieldGrid({
   displayedLogCount = 0,
   hoveredTargetId = null,
   mapSize = null,
+  onAnimatingChange = null,
 }) {
   const [activeAnimation, setActiveAnimation] = useState(null);
   const [animationPhase, setAnimationPhase] = useState(null);
@@ -699,6 +700,14 @@ function BattlefieldGrid({
   const [selectedEntity, setSelectedEntity] = useState(null);
 
   const { playSFX } = useAudio();
+
+  // Notify parent when animation busy-state changes so end-of-combat timing
+  // can wait for the death animation to finish before starting the grace timer.
+  useEffect(() => {
+    if (onAnimatingChange) {
+      onAnimatingChange(activeAnimation !== null || animationQueue.length > 0)
+    }
+  }, [activeAnimation, animationQueue, onAnimatingChange]);
 
   // Smooth camera — zoomed mode only. All mutable values live in refs so the
   // RAF loop never needs to be recreated and only drives a React re-render

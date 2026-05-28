@@ -25,6 +25,7 @@ export function useCombatCoordinator({
     combat,
     inCombat,
     displayedLogCount,
+    isBattlefieldAnimating,
     performAction,
     fetchCombatStatus,
     playSFX,
@@ -67,7 +68,7 @@ export function useCombatCoordinator({
 
         if (!inCombat && maybeEnd && (maybeEnd.status === 'victory' || maybeEnd.status === 'defeat')) {
             setEndState(maybeEnd)
-            if (!isCombatLogProcessing && !hasPendingLogs && maybeEnd.id && maybeEnd.id !== lastEndStateId) {
+            if (!isCombatLogProcessing && !hasPendingLogs && !isBattlefieldAnimating && maybeEnd.id && maybeEnd.id !== lastEndStateId) {
                 // Mark handled immediately so re-renders don't schedule a second timer
                 setLastEndStateId(maybeEnd.id)
                 sessionStorage.setItem('hov_last_end_state_id', maybeEnd.id)
@@ -87,7 +88,7 @@ export function useCombatCoordinator({
                 }, VICTORY_DIALOG_DELAY_MS)
             }
         }
-    }, [inCombat, combat?.end_state, isCombatLogProcessing, lastEndStateId, displayedLogCount, combat?.log, playSting])
+    }, [inCombat, combat?.end_state, isCombatLogProcessing, isBattlefieldAnimating, lastEndStateId, displayedLogCount, combat?.log, playSting])
 
     // Cancel any pending end-state timer when the hook unmounts
     useEffect(() => {

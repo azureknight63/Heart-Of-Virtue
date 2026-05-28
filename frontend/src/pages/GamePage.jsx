@@ -43,6 +43,7 @@ export default function GamePage() {
   const [mode, setMode] = useState('exploration') // 'exploration' or 'combat'
   const [isInteractionTyping, setIsInteractionTyping] = useState(false)
   const [displayedLogCount, setDisplayedLogCount] = useState(0)
+  const [isBattlefieldAnimating, setIsBattlefieldAnimating] = useState(false)
 
   // Beta end dialog state
   const [showBetaEndDialog, setShowBetaEndDialog] = useState(false)
@@ -85,6 +86,7 @@ export default function GamePage() {
     combat,
     inCombat,
     displayedLogCount,
+    isBattlefieldAnimating,
     performAction,
     fetchCombatStatus,
     playSFX,
@@ -607,6 +609,7 @@ export default function GamePage() {
           hoveredTargetId={hoveredTargetId}
           showDescription={isMobile}
           onDescriptionInteract={isMobile ? () => setActiveMobileTab('character') : undefined}
+          onAnimatingChange={setIsBattlefieldAnimating}
         />
       </div>
 

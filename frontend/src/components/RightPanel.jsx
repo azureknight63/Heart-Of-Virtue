@@ -2,7 +2,7 @@ import Battlefield from './Battlefield'
 import WorldMap from './WorldMap'
 import CollapsibleRoomDescription from './CollapsibleRoomDescription'
 
-export default function RightPanel({ mode, combat, location, onMoveToLocation, exploredTiles, currentLogIndex, displayedLogCount, hoveredTargetId, showDescription, onDescriptionInteract }) {
+export default function RightPanel({ mode, combat, location, onMoveToLocation, exploredTiles, currentLogIndex, displayedLogCount, hoveredTargetId, showDescription, onDescriptionInteract, onAnimatingChange }) {
   return (
     <div className="flex-1 flex flex-col bg-dark-panel border-2 border-orange rounded-lg overflow-hidden retro-glow">
       {/* Header */}
@@ -27,6 +27,7 @@ export default function RightPanel({ mode, combat, location, onMoveToLocation, e
             currentLogIndex={currentLogIndex}
             displayedLogCount={displayedLogCount}
             hoveredTargetId={hoveredTargetId}
+            onAnimatingChange={onAnimatingChange}
           />
         ) : (
           <WorldMap location={location} onMoveToLocation={onMoveToLocation} exploredTiles={exploredTiles} />
