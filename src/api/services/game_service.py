@@ -279,10 +279,14 @@ class GameService:
             name_lower = map_name.lower()
             if "dark-grotto" in name_lower:
                 bgm = "dark_grotto"
+            elif "eastern" in name_lower:
+                bgm = "eastern_descent"
             elif "verdette" in name_lower:
                 bgm = "verdette_caverns"
             elif "mineral" in name_lower:
                 bgm = "mineral_pools"
+            elif "nomad" in name_lower:
+                bgm = "nomad_camp"
             elif "grondia" in name_lower:
                 bgm = "grondia"
         return bgm

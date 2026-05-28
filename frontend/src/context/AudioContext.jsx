@@ -55,9 +55,12 @@ const BGM_MAP = {
     'battle': getAssetPath('/assets/sounds/bgm_battle.mp3'),
     'dark_grotto': getAssetPath('/assets/sounds/dark_grotto.mp3'),
     'dungeon': getAssetPath('/assets/sounds/bgm_dungeon.mp3'),
+    'eastern_descent': getAssetPath('/assets/sounds/bgm_eastern_descent.mp3'),
     'fanfare': getAssetPath('/assets/sounds/bgm_fanfare.wav'),
+    'grondia': getAssetPath('/assets/sounds/bgm_grondia.mp3'),
     'memory_flash': getAssetPath('/assets/sounds/memory_flash.mp3'),
     'mineral_pools': getAssetPath('/assets/sounds/bgm_mineral_pools.wav'),
+    'nomad_camp': getAssetPath('/assets/sounds/bgm_nomad_camp.mp3'),
     'dream_space': getAssetPath('/assets/sounds/bgm_dream_space.wav'),
 };
 

@@ -1,6 +1,6 @@
 {
     "metadata": {
-        "bgm": "TBD"
+        "bgm": "eastern_descent"
     },
     "(0,2)": {
         "id": "tile_0_2",
@@ -808,6 +808,7 @@
         "id": "tile_3_6",
         "title": "NomadCamp",
         "description": "The camp occupies a natural hollow in the bank — sheltered from the prevailing wind, with a clear sightline upstream. The shelters are lean-tos of oiled canvas over light poles, practical to a degree that suggests long use. A fire ring sits at the centre, its stones black with years of use. The smell of woodsmoke and dried meat is warm and immediate after hours of cold rock.",
+        "bgm": "nomad_camp",
         "exits": [
             "west",
             "east"
