@@ -516,11 +516,18 @@ class AfterDefeatingKingSlime(Event):
         # Spawn the MineralFragment on this tile
         self.tile.spawn_item("MineralFragment")
 
+        # Queue the memory flash so it fires once Jean picks up the fragment
+        self.tile.events_here.append(Ch02KingSlimeMemoryFlash(
+            player=self.player, tile=self.tile, repeat=False
+        ))
+
         # Set the story flag so AfterKingSlimeReturn can fire later
         self.player.universe.story["king_slime_defeated"] = "1"
 
-        # Teleport Gorran from the atrium (2,1) to the arena (2,6)
+        # Teleport Gorran to the arena. He lives as an ally NPC; find him wherever
+        # he currently is (atrium fallback, then combat_list_allies).
         current_map = self.player.universe.current_map
+        gorran = None
         atrium_coords = (2, 1)
         if atrium_coords in current_map.tiles:
             atrium_tile = current_map.tiles[atrium_coords]
@@ -529,7 +536,20 @@ class AfterDefeatingKingSlime(Event):
                     atrium_tile.npcs_here.remove(npc)
                     npc.tile = self.tile
                     self.tile.npcs_here.append(npc)
+                    gorran = npc
                     break
+
+        if gorran is None:
+            for ally in list(getattr(self.player, "combat_list_allies", [])):
+                if ally.__class__.__name__ == "Gorran":
+                    gorran = ally
+                    break
+            if gorran is not None:
+                old_tile = getattr(gorran, "tile", None)
+                if old_tile and gorran in getattr(old_tile, "npcs_here", []):
+                    old_tile.npcs_here.remove(gorran)
+                gorran.tile = self.tile
+                self.tile.npcs_here.append(gorran)
 
         # Narrate Gorran's arrival and his reaction to the cleansed pools
         time.sleep(1)
@@ -791,8 +811,11 @@ class Ch02KingSlimeMemoryFlash(MemoryFlash):
         )
 
     def check_conditions(self):
-        # This event is triggered manually from MineralFragment pickup — never fires on its own
-        pass
+        if any(
+            i.__class__.__name__ == "MineralFragment"
+            for i in getattr(self.player, "inventory", [])
+        ):
+            self.pass_conditions_to_process()
 
 
 class AfterKingSlimeReturn(Event):

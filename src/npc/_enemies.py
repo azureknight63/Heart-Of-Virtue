@@ -231,7 +231,7 @@ class KingSlime(NPC):
         super().__init__(
             name="King Slime",
             description=description,
-            maxhp=200,
+            maxhp=400,
             damage=50,
             protection=15,
             awareness=60,

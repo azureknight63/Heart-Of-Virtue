@@ -233,7 +233,7 @@ class TestEnemySubclasses:
         (GiantSpider, "Giant Spider ", 110, 22, {'has_resistances': True}),
         (CaveBat, "Cave Bat ", 15, 23, {'speed': 40}),
         (ElderSlime, "Elder Slime ", 70, 28, {'has_resistances': True}),
-        (KingSlime, "King Slime", 200, 50, {'exact_name': True, 'has_loot': True, 'exp_award': 500}),
+        (KingSlime, "King Slime", 400, 50, {'exact_name': True, 'has_loot': True, 'exp_award': 500}),
         (TalusHound, "Talus Hound ", 50, 14, {'awareness': 30}),
         (ScarpAdder, "Scarp Adder ", 38, None, {}),
         (StatusDummy, "Pell", 500, None, {'exact_name': True, 'all_neutral_resistances': True}),
