@@ -2457,7 +2457,7 @@ class GameService:
             player.refresh_weight()
 
         weight = getattr(player, "weight_current", 0)
-        max_weight = getattr(player, "weight_tolerance", 100)
+        max_weight = getattr(player, "weight_tolerance", 20.0)
         weight_pct = (weight / max_weight * 100) if max_weight > 0 else 0
 
         return {
@@ -2542,7 +2542,7 @@ class GameService:
         stats["max_fatigue"] = getattr(player, "maxfatigue", 0)
 
         weight = getattr(player, "weight_current", 0)
-        max_weight = getattr(player, "weight_tolerance", 100)
+        max_weight = getattr(player, "weight_tolerance", 20.0)
 
         stats["weight_current"] = weight
         stats["carrying_capacity"] = max_weight
@@ -3946,7 +3946,7 @@ class GameService:
         # Check weight limit if it's an object with weight
         if not isinstance(item, dict) and hasattr(item, "weight"):
             item_weight = item.weight * getattr(item, "count", 1)
-            capacity = getattr(player, "weight_tolerance", 100)
+            capacity = getattr(player, "weight_tolerance", 20.0)
             if player.weight_current + item_weight > capacity:
                 return {
                     "success": False,
