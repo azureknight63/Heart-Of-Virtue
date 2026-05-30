@@ -1617,6 +1617,7 @@ class ApiCombatAdapter:
                         f"Preparing strategist context: {len(self.player.combat_list)} enemies, {len(self.available_options)} available moves"
                     )
                     # Gather context
+                    all_moves = self._get_available_moves()
                     ctx = {
                         "player": CombatantSerializer.serialize_combatant(self.player),
                         "enemies": [
@@ -1625,16 +1626,24 @@ class ApiCombatAdapter:
                             )
                             for e in self.player.combat_list
                         ],
+                        # Allies in combat (friendly NPCs); empty list when fighting solo
+                        "allies": [
+                            CombatantSerializer.serialize_combatant(
+                                a, reference=self.player
+                            )
+                            for a in getattr(self.player, "combat_list_allies", [])
+                            if a is not self.player and getattr(a, "friend", False)
+                        ],
                         "history": [
                             entry["message"] for entry in self.player.combat_log[-20:]
-                        ],  # Last 20 messages
+                        ],
                         "last_move": getattr(self.player, "last_move_summary", "None"),
                         # Only send moves that are available AND (if targeted) have
                         # at least one viable target — prevents TA from suggesting
                         # attacks that cannot resolve at execution time.
                         "available_moves": [
                             m
-                            for m in self.available_options
+                            for m in all_moves
                             if isinstance(m, dict)
                             and m.get("available", True)
                             and (
@@ -1642,6 +1651,16 @@ class ApiCombatAdapter:
                                 or len(m.get("viable_targets", [])) > 0
                             )
                         ],
+                        # Cooldown ETAs for key defensive moves that are currently
+                        # unavailable — lets the LLM reason about whether to wait.
+                        "defensive_cooldowns": {
+                            m["name"]: m["cooldown_remaining"]
+                            for m in all_moves
+                            if isinstance(m, dict)
+                            and not m.get("available", True)
+                            and m.get("name") in ("Dodge", "Parry", "Withdraw")
+                            and m.get("cooldown_remaining", 0) > 0
+                        },
                     }
 
                     logger.debug(f"Combat context keys: {list(ctx.keys())}")

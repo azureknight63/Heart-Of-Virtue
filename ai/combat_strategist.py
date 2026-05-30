@@ -92,13 +92,23 @@ class CombatStrategist:
             "They must be cast NOW to be effective. 'beats_until_impact' is the window available: "
             "≤ 2 beats → strongly prefer Dodge/Parry (90+); 1 beat → last chance. "
             "When estimated incoming damage is shown, weigh it against Jean's current HP. "
-            "Reduce urgency if Jean's evasion ≥ 15 or combined defense ≥ 10.\n"
-            "3. STATUS EFFECTS: Each active effect includes a tactical note. Honor it — "
-            "e.g. Disoriented reduces Dodge reliability; Fervent means press the attack now; "
-            "DoT effects (Poisoned/Enflamed/Resonant) make stalling costly.\n"
+            "Reduce urgency if Jean's evasion ≥ 15 or combined defense ≥ 10. "
+            "If a defensive move is on cooldown, its ETA is shown — factor that into timing.\n"
+            "3. STATUS EFFECTS (player and enemy): Each active effect includes a tactical note. Honor it — "
+            "e.g. Disoriented on Jean reduces Dodge reliability; Fervent means press the attack; "
+            "DoT effects (Poisoned/Enflamed/Resonant) make stalling costly. "
+            "Enemy status effects work the same way: Disoriented enemy is easier to hit; "
+            "DoT on enemy means finishing the fight is less urgent since time works in your favour.\n"
             "4. HP CRITICAL (< 25%): Prioritize UseItem, Rest, or Withdraw over offense.\n"
-            "5. SAFE DISTANCE (enemy > 5ft): Advance is often better than short-reach attacks.\n"
-            "5. POINT-BLANK (enemy ≤ 1ft): Dodge or Withdraw before using ranged/sweeping moves.\n\n"
+            "5. ALLIES: If allies are present, coordinate — focus fire on the weakest or most dangerous "
+            "enemy first. Jean can target enemies the ally is already engaging.\n"
+            "6. TARGET PRIORITY (multiple enemies): When a 'Target Priority' section is shown, use it. "
+            "Attack the highest-priority target unless a more urgent tactical need (e.g. incoming lethal hit "
+            "from another enemy) overrides it.\n"
+            "7. ENEMY FATIGUE: If an enemy's fatigue is shown as LOW or CRITICAL, "
+            "they may Rest next turn instead of attacking — an opportunity to press offense.\n"
+            "8. SAFE DISTANCE (enemy > 5ft): Advance is often better than short-reach attacks.\n"
+            "9. POINT-BLANK (enemy ≤ 1ft): Dodge or Withdraw before using ranged/sweeping moves.\n\n"
 
             "Suggest only moves listed in the 'Available Moves' section. "
             "Format each suggestion as a JSON object with:\n"
@@ -194,6 +204,17 @@ class CombatStrategist:
         # Dodge reliability is impaired by certain status effects
         dodge_impaired = bool(player_status_names & {"Disoriented", "Slimed", "Petrified"})
 
+        # Enemy state: if any enemy has DoT, time is on Jean's side — slightly less aggressive
+        enemy_dot_active = any(
+            any(s.get("name", "") in {"Poisoned", "Enflamed", "Resonant"} for s in e.get("status_effects", []))
+            for e in combat_context.get("enemies", [])
+        )
+        # If leading enemy is likely to Rest (low fatigue), that's an offensive window
+        enemy_likely_resting = any(
+            (e.get("fatigue") or 0) / max((e.get("max_fatigue") or e.get("maxfatigue") or 1), 1) < 0.25
+            for e in combat_context.get("enemies", [])
+        )
+
         # Beats-until-impact and estimated damage for the most threatening charge
         worst_threat = self._worst_incoming_threat(combat_context.get("enemies", []), hp)
         min_bui = worst_threat["beats_until_impact"]
@@ -273,9 +294,18 @@ class CombatStrategist:
                 reasoning = "HP critically low; use a healing consumable before engaging."
 
             elif dot_active and category == "Offensive":
-                # DoT ticking — reward aggression to end the fight
+                # Player DoT ticking — reward aggression to end the fight
                 base_score = min(95, base_score + 8)
                 reasoning = f"DoT is draining HP; {name} to end combat quickly."
+
+            elif enemy_likely_resting and category == "Offensive":
+                # Enemy likely to Rest next turn — safe offensive window
+                base_score = min(95, base_score + 6)
+                reasoning = f"Enemy fatigue is critical — they may Rest next turn; {name} to exploit the window."
+
+            elif enemy_dot_active and category == "Offensive":
+                # Enemy has DoT — time favours Jean, slightly less frantic
+                reasoning = f"Enemy is poisoned/burning — {name} while time works in Jean's favour."
 
             elif fatigue_low and name in ("Wait", "Rest"):
                 base_score = 72
@@ -385,11 +415,19 @@ class CombatStrategist:
             f"Consumables: [{p_consumables or 'None'}]"
         )
 
-        # Enemies — beats_until_impact and estimated damage for telegraphed moves
+        # Enemies — beats_until_impact, estimated damage, status effects, fatigue
         enemy_list = []
         imminent_alerts = []
-        for e in ctx.get("enemies", []):
+        enemies = ctx.get("enemies", [])
+        for e in enemies:
             e_pos = e.get("position") or {}
+            e_fatigue = e.get("fatigue", 0)
+            e_max_fatigue = e.get("max_fatigue") or e.get("maxfatigue") or 1
+            e_fat_pct = e_fatigue / e_max_fatigue if e_max_fatigue else 1.0
+            fat_tag = " ⚠ FATIGUE CRITICAL — likely to Rest" if e_fat_pct < 0.25 else (
+                " [fatigue LOW]" if e_fat_pct < 0.50 else ""
+            )
+
             mip = e.get("move_in_process")
             mip_str = ""
             if mip:
@@ -419,13 +457,45 @@ class CombatStrategist:
                         f"{qualifier}.{vuln_note}"
                     )
 
+            # Enemy status effects
+            e_statuses = self._format_status_effects(e.get("status_effects", []))
+            status_str = f"\n    Status: {e_statuses.strip()}" if e_statuses.strip() != "None" else ""
+
             enemy_list.append(
                 f"- {e.get('name')} [ID: {e.get('id')}, "
                 f"HP: {e.get('hp')}/{e.get('max_hp')}, "
+                f"Fatigue: {e_fatigue}/{e_max_fatigue}{fat_tag}, "
                 f"Pos: {e_pos.get('x')},{e_pos.get('y')}, "
-                f"Dist: {e.get('distance')}ft{mip_str}]"
+                f"Dist: {e.get('distance')}ft{mip_str}]{status_str}"
             )
         enemies_block = "Enemies:\n" + "\n".join(enemy_list)
+
+        # Allies block
+        allies = ctx.get("allies", [])
+        if allies:
+            ally_lines = []
+            for a in allies:
+                a_pos = a.get("position") or {}
+                ally_lines.append(
+                    f"- {a.get('name')} [ID: {a.get('id')}, "
+                    f"HP: {a.get('hp')}/{a.get('max_hp')}, "
+                    f"Pos: {a_pos.get('x')},{a_pos.get('y')}, "
+                    f"Dist: {a.get('distance')}ft]"
+                )
+            allies_block = "Allies (friendly — do not attack):\n" + "\n".join(ally_lines) + "\n"
+        else:
+            allies_block = ""
+
+        # Defensive cooldown ETAs
+        def_cooldowns = ctx.get("defensive_cooldowns", {})
+        if def_cooldowns:
+            cd_parts = [f"{name} in {beats} beat{'s' if beats != 1 else ''}" for name, beats in def_cooldowns.items()]
+            cooldown_note = "Defensive moves on cooldown: " + ", ".join(cd_parts) + "\n"
+        else:
+            cooldown_note = ""
+
+        # Multi-enemy target priority
+        priority_block = self._build_target_priority(enemies, hp) if len(enemies) > 1 else ""
 
         # Available moves — fatigue cost + description
         move_descriptions = []
@@ -462,7 +532,12 @@ class CombatStrategist:
 
         history_str = "\n".join(ctx.get("history", [])[-5:])
         return (
-            f"{player_block}\n\n{enemies_block}\n{alert_block}\n"
+            f"{player_block}\n\n"
+            f"{enemies_block}\n"
+            f"{allies_block}"
+            f"{cooldown_note}"
+            f"{priority_block}"
+            f"{alert_block}\n"
             f"Recent History:\n{history_str}\n"
             f"Previous Move: {ctx.get('last_move', 'None')}\n\n"
             f"Available Moves:\n" + "\n".join(f"  {d}" for d in move_descriptions)
@@ -553,6 +628,50 @@ class CombatStrategist:
             ):
                 best = {**threat, "beats_until_impact": bui}
         return best
+
+    def _build_target_priority(self, enemies: List[Dict[str, Any]], player_hp: int) -> str:
+        """
+        Rank enemies by threat when multiple are present.
+
+        Priority: (1) incoming lethal charge, (2) incoming non-lethal charge,
+        (3) lowest HP% (finish them off), (4) default order.
+        """
+        scored = []
+        for e in enemies:
+            mip = e.get("move_in_process")
+            lethal = False
+            bui = 99
+            if mip:
+                bui = self._beats_until_impact(mip)
+                threat = self._estimate_incoming_damage(mip, e, player_hp)
+                lethal = threat["potentially_lethal"]
+
+            hp = e.get("hp") or 0
+            max_hp = e.get("max_hp") or 1
+            hp_pct = hp / max_hp
+
+            # Score: lower is higher priority
+            priority = (
+                0 if (lethal and bui <= 2) else
+                1 if (mip and bui <= 2) else
+                2 if hp_pct < 0.30 else
+                3
+            )
+            scored.append((priority, hp_pct, e))
+
+        scored.sort(key=lambda x: (x[0], x[1]))
+
+        lines = ["Target Priority (highest → lowest):"]
+        for rank, (priority, hp_pct, e) in enumerate(scored, 1):
+            mip = e.get("move_in_process")
+            reason = (
+                "incoming LETHAL charge" if priority == 0 else
+                "incoming charge" if priority == 1 else
+                f"low HP ({int(hp_pct * 100)}%)" if priority == 2 else
+                "standard threat"
+            )
+            lines.append(f"  {rank}. {e.get('name')} (ID: {e.get('id')}) — {reason}")
+        return "\n".join(lines) + "\n"
 
     def _ensure_target_ids(self, suggestions: List[Dict[str, Any]], context: Dict[str, Any]):
         """Ensure targeted moves have a target_id, auto-filling if missing."""
