@@ -4,7 +4,7 @@ from ai.llm_client import GenericLLMClient
 
 logger = logging.getLogger(__name__)
 
-# Tactical notes for each status effect, keyed by state name.
+# Tactical notes when Jean has this status effect.
 # Each entry is (short_effect, strategic_implication).
 _STATUS_TACTICAL_NOTES: Dict[str, tuple] = {
     "Disoriented": (
@@ -53,6 +53,50 @@ _STATUS_TACTICAL_NOTES: Dict[str, tuple] = {
     ),
 }
 
+# Tactical notes when an ENEMY has this status effect (Jean's perspective on what it means).
+_STATUS_TACTICAL_NOTES_ENEMY: Dict[str, tuple] = {
+    "Disoriented": (
+        "−30% finesse, −25% protection",
+        "Easier to hit — press offense while their accuracy and defense are reduced",
+    ),
+    "Slimed": (
+        "−20% finesse, −15% protection, fatigue drains on movement",
+        "Impaired and draining — good time to press the attack",
+    ),
+    "Resonant": (
+        "armor-piercing DoT active",
+        "Taking sustained damage — time is working in Jean's favour",
+    ),
+    "Petrified": (
+        "−20% finesse, −35% speed, +25% protection",
+        "Slower but tankier — finesse-based moves may be less effective; sustain pressure",
+    ),
+    "Fervent": (
+        "+30% strength, +15% finesse but draining HP/fatigue",
+        "Dealing more damage but bleeding resources — play defensively and outlast them",
+    ),
+    "Poisoned": (
+        "DoT: HP draining every beat",
+        "Time works in Jean's favour — no need to rush; avoid unnecessary risk",
+    ),
+    "Enflamed": (
+        "DoT: HP draining every 3 beats",
+        "Burning down — steady pressure is enough; avoid overcommitting",
+    ),
+    "Hollowed": (
+        "HP+fatigue drain active",
+        "Weakening over time — Jean can afford a measured approach",
+    ),
+    "Dodging": (
+        "+evasion active",
+        "Harder to land hits right now — consider waiting a beat or using a guaranteed move",
+    ),
+    "Parrying": (
+        "Parry stance active",
+        "Do not attack — they will parry and deal recoil damage; wait for stance to expire",
+    ),
+}
+
 # Known NPC move damage multipliers relative to the attacker's base damage stat.
 # Moves not listed here default to 1.0 (standard NpcAttack range).
 _NPC_MOVE_DAMAGE_MULTIPLIERS: Dict[str, float] = {
@@ -97,8 +141,9 @@ class CombatStrategist:
             "3. STATUS EFFECTS (player and enemy): Each active effect includes a tactical note. Honor it — "
             "e.g. Disoriented on Jean reduces Dodge reliability; Fervent means press the attack; "
             "DoT effects (Poisoned/Enflamed/Resonant) make stalling costly. "
-            "Enemy status effects work the same way: Disoriented enemy is easier to hit; "
-            "DoT on enemy means finishing the fight is less urgent since time works in your favour.\n"
+            "Enemy status effects are shown with their tactical implication from Jean's perspective — "
+            "e.g. Disoriented enemy → press offense; enemy Poisoned/Enflamed → time works in Jean's favour, "
+            "no need to rush; enemy Parrying → do NOT attack this beat.\n"
             "4. HP CRITICAL (< 25%): Prioritize UseItem, Rest, or Withdraw over offense.\n"
             "5. ALLIES: If allies are present, coordinate — focus fire on the weakest or most dangerous "
             "enemy first. Jean can target enemies the ally is already engaging.\n"
@@ -457,8 +502,10 @@ class CombatStrategist:
                         f"{qualifier}.{vuln_note}"
                     )
 
-            # Enemy status effects
-            e_statuses = self._format_status_effects(e.get("status_effects", []))
+            # Enemy status effects — use enemy perspective notes
+            e_statuses = self._format_status_effects(
+                e.get("status_effects", []), notes=_STATUS_TACTICAL_NOTES_ENEMY
+            )
             status_str = f"\n    Status: {e_statuses.strip()}" if e_statuses.strip() != "None" else ""
 
             enemy_list.append(
@@ -517,8 +564,10 @@ class CombatStrategist:
             else:
                 move_descriptions.append(f"{name}{cost_str}{desc_str}")
 
-        # Situational alert block
+        # Situational alert block — ordered by system prompt priority (most urgent first).
+        # INCOMING attacks (priority 2) lead; HP/fatigue/heat follow.
         alerts = []
+        alerts.extend(imminent_alerts)  # priority 2: telegraphed attacks
         if hp_pct < 0.25:
             alerts.append("⚠ HP CRITICAL: Prioritize healing or defensive moves.")
         if fatigue_pct < 0.25:
@@ -527,7 +576,6 @@ class CombatStrategist:
             alerts.append(f"⚠ BLAZING HEAT ({heat:.2f}×): Maximize offense now — missing or being hit collapses the combo.")
         elif heat < 0.8:
             alerts.append(f"⚠ COLD HEAT ({heat:.2f}×): Land hits to rebuild combo before using expensive moves.")
-        alerts.extend(imminent_alerts)
         alert_block = ("\nSITUATIONAL ALERTS:\n" + "\n".join(alerts) + "\n") if alerts else ""
 
         history_str = "\n".join(ctx.get("history", [])[-5:])
@@ -547,8 +595,20 @@ class CombatStrategist:
     # Helpers
     # ------------------------------------------------------------------
 
-    def _format_status_effects(self, status_effects: List[Any]) -> str:
-        """Render status effects with mechanical notes and remaining duration."""
+    @staticmethod
+    def _format_status_effects(
+        status_effects: List[Any],
+        notes: Optional[Dict[str, tuple]] = None,
+    ) -> str:
+        """
+        Render status effects with mechanical notes and remaining duration.
+
+        Pass notes=_STATUS_TACTICAL_NOTES_ENEMY when rendering an enemy's
+        status effects so the tactical implications are from Jean's viewpoint,
+        not the affected entity's viewpoint.
+        """
+        if notes is None:
+            notes = _STATUS_TACTICAL_NOTES
         if not status_effects:
             return "  None"
         lines = []
@@ -558,7 +618,7 @@ class CombatStrategist:
             name = s.get("name", "Unknown") if isinstance(s, dict) else str(s)
             beats_left = s.get("beats_left", 0) if isinstance(s, dict) else 0
             duration_str = f", ~{beats_left} beats remaining" if beats_left > 0 else ""
-            note_entry = _STATUS_TACTICAL_NOTES.get(name)
+            note_entry = notes.get(name)
             if note_entry:
                 effect_str, implication = note_entry
                 lines.append(f"  {name} ({effect_str}{duration_str}) → {implication}")
@@ -674,9 +734,16 @@ class CombatStrategist:
         return "\n".join(lines) + "\n"
 
     def _ensure_target_ids(self, suggestions: List[Dict[str, Any]], context: Dict[str, Any]):
-        """Ensure targeted moves have a target_id, auto-filling if missing."""
+        """
+        Ensure targeted moves have a target_id, auto-filling if missing.
+
+        When multiple enemies are present the default target is the highest-priority
+        one (same ranking as _build_target_priority), not simply enemies[0].
+        """
         enemies = context.get("enemies", [])
-        primary_target_id = enemies[0].get("id") if enemies else None
+        player_hp = (context.get("player") or {}).get("hp") or 1
+        primary_target_id = self._priority_target_id(enemies, player_hp)
+
         targeted_move_names = {
             m.get("name") for m in context.get("available_moves", []) if m.get("targeted")
         }
@@ -684,6 +751,35 @@ class CombatStrategist:
             if s.get("move_name") in targeted_move_names and not s.get("target_id"):
                 logger.info(f"DEBUG: Strategist auto-filling missing target_id for '{s.get('move_name')}'")
                 s["target_id"] = primary_target_id
+
+    def _priority_target_id(self, enemies: List[Dict[str, Any]], player_hp: int) -> Optional[str]:
+        """Return the ID of the highest-priority enemy (matches _build_target_priority ranking)."""
+        if not enemies:
+            return None
+        best_priority = 999
+        best_hp_pct = 1.0
+        best_id = enemies[0].get("id")
+        for e in enemies:
+            mip = e.get("move_in_process")
+            lethal = False
+            bui = 99
+            if mip:
+                bui = self._beats_until_impact(mip)
+                lethal = self._estimate_incoming_damage(mip, e, player_hp)["potentially_lethal"]
+            hp = e.get("hp") or 0
+            max_hp = e.get("max_hp") or 1
+            hp_pct = hp / max_hp
+            priority = (
+                0 if (lethal and bui <= 2) else
+                1 if (mip and bui <= 2) else
+                2 if hp_pct < 0.30 else
+                3
+            )
+            if (priority, hp_pct) < (best_priority, best_hp_pct):
+                best_priority = priority
+                best_hp_pct = hp_pct
+                best_id = e.get("id")
+        return best_id
 
     def _extract_names(self, items: List[Any]) -> List[str]:
         """Extract 'name' from a list of objects or dicts."""
