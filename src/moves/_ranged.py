@@ -108,7 +108,7 @@ class ShootBow(
             range_min <= target_distance <= range_max
         ):  # check if target is still in range
             hit_chance = int(98 - enemy.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3))
-            hit_chance -= close_range_distraction * (hit_chance / 2)
+            hit_chance = int(hit_chance - close_range_distraction * (hit_chance / 2))
             wpn_range_base = getattr(self.user.eq_weapon, "range_base", 0)
             if target_distance > wpn_range_base:
                 accuracy_decay = (target_distance - wpn_range_base) * self.decay

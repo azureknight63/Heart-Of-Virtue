@@ -619,7 +619,8 @@ def combat(player, event_config: Optional[CombatEventConfig] = None):
                         f"{enemy.name} breaks, unwilling to die for nothing.",
                         "yellow",
                     )
-                    player.current_room.npcs_here.remove(enemy)
+                    if enemy in player.current_room.npcs_here:
+                        player.current_room.npcs_here.remove(enemy)
                     player.combat_list.remove(enemy)
                     for combatant in list(player.combat_list_allies) + [player]:
                         combatant.combat_proximity.pop(enemy, None)
