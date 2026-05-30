@@ -232,6 +232,9 @@ describe('NpcChatPanel', () => {
       await waitFor(() => {
         expect(npcChat.respond).toHaveBeenCalled()
       })
+
+      // Flush the finally block's setLoading(false) state update
+      await new Promise(resolve => setTimeout(resolve, 0))
     })
 
     it('disables options while NPC is responding', async () => {
@@ -311,6 +314,9 @@ describe('NpcChatPanel', () => {
       await waitFor(() => {
         expect(npcChat.respond).toHaveBeenCalled()
       })
+
+      // Flush the finally block's setLoading(false) state update
+      await new Promise(resolve => setTimeout(resolve, 0))
     })
   })
 
