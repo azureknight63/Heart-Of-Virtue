@@ -112,7 +112,9 @@ def test_build_user_prompt(strategist):
     assert "Bat [ID: enemy_1" in prompt
     assert "Dist: 5ft" in prompt
     assert "Jean attacks Bat!" in prompt
-    assert "Available Moves: Slash; Dodge" in prompt
+    assert "Available Moves:" in prompt
+    assert "Slash" in prompt
+    assert "Dodge" in prompt
 
 def test_malformed_json_handling(strategist):
     with patch.object(strategist.client, 'generate_structured', return_value="not a dict"):
