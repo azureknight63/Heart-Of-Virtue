@@ -119,6 +119,7 @@ class Poisoned(State):
             world=True,
             statustype="poison",
             persistent=True,
+            description="Deals escalating HP damage every few beats. Worsens if reapplied.",
         )
         self.tick = 0  # increases at each effect cycle
         self.execute_on = (
@@ -176,6 +177,7 @@ class Enflamed(
             world=False,
             statustype="enflamed",
             persistent=False,
+            description="Deals escalating HP damage every few beats. Worsens if reapplied.",
         )
         self.tick = 0  # increases at each effect cycle
         self.execute_on = (
@@ -233,6 +235,7 @@ class Clean(State):
             world=True,
             statustype="clean",
             persistent=True,
+            description="Charisma +1, Max Fatigue +10. Wears off as you travel.",
         )
         self.tick = 0  # increases at each effect cycle
         self.execute_on = (
@@ -269,6 +272,7 @@ class Disoriented(State):
             world=False,
             statustype="disoriented",
             persistent=False,
+            description="Finesse -30%, Protection -25%. Defensive positioning is compromised.",
         )
         self.sub_finesse = int(target.finesse * 0.3)  # Reduce finesse by 30%
         self.sub_protection = int(target.protection * 0.25)  # Reduce protection by 25%
@@ -295,7 +299,7 @@ class Hawkeye(State):
     def __init__(
         self, target
     ):  # increases the target's accuracy with a ranged weapon for a short duration
-        super().__init__(name="Hawkeye", target=target, beats_max=30)
+        super().__init__(name="Hawkeye", target=target, beats_max=30, description="Ranged accuracy greatly increased.")
 
 
 class Slimed(State):
@@ -318,6 +322,7 @@ class Slimed(State):
             world=True,
             statustype="poison",
             persistent=True,
+            description="Finesse -20%, Protection -15%. Deals periodic acid damage. Worsens if reapplied.",
         )
         self.tick = 0
         self.execute_on = 6
@@ -371,6 +376,7 @@ class Resonant(State):
             world=False,
             statustype="stun",
             persistent=False,
+            description="Finesse -25%. Deals periodic armor-bypassing damage from resonant vibration.",
         )
         self.tick = 0
         self.execute_on = 5
@@ -422,6 +428,7 @@ class Petrified(State):
             world=True,
             statustype="stone",
             persistent=False,
+            description="Finesse -20%, Speed -35%, Protection +25%. Drains Fatigue every few beats. Worsens if reapplied.",
         )
         self.tick = 0
         self.execute_on = 6
@@ -491,6 +498,7 @@ class Hollowed(State):
             world=True,
             statustype="apathy",
             persistent=True,
+            description="Faith -3, Charisma -2, Endurance -2. Drains HP and Fatigue every few beats.",
         )
         self.tick = 0
         self.execute_on = 8
@@ -593,6 +601,7 @@ class PhoenixRevive(State):
             world=False,
             statustype="revive",
             persistent=True,
+            description="25% chance to revive at 50% HP upon fatal damage. Consumed on use.",
         )
         self.chance = 0.25  # 25% chance per battle
 
