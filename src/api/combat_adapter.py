@@ -888,7 +888,7 @@ class ApiCombatAdapter:
             for each_enemy in player.combat_list:
                 remove_these = []
                 for each_ally_in_prox in each_enemy.combat_proximity:
-                    if not each_ally.is_alive():
+                    if not each_ally_in_prox.is_alive():
                         remove_these.append(each_ally_in_prox)
                 for each_ally_that_died in remove_these:
                     del each_enemy.combat_proximity[each_ally_that_died]
