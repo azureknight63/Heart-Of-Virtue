@@ -703,9 +703,20 @@ function BattlefieldGrid({
 
   // Notify parent when animation busy-state changes so end-of-combat timing
   // can wait for the death animation to finish before starting the grace timer.
+  // prevAnimatingRef skips the callback when the boolean hasn't changed (e.g.
+  // phase transitions within a single animation — all fire activeAnimation!=null
+  // so the value stays true throughout). This avoids unnecessary GamePage
+  // re-renders on every phase. Cleanup resets to false on unmount so GamePage
+  // never gets stuck with isBattlefieldAnimating=true.
+  const prevAnimatingRef = useRef(false);
   useEffect(() => {
-    if (onAnimatingChange) {
-      onAnimatingChange(activeAnimation !== null || animationQueue.length > 0)
+    const isAnimating = activeAnimation !== null || animationQueue.length > 0;
+    if (onAnimatingChange && isAnimating !== prevAnimatingRef.current) {
+      prevAnimatingRef.current = isAnimating;
+      onAnimatingChange(isAnimating)
+    }
+    return () => {
+      if (onAnimatingChange) onAnimatingChange(false)
     }
   }, [activeAnimation, animationQueue, onAnimatingChange]);
 

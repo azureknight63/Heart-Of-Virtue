@@ -26,7 +26,7 @@ export default function GamePage() {
   const { location, loading: worldLoading, moveToLocation, refetch: refetchWorld } = useWorld()
   const { exploredTiles, setExploredTiles, refetch: refetchExploration } = useExploration()
   const { combat, inCombat, fetchCombatStatus, performAction } = useCombat()
-  const { playBGM, playSFX } = useAudio()
+  const { playBGM, playSFX, playSting } = useAudio()
   const { triggerTick } = useAutosave(player)
   const { error: showError } = useToast()
 
@@ -90,7 +90,7 @@ export default function GamePage() {
     performAction,
     fetchCombatStatus,
     playSFX,
-    playBGM
+    playSting
   })
 
   // Event management hook

@@ -11,6 +11,7 @@ describe('useCombatCoordinator', () => {
         combat: null,
         inCombat: false,
         displayedLogCount: 0,
+        isBattlefieldAnimating: false,
         performAction: vi.fn(),
         fetchCombatStatus: vi.fn(),
         playSFX: vi.fn(),

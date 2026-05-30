@@ -811,11 +811,27 @@ class Ch02KingSlimeMemoryFlash(MemoryFlash):
         )
 
     def check_conditions(self):
+        story = getattr(self.player.universe, "story", {})
+        if story.get("king_slime_flash_fired"):
+            # Already completed; clean up if still lingering in events_here.
+            if self in getattr(self.tile, "events_here", []):
+                self.tile.events_here.remove(self)
+            return
+        if self.needs_input:
+            # Mid-flash — waiting for the player to click Continue.
+            # Don't call process() again or the dialog will re-stack.
+            return
         if any(
             i.__class__.__name__ == "MineralFragment"
             for i in getattr(self.player, "inventory", [])
         ):
             self.pass_conditions_to_process()
+
+    def process(self, user_input=None):
+        super().process(user_input)
+        if user_input is not None:
+            # Completion pass — mark as fired so reloads/re-checks can't replay it.
+            self.player.universe.story["king_slime_flash_fired"] = "1"
 
 
 class AfterKingSlimeReturn(Event):
