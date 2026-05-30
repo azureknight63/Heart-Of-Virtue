@@ -1204,6 +1204,9 @@ class GameService:
             if hasattr(tile, "items_here") and item in tile.items_here:
                 tile.items_here.remove(item)
 
+        if items_to_remove and hasattr(player, "stack_inv_items"):
+            player.stack_inv_items()
+
         # Check Objects
         if hasattr(tile, "objects_here"):
             for obj in tile.objects_here:
@@ -3786,6 +3789,8 @@ class GameService:
         for item in final_rewards["items"]:
             if len(inventory) < getattr(player, "max_inventory", 20):
                 inventory.append(item)
+        if final_rewards["items"] and hasattr(player, "stack_inv_items"):
+            player.stack_inv_items()
 
         # Award reputation (simplified - just track)
         if not hasattr(player, "reputation"):
@@ -4954,6 +4959,12 @@ class GameService:
                 skipped.append({"name": name, "reason": "not_found"})
 
         player.combat_drops = []
+
+        if collected and hasattr(player, "stack_inv_items"):
+            player.stack_inv_items()
+        if hasattr(player, "refresh_weight"):
+            player.refresh_weight()
+
         return {"success": True, "collected": collected, "skipped": skipped}
 
     # ── Shop ──────────────────────────────────────────────────────────────────
