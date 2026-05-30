@@ -249,7 +249,7 @@ class TestCollectCombatLootHardening:
         player.current_room.items_here = [item1, item2]
         player.inventory_list = []
         player.inventory = []
-        player.carrying_capacity = 100.0
+        player.weight_tolerance = 100.0
         player.combat_drops = ["Gold Coin"]
 
         result = game_service.collect_combat_loot(player, ["Gold Coin"])
@@ -322,6 +322,107 @@ class TestCollectCombatLootHardening:
 
         assert result["success"] is True
         assert result["collected"] == []
+
+    def test_collect_combat_loot_over_capacity_skipped(self):
+        """Regression: over_capacity skip path fires at weight_tolerance, not carrying_capacity."""
+        game_service = GameService()
+
+        heavy_item = Mock()
+        heavy_item.name = "Boulder"
+        heavy_item.weight = 50.0
+
+        player = Mock()
+        player.current_room = Mock()
+        player.current_room.items_here = [heavy_item]
+        player.inventory_list = []
+        player.inventory = []
+        player.weight_tolerance = 5.0  # much less than item weight
+        player.combat_drops = ["Boulder"]
+
+        result = game_service.collect_combat_loot(player, ["Boulder"])
+
+        assert result["success"] is True
+        assert result["collected"] == []
+        assert any(s["name"] == "Boulder" and s["reason"] == "over_capacity"
+                   for s in result["skipped"])
+        assert heavy_item not in player.inventory_list
+
+
+class TestSearchAutoTakeHardening:
+    """Test weight enforcement in the search() hidden-item auto-take path."""
+
+    def _make_search_player(self, inventory, weight_tolerance):
+        """Build a minimal player mock for search() tests."""
+        player = Mock()
+        player.name = "Jean"
+        player.finesse = 100
+        player.intelligence = 100
+        player.faith = 100
+        player.inventory_list = inventory
+        player.inventory = inventory
+        player.weight_tolerance = weight_tolerance
+
+        tile = Mock()
+        tile.npcs_here = []
+        tile.objects_here = []
+        tile.block_exit = []
+        tile.description = ""
+        tile.name = "Test Room"
+        tile.x = 0
+        tile.y = 0
+
+        # Return the player's tile on (0,0); None for all adjacent tiles → no exits
+        def _get_tile(x, y):
+            return tile if (x == 0 and y == 0) else None
+
+        player.universe = Mock()
+        player.universe.get_tile.side_effect = _get_tile
+        player.location_x = 0
+        player.location_y = 0
+        player.explored_tiles = {}
+        return player, tile
+
+    def _make_item(self, name, weight, hidden=True, hide_factor=0):
+        """Build a minimal item mock compatible with ItemSerializer."""
+        item = Mock()
+        item.hidden = hidden
+        item.hide_factor = hide_factor
+        item.weight = weight
+        item.name = name
+        item.keywords = []
+        item.count = 1
+        item.description = ""
+        item.item_type = "misc"
+        return item
+
+    def test_auto_take_succeeds_when_under_capacity(self):
+        """Hidden item with hide_factor=0 is auto-taken when inventory has room."""
+        game_service = GameService()
+        player, tile = self._make_search_player([], weight_tolerance=50.0)
+        item = self._make_item("Small Gem", weight=1.0)
+        tile.items_here = [item]
+
+        result = game_service.search(player)
+
+        assert result["success"] is True
+        assert any(f.get("auto_taken") for f in result["found"])
+        assert item in player.inventory_list
+
+    def test_auto_take_skipped_when_over_capacity(self):
+        """Hidden item with hide_factor=0 is found but NOT auto-taken when over capacity."""
+        game_service = GameService()
+        player, tile = self._make_search_player([], weight_tolerance=5.0)
+        item = self._make_item("Heavy Relic", weight=10.0)  # exceeds weight_tolerance
+        tile.items_here = [item]
+
+        result = game_service.search(player)
+
+        assert result["success"] is True
+        found = result["found"]
+        assert any(f["name"] == "Heavy Relic" for f in found)
+        assert not any(f.get("auto_taken") for f in found)
+        assert item not in player.inventory_list
+        assert any("found" in m and "takes" not in m for m in result["messages"])
 
 
 class TestGetCurrentRoomHardening:
@@ -700,7 +801,7 @@ class TestRegressionScenarios:
         player.current_room.items_here = [item1, item2]
         player.inventory_list = []
         player.inventory = []
-        player.carrying_capacity = 100.0
+        player.weight_tolerance = 100.0
         player.combat_drops = ["Gold Coin", "Rusty Key"]
 
         result = game_service.collect_combat_loot(
