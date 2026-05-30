@@ -74,7 +74,7 @@ class State:  # master class for all states
     def process(self, target):
         if self.combat and target.in_combat:
             self.effect(target)
-            if self.beats_max >= 0:
+            if self.beats_max > 0:
                 self.beats_left -= 1
                 if self.beats_left <= 0:
                     target.states.remove(self)
@@ -83,7 +83,7 @@ class State:  # master class for all states
                     self.on_removal(target)
         elif self.world and not target.in_combat:
             self.effect(target)
-            if self.steps_max >= 0:
+            if self.steps_max > 0:
                 self.steps_left -= 1
                 if self.steps_left <= 0:
                     target.states.remove(self)

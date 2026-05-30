@@ -421,8 +421,21 @@ def test_state_infinite_duration():
     for _ in range(10):
         state.process(target)
 
-    # Should still be in states (negative max means infinite)
-    # The code checks if beats_max >= 0 before decrementing
+    # Should still be in states (beats_max <= 0 means infinite, never ticks down)
+    assert state in target.states
+
+
+def test_state_zero_beats_max_is_permanent():
+    """beats_max=0 (the default) must persist indefinitely — regression for the >= 0 bug."""
+    target = Mock()
+    target.in_combat = True
+    target.states = []
+    state = State("Permanent", target, beats_max=0, combat=True)
+    target.states.append(state)
+
+    for _ in range(20):
+        state.process(target)
+
     assert state in target.states
 
 
