@@ -4,6 +4,67 @@ from ai.llm_client import GenericLLMClient
 
 logger = logging.getLogger(__name__)
 
+# Tactical notes for each status effect, keyed by state name.
+# Each entry is (short_effect, strategic_implication).
+_STATUS_TACTICAL_NOTES: Dict[str, tuple] = {
+    "Disoriented": (
+        "−30% finesse, −25% protection",
+        "Dodge is less reliable; consider Rest or UseItem instead of defensive moves",
+    ),
+    "Slimed": (
+        "−20% finesse, −15% protection, fatigue drains on movement",
+        "Fatigue is burning faster than normal; Rest urgency is elevated",
+    ),
+    "Resonant": (
+        "−25% finesse, armor-piercing DoT every few beats",
+        "HP draining through armor; end combat quickly or heal",
+    ),
+    "Petrified": (
+        "−20% finesse, −35% speed, +25% protection",
+        "Slower and harder to dodge but tankier; prefer offense over evasion",
+    ),
+    "Fervent": (
+        "+30% strength, +15% finesse, −3 endurance; HP+fatigue drain every 5 beats",
+        "Bonus damage now but bleeding resources — press the attack, don't stall",
+    ),
+    "Poisoned": (
+        "DoT: HP draining every beat",
+        "Each wasted beat costs HP; aggressive offense to end combat is preferred",
+    ),
+    "Enflamed": (
+        "DoT: HP draining every 3 beats",
+        "Time pressure — prioritize finishing the fight quickly",
+    ),
+    "Hollowed": (
+        "HP+fatigue drain every 8 beats, −faith/−charisma/−endurance",
+        "Sustained drain; UseItem or Rest only if absolutely necessary",
+    ),
+    "Hawkeye": (
+        "+ranged accuracy",
+        "Ranged attacks are more reliable now; prefer them if available",
+    ),
+    "Dodging": (
+        "+evasion active",
+        "Already dodging; another Dodge would be redundant",
+    ),
+    "Parrying": (
+        "Parry stance active",
+        "Already parrying; wait for the enemy to trigger it",
+    ),
+}
+
+# Known NPC move damage multipliers relative to the attacker's base damage stat.
+# Moves not listed here default to 1.0 (standard NpcAttack range).
+_NPC_MOVE_DAMAGE_MULTIPLIERS: Dict[str, float] = {
+    "SlimeVolley": 2.2,
+    "TidalSurge": 2.5,
+    "GorranClub": 2.0,      # damage * uniform(1.5, 3) — use midpoint ~2.25; conservative 2.0
+    "VenomClaw": 1.0,        # standard damage + poison application
+    "SpiderBite": 1.0,       # standard damage + poison
+    "BatBite": 0.85,         # lower damage, drain (uniform 0.7–1.1 midpoint)
+}
+
+
 class CombatStrategist:
     """Strategist that suggests tactical moves during combat using an LLM."""
 
@@ -11,28 +72,47 @@ class CombatStrategist:
         logger.info("DEBUG: Initializing CombatStrategist")
         self.client = client or GenericLLMClient()
         self.system_prompt = (
-            "You are the Tactical Strategist for Jean Claire, a male human protagonist. Your goal is to analyze the current combat state and suggest the best moves.\n"
+            "You are the Tactical Strategist for Jean Claire, a male human protagonist. "
+            "Your goal is to analyze the current combat state and suggest the best moves.\n"
             "Consider Heat (affects damage/XP), Fatigue (resource for moves), and Distance (proximity to enemies).\n"
-            "Consider everything provided in the context, including player attributes, consumables, status effects, and the narrative flow of the combat log.\n\n"
+            "Consider everything provided in the context, including player attributes, consumables, "
+            "status effects, and the narrative flow of the combat log.\n\n"
+
+            "HEAT SYSTEM:\n"
+            "Heat is Jean's damage multiplier, shown as 'Heat: Nx [label]'. It ranges from 0.5× to 10×.\n"
+            "- COLD (< 0.8×): Attacks deal sub-baseline damage. Rebuild heat by landing hits before committing to expensive moves.\n"
+            "- WARM (0.8–1.2×): Baseline. Normal offense/defense tradeoffs apply.\n"
+            "- HOT (1.2–2.0×): Attacks deal meaningfully bonus damage. Favor offense; avoid missing (miss = ×0.85 heat drop).\n"
+            "- BLAZING (> 2.0×): Major damage multiplier active. Press the attack aggressively; "
+            "being hit or parried will collapse the combo.\n\n"
+
             "SITUATIONAL PRIORITIES — apply these before all else:\n"
-            "1. FATIGUE CRITICAL (< 25% remaining): Prefer Rest if available. Avoid high-cost offensive moves that will exhaust Jean.\n"
+            "1. FATIGUE CRITICAL (< 25% remaining): Prefer Rest if available. Avoid high-cost offensive moves.\n"
             "2. ENEMY TELEGRAPHING: Dodge and Parry each take 2 beats to become active (1 prep + 1 execute). "
-            "They must be cast NOW to be effective against an incoming attack. "
-            "When 'beats_until_impact' is shown for an enemy move, treat it as the window available: "
-            "≤ 2 beats → strongly prefer Dodge/Parry (score 90+); exactly 1 beat → Dodge/Parry may be too late but still worth it. "
-            "Reduce urgency if Jean's evasion is high (≥ 15) or armor defense is high (≥ 10) — he may survive without dodging.\n"
-            "3. HP CRITICAL (< 25% remaining): Prioritize UseItem (healing consumables), Rest, or Withdraw over offensive options.\n"
-            "4. SAFE DISTANCE (enemy > 5ft away): Advance is often better than attacking moves with short reach.\n"
-            "5. POINT-BLANK (enemy ≤ 1ft): Dodge or Withdraw may be needed before a ranged or sweeping move is viable.\n\n"
-            "Suggest only moves that are currently listed in the 'Available Moves' section below. "
+            "They must be cast NOW to be effective. 'beats_until_impact' is the window available: "
+            "≤ 2 beats → strongly prefer Dodge/Parry (90+); 1 beat → last chance. "
+            "When estimated incoming damage is shown, weigh it against Jean's current HP. "
+            "Reduce urgency if Jean's evasion ≥ 15 or combined defense ≥ 10.\n"
+            "3. STATUS EFFECTS: Each active effect includes a tactical note. Honor it — "
+            "e.g. Disoriented reduces Dodge reliability; Fervent means press the attack now; "
+            "DoT effects (Poisoned/Enflamed/Resonant) make stalling costly.\n"
+            "4. HP CRITICAL (< 25%): Prioritize UseItem, Rest, or Withdraw over offense.\n"
+            "5. SAFE DISTANCE (enemy > 5ft): Advance is often better than short-reach attacks.\n"
+            "5. POINT-BLANK (enemy ≤ 1ft): Dodge or Withdraw before using ranged/sweeping moves.\n\n"
+
+            "Suggest only moves listed in the 'Available Moves' section. "
             "Format each suggestion as a JSON object with:\n"
             "- move_name: The exact name of the move.\n"
-            "- target_id: The exact ID of the target as provided in the context (e.g., 'enemy_12345'). "
-            "IMPORTANT: If the move is listed as requiring a target (e.g., Attack, Advance), you MUST provide a valid target_id from the 'Enemies' list. "
+            "- target_id: The exact ID of the target (e.g., 'enemy_12345'). "
+            "IMPORTANT: If the move requires a target, provide a valid target_id from the Enemies list. "
             "Use null ONLY if the move is strictly self-targeted or non-targeted.\n"
-            "- score: 1-100 (An estimate of how significant this move will be toward maximizing tactical advantage).\n"
-            "- reasoning: A brief, one-sentence explanation of why this move is optimal."
+            "- score: 1-100 (tactical advantage estimate).\n"
+            "- reasoning: A brief, one-sentence explanation."
         )
+
+    # ------------------------------------------------------------------
+    # Public interface
+    # ------------------------------------------------------------------
 
     def get_suggestions(self, combat_context: Dict[str, Any], max_suggestions: int = 1) -> List[Dict[str, Any]]:
         """Fetch movement suggestions from the LLM or fallback to heuristics."""
@@ -57,7 +137,6 @@ class CombatStrategist:
                 else:
                     raw_suggestions = []
 
-                # Sanitize and validate suggestions from LLM
                 for s in raw_suggestions:
                     if isinstance(s, dict) and "move_name" in s:
                         try:
@@ -69,72 +148,69 @@ class CombatStrategist:
             except Exception as e:
                 logger.error(f"DEBUG: Error in LLM suggestion flow: {e}", exc_info=True)
 
-        # If LLM failed or provided no valid suggestions, use fallback
         if not suggestions:
             logger.info("DEBUG: Using heuristic fallback for combat suggestions.")
             return self._get_fallback_suggestions(combat_context, max_suggestions)
 
-        # Post-process: sort, limit, and ensure targets
         suggestions.sort(key=lambda x: x["score"], reverse=True)
         results = suggestions[:max_suggestions]
-
         self._ensure_target_ids(results, combat_context)
         logger.info(f"DEBUG: CombatStrategist returning {len(results)} suggestions.")
         return results
 
-    def _ensure_target_ids(self, suggestions: List[Dict[str, Any]], context: Dict[str, Any]):
-        """Ensure targeted moves have a target_id, auto-filling if missing."""
-        enemies = context.get("enemies", [])
-        primary_target_id = enemies[0].get("id") if enemies else None
-
-        targeted_move_names = {
-            m.get("name") for m in context.get("available_moves", [])
-            if m.get("targeted")
-        }
-
-        for s in suggestions:
-            if s.get("move_name") in targeted_move_names and not s.get("target_id"):
-                logger.info(f"DEBUG: Strategist auto-filling missing target_id for '{s.get('move_name')}'")
-                s["target_id"] = primary_target_id
+    # ------------------------------------------------------------------
+    # Heuristic fallback
+    # ------------------------------------------------------------------
 
     def _get_fallback_suggestions(self, combat_context: Dict[str, Any], max_suggestions: int) -> List[Dict[str, Any]]:
-        """Provide context-aware suggestions based on move categories and combat state if the LLM fails."""
+        """Provide context-aware suggestions based on combat state when the LLM is unavailable."""
         available = [m for m in combat_context.get("available_moves", []) if m.get("available", True)]
         if not available:
-            return [{
-                "move_name": "Check", "target_id": None, "score": 10,
-                "reasoning": "No other moves available; reassess the battlefield."
-            }]
+            return [{"move_name": "Check", "target_id": None, "score": 10,
+                     "reasoning": "No other moves available; reassess the battlefield."}]
 
-        # Compute situational flags
         player = combat_context.get("player", {})
         hp = player.get("hp") or 0
         max_hp = player.get("max_hp") or 1
         fatigue = player.get("fatigue") or 0
         max_fatigue = player.get("max_fatigue") or 1
+        heat = float(player.get("heat") or 1.0)
+
         hp_critical = hp / max_hp < 0.25
         fatigue_critical = fatigue / max_fatigue < 0.25
         fatigue_low = fatigue / max_fatigue < 0.50
 
-        # Beats-until-impact for the most threatening enemy charge
         player_stats = player.get("stats", {})
         player_evasion = player_stats.get("evasion", 0)
         player_defense = player_stats.get("defense", 0)
         player_armor = (player.get("equipment", {}).get("armor") or {}).get("defense", 0)
+        combined_defense = player_defense + player_armor
+        defensively_vulnerable = player_evasion < 15 and combined_defense < 10
 
-        min_beats_until_impact = min(
-            (self._beats_until_impact(e.get("move_in_process"))
-             for e in combat_context.get("enemies", [])
-             if e.get("move_in_process")),
-            default=99,
-        )
-        # Defensive moves (Dodge/Parry) need 2 beats to become active.
-        # Reduce urgency when Jean has meaningful passive defenses.
-        defensively_vulnerable = player_evasion < 15 and (player_defense + player_armor) < 10
-        enemies_in_defensive_window = min_beats_until_impact <= 2
-        enemies_about_to_strike = enemies_in_defensive_window  # keep name for scoring branches
+        # Active DoT on player accelerates urgency to end combat
+        player_status_names = {s.get("name", "") for s in player.get("status_effects", [])}
+        dot_active = bool(player_status_names & {"Poisoned", "Enflamed", "Resonant", "Hollowed"})
 
-        # Base category scoring
+        # Dodge reliability is impaired by certain status effects
+        dodge_impaired = bool(player_status_names & {"Disoriented", "Slimed", "Petrified"})
+
+        # Beats-until-impact and estimated damage for the most threatening charge
+        worst_threat = self._worst_incoming_threat(combat_context.get("enemies", []), hp)
+        min_bui = worst_threat["beats_until_impact"]
+        est_damage = worst_threat["estimated_damage"]
+        est_lethal = worst_threat["potentially_lethal"]
+
+        enemies_in_defensive_window = min_bui <= 2
+
+        # Heat modifiers for offensive scoring
+        heat_offensive_bonus = 0
+        if heat >= 2.0:
+            heat_offensive_bonus = 10   # BLAZING: attack now
+        elif heat >= 1.2:
+            heat_offensive_bonus = 5    # HOT: lean offensive
+        elif heat < 0.8:
+            heat_offensive_bonus = -10  # COLD: rebuild before spending resources
+
         category_scores = {
             "Offensive": 85,
             "Maneuver": 75,
@@ -152,41 +228,84 @@ class CombatStrategist:
             category = m.get("category", "Miscellaneous")
             base_score = category_scores.get(category, 40)
 
-            # Situational overrides — these trump category defaults
-            if enemies_about_to_strike and name in ("Dodge", "Parry"):
-                if defensively_vulnerable:
+            # --- Situational overrides, in priority order ---
+
+            if enemies_in_defensive_window and name in ("Dodge", "Parry"):
+                if dodge_impaired and not est_lethal:
+                    # Status effect reduces defensive move value when the hit is survivable
+                    base_score = 60
+                    reasoning = (
+                        f"Attack in ~{min_bui} beat(s) but status effect impairs {name} reliability; "
+                        "consider UseItem or accepting the hit."
+                    )
+                elif dodge_impaired and est_lethal:
+                    # Even impaired, better than a one-shot
+                    base_score = 88
+                    reasoning = (
+                        f"Incoming hit is potentially lethal in ~{min_bui} beat(s); "
+                        f"{name} reliability is reduced by status effect but still preferable to dying."
+                    )
+                elif est_lethal:
+                    base_score = 97
+                    reasoning = (
+                        f"Potentially lethal hit (~{est_damage} dmg) landing in ~{min_bui} beat(s); "
+                        f"{name} is critical."
+                    )
+                elif defensively_vulnerable:
                     base_score = 95
                     reasoning = (
-                        f"Attack landing in ~{min_beats_until_impact} beat(s) and Jean's defenses are low; "
-                        f"{name} now to avoid significant damage."
+                        f"Attack landing in ~{min_bui} beat(s) and Jean's defenses are low "
+                        f"(~{est_damage} estimated dmg); {name} now."
                     )
                 else:
                     base_score = 80
                     reasoning = (
-                        f"Attack landing in ~{min_beats_until_impact} beat(s); {name} is advisable "
-                        "but Jean's defenses may absorb the hit."
+                        f"Attack in ~{min_bui} beat(s) (~{est_damage} estimated dmg); "
+                        f"{name} is advisable but Jean's defenses may absorb it."
                     )
+
             elif fatigue_critical and name == "Rest":
                 base_score = 90
                 reasoning = "Fatigue critically low; Rest is essential to maintain move availability."
+
             elif hp_critical and name == "UseItem":
                 base_score = 88
                 reasoning = "HP critically low; use a healing consumable before engaging."
+
+            elif dot_active and category == "Offensive":
+                # DoT ticking — reward aggression to end the fight
+                base_score = min(95, base_score + 8)
+                reasoning = f"DoT is draining HP; {name} to end combat quickly."
+
             elif fatigue_low and name in ("Wait", "Rest"):
                 base_score = 72
                 reasoning = f"Fatigue is low; {name} conserves resources for a better opportunity."
+
             elif name == "Advance":
                 base_score = 80
                 reasoning = "Close the distance to bring offensive moves into range."
+
             elif name in ("Wait", "Check"):
                 base_score = 20
                 reasoning = f"{name} cedes initiative; use only if no better option exists."
+
+            elif category == "Offensive":
+                base_score = min(99, base_score + heat_offensive_bonus)
+                if heat >= 2.0:
+                    reasoning = f"Heat is BLAZING ({heat:.1f}×); {name} for amplified damage — don't miss."
+                elif heat >= 1.2:
+                    reasoning = f"Heat is elevated ({heat:.1f}×); {name} while the combo holds."
+                elif heat < 0.8:
+                    reasoning = f"Heat is low ({heat:.1f}×); {name} to rebuild combo before committing."
+                else:
+                    reasoning = f"Tactical analysis unavailable; {name} is a viable fallback."
+
             else:
                 reasoning = f"Tactical analysis unavailable; {name} is a viable fallback."
 
             scored_moves.append({
                 "move_name": name,
-                "target_id": None,  # Filled by _ensure_target_ids
+                "target_id": None,
                 "score": base_score,
                 "reasoning": reasoning,
             })
@@ -205,49 +324,68 @@ class CombatStrategist:
         self._ensure_target_ids(results, combat_context)
         return results
 
+    # ------------------------------------------------------------------
+    # Prompt construction
+    # ------------------------------------------------------------------
+
     def _build_user_prompt(self, ctx: Dict[str, Any]) -> str:
         """Construct the context string for the LLM."""
         player = ctx.get("player", {})
         pos = player.get("position") or {}
 
-        # Compute urgency flags
+        # Urgency flags
         hp = player.get("hp") or 0
         max_hp = player.get("max_hp") or 1
         fatigue = player.get("fatigue") or 0
         max_fatigue = player.get("max_fatigue") or 1
+        heat = float(player.get("heat") or 1.0)
         hp_pct = hp / max_hp
         fatigue_pct = fatigue / max_fatigue
         hp_flag = " ⚠ HP CRITICAL" if hp_pct < 0.25 else (" LOW" if hp_pct < 0.50 else "")
         fatigue_flag = " ⚠ FATIGUE CRITICAL" if fatigue_pct < 0.25 else (" LOW" if fatigue_pct < 0.50 else "")
 
-        # Player Stats & Effects
-        p_attrs = ", ".join([f"{k}: {v}" for k, v in player.get("attributes", {}).items()])
-        passives = self._extract_names(player.get('passives', []))
-        statuses = self._extract_names(player.get('status_effects', []))
+        # Heat label
+        if heat >= 2.0:
+            heat_label = f"{heat:.2f}× [BLAZING — attacks deal +{int((heat-1)*100)}% damage; protect this streak]"
+        elif heat >= 1.2:
+            heat_label = f"{heat:.2f}× [HOT — attacks deal +{int((heat-1)*100)}% bonus damage]"
+        elif heat < 0.8:
+            heat_label = f"{heat:.2f}× [COLD — attacks deal −{int((1-heat)*100)}% damage; land hits to rebuild]"
+        else:
+            heat_label = f"{heat:.2f}× [WARM — baseline damage]"
 
-        p_consumables = ", ".join([
-            f"{c.get('name', 'Item')} (Qty: {c.get('qty', 1)})"
-            for c in player.get("consumables", [])
-        ])
+        p_attrs = ", ".join([f"{k}: {v}" for k, v in player.get("attributes", {}).items()])
+        passives = self._extract_names(player.get("passives", []))
 
         p_stats = player.get("stats", {})
         p_evasion = p_stats.get("evasion", 0)
         p_defense = p_stats.get("defense", 0)
         p_armor_def = (player.get("equipment", {}).get("armor") or {}).get("defense", 0)
 
+        p_consumables = ", ".join([
+            f"{c.get('name', 'Item')} (Qty: {c.get('qty', 1)})"
+            for c in player.get("consumables", [])
+        ])
+
+        # Status effects with mechanical context
+        status_lines = self._format_status_effects(player.get("status_effects", []))
+
         player_block = (
-            f"Player: {player.get('name', 'Jean')} (Male Human) [HP: {hp}/{max_hp}{hp_flag}, "
-            f"Fatigue: {fatigue}/{max_fatigue}{fatigue_flag}, Heat: {player.get('heat')}, "
+            f"Player: {player.get('name', 'Jean')} (Male Human) "
+            f"[HP: {hp}/{max_hp}{hp_flag}, "
+            f"Fatigue: {fatigue}/{max_fatigue}{fatigue_flag}, "
+            f"Heat: {heat_label}, "
             f"Pos: {pos.get('x')},{pos.get('y')}, Facing: {pos.get('facing')}]\n"
             f"Attributes: [{p_attrs}]\n"
-            f"Combat Stats: [Evasion: {p_evasion}, Defense: {p_defense}, Armor Defense: {p_armor_def}, "
-            f"Accuracy: {p_stats.get('accuracy', 80)}, Speed: {p_stats.get('speed', 0)}]\n"
-            f"Passives: {', '.join(passives)}\n"
-            f"Status: {', '.join(statuses)}\n"
+            f"Combat Stats: [Evasion: {p_evasion}, Defense: {p_defense}, "
+            f"Armor Defense: {p_armor_def}, Accuracy: {p_stats.get('accuracy', 80)}, "
+            f"Speed: {p_stats.get('speed', 0)}]\n"
+            f"Passives: {', '.join(passives) or 'None'}\n"
+            f"Status Effects:\n{status_lines}\n"
             f"Consumables: [{p_consumables or 'None'}]"
         )
 
-        # Enemies — compute beats_until_impact and flag attacks within the defensive window
+        # Enemies — beats_until_impact and estimated damage for telegraphed moves
         enemy_list = []
         imminent_alerts = []
         for e in ctx.get("enemies", []):
@@ -256,30 +394,40 @@ class CombatStrategist:
             mip_str = ""
             if mip:
                 bui = self._beats_until_impact(mip)
-                bui_label = f"{bui} beat{'s' if bui != 1 else ''} until impact"
-                mip_str = f", Charging: {mip.get('name')} ({bui_label})"
+                threat = self._estimate_incoming_damage(mip, e, hp)
+                est_dmg = threat["estimated_damage"]
+                lethal = threat["potentially_lethal"]
+
+                lethal_tag = " ⚠ POTENTIALLY LETHAL" if lethal else ""
+                mip_str = (
+                    f", Charging: {mip.get('name')} "
+                    f"({bui} beat{'s' if bui != 1 else ''} until impact, "
+                    f"~{est_dmg} estimated dmg{lethal_tag})"
+                )
+
                 if bui <= 2:
-                    if bui <= 1:
-                        qualifier = "Dodge/Parry is last-chance"
-                    else:
-                        qualifier = "Dodge/Parry NOW to intercept"
+                    qualifier = "Dodge/Parry NOW" if bui >= 2 else "last-chance Dodge/Parry"
                     vuln_note = (
                         f" Jean's evasion ({p_evasion}) and defense ({p_defense + p_armor_def}) "
-                        "are low — this will hurt if not blocked."
+                        "are low — this will hurt."
                         if p_evasion < 15 and (p_defense + p_armor_def) < 10
-                        else f" Jean's defenses may reduce impact."
+                        else " Jean's defenses may reduce impact."
                     )
                     imminent_alerts.append(
-                        f"⚠ INCOMING: {e.get('name')} lands {mip.get('name')} in ~{bui} beat(s). "
+                        f"⚠ INCOMING: {e.get('name')} lands {mip.get('name')} "
+                        f"in ~{bui} beat(s) (~{est_dmg} dmg{', LETHAL' if lethal else ''}). "
                         f"{qualifier}.{vuln_note}"
                     )
+
             enemy_list.append(
-                f"- {e.get('name')} [ID: {e.get('id')}, HP: {e.get('hp')}/{e.get('max_hp')}, "
-                f"Pos: {e_pos.get('x')},{e_pos.get('y')}, Dist: {e.get('distance')}ft{mip_str}]"
+                f"- {e.get('name')} [ID: {e.get('id')}, "
+                f"HP: {e.get('hp')}/{e.get('max_hp')}, "
+                f"Pos: {e_pos.get('x')},{e_pos.get('y')}, "
+                f"Dist: {e.get('distance')}ft{mip_str}]"
             )
         enemies_block = "Enemies:\n" + "\n".join(enemy_list)
 
-        # Move Options — include fatigue cost and brief description
+        # Available moves — fatigue cost + description
         move_descriptions = []
         for m in ctx.get("available_moves", []):
             if not m.get("available", True):
@@ -299,12 +447,16 @@ class CombatStrategist:
             else:
                 move_descriptions.append(f"{name}{cost_str}{desc_str}")
 
-        # Build situational alert block
+        # Situational alert block
         alerts = []
         if hp_pct < 0.25:
             alerts.append("⚠ HP CRITICAL: Prioritize healing or defensive moves.")
         if fatigue_pct < 0.25:
             alerts.append("⚠ FATIGUE CRITICAL: Prefer Rest or zero-cost moves.")
+        if heat >= 2.0:
+            alerts.append(f"⚠ BLAZING HEAT ({heat:.2f}×): Maximize offense now — missing or being hit collapses the combo.")
+        elif heat < 0.8:
+            alerts.append(f"⚠ COLD HEAT ({heat:.2f}×): Land hits to rebuild combo before using expensive moves.")
         alerts.extend(imminent_alerts)
         alert_block = ("\nSITUATIONAL ALERTS:\n" + "\n".join(alerts) + "\n") if alerts else ""
 
@@ -316,35 +468,114 @@ class CombatStrategist:
             f"Available Moves:\n" + "\n".join(f"  {d}" for d in move_descriptions)
         )
 
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    def _format_status_effects(self, status_effects: List[Any]) -> str:
+        """Render status effects with mechanical notes and remaining duration."""
+        if not status_effects:
+            return "  None"
+        lines = []
+        for s in status_effects:
+            if not s:
+                continue
+            name = s.get("name", "Unknown") if isinstance(s, dict) else str(s)
+            beats_left = s.get("beats_left", 0) if isinstance(s, dict) else 0
+            duration_str = f", ~{beats_left} beats remaining" if beats_left > 0 else ""
+            note_entry = _STATUS_TACTICAL_NOTES.get(name)
+            if note_entry:
+                effect_str, implication = note_entry
+                lines.append(f"  {name} ({effect_str}{duration_str}) → {implication}")
+            else:
+                desc = s.get("description", "") if isinstance(s, dict) else ""
+                lines.append(f"  {name}{duration_str}{': ' + desc if desc else ''}")
+        return "\n".join(lines) if lines else "  None"
+
     @staticmethod
     def _beats_until_impact(mip: Dict[str, Any]) -> int:
         """
-        Estimate how many beats remain until a charging move lands.
+        Estimate beats until a charging enemy move lands.
 
         beats_left only covers the current stage. If the move is still in
-        prep (current_stage == 0) we add the execute duration (defaulting to 1
-        when unknown) so callers see the full window before impact, not just
-        how long prep has left.
+        prep (current_stage == 0) we add one execute beat so callers see the
+        full window before impact rather than just remaining prep time.
         """
         if not mip:
             return 99
         beats_left = mip.get("beats_left", 99)
         current_stage = mip.get("current_stage", 0)
         if current_stage == 0:
-            # Still preparing — add one execute beat (the minimum execute duration)
-            execute_beats = mip.get("total_beats", 1) if current_stage == 1 else 1
-            return beats_left + execute_beats
-        # Already executing — beats_left is the direct countdown to impact
+            return beats_left + 1  # remaining prep + one execute beat
         return beats_left
 
+    @staticmethod
+    def _estimate_incoming_damage(
+        mip: Dict[str, Any],
+        enemy: Dict[str, Any],
+        player_hp: int,
+    ) -> Dict[str, Any]:
+        """
+        Estimate damage range for a telegraphed enemy move.
+
+        Uses the enemy's serialized damage stat and the known multiplier for
+        the move name (falling back to 1.0 for unknown moves). Protection is
+        not available for the enemy's view of the player, so the estimate is
+        conservative (raw power before mitigation).
+        """
+        move_name = mip.get("name", "")
+        multiplier = _NPC_MOVE_DAMAGE_MULTIPLIERS.get(move_name, 1.0)
+        enemy_damage = (enemy.get("stats") or {}).get("damage", 0) or enemy.get("damage", 0)
+
+        low = max(0, int(enemy_damage * multiplier * 0.8))
+        high = max(0, int(enemy_damage * multiplier * 1.2))
+        midpoint = (low + high) // 2
+
+        return {
+            "estimated_damage": f"{low}–{high}",
+            "midpoint": midpoint,
+            "potentially_lethal": midpoint >= player_hp * 0.5,  # hits for 50%+ of current HP
+        }
+
+    def _worst_incoming_threat(
+        self, enemies: List[Dict[str, Any]], player_hp: int
+    ) -> Dict[str, Any]:
+        """Return the combined threat metrics for the most dangerous incoming charge."""
+        best = {"beats_until_impact": 99, "estimated_damage": "0–0", "potentially_lethal": False}
+        for e in enemies:
+            mip = e.get("move_in_process")
+            if not mip:
+                continue
+            bui = self._beats_until_impact(mip)
+            threat = self._estimate_incoming_damage(mip, e, player_hp)
+            if bui < best["beats_until_impact"] or (
+                bui == best["beats_until_impact"] and threat["potentially_lethal"]
+            ):
+                best = {**threat, "beats_until_impact": bui}
+        return best
+
+    def _ensure_target_ids(self, suggestions: List[Dict[str, Any]], context: Dict[str, Any]):
+        """Ensure targeted moves have a target_id, auto-filling if missing."""
+        enemies = context.get("enemies", [])
+        primary_target_id = enemies[0].get("id") if enemies else None
+        targeted_move_names = {
+            m.get("name") for m in context.get("available_moves", []) if m.get("targeted")
+        }
+        for s in suggestions:
+            if s.get("move_name") in targeted_move_names and not s.get("target_id"):
+                logger.info(f"DEBUG: Strategist auto-filling missing target_id for '{s.get('move_name')}'")
+                s["target_id"] = primary_target_id
+
     def _extract_names(self, items: List[Any]) -> List[str]:
-        """Helper to extract 'name' from a list of objects or dictionaries."""
+        """Extract 'name' from a list of objects or dicts."""
         extracted = []
         for item in items:
-            if not item: continue
+            if not item:
+                continue
             if isinstance(item, dict):
-                name = item.get('name')
-                if name: extracted.append(str(name))
+                name = item.get("name")
+                if name:
+                    extracted.append(str(name))
             else:
                 extracted.append(str(item))
         return extracted
