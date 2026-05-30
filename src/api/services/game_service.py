@@ -2215,6 +2215,9 @@ class GameService:
             command = {"type": "cancel_selection"}
             return adapter.process_command(command)
 
+        elif move_type == "flee":
+            return self.flee_combat(player)
+
         elif move_type == "select_move_and_target":
             if not isinstance(move_id, str) or not move_id:
                 return {"error": "Invalid move name"}
@@ -3259,26 +3262,44 @@ class GameService:
         if not getattr(player, "in_combat", False):
             return {"error": "Not in combat"}
 
-        # 50% chance to flee (stub)
-        success = True  # In real implementation, would check speed/chance
+        # Clear enemy combat state so they don't immediately re-engage on next interaction
+        for enemy in list(getattr(player, "combat_list", [])):
+            enemy.in_combat = False
+            enemy.aggro = False
 
-        if success:
-            player.in_combat = False
-            return {
-                "success": True,
-                "fled": True,
-                "message": "Fled from combat successfully",
-            }
-        else:
-            enemies = getattr(player, "combat_list", [])
-            return {
-                "success": False,
-                "fled": False,
-                "message": "Failed to flee!",
-                "battle_state": CombatStateSerializer.serialize_combat_state(
-                    player, enemies
-                ),
-            }
+        player.in_combat = False
+        player.combat_list = []
+
+        # Clear ally combat state — filter to living allies first, then clear their flags
+        living_allies = [
+            a for a in getattr(player, "combat_list_allies", [])[1:] if a.is_alive()
+        ]
+        for ally in living_allies:
+            ally.in_combat = False
+        player.combat_list_allies = [player] + living_allies
+
+        player.current_move = None
+
+        # Strip non-persistent status effects (mirrors end-of-combat cleanup)
+        player.states = [
+            s for s in getattr(player, "states", [])
+            if getattr(s, "persistent", True)
+        ]
+
+        if hasattr(player, "_combat_adapter"):
+            del player._combat_adapter
+        if hasattr(player, "combat_adapter_state"):
+            del player.combat_adapter_state
+        if hasattr(player, "_combat_deferred_enemies"):
+            del player._combat_deferred_enemies
+        if hasattr(player, "combat_end_summary"):
+            del player.combat_end_summary
+
+        return {
+            "success": True,
+            "fled": True,
+            "message": "Fled from combat successfully",
+        }
 
     def _get_turn_order(
         self, player: "player_module.Player", enemies: List[Any]
