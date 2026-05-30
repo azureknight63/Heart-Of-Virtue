@@ -420,9 +420,11 @@ class Move:  # master class for all moves
         recoil = max(1, recoil)
 
         # Fatigue cost calculation — endurance gives modest relief (coeff 2);
+        # strength reduces how much weapon weight burdens the fighter;
         # carry weight adds proportional burden on top.
+        wt_mult = max(4, 10 - 0.2 * self.user.strength)
         fatigue_cost = (
-            85 + (self.user.eq_weapon.weight * 10) - (2 * self.user.endurance)
+            85 + int(self.user.eq_weapon.weight * wt_mult) - (2 * self.user.endurance)
         )
         fatigue_cost += int(mod_fatigue)
         fatigue_cost = max(floor_fatigue, int(fatigue_cost))

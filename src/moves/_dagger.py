@@ -106,9 +106,10 @@ class Slash(
 
         recoil = int(1 + (self.user.eq_weapon.weight / 2))
 
+        wt_mult = max(4, 10 - 0.2 * self.user.strength)
         fatigue_cost = int(
             math.ceil(
-                85 + (self.user.eq_weapon.weight * 10) - (2 * self.user.endurance)
+                85 + (self.user.eq_weapon.weight * wt_mult) - (2 * self.user.endurance)
             )
         )
         fatigue_cost = max(10, fatigue_cost)
