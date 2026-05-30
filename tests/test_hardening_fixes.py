@@ -249,7 +249,7 @@ class TestCollectCombatLootHardening:
         player.current_room.items_here = [item1, item2]
         player.inventory_list = []
         player.inventory = []
-        player.carrying_capacity = 100.0
+        player.weight_tolerance = 100.0
         player.combat_drops = ["Gold Coin"]
 
         result = game_service.collect_combat_loot(player, ["Gold Coin"])
@@ -700,7 +700,7 @@ class TestRegressionScenarios:
         player.current_room.items_here = [item1, item2]
         player.inventory_list = []
         player.inventory = []
-        player.carrying_capacity = 100.0
+        player.weight_tolerance = 100.0
         player.combat_drops = ["Gold Coin", "Rusty Key"]
 
         result = game_service.collect_combat_loot(
