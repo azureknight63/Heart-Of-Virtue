@@ -3270,12 +3270,13 @@ class GameService:
         player.in_combat = False
         player.combat_list = []
 
-        # Clear ally combat state (keep living allies, just drop their in_combat flag)
-        for ally in getattr(player, "combat_list_allies", [])[1:]:
-            ally.in_combat = False
-        player.combat_list_allies = [player] + [
+        # Clear ally combat state — filter to living allies first, then clear their flags
+        living_allies = [
             a for a in getattr(player, "combat_list_allies", [])[1:] if a.is_alive()
         ]
+        for ally in living_allies:
+            ally.in_combat = False
+        player.combat_list_allies = [player] + living_allies
 
         player.current_move = None
 
@@ -3291,6 +3292,8 @@ class GameService:
             del player.combat_adapter_state
         if hasattr(player, "_combat_deferred_enemies"):
             del player._combat_deferred_enemies
+        if hasattr(player, "combat_end_summary"):
+            del player.combat_end_summary
 
         return {
             "success": True,

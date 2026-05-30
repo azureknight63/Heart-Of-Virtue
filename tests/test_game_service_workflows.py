@@ -1397,3 +1397,122 @@ class TestComplexWorkflows:
 
         # Original quest should still be active
         assert len(player_with_universe.active_quests) == 1
+
+
+# =============================================================================
+# FLEE COMBAT — STATE CLEANUP TESTS
+# =============================================================================
+
+
+class TestFleeCombatCleanup:
+    """Verify flee_combat fully tears down combat state (regression guard for #206)."""
+
+    @pytest.fixture
+    def in_combat_player(self, player_with_universe, mock_enemy):
+        """Player with a fully populated combat state."""
+        player_with_universe.in_combat = True
+        player_with_universe.combat_list = [mock_enemy]
+        mock_enemy.in_combat = True
+        mock_enemy.aggro = True
+        return player_with_universe
+
+    def test_flee_sets_in_combat_false(self, game_service, in_combat_player):
+        game_service.flee_combat(in_combat_player)
+        assert in_combat_player.in_combat is False
+
+    def test_flee_empties_combat_list(self, game_service, in_combat_player):
+        game_service.flee_combat(in_combat_player)
+        assert in_combat_player.combat_list == []
+
+    def test_flee_clears_enemy_in_combat_flag(self, game_service, in_combat_player, mock_enemy):
+        game_service.flee_combat(in_combat_player)
+        assert mock_enemy.in_combat is False
+
+    def test_flee_clears_enemy_aggro(self, game_service, in_combat_player, mock_enemy):
+        game_service.flee_combat(in_combat_player)
+        assert mock_enemy.aggro is False
+
+    def test_flee_resets_current_move(self, game_service, in_combat_player):
+        in_combat_player.current_move = MagicMock()
+        game_service.flee_combat(in_combat_player)
+        assert in_combat_player.current_move is None
+
+    def test_flee_removes_combat_adapter(self, game_service, in_combat_player):
+        in_combat_player._combat_adapter = MagicMock()
+        game_service.flee_combat(in_combat_player)
+        assert not hasattr(in_combat_player, "_combat_adapter")
+
+    def test_flee_removes_combat_adapter_state(self, game_service, in_combat_player):
+        in_combat_player.combat_adapter_state = {"events_triggered": []}
+        game_service.flee_combat(in_combat_player)
+        assert not hasattr(in_combat_player, "combat_adapter_state")
+
+    def test_flee_removes_combat_deferred_enemies(self, game_service, in_combat_player):
+        in_combat_player._combat_deferred_enemies = [MagicMock()]
+        game_service.flee_combat(in_combat_player)
+        assert not hasattr(in_combat_player, "_combat_deferred_enemies")
+
+    def test_flee_removes_combat_end_summary(self, game_service, in_combat_player):
+        in_combat_player.combat_end_summary = {"victory": False}
+        game_service.flee_combat(in_combat_player)
+        assert not hasattr(in_combat_player, "combat_end_summary")
+
+    def test_flee_strips_non_persistent_status_effects(self, game_service, in_combat_player):
+        persistent = MagicMock()
+        persistent.persistent = True
+        transient = MagicMock()
+        transient.persistent = False
+        in_combat_player.states = [persistent, transient]
+        game_service.flee_combat(in_combat_player)
+        assert persistent in in_combat_player.states
+        assert transient not in in_combat_player.states
+
+    def test_flee_tolerates_no_combat_adapter(self, game_service, in_combat_player):
+        # _combat_adapter set to None in fixture — hasattr is True; test the absent case
+        del in_combat_player._combat_adapter
+        result = game_service.flee_combat(in_combat_player)
+        assert result.get("fled") is True
+
+    def test_flee_tolerates_empty_combat_list(self, game_service, player_with_universe):
+        player_with_universe.in_combat = True
+        player_with_universe.combat_list = []
+        result = game_service.flee_combat(player_with_universe)
+        assert result.get("fled") is True
+
+    def test_flee_tolerates_no_allies(self, game_service, in_combat_player):
+        in_combat_player.combat_list_allies = []
+        result = game_service.flee_combat(in_combat_player)
+        assert result.get("fled") is True
+        assert in_combat_player.combat_list_allies == [in_combat_player]
+
+    def test_flee_keeps_living_allies_clears_dead(self, game_service, in_combat_player):
+        living = MagicMock()
+        living.is_alive.return_value = True
+        living.in_combat = True
+        dead = MagicMock()
+        dead.is_alive.return_value = False
+        dead.in_combat = True
+        in_combat_player.combat_list_allies = [in_combat_player, living, dead]
+
+        game_service.flee_combat(in_combat_player)
+
+        assert living in in_combat_player.combat_list_allies
+        assert dead not in in_combat_player.combat_list_allies
+        assert living.in_combat is False
+
+    def test_flee_returns_success_payload(self, game_service, in_combat_player):
+        result = game_service.flee_combat(in_combat_player)
+        assert result == {"success": True, "fled": True, "message": "Fled from combat successfully"}
+
+    def test_execute_move_routes_flee_to_flee_combat(self, game_service, in_combat_player):
+        """execute_move with move_type='flee' must call flee_combat, not fall through to error."""
+        adapter = MagicMock()
+        adapter.awaiting_input = True
+        adapter.input_type = "move_selection"
+        in_combat_player._combat_adapter = adapter
+
+        with patch.object(game_service, "flee_combat", wraps=game_service.flee_combat) as spy:
+            result = game_service.execute_move(in_combat_player, "flee", "")
+            spy.assert_called_once_with(in_combat_player)
+
+        assert result.get("fled") is True
