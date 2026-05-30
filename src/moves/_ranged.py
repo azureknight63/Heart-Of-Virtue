@@ -12,6 +12,7 @@ from ._base import (
     Move,
     PassiveMove,
     _ensure_weapon_exp,
+    _apply_carry_fatigue,
 )  # noqa: F401
 
 
@@ -35,9 +36,8 @@ class ShootBow(
         execute = 1
         recoil = 1  # bows do not have significant recoil
         cooldown = 3
-        fatigue_cost = 100 - (5 * player.endurance)
-        if fatigue_cost <= 10:
-            fatigue_cost = 10
+        fatigue_cost = max(10, 100 - (2 * player.endurance))
+        fatigue_cost = _apply_carry_fatigue(player, fatigue_cost)
         mvrange = (6, 50)
         super().__init__(
             name="Shoot Bow",
@@ -216,9 +216,8 @@ class ShootBow(
         cooldown = 3 - int(self.user.speed / 20)
         if cooldown < 0:
             cooldown = 0
-        fatigue_cost = int(math.ceil(100 - (5 * self.user.endurance)))
-        if fatigue_cost <= 10:
-            fatigue_cost = 10
+        fatigue_cost = max(10, int(math.ceil(100 - (2 * self.user.endurance))))
+        fatigue_cost = _apply_carry_fatigue(self.user, fatigue_cost)
         # effective_range = self.user.eq_weapon.range_base + (100 / self.user.eq_weapon.range_decay)
         # weapon_name = self.user.eq_weapon.name
         # self.stage_announce[1] = colored("Jean lets his " + weapon_name + " fly!", "green")
@@ -357,7 +356,7 @@ class ShootCrossbow(Move):
         execute = 1
         recoil = 2
         cooldown = 5
-        fatigue_cost = max(10, 100 - (5 * user.endurance))
+        fatigue_cost = _apply_carry_fatigue(user, max(10, 100 - (2 * user.endurance)))
         super().__init__(
             name="Shoot Crossbow",
             description=description,
@@ -405,7 +404,7 @@ class ShootCrossbow(Move):
             + int(self.user.strength * wpn.str_mod)
             + int(self.user.finesse * wpn.fin_mod),
         )
-        self.fatigue_cost = max(10, 100 - (5 * self.user.endurance))
+        self.fatigue_cost = _apply_carry_fatigue(self.user, max(10, 100 - (2 * self.user.endurance)))
         self.mvrange = getattr(wpn, "wpnrange", (6, 40))
 
     def execute(self, player):
@@ -475,7 +474,7 @@ class BroadheadBolt(Move):
         execute = 1
         recoil = 2
         cooldown = 6
-        fatigue_cost = max(10, 110 - (5 * user.endurance))
+        fatigue_cost = _apply_carry_fatigue(user, max(10, 110 - (2 * user.endurance)))
         super().__init__(
             name="Broadhead Bolt",
             description=description,
@@ -523,7 +522,7 @@ class BroadheadBolt(Move):
             + int(self.user.strength * wpn.str_mod)
             + int(self.user.finesse * wpn.fin_mod),
         )
-        self.fatigue_cost = max(15, 110 - (5 * self.user.endurance))
+        self.fatigue_cost = _apply_carry_fatigue(self.user, max(15, 110 - (2 * self.user.endurance)))
         self.mvrange = getattr(wpn, "wpnrange", (6, 40))
 
     def execute(self, player):
@@ -546,7 +545,7 @@ class AimedShot(Move):
         execute = 1
         recoil = 2
         cooldown = 8
-        fatigue_cost = max(10, 90 - (5 * user.endurance))
+        fatigue_cost = _apply_carry_fatigue(user, max(10, 90 - (2 * user.endurance)))
         super().__init__(
             name="Aimed Shot",
             description=description,
@@ -594,7 +593,7 @@ class AimedShot(Move):
             + int(self.user.finesse * wpn.fin_mod)
         )
         self.power = max(1, int(base * 1.5))
-        self.fatigue_cost = max(10, 90 - (5 * self.user.endurance))
+        self.fatigue_cost = _apply_carry_fatigue(self.user, max(10, 90 - (2 * self.user.endurance)))
         self.mvrange = getattr(wpn, "wpnrange", (6, 40))
 
     def execute(self, player):
@@ -666,7 +665,7 @@ class PinningBolt(Move):
         execute = 1
         recoil = 2
         cooldown = 6
-        fatigue_cost = max(10, 100 - (5 * user.endurance))
+        fatigue_cost = _apply_carry_fatigue(user, max(10, 100 - (2 * user.endurance)))
         super().__init__(
             name="Pinning Bolt",
             description=description,
@@ -714,7 +713,7 @@ class PinningBolt(Move):
             + int(self.user.strength * wpn.str_mod)
             + int(self.user.finesse * wpn.fin_mod),
         )
-        self.fatigue_cost = max(10, 100 - (5 * self.user.endurance))
+        self.fatigue_cost = _apply_carry_fatigue(self.user, max(10, 100 - (2 * self.user.endurance)))
         self.mvrange = getattr(wpn, "wpnrange", (6, 40))
 
     def execute(self, player):

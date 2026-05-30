@@ -11,6 +11,7 @@ from animations import animate_to_main_screen as animate  # noqa: F401
 from ._base import (
     Move,
     PassiveMove,
+    _apply_carry_fatigue,
 )  # noqa: F401
 
 
@@ -91,9 +92,8 @@ class PowerStrike(Move):
         if cooldown < 0:
             cooldown = 0
         cooldown += 3
-        fatigue_cost = 100 - (3 * self.user.endurance)
-        if fatigue_cost <= 25:
-            fatigue_cost = 25
+        fatigue_cost = max(25, 100 - (2 * self.user.endurance))
+        fatigue_cost = _apply_carry_fatigue(self.user, fatigue_cost)
         self.power = power
         self.stage_beat[0] = prep
         self.stage_beat[1] = execute

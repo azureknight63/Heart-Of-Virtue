@@ -12,6 +12,7 @@ from ._base import (
     Move,
     PassiveMove,
     default_animations,
+    _apply_carry_fatigue,
 )  # noqa: F401
 
 
@@ -395,9 +396,9 @@ class Attack(Move):  # basic attack function, always uses equipped weapon, playe
         if cooldown < 0:
             cooldown = 0
         weapon = "fist"  # modified later, based on player weapon
-        fatigue_cost = int(math.ceil(100 - (5 * player.endurance)))
-        if fatigue_cost <= 10:
-            fatigue_cost = 10
+        fatigue_cost = int(math.ceil(100 - (2 * player.endurance)))
+        fatigue_cost = max(10, fatigue_cost)
+        fatigue_cost = _apply_carry_fatigue(player, fatigue_cost)
         mvrange = (0, 5)
         super().__init__(
             name="Attack",
@@ -481,13 +482,14 @@ class Attack(Move):  # basic attack function, always uses equipped weapon, playe
 
         recoil = int(1 + (self.user.eq_weapon.weight / 2))
 
+        wt_mult = max(4, 10 - 0.2 * self.user.strength)
         fatigue_cost = int(
             math.ceil(
-                70 + (self.user.eq_weapon.weight * 10) - (5 * self.user.endurance)
+                70 + (self.user.eq_weapon.weight * wt_mult) - (2 * self.user.endurance)
             )
         )
-        if fatigue_cost <= 10:
-            fatigue_cost = 10
+        fatigue_cost = max(10, fatigue_cost)
+        fatigue_cost = _apply_carry_fatigue(self.user, fatigue_cost)
 
         mvrange = self.user.eq_weapon.wpnrange
 
