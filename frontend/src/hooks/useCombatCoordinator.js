@@ -25,6 +25,7 @@ export function useCombatCoordinator({
     combat,
     inCombat,
     displayedLogCount,
+    isBattlefieldAnimating,
     performAction,
     fetchCombatStatus,
     playSFX,
@@ -39,9 +40,10 @@ export function useCombatCoordinator({
     const [lastEndStateId, setLastEndStateId] = useState(
         () => sessionStorage.getItem('hov_last_end_state_id')
     )
-    // True from when the end-state timer is scheduled until the dialog fires.
-    // Lets GamePage keep mode='combat' during the delay without relying on lastEndStateId.
-    const [endStatePending, setEndStatePending] = useState(false)
+    // Ref (not state) so the update is visible synchronously to GamePage's effect
+    // in the same render cycle where the kill is detected. useState would queue
+    // the update for the next render, causing a one-frame flash to exploration mode.
+    const endStatePendingRef = useRef(false)
 
     // Combat log processing state
     const [isCombatLogProcessing, setIsCombatLogProcessing] = useState(false)
@@ -66,16 +68,23 @@ export function useCombatCoordinator({
 
         if (!inCombat && maybeEnd && (maybeEnd.status === 'victory' || maybeEnd.status === 'defeat')) {
             setEndState(maybeEnd)
-            if (!isCombatLogProcessing && !hasPendingLogs && maybeEnd.id && maybeEnd.id !== lastEndStateId) {
+            // Lock mode='combat' only while this end state hasn't been dispatched
+            // to the countdown timer yet. Once lastEndStateId records the ID the
+            // condition flips false, so post-dialog cleanup (loot collection, etc.)
+            // can exit to exploration. Setting this unconditionally re-locked combat
+            // mode on every re-render after the timer fired.
+            if (maybeEnd.id !== lastEndStateId) {
+                endStatePendingRef.current = true
+            }
+            if (!isCombatLogProcessing && !hasPendingLogs && !isBattlefieldAnimating && maybeEnd.id && maybeEnd.id !== lastEndStateId) {
                 // Mark handled immediately so re-renders don't schedule a second timer
                 setLastEndStateId(maybeEnd.id)
                 sessionStorage.setItem('hov_last_end_state_id', maybeEnd.id)
-                setEndStatePending(true)
 
                 const isVictory = maybeEnd.status === 'victory'
                 endStateTimerRef.current = setTimeout(() => {
                     endStateTimerRef.current = null
-                    setEndStatePending(false)
+                    endStatePendingRef.current = false
                     if (isVictory) {
                         setShowVictoryDialog(true)
                         // Play fanfare as a one-shot sting (non-looping)
@@ -86,7 +95,7 @@ export function useCombatCoordinator({
                 }, VICTORY_DIALOG_DELAY_MS)
             }
         }
-    }, [inCombat, combat?.end_state, isCombatLogProcessing, lastEndStateId, displayedLogCount, combat?.log, playSting])
+    }, [inCombat, combat?.end_state, isCombatLogProcessing, isBattlefieldAnimating, lastEndStateId, displayedLogCount, combat?.log, playSting])
 
     // Cancel any pending end-state timer when the hook unmounts
     useEffect(() => {
@@ -178,7 +187,7 @@ export function useCombatCoordinator({
         showLootDialog,
         endState,
         lastEndStateId,
-        endStatePending,
+        endStatePendingRef,
         isCombatLogProcessing,
         currentLogIndex,
         hoveredTargetId,

@@ -26,7 +26,7 @@ export default function GamePage() {
   const { location, loading: worldLoading, moveToLocation, refetch: refetchWorld } = useWorld()
   const { exploredTiles, setExploredTiles, refetch: refetchExploration } = useExploration()
   const { combat, inCombat, fetchCombatStatus, performAction } = useCombat()
-  const { playBGM, playSFX } = useAudio()
+  const { playBGM, playSFX, playSting } = useAudio()
   const { triggerTick } = useAutosave(player)
   const { error: showError } = useToast()
 
@@ -43,6 +43,7 @@ export default function GamePage() {
   const [mode, setMode] = useState('exploration') // 'exploration' or 'combat'
   const [isInteractionTyping, setIsInteractionTyping] = useState(false)
   const [displayedLogCount, setDisplayedLogCount] = useState(0)
+  const [isBattlefieldAnimating, setIsBattlefieldAnimating] = useState(false)
 
   // Beta end dialog state
   const [showBetaEndDialog, setShowBetaEndDialog] = useState(false)
@@ -66,7 +67,7 @@ export default function GamePage() {
     showLootDialog,
     endState,
     lastEndStateId,
-    endStatePending,
+    endStatePendingRef,
     isCombatLogProcessing,
     currentLogIndex,
     hoveredTargetId,
@@ -85,10 +86,11 @@ export default function GamePage() {
     combat,
     inCombat,
     displayedLogCount,
+    isBattlefieldAnimating,
     performAction,
     fetchCombatStatus,
     playSFX,
-    playBGM
+    playSting
   })
 
   // Event management hook
@@ -339,10 +341,10 @@ export default function GamePage() {
         setEndState(maybeEnd)
 
         // Keep mode locked to 'combat' while the dialog is pending (timer running)
-        // or while the dialog is open. endStatePending bridges the gap between when
-        // lastEndStateId is updated (immediately, to prevent duplicate timers) and
-        // when showVictoryDialog/showDefeatDialog becomes true (after the delay).
-        const isDialogActive = showVictoryDialog || showDefeatDialog || endStatePending;
+        // or while the dialog is open. endStatePendingRef.current is a ref so it
+        // reflects the value set by useCombatCoordinator's effect in the same render
+        // cycle — state would be one render stale, causing a flash to exploration.
+        const isDialogActive = showVictoryDialog || showDefeatDialog || endStatePendingRef.current;
 
         if (isDialogActive) {
           setMode('combat')
@@ -358,7 +360,7 @@ export default function GamePage() {
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [inCombat, combat, eventQueue, currentEvent, endStatePending, showVictoryDialog, showDefeatDialog])
+  }, [inCombat, combat, eventQueue, currentEvent, showVictoryDialog, showDefeatDialog])
 
   /**
    * Manage SFX when modes change
@@ -607,6 +609,7 @@ export default function GamePage() {
           hoveredTargetId={hoveredTargetId}
           showDescription={isMobile}
           onDescriptionInteract={isMobile ? () => setActiveMobileTab('character') : undefined}
+          onAnimatingChange={setIsBattlefieldAnimating}
         />
       </div>
 

@@ -11,6 +11,7 @@ describe('useCombatCoordinator', () => {
         combat: null,
         inCombat: false,
         displayedLogCount: 0,
+        isBattlefieldAnimating: false,
         performAction: vi.fn(),
         fetchCombatStatus: vi.fn(),
         playSFX: vi.fn(),
@@ -53,6 +54,7 @@ describe('useCombatCoordinator', () => {
     describe('victory/defeat dialog handling', () => {
         beforeEach(() => {
             vi.useFakeTimers()
+            sessionStorage.clear()
         })
 
         afterEach(() => {
@@ -150,6 +152,46 @@ describe('useCombatCoordinator', () => {
             )
 
             expect(result.current.showVictoryDialog).toBe(false)
+        })
+
+        it('should call playSting with fanfare on victory', () => {
+            const playSting = vi.fn()
+            const combat = {
+                end_state: {
+                    id: 'victory-fanfare-test',
+                    status: 'victory',
+                    message: 'You won!'
+                },
+                log: []
+            }
+
+            renderHook(() =>
+                useCombatCoordinator({ ...defaultParams, combat, inCombat: false, playSting })
+            )
+
+            act(() => vi.advanceTimersByTime(5000))
+
+            expect(playSting).toHaveBeenCalledWith('fanfare')
+        })
+
+        it('should not call playSting for defeat', () => {
+            const playSting = vi.fn()
+            const combat = {
+                end_state: {
+                    id: 'defeat-fanfare-test',
+                    status: 'defeat',
+                    message: 'You lost!'
+                },
+                log: []
+            }
+
+            renderHook(() =>
+                useCombatCoordinator({ ...defaultParams, combat, inCombat: false, playSting })
+            )
+
+            act(() => vi.advanceTimersByTime(5000))
+
+            expect(playSting).not.toHaveBeenCalled()
         })
 
         it('should not show same end state twice', () => {

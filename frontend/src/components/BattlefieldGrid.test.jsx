@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import BattlefieldGrid from './BattlefieldGrid';
 
@@ -148,5 +148,103 @@ describe('BattlefieldGrid', () => {
         const jeanInPanel = screen.queryAllByText('Jean');
         // Panel renders name inside a distinct section — after Escape there should be at most the marker label
         expect(jeanInPanel.length).toBeLessThanOrEqual(1);
+    });
+
+    describe('onAnimatingChange callback', () => {
+        beforeEach(() => {
+            vi.useFakeTimers();
+        });
+
+        afterEach(() => {
+            vi.useRealTimers();
+        });
+
+        const combatWithAnimation = {
+            ...mockCombat,
+            log: [
+                {
+                    animation: {
+                        type: 'attack',
+                        source_id: 'player',
+                        target_id: 'enemy_goblin',
+                        outcome: 'hit'
+                    }
+                }
+            ]
+        };
+
+        it('calls onAnimatingChange(true) when an animation is queued', () => {
+            const onAnimatingChange = vi.fn();
+            render(
+                <BattlefieldGrid
+                    combat={combatWithAnimation}
+                    tab="overview"
+                    zoom={1}
+                    onAnimatingChange={onAnimatingChange}
+                    displayedLogCount={1}
+                />
+            );
+            expect(onAnimatingChange).toHaveBeenCalledWith(true);
+        });
+
+        it('does not call onAnimatingChange again during phase transitions', () => {
+            const onAnimatingChange = vi.fn();
+            render(
+                <BattlefieldGrid
+                    combat={combatWithAnimation}
+                    tab="overview"
+                    zoom={1}
+                    onAnimatingChange={onAnimatingChange}
+                    displayedLogCount={1}
+                />
+            );
+
+            // Should be called once with true on animation start
+            expect(onAnimatingChange.mock.calls.filter(c => c[0] === true).length).toBe(1);
+            onAnimatingChange.mockClear();
+
+            // Advance past windup (100ms) into strike — activeAnimation stays non-null,
+            // so the dep-array condition doesn't change and onAnimatingChange must not fire
+            act(() => vi.advanceTimersByTime(150));
+
+            expect(onAnimatingChange.mock.calls.filter(c => c[0] === true).length).toBe(0);
+        });
+
+        it('calls onAnimatingChange(false) after all animation phases complete', () => {
+            const onAnimatingChange = vi.fn();
+            render(
+                <BattlefieldGrid
+                    combat={combatWithAnimation}
+                    tab="overview"
+                    zoom={1}
+                    onAnimatingChange={onAnimatingChange}
+                    displayedLogCount={1}
+                />
+            );
+
+            onAnimatingChange.mockClear();
+
+            // Attack animation: windup(100) + strike(300) + impact(200) + return(200) = 800ms
+            act(() => vi.advanceTimersByTime(900));
+
+            expect(onAnimatingChange).toHaveBeenCalledWith(false);
+        });
+
+        it('calls onAnimatingChange(false) on unmount to prevent stuck animating state', () => {
+            const onAnimatingChange = vi.fn();
+            const { unmount } = render(
+                <BattlefieldGrid
+                    combat={mockCombat}
+                    tab="overview"
+                    zoom={1}
+                    onAnimatingChange={onAnimatingChange}
+                />
+            );
+
+            onAnimatingChange.mockClear();
+            unmount();
+
+            expect(onAnimatingChange).toHaveBeenCalledWith(false);
+        });
     });
 });
