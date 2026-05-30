@@ -2120,8 +2120,8 @@ class GameService:
         if session_id:
             adapter.session_id = session_id
 
-        # Check if adapter is ready for input (unless cancelling, which should always be allowed)
-        if not adapter.awaiting_input and move_type != "cancel":
+        # Check if adapter is ready for input (unless cancelling/fleeing, which should always be allowed)
+        if not adapter.awaiting_input and move_type not in ("cancel", "flee"):
             return {
                 "error": "Not awaiting input",
                 "details": f"awaiting_input={adapter.awaiting_input}, input_type={adapter.input_type}",
@@ -2252,6 +2252,9 @@ class GameService:
                 "target_id": actual_target_id,
             }
             return adapter.process_command(command)
+
+        elif move_type == "flee":
+            return self.flee_combat(player)
 
         else:
             return {"error": f"Unknown move type: {move_type}"}
@@ -3261,6 +3264,17 @@ class GameService:
         """
         if not getattr(player, "in_combat", False):
             return {"error": "Not in combat"}
+
+        enemies = getattr(player, "combat_list", [])
+        for enemy in enemies:
+            prox = getattr(enemy, "combat_proximity", 0)
+            dist = prox.get(player, 0) if isinstance(prox, dict) else prox
+            if dist < 20:
+                return {
+                    "success": False,
+                    "fled": False,
+                    "error": "Cannot flee — enemies are too close",
+                }
 
         # Clear enemy combat state so they don't immediately re-engage on next interaction
         for enemy in list(getattr(player, "combat_list", [])):

@@ -265,8 +265,9 @@ class TestCombatWorkflows:
     def test_combat_workflow_flee_from_combat(
         self, game_service, player_with_universe, mock_enemy
     ):
-        """Test fleeing from combat transitions to not-in-combat."""
+        """Test fleeing from combat transitions to not-in-combat when enemies are far enough."""
         player_with_universe.in_combat = True
+        mock_enemy.combat_proximity = {player_with_universe: 25}
         player_with_universe.combat_list = [mock_enemy]
 
         result = game_service.flee_combat(player_with_universe)
@@ -274,6 +275,21 @@ class TestCombatWorkflows:
         assert result.get("success") is True
         assert result.get("fled") is True
         assert player_with_universe.in_combat is False
+
+    def test_combat_workflow_flee_blocked_when_enemy_too_close(
+        self, game_service, player_with_universe, mock_enemy
+    ):
+        """Test that fleeing is blocked when any enemy is within 20 ft."""
+        player_with_universe.in_combat = True
+        mock_enemy.combat_proximity = {player_with_universe: 10}
+        player_with_universe.combat_list = [mock_enemy]
+
+        result = game_service.flee_combat(player_with_universe)
+
+        assert result.get("success") is False
+        assert result.get("fled") is False
+        assert "too close" in result.get("error", "")
+        assert player_with_universe.in_combat is True
 
     def test_combat_workflow_cannot_flee_when_not_in_combat(
         self, game_service, player_with_universe
@@ -1409,11 +1425,12 @@ class TestFleeCombatCleanup:
 
     @pytest.fixture
     def in_combat_player(self, player_with_universe, mock_enemy):
-        """Player with a fully populated combat state."""
+        """Player with a fully populated combat state, enemy at flee-viable distance."""
         player_with_universe.in_combat = True
         player_with_universe.combat_list = [mock_enemy]
         mock_enemy.in_combat = True
         mock_enemy.aggro = True
+        mock_enemy.combat_proximity = 25  # >= 20 ft so flee is not blocked by distance check
         return player_with_universe
 
     def test_flee_sets_in_combat_false(self, game_service, in_combat_player):
@@ -1499,6 +1516,16 @@ class TestFleeCombatCleanup:
         assert living in in_combat_player.combat_list_allies
         assert dead not in in_combat_player.combat_list_allies
         assert living.in_combat is False
+
+    def test_flee_blocked_when_enemy_too_close(self, game_service, player_with_universe, mock_enemy):
+        """flee_combat returns an error when any enemy is within 20 ft."""
+        player_with_universe.in_combat = True
+        mock_enemy.combat_proximity = 10  # < 20 ft
+        player_with_universe.combat_list = [mock_enemy]
+        result = game_service.flee_combat(player_with_universe)
+        assert result.get("success") is False
+        assert result.get("fled") is False
+        assert "too close" in result.get("error", "")
 
     def test_flee_returns_success_payload(self, game_service, in_combat_player):
         result = game_service.flee_combat(in_combat_player)
