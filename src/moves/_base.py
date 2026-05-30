@@ -9,6 +9,7 @@ import items  # noqa: F401
 import positions  # noqa: F401
 from animations import animate_to_main_screen as animate  # noqa: F401
 
+
 def _apply_carry_fatigue(user, fatigue_cost):
     """Scale fatigue_cost up proportionally to carry weight burden.
 
