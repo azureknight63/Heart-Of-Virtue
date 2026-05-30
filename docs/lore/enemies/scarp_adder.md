@@ -30,12 +30,14 @@ A thick-bodied ambush serpent of the eastern slope — a solitary, patient preda
 - **Withdrawal**: Uses `Withdraw` to reposition and reset after striking, maintaining evasion
 
 ## Tactics
-- **Ambush and strike**: Uses superior positioning to deliver the first `VenomClaw` attack before Jean can react
-- **Venom strategy**: Prioritizes `VenomClaw` to apply poison and deal ongoing damage rather than raw attacks
-- **Terrain exploitation**: Coils in rocky areas, disappears into stone, emerges to strike
-- **Hit and withdraw**: Strikes with `VenomClaw` or `NpcAttack`, then uses `Withdraw` to reset distance
-- **Patience**: Not aggressive in extended combat; prefers to outlast through poison damage and strategic disengagement
-- **Evasion**: Uses `Dodge` sparingly; relies on positioning and movement rather than defensive actions
+
+- **First-strike advantage**: Use superior positioning and camouflage to deliver the first `VenomClaw` attack before Jean reacts
+- **Venom accumulation**: Prioritize `VenomClaw` over raw `NpcAttack` to apply persistent poison and wear down prey over time
+- **Terrain mastery**: Coil in rocky areas, disappear into stone crevices, emerge to strike from unexpected angles
+- **Hit-and-withdraw cycles**: Strike decisively, then use `Withdraw` to reset distance and repositioning
+- **Patient attrition**: Not interested in extended direct combat; win through accumulated poison damage and strategic patience
+- **Minimal defense**: Use `Dodge` sparingly; rely instead on positioning and avoidance through terrain exploitation
+- **Calculated retreat**: Disengage and disappear into stone if overwhelmed; the creature knows its territorial limits and respects them
 
 ## Example Stats (from code)
 - HP: moderate (maxhp=38)
@@ -57,13 +59,14 @@ A thick-bodied ambush serpent of the eastern slope — a solitary, patient preda
 - No explicit status immunities — relies on positioning to avoid status effects
 
 ## Encounter & Lore Notes
-- Scarp Adders are found on rocky slopes and in stone-filled areas of the eastern regions
-- Dangerous when encountered in rocky terrain where their camouflage and heat-sensing give maximum advantage
-- Often found in caves, rocky outcrops, or stone passages
-- Multiple adders rarely occupy the same territory; solitary creatures by nature
-- Are intelligent enough to flee from overwhelming odds; not suicidal predators
-- Tracks and shed scales can indicate adder presence
-- Local settlements may have folklore about territorial adders guarding sacred stone
+
+**Location & Chapter**: Scarp Adders inhabit the **rocky slopes and stone-filled areas of the eastern regions (Chapter 2 onward)**. They are found in caves, rocky outcrops, stone passages, and cliffside niches where their camouflage is most effective.
+
+**Solitary Hunters**: Multiple adders rarely occupy the same territory. Each claims a domain and defends it with calculated precision. They are patient predators—willing to wait for hours or days for prey to enter their ambush zone.
+
+**Territorial Respect**: Despite their danger, Scarp Adders respect boundaries. They avoid unnecessary combat with creatures much larger than themselves. A skilled traveler who recognizes a Scarp Adder's territory and gives way may pass unmolested—a silent agreement between cautious beings.
+
+**Jean's Arc Connection (Oblique)**: The Scarp Adder teaches a hard lesson about natural limits and territorial respect. Jean may come to see these creatures not as evil but as aspects of a world that was always hostile to the weak or careless. Their patience and precision mirror the kind of deliberate, focused intention Jean must develop to survive corruption—not through overwhelming force, but through careful pattern recognition and strategic positioning.
 
 ## DM / Designer Tips
 - **Terrain advantage**: Encounters should emphasize rocky terrain; open areas reduce the adder's tactical advantage

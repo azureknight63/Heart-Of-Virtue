@@ -27,11 +27,13 @@ A colossal mass of pulsating green slime, studded with mineral fragments it has 
 - **Fatigue**: Can rest and recover, making it a marathon boss rather than a burst threat
 
 ## Tactics
-- **Telegraphed devastation**: Uses `TidalSurge` as its primary attack — the same mechanic as Elder Slime, but massively scaled
-- **Inevitable advance**: Slowly closes distance with `Advance`; there is nowhere to run, only to dodge and resist
-- **Rhythm and pattern**: Moves follow a discernible rhythm that gives players time to heal and prepare between surges
-- **Fatigue management**: Will occasionally rest (`NpcIdle`) to recover, giving players brief respites
-- **Overwhelming force**: Designed to be beaten through learning patterns, optimal damage selection, and resource management — not through raw stats
+
+- **Telegraphed devastation**: Use `TidalSurge` as the primary attack—same mechanic as Elder Slime, but massively scaled and more devastating
+- **Inevitable advance**: Slowly close distance with `Advance`; the creature's weight is inexorable; no amount of kiting can avoid eventual engagement
+- **Rhythm and recovery**: Attack in patterns, with deliberate `NpcIdle` recovery periods. This creates a discernible rhythm—moments where Jean can heal, reposition, and prepare for the next surge
+- **Pattern mastery as victory**: The fight is designed to *teach* Jean through repeated exposure. The Tidal Surge telegraph is consistent; learning it transforms overwhelming odds into manageable rhythm
+- **Attrition strategy**: Win through accumulated damage and resource management, not through bursts. Force Jean to think strategically, not tactically
+- **Fatigue irrelevance**: Unlike lesser enemies, the King Slime's fatigue doesn't limit it—it simply rests and continues. This underscores that raw endurance won't win; only mastery of the pattern will
 
 ## Example Stats (from code)
 - HP: very high (maxhp=200) — a true boss
@@ -60,11 +62,12 @@ A colossal mass of pulsating green slime, studded with mineral fragments it has 
 - **Slimed (1.0)**: Immune — already made of slime
 
 ## Encounter & Lore Notes
-- The King Slime is the culmination of Chapter 1 — its defeat marks a major narrative turning point
-- The Tidal Surge attack is the key mechanic players must master; it's telegraphed the same way as Elder Slime, teaching reward for earlier encounters
-- Serves as environmental storytelling; the pools' corruption is literally embodied in this creature
-- Defeating it should feel like a genuine victory after a long, grinding battle of attrition and pattern recognition
-- The creature's minerals suggest it is not purely slime but a hybrid of consumed land and gelatinous corruption
+
+**Location & Chapter**: The King Slime dwells in the **heart of the Grondelith Mineral Pools (Chapter 1, final boss)**. It is the source and embodiment of the corruption that has degraded the pools from a sacred site into a festering wound.
+
+**Narrative Significance**: This encounter marks the culmination of Chapter 1. Defeating the King Slime is not merely a mechanical victory but a statement: Jean has learned to recognize corruption's patterns, to persist through overwhelming odds, and to strike at the heart of darkness itself. The victory is earned through pattern mastery learned from Elder Slimes—a reward for earlier patience and observation.
+
+**Jean's Arc Connection (Oblique)**: The King Slime represents the weight of accumulated corruption—corruption that has consumed centuries, layers upon layers of degradation. Jean faces a creature that embodies overwhelming force, yet defeats it not through raw strength but through learning its patterns and maintaining conviction despite the darkness's apparent inevitability. This encounter teaches Jean that corruption, for all its ancient weight, is not invincible. It can be understood. It can be overcome.
 
 ## DM / Designer Tips
 - **Boss pacing**: The King Slime is designed for a long, demanding fight. Ensure players have healing items and stamina management tools

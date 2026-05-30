@@ -51,10 +51,14 @@ An enormous arachnid covered in jet-black, wiry hairs, skittering about with pre
 - **Poison (1.0)**: Immune to poison — it manufactures its own venom
 
 ## Encounter & Lore Notes
-- Giant Spiders are found in dark caves, webs, and nest chambers throughout corrupted areas
-- Their venom makes them dangerous even when wounded; poison damage can accumulate and become lethal over time
-- Often encountered as a solo threat or in small colonies; multiple spiders represent a serious threat
-- Their webs can be used for environmental storytelling — evidence of past victims, silk cocoons, etc.
+
+**Location & Distribution**: Giant Spiders inhabit dark, sheltered biomes throughout **Chapter 3 and beyond**: deep forests where canopy shadows create perpetual twilight, swamp caverns and underground chambers, cliff-face caves, and corrupted ruins where webs overtake ancient stonework. They are not found in open plains or deserts—they require cover, moisture, and darkness to thrive.
+
+**Corrupted or Natural?**: The true nature of Giant Spiders remains ambiguous. Some scholars argue they are natural predators bloated to unnatural size by corruption. Others insist they are something summoned or created by the darkness itself. The spiders offer no clear answer: they hunt with unnatural intelligence yet follow patterns that seem wholly animal. This ambiguity is their defining characteristic.
+
+**Danger & Lethality**: Their venom carries a quality that feels almost *intentional*—as if each drop is specifically designed to weaken prey. Poison accumulates in wounds, and victims who escape often find the venom continues to work long after the encounter, suggesting it was crafted rather than evolved.
+
+**Jean's Arc Connection (Oblique)**: Jean must learn to distinguish between natural threats and corruption spreading through the world. Giant Spiders present a test of this judgment: are they evil things to be destroyed, or are they simply predators in a corrupted land? The ambiguity mirrors Jean's own struggle to understand what must be fought and what must merely be accepted as part of a fallen world.
 
 ## DM / Designer Tips
 - **Emphasize poison danger**: Make poison damage meaningful in encounters; healing items and poison resistance become valuable

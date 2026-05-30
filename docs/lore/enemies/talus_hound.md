@@ -78,12 +78,14 @@ The Talus Hound's `select_move()` method includes sophisticated pack-aware AI:
 - No explicit status resistances — designed to be fast-moving rather than status-resistant
 
 ## Encounter & Lore Notes
-- Talus Hounds are found on the eastern slopes and rocky highlands
-- Danger scales significantly with pack size; a lone hound is manageable, but a coordinated pack is formidable
-- Often encountered in open terrain where their speed and flanking tactics are most effective
-- Pack structure mirrors real wolf/dog packs; hierarchy and coordination are natural to them
-- Are not mindlessly aggressive; they assess threats and withdraw if significantly outmatched
-- Environmental storytelling: tracks, scat, and kills can indicate pack presence and size
+
+**Location & Chapter**: Talus Hounds inhabit the **eastern slopes and rocky highlands (Chapter 2 onward)**. They are natural predators untouched by corruption—a reminder that not all threats come from the spreading darkness.
+
+**Pack Dynamics**: Danger scales with pack size. A single hound is a manageable threat; a coordinated pack becomes formidable. The creatures demonstrate sophisticated communication and hierarchy, suggesting genuine intelligence rather than animal instinct alone.
+
+**Nature vs. Corruption**: Unlike corrupted creatures, Talus Hounds are not twisted by darkness but *adapted to* it. They thrive in rocky terrain, hunt with natural cunning, and respond to circumstances with tactical wisdom. They represent the world as it was—hostile but comprehensible.
+
+**Jean's Arc Connection (Oblique)**: Talus Hounds embody natural struggle and opposition. They are dangerous but not *corrupted*—a distinction Jean must learn to make. When facing a pack, Jean confronts the reality that not all adversity is corruption; some is simply the world's inherent difficulty. The hounds' coordination also hints at something Jean lacks: companions, a pack, shared purpose. Fighting them alone underscores Jean's isolation.
 
 ## DM / Designer Tips
 - **Communicate pack dynamics**: Describe coordinated movements and flanking attempts so players understand the threat

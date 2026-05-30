@@ -29,12 +29,13 @@ Animated mineral sediment from the Grondelith Mineral Pools — a failed golemit
 - **Slurry Trail**: Leaves hardening slurry; visual indicator of the corruption's spread
 
 ## Tactics
-- **Mineral Spit strategy**: Opens combat with `MineralSpit` at range, attempting to slow or disable Jean
-- **Advance methodically**: Closes distance with determined `Advance` moves despite slow speed
-- **Overwhelming presence**: Relies on sheer mass and hitpoint pool to grind down enemies through attrition
-- **Tactical retreat**: Uses `Withdraw` rarely, only when heavily damaged; prefers to stand ground
-- **Idle positioning**: Uses `NpcIdle` to recover and reset stance between assaults
-- **Persistence**: Continues attacking until destroyed; will never flee or disengage
+
+- **Mineral Spit opener**: Begin combat at range with `MineralSpit`, attempting to slow or impede Jean before closing distance
+- **Methodical advance**: Close distance relentlessly with `Advance` moves, prioritizing positioning over speed
+- **Overwhelming mass**: Rely on sheer bulk and HP pool to outlast enemies through slow attrition and relentless pressure
+- **Stand ground**: Use `Withdraw` only when critically damaged; prefer to occupy space and force Jean to engage on the creature's terms
+- **Recovery stance**: Use `NpcIdle` between attacks to recover and reset positioning, appearing to gather strength
+- **Inexorable persistence**: Never flee, never disengage. Continue attacking until the creature is destroyed or Jean is dead. This is not a choice; it is all the creature knows
 
 ## Example Stats (from code)
 - HP: moderate (maxhp=60)
@@ -62,13 +63,14 @@ Animated mineral sediment from the Grondelith Mineral Pools — a failed golemit
 - **Slow (-0.5)**: Vulnerable — slow effects are extra effective against the already-ponderous creature
 
 ## Encounter & Lore Notes
-- Corrupted Stone Creatures are found in the deeper chambers of the Grondelith Mineral Pools
-- Represent failed animations; evidence of corruption attempting and failing to create true awakened guardians
-- Scattered throughout the pools like grave markers of failed experiments in corrupted creation
-- Their presence indicates heavy corruption; areas with multiple creatures are deeply tainted
-- The slurry trails they leave behind harden slowly, altering the landscape and creating hazards
-- Sometimes found guarding resource-rich mineral deposits or contested territory within the pools
-- Are not natural; they are symptoms of corruption, not native to the world
+
+**Location & Chapter**: Corrupted Stone Creatures inhabit the **deeper chambers of the Grondelith Mineral Pools (Chapter 1 onward)**, particularly in areas of heavy mineral concentration and deep corruption. They are most common in the heart of the pools, near the King Slime's domain.
+
+**Failed Creation**: Stone Creatures represent corruption's attempt to *build*—to animate stone and create guardians. They are failures. Not true awakened beings (like theorized Golemites), but mindless mineral mass puppeted by corrupted will. Each creature is evidence that corruption, for all its power, cannot truly create. It can only degrade and twist.
+
+**Environmental Hazard**: The slurry they excrete hardens slowly, altering terrain and creating new obstacles. Over time, multiple creatures reshape the landscape—a physical manifestation of corruption's corrupting influence. Maps change where these creatures walk.
+
+**Jean's Arc Connection (Oblique)**: Stone Creatures embody the horror of corruption's imperfection. They are creatures *broken* by the force that animated them—failures imprisoned in stone and slurry. Jean must confront the question: What is corruption attempting to *build*? What vision, however twisted, drives it to create guardians and sentinels? And what does it say about corruption that even its attempts at creation result only in mindless, degraded things?
 
 ## DM / Designer Tips
 - **Corruption marker**: Their presence indicates the severity of the pools' degradation

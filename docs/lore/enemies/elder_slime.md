@@ -58,10 +58,12 @@ A vastly larger and more deliberate cousin of the common slime. The Elder Slime 
 - **Slimed (1.0)**: Immune — already made of slime
 
 ## Encounter & Lore Notes
-- Elder Slimes are found deeper in the Grondelith Mineral Pools, in chambers with mineral deposits and stagnant water
-- Represents an evolutionary step toward the Chapter 1 boss (King Slime); players encounter Elder Slimes to learn mechanics they'll later need against the King
-- The Slime Volley telegraph serves as a tutorial in reading boss patterns and timing dodges
-- Often guarding chokepoints or resource-rich areas in the pools
+
+**Location & Chapter**: Elder Slimes inhabit the deeper chambers of the **Grondelith Mineral Pools (Chapter 1, mid-arc)**, particularly areas rich with mineral deposits and stagnant water pools. They serve as the threshold between common slimes and the King Slime's domain.
+
+**Narrative Function**: The Elder Slime is a teaching encounter. Players who face it must learn to *read* the Slime Volley telegraph—to recognize the subtle tells of a devastating attack before it occurs. This is not merely a mechanical lesson but a narrative one: in darkness and corruption, learning to perceive patterns becomes survival.
+
+**Jean's Arc Connection (Oblique)**: Jean is learning to navigate corruption, just as he must learn to navigate Elder Slimes. Both require patience, pattern recognition, and the ability to see subtle tells in apparent chaos. The creature embodies the principle that corruption doesn't move randomly—it has patterns, rhythms, tells. Understanding those patterns is the first step toward resistance.
 
 ## DM / Designer Tips
 - **Telegraph mechanics**: The Slime Volley attack should be visually and mechanically distinct — it announces itself before executing
