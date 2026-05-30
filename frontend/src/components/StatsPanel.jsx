@@ -11,12 +11,12 @@ export default function StatsPanel({ player, onClose }) {
   if (!player) return null
 
   const attributes = [
-    { name: 'Strength', key: 'strength', icon: '💪', tooltip: 'Increases melee damage and carrying capacity.' },
+    { name: 'Strength', key: 'strength', icon: '💪', tooltip: 'Increases melee damage, carrying capacity, and maximum HP (+2 HP per point above 10).' },
     { name: 'Finesse', key: 'finesse', icon: '🎯', tooltip: 'Improves accuracy and critical hit chance.' },
     { name: 'Speed', key: 'speed', icon: '⚡', tooltip: 'Determines turn order and evasion chance.' },
-    { name: 'Endurance', key: 'endurance', icon: '🛡️', tooltip: 'Increases maximum HP and fatigue.' },
+    { name: 'Endurance', key: 'endurance', icon: '🛡️', tooltip: 'Reduces combat cooldowns, improves fatigue recovery, and raises maximum fatigue (+2 per point above 10).' },
     { name: 'Charisma', key: 'charisma', icon: '🗣️', tooltip: 'Affects dialogue and merchant prices.' },
-    { name: 'Intelligence', key: 'intelligence', icon: '🧠', tooltip: 'Enhances magic and skill learning.' },
+    { name: 'Intelligence', key: 'intelligence', icon: '🧠', tooltip: 'Enhances skill learning speed and reduces experience needed to level up.' },
     { name: 'Faith', key: 'faith', icon: '📿', tooltip: 'Strengthens divine abilities.' },
   ]
 

@@ -507,6 +507,22 @@ def refresh_stat_bonuses(
         if v < 0:
             target.status_resistance[k] = 0
 
+    # Attribute-derived stat bumps (applied after item/state bonuses, before weight adjustments)
+    # Strength adds a small amount of max HP: +2 per point above base 10
+    try:
+        if hasattr(target, "maxhp") and isinstance(getattr(target, "strength", None), (int, float)):
+            str_bonus = max(0, target.strength - 10)
+            target.maxhp = int(target.maxhp + str_bonus * 2)
+    except Exception:
+        pass
+    # Endurance adds a small amount of max fatigue: +2 per point above base 10
+    try:
+        if hasattr(target, "maxfatigue") and isinstance(getattr(target, "endurance", None), (int, float)):
+            end_bonus = max(0, target.endurance - 10)
+            target.maxfatigue = int(target.maxfatigue + end_bonus * 2)
+    except Exception:
+        pass
+
     # Jean-specific post-processing
     if get_attr(target, "name", None) == "Jean":
         # weight_tolerance recalculation is deterministic (assignment, not +=)

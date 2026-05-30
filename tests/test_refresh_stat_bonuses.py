@@ -156,9 +156,9 @@ def test_refresh_stat_bonuses_overweight_penalty():
     t.maxfatigue = t.maxfatigue_base
     # Re-run (function resets stats first anyway)
     functions.refresh_stat_bonuses(t)
-    # Calculate expected: base maxfatigue (100) - overweight(10)*10 = 0 floor or 0? Wait base 100 - 100 = 0
-    # Because bonuses to maxfatigue are absent aside from overweight penalty (no add_maxfatigue)
-    assert t.maxfatigue == 0
+    # Expected: base(100) + endurance_bonus((20-10)*2=20) - overweight_penalty(10*10=100) = 20
+    # add_endurance=10 raises endurance from 10→20, giving +20 to maxfatigue before the penalty.
+    assert t.maxfatigue == 20
 
 
 def test_refresh_stat_bonuses_non_jean_no_weight_logic():
