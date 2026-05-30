@@ -183,7 +183,7 @@ class WhirlAttack(Move):
                     base_damage = max(1, int(self.power - enemy.protection))
 
                     # Small random variance in hits
-                    hit_chance = (85 - enemy.finesse) + self.user.finesse
+                    hit_chance = int(85 - enemy.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3))
                     roll = random.randint(0, 100)
 
                     if hit_chance >= roll:
@@ -293,7 +293,7 @@ class VertigoSpin(Move):
 
         # Calculate and deal damage
         base_damage = max(1, int(self.power - self.target.protection))
-        hit_chance = (85 - self.target.finesse) + self.user.finesse
+        hit_chance = int(85 - self.target.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3))
         roll = random.randint(0, 100)
 
         if hit_chance >= roll:
@@ -478,7 +478,7 @@ class DisarmingSlash(Move):
             )
 
         if self.viable():
-            hit_chance = max(5, (98 - self.target.finesse) + self.user.finesse)
+            hit_chance = max(5, int(98 - self.target.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3)))
         else:
             hit_chance = -1
 
@@ -613,7 +613,7 @@ class Riposte(Move):
             )
 
         if self.viable():
-            hit_chance = max(5, (98 - self.target.finesse) + self.user.finesse)
+            hit_chance = max(5, int(98 - self.target.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3)))
         else:
             hit_chance = -1
 

@@ -81,6 +81,7 @@ def _make_user(subtype="Spear", name="Jean", equip=True):
     user.finesse = 10
     user.endurance = 10
     user.speed = 10
+    user.intelligence = 10
     user.hp = 100
     user.maxhp = 100
     user.fatigue = 200

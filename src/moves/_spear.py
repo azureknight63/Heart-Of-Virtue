@@ -93,7 +93,7 @@ class KeepAway(Move):
             )
 
         if self.viable():
-            hit_chance = max(5, (98 - self.target.finesse) + self.user.finesse)
+            hit_chance = max(5, int(98 - self.target.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3)))
         else:
             hit_chance = -1
 
@@ -286,7 +286,7 @@ class Lunge(Move):
         print(self.stage_announce[1])
 
         if self.viable():
-            hit_chance = max(5, (98 - self.target.finesse) + self.user.finesse)
+            hit_chance = max(5, int(98 - self.target.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3)))
         else:
             hit_chance = -1
 
@@ -404,7 +404,7 @@ class Impale(Move):
             )
 
         if self.viable():
-            hit_chance = max(5, (98 - self.target.finesse) + self.user.finesse)
+            hit_chance = max(5, int(98 - self.target.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3)))
         else:
             hit_chance = -1
 
@@ -537,7 +537,7 @@ class ArmorPierce(Move):
             )
 
         if self.viable():
-            hit_chance = max(5, (98 - self.target.finesse) + self.user.finesse)
+            hit_chance = max(5, int(98 - self.target.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3)))
         else:
             hit_chance = -1
 

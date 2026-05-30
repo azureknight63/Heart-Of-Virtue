@@ -392,7 +392,7 @@ class Move:  # master class for all moves
         execute = 1
 
         # Cooldown calculation
-        cooldown = (3 + self.user.eq_weapon.weight) - int(self.user.speed / 10)
+        cooldown = (3 + self.user.eq_weapon.weight) - int(self.user.endurance / 10)
         cooldown += int(mod_cd)
         cooldown = max(0, cooldown)
 
@@ -443,7 +443,7 @@ class Move:  # master class for all moves
             )
 
         if self.viable():
-            hit_chance = (98 - self.target.finesse) + self.user.finesse
+            hit_chance = int(98 - self.target.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3))
             if hit_chance < 5:  # Minimum value for hit chance
                 hit_chance = 5
         else:

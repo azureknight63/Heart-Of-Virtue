@@ -96,7 +96,7 @@ class ChipAway(Move):
             )
 
         hit_chance = (
-            max(5, (98 - self.target.finesse) + self.user.finesse)
+            max(5, int(98 - self.target.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3)))
             if self.viable()
             else -1
         )
@@ -216,7 +216,7 @@ class ExploitWeakness(Move):
             )
 
         if self.viable():
-            hit_chance = max(5, (98 - self.target.finesse) + self.user.finesse)
+            hit_chance = max(5, int(98 - self.target.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3)))
         else:
             hit_chance = -1
 
@@ -343,7 +343,7 @@ class Stupefy(Move):
             )
 
         if self.viable():
-            hit_chance = max(5, (98 - self.target.finesse) + self.user.finesse)
+            hit_chance = max(5, int(98 - self.target.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3)))
         else:
             hit_chance = -1
 

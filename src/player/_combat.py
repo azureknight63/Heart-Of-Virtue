@@ -153,7 +153,7 @@ he lets out a barely audible whisper:""",
                 + (self.strength * self.eq_weapon.str_mod)
                 + (self.finesse * self.eq_weapon.fin_mod)
             )
-            hit_chance = (98 - target.finesse) + self.finesse
+            hit_chance = int(98 - target.finesse + (self.finesse * 0.7) + (self.intelligence * 0.3))
             if hit_chance < 5:  # Minimum value for hit chance
                 hit_chance = 5
             roll = random.randint(0, 100)

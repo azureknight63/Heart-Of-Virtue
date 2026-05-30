@@ -37,7 +37,7 @@ def test_evaluate_sets_power_and_stage_beats(monkeypatch):
     # Stage beats per formula
     expected_prep = int(50 / bat.speed)
     expected_recoil = int(50 / bat.speed)
-    expected_cooldown = max(0, 5 - int(bat.speed / 10))
+    expected_cooldown = max(0, 5 - int(bat.endurance / 10))
     expected_fatigue = 120 - (5 * bat.endurance)
     if expected_fatigue <= 20:
         expected_fatigue = 20

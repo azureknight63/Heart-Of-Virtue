@@ -103,6 +103,7 @@ class NPC(NPCCombatMixin, NPCLootMixin, Combatant):
         self.hide_factor = hide_factor
         self.discovery_message = discovery_message
         self.friend = friend  # Is this a friendly NPC? Default is False (enemy). Friends will help Jean in combat.
+        self.can_yield = True  # Whether this NPC may yield when wounded. Bosses and the like should set this False.
         self.combat_delay = (
             0  # initial delay for combat actions. Typically randomized on unit spawn
         )

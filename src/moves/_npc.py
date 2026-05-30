@@ -97,7 +97,7 @@ class NpcAttack(Move):  # basic attack function, NPCs only
         recoil = int(50 / self.user.speed)
         if recoil < 0:
             recoil = 0
-        cooldown = 5 - int(self.user.speed / 10)
+        cooldown = 5 - int(self.user.endurance / 10)
         if cooldown < 0:
             cooldown = 0
         fatigue_cost = int(math.ceil(100 - (5 * self.user.endurance)))
@@ -144,7 +144,7 @@ class NpcAttack(Move):  # basic attack function, NPCs only
         self.prep_colors()
         glance = False
         if self.viable():
-            hit_chance = (95 - self.target.finesse) + self.user.finesse
+            hit_chance = int(95 - self.target.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3))
             if hit_chance <= 0:
                 hit_chance = 1
         else:
@@ -425,7 +425,7 @@ class GorranClub(Move):  # Gorran's special club attack! Massive damage, long re
         if recoil < 0:
             recoil = 0
         recoil += 5
-        cooldown = 5 - int(self.user.speed / 10)
+        cooldown = 5 - int(self.user.endurance / 10)
         if cooldown < 0:
             cooldown = 0
         cooldown += 3
@@ -472,7 +472,7 @@ class GorranClub(Move):  # Gorran's special club attack! Massive damage, long re
         self.prep_colors()
         glance = False
         if self.viable():
-            hit_chance = (105 - self.target.finesse) + self.user.finesse
+            hit_chance = int(105 - self.target.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3))
             if hit_chance <= 0:
                 hit_chance = 1
         else:
@@ -559,7 +559,7 @@ class VenomClaw(Move):  # Poisonous attack
         recoil = int(50 / self.user.speed)
         if recoil < 0:
             recoil = 0
-        cooldown = 5 - int(self.user.speed / 10)
+        cooldown = 5 - int(self.user.endurance / 10)
         if cooldown < 0:
             cooldown = 0
         fatigue_cost = int(math.ceil(120 - (5 * self.user.endurance)))
@@ -606,7 +606,7 @@ class VenomClaw(Move):  # Poisonous attack
         self.prep_colors()
         glance = False
         if self.viable():
-            hit_chance = (95 - self.target.finesse) + self.user.finesse
+            hit_chance = int(95 - self.target.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3))
             if hit_chance <= 0:
                 hit_chance = 1
         else:
@@ -698,7 +698,7 @@ class SpiderBite(Move):  # Poisonous attack
         recoil = int(50 / self.user.speed)
         if recoil < 0:
             recoil = 0
-        cooldown = 5 - int(self.user.speed / 10)
+        cooldown = 5 - int(self.user.endurance / 10)
         if cooldown < 0:
             cooldown = 0
         fatigue_cost = int(math.ceil(120 - (5 * self.user.endurance)))
@@ -742,7 +742,7 @@ class SpiderBite(Move):  # Poisonous attack
         self.prep_colors()
         glance = False
         if self.viable():
-            hit_chance = (95 - self.target.finesse) + self.user.finesse
+            hit_chance = int(95 - self.target.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3))
             if hit_chance <= 0:
                 hit_chance = 1
         else:
@@ -835,7 +835,7 @@ class BatBite(Move):  # Vampiric / life-draining bite for bat-type NPCs
         recoil = int(50 / self.user.speed)
         if recoil < 0:
             recoil = 0
-        cooldown = 5 - int(self.user.speed / 10)
+        cooldown = 5 - int(self.user.endurance / 10)
         if cooldown < 0:
             cooldown = 0
         fatigue_cost = int(math.ceil(120 - (5 * self.user.endurance)))
@@ -878,7 +878,7 @@ class BatBite(Move):  # Vampiric / life-draining bite for bat-type NPCs
         self.prep_colors()
         glance = False
         if self.viable():
-            hit_chance = (95 - self.target.finesse) + self.user.finesse
+            hit_chance = int(95 - self.target.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3))
             if hit_chance <= 0:
                 hit_chance = 1
         else:
@@ -939,7 +939,7 @@ class MineralSpit(NpcAttack):
         self.prep_colors()
         glance = False
         if self.viable():
-            hit_chance = (95 - self.target.finesse) + self.user.finesse
+            hit_chance = int(95 - self.target.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3))
             if hit_chance <= 0:
                 hit_chance = 1
         else:
@@ -998,7 +998,7 @@ class SoulDrain(NpcAttack):
         self.prep_colors()
         glance = False
         if self.viable():
-            hit_chance = (95 - self.target.finesse) + self.user.finesse
+            hit_chance = int(95 - self.target.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3))
             if hit_chance <= 0:
                 hit_chance = 1
         else:
@@ -1056,7 +1056,7 @@ class WailStrike(NpcAttack):
         self.prep_colors()
         glance = False
         if self.viable():
-            hit_chance = (95 - self.target.finesse) + self.user.finesse
+            hit_chance = int(95 - self.target.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3))
             if hit_chance <= 0:
                 hit_chance = 1
         else:

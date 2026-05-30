@@ -101,6 +101,7 @@ class Lurker(NPC):
             aggro=True,
             exp_award=950,
         )
+        self.can_yield = False
         self.loot = loot.lev1
         self.resistance_base["dark"] = 0.5
         self.resistance_base["fire"] = -0.5
@@ -241,6 +242,7 @@ class KingSlime(NPC):
             idle_message=" pulses at the centre of the pool.",
             alert_message=" rears upward with a deep, resonant churn!",
         )
+        self.can_yield = False
         self.resistance_base["slashing"] = 0.65
         self.resistance_base["piercing"] = 0.65
         self.resistance_base["crushing"] = 1.2

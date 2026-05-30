@@ -523,6 +523,17 @@ def refresh_stat_bonuses(
     except Exception:
         pass
 
+    # Faith-based status resistance scaling for mental/debilitating effects
+    try:
+        faith = getattr(target, 'faith', 0)
+        if faith and isinstance(faith, (int, float)) and hasattr(target, 'status_resistance') and hasattr(target, 'status_resistance_base'):
+            faith_keys = ("apathy", "hollowed", "fear")
+            for key in faith_keys:
+                if key in target.status_resistance_base:
+                    target.status_resistance[key] = min(1.0, target.status_resistance.get(key, 0) + faith * 0.005)
+    except Exception:
+        pass
+
     # Jean-specific post-processing
     if get_attr(target, "name", None) == "Jean":
         # weight_tolerance recalculation is deterministic (assignment, not +=)

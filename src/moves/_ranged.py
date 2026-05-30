@@ -107,7 +107,7 @@ class ShootBow(
         if (
             range_min <= target_distance <= range_max
         ):  # check if target is still in range
-            hit_chance = (98 - enemy.finesse) + self.user.finesse
+            hit_chance = int(98 - enemy.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3))
             hit_chance -= close_range_distraction * (hit_chance / 2)
             wpn_range_base = getattr(self.user.eq_weapon, "range_base", 0)
             if target_distance > wpn_range_base:
@@ -213,7 +213,7 @@ class ShootBow(
             prep = 1
         execute = 1
         recoil = 1
-        cooldown = 3 - int(self.user.speed / 20)
+        cooldown = 3 - int(self.user.endurance / 20)
         if cooldown < 0:
             cooldown = 0
         fatigue_cost = int(math.ceil(100 - (5 * self.user.endurance)))
@@ -427,7 +427,7 @@ class ShootCrossbow(Move):
         if not self.viable():
             hit_chance = -1
         else:
-            hit_chance = max(5, (98 - self.target.finesse) + self.user.finesse)
+            hit_chance = max(5, int(98 - self.target.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3)))
             if _crossbow_close_range_penalty(self.user, rmin):
                 hit_chance = int(hit_chance * 0.5)
 
@@ -617,7 +617,7 @@ class AimedShot(Move):
             hit_chance = -1
         else:
             hit_chance = min(
-                100, max(5, (98 - self.target.finesse) + self.user.finesse + 15)
+                100, max(5, int(98 - self.target.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3)) + 15)
             )
             if _crossbow_close_range_penalty(self.user, rmin):
                 hit_chance = int(hit_chance * 0.5)
@@ -736,7 +736,7 @@ class PinningBolt(Move):
         if not self.viable():
             hit_chance = -1
         else:
-            hit_chance = max(5, (98 - self.target.finesse) + self.user.finesse)
+            hit_chance = max(5, int(98 - self.target.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3)))
             if _crossbow_close_range_penalty(self.user, rmin):
                 hit_chance = int(hit_chance * 0.5)
 
