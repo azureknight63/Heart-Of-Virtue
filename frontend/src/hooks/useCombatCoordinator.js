@@ -68,11 +68,18 @@ export function useCombatCoordinator({
 
         if (!inCombat && maybeEnd && (maybeEnd.status === 'victory' || maybeEnd.status === 'defeat')) {
             setEndState(maybeEnd)
+            // Lock mode='combat' only while this end state hasn't been dispatched
+            // to the countdown timer yet. Once lastEndStateId records the ID the
+            // condition flips false, so post-dialog cleanup (loot collection, etc.)
+            // can exit to exploration. Setting this unconditionally re-locked combat
+            // mode on every re-render after the timer fired.
+            if (maybeEnd.id !== lastEndStateId) {
+                endStatePendingRef.current = true
+            }
             if (!isCombatLogProcessing && !hasPendingLogs && !isBattlefieldAnimating && maybeEnd.id && maybeEnd.id !== lastEndStateId) {
                 // Mark handled immediately so re-renders don't schedule a second timer
                 setLastEndStateId(maybeEnd.id)
                 sessionStorage.setItem('hov_last_end_state_id', maybeEnd.id)
-                endStatePendingRef.current = true
 
                 const isVictory = maybeEnd.status === 'victory'
                 endStateTimerRef.current = setTimeout(() => {
