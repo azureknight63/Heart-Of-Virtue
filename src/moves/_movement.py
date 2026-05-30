@@ -44,7 +44,7 @@ class Dodge(Move):
         self,
     ):  # adjusts the move's attributes to match the current game state
         self.stage_beat = [1, 1, 5, 2]
-        self.fatigue_cost = 75 - ((2 * self.user.endurance) + (3 * self.user.speed))
+        self.fatigue_cost = 75 - ((2 * self.user.endurance) + (3 * self.user.finesse))
         if self.fatigue_cost <= 10:
             self.fatigue_cost = 10
 
@@ -107,7 +107,7 @@ class Parry(Move):
         self,
     ):  # adjusts the move's attributes to match the current game state
         self.stage_beat = [1, 1, 5, 2]
-        self.fatigue_cost = 75 - ((2 * self.user.endurance) + (3 * self.user.speed))
+        self.fatigue_cost = 75 - ((2 * self.user.endurance) + (3 * self.user.finesse))
         if self.fatigue_cost <= 10:
             self.fatigue_cost = 10
 

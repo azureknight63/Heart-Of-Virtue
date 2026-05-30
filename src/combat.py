@@ -605,6 +605,26 @@ def combat(player, event_config: Optional[CombatEventConfig] = None):
                 enemy
             )  # will process the enemy's actions if it's alive
 
+        # Charisma yield check: wounded enemies may break and flee
+        player_charisma = getattr(player, "charisma", 10)
+        for enemy in list(player.combat_list):
+            if not enemy.is_alive():
+                continue
+            if not getattr(enemy, "can_yield", True):
+                continue
+            max_hp = getattr(enemy, "maxhp", 1) or 1
+            if enemy.hp / max_hp <= 0.25:
+                if random.random() < player_charisma * 0.02:
+                    cprint(
+                        f"{enemy.name} breaks, unwilling to die for nothing.",
+                        "yellow",
+                    )
+                    if enemy in player.current_room.npcs_here:
+                        player.current_room.npcs_here.remove(enemy)
+                    player.combat_list.remove(enemy)
+                    for combatant in list(player.combat_list_allies) + [player]:
+                        combatant.combat_proximity.pop(enemy, None)
+
         player.combat_idle()
 
         player.cycle_states()

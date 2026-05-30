@@ -392,7 +392,7 @@ class Attack(Move):  # basic attack function, always uses equipped weapon, playe
             prep = 1
         execute = 1
         recoil = 1  # modified later, based on player weapon
-        cooldown = 3 - int(player.speed / 10)
+        cooldown = 3 - int(player.endurance / 10)
         if cooldown < 0:
             cooldown = 0
         weapon = "fist"  # modified later, based on player weapon
@@ -476,7 +476,7 @@ class Attack(Move):  # basic attack function, always uses equipped weapon, playe
 
         execute = 1
 
-        cooldown = 5 - int(self.user.speed / 10)
+        cooldown = 5 - int(self.user.endurance / 10)
         if cooldown < 0:
             cooldown = 0
 
@@ -523,7 +523,7 @@ class Attack(Move):  # basic attack function, always uses equipped weapon, playe
             if self.animations["e"] != "None":
                 animate(self.animations["e"], self.stage_announce[1])
         if self.viable():
-            hit_chance = (98 - self.target.finesse) + self.user.finesse
+            hit_chance = int(98 - self.target.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3))
             if hit_chance < 5:  # Minimum value for hit chance
                 hit_chance = 5
         else:

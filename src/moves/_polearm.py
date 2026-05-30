@@ -183,7 +183,7 @@ class Sweep(Move):
                     continue
 
             base_dmg = max(1, int(self.power - enemy.protection))
-            hit_chance = max(5, (85 - enemy.finesse) + self.user.finesse)
+            hit_chance = max(5, int(85 - enemy.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3)))
             if random.randint(0, 100) <= hit_chance:
                 if functions.check_parry(enemy):
                     cprint(f"{enemy.name} blocked the sweep!", "yellow")
@@ -243,7 +243,7 @@ class BracePosition(Move):
 
     def evaluate(self):
         self.fatigue_cost = max(
-            10, 75 - ((2 * self.user.endurance) + (3 * self.user.speed))
+            10, 75 - ((2 * self.user.endurance) + (3 * self.user.finesse))
         )
 
     def execute(self, user):
@@ -354,7 +354,7 @@ class HalberdSpin(Move):
                     continue
 
             base_dmg = max(1, int(self.power - enemy.protection))
-            hit_chance = max(5, (85 - enemy.finesse) + self.user.finesse)
+            hit_chance = max(5, int(85 - enemy.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3)))
             if random.randint(0, 100) <= hit_chance:
                 if functions.check_parry(enemy):
                     cprint(f"{enemy.name} parried the spin!", "yellow")

@@ -100,7 +100,7 @@ class Slash(
 
         execute = 1
 
-        cooldown = (3 + self.user.eq_weapon.weight) - int(self.user.speed / 10)
+        cooldown = (3 + self.user.eq_weapon.weight) - int(self.user.endurance / 10)
         if cooldown < 0:
             cooldown = 0
 
@@ -143,7 +143,7 @@ class Slash(
             )
 
         if self.viable():
-            hit_chance = (98 - self.target.finesse) + self.user.finesse
+            hit_chance = int(98 - self.target.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3))
             if hit_chance < 5:  # Minimum value for hit chance
                 hit_chance = 5
         else:
@@ -358,7 +358,7 @@ class FeintAndPivot(Move):
 
         # Calculate and deal damage
         base_damage = max(1, int(self.power - self.target.protection))
-        hit_chance = (90 - self.target.finesse) + self.user.finesse
+        hit_chance = int(90 - self.target.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3))
         roll = random.randint(0, 100)
 
         if hit_chance >= roll:
@@ -535,7 +535,7 @@ class Backstab(Move):
             )
 
         if self.viable():
-            hit_chance = (98 - self.target.finesse) + self.user.finesse
+            hit_chance = int(98 - self.target.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3))
             if hit_chance < 5:
                 hit_chance = 5
         else:

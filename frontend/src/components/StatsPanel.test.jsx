@@ -88,17 +88,17 @@ describe('StatsPanel', () => {
     render(<StatsPanel player={mockPlayer} />);
 
     // Strength is 12 (base 10) -> buffed color #00ff88
-    const strengthContainer = screen.getByTitle(/Increases melee damage and carrying capacity/i);
+    const strengthContainer = screen.getByTitle(/Increases melee damage, carrying capacity, armor effectiveness/i);
     const strengthVal = within(strengthContainer).getByText('12');
     expect(strengthVal.style.color).toBe('rgb(0, 255, 136)'); // #00ff88
 
     // Finesse is 8 (base 10) -> debuffed color #ff6666
-    const finesseContainer = screen.getByTitle(/Improves accuracy and critical hit chance/i);
+    const finesseContainer = screen.getByTitle(/Improves weapon damage.*hit accuracy/i);
     const finesseVal = within(finesseContainer).getByText('8');
     expect(finesseVal.style.color).toBe('rgb(255, 68, 68)'); // #ff4444 (colors.danger)
 
     // Speed is 10 (base 10) -> normal color #ffcc00 (colors.gold)
-    const speedContainer = screen.getByTitle(/Determines turn order and evasion chance/i);
+    const speedContainer = screen.getByTitle(/Determines turn order and action preparation time/i);
     const speedVal = within(speedContainer).getByText('10');
     expect(speedVal.style.color).toBe('rgb(255, 204, 0)'); // #ffcc00
   });
@@ -108,7 +108,7 @@ describe('StatsPanel', () => {
     render(<StatsPanel player={mockPlayer} />);
 
     // Test attribute rows have tooltips
-    const attribute = screen.getByTitle(/Increases melee damage and carrying capacity/i);
+    const attribute = screen.getByTitle(/Increases melee damage, carrying capacity, armor effectiveness/i);
     expect(attribute).toBeDefined();
 
     // Test that states display correctly

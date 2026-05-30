@@ -88,7 +88,7 @@ class PowerStrike(Move):
         if recoil < 0:
             recoil = 0
         recoil += 3
-        cooldown = 7 - int(self.user.speed / 10)
+        cooldown = 7 - int(self.user.endurance / 10)
         if cooldown < 0:
             cooldown = 0
         cooldown += 3
@@ -136,7 +136,7 @@ class PowerStrike(Move):
         self.prep_colors()
         glance = False
         if self.viable():
-            hit_chance = (85 - self.target.finesse) + self.user.finesse
+            hit_chance = int(85 - self.target.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3))
             if hit_chance <= 0:
                 hit_chance = 1
         else:
@@ -250,7 +250,7 @@ class Jab(Move):
         self.prep_colors()
         glance = False
         if self.viable():
-            hit_chance = (98 - self.target.finesse) + self.user.finesse
+            hit_chance = int(98 - self.target.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3))
             if hit_chance <= 0:
                 hit_chance = 1
         else:

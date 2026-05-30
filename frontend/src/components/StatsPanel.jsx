@@ -11,13 +11,13 @@ export default function StatsPanel({ player, onClose }) {
   if (!player) return null
 
   const attributes = [
-    { name: 'Strength', key: 'strength', icon: '💪', tooltip: 'Increases melee damage and carrying capacity.' },
-    { name: 'Finesse', key: 'finesse', icon: '🎯', tooltip: 'Improves accuracy and critical hit chance.' },
-    { name: 'Speed', key: 'speed', icon: '⚡', tooltip: 'Determines turn order and evasion chance.' },
-    { name: 'Endurance', key: 'endurance', icon: '🛡️', tooltip: 'Increases maximum HP and fatigue.' },
-    { name: 'Charisma', key: 'charisma', icon: '🗣️', tooltip: 'Affects dialogue and merchant prices.' },
-    { name: 'Intelligence', key: 'intelligence', icon: '🧠', tooltip: 'Enhances magic and skill learning.' },
-    { name: 'Faith', key: 'faith', icon: '📿', tooltip: 'Strengthens divine abilities.' },
+    { name: 'Strength', key: 'strength', icon: '💪', tooltip: 'Increases melee damage, carrying capacity, armor effectiveness, and maximum HP (+2 HP per point above 10).' },
+    { name: 'Finesse', key: 'finesse', icon: '🎯', tooltip: 'Improves weapon damage (finesse weapons), hit accuracy (70% weight), dodge and parry fatigue cost, and stealth.' },
+    { name: 'Speed', key: 'speed', icon: '⚡', tooltip: 'Determines turn order and action preparation time. Higher speed means you act first and execute moves faster.' },
+    { name: 'Endurance', key: 'endurance', icon: '🛡️', tooltip: 'Reduces fatigue cost of all moves, shortens move cooldowns, and raises maximum fatigue (+2 per point above 10). Also contributes to protection and carrying capacity.' },
+    { name: 'Charisma', key: 'charisma', icon: '🗣️', tooltip: 'Affects NPC dialogue and merchant prices. In combat, high charisma may cause wounded enemies to break and flee rather than fight to the death.' },
+    { name: 'Intelligence', key: 'intelligence', icon: '🧠', tooltip: 'Reduces experience needed to level up and improves search ability. Contributes 30% of hit accuracy — sharp minds anticipate enemy patterns.' },
+    { name: 'Faith', key: 'faith', icon: '📿', tooltip: "Strengthens divine abilities and Jean's resolve. Increases resistance to mental afflictions (Apathy, Hollowed) by 0.5% per point." },
   ]
 
   const getAttributeColor = (current, base) => {
