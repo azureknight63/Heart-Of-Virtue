@@ -9,6 +9,23 @@ import items  # noqa: F401
 import positions  # noqa: F401
 from animations import animate_to_main_screen as animate  # noqa: F401
 
+def _apply_carry_fatigue(user, fatigue_cost):
+    """Scale fatigue_cost up proportionally to carry weight burden.
+
+    +0% at 0% carry, +50% at 100% carry, capped at +75% at 150% carry.
+    Returns the original cost unchanged for NPCs (no weight_tolerance).
+    """
+    try:
+        wt = float(getattr(user, "weight_tolerance", 0) or 0)
+        if wt > 0:
+            wc = float(getattr(user, "weight_current", 0) or 0)
+            weight_pct = min(wc / wt, 1.5)
+            fatigue_cost = int(math.ceil(fatigue_cost * (1.0 + 0.5 * weight_pct)))
+    except (TypeError, ValueError):
+        pass
+    return fatigue_cost
+
+
 # Helper to ensure weapon subtype EXP pools exist (referenced in parry/hit/standard_execute_attack)
 
 
@@ -365,6 +382,7 @@ class Move:  # master class for all moves
         mod_fatigue=0,
         mod_range_min=0,
         mod_range_max=0,
+        floor_fatigue=10,
     ):
         """
         Standard evaluation sequence for typical attack-type abilities
@@ -401,12 +419,14 @@ class Move:  # master class for all moves
         recoil += int(mod_recoil)
         recoil = max(1, recoil)
 
-        # Fatigue cost calculation
+        # Fatigue cost calculation — endurance gives modest relief (coeff 2);
+        # carry weight adds proportional burden on top.
         fatigue_cost = (
-            85 + (self.user.eq_weapon.weight * 10) - (5 * self.user.endurance)
+            85 + (self.user.eq_weapon.weight * 10) - (2 * self.user.endurance)
         )
         fatigue_cost += int(mod_fatigue)
-        fatigue_cost = max(10, int(fatigue_cost))
+        fatigue_cost = max(floor_fatigue, int(fatigue_cost))
+        fatigue_cost = _apply_carry_fatigue(self.user, fatigue_cost)
 
         # Range calculation
         mvrange = (

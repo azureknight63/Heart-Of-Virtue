@@ -75,6 +75,8 @@ class PommelStrike(Move):
             self.power,
             self.base_damage_type,
             mod_prep=(-1 * (self.user.eq_weapon.weight * 3)),
+            mod_fatigue=-5,
+            floor_fatigue=12,
         )
         self.power = evaluation[0]
         self.base_damage_type = evaluation[1]
@@ -384,6 +386,8 @@ class Thrust(Move):
             base_power=-5,
             base_damage_type="piercing",
             mod_prep=-10,
+            mod_fatigue=-30,
+            floor_fatigue=8,
         )
         self.power = evaluation[0]
         self.base_damage_type = evaluation[1]
@@ -453,6 +457,8 @@ class DisarmingSlash(Move):
         evaluation = self.standard_evaluate_attack(
             base_power=-8,
             base_damage_type="slashing",
+            mod_fatigue=5,
+            floor_fatigue=15,
         )
         self.power = evaluation[0]
         self.base_damage_type = evaluation[1]
@@ -589,6 +595,8 @@ class Riposte(Move):
         evaluation = self.standard_evaluate_attack(
             base_power=10,
             base_damage_type="slashing",
+            mod_fatigue=-10,
+            floor_fatigue=12,
         )
         self.power = evaluation[0]
         self.base_damage_type = evaluation[1]

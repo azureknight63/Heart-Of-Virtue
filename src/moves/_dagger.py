@@ -12,6 +12,7 @@ from ._base import (
     Move,
     PassiveMove,
     _ensure_weapon_exp,
+    _apply_carry_fatigue,
 )  # noqa: F401
 
 
@@ -107,11 +108,11 @@ class Slash(
 
         fatigue_cost = int(
             math.ceil(
-                85 + (self.user.eq_weapon.weight * 10) - (5 * self.user.endurance)
+                85 + (self.user.eq_weapon.weight * 10) - (2 * self.user.endurance)
             )
         )
-        if fatigue_cost <= 10:
-            fatigue_cost = 10
+        fatigue_cost = max(10, fatigue_cost)
+        fatigue_cost = _apply_carry_fatigue(self.user, fatigue_cost)
 
         mvrange = self.user.eq_weapon.wpnrange
 
