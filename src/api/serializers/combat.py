@@ -541,6 +541,7 @@ class StateEffectSerializer:
             "healing_per_turn": getattr(state, "healing_per_turn", 0),
             "severity": StateEffectSerializer._get_severity(state),
             "resistable": getattr(state, "resistable", True),
+            "beats_left": getattr(state, "beats_left", 0),
         }
 
     @staticmethod
