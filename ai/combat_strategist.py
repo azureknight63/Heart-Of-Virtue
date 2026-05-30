@@ -16,7 +16,11 @@ class CombatStrategist:
             "Consider everything provided in the context, including player attributes, consumables, status effects, and the narrative flow of the combat log.\n\n"
             "SITUATIONAL PRIORITIES — apply these before all else:\n"
             "1. FATIGUE CRITICAL (< 25% remaining): Prefer Rest if available. Avoid high-cost offensive moves that will exhaust Jean.\n"
-            "2. ENEMY TELEGRAPHING (beats_left = 1): An enemy attack is about to land. Strongly prefer Dodge or Parry if available. Score them 90+.\n"
+            "2. ENEMY TELEGRAPHING: Dodge and Parry each take 2 beats to become active (1 prep + 1 execute). "
+            "They must be cast NOW to be effective against an incoming attack. "
+            "When 'beats_until_impact' is shown for an enemy move, treat it as the window available: "
+            "≤ 2 beats → strongly prefer Dodge/Parry (score 90+); exactly 1 beat → Dodge/Parry may be too late but still worth it. "
+            "Reduce urgency if Jean's evasion is high (≥ 15) or armor defense is high (≥ 10) — he may survive without dodging.\n"
             "3. HP CRITICAL (< 25% remaining): Prioritize UseItem (healing consumables), Rest, or Withdraw over offensive options.\n"
             "4. SAFE DISTANCE (enemy > 5ft away): Advance is often better than attacking moves with short reach.\n"
             "5. POINT-BLANK (enemy ≤ 1ft): Dodge or Withdraw may be needed before a ranged or sweeping move is viable.\n\n"
@@ -112,11 +116,23 @@ class CombatStrategist:
         fatigue_critical = fatigue / max_fatigue < 0.25
         fatigue_low = fatigue / max_fatigue < 0.50
 
-        # Check if any enemy is 1 beat from striking
-        enemies_about_to_strike = any(
-            e.get("move_in_process", {}) and e.get("move_in_process", {}).get("beats_left", 99) <= 1
-            for e in combat_context.get("enemies", [])
+        # Beats-until-impact for the most threatening enemy charge
+        player_stats = player.get("stats", {})
+        player_evasion = player_stats.get("evasion", 0)
+        player_defense = player_stats.get("defense", 0)
+        player_armor = (player.get("equipment", {}).get("armor") or {}).get("defense", 0)
+
+        min_beats_until_impact = min(
+            (self._beats_until_impact(e.get("move_in_process"))
+             for e in combat_context.get("enemies", [])
+             if e.get("move_in_process")),
+            default=99,
         )
+        # Defensive moves (Dodge/Parry) need 2 beats to become active.
+        # Reduce urgency when Jean has meaningful passive defenses.
+        defensively_vulnerable = player_evasion < 15 and (player_defense + player_armor) < 10
+        enemies_in_defensive_window = min_beats_until_impact <= 2
+        enemies_about_to_strike = enemies_in_defensive_window  # keep name for scoring branches
 
         # Base category scoring
         category_scores = {
@@ -138,8 +154,18 @@ class CombatStrategist:
 
             # Situational overrides — these trump category defaults
             if enemies_about_to_strike and name in ("Dodge", "Parry"):
-                base_score = 95
-                reasoning = f"Enemy attack is imminent; {name} can negate or reduce incoming damage."
+                if defensively_vulnerable:
+                    base_score = 95
+                    reasoning = (
+                        f"Attack landing in ~{min_beats_until_impact} beat(s) and Jean's defenses are low; "
+                        f"{name} now to avoid significant damage."
+                    )
+                else:
+                    base_score = 80
+                    reasoning = (
+                        f"Attack landing in ~{min_beats_until_impact} beat(s); {name} is advisable "
+                        "but Jean's defenses may absorb the hit."
+                    )
             elif fatigue_critical and name == "Rest":
                 base_score = 90
                 reasoning = "Fatigue critically low; Rest is essential to maintain move availability."
@@ -204,17 +230,24 @@ class CombatStrategist:
             for c in player.get("consumables", [])
         ])
 
+        p_stats = player.get("stats", {})
+        p_evasion = p_stats.get("evasion", 0)
+        p_defense = p_stats.get("defense", 0)
+        p_armor_def = (player.get("equipment", {}).get("armor") or {}).get("defense", 0)
+
         player_block = (
             f"Player: {player.get('name', 'Jean')} (Male Human) [HP: {hp}/{max_hp}{hp_flag}, "
             f"Fatigue: {fatigue}/{max_fatigue}{fatigue_flag}, Heat: {player.get('heat')}, "
             f"Pos: {pos.get('x')},{pos.get('y')}, Facing: {pos.get('facing')}]\n"
             f"Attributes: [{p_attrs}]\n"
+            f"Combat Stats: [Evasion: {p_evasion}, Defense: {p_defense}, Armor Defense: {p_armor_def}, "
+            f"Accuracy: {p_stats.get('accuracy', 80)}, Speed: {p_stats.get('speed', 0)}]\n"
             f"Passives: {', '.join(passives)}\n"
             f"Status: {', '.join(statuses)}\n"
             f"Consumables: [{p_consumables or 'None'}]"
         )
 
-        # Enemies — flag imminent attacks (beats_left == 1)
+        # Enemies — compute beats_until_impact and flag attacks within the defensive window
         enemy_list = []
         imminent_alerts = []
         for e in ctx.get("enemies", []):
@@ -222,12 +255,23 @@ class CombatStrategist:
             mip = e.get("move_in_process")
             mip_str = ""
             if mip:
-                beats_left = mip.get("beats_left", 99)
-                mip_str = f", Charging: {mip.get('name')} ({beats_left} beat{'s' if beats_left != 1 else ''} left)"
-                if beats_left <= 1:
+                bui = self._beats_until_impact(mip)
+                bui_label = f"{bui} beat{'s' if bui != 1 else ''} until impact"
+                mip_str = f", Charging: {mip.get('name')} ({bui_label})"
+                if bui <= 2:
+                    if bui <= 1:
+                        qualifier = "Dodge/Parry is last-chance"
+                    else:
+                        qualifier = "Dodge/Parry NOW to intercept"
+                    vuln_note = (
+                        f" Jean's evasion ({p_evasion}) and defense ({p_defense + p_armor_def}) "
+                        "are low — this will hurt if not blocked."
+                        if p_evasion < 15 and (p_defense + p_armor_def) < 10
+                        else f" Jean's defenses may reduce impact."
+                    )
                     imminent_alerts.append(
-                        f"⚠ IMMINENT: {e.get('name')} is 1 beat from completing {mip.get('name')}! "
-                        "Consider Dodge or Parry."
+                        f"⚠ INCOMING: {e.get('name')} lands {mip.get('name')} in ~{bui} beat(s). "
+                        f"{qualifier}.{vuln_note}"
                     )
             enemy_list.append(
                 f"- {e.get('name')} [ID: {e.get('id')}, HP: {e.get('hp')}/{e.get('max_hp')}, "
@@ -271,6 +315,27 @@ class CombatStrategist:
             f"Previous Move: {ctx.get('last_move', 'None')}\n\n"
             f"Available Moves:\n" + "\n".join(f"  {d}" for d in move_descriptions)
         )
+
+    @staticmethod
+    def _beats_until_impact(mip: Dict[str, Any]) -> int:
+        """
+        Estimate how many beats remain until a charging move lands.
+
+        beats_left only covers the current stage. If the move is still in
+        prep (current_stage == 0) we add the execute duration (defaulting to 1
+        when unknown) so callers see the full window before impact, not just
+        how long prep has left.
+        """
+        if not mip:
+            return 99
+        beats_left = mip.get("beats_left", 99)
+        current_stage = mip.get("current_stage", 0)
+        if current_stage == 0:
+            # Still preparing — add one execute beat (the minimum execute duration)
+            execute_beats = mip.get("total_beats", 1) if current_stage == 1 else 1
+            return beats_left + execute_beats
+        # Already executing — beats_left is the direct countdown to impact
+        return beats_left
 
     def _extract_names(self, items: List[Any]) -> List[str]:
         """Helper to extract 'name' from a list of objects or dictionaries."""
