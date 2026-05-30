@@ -75,6 +75,10 @@ export const combat = {
       payload = {
         move_type: 'cancel'
       }
+    } else if (actionType === 'flee') {
+      payload = {
+        move_type: 'flee'
+      }
     }
 
     return apiClient.post('/combat/move', payload)

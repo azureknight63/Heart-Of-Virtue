@@ -265,8 +265,9 @@ class TestCombatWorkflows:
     def test_combat_workflow_flee_from_combat(
         self, game_service, player_with_universe, mock_enemy
     ):
-        """Test fleeing from combat transitions to not-in-combat."""
+        """Test fleeing from combat transitions to not-in-combat when enemies are far enough."""
         player_with_universe.in_combat = True
+        mock_enemy.combat_proximity = {player_with_universe: 25}
         player_with_universe.combat_list = [mock_enemy]
 
         result = game_service.flee_combat(player_with_universe)
@@ -274,6 +275,21 @@ class TestCombatWorkflows:
         assert result.get("success") is True
         assert result.get("fled") is True
         assert player_with_universe.in_combat is False
+
+    def test_combat_workflow_flee_blocked_when_enemy_too_close(
+        self, game_service, player_with_universe, mock_enemy
+    ):
+        """Test that fleeing is blocked when any enemy is within 20 ft."""
+        player_with_universe.in_combat = True
+        mock_enemy.combat_proximity = {player_with_universe: 10}
+        player_with_universe.combat_list = [mock_enemy]
+
+        result = game_service.flee_combat(player_with_universe)
+
+        assert result.get("success") is False
+        assert result.get("fled") is False
+        assert "too close" in result.get("error", "")
+        assert player_with_universe.in_combat is True
 
     def test_combat_workflow_cannot_flee_when_not_in_combat(
         self, game_service, player_with_universe

@@ -17,6 +17,7 @@ import CombatInputDialog from './CombatInputDialog'
 import { getAnimationDuration } from '../utils/animationConfigs'
 import CombatCheckDialog from './CombatCheckDialog'
 import SuggestedMovesPanel from './SuggestedMovesPanel'
+import FleeButton from './FleeButton'
 import FeedbackDialog from './FeedbackDialog'
 import CooldownTray from './CooldownTray'
 import ShopDialog from './ShopDialog'
@@ -127,6 +128,12 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
 
   // Determine if it's player's turn - ONLY if not processing log and combat hasn't ended
   const isMyTurn = (combat?.awaiting_input || false) && !isBusyProcessing && !combat?.end_state && !isEventDialogActive
+
+  // Flee is viable only when it's the player's turn and all enemies are >= 20 ft away
+  const canFlee = isMyTurn &&
+    Array.isArray(combat?.enemies) &&
+    combat.enemies.length > 0 &&
+    combat.enemies.every(e => (e.distance ?? 0) >= 20)
 
   // Get active player data (merging combat status if in combat)
   const activePlayer = (mode === 'combat' && combat?.player)
@@ -728,6 +735,14 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
                 onCombatAction('cancel', {})
               }
             }}
+          />
+        )}
+
+        {/* Flee button — only when all enemies are >= 20 ft away */}
+        {canFlee && (
+          <FleeButton
+            onFlee={() => onCombatAction('flee', {})}
+            isMobile={isMobile}
           />
         )}
 
