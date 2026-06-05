@@ -200,14 +200,14 @@ class TestBloodOfMartyrsViable:
 
 class TestIronhideExecute:
 
-    def test_heals_25_percent_maxhp(self):
+    def test_heals_30_percent_maxhp(self):
         player = _make_player(hp=50, maxhp=100, fatigue=100)
         player.states = []
         player.combat_exp = {"Basic": 0}
         move = Ironhide(player)
         with patch("src.moves._mastery.functions.refresh_stat_bonuses"):
             move.execute(player)
-        assert player.hp == 75
+        assert player.hp == 80
 
     def test_purges_negative_states(self):
         player = _make_player(hp=50, maxhp=100, fatigue=100)

@@ -57,7 +57,7 @@ class Pulverize(Move):
         target = self.target
         hit_chance = max(5, int(98 - target.finesse + player.finesse * 0.7 + player.intelligence * 0.3))
         roll = random.randint(0, 100)
-        power = int(player.eq_weapon.damage * 1.5 + player.strength * 2.5)
+        power = int(player.eq_weapon.damage * 1.8 + player.strength * 3.0)
         # Ignores ALL protection — no protection subtraction
         damage = int(
             power * target.resistance.get("crushing", 1.0) * player.heat * random.uniform(0.8, 1.2)
@@ -90,14 +90,14 @@ class KillingPrecision(Move):
             xp_gain=3,
             current_stage=0,
             targeted=True,
-            stage_beat=[1, 1, 2, 25],
+            stage_beat=[1, 1, 2, 30],
             stage_announce=[
                 colored(f"{player.name} centres his breathing and locates the gap.", "cyan"),
                 colored(f"{player.name} drives a perfect, unerring strike!", "cyan"),
                 colored(f"{player.name} withdraws, composure intact.", "yellow"),
                 "",
             ],
-            fatigue_cost=70,
+            fatigue_cost=75,
             beats_left=1,
             target=player,
             user=player,
@@ -117,7 +117,7 @@ class KillingPrecision(Move):
         self.prep_colors()
         print(self.stage_announce[1])
         target = self.target
-        power = int(player.eq_weapon.damage + player.finesse * 3)
+        power = int(player.eq_weapon.damage * 1.5 + player.finesse * 2.5)
         # Only 20% of protection applies
         damage = int(
             (power * target.resistance.get("slashing", 1.0) - target.protection * 0.2)
@@ -150,14 +150,14 @@ class LightningAssault(Move):
             xp_gain=3,
             current_stage=0,
             targeted=True,
-            stage_beat=[1, 1, 1, 15],
+            stage_beat=[1, 1, 1, 30],
             stage_announce=[
                 colored(f"{player.name} shifts his weight and explodes forward.", "cyan"),
                 colored(f"{player.name} unleashes a blinding flurry of blows!", "cyan"),
                 colored(f"{player.name} resets his stance.", "yellow"),
                 "",
             ],
-            fatigue_cost=65,
+            fatigue_cost=70,
             beats_left=1,
             target=player,
             user=player,
@@ -185,7 +185,7 @@ class LightningAssault(Move):
         hits_landed = 0
         for i in range(3):
             roll = random.randint(0, 100)
-            power = int(player.eq_weapon.damage * 0.6 + player.speed * 0.8)
+            power = int(player.eq_weapon.damage * 0.55 + player.speed * 0.75)
             damage = int(
                 (power * target.resistance.get("slashing", 1.0) - target.protection)
                 * player.heat * random.uniform(0.8, 1.2)
@@ -213,8 +213,8 @@ class Ironhide(Move):
         super().__init__(
             name="Ironhide",
             description=(
-                "Dig in with sheer grit — heal 25%% of max HP, purge all active ailments, "
-                "and restore 50 fatigue. "
+                "Dig in with sheer grit — heal 30%% of max HP, purge all active ailments, "
+                "and restore 60 fatigue. "
                 "Only available when Endurance is your dominant stat."
             ),
             xp_gain=3,
@@ -227,7 +227,7 @@ class Ironhide(Move):
                 colored(f"{player.name} exhales, tension bleeding out of his frame.", "yellow"),
                 "",
             ],
-            fatigue_cost=20,
+            fatigue_cost=25,
             beats_left=1,
             target=player,
             user=player,
@@ -244,7 +244,7 @@ class Ironhide(Move):
 
     def execute(self, player):
         print(self.stage_announce[1])
-        heal = int(player.maxhp * 0.25)
+        heal = int(player.maxhp * 0.30)
         player.hp = min(player.hp + heal, player.maxhp)
         cprint(f"{player.name} recovers {heal} HP!", "green")
         # Purge negative ailment types
@@ -259,7 +259,7 @@ class Ironhide(Move):
                     pass
         if removed:
             cprint(f"All ailments purged from {player.name}!", "green")
-        player.fatigue = min(player.fatigue + 50, player.maxfatigue)
+        player.fatigue = min(player.fatigue + 60, player.maxfatigue)
         player.combat_exp["Basic"] += 5
         player.fatigue = max(0, player.fatigue - self.fatigue_cost)
         functions.refresh_stat_bonuses(player)
@@ -334,14 +334,14 @@ class SecretPlans(Move):
             xp_gain=3,
             current_stage=0,
             targeted=False,
-            stage_beat=[2, 1, 2, 35],
+            stage_beat=[2, 1, 2, 50],
             stage_announce=[
                 colored(f"{player.name} reads the field and pieces together the advantage.", "cyan"),
                 colored(f"{player.name} puts the plan into motion!", "cyan"),
                 colored(f"The plan is set. {player.name} stands ready.", "yellow"),
                 "",
             ],
-            fatigue_cost=60,
+            fatigue_cost=75,
             beats_left=2,
             target=player,
             user=player,
