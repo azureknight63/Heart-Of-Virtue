@@ -1260,10 +1260,50 @@
         }
       },
       {
+        "__class__": "Ch02ArenaEntrance",
+        "__module__": "story.ch02",
+        "props": {
+          "name": "Ch02ArenaEntrance",
+          "player": null,
+          "tile": null,
+          "repeat": false,
+          "thread": null,
+          "has_run": false,
+          "params": null,
+          "referenceobj": null,
+          "combat_effect": false,
+          "delay_duration": 3000,
+          "delay_mode": "combat",
+          "completed": false,
+          "api_event_id": null,
+          "needs_input": false
+        }
+      },
+      {
         "__class__": "AfterDefeatingKingSlime",
         "__module__": "story.ch02",
         "props": {
           "name": "AfterDefeatingKingSlime",
+          "player": null,
+          "tile": null,
+          "repeat": false,
+          "thread": null,
+          "has_run": false,
+          "params": null,
+          "referenceobj": null,
+          "combat_effect": false,
+          "delay_duration": 3000,
+          "delay_mode": "combat",
+          "completed": false,
+          "api_event_id": null,
+          "needs_input": false
+        }
+      },
+      {
+        "__class__": "Ch02GorranReminder",
+        "__module__": "story.ch02",
+        "props": {
+          "name": "Ch02GorranReminder",
           "player": null,
           "tile": null,
           "repeat": false,
