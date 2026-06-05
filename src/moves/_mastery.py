@@ -120,7 +120,7 @@ class KillingPrecision(Move):
         power = int(player.eq_weapon.damage * 1.5 + player.finesse * 2.5)
         # Only 20% of protection applies
         damage = int(
-            (power * target.resistance.get("slashing", 1.0) - target.protection * 0.2)
+            (power * target.resistance.get("piercing", 1.0) - target.protection * 0.2)
             * player.heat * random.uniform(0.8, 1.2)
         )
         damage = max(1, damage)
@@ -183,7 +183,7 @@ class LightningAssault(Move):
         player.combat_exp["Basic"] += 5
         player.fatigue = max(0, player.fatigue - self.fatigue_cost)
         hits_landed = 0
-        for i in range(3):
+        for _ in range(3):
             roll = random.randint(0, 100)
             power = int(player.eq_weapon.damage * 0.55 + player.speed * 0.75)
             damage = int(
@@ -197,7 +197,7 @@ class LightningAssault(Move):
                 else:
                     self.hit(damage, False)
                     hits_landed += 1
-                    if not getattr(target, "is_alive", True):
+                    if not target.is_alive():
                         break
             else:
                 self.miss()
@@ -213,10 +213,11 @@ class Ironhide(Move):
         super().__init__(
             name="Ironhide",
             description=(
-                "Dig in with sheer grit — heal 30%% of max HP, purge all active ailments, "
+                "Dig in with sheer grit — heal 30% of max HP, purge all active ailments, "
                 "and restore 60 fatigue. "
                 "Only available when Endurance is your dominant stat."
             ),
+
             xp_gain=3,
             current_stage=0,
             targeted=False,
@@ -305,7 +306,7 @@ class WarCry(Move):
         print(self.stage_announce[1])
         affected = 0
         for enemy in list(getattr(player, "combat_list", [])):
-            if not getattr(enemy, "is_alive", False):
+            if not enemy.is_alive():
                 continue
             # Interrupt any move in prep or execute stage
             cm = getattr(enemy, "current_move", None)
@@ -327,7 +328,7 @@ class SecretPlans(Move):
         super().__init__(
             name="Secret Plans",
             description=(
-                "Reveal the hidden agenda. Jean and all allies gain +30%% speed and damage "
+                "Reveal the hidden agenda. Jean and all allies gain +30% speed and damage "
                 "for 25 beats, and all move cooldowns reset immediately. "
                 "Only available when Intelligence is your dominant stat."
             ),
@@ -360,7 +361,7 @@ class SecretPlans(Move):
         print(self.stage_announce[1])
         targets = [player] + list(getattr(player, "combat_list_allies", []))
         for entity in targets:
-            if not getattr(entity, "is_alive", False):
+            if not entity.is_alive():
                 continue
             functions.inflict(states.SecretPlansState(entity), entity, force=True)
             # Reset cooldowns: set beats_left = 0 on all moves in cooldown stage
@@ -440,7 +441,7 @@ class BloodOfMartyrs(Move):
                 "yellow",
             )
             for enemy in list(getattr(player, "combat_list", [])):
-                if getattr(enemy, "is_alive", False):
+                if enemy.is_alive():
                     # Pure damage — bypasses protection and resistance scaling (pure type, resist=1.0)
                     pure_damage = int(detonation * enemy.resistance.get("pure", 1.0))
                     enemy.hp -= pure_damage

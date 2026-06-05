@@ -636,7 +636,7 @@ class WarCryStunned(State):
         super().__init__(
             name="War Cry Stunned",
             target=target,
-            beats_max=2,
+            beats_max=1,
             compounding=False,
             combat=True,
             world=False,
