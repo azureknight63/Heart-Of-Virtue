@@ -36,7 +36,7 @@ A colossal mass of pulsating green slime, studded with mineral fragments it has 
 - **Fatigue irrelevance**: Unlike lesser enemies, the King Slime's fatigue doesn't limit it—it simply rests and continues. This underscores that raw endurance won't win; only mastery of the pattern will
 
 ## Example Stats (from code)
-- HP: very high (maxhp=200) — a true boss
+- HP: very high (maxhp=400) — a true boss with extended endurance
 - Damage: high (damage=50)
 - Protection: moderate-high (protection=15) — thick gelatinous armor
 - Awareness: moderate (awareness=30)
