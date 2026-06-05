@@ -659,6 +659,87 @@ class AfterDefeatingKingSlime(Event):
                 tile.spawn_object("TileDescription", player, tile, description=description)
 
 
+class Ch02GorranAtPools(Event):
+    """
+    Fires once when Jean first enters the Grondelith map (tile 2,0).
+
+    Gorran led Jean this far but cannot follow into the corrupted interior —
+    the corruption is too dense for stone to tolerate. He settles at the
+    Atrium threshold (tile 2,1), where he will wait until King Slime is
+    defeated. AfterDefeatingKingSlime already looks for him at (2,1).
+
+    Attach to tile (2,0) in grondelith-mineral-pools.json.
+    """
+
+    def __init__(
+        self, player, tile, params=None, repeat=False, name="Ch02GorranAtPools"
+    ):
+        super().__init__(
+            name=name, player=player, tile=tile, repeat=repeat, params=params
+        )
+
+    def check_conditions(self):
+        story = getattr(self.player.universe, "story", {})
+        if story.get("gorran_at_pools"):
+            self.tile.remove_event(self.name)
+            return
+        self.pass_conditions_to_process()
+
+    def process(self):
+        # Spawn Gorran at the Atrium (2,1) — where AfterDefeatingKingSlime
+        # expects to find him. Don't place him on this entry tile so he doesn't
+        # block the passage or trigger combat checks.
+        # Use universe.maps lookup rather than player.map so the correct tile is
+        # found even when player.map is pointing to a combat arena after a flee.
+        pools_map = next(
+            (m for m in self.player.universe.maps if m.get("name") == "grondelith-mineral-pools"),
+            None,
+        )
+        atrium_tile = pools_map.get((2, 1)) if pools_map else None
+        if atrium_tile is not None:
+            gorran_already_there = any(
+                n.__class__.__name__ == "Gorran" for n in atrium_tile.npcs_here
+            )
+            if not gorran_already_there:
+                atrium_tile.spawn_npc("Gorran")
+
+        if not self.player.skip_dialog:
+            print_slow(
+                "Gorran had come to the threshold and no further. He stood at the entrance "
+                "to the atrium — that great vaulted space with its spring-fed pools — "
+                "facing south, one hand resting against the stone arch.",
+                delay=0.03,
+            )
+            time.sleep(1.5)
+            print_slow(
+                "Jean came up beside him. The air changed here. Even at the threshold he could "
+                "feel it — a heaviness below the mineral scent, something sweet and wrong.",
+                delay=0.03,
+            )
+            time.sleep(1)
+            print_slow(
+                "Gorran did not look at him. He tapped his own chest twice — slow, deliberate. "
+                "Then he pointed south, toward the deeper passages. Then he drew his hand back.",
+                delay=0.03,
+            )
+            time.sleep(1)
+            print_slow(
+                "He made a sound. Low and brief. The Golemite equivalent of: I know.",
+                delay=0.04,
+            )
+            time.sleep(1)
+            print_slow(
+                "He lowered himself beside the arch — that slow, deliberate settling of stone "
+                "finding its position. He would wait here. Jean understood that.",
+                delay=0.03,
+            )
+            time.sleep(1.5)
+            await_input()
+
+        self.player.universe.story["gorran_at_pools"] = "1"
+        self.tile.remove_event(self.name)
+
+
 class Ch02FragmentReminder(Event):
     """
     Fires via evaluate_for_map_entry() whenever the player has left the
