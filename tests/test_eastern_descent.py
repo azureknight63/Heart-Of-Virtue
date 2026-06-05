@@ -1,0 +1,45 @@
+import pytest
+from unittest.mock import patch, MagicMock
+from npc._eastern_descent import NomadCamper, NomadScout, NomadTrader
+
+def test_nomad_camper_properties():
+    npc = NomadCamper()
+    assert npc.name == "Nomad"
+    assert "talk" in npc.keywords
+    assert npc.pronouns["personal"] == "he"
+    assert len(npc.known_moves) > 0
+
+@patch("builtins.print")
+def test_nomad_camper_talk(mock_print):
+    npc = NomadCamper()
+    player = MagicMock()
+    npc.talk(player)
+    assert mock_print.called
+
+def test_nomad_scout_properties():
+    npc = NomadScout()
+    assert npc.name == "Nomad Scout"
+    assert "talk" in npc.keywords
+    assert npc.pronouns["personal"] == "he"
+    assert len(npc.known_moves) > 0
+
+@patch("builtins.print")
+def test_nomad_scout_talk(mock_print):
+    npc = NomadScout()
+    player = MagicMock()
+    npc.talk(player)
+    assert mock_print.called
+
+def test_nomad_trader_properties():
+    npc = NomadTrader()
+    assert npc.name == "Nomad Trader"
+    assert "talk" in npc.keywords
+    assert npc.pronouns["personal"] == "she"
+    assert len(npc.known_moves) > 0
+
+@patch("builtins.print")
+def test_nomad_trader_talk(mock_print):
+    npc = NomadTrader()
+    player = MagicMock()
+    npc.talk(player)
+    assert mock_print.called

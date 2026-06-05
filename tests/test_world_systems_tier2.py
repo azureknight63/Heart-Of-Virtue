@@ -311,7 +311,7 @@ class TestJsonMapsRootCandidates:
         """Test that default maps directory is checked."""
         candidates = universe._json_maps_root_candidates()
         # Should include src/resources/maps
-        candidate_strs = [str(c) for c in candidates]
+        candidate_strs = [str(c).replace("\\", "/") for c in candidates]
         assert any("resources/maps" in s for s in candidate_strs)
 
 
