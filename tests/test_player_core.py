@@ -527,7 +527,7 @@ class TestPlayerCore:
 
     @patch('builtins.input', side_effect=['1', '2', '2', '3']) # Select Strength (1), then 2 points, then Finesse (2), then 3 points
     @patch('time.sleep')
-    @patch('random.randint', side_effect=[1, 1, 1, 1, 1, 1, 5, 1, 2]) # Random bonuses (6x1), then 5 points to distribute, then selection 1, then 2 points
+    @patch('random.randint', side_effect=[1, 1, 1, 1, 1, 1, 1, 5, 1, 2]) # Random bonuses (7x1 — 6 stats + faith), then 5 points to distribute, then selection 1, then 2 points
     def test_level_up_interactive(self, mock_randint, mock_sleep, mock_input, player):
         # Initial stats
         player.strength_base = 10
@@ -1141,8 +1141,8 @@ class TestPlayerCore:
         player.charisma_base = 10
         player.intelligence_base = 10
 
-        # random.randint(0, 2) called 6 times for bonuses, then random.randint(6, 9) for points
-        with patch('random.randint', side_effect=[1, 1, 1, 1, 1, 1, 8]), \
+        # random.randint(0, 2) called 7 times for bonuses (6 stats + faith), then random.randint(6, 9) for points
+        with patch('random.randint', side_effect=[1, 1, 1, 1, 1, 1, 1, 8]), \
              patch('builtins.input', side_effect=["1", "5", "1", "3"]), \
              patch('functions.cprint'), \
              patch('builtins.print'), \
