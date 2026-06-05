@@ -473,6 +473,8 @@ class AfterDefeatingKingSlime(Event):
             self.pass_conditions_to_process()
 
     def process(self):
+        if self.player.universe.story.get("king_slime_defeated"):
+            return
         time.sleep(1)
         print_slow("The churning stilled. A deep, resonant silence settled over the cavern.")
         time.sleep(1)
@@ -584,12 +586,18 @@ class AfterDefeatingKingSlime(Event):
 
         self.tile.remove_event(self.name)
 
-    def _cleanse_pool_tiles(self, player, current_map):
+    def _cleanse_pool_tiles(self, player, current_map=None):
         """Update corrupted channel tile descriptions to reflect the post-cleansing state.
 
         Physical damage (acid pitting, dissolved floors, staining) persists as geological
         evidence. Active slime, living corruption, and all rumbling references are gone.
         """
+        # Use universe.maps lookup so the correct map is found even if player.map
+        # is pointing elsewhere (e.g., after a flee from a random encounter).
+        current_map = next(
+            (m for m in player.universe.maps if m.get("name") == "grondelith-mineral-pools"),
+            current_map,  # fall back to the passed-in map if not found
+        )
         cleansed = {
             (2, 2): (
                 "The colour has returned. Where the channels ran green, they run clear now — "

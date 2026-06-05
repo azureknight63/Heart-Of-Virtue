@@ -1313,20 +1313,20 @@
         }
       },
       {
-        "__class__": "Ch02GorranReminder",
+        "__class__": "Ch02FragmentReminder",
         "__module__": "story.ch02",
         "props": {
-          "name": "Ch02GorranReminder",
+          "name": "Ch02FragmentReminder",
           "player": null,
           "tile": null,
-          "repeat": false,
+          "repeat": true,
           "thread": null,
           "has_run": false,
           "params": null,
           "referenceobj": null,
           "combat_effect": false,
           "delay_duration": 3000,
-          "delay_mode": "combat",
+          "delay_mode": "exploration",
           "completed": false,
           "api_event_id": null,
           "needs_input": false

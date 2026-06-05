@@ -72,6 +72,8 @@ class TileDescription(Object):
             end_mark = ""
         else:
             # Legacy construction from map-file params list.
+            if params is None:
+                raise ValueError("TileDescription requires either description or params")
             param_list = params[2:]
             last_param = param_list[-1]
             if (
