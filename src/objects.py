@@ -65,18 +65,24 @@ class TileDescription(Object):
     to be dynamically changed.
     """
 
-    def __init__(self, player, tile, params):
-        param_list = params[2:]
-        last_param = param_list[-1]
-        if (
-            last_param[-1] == "~"
-        ):  # Tilde is used to replace the end period when parsing the object from the map
-            param_list[-1] = last_param[:-1]  # Remove the tilde
-            end_mark = "."
-        else:
+    def __init__(self, player, tile, params=None, description=None):
+        if description is not None:
+            # Programmatic construction: description passed directly as a string.
+            desc_text = description
             end_mark = ""
-        description = ".".join(param_list)
-        word_list = description.split(" ")
+        else:
+            # Legacy construction from map-file params list.
+            param_list = params[2:]
+            last_param = param_list[-1]
+            if (
+                last_param[-1] == "~"
+            ):  # Tilde is used to replace the end period when parsing the object from the map
+                param_list[-1] = last_param[:-1]  # Remove the tilde
+                end_mark = "."
+            else:
+                end_mark = ""
+            desc_text = ".".join(param_list)
+        word_list = desc_text.split(" ")
         last_word = word_list[-1]
         word_list[-1] = (
             last_word + end_mark
@@ -92,10 +98,6 @@ class TileDescription(Object):
         lines.append(temp_line)
         for i, v in enumerate(lines):
             lines[i] = "        " + v + "\n"
-            # if i != len(lines)-1:
-            #     lines[i] = '        ' + v + '\n'
-            # else:
-            #     lines[i] = '        ' + v + '.\n'
         description = colored("".join(lines), "cyan")
         idle_message = description
         super().__init__(

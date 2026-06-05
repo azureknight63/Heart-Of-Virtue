@@ -526,11 +526,12 @@ class AfterDefeatingKingSlime(Event):
 
         # Teleport Gorran to the arena. He lives as an ally NPC; find him wherever
         # he currently is (atrium fallback, then combat_list_allies).
-        current_map = self.player.universe.current_map
+        # player.map is a dict keyed by (x, y) tuples, not an object with .tiles.
+        current_map = self.player.map
         gorran = None
         atrium_coords = (2, 1)
-        if atrium_coords in current_map.tiles:
-            atrium_tile = current_map.tiles[atrium_coords]
+        if atrium_coords in current_map:
+            atrium_tile = current_map[atrium_coords]
             for npc in list(atrium_tile.npcs_here):
                 if npc.__class__.__name__ == "Gorran":
                     atrium_tile.npcs_here.remove(npc)
@@ -653,8 +654,8 @@ class AfterDefeatingKingSlime(Event):
             ),
         }
         for coords, description in cleansed.items():
-            if coords in current_map.tiles:
-                tile = current_map.tiles[coords]
+            if coords in current_map:
+                tile = current_map[coords]
                 tile.spawn_object("TileDescription", player, tile, description=description)
 
 
