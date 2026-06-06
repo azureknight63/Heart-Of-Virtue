@@ -72,6 +72,15 @@ from ._ranged import (
     MarksmanEye,
 )
 from ._polearm import OverheadSmash, Sweep, BracePosition, HalberdSpin, ReachMastery
+from ._mastery import (
+    Pulverize,
+    KillingPrecision,
+    LightningAssault,
+    Ironhide,
+    WarCry,
+    SecretPlans,
+    BloodOfMartyrs,
+)
 from ._npc import (
     NpcAttack,
     NpcRest,
@@ -168,6 +177,14 @@ __all__ = [
     "BracePosition",
     "HalberdSpin",
     "ReachMastery",
+    # Mastery
+    "Pulverize",
+    "KillingPrecision",
+    "LightningAssault",
+    "Ironhide",
+    "WarCry",
+    "SecretPlans",
+    "BloodOfMartyrs",
     # NPC
     "NpcAttack",
     "NpcRest",

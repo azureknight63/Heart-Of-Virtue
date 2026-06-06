@@ -718,6 +718,9 @@ class CrusaderOath(Move):
             return False
         if any(isinstance(s, states.Fervent) for s in self.user.states):
             return False
+        p = self.user
+        if p.faith < min(p.strength, p.finesse, p.speed, p.endurance, p.charisma):
+            return False
         return True
 
     def execute(self, player):
