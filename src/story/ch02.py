@@ -714,7 +714,21 @@ class Ch02GorranAtPools(Event):
                 n.__class__.__name__ == "Gorran" for n in atrium_tile.npcs_here
             )
             if not gorran_already_there:
-                atrium_tile.spawn_npc("Gorran")
+                # Check if Gorran is in the player's party
+                gorran_in_party = None
+                for ally in list(getattr(self.player, "combat_list_allies", [])):
+                    if ally.__class__.__name__ == "Gorran":
+                        gorran_in_party = ally
+                        break
+
+                if gorran_in_party is not None:
+                    # Remove Gorran from party and move to tile
+                    self.player.combat_list_allies.remove(gorran_in_party)
+                    gorran_in_party.tile = atrium_tile
+                    atrium_tile.npcs_here.append(gorran_in_party)
+                else:
+                    # Spawn new Gorran if not in party
+                    atrium_tile.spawn_npc("Gorran")
 
         if not self.player.skip_dialog:
             print_slow(
