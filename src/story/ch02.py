@@ -2,7 +2,7 @@
 Chapter 02 events
 """
 
-from src.events import Event, dialogue
+from src.events import Event
 from src.functions import print_slow, await_input
 import time
 from src import items
