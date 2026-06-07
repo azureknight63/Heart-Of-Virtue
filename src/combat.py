@@ -129,31 +129,34 @@ def combat(player, event_config: Optional[CombatEventConfig] = None):
             npc.combat_delay -= 1
         else:
             if npc.current_move is None:
-                if not npc.friend:
-                    if player.combat_list_allies:
-                        npc.target = player.combat_list_allies[
-                            random.randint(0, len(player.combat_list_allies) - 1)
-                        ]
+                if any(getattr(s, "_stunned", False) for s in getattr(npc, "states", [])):
+                    pass  # War Cry stun — skip move selection this beat
                 else:
-                    if player.combat_list:
-                        npc.target = player.combat_list[
-                            random.randint(0, len(player.combat_list) - 1)
-                        ]
-                npc.select_move()
-                npc.current_move.target = npc.target
-                if (
-                    npc.current_move is not None
-                    and hasattr(npc.current_move, "cast")
-                    and callable(getattr(npc.current_move, "cast"))
-                ):
-                    npc.current_move.cast()
-                    # Log the move execution
-                    if npc.current_move:
-                        game_logger.log_combat_move(npc.name, npc.current_move.name)
-                        if debug_manager.should_debug_ai_decisions():
-                            debug_manager.display_ai_debug_info(
-                                npc, f"Used {npc.current_move.name}", {}
-                            )
+                    if not npc.friend:
+                        if player.combat_list_allies:
+                            npc.target = player.combat_list_allies[
+                                random.randint(0, len(player.combat_list_allies) - 1)
+                            ]
+                    else:
+                        if player.combat_list:
+                            npc.target = player.combat_list[
+                                random.randint(0, len(player.combat_list) - 1)
+                            ]
+                    npc.select_move()
+                    npc.current_move.target = npc.target
+                    if (
+                        npc.current_move is not None
+                        and hasattr(npc.current_move, "cast")
+                        and callable(getattr(npc.current_move, "cast"))
+                    ):
+                        npc.current_move.cast()
+                        # Log the move execution
+                        if npc.current_move:
+                            game_logger.log_combat_move(npc.name, npc.current_move.name)
+                            if debug_manager.should_debug_ai_decisions():
+                                debug_manager.display_ai_debug_info(
+                                    npc, f"Used {npc.current_move.name}", {}
+                                )
         get_moves = npc.known_moves[:]
         if (npc.current_move is not None) and (
             npc.current_move not in get_moves

@@ -69,6 +69,8 @@ def _make_player():
     player.finesse = 10
     player.endurance = 10
     player.speed = 10
+    player.charisma = 10
+    player.faith = 10
     player.hp = 100
     player.maxhp = 100
     player.fatigue = 100
@@ -459,6 +461,23 @@ class TestCrusaderOath:
         player = _make_player()
         player.in_combat = True
         player.states = []
+        move = CrusaderOath(player)
+        assert move.viable() is True
+
+    def test_viable_false_when_faith_is_lowest(self):
+        player = _make_player()
+        player.in_combat = True
+        player.states = []
+        player.faith = 5  # strictly below all other stats (10)
+        move = CrusaderOath(player)
+        assert move.viable() is False
+
+    def test_viable_true_when_faith_ties_for_lowest(self):
+        player = _make_player()
+        player.in_combat = True
+        player.states = []
+        player.faith = 10
+        player.finesse = 10  # tied — faith is not strictly the lowest
         move = CrusaderOath(player)
         assert move.viable() is True
 

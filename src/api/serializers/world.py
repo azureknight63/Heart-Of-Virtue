@@ -92,7 +92,7 @@ class TileSerializer:
 
         # Serialize events
         events = getattr(tile, "events_here", [])
-        result["events"] = EventSerializer.serialize_list(events)
+        result["events"] = EventSerializer.serialize_many(events)
 
         # Serialize exits/connections
         exits = {}
