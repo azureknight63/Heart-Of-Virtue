@@ -2,7 +2,7 @@
 Chapter 02 events
 """
 
-from src.events import Event, dialogue
+from src.events import Event
 from src.functions import print_slow, await_input
 import time
 from src import items
@@ -836,8 +836,9 @@ class Ch02KingSlimeMemoryFlash(MemoryFlash):
 
 class AfterKingSlimeReturn(Event):
     """
-    Fires once when Jean re-enters any Grondia tile after king_slime_defeated is set.
-    Votha Krr eats the mineral fragment and sends Jean toward the Echoing Caves.
+    Fires once when Jean re-enters the Citadel after king_slime_defeated is set.
+    Votha Krr accepts the mineral fragment and sends Jean toward the Echoing Caves.
+    Seven stages: greeting, choice, consumption, acknowledgment, wisdom, farewell, cleanup.
     """
 
     def __init__(
@@ -860,138 +861,138 @@ class AfterKingSlimeReturn(Event):
             self.pass_conditions_to_process()
 
     def process(self, user_input=None):
+        if not hasattr(self, "_stage"):
+            self._stage = 1
+
         # Check if Jean actually has the MineralFragment
         has_fragment = any(
             i.__class__.__name__ == "MineralFragment" for i in self.player.inventory
         )
         if not has_fragment:
-            # If pass-1 somehow set needs_input, clear it so no stale prompt lingers.
             self.needs_input = False
             return
 
-        if user_input is None:
-            # First pass: display narration and present the choice prompt
-            time.sleep(1)
-            print_slow(
-                "Votha Krr rose from his throne as Jean entered. His deep-set eyes took in the "
-                "bleeding finger, the fragment in Jean's hand, and Jean's expression — all at once.",
-                delay=0.03,
-            )
-            time.sleep(1.5)
-
-            dialogue(
-                "Votha Krr",
-                "The pools are clean, little one. You have done well.",
-                "green",
-            )
-            time.sleep(1)
-            print_slow(
-                "Jean still held the mineral fragment. The cut on his finger had stopped bleeding "
-                "but hadn't stopped hurting.",
-                delay=0.03,
-            )
-            time.sleep(1)
-
-            # Signal the API that we need input before continuing
+        # Stage 1 — Votha rises and greets Jean; present choice
+        if self._stage == 1:
             self.needs_input = True
             self.input_type = "choice"
+            self.description = (
+                "Votha Krr rose from his throne as Jean entered. His deep-set eyes took in the "
+                "bleeding finger, the fragment in Jean's hand, and Jean's expression — all at once.\n\n"
+                "Votha Krr: \"The pools are clean, little one. You have done well.\"\n\n"
+                "Jean still held the mineral fragment. The cut on his finger had stopped bleeding "
+                "but hadn't stopped hurting."
+            )
             self.input_prompt = ""
             self.input_options = [
                 {"value": "a", "label": "Hand it over."},
                 {"value": "b", "label": '"What is this thing, exactly?"'},
                 {"value": "c", "label": "[Set it on the edge of the throne without a word.]"},
             ]
+            self._stage = 2
             return
 
-        # Second pass: user has made their choice
-        _frag_choice = str(user_input).strip().lower()
-        # Normalise numeric frontend fallbacks (e.g. "0"/"1"/"2") to letter values
-        _choice_map = {"0": "a", "1": "b", "2": "c"}
-        _frag_choice = _choice_map.get(_frag_choice, _frag_choice)
-        if _frag_choice not in ("a", "b", "c"):
-            _frag_choice = "a"
+        # Stage 2 — Process Jean's choice and narrate the handover
+        if self._stage == 2:
+            _frag_choice = str(user_input or "a").strip().lower()
+            _choice_map = {"0": "a", "1": "b", "2": "c"}
+            _frag_choice = _choice_map.get(_frag_choice, _frag_choice)
+            if _frag_choice not in ("a", "b", "c"):
+                _frag_choice = "a"
 
-        if _frag_choice == "a":
-            print_slow("Jean held it out. Votha took it from his hand.", delay=0.03)
-        elif _frag_choice == "b":
-            dialogue("Jean", "What is this thing, exactly?", "cyan")
-            time.sleep(0.5)
-            dialogue(
-                "Votha Krr",
-                "A memory, made stone. The mineral pools do not merely hold water — "
-                "they record what passes through them. Light, creature, time. "
-                "This fragment carries something very old. "
-                "It is right that it returns to stone.",
-                "green",
+            if _frag_choice == "a":
+                self.description = "Jean held it out. Votha took it from his hand."
+            elif _frag_choice == "b":
+                self.description = (
+                    "Jean: \"What is this thing, exactly?\"\n\n"
+                    "Votha Krr: \"A memory, made stone. The mineral pools do not merely hold water — "
+                    "they record what passes through them. Light, creature, time. "
+                    "This fragment carries something very old. "
+                    "It is right that it returns to stone.\"\n\n"
+                    "He took the fragment from Jean's hand."
+                )
+            else:  # c
+                self.description = (
+                    "Jean sets the fragment on the armrest of the throne without looking at Votha. "
+                    "The Elder watches him do it. Waits. "
+                    "Then reaches out and picks it up, slowly, as though giving Jean time to reconsider."
+                )
+
+            self.needs_input = True
+            self.input_type = "choice"
+            self.input_prompt = ""
+            self.input_options = [{"value": "continue", "label": "Continue"}]
+            self._stage = 3
+            return
+
+        # Stage 3 — Votha consumes the fragment
+        if self._stage == 3:
+            self.description = (
+                "Votha regarded the fragment for a single moment — then placed it in his mouth.\n\n"
+                "A soft, contented rumble escaped him. The fragment was gone."
             )
-            time.sleep(1)
-            print_slow("He took the fragment from Jean's hand.", delay=0.03)
-        else:
-            print_slow(
-                "Jean sets the fragment on the armrest of the throne without looking at Votha. "
-                "The Elder watches him do it. Waits. "
-                "Then reaches out and picks it up, slowly, as though giving Jean time to reconsider.",
-                delay=0.03,
+            self.needs_input = True
+            self.input_type = "choice"
+            self.input_prompt = ""
+            self.input_options = [{"value": "continue", "label": "Continue"}]
+            self._stage = 4
+            return
+
+        # Stage 4 — Votha acknowledges Jean's completion and his return
+        if self._stage == 4:
+            self.description = (
+                "Votha Krr: \"The pools are clean. You have done what we could not do alone, little one.\"\n\n"
+                "He studied Jean's face. Then — the bleeding finger. "
+                "He regarded it for a moment without comment.\n\n"
+                "Votha Krr: \"You came back.\"\n\n"
+                "He said it simply. As an observation, not a compliment."
             )
-        time.sleep(1)
-        print_slow(
-            "Votha regarded the fragment for a single moment — then placed it in his mouth.",
-            delay=0.03,
-        )
-        time.sleep(1)
-        print_slow(
-            "A soft, contented rumble escaped him. The fragment was gone.",
-            delay=0.04,
-        )
+            self.needs_input = True
+            self.input_type = "choice"
+            self.input_prompt = ""
+            self.input_options = [{"value": "continue", "label": "Continue"}]
+            self._stage = 5
+            return
 
-        # Remove the MineralFragment from inventory
-        for item in list(self.player.inventory):
-            if item.__class__.__name__ == "MineralFragment":
-                self.player.inventory.remove(item)
-                break
+        # Stage 5 — Votha's philosophical directive
+        if self._stage == 5:
+            self.description = (
+                "Votha Krr: \"To mend what is broken, one must first understand the cracks. "
+                "Go now. Seek the Echoing Caves to the west, beyond the river. "
+                "There, the earth sings the songs of lost things. "
+                "Perhaps you will find a different kind of strength there — "
+                "or, at the very least, a clearer path.\""
+            )
+            self.needs_input = True
+            self.input_type = "choice"
+            self.input_prompt = ""
+            self.input_options = [{"value": "continue", "label": "Continue"}]
+            self._stage = 6
+            return
 
-        time.sleep(1.5)
-        dialogue(
-            "Votha Krr",
-            "The pools are clean. You have done what we could not do alone, little one.",
-            "green",
-        )
-        time.sleep(1)
-        print_slow(
-            "He studied Jean's face. Then — the bleeding finger. "
-            "He regarded it for a moment without comment.",
-            delay=0.03,
-        )
-        time.sleep(1.5)
-        dialogue(
-            "Votha Krr",
-            "You came back.",
-            "green",
-        )
-        time.sleep(1)
-        print_slow(
-            "He said it simply. As an observation, not a compliment.", delay=0.03
-        )
-        time.sleep(1.5)
-        dialogue(
-            "Votha Krr",
-            "To mend what is broken, one must first understand the cracks. "
-            "Go now. Seek the Echoing Caves to the west, beyond the river. "
-            "There, the earth sings the songs of lost things. "
-            "Perhaps you will find a different kind of strength there — "
-            "or, at the very least, a clearer path.",
-            "green",
-        )
-        time.sleep(1)
-        print_slow(
-            "He did not elaborate. When Jean opened his mouth, Votha Krr's only answer "
-            "was to press two fingers briefly to his own chest — over the place a human "
-            "would call the heart — and then withdraw.",
-            delay=0.03,
-        )
-        time.sleep(1.5)
+        # Stage 6 — Votha's farewell gesture
+        if self._stage == 6:
+            self.description = (
+                "He did not elaborate. When Jean opened his mouth, Votha Krr's only answer "
+                "was to press two fingers briefly to his own chest — over the place a human "
+                "would call the heart — and then withdraw."
+            )
+            self.needs_input = True
+            self.input_type = "choice"
+            self.input_prompt = ""
+            self.input_options = [{"value": "continue", "label": "Continue"}]
+            self._stage = 7
+            return
 
-        self.needs_input = False
-        self.completed = True
-        self.player.universe.story["votha_krr_response_given"] = "1"
-        self.tile.remove_event(self.name)
+        # Stage 7 — Cleanup
+        if self._stage == 7:
+            # Remove the MineralFragment from inventory
+            for item in list(self.player.inventory):
+                if item.__class__.__name__ == "MineralFragment":
+                    self.player.inventory.remove(item)
+                    break
+
+            self.needs_input = False
+            self.completed = True
+            self.player.universe.story["votha_krr_response_given"] = "1"
+            self.tile.remove_event(self.name)
