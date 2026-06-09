@@ -1055,6 +1055,9 @@ class TestAfterDefeatingKingSlime:
         player.universe.story = {}
         player.universe.current_map = Mock()
         player.universe.current_map.tiles = {}
+        # _cleanse_pool_tiles iterates maps looking for "grondelith-mineral-pools" dict
+        pool_map = {"name": "grondelith-mineral-pools"}
+        player.universe.maps = [pool_map]
         tile = _make_tile()
         tile.remove_event = Mock()
         tile.spawn_object = Mock()
@@ -1114,7 +1117,7 @@ class TestAfterDefeatingKingSlime:
         gorran.__class__.__name__ = "Gorran"
         atrium_tile = Mock()
         atrium_tile.npcs_here = [gorran]
-        player.universe.current_map.tiles = {(2, 1): atrium_tile}
+        player.map = {(2, 1): atrium_tile}  # process() uses player.map, not universe.current_map
         with (
             patch("story.ch02.print_slow"),
             patch("story.ch02.time.sleep"),
@@ -1156,10 +1159,12 @@ class TestAfterDefeatingKingSlime_CleanseTiles:
         tile.spawn_object = Mock()
         tile.spawn_item = Mock()
 
-        # Populate some pool tiles in the current map
+        # Provide a mineral pools map so _cleanse_pool_tiles can find coords
         pool_tile = Mock()
         pool_tile.spawn_object = Mock()
-        player.universe.current_map.tiles = {(2, 2): pool_tile, (3, 2): Mock()}
+        pool_map = {"name": "grondelith-mineral-pools", (2, 2): pool_tile, (3, 2): Mock()}
+        player.universe.maps = [pool_map]
+        player.universe.current_map.tiles = {}
 
         ev = self.cls(player=player, tile=tile)
         with (
@@ -1386,13 +1391,16 @@ class TestAfterKingSlimeReturn:
         ev.process(user_input=None)
         assert ev.needs_input is False
 
+    def _drive_to_completion(self, ev, choice="a"):
+        """Drive through all 7 stages: stage1(no input), stage2(choice), stages 3-7(continue)."""
+        ev.process(user_input=None)  # stage 1
+        ev.process(user_input=choice)  # stage 2
+        for _ in range(5):  # stages 3-7
+            ev.process(user_input="continue")
+
     def test_process_first_pass_prompts_choice(self):
         ev, player, tile = self._make(has_fragment=True)
-        with (
-            patch("story.ch02.print_slow"),
-            patch("story.ch02.dialogue"),
-            patch("story.ch02.time.sleep"),
-        ):
+        with patch("story.ch02.print_slow"):
             ev.process(user_input=None)
         assert ev.needs_input is True
         option_values = [o["value"] for o in ev.input_options]
@@ -1402,53 +1410,33 @@ class TestAfterKingSlimeReturn:
 
     def test_process_choice_a_hand_over(self):
         ev, player, tile = self._make(has_fragment=True)
-        with (
-            patch("story.ch02.print_slow"),
-            patch("story.ch02.dialogue"),
-            patch("story.ch02.time.sleep"),
-        ):
-            ev.process(user_input="a")
+        with patch("story.ch02.print_slow"):
+            self._drive_to_completion(ev, choice="a")
         assert player.universe.story.get("votha_krr_response_given") == "1"
         assert ev.completed is True
 
     def test_process_choice_b_question(self):
         ev, player, tile = self._make(has_fragment=True)
-        with (
-            patch("story.ch02.print_slow"),
-            patch("story.ch02.dialogue"),
-            patch("story.ch02.time.sleep"),
-        ):
-            ev.process(user_input="b")
+        with patch("story.ch02.print_slow"):
+            self._drive_to_completion(ev, choice="b")
         assert player.universe.story.get("votha_krr_response_given") == "1"
 
     def test_process_choice_c_set_on_throne(self):
         ev, player, tile = self._make(has_fragment=True)
-        with (
-            patch("story.ch02.print_slow"),
-            patch("story.ch02.dialogue"),
-            patch("story.ch02.time.sleep"),
-        ):
-            ev.process(user_input="c")
+        with patch("story.ch02.print_slow"):
+            self._drive_to_completion(ev, choice="c")
         assert player.universe.story.get("votha_krr_response_given") == "1"
 
     def test_process_numeric_input_0_maps_to_a(self):
         ev, player, tile = self._make(has_fragment=True)
-        with (
-            patch("story.ch02.print_slow"),
-            patch("story.ch02.dialogue"),
-            patch("story.ch02.time.sleep"),
-        ):
-            ev.process(user_input="0")
+        with patch("story.ch02.print_slow"):
+            self._drive_to_completion(ev, choice="0")
         assert ev.completed is True
 
     def test_process_invalid_defaults_to_a(self):
         ev, player, tile = self._make(has_fragment=True)
-        with (
-            patch("story.ch02.print_slow"),
-            patch("story.ch02.dialogue"),
-            patch("story.ch02.time.sleep"),
-        ):
-            ev.process(user_input="zzz")
+        with patch("story.ch02.print_slow"):
+            self._drive_to_completion(ev, choice="zzz")
         assert ev.completed is True
 
     def test_process_removes_fragment_from_inventory(self):
@@ -1456,12 +1444,8 @@ class TestAfterKingSlimeReturn:
         frag = Mock()
         frag.__class__.__name__ = "MineralFragment"
         player.inventory = [frag]
-        with (
-            patch("story.ch02.print_slow"),
-            patch("story.ch02.dialogue"),
-            patch("story.ch02.time.sleep"),
-        ):
-            ev.process(user_input="a")
+        with patch("story.ch02.print_slow"):
+            self._drive_to_completion(ev, choice="a")
         assert frag not in player.inventory
 
 
