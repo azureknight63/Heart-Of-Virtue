@@ -34,6 +34,35 @@
                 "__class__": "Passageway",
                 "__module__": "objects",
                 "props": {
+                    "name": "Jambo's Tent",
+                    "description": "A small merchant's tent pitched just inside the camp boundary, its canvas weathered but its sign cheerful: 'Jambo Heals U.'",
+                    "idle_message": "A small merchant's tent is pitched here with a hand-painted sign reading \"Jambo Heals U.\"",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": "a merchant's tent!",
+                    "announce": "A small merchant's tent is pitched just inside the camp boundary.",
+                    "keywords": [
+                        "enter",
+                        "jambo",
+                        "tent",
+                        "shop",
+                        "go",
+                        "in"
+                    ],
+                    "events": [],
+                    "tile": null,
+                    "player": null,
+                    "events_before": [],
+                    "events_after": [],
+                    "teleport_map": "eastern-descent-jambos-tent",
+                    "teleport_tile": [2, 2],
+                    "persist": true
+                }
+            },
+            {
+                "__class__": "Passageway",
+                "__module__": "objects",
+                "props": {
                     "name": "Camp Boundary",
                     "description": "A line of weathered stakes marks the camp's eastern edge. Beyond them, the bank continues east toward the descent road.",
                     "idle_message": "The camp boundary leads back out to the descent road.",

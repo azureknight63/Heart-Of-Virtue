@@ -1,0 +1,138 @@
+{
+    "(2,2)": {
+        "id": "tile_2_2",
+        "title": "Jambo's Tent Entrance",
+        "description": "A low canvas doorway opens onto a compact, well-worn vestibule strewn with small rugs and crates. A battered counter and a lantern mark where Jambo greets customers. The air carries a warm mix of spices and dried herbs. The first shelves hold a rotating display of curios and everyday potions.",
+        "exits": [
+            "east"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [
+            {
+                "__class__": "JamboHealsU",
+                "__module__": "npc",
+                "props": null
+            }
+        ],
+        "objects": [
+            {
+                "__class__": "Passageway",
+                "__module__": "objects",
+                "props": {
+                    "name": "Tent Flap",
+                    "description": "A tent flap leading back out to the camp.",
+                    "idle_message": "A tent flap opens back out to the camp.",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": "a tent flap leading out!",
+                    "announce": "A tent flap opens back out to the camp.",
+                    "keywords": [
+                        "enter",
+                        "go",
+                        "leave",
+                        "exit",
+                        "out",
+                        "camp"
+                    ],
+                    "events": [],
+                    "tile": null,
+                    "player": null,
+                    "events_before": [],
+                    "events_after": [],
+                    "teleport_map": "eastern-descent-nomad-camp",
+                    "teleport_tile": [2, 0],
+                    "persist": true
+                }
+            }
+        ],
+        "symbol": "E"
+    },
+    "(3,2)": {
+        "id": "tile_3_2",
+        "title": "Jambo's Tent Storage",
+        "description": "A narrow back chamber lined with shelves and stacked wooden crates, jars, and labeled sacks. Every surface is claimed by spare stock, overflows of common potions, and oddities waiting to be rotated into the shop. A small locked chest and a ledger sit on a workbench. The space smells faintly of alcohol, ink, and packing straw.",
+        "exits": [
+            "north",
+            "west"
+        ],
+        "block_exit": [],
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": [
+            {
+                "__class__": "Crate",
+                "__module__": "objects",
+                "props": {
+                    "nickname": "crate",
+                    "possible_states": ["closed", "opened"],
+                    "revealed": false,
+                    "locked": false,
+                    "state": "opened",
+                    "merchant": "Jambo",
+                    "allowed_item_types": [{"__class_type__": "items:Consumable"}],
+                    "stock_count": 12,
+                    "inventory": [],
+                    "name": "Crate",
+                    "description": "A large wooden crate containing merchandise.",
+                    "idle_message": "A large wooden crate is here.",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": "a large wooden crate!",
+                    "announce": "A large wooden crate is here.",
+                    "keywords": ["loot", "check", "view", "examine", "inspect", "peruse"],
+                    "events": [],
+                    "tile": null,
+                    "player": null
+                }
+            }
+        ],
+        "symbol": ""
+    },
+    "(3,1)": {
+        "id": "tile_3_1",
+        "title": "Jambo's Tent - Lounge",
+        "description": "A cozy nook behind a hanging cloth, containing a simple cot, a low cooking pot over a brazier, and a patchwork curtain used as a privacy screen. Personal touches — dried herbs, a tiny shrine, colorful scarves and a worn rug — make it tidy and lived-in.",
+        "exits": [
+            "south"
+        ],
+        "block_exit": ["southwest"],
+        "events": [],
+        "items": [
+            {
+                "__class__": "Book",
+                "__module__": "items",
+                "props": {
+                    "weight": 2.0,
+                    "maintype": "Book",
+                    "subtype": "Book",
+                    "count": 1,
+                    "interactions": ["drop", "read"],
+                    "name": "Jambo's Little Book of Big Deals",
+                    "description": "This pithy tome appears to be a collection of hand-written advice from Jambo himself.",
+                    "value": 15,
+                    "type": "Book",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "merchandise": false,
+                    "discovery_message": "a book!",
+                    "announce": "There's a Book here.",
+                    "skills": null,
+                    "owner": null,
+                    "equip_states": [],
+                    "add_resistance": {},
+                    "add_status_resistance": {},
+                    "gives_exp": false,
+                    "event": null,
+                    "text_file_path": "src/resources/books/jambos-book-of-business-wisdom.txt",
+                    "chars_per_page": 800
+                }
+            }
+        ],
+        "npcs": [],
+        "objects": [],
+        "symbol": ""
+    }
+}
