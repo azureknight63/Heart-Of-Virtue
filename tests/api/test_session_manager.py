@@ -213,3 +213,100 @@ class TestSessionManager:
         assert len(sessions) == 3
         assert all("session_id" in s for s in sessions)
         assert all("username" in s for s in sessions)
+
+
+class TestApplyStartingEquipment:
+    """_apply_starting_equipment must fully wire config items into the player —
+    not just mark isequipped in the display, but set eq_weapon and recalc protection."""
+
+    def _sm(self, specs):
+        """SessionManager with starting_equipment injected directly (no CONFIG_FILE needed)."""
+        sm = SessionManager()
+        sm.starting_equipment = list(specs)
+        return sm
+
+    def test_weapon_replaces_fists_as_eq_weapon(self):
+        player = self._sm(["Shortsword:0"])._create_player_for_session("tester")
+
+        assert player.eq_weapon is not player.fists
+        assert player.eq_weapon.maintype == "Weapon"
+
+    def test_weapon_damage_exceeds_fists(self):
+        player = self._sm(["Shortsword:0"])._create_player_for_session("tester")
+
+        assert player.eq_weapon.damage > player.fists.damage
+
+    def test_weapon_item_flags_correct(self):
+        player = self._sm(["Shortsword:0"])._create_player_for_session("tester")
+
+        sword = next(
+            (i for i in player.inventory
+             if getattr(i, "maintype", None) == "Weapon" and i is not player.fists),
+            None,
+        )
+        assert sword is not None, "Shortsword not found in inventory"
+        assert sword.isequipped is True
+        assert "unequip" in sword.interactions
+        assert "equip" not in sword.interactions
+
+    def test_armor_raises_protection_above_endurance_base(self):
+        player = self._sm(["LeatherArmor:0"])._create_player_for_session("tester")
+
+        assert player.protection > player.endurance / 10
+
+    def test_armor_protection_value_is_included(self):
+        player = self._sm(["LeatherArmor:0"])._create_player_for_session("tester")
+
+        # LeatherArmor contributes 4 protection; endurance/10 is the stat base.
+        # str_mod/fin_mod contributions can only add more, so >= is a safe bound.
+        assert player.protection >= player.endurance / 10 + 4
+
+    def test_new_armor_unequips_conflicting_default_armor(self):
+        player = self._sm(["LeatherArmor:0"])._create_player_for_session("tester")
+
+        # After equipping LeatherArmor, no other Armor-slot item should remain equipped.
+        # This is an unconditional assertion — if the default kit changes and there is
+        # no conflict item, the slot-conflict logic is still verified by the protection
+        # value tests; but if there IS an Armor item, it must be unequipped.
+        still_equipped_armor = [
+            i for i in player.inventory
+            if getattr(i, "maintype", None) == "Armor"
+            and getattr(i, "isequipped", False)
+            and i.name != "Leather Armor"
+        ]
+        assert still_equipped_armor == [], (
+            f"Slot conflict not resolved — these Armor items are still equipped: "
+            f"{[i.name for i in still_equipped_armor]}"
+        )
+
+    def test_full_leather_set_composite_protection(self):
+        player = self._sm(
+            ["Shortsword:0", "LeatherArmor:0", "LeatherCap:0", "LeatherGloves:0", "LeatherBoots:0"]
+        )._create_player_for_session("tester")
+
+        assert player.eq_weapon is not player.fists
+        assert player.eq_weapon.maintype == "Weapon"
+        # 4 (Armor) + 2 (Cap) + 2 (Gloves) + 3 (Boots) = 11 minimum from leather set
+        assert player.protection >= player.endurance / 10 + 11
+
+    def test_unknown_item_class_skipped_valid_items_still_applied(self):
+        player = self._sm(
+            ["NonExistentItem:0", "Shortsword:0"]
+        )._create_player_for_session("tester")
+
+        assert player.eq_weapon is not player.fists
+
+    def test_empty_starting_equipment_leaves_fists(self):
+        sm = SessionManager()
+        sm.starting_equipment = []
+        player = sm._create_player_for_session("tester")
+
+        assert player.eq_weapon is player.fists
+
+    def test_minimal_player_fallback_does_not_raise(self):
+        from src.api.services.session_manager import MinimalPlayer
+
+        sm = SessionManager()
+        sm.starting_equipment = ["Shortsword:0"]
+        minimal = MinimalPlayer("tester")
+        sm._apply_starting_equipment(minimal)  # must not raise

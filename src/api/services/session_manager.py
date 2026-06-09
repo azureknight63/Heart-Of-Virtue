@@ -671,8 +671,11 @@ class SessionManager:
                         player.eq_weapon = item
                     try:
                         item.on_equip(player)
-                    except Exception:
-                        pass
+                    except Exception as _equip_err:
+                        print(
+                            f"[SessionManager] [WARN] on_equip raised for {item_class_name}: {_equip_err}",
+                            flush=True,
+                        )
                     print(
                         f"[SessionManager] [OK] Applied starting equipment: {item_class_name} (enchant {enchantment_level})",
                         flush=True,
