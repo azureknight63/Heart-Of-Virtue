@@ -627,3 +627,74 @@ class PhoenixRevive(State):
             functions.refresh_stat_bonuses(target)
             return True
         return False
+
+
+class WarCryStunned(State):
+    """Applied by War Cry. Prevents NPC move selection for 1 combat beat."""
+
+    def __init__(self, target):
+        super().__init__(
+            name="War Cry Stunned",
+            target=target,
+            beats_max=1,
+            compounding=False,
+            combat=True,
+            world=False,
+            statustype="stun",
+            persistent=False,
+            description="Reeling from a war cry — unable to act for one beat.",
+        )
+        self._stunned = True
+
+
+class SecretPlansState(State):
+    """Applied by Secret Plans. +30% strength, finesse, speed for 25 beats."""
+
+    def __init__(self, target):
+        super().__init__(
+            name="Secret Plans",
+            target=target,
+            beats_max=25,
+            compounding=False,
+            combat=True,
+            world=False,
+            statustype="generic",
+            persistent=False,
+            description="Strength +30%, Finesse +30%, Speed +30% for 25 beats.",
+        )
+        self.add_str = int(target.strength * 0.30)
+        self.add_fin = int(target.finesse * 0.30)
+        self.add_speed = int(target.speed * 0.30)
+
+    def on_application(self, target):
+        functions.refresh_stat_bonuses(target)
+        cprint(f"{target.name}'s hidden plan springs into motion!", "cyan")
+
+    def on_removal(self, target):
+        functions.refresh_stat_bonuses(target)
+        cprint(f"The momentum of {target.name}'s secret plan fades.", "cyan")
+
+
+class BloodOfMartyrsState(State):
+    """Applied by Blood of Martyrs. Tracks absorbed damage; _absorbing flag intercepts hit()."""
+
+    def __init__(self, target):
+        super().__init__(
+            name="Blood of Martyrs",
+            target=target,
+            beats_max=45,
+            compounding=False,
+            combat=True,
+            world=False,
+            statustype="generic",
+            persistent=False,
+            description="Absorbing all incoming damage. The reckoning approaches.",
+        )
+        self._absorbing = True
+        self.absorbed = 0
+
+    def on_application(self, target):
+        cprint(f"{target.name} opens himself to the storm. Every blow will be answered.", "yellow")
+
+    def on_removal(self, target):
+        self._absorbing = False

@@ -137,6 +137,10 @@ class Move:  # master class for all moves
         viability = True
         return viability
 
+    def learnable_when(self, player) -> bool:
+        """Override to gate skill-tree availability on player state (e.g. stat thresholds)."""
+        return True
+
     def process_stage(self, user):
         if user.current_move == self:
             if self.current_stage == 0:
@@ -290,6 +294,12 @@ class Move:  # master class for all moves
                     + colored(damage, "red")
                     + colored(" damage!", "yellow")
                 )
+            # Blood of Martyrs absorption — intercept before HP is reduced
+            for _s in getattr(self.target, "states", []):
+                if getattr(_s, "_absorbing", False):
+                    _s.absorbed += damage
+                    damage = 0
+                    break
             self.target.hp -= damage
             if self.user.name == "Jean":
                 self.user.change_heat(1.25)

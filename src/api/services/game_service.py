@@ -2621,14 +2621,21 @@ class GameService:
                     # Check if already known
                     is_known = any(km["name"] == skill.name for km in known_moves)
 
+                    stat_ok = (
+                        not hasattr(skill, "learnable_when")
+                        or skill.learnable_when(player)
+                    )
                     category_skills.append(
                         {
                             "name": skill.name,
                             "description": getattr(skill, "description", ""),
                             "required_exp": req_exp,
                             "is_known": is_known,
-                            "can_learn": player.skill_exp.get(category, 0) >= req_exp
-                            and not is_known,
+                            "can_learn": (
+                                player.skill_exp.get(category, 0) >= req_exp
+                                and not is_known
+                                and stat_ok
+                            ),
                         }
                     )
                 skill_tree[category] = category_skills
@@ -2687,6 +2694,13 @@ class GameService:
             return {
                 "success": False,
                 "error": f"Not enough experience. Required: {req_exp}, Available: {current_exp}",
+            }
+
+        # Check stat requirements (mastery skills)
+        if hasattr(skill_obj, "learnable_when") and not skill_obj.learnable_when(player):
+            return {
+                "success": False,
+                "error": "Stat requirements not met. This skill requires its linked stat to exceed 30 and be your highest.",
             }
 
         # Learn the skill

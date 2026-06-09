@@ -33,7 +33,9 @@ class PlayerLevelingMixin:
                             if skill.name == known_skill.name:
                                 skill_is_already_learned = True
                                 break
-                        if not skill_is_already_learned:
+                        if not skill_is_already_learned and (
+                            not hasattr(skill, "learnable_when") or skill.learnable_when(self)
+                        ):
                             announce = True
                     else:
                         continue
@@ -81,6 +83,7 @@ class PlayerLevelingMixin:
             ("endurance_base", "Endurance"),
             ("charisma_base", "Charisma"),
             ("intelligence_base", "Intelligence"),
+            ("faith_base", "Faith"),
         ]
 
         for attr, _label in attributes:
@@ -147,6 +150,7 @@ class PlayerLevelingMixin:
             ("endurance_base", colored("Endurance", "magenta"), 4),
             ("charisma_base", colored("Charisma", "magenta"), 5),
             ("intelligence_base", colored("Intelligence", "magenta"), 6),
+            ("faith_base", colored("Faith", "magenta"), 7),
         ]
 
         for attr, attr_name, i in attributes:
@@ -168,9 +172,9 @@ class PlayerLevelingMixin:
                 print(f"({i}) {attr_name} - {getattr(self, attr)}")
 
             selection = input("Selection: ")
-            if not selection.isdigit() or (1 > int(selection) > 6):
+            if not selection.isdigit() or (1 > int(selection) > 7):
                 cprint(
-                    "Invalid selection. You must enter a choice between 1 and 6.",
+                    "Invalid selection. You must enter a choice between 1 and 7.",
                     "red",
                 )
                 continue

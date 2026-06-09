@@ -16,6 +16,14 @@ class Skilltree:
                 moves.TacticalPositioning(user): 1000,
                 moves.StrategicInsight(user): 500,
                 moves.MasterTactician(user): 1500,
+                # Mastery skills — require the linked stat > 30 and highest (learnable_when gate)
+                moves.Pulverize(user): 2500,
+                moves.KillingPrecision(user): 2500,
+                moves.LightningAssault(user): 2500,
+                moves.Ironhide(user): 2500,
+                moves.WarCry(user): 2500,
+                moves.SecretPlans(user): 2500,
+                moves.BloodOfMartyrs(user): 2500,
                 # Note: Turn, Advance, Withdraw are available by default (not in skilltree)
                 # moves.AggressiveStance(user): 150  # Shift to an aggressive fighting stance; ++str, spd; -fin, end
                 # moves.DefensiveStance(user): 150  # ++fin, end, -str, fth, cha
