@@ -23,11 +23,12 @@ class GorranGestureEvent(Event):
         )
 
     def check_conditions(self):
-        """Only fires if player's previous tile was Grondia (coming from the west)."""
-        # Check if we're entering from Grondia
-        previous_tile = getattr(self.player, "previous_tile", None)
-        if previous_tile and "Grondia" in str(previous_tile.title):
-            self.pass_conditions_to_process()
+        story = getattr(getattr(self.player, "universe", None), "story", {})
+        if story.get("gorran_gesture_done") == "1":
+            if self in self.tile.events_here:
+                self.tile.events_here.remove(self)
+            return
+        self.pass_conditions_to_process()
 
     def process(self):
         if not self.player.skip_dialog:
@@ -40,6 +41,12 @@ class GorranGestureEvent(Event):
             time.sleep(1)
             print_slow("Jean did not ask him.\n")
             time.sleep(0.5)
+        self._set_gate()
+
+    def _set_gate(self):
+        story = getattr(getattr(self.player, "universe", None), "story", None)
+        if story is not None:
+            story["gorran_gesture_done"] = "1"
 
 
 class EasternRoadTurnbackEvent(Event):
@@ -84,9 +91,11 @@ class EasternRoadTurnbackEvent(Event):
         if self.tile and self.player:
             universe = getattr(self.player, "universe", None)
             if universe:
-                self.player.current_tile = universe.tiles.get(
-                    (5, 4), self.player.current_tile
-                )
+                dest = universe.get_tile(5, 4)
+                if dest:
+                    self.player.location_x = 5
+                    self.player.location_y = 4
+                    self.player.current_room = dest
 
 
 class NomadCampArrivalEvent(Event):
