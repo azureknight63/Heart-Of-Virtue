@@ -667,6 +667,8 @@ class SessionManager:
                             item.interactions.append("unequip")
                         if hasattr(item, "interactions") and "equip" in item.interactions:
                             item.interactions.remove("equip")
+                        if new_maintype == "Weapon" and hasattr(player, "eq_weapon"):
+                            player.eq_weapon = item
                     print(
                         f"[SessionManager] [OK] Applied starting equipment: {item_class_name} (enchant {enchantment_level})",
                         flush=True,

@@ -61,13 +61,14 @@ class Player(
     def __init__(self):
         self.inventory = [
             items.Gold(15),
+            items.Shortsword(),
             items.TatteredCloth(),
             items.ClothHood(),
             items.JeanWeddingBand(),
         ]
         # Equip starting gear
         for item in self.inventory:
-            if item.name in ["Tattered Cloth", "Cloth Hood"]:
+            if item.name in ["Tattered Cloth", "Cloth Hood", "Shortsword"]:
                 item.isequipped = True
                 if "equip" in item.interactions:
                     item.interactions.remove("equip")
@@ -124,7 +125,7 @@ class Player(
         self.weight_tolerance_base = 20.00
         self.weight_current = 0.00
         self.fists = items.Fists()
-        self.eq_weapon = self.fists
+        self.eq_weapon = next((item for item in self.inventory if item.name == "Shortsword"), self.fists)
         self.combat_exp = {
             "Basic": 0,
             "Unarmed": 0,
