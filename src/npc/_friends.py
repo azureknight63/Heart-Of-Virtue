@@ -859,10 +859,9 @@ class Devet(HumanNPCLLMMixin, Friend):
             "this is not a question.",
             "Devet studies Jean for a long moment. Then he says, 'Jean's come from the city.' "
             "It's not a question.",
-            "Devet says quietly, 'The west's not kind. But then, nowhere is, if a man's not ready "
-            "for it.'",
-            "Devet tends the fire. When he speaks, his voice is low. 'Jean will want to rest here. "
-            "The crossing can wait until morning.'",
+            "Devet says quietly, 'The west's not kind.'",
+            "Devet tends the fire. When he speaks, his voice is low. 'Rest here. "
+            "Crossing\\'s better at dawn.'",
         ]
         print(random.choice(lines))
 
@@ -919,5 +918,11 @@ class Liss(HumanNPCLLMMixin, Friend):
             "different, isn't he?' She doesn't elaborate on what 'different' means.",
             "Liss looks at Jean directly. 'Jean looks like he's carrying something. Not in his "
             "pack. In his — ' She makes a vague gesture, 'everything, I guess.'",
+            "Liss says, 'Does the Golemite sleep? He never looked like he was sleeping. "
+            "But does he?'",
+            "Liss says, 'What does stone eat? I asked Devet and he said I was being strange "
+            "but I think it's a real question.'",
+            "Liss says, 'If Jean hit the Golemite — not that Jean should — would he feel it? "
+            "Or is it like hitting a rock? Is he like a rock? He doesn\\'t seem like a rock.'",
         ]
         print(random.choice(lines))
