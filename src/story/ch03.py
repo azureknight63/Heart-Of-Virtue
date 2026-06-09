@@ -100,10 +100,16 @@ class EasternRoadTurnbackEvent(Event):
 
 class NomadCampArrivalEvent(Event):
     """
-    Fires once on Jean's first entry to the NomadCamp tile (2,5) on the Eastern Descent.
+    Fires once on Jean's first entry to the NomadCamp tile (3,6) on the Eastern Descent.
     Introduces Mara, Devet, and Liss. Sets story gate 'nomad_camp_reached'.
     Gorran is present throughout but non-verbal.
-    Source: docs/lore/story/ch02-ch03-transition.md, Beat 4.
+
+    Delivery modes:
+      API (stdout redirected to StringIO): 5 staged dialogs, each gated by a
+        "Continue" choice button. process() is re-entered via process_event_input
+        with user_input="continue" to advance the stage.
+      Terminal (stdout is a real TTY): all beats run sequentially in one call
+        with await_input() pauses between them.
     """
 
     def __init__(
@@ -117,6 +123,10 @@ class NomadCampArrivalEvent(Event):
         super().__init__(
             name=name, player=player, tile=tile, repeat=repeat, params=params
         )
+        self.stage = 0
+        self.input_type = "choice"
+        self.input_prompt = ""
+        self.input_options = [{"value": "continue", "label": "Continue"}]
 
     def check_conditions(self):
         story = getattr(getattr(self.player, "universe", None), "story", {})
@@ -126,34 +136,155 @@ class NomadCampArrivalEvent(Event):
             return
         self.pass_conditions_to_process()
 
-    def process(self):
+    def process(self, user_input=None):
+        import io
+        import sys
+
         if self.player.skip_dialog:
+            self.completed = True
+            self.needs_input = False
             self._set_gate()
             return
 
+        if isinstance(sys.stdout, io.StringIO):
+            # API mode: one beat per dialog, advanced by the "Continue" choice.
+            if user_input is not None:
+                self.stage += 1
+            self._render_api_stage(self.stage)
+            if self.stage >= 4:
+                self.needs_input = False
+                self.completed = True
+                self._set_gate()
+            else:
+                self.needs_input = True
+        else:
+            # Terminal mode: all beats in sequence with await_input() pauses.
+            self._render_terminal()
+            self.needs_input = False
+            self.completed = True
+            self._set_gate()
+
+    # ------------------------------------------------------------------
+    # API mode: one method per beat — called individually as stage advances
+    # ------------------------------------------------------------------
+
+    def _render_api_stage(self, stage):
+        if stage == 0:
+            print_slow(
+                "Jean smelled the camp before he saw it — woodsmoke, dried meat, the particular "
+                "warmth of a fire that had been maintained rather than lit. The sound of the river "
+                "was constant behind it."
+            )
+            print_slow(
+                "A woman was watching them from the camp's edge. She had clocked them while they were "
+                "still fifty paces out — Jean was sure of it — but by the time he reached the fire "
+                "ring she was already back to what she had been doing, crouched over a pack, sorting "
+                "something with methodical attention."
+            )
+            print_slow(
+                "The camp was neat. Lean-tos of oiled canvas over light poles, angled correctly "
+                "against the prevailing wind. A fire built in an established ring, its stones "
+                "black with years of use. These were people who knew how to be somewhere without "
+                "being of it."
+            )
+        elif stage == 1:
+            print_slow(
+                "The woman didn't look up. Her eyes found Jean for one flat second — taking in "
+                "his gear, his bearing, the large stone figure standing slightly behind him — "
+                "and returned to the pack."
+            )
+            dialogue("Mara", "Crossing west?", "cyan")
+            print_slow("Not a greeting. A question with a purpose.")
+            print_slow(
+                "When Jean said yes, she named a number. Flat, fair, not open to discussion. "
+                "She didn't look up when she said it. She was already back to the pack before "
+                "the last word had settled."
+            )
+        elif stage == 2:
+            print_slow(
+                "An older man was tending the fire — unhurried, each movement economical in the "
+                "way of someone who has done this ten thousand times. He gave Jean one look "
+                "when Jean approached: the look of someone who had seen desperate people cross "
+                "this river before, heading west, and knew most of them weren't running toward "
+                "something."
+            )
+            print_slow(
+                "He didn't offer this observation aloud. He picked up a bowl and filled it from "
+                "the pot and held it out. It was not a question."
+            )
+            print_slow(
+                "Gorran stood where Jean had left him, still, watching the fire without watching "
+                "it. His presence had settled into the camp's edge the way large stones settle: "
+                "without effort, without apology."
+            )
+        elif stage == 3:
+            print_slow(
+                "A girl — young, dark-haired, openly curious — was at the camp's far edge. She "
+                "was not approaching Gorran. She was simply standing at a distance that was "
+                "technically not approaching, watching him with the focused intensity of someone "
+                "doing serious research."
+            )
+            print_slow(
+                "She asked Mara something in a low voice. Something about Golemites. Whether "
+                "they slept. Whether they ate. Whether the sound they made was a language or "
+                "just a sound."
+            )
+            print_slow(
+                "Gorran could almost certainly hear her. He gave no indication of this. He "
+                "allowed her attention with the patient forbearance of a very old, very large "
+                "thing being studied by a small one."
+            )
+        elif stage == 4:
+            has_mace = any(
+                item.__class__.__name__ == "Mace" for item in self.player.inventory
+            )
+            print_slow(
+                "A while later — Jean was sitting with the bowl, Gorran nearby, the fire "
+                "between them and the river — Mara spoke without looking up from what she "
+                "was sorting."
+            )
+            if has_mace:
+                print_slow(
+                    "Her eyes tracked to Jean's mace for just a moment. Then back to her work."
+                )
+                dialogue("Mara", "That's religious kit.", "cyan")
+            else:
+                print_slow(
+                    "Her eyes moved across Jean — his posture, his hands, the way his weight "
+                    "sat — and returned to her work."
+                )
+                dialogue("Mara", "You were a man of the church.", "cyan")
+            print_slow("Not a question.")
+            dialogue("Jean", "It was.", "cyan")
+            print_slow(
+                "She didn't follow up. She filed it. The sorting continued."
+            )
+
+    # ------------------------------------------------------------------
+    # Terminal mode: sequential flow, await_input() provides the pacing
+    # ------------------------------------------------------------------
+
+    def _render_terminal(self):
         print("\n")
         time.sleep(0.5)
         print_slow(
             "Jean smelled the camp before he saw it — woodsmoke, dried meat, the particular "
             "warmth of a fire that had been maintained rather than lit. The sound of the river "
-            "was constant behind it.",
-            delay=0.03,
+            "was constant behind it."
         )
         time.sleep(1)
         print_slow(
             "A woman was watching them from the camp's edge. She had clocked them while they were "
             "still fifty paces out — Jean was sure of it — but by the time he reached the fire "
             "ring she was already back to what she had been doing, crouched over a pack, sorting "
-            "something with methodical attention.",
-            delay=0.03,
+            "something with methodical attention."
         )
         time.sleep(1)
         print_slow(
             "The camp was neat. Lean-tos of oiled canvas over light poles, angled correctly "
             "against the prevailing wind. A fire built in an established ring, its stones "
             "black with years of use. These were people who knew how to be somewhere without "
-            "being of it.",
-            delay=0.03,
+            "being of it."
         )
         time.sleep(1.5)
         await_input()
@@ -161,19 +292,17 @@ class NomadCampArrivalEvent(Event):
         print_slow(
             "The woman didn't look up. Her eyes found Jean for one flat second — taking in "
             "his gear, his bearing, the large stone figure standing slightly behind him — "
-            "and returned to the pack.",
-            delay=0.03,
+            "and returned to the pack."
         )
         time.sleep(1)
         dialogue("Mara", "Crossing west?", "cyan")
         time.sleep(0.5)
-        print_slow("Not a greeting. A question with a purpose.", delay=0.04)
+        print_slow("Not a greeting. A question with a purpose.")
         time.sleep(1)
         print_slow(
             "When Jean said yes, she named a number. Flat, fair, not open to discussion. "
             "She didn't look up when she said it. She was already back to the pack before "
-            "the last word had settled.",
-            delay=0.03,
+            "the last word had settled."
         )
         time.sleep(1.5)
         await_input()
@@ -183,21 +312,18 @@ class NomadCampArrivalEvent(Event):
             "way of someone who has done this ten thousand times. He gave Jean one look "
             "when Jean approached: the look of someone who had seen desperate people cross "
             "this river before, heading west, and knew most of them weren't running toward "
-            "something.",
-            delay=0.03,
+            "something."
         )
         time.sleep(1.5)
         print_slow(
             "He didn't offer this observation aloud. He picked up a bowl and filled it from "
-            "the pot and held it out. It was not a question.",
-            delay=0.04,
+            "the pot and held it out. It was not a question."
         )
         time.sleep(1)
         print_slow(
             "Gorran stood where Jean had left him, still, watching the fire without watching "
             "it. His presence had settled into the camp's edge the way large stones settle: "
-            "without effort, without apology.",
-            delay=0.03,
+            "without effort, without apology."
         )
         time.sleep(1.5)
         await_input()
@@ -206,64 +332,54 @@ class NomadCampArrivalEvent(Event):
             "A girl — young, dark-haired, openly curious — was at the camp's far edge. She "
             "was not approaching Gorran. She was simply standing at a distance that was "
             "technically not approaching, watching him with the focused intensity of someone "
-            "doing serious research.",
-            delay=0.03,
+            "doing serious research."
         )
         time.sleep(1)
         print_slow(
             "She asked Mara something in a low voice. Something about Golemites. Whether "
             "they slept. Whether they ate. Whether the sound they made was a language or "
-            "just a sound.",
-            delay=0.03,
+            "just a sound."
         )
         time.sleep(1)
         print_slow(
             "Gorran could almost certainly hear her. He gave no indication of this. He "
             "allowed her attention with the patient forbearance of a very old, very large "
-            "thing being studied by a small one.",
-            delay=0.03,
+            "thing being studied by a small one."
         )
         time.sleep(1.5)
         await_input()
 
-        # Equipment-conditional character-pinning exchange
         has_mace = any(
             item.__class__.__name__ == "Mace" for item in self.player.inventory
         )
         print_slow(
             "A while later — Jean was sitting with the bowl, Gorran nearby, the fire "
             "between them and the river — Mara spoke without looking up from what she "
-            "was sorting.",
-            delay=0.03,
+            "was sorting."
         )
         time.sleep(1)
         if has_mace:
             print_slow(
-                "Her eyes tracked to Jean's mace for just a moment. Then back to her work.",
-                delay=0.04,
+                "Her eyes tracked to Jean's mace for just a moment. Then back to her work."
             )
             time.sleep(0.5)
             dialogue("Mara", "That's religious kit.", "cyan")
         else:
             print_slow(
                 "Her eyes moved across Jean — his posture, his hands, the way his weight "
-                "sat — and returned to her work.",
-                delay=0.04,
+                "sat — and returned to her work."
             )
             time.sleep(0.5)
             dialogue("Mara", "You were a man of the church.", "cyan")
         time.sleep(0.5)
-        print_slow("Not a question.", delay=0.05)
+        print_slow("Not a question.")
         time.sleep(1)
         dialogue("Jean", "It was.", "cyan")
         time.sleep(1)
         print_slow(
-            "She didn't follow up. She filed it. The sorting continued.",
-            delay=0.04,
+            "She didn't follow up. She filed it. The sorting continued."
         )
         time.sleep(1.5)
-
-        self._set_gate()
 
     def _set_gate(self):
         story = getattr(getattr(self.player, "universe", None), "story", None)
