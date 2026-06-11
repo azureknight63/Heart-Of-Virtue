@@ -921,12 +921,12 @@ class TestCh02GuideToCitadel(unittest.TestCase):
         event = Ch02GuideToCitadel(self.player, self.tile, params=None)
         self.assertEqual(event.name, "Ch02_GuideToCitadel")
 
-    def test_guide_to_citadel_check_combat_conditions(self):
-        """Test check_combat_conditions."""
+    def test_guide_to_citadel_check_conditions(self):
+        """Test check_conditions."""
         event = Ch02GuideToCitadel(self.player, self.tile, params=None)
         self.player.combat_list = []
         with patch.object(event, 'pass_conditions_to_process') as mock_pass:
-            event.check_combat_conditions()
+            event.check_conditions()
             mock_pass.assert_called_once()
 
     def test_guide_to_citadel_process(self):

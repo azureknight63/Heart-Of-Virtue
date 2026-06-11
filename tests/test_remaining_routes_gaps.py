@@ -265,6 +265,36 @@ class TestPlayerRouteGaps:
         )
         assert resp.status_code == 400
 
+    def test_allocate_level_up_randomize_success(self):
+        self.player.pending_attribute_points = 5
+        self.player.strength_base = 10
+        self.player.finesse_base = 10
+        self.player.speed_base = 10
+        self.player.endurance_base = 10
+        self.player.charisma_base = 10
+        self.player.intelligence_base = 10
+        self.player.faith_base = 10
+        self.gs.get_player_stats.return_value = {}
+        resp = self.client.post(
+            "/api/level-up/allocate",
+            json={"attribute": "randomize"},
+            headers=AUTH_HEADER,
+        )
+        assert resp.status_code == 200
+        data = json.loads(resp.data)
+        assert data["success"] is True
+        assert data["remaining_points"] == 0
+        assert self.player.pending_attribute_points == 0
+
+    def test_allocate_level_up_randomize_no_points(self):
+        self.player.pending_attribute_points = 0
+        resp = self.client.post(
+            "/api/level-up/allocate",
+            json={"attribute": "randomize"},
+            headers=AUTH_HEADER,
+        )
+        assert resp.status_code == 400
+
 
 # ===========================================================================
 # REPUTATION ROUTES
