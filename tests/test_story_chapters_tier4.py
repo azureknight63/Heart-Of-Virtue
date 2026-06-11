@@ -56,7 +56,11 @@ from story.ch02 import (
 from story.ch03 import (
     GorranGestureEvent,
     EasternRoadTurnbackEvent,
-    NomadCampArrivalEvent,
+    NomadCampSmellEvent,
+    MaraFirstContactEvent,
+    DevetIntroEvent,
+    LissObservingEvent,
+    MaraObservationEvent,
 )
 
 
@@ -1164,41 +1168,186 @@ class TestEasternRoadTurnbackEvent(unittest.TestCase):
             event.process()
 
 
-class TestNomadCampArrivalEvent(unittest.TestCase):
-    """Full coverage for NomadCampArrivalEvent."""
+class TestNomadCampSmellEvent(unittest.TestCase):
+    """Coverage for NomadCampSmellEvent (first tile of nomad camp sub-map)."""
 
     def setUp(self):
-        """Set up fixtures."""
         self.player = Mock()
         self.player.universe = Mock()
         self.player.universe.story = {}
+        self.player.skip_dialog = True
         self.tile = Mock()
         self.tile.events_here = []
 
-    def test_nomad_camp_arrival_event_init(self):
-        """Test Nomad camp arrival event init."""
-        event = NomadCampArrivalEvent(self.player, self.tile, params=None)
-        self.assertEqual(event.name, "NomadCampArrival")
+    def test_init(self):
+        event = NomadCampSmellEvent(self.player, self.tile)
+        self.assertEqual(event.name, "NomadCampSmell")
 
-    def test_nomad_camp_arrival_event_check_conditions(self):
-        """Test check_conditions."""
-        event = NomadCampArrivalEvent(self.player, self.tile, params=None)
-        self.player.universe.story = {"nomad_camp_visited": "1"}
+    def test_check_conditions_not_yet_entered(self):
+        event = NomadCampSmellEvent(self.player, self.tile)
         with patch.object(event, 'pass_conditions_to_process') as mock_pass:
             event.check_conditions()
             mock_pass.assert_called_once()
 
-    def test_nomad_camp_arrival_event_process(self):
-        """Test process method."""
-        event = NomadCampArrivalEvent(self.player, self.tile, params=None)
-        with patch('src.functions.print_slow'):
-            with patch.object(event, '_set_gate'):
-                event.process()
+    def test_check_conditions_already_entered(self):
+        self.player.universe.story = {"nomad_camp_entered": "1"}
+        self.tile.events_here = []
+        event = NomadCampSmellEvent(self.player, self.tile)
+        self.tile.events_here = [event]
+        with patch.object(event, 'pass_conditions_to_process') as mock_pass:
+            event.check_conditions()
+            mock_pass.assert_not_called()
 
-    def test_nomad_camp_arrival_event_set_gate(self):
-        """Test _set_gate method."""
-        event = NomadCampArrivalEvent(self.player, self.tile, params=None)
-        event._set_gate()
+    def test_process_sets_gate(self):
+        event = NomadCampSmellEvent(self.player, self.tile)
+        event.process()
+        self.assertEqual(self.player.universe.story.get("nomad_camp_entered"), "1")
+
+
+class TestMaraFirstContactEvent(unittest.TestCase):
+    """Coverage for MaraFirstContactEvent."""
+
+    def setUp(self):
+        self.player = Mock()
+        self.player.universe = Mock()
+        self.player.universe.story = {}
+        self.player.skip_dialog = True
+        self.tile = Mock()
+        self.tile.events_here = []
+
+    def test_init(self):
+        event = MaraFirstContactEvent(self.player, self.tile)
+        self.assertEqual(event.name, "MaraFirstContact")
+
+    def test_check_conditions_fires_when_not_done(self):
+        event = MaraFirstContactEvent(self.player, self.tile)
+        with patch.object(event, 'pass_conditions_to_process') as mock_pass:
+            event.check_conditions()
+            mock_pass.assert_called_once()
+
+    def test_check_conditions_suppressed_when_done(self):
+        self.player.universe.story = {"mara_intro_done": "1"}
+        event = MaraFirstContactEvent(self.player, self.tile)
+        self.tile.events_here = [event]
+        with patch.object(event, 'pass_conditions_to_process') as mock_pass:
+            event.check_conditions()
+            mock_pass.assert_not_called()
+
+    def test_process_sets_gate(self):
+        event = MaraFirstContactEvent(self.player, self.tile)
+        event.process()
+        self.assertEqual(self.player.universe.story.get("mara_intro_done"), "1")
+
+
+class TestDevetIntroEvent(unittest.TestCase):
+    """Coverage for DevetIntroEvent."""
+
+    def setUp(self):
+        self.player = Mock()
+        self.player.universe = Mock()
+        self.player.universe.story = {}
+        self.player.skip_dialog = True
+        self.tile = Mock()
+        self.tile.events_here = []
+
+    def test_init(self):
+        event = DevetIntroEvent(self.player, self.tile)
+        self.assertEqual(event.name, "DevetIntro")
+
+    def test_process_sets_gate(self):
+        event = DevetIntroEvent(self.player, self.tile)
+        event.process()
+        self.assertEqual(self.player.universe.story.get("devet_intro_done"), "1")
+
+
+class TestLissObservingEvent(unittest.TestCase):
+    """Coverage for LissObservingEvent."""
+
+    def setUp(self):
+        self.player = Mock()
+        self.player.universe = Mock()
+        self.player.universe.story = {}
+        self.player.skip_dialog = True
+        self.tile = Mock()
+        self.tile.events_here = []
+
+    def test_init(self):
+        event = LissObservingEvent(self.player, self.tile)
+        self.assertEqual(event.name, "LissObserving")
+
+    def test_process_sets_gate(self):
+        event = LissObservingEvent(self.player, self.tile)
+        event.process()
+        self.assertEqual(self.player.universe.story.get("liss_gorran_done"), "1")
+
+
+class TestMaraObservationEvent(unittest.TestCase):
+    """Coverage for MaraObservationEvent (chapter gate — fires after all three intros)."""
+
+    def setUp(self):
+        self.player = Mock()
+        self.player.universe = Mock()
+        self.player.universe.story = {}
+        self.player.skip_dialog = True
+        self.player.inventory = []
+        self.tile = Mock()
+        self.tile.events_here = []
+
+    def test_init(self):
+        event = MaraObservationEvent(self.player, self.tile)
+        self.assertEqual(event.name, "MaraObservation")
+
+    def test_check_conditions_blocked_when_already_reached(self):
+        self.player.universe.story = {"nomad_camp_reached": "1"}
+        event = MaraObservationEvent(self.player, self.tile)
+        self.tile.events_here = [event]
+        with patch.object(event, 'pass_conditions_to_process') as mock_pass:
+            event.check_conditions()
+            mock_pass.assert_not_called()
+
+    def test_check_conditions_blocked_when_intros_incomplete(self):
+        # Only mara done — devet and liss still missing
+        self.player.universe.story = {"mara_intro_done": "1"}
+        event = MaraObservationEvent(self.player, self.tile)
+        with patch.object(event, 'pass_conditions_to_process') as mock_pass:
+            event.check_conditions()
+            mock_pass.assert_not_called()
+
+    def test_check_conditions_fires_when_all_intros_done(self):
+        self.player.universe.story = {
+            "mara_intro_done": "1",
+            "devet_intro_done": "1",
+            "liss_gorran_done": "1",
+        }
+        event = MaraObservationEvent(self.player, self.tile)
+        with patch.object(event, 'pass_conditions_to_process') as mock_pass:
+            event.check_conditions()
+            mock_pass.assert_called_once()
+
+    def test_process_sets_nomad_camp_reached(self):
+        self.player.universe.story = {
+            "mara_intro_done": "1",
+            "devet_intro_done": "1",
+            "liss_gorran_done": "1",
+        }
+        event = MaraObservationEvent(self.player, self.tile)
+        event.process()
+        self.assertEqual(self.player.universe.story.get("nomad_camp_reached"), "1")
+
+    def test_process_mace_branch(self):
+        """Mara says 'That\'s religious kit.' when Jean carries a Mace."""
+        mace = Mock()
+        mace.__class__ = type('Mace', (), {})
+        self.player.inventory = [mace]
+        self.player.universe.story = {
+            "mara_intro_done": "1",
+            "devet_intro_done": "1",
+            "liss_gorran_done": "1",
+        }
+        event = MaraObservationEvent(self.player, self.tile)
+        # should not raise; mace branch selects alternate dialogue
+        event.process()
+        self.assertEqual(self.player.universe.story.get("nomad_camp_reached"), "1")
 
 
 if __name__ == "__main__":
