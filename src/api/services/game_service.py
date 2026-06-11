@@ -1398,28 +1398,43 @@ class GameService:
                     or hasattr(target, "_parent_container")
                 )
 
-                if is_container and action in ["loot", "check"]:
+                if is_container and action in [
+                    "loot",
+                    "check",
+                    "view",
+                    "examine",
+                    "inspect",
+                    "peruse",
+                ]:
                     target.open()
-                    # Create a LootEvent and store it
-                    loot_event = LootEvent(
-                        f"Looting {target.name}", player, tile, target
-                    )
-                    event_data = EventSerializer.serialize_with_input(loot_event)
+                    # Only surface the loot menu if the container actually
+                    # opened. A locked container's open() is a no-op (state
+                    # stays "closed"); creating a LootEvent anyway would expose
+                    # its contents and bypass the lock. open() narrates why it
+                    # failed, which flows out via the narration sink below.
+                    if getattr(target, "state", None) == "opened":
+                        # Create a LootEvent and store it
+                        loot_event = LootEvent(
+                            f"Looting {target.name}", player, tile, target
+                        )
+                        event_data = EventSerializer.serialize_with_input(
+                            loot_event
+                        )
 
-                    if session_data is not None:
-                        event_id = str(uuid.uuid4())
-                        event_data["event_id"] = event_id
+                        if session_data is not None:
+                            event_id = str(uuid.uuid4())
+                            event_data["event_id"] = event_id
 
-                        if "pending_events" not in session_data:
-                            session_data["pending_events"] = {}
-                        session_data["pending_events"][event_id] = {
-                            "event": loot_event,
-                            "tile_x": tile.x,
-                            "tile_y": tile.y,
-                            "event_data": event_data,
-                        }
+                            if "pending_events" not in session_data:
+                                session_data["pending_events"] = {}
+                            session_data["pending_events"][event_id] = {
+                                "event": loot_event,
+                                "tile_x": tile.x,
+                                "tile_y": tile.y,
+                                "event_data": event_data,
+                            }
 
-                    events_triggered.append(event_data)
+                        events_triggered.append(event_data)
                 elif (
                     is_item
                     and action in ["take", "equip"]

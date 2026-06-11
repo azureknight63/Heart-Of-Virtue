@@ -497,9 +497,8 @@ class TestContainer:
         tile = Mock()
         container = Container(player=player, tile=tile)
         with patch.object(container, "open") as mock_open:
-            with patch("src.interface.ContainerLootInterface"):
-                container.loot()
-                mock_open.assert_called_once()
+            container.loot()
+            mock_open.assert_called_once()
 
     def test_container_check_alias(self):
         """Test check() aliases loot()."""

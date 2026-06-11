@@ -470,24 +470,16 @@ class Container(Object):
 
     def loot(self):
         """
-        Allows the player to loot the container. If the container is closed, it opens it first.
-        If the container is opened, launches the ContainerLootInterface for item selection and transfer.
+        Open the container so its contents are revealed.
+
+        Item selection and transfer are driven by the structured
+        ``events.LootEvent`` (created by
+        ``GameService.interact_with_target``) for the web client. This method
+        only ensures the container is open; it no longer launches a terminal
+        interface.
         """
         if self.state == "closed":
             self.open()
-
-        if self.state != "opened":
-            return
-
-        # Import the interface class
-        try:
-            from interface import ContainerLootInterface
-        except ImportError:
-            from src.interface import ContainerLootInterface
-
-        # Create and run the loot interface
-        loot_interface = ContainerLootInterface(self, self.player)
-        loot_interface.run()
 
     def check(self):
         self.loot()
