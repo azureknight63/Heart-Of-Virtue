@@ -1093,14 +1093,13 @@ class TestMiloCurioDealer:
         assert "rare" in str(mock_print.call_args).lower()
 
     def test_milo_trade_uses_custom_shop(self):
-        """Test MiloCurioDealer.trade() uses custom shop interface."""
+        """Test MiloCurioDealer.trade() absorbs player merchandise."""
         milo = MiloCurioDealer()
         player = MagicMock()
         milo._collect_player_merchandise = MagicMock()
 
         with patch('builtins.print'):
-            with patch('interface.ShopInterface'):
-                milo.trade(player)
+            milo.trade(player)
 
         milo._collect_player_merchandise.assert_called_once_with(player)
 
@@ -1163,14 +1162,13 @@ class TestJamboHealsU:
             # Verify it doesn't crash
 
     def test_jambo_trade(self):
-        """Test JamboHealsU.trade() uses custom shop."""
+        """Test JamboHealsU.trade() absorbs player merchandise."""
         jambo = JamboHealsU()
         player = MagicMock()
         jambo._collect_player_merchandise = MagicMock()
 
         with patch('builtins.print'):
-            with patch('interface.ShopInterface'):
-                jambo.trade(player)
+            jambo.trade(player)
 
         jambo._collect_player_merchandise.assert_called_once()
 

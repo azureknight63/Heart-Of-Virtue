@@ -347,65 +347,65 @@ def test_apply_value_conditions_edge_cases():
     m._apply_value_conditions()
     assert item.value == 200
 
+def _merchandise(name):
+    goods = MagicMock()
+    goods.merchandise = True
+    goods.name = name
+    return goods
+
+
 def test_merchant_verbs():
     # Test base Merchant verb methods (talk, trade, buy, sell)
     m = Merchant(name="BaseMerchant", description="desc", damage=1, aggro=False, exp_award=0, stock_count=5)
     player = FakePlayer()
-    
-    # Verify talk prints something
-    with patch('builtins.print') as mock_print:
-        m.talk(player)
-        mock_print.assert_called_with("BaseMerchant has nothing to say.")
-        
-    # Verify trade / buy / sell call shop interface or collect
-    m.shop = MagicMock()
+
+    # talk narrates a flavor line without error
+    m.talk(player)
+
+    # Pricing lives on the merchant now (ShopInterface removed)
+    assert m.buy_modifier == 1.0
+    assert m.sell_modifier == 0.5
+    assert m.shop_name == "BaseMerchant's Shop"
+
+    # trade absorbs any merchandise Jean carries; no terminal UI is launched
+    goods = _merchandise("Trinket")
+    player.inventory = [goods]
+    m.inventory = []
     m.trade(player)
-    assert m.shop.run.called
-    
-    m.shop.reset_mock()
+    assert goods in m.inventory
+    assert goods not in player.inventory
+
+    # buy/sell delegate to trade and stay safe on an empty inventory
     m.buy(player)
-    assert m.shop.run.called
-    
-    m.shop.reset_mock()
     m.sell(player)
-    assert m.shop.run.called
+
 
 def test_milo_verbs():
     # Test MiloCurioDealer talk/trade
     milo = MiloCurioDealer()
     player = FakePlayer()
-    
-    with patch('builtins.print') as mock_print:
-        milo.talk(player)
-        mock_print.assert_any_call("Milo grins: 'Looking for something rare, friend? I've got just the thing!'")
-        
-    with patch('interface.ShopInterface') as mock_shop_cls:
-        mock_shop = MagicMock()
-        mock_shop_cls.return_value = mock_shop
-        milo.trade(player)
-        assert mock_shop.run.called
+
+    milo.talk(player)
+    assert milo.shop_name == "The Wandering Curiosities Shop"
+
+    goods = _merchandise("Curio")
+    player.inventory = [goods]
+    milo.inventory = []
+    milo.trade(player)
+    assert goods in milo.inventory
+
 
 def test_jambo_verbs():
-    # Test JamboHealsU initialize_shop, trade
+    # Test JamboHealsU pricing + trade
     jambo = JamboHealsU()
     player = FakePlayer()
-    
-    # Test shop import fails in JamboHealsU and inventory is None (line 227)
-    import sys
-    orig_interface = sys.modules.get('interface')
-    sys.modules['interface'] = None
-    try:
-        jambo.inventory = None
-        jambo.initialize_shop()
-        assert jambo.shop is None
-        assert jambo.inventory == []
-    finally:
-        sys.modules['interface'] = orig_interface
-        
-    # Test Jambo trade
-    with patch('interface.ShopInterface') as mock_shop_cls:
-        mock_shop = MagicMock()
-        mock_shop_cls.return_value = mock_shop
-        jambo.trade(player)
-        assert mock_shop.run.called
-        assert mock_shop.exit_message is not None
+
+    assert jambo.buy_modifier == 1.0
+    assert jambo.sell_modifier == 0.5
+    assert jambo.shop_name == "Jambo Heals U"
+
+    goods = _merchandise("Potion")
+    player.inventory = [goods]
+    jambo.inventory = []
+    jambo.trade(player)
+    assert goods in jambo.inventory

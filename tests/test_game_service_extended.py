@@ -146,16 +146,17 @@ def mock_merchant():
     """Create a mock merchant NPC with shop."""
     merchant = MagicMock()
     merchant.name = "Shopkeeper"
-    merchant.shop = MagicMock()
-    merchant.shop.buy_modifier = 1.0
-    merchant.shop.sell_modifier = 0.5
+    # Price modifiers live on the merchant itself (ShopInterface removed).
+    merchant.buy_modifier = 1.0
+    merchant.sell_modifier = 0.5
+    merchant.shop_name = "Shopkeeper's Shop"
     merchant.inventory = []
     merchant._buyback_ledger = []
 
     def initialize_shop():
-        merchant.shop = MagicMock()
-        merchant.shop.buy_modifier = 1.0
-        merchant.shop.sell_modifier = 0.5
+        merchant.buy_modifier = 1.0
+        merchant.sell_modifier = 0.5
+        merchant.shop_name = "Shopkeeper's Shop"
 
     merchant.initialize_shop = initialize_shop
     merchant.update_goods = MagicMock()
@@ -211,8 +212,9 @@ class TestShopGetState:
             assert "error" in result
 
     def test_get_shop_state_initializes_shop(self, game_service, extended_mock_player, mock_merchant):
-        """Test that get_shop_state initializes shop if None."""
-        mock_merchant.shop = None
+        """Test that get_shop_state initializes pricing when uninitialized."""
+        # No buy_modifier set yet -> get_shop_state should lazily initialize.
+        del mock_merchant.buy_modifier
         mock_merchant.initialize_shop = MagicMock()
         with patch.object(game_service, "_find_merchant", return_value=mock_merchant):
             with patch("src.api.serializers.shop_serializer.ShopSerializer.serialize_state", return_value={"sell_modifier": 0.5}):

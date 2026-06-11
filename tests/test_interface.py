@@ -132,27 +132,6 @@ class TestGetGold(unittest.TestCase):
         inventory = [DummyItem('Gold', 7), DummyItem('Silver', 3), DummyItem('Gold', 8)]
         self.assertEqual(interface.get_gold(inventory), 15)
 
-class DummyMerchant:
-    def __init__(self, name):
-        self.name = name
-
-class TestShopInterface(unittest.TestCase):
-    def test_shop_interface_init(self):
-        merchant = DummyMerchant('Bob')
-        shop = interface.ShopInterface(merchant)
-        self.assertEqual(shop.title, "Bob's Shop")
-        self.assertEqual(shop.exit_label, "Leave Shop")
-        self.assertEqual(len(shop.choices), 2)
-        self.assertEqual(shop.choices[0]['label'], 'Buy')
-        self.assertEqual(shop.choices[1]['label'], 'Sell')
-        self.assertIs(shop.merchant, merchant)
-        self.assertIsNone(shop.player)
-
-    def test_shop_interface_custom_name(self):
-        merchant = DummyMerchant('Alice')
-        shop = interface.ShopInterface(merchant, shop_name="Alice's Magic Emporium")
-        self.assertEqual(shop.title, "Alice's Magic Emporium")
-
 class TestSubmenu(unittest.TestCase):
     @patch('builtins.input', side_effect=["0", "x", "x"])
     @patch('builtins.print')

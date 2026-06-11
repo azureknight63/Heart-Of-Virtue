@@ -5015,7 +5015,7 @@ class GameService:
         if merchant is None:
             return {"error": "Merchant not found at this location"}
 
-        if merchant.shop is None:
+        if not hasattr(merchant, "buy_modifier"):
             merchant.initialize_shop()
 
         # Validate quantity
@@ -5051,7 +5051,7 @@ class GameService:
         if merchant is None:
             return {"success": False, "error": "Merchant not found at this location"}
 
-        if merchant.shop is None:
+        if not hasattr(merchant, "buy_modifier"):
             merchant.initialize_shop()
 
         # Stock the merchant on first API access — update_goods() is normally
@@ -5129,7 +5129,7 @@ class GameService:
         if validation_error:
             return {"success": False, **validation_error}
 
-        buy_mod = getattr(merchant.shop, "buy_modifier", 1.0)
+        buy_mod = getattr(merchant, "buy_modifier", 1.0)
 
         # Locate item in merchant inventory
         target_item = None
@@ -5209,7 +5209,7 @@ class GameService:
         if validation_error:
             return {"success": False, **validation_error}
 
-        sell_mod = getattr(merchant.shop, "sell_modifier", 0.5)
+        sell_mod = getattr(merchant, "sell_modifier", 0.5)
 
         # Locate item in player inventory
         target_item = None
