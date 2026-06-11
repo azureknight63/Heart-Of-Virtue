@@ -10,6 +10,7 @@ from unittest.mock import patch
 from src.api.constants import ITEM_USE_RANGE
 from src.functions import check_for_combat
 from src.inventory_utils import get_gold
+from src.narration import capture_narration
 
 if TYPE_CHECKING:
     from src import player as player_module
@@ -150,20 +151,23 @@ class GameService:
 
         return mock_input
 
-    def _build_event_patches(
-        self, target_modules, mock_input, mock_cprint, mock_print_slow
-    ) -> List[Any]:
+    def _build_event_patches(self, target_modules, mock_input) -> List[Any]:
+        """Build patches that neutralize blocking/timing during event processing.
+
+        Engine narrative output now flows through the narration sink (captured via
+        ``capture_narration``), so cprint/print_slow are no longer patched here.
+        We still suppress blocking ``input()`` (forced via ``mock_input`` until the
+        structured interaction protocol fully replaces it), terminal pauses, and
+        animation playback.
+        """
         patches = [
             patch("builtins.input", mock_input),
-            patch("neotermcolor.cprint", mock_cprint),
             patch("time.sleep", return_value=None),
         ]
 
         for mod in set(target_modules):
             patches.extend(
                 [
-                    patch(f"{mod}.cprint", mock_cprint, create=True),
-                    patch(f"{mod}.print_slow", mock_print_slow, create=True),
                     patch(f"{mod}.await_input", return_value=None, create=True),
                     patch(
                         f"{mod}.animate_to_main_screen",
@@ -739,27 +743,15 @@ class GameService:
             if hasattr(event, "check_conditions"):
                 f = io.StringIO()
                 try:
-                    # Patch functions to capture output without blocking
-                    def mock_cprint(text, *args, **kwargs):
-                        f.write(str(text) + "\n")
-
-                    def mock_print_slow(text, speed="slow"):
-                        f.write(str(text) + "\n")
-
                     mock_input = self._make_mock_input(f)
 
                     target_modules = self._get_event_target_modules(
                         event, include_animations=True
                     )
-                    patches = self._build_event_patches(
-                        target_modules,
-                        mock_input,
-                        mock_cprint,
-                        mock_print_slow,
-                    )
+                    patches = self._build_event_patches(target_modules, mock_input)
 
-                    # Capture stdout only (stderr is global/not thread-safe to redirect)
-                    with contextlib.redirect_stdout(f), contextlib.ExitStack() as stack:
+                    # Capture structured narration emitted during event processing.
+                    with capture_narration() as _msgs, contextlib.ExitStack() as stack:
 
                         for p in patches:
                             try:
@@ -804,7 +796,9 @@ class GameService:
                     )
 
                 # Capture and clean output
-                clean_output = self._clean_event_output(f.getvalue())
+                clean_output = self._clean_event_output(
+                    "\n".join(m.get("text", "") for m in _msgs)
+                )
                 if clean_output:
                     event_data["output_text"] = clean_output
 
@@ -845,17 +839,11 @@ class GameService:
         event = pending["event"]
 
         # Process the event with user input
-        f = io.StringIO()
         result = {"success": True, "event_id": event_id}
 
         try:
-            # Patch functions to capture output without blocking
-            def mock_cprint(text, *args, **kwargs):
-                f.write(str(text) + "\n")
-
-            def mock_print_slow(text, speed="slow"):
-                f.write(str(text) + "\n")
-
+            # Any incidental input() during processing resolves to the supplied
+            # user_input; structured choices come through process(user_input=...).
             def mock_input(prompt=""):
                 return user_input
 
@@ -863,15 +851,10 @@ class GameService:
             target_modules = self._get_event_target_modules(
                 event, include_animations=False
             )
-            patches = self._build_event_patches(
-                target_modules,
-                mock_input,
-                mock_cprint,
-                mock_print_slow,
-            )
+            patches = self._build_event_patches(target_modules, mock_input)
 
-            # Capture stdout only (stderr is global/not thread-safe to redirect)
-            with contextlib.redirect_stdout(f), contextlib.ExitStack() as stack:
+            # Capture structured narration emitted during event processing.
+            with capture_narration() as _msgs, contextlib.ExitStack() as stack:
 
                 for p in patches:
                     try:
@@ -931,7 +914,9 @@ class GameService:
             _log.exception("Event input processing failed for event_id=%s", event_id)
 
         # Capture and clean output
-        clean_output = self._clean_event_output(f.getvalue())
+        clean_output = self._clean_event_output(
+            "\n".join(m.get("text", "") for m in _msgs)
+        )
         if clean_output:
             result["output_text"] = clean_output
 
@@ -1363,34 +1348,20 @@ class GameService:
         _pre_y = player.location_y
 
         # Execute action and capture output
-        f = io.StringIO()
         events_triggered = []
         try:
-            # We need to patch await_input to prevent blocking, and time.sleep to prevent delays
-            # Also patch cprint and print_slow to capture colored output
-            def mock_cprint(text, *args, **kwargs):
-                f.write(str(text) + "\n")
-
-            def mock_print_slow(text, speed="slow"):
-                # Just write the text directly without character-by-character delays
-                f.write(str(text) + "\n")
-
             def mock_input(prompt=""):
-                # Return 'x' to exit any terminal-based interactive loops (like loot menus)
+                # Return 'x' to exit any legacy terminal interactive loops.
                 return "x"
 
-            # Patch at multiple levels since different modules import differently
+            # Narrative output is captured via the narration sink; we still
+            # neutralize blocking input and timing for any legacy code paths.
             with (
-                contextlib.redirect_stdout(f),
+                capture_narration() as _msgs,
                 patch("builtins.input", mock_input),
                 patch("functions.await_input", return_value=None),
-                patch("functions.print_slow", mock_print_slow),
                 patch("time.sleep", return_value=None),
-                patch("neotermcolor.cprint", mock_cprint),
                 patch("src.functions.await_input", return_value=None),
-                patch("src.functions.print_slow", mock_print_slow),
-                patch("src.items.cprint", mock_cprint),
-                patch("items.cprint", mock_cprint),
             ):
 
                 try:
@@ -1496,7 +1467,7 @@ class GameService:
                 "message": f"Error executing action: {str(e)}",
             }
 
-        output = f.getvalue()
+        output = "\n".join(m.get("text", "") for m in _msgs)
 
         # Clean up output (remove ANSI codes)
         ansi_escape = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
@@ -1874,27 +1845,15 @@ class GameService:
             if hasattr(event, method_name):
                 f = io.StringIO()
                 try:
-                    # Patch functions to capture output without blocking
-                    def mock_cprint(text, *args, **kwargs):
-                        f.write(str(text) + "\n")
-
-                    def mock_print_slow(text, speed="slow"):
-                        f.write(str(text) + "\n")
-
                     mock_input = self._make_mock_input(f)
 
                     target_modules = self._get_event_target_modules(
                         event, include_animations=True
                     )
-                    patches = self._build_event_patches(
-                        target_modules,
-                        mock_input,
-                        mock_cprint,
-                        mock_print_slow,
-                    )
+                    patches = self._build_event_patches(target_modules, mock_input)
 
-                    # Capture stdout/stderr and patch blocking functions
-                    with contextlib.redirect_stdout(f), contextlib.ExitStack() as stack:
+                    # Capture structured narration emitted during processing.
+                    with capture_narration() as _msgs, contextlib.ExitStack() as stack:
 
                         for p in patches:
                             try:
@@ -1930,7 +1889,9 @@ class GameService:
                     event_data["error"] = str(e)
 
                 # Capture and clean output
-                clean_output = self._clean_event_output(f.getvalue())
+                clean_output = self._clean_event_output(
+                    "\n".join(m.get("text", "") for m in _msgs)
+                )
                 triggered = False
                 if clean_output:
                     event_data["output_text"] = clean_output
