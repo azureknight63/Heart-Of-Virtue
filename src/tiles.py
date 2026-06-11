@@ -5,7 +5,7 @@ __author__ = "Alex Egbert"
 import importlib
 import random
 
-from neotermcolor import colored
+from narration import colored
 
 import actions  # type: ignore
 import functions  # type: ignore

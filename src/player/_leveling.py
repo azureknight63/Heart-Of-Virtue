@@ -3,7 +3,7 @@
 import random
 import time
 
-from neotermcolor import colored, cprint
+from narration import colored, cprint, narrate
 
 
 class PlayerLevelingMixin:
@@ -135,7 +135,7 @@ class PlayerLevelingMixin:
         )
         cprint("Jean has reached a new level!", "cyan")
         self.level += 1
-        print(colored("He is now level {}".format(self.level)))
+        narrate(colored("He is now level {}".format(self.level)))
         self.exp -= self.exp_to_level
         self.exp_to_level = self.level * (165 - self.intelligence)
         cprint(
@@ -158,18 +158,18 @@ class PlayerLevelingMixin:
             if bonus != 0:
                 current_value = getattr(self, attr)
                 setattr(self, attr, current_value + bonus)
-                print(f"{attr_name} went up by {colored(str(bonus), 'yellow')}.")
+                narrate(f"{attr_name} went up by {colored(str(bonus), color='yellow')}.")
                 time.sleep(2)
 
         points = random.randint(6, 9)
 
         while points > 0:
-            print(
+            narrate(
                 f'You have {colored(str(points), "yellow")} additional attribute points to distribute. '
                 f"Please select an attribute to increase:\n"
             )
             for attr, attr_name, i in attributes:
-                print(f"({i}) {attr_name} - {getattr(self, attr)}")
+                narrate(f"({i}) {attr_name} - {getattr(self, attr)}")
 
             selection = input("Selection: ")
             if not selection.isdigit() or (1 > int(selection) > 7):

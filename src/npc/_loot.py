@@ -21,8 +21,7 @@ import random
 
 import functions  # type: ignore
 import loot_tables  # type: ignore
-from neotermcolor import colored, cprint  # type: ignore
-
+from narration import colored, cprint, narrate  # type: ignore
 # Single Loot instance shared across the package via import
 loot = loot_tables.Loot()
 
@@ -33,7 +32,7 @@ class NPCLootMixin:
     def die(self):
         really_die = self.before_death()
         if really_die:
-            print(colored(self.name, "magenta") + " exploded into fragments of light!")
+            narrate(colored(self.name, color="magenta") + " exploded into fragments of light!")
 
     def before_death(
         self,
@@ -87,7 +86,7 @@ class NPCLootMixin:
         self,
     ):  # when the NPC dies, do a roll to see if any loot drops
         if self.current_room is None:
-            print("### ERR: Current room for {} ({}) is None".format(self.name, self))
+            narrate("### ERR: Current room for {} ({}) is None".format(self.name, self))
             return
         # Shuffle the dict keys to create random access
         keys = list(self.loot.keys())

@@ -12,8 +12,7 @@ from pathlib import Path
 import functions  # type: ignore
 import genericng  # type: ignore
 import moves  # type: ignore
-from neotermcolor import colored  # type: ignore
-
+from narration import colored, narrate  # type: ignore
 from ._base import Friend
 from ._chat_llm import HumanNPCLLMMixin
 from ._llm import MynxLLMMixin
@@ -109,7 +108,7 @@ class Mynx(MynxLLMMixin, Friend):
                 player, prompt=prompt, structured=structured
             )
         except Exception:
-            print(f"{self.name} tilts its head and makes a confused chitter.")
+            narrate(f"{self.name} tilts its head and makes a confused chitter.")
             return None
 
     def pet(self, player=None, structured: bool = False):
@@ -197,7 +196,7 @@ friendly enough to Jean.
 
     def talk(self, player):
         if self.current_room.universe.story["gorran_first"] == "0":
-            print(
+            narrate(
                 colored(
                     "The Rock-Man turns toward you slowly. His massive form shifts, and he "
                     "raises one broad hand — not a greeting, but a direction. He begins to move.",
@@ -227,7 +226,7 @@ friendly enough to Jean.
                 "A subsonic pressure moves through the stone at your feet. Gorran does not turn. "
                 "He is still here. That is the message.",
             ]
-            print(colored(random.choice(responses), "yellow"))
+            narrate(random.choice(responses), color="yellow")
 
         elif stage == 1:
             # Stage 1: gesture and sound only — same as Stage 0, but the silence
@@ -245,7 +244,7 @@ friendly enough to Jean.
                 "Gorran doesn't speak. But the silence feels different than it did before — "
                 "deliberate, not empty.",
             ]
-            print(colored(random.choice(responses), "yellow"))
+            narrate(random.choice(responses), color="yellow")
 
         elif stage == 2:
             # Stage 2: single words, said simply and without elaboration
@@ -262,7 +261,7 @@ friendly enough to Jean.
                     + " Clear and final. He's already past whatever he refused."
                 ),
             ]
-            print(random.choice(responses))
+            narrate(random.choice(responses))
 
         else:
             # Stage 3 and 4: short phrases, said with effort
@@ -280,7 +279,7 @@ friendly enough to Jean.
                     + " He doesn't look at you when he says it."
                 ),
             ]
-            print(random.choice(responses))
+            narrate(random.choice(responses))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -348,7 +347,7 @@ class GronditePasserby(Friend):
             self.known_moves = []
 
     def talk(self, player):
-        print(random.choice(self._TALK_LINES))
+        narrate(random.choice(self._TALK_LINES))
 
 
 class GronditeWorker(Friend):
@@ -403,7 +402,7 @@ class GronditeWorker(Friend):
             self.known_moves = []
 
     def talk(self, player):
-        print(random.choice(self._TALK_LINES))
+        narrate(random.choice(self._TALK_LINES))
 
 
 class GronditeElder(Friend):
@@ -463,7 +462,7 @@ class GronditeElder(Friend):
             self.known_moves = []
 
     def talk(self, player):
-        print(random.choice(self._TALK_LINES))
+        narrate(random.choice(self._TALK_LINES))
 
 
 class GronditeConclaveElder(Friend):
@@ -517,43 +516,43 @@ class GronditeConclaveElder(Friend):
         first_time = story.get(self._INTRO_RUN_KEY, "0") == "0"
 
         if first_time:
-            print(
+            narrate(
                 "\nThe Elder turns before Jean says anything. He had already turned — "
                 "waiting — before he reached the plinth."
             )
             time.sleep(1.5)
-            print(
+            narrate(
                 "He studies Jean. Then he reaches into the folds of his stone-mantle and "
                 "produces something: a small disc, cracked cleanly in half, one piece "
                 "missing. He holds it out toward Jean."
             )
             time.sleep(1.5)
-            print(
+            narrate(
                 "He makes a sound: low, deliberate, with a rising inflection at the end. "
                 "The sound of a question."
             )
             time.sleep(1)
-            print(
+            narrate(
                 "Jean doesn't know what he is asking. But the broken disc is clearly "
                 "meant to show him — and the Elder's eyes, fixed on Jean's face, are "
                 "reading something there. Jean's hands. His posture. The weight in him "
                 "that he hasn't put down."
             )
             time.sleep(1.5)
-            print(
+            narrate(
                 "Whatever he finds, it is not the answer he was hoping for. He doesn't "
                 "react to that — his expression doesn't change — but the disc lowers "
                 "slightly. He makes one short sound: not a dismissal. More like a comma."
             )
             time.sleep(1.5)
-            print(
+            narrate(
                 "He holds Jean's gaze a moment longer than comfort requires. Then, "
                 "carefully, he folds the broken disc back into his mantle. He turns "
                 "to face the plinth. His back is not a rejection; it is simply where "
                 "he was before Jean arrived."
             )
             time.sleep(1)
-            print(
+            narrate(
                 "Jean has the distinct sense that the question is still open. That the "
                 "Elder expects him to come back."
             )
@@ -593,7 +592,7 @@ class GronditeConclaveElder(Friend):
                     "piece is. The Elder still believes Jean is the one to find it."
                 ),
             ]
-            print(random.choice(lines))
+            narrate(random.choice(lines))
 
 
 class Mara(HumanNPCLLMMixin, Friend):
@@ -674,7 +673,7 @@ class Mara(HumanNPCLLMMixin, Friend):
             "the bend.'",
             "Mara's eyes narrow slightly as she studies Jean. Then she returns to her sorting.",
         ]
-        print(random.choice(lines))
+        narrate(random.choice(lines))
 
     def _get_optimal_range_to_target(self):
         """Determine what range Mara should maintain based on nearest enemy (not allies)."""
@@ -863,7 +862,7 @@ class Devet(HumanNPCLLMMixin, Friend):
             "Devet tends the fire. When he speaks, his voice is low. 'Rest here. "
             "Crossing\\'s better at dawn.'",
         ]
-        print(random.choice(lines))
+        narrate(random.choice(lines))
 
 
 class Liss(HumanNPCLLMMixin, Friend):
@@ -925,4 +924,4 @@ class Liss(HumanNPCLLMMixin, Friend):
             "Liss says, 'If Jean hit the Golemite — not that Jean should — would he feel it? "
             "Or is it like hitting a rock? Is he like a rock? He doesn\\'t seem like a rock.'",
         ]
-        print(random.choice(lines))
+        narrate(random.choice(lines))

@@ -21,6 +21,7 @@ from items import (  # type: ignore
 
 from ._base import NPC
 from ._shop import MerchantShopMixin
+from narration import narrate
 
 
 class Merchant(NPC, MerchantShopMixin):
@@ -103,14 +104,14 @@ class Merchant(NPC, MerchantShopMixin):
         self.initialize_shop()
 
     def talk(self, player):
-        print(self.name + " has nothing to say.")
+        narrate(self.name + " has nothing to say.")
 
     def trade(self, player):
         """
         This method is called when the player wants to trade with the merchant.
         It should handle the trading logic, such as buying and selling items.
         """
-        print(f"{self.name} is ready to trade with you.")
+        narrate(f"{self.name} is ready to trade with you.")
         # First, absorb any merchandise Jean carried over so it appears in the Buy menu.
         self._collect_player_merchandise(player)
         if self.shop:
@@ -164,12 +165,12 @@ class MiloCurioDealer(Merchant):
             )
 
     def talk(self, player):  # noqa
-        print(
+        narrate(
             "Milo grins: 'Looking for something rare, friend? I've got just the thing!'"
         )
 
     def trade(self, player):
-        print(
+        narrate(
             "Milo opens his patchwork coat, revealing a dazzling array of curiosities."
         )
         # Collect merchandise items first (in case Jean picked something up on Milo's floor)
@@ -280,7 +281,7 @@ class JamboHealsU(Merchant):
                 "Jambo asks anyway. This is good business practice.\""
             )
 
-        print(random.choice(lines))
+        narrate(random.choice(lines))
 
     def trade(self, player):
         # Collect any merchandise Jean brought in so it appears in the Buy list.

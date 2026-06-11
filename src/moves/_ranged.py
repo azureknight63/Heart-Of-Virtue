@@ -1,6 +1,6 @@
 """Ranged weapon moves: ShootBow, ShootCrossbow and crossbow skills; passives EagleEye, MarksmanEye."""
 
-from neotermcolor import colored, cprint  # noqa: F401
+from narration import colored, cprint, narrate  # noqa: F401
 import random  # noqa: F401
 import math  # noqa: F401
 import states  # noqa: F401
@@ -173,7 +173,7 @@ class ShootBow(
             if show_menu:
                 cprint("Select an arrow type...", "cyan")
                 for i, v in enumerate(arrowtypes):
-                    print(
+                    narrate(
                         colored(str(i) + ": " + v.name, "cyan") + "(" + v.helptext + ")"
                     )
                 arrow_selection = None
@@ -188,7 +188,7 @@ class ShootBow(
                     arrow_selection = None
         else:
             self.arrow = arrowtypes[0]
-        print(
+        narrate(
             "{} knocks a {} and takes aim!".format(player.name, self.arrow.name.lower())
         )
         self.base_range = player.eq_weapon.range_base * self.arrow.range_base_modifier
@@ -264,7 +264,7 @@ class ShootBow(
             range_min <= target_distance <= range_max
         ):  # check if target is still in range
             hit_chance = self.calculate_hit_chance(self.target)
-            print(self.stage_announce[1])
+            narrate(self.stage_announce[1])
             if self.arrow.count > 1:
                 self.arrow.count -= 1
             else:
@@ -410,7 +410,7 @@ class ShootCrossbow(Move):
     def execute(self, player):
         glance = False
         self.prep_colors()
-        print(self.stage_announce[1])
+        narrate(self.stage_announce[1])
 
         if (
             hasattr(self.user, "combat_position")
@@ -599,7 +599,7 @@ class AimedShot(Move):
     def execute(self, player):
         glance = False
         self.prep_colors()
-        print(self.stage_announce[1])
+        narrate(self.stage_announce[1])
 
         if (
             hasattr(self.user, "combat_position")
@@ -719,7 +719,7 @@ class PinningBolt(Move):
     def execute(self, player):
         glance = False
         self.prep_colors()
-        print(self.stage_announce[1])
+        narrate(self.stage_announce[1])
 
         if (
             hasattr(self.user, "combat_position")

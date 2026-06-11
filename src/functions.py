@@ -18,7 +18,7 @@ if TYPE_CHECKING:  # only for type hints; avoids runtime circular imports
     from player import Player
     from tiles import MapTile
 
-from neotermcolor import colored, cprint
+from narration import colored, cprint, narrate
 from os import listdir
 from os.path import isfile, join
 
@@ -28,13 +28,13 @@ This module contains general functions to use throughout the game
 
 
 def print_slow(text, speed="slow"):
-    speeds = {"slow": 1, "medium": 2, "fast": 4}
-    printspeed = speeds.get(speed, 1) if not isinstance(speed, int) else speed
-    rate = 0.1 / printspeed
-    wrap = textwrap.fill(text, 80)
-    for letter in wrap:
-        print(letter, end="", flush=True)
-        time.sleep(rate)
+    """Emit narrative text as a single message.
+
+    The terminal typewriter effect has been retired with terminal mode; the web
+    frontend is responsible for any progressive-reveal animation. ``speed`` is
+    accepted for signature compatibility and ignored.
+    """
+    narrate(text)
 
 
 def execute_arbitrary_method(method, player):
@@ -177,7 +177,7 @@ def enumerate_for_interactions(subjects, player, args_list, action_input):
         return True
 
     # Multiple candidates: show selection menu
-    print(
+    narrate(
         colored(
             f"Multiple targets match '{verb}' command:"
             + (f" '{target_fragment}'" if target_fragment else ""),
@@ -186,12 +186,12 @@ def enumerate_for_interactions(subjects, player, args_list, action_input):
     )
     for idx, (thing, _m) in enumerate(candidates, start=1):
         display_name = getattr(thing, "name", str(thing))
-        print(colored(f"{idx}: {display_name}", "yellow"))
-    print(colored("X: Cancel", "red"))
+        narrate(f"{idx}: {display_name}", color="yellow")
+    narrate("X: Cancel", color="red")
 
     selection = input(colored("Selection: ", "cyan")).strip().lower()
     if selection in ("0", "x", "X", "cancel"):
-        print(colored("Jean decides against it for now.", "yellow"))
+        narrate("Jean decides against it for now.", color="yellow")
         return False
     if selection.isdigit():
         choice = int(selection)
@@ -200,19 +200,17 @@ def enumerate_for_interactions(subjects, player, args_list, action_input):
             execute_arbitrary_method(getattr(thing, method_name), player)
             return True
 
-    print(colored("Invalid selection. Nothing happens.", "red"))
+    narrate("Invalid selection. Nothing happens.", color="red")
     return False
 
 
 def screen_clear():
-    try:
-        # Prefer native terminal clear; fallback to printing newlines
-        if os.name == "nt":
-            os.system("cls")
-        else:
-            os.system("clear")
-    except Exception:
-        print("\n" * 100)
+    """No-op retained for compatibility.
+
+    Clearing the terminal is meaningless in the web client, which manages its own
+    display surface. Kept so existing callers don't need to change.
+    """
+    return None
 
 
 def _print_visible_lines(seq, attr_getter):
@@ -226,8 +224,8 @@ def _print_visible_lines(seq, attr_getter):
             except Exception:
                 lines.append(str(obj))
     if lines:
-        print("\n".join(lines))
-        print()
+        narrate("\n".join(lines))
+        narrate()
 
 
 def print_npcs_in_room(room):
@@ -710,7 +708,7 @@ def load_select():
     base_path = os.path.dirname(os.path.abspath(__file__))
 
     while True:
-        print("Select the file you wish to load.")
+        narrate("Select the file you wish to load.")
         for i, file in enumerate(saves):
             file_path = os.path.join(base_path, file)
             try:
@@ -731,12 +729,12 @@ def load_select():
                 descriptor = f"play time: {playtime}" if playtime else "play time: 0"
             except Exception:
                 descriptor = colored("UNREADABLE (legacy/incompatible)", "red")
-            print(f"{i}: {file} (last modified {timestamp}) ({descriptor})")
+            narrate(f"{i}: {file} (last modified {timestamp}) ({descriptor})")
 
-        print("x: Cancel")
+        narrate("x: Cancel")
         choice = input("Selection: ").strip()
         if choice.lower() == "x":
-            print("Load operation cancelled.")
+            narrate("Load operation cancelled.")
             return None
 
         if is_input_integer(choice):
@@ -960,7 +958,7 @@ def load(filename):
 def save_select(player):
     save_complete = False
     while not save_complete:
-        print(
+        narrate(
             "Save as a new file or overwrite existing?\nn: New file\no: Overwrite existing\nx: Cancel"
         )
         choice = input("Selection: ")
@@ -978,17 +976,17 @@ def save_select(player):
         elif choice == "o":
             overwrite_complete = False
             while not overwrite_complete:
-                print("Select a file to overwrite.\n")
+                narrate("Select a file to overwrite.\n")
                 for i, filename in enumerate(saves_list()):
                     if "autosave" not in filename:
                         timestamp = str(
                             datetime.datetime.fromtimestamp(os.path.getmtime(filename))
                         )
                         timestamp = timestamp[:-7]
-                        print(
+                        narrate(
                             "{}: {} (last modified {})".format(i, filename, timestamp)
                         )
-                print("x: Cancel")
+                narrate("x: Cancel")
                 choice = input("Selection: ")
                 if is_input_integer(choice):
                     for i, filename in enumerate(saves_list()):
@@ -1116,7 +1114,12 @@ def seek_class(classname, package="all", allow_other_modules=True):
 
 
 def await_input():
-    input(colored("\n(Press Enter)", "yellow"))
+    """No-op retained for compatibility.
+
+    There is no blocking "press Enter" pause in the web client; pacing between
+    narrative beats is handled by the frontend.
+    """
+    return None
 
 
 def inflict(state, target, chance=1.0, force=False):
@@ -1275,13 +1278,13 @@ def add_preference(player, preftype, setting):
     if preftype == "arrow":
         if player.preferences[preftype] != setting:
             player.preferences[preftype] = setting
-            print("Jean made " + colored(setting, "magenta") + " his preference.")
+            narrate("Jean made " + colored(setting, color="magenta") + " his preference.")
         else:
             player.preferences[preftype] = "None"
-            print("Jean stopped preferring a specific {}.".format(preftype))
+            narrate("Jean stopped preferring a specific {}.".format(preftype))
     else:
         player.preferences[preftype] = setting
-        print("Jean made " + colored(setting, "purple") + " his preference.")
+        narrate("Jean made " + colored(setting, "purple") + " his preference.")
 
 
 def escape_ansi(line):
@@ -1438,7 +1441,7 @@ def stack_inv_items(target):
 def advise_player_actions(player: "Player", room: "MapTile" = None):
     if room is None:
         room = player.current_room
-    print("\nChoose an action:\n")
+    narrate("\nChoose an action:\n")
     available_actions = room.adjacent_moves()
     move_separator = colored(" | ", "cyan")
     available_moves = move_separator.join(
@@ -1449,8 +1452,8 @@ def advise_player_actions(player: "Player", room: "MapTile" = None):
     chunk_size = 5
     for i in range(0, len(actions_split), chunk_size):
         chunk = "|".join(actions_split[i:i + chunk_size])
-        print(chunk)
-    print("\nFor a list of additional commands, enter 'c'.\n")
+        narrate(chunk)
+    narrate("\nFor a list of additional commands, enter 'c'.\n")
 
 
 def learn_all_skills_from_skilltree(player: "Player"):

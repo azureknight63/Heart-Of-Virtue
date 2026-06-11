@@ -4,7 +4,7 @@ Chapter 03 events
 
 from src.events import Event, dialogue
 from src.functions import print_slow, await_input
-from neotermcolor import colored
+from narration import colored, narrate
 import time
 
 
@@ -32,7 +32,7 @@ class GorranGestureEvent(Event):
 
     def process(self):
         if not self.player.skip_dialog:
-            print("\n")
+            narrate("\n")
             time.sleep(0.3)
             print_slow(
                 "Gorran paused at the gate as it sealed. His palm rested flat against the stone — "
@@ -70,7 +70,7 @@ class EasternRoadTurnbackEvent(Event):
 
     def process(self):
         if not self.player.skip_dialog:
-            print("\n")
+            narrate("\n")
             time.sleep(0.3)
             print_slow("Jean stood at the edge of the road east.\n")
             time.sleep(1)
@@ -120,7 +120,7 @@ class NomadCampSmellEvent(Event):
 
     def process(self):
         if not self.player.skip_dialog:
-            print("\n")
+            narrate("\n")
             time.sleep(0.3)
             print_slow(
                 "Jean smelled the camp before he saw it — woodsmoke, dried meat, the particular "
@@ -162,7 +162,7 @@ class MaraFirstContactEvent(Event):
 
     def process(self):
         if not self.player.skip_dialog:
-            print("\n")
+            narrate("\n")
             time.sleep(0.3)
             print_slow(
                 "A woman at the camp's western edge had clocked them while they were still fifty "
@@ -210,7 +210,7 @@ class DevetIntroEvent(Event):
 
     def process(self):
         if not self.player.skip_dialog:
-            print("\n")
+            narrate("\n")
             time.sleep(0.3)
             print_slow(
                 "An older man was tending the fire — unhurried, each movement economical in the "
@@ -259,7 +259,7 @@ class LissObservingEvent(Event):
 
     def process(self):
         if not self.player.skip_dialog:
-            print("\n")
+            narrate("\n")
             time.sleep(0.3)
             print_slow(
                 "A girl was at the camp's far corner — young, dark-haired. Not approaching "
@@ -324,7 +324,7 @@ class MaraObservationEvent(Event):
 
     def process(self):
         if not self.player.skip_dialog:
-            print("\n")
+            narrate("\n")
             time.sleep(0.3)
             has_mace = any(
                 item.__class__.__name__ == "Mace" for item in self.player.inventory

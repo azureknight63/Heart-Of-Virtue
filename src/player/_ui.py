@@ -3,7 +3,7 @@
 import math
 
 import functions  # type: ignore
-from neotermcolor import colored, cprint
+from narration import colored, cprint, narrate
 
 
 def generate_output_grid(
@@ -277,7 +277,7 @@ class PlayerUIMixin:
             ),
             "Level: {} // Exp to next: {}".format(self.level, self.exp_to_level),
         ]
-        print(
+        narrate(
             generate_output_grid(
                 output_grid_data,
                 border="+++",
@@ -334,7 +334,7 @@ class PlayerUIMixin:
                     attrs=["bold", "dark"],
                 )
             )
-        print(
+        narrate(
             generate_output_grid(
                 output_grid_data,
                 cols=2,
@@ -396,9 +396,9 @@ class PlayerUIMixin:
                     )
                 )
         if len(output_grid_data) == 0:
-            print("None")
+            narrate("None")
         else:
-            print(
+            narrate(
                 generate_output_grid(
                     output_grid_data,
                     border="-",
@@ -448,9 +448,9 @@ class PlayerUIMixin:
                     )
                 )
         if len(output_grid_data) == 0:
-            print("None")
+            narrate("None")
         else:
-            print(
+            narrate(
                 generate_output_grid(
                     output_grid_data,
                     border="~",
@@ -515,4 +515,4 @@ class PlayerUIMixin:
         else:
             fat_string = ""
 
-        print(hp_string + fat_string)
+        narrate(hp_string + fat_string)

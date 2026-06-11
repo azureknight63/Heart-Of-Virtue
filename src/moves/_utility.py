@@ -1,6 +1,6 @@
 """Universal utility moves: Check, Wait, Rest, UseItem, Attack, StrategicInsight, MasterTactician."""
 
-from neotermcolor import colored, cprint  # noqa: F401
+from narration import colored, cprint, narrate  # noqa: F401
 import random  # noqa: F401
 import math  # noqa: F401
 import states  # noqa: F401
@@ -506,7 +506,7 @@ class Attack(Move):  # basic attack function, always uses equipped weapon, playe
     def execute(self, player):
         glance = False  # switch for determining a glancing blow
         self.prep_colors()
-        print(self.stage_announce[1])
+        narrate(self.stage_announce[1])
 
         # Face the target when attacking
         if (
@@ -592,7 +592,7 @@ class Rest(Move):  # standard rest to restore fatigue.
         return viability
 
     def execute(self, player):
-        print(self.stage_announce[1])
+        narrate(self.stage_announce[1])
         recovery_amt = int(
             math.ceil((player.maxfatigue * 0.4) * random.uniform(0.8, 1.2))
         )
@@ -649,7 +649,7 @@ class UseItem(Move):
             while True:
                 cprint("Use item on whom?", "cyan")
                 for i, t in enumerate(possible_targets):
-                    print(
+                    narrate(
                         colored(str(i), "magenta") + ": " + colored(t.name, "magenta")
                     )
                 cprint("x: Cancel", "magenta")
@@ -724,7 +724,7 @@ class CrusaderOath(Move):
         return True
 
     def execute(self, player):
-        print(self.stage_announce[1])
+        narrate(self.stage_announce[1])
         fervent = states.Fervent(player)
         functions.inflict(fervent, player, force=True)
         player.fatigue = max(0, player.fatigue - self.fatigue_cost)

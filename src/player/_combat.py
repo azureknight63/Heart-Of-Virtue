@@ -5,7 +5,7 @@ import time
 
 import combat  # type: ignore
 import functions  # type: ignore
-from neotermcolor import colored, cprint
+from narration import colored, cprint, narrate
 
 
 class PlayerCombatMixin:
@@ -17,12 +17,12 @@ class PlayerCombatMixin:
             chance = random.randint(0, 1000)
             if chance > 995:
                 message = random.randint(0, len(self.combat_idle_msg) - 1)
-                print(self.combat_idle_msg[message])
+                narrate(self.combat_idle_msg[message])
         else:
             chance = random.randint(0, 1000)  # combat hurt (injured)
             if chance > 950:
                 message = random.randint(0, len(self.combat_hurt_msg) - 1)
-                print(self.combat_hurt_msg[message])
+                narrate(self.combat_hurt_msg[message])
 
     def change_heat(self, mult=1, add=0):
         """Adjust combat heat multiplier, clamped to [0.5, 10] with 2 decimal precision."""
@@ -51,7 +51,7 @@ class PlayerCombatMixin:
         """Play the player death sequence: hurt messages, ASCII art, then await input."""
         for i in range(random.randint(2, 5)):
             message = random.randint(0, len(self.combat_hurt_msg) - 1)
-            print(self.combat_hurt_msg[message])
+            narrate(self.combat_hurt_msg[message])
             time.sleep(0.5)
 
         cprint("Jean groans weakly, then goes completely limp.", "red")
@@ -104,7 +104,7 @@ he lets out a barely audible whisper:""",
             "red",
         )
         time.sleep(0.5)
-        print("\n\n")
+        narrate("\n\n")
         cprint("Jean has died!", "red")
         time.sleep(5)
         functions.await_input()
@@ -142,7 +142,7 @@ he lets out a barely audible whisper:""",
         target = None
 
         def strike():
-            print(
+            narrate(
                 colored(
                     "Jean strikes with his " + self.eq_weapon.name + "!",
                     "green",
@@ -168,7 +168,7 @@ he lets out a barely audible whisper:""",
             self.combat_exp["Basic"] += 10
             if hit_chance >= roll:  # a hit!
                 if glance:
-                    print(
+                    narrate(
                         colored(self.name, "cyan")
                         + colored(" just barely hit ", "yellow")
                         + colored(target.name, "magenta")
@@ -177,7 +177,7 @@ he lets out a barely audible whisper:""",
                         + colored(" damage!", "yellow")
                     )
                 else:
-                    print(
+                    narrate(
                         colored(self.name, "cyan")
                         + colored(" struck ", "yellow")
                         + colored(target.name, "magenta")
@@ -187,7 +187,7 @@ he lets out a barely audible whisper:""",
                     )
                 target.hp -= damage
             else:
-                print(colored("Jean", "cyan") + "'s attack just missed!")
+                narrate(colored("Jean", color="cyan") + "'s attack just missed!")
 
         if phrase == "":
             targets_here = {}
@@ -195,18 +195,18 @@ he lets out a barely audible whisper:""",
                 if not possible_target.hidden and possible_target.name != "null":
                     targets_here[str(i)] = possible_target
             if len(targets_here) > 0:
-                print("Which target would you like to attack?\n\n")
+                narrate("Which target would you like to attack?\n\n")
                 for k, v in targets_here.items():
-                    print(k, ": ", v.name)
+                    narrate(k, ": ", v.name)
                 choice = input("Selection: ")
                 if choice in targets_here:
                     target = targets_here[choice]
                     strike()
                 else:
-                    print("Invalid selection.")
+                    narrate("Invalid selection.")
                     return
             else:
-                print("There's nothing here for Jean to attack.\n")
+                narrate("There's nothing here for Jean to attack.\n")
                 return
         else:
             lower_phrase = phrase.lower()
@@ -232,13 +232,13 @@ he lets out a barely audible whisper:""",
                         success = True
                         break
             if not success:
-                print("That's not a valid target for Jean to attack.\n")
+                narrate("That's not a valid target for Jean to attack.\n")
                 return
 
         # The following is not accessible if the strike was never attempted (no valid target, invalid selection, etc.)
         # Engage the target in combat!
         if target.is_alive():
-            print(target.name + " " + target.alert_message)
+            narrate(target.name + " " + target.alert_message)
 
         target.in_combat = True
         self.combat_list = [target]
@@ -252,5 +252,5 @@ he lets out a barely audible whisper:""",
         self.combat_list = self.combat_list + check_other_aggro_enemies
 
         if target.is_alive() or check_other_aggro_enemies:
-            print(colored("Jean readies himself for battle!", "red"))
+            narrate("Jean readies himself for battle!", color="red")
         combat.combat(self)

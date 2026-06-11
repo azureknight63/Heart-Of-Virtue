@@ -3,7 +3,7 @@ Combat states to be used within combat module. May also spill over to the standa
  States are objects applied to a player/npc that hang around until they expire or are removed.
 """
 
-from neotermcolor import colored
+from narration import colored
 from functions import print_slow, await_input
 from typing import Optional
 
@@ -183,7 +183,7 @@ class LootEvent(Event):
             self.needs_input = False
             return {"success": True, "message": "Interaction ended."}
 
-        from neotermcolor import cprint
+        from narration import cprint
 
         try:
             from inventory_utils import transfer_item

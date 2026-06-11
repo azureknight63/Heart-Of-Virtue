@@ -2,7 +2,7 @@ from __future__ import annotations
 import random
 import time
 import states
-from neotermcolor import colored, cprint
+from narration import colored, cprint, narrate
 
 import functions as functions
 from player import Player
@@ -167,7 +167,7 @@ class WallSwitch(Object):
                         self.event_off = event
 
     def press(self):
-        print("Jean hears a faint 'click.'")
+        narrate("Jean hears a faint 'click.'")
         time.sleep(0.5)
         if not self.position:
             self.position = True
@@ -223,7 +223,7 @@ class WallInscription(Object):
             functions.print_slow(self.text, speed="fast")
             functions.await_input()
         else:
-            print(self.description)
+            narrate(self.description)
 
     def examine(self):
         # Alias of read
@@ -378,7 +378,7 @@ class Container(Object):
     def unlock(self):
         """Optimized unlock method with early return and f-string formatting. Supports both direct object reference and nickname-based key matching."""
         if self.state != "closed":
-            print("Jean can't unlock something that's already open!")
+            narrate("Jean can't unlock something that's already open!")
             return
 
         # Search for a matching key (either by direct object reference or by nickname)
@@ -415,15 +415,15 @@ class Container(Object):
     def open(self):
         """Optimized open method with f-string formatting"""
         if self.locked:
-            print(
+            narrate(
                 f"Jean pulls on the lid of the {self.nickname} to no avail. It's locked."
             )
             return
 
         if self.state == "closed":
-            print(f"The {self.nickname} creaks eerily.")
+            narrate(f"The {self.nickname} creaks eerily.")
             time.sleep(0.5)
-            print("The lid lifts back on the hinge, revealing the contents inside.")
+            narrate("The lid lifts back on the hinge, revealing the contents inside.")
             self.revealed = True
             self.state = "opened"
             if "open" in self.keywords:
@@ -431,7 +431,7 @@ class Container(Object):
             self.refresh_description()
             self.process_events()
         else:
-            print(
+            narrate(
                 f"The {self.nickname} is already open. You should VIEW or LOOT it to see what's inside."
             )
 
@@ -451,7 +451,7 @@ class Container(Object):
             from src.inventory_utils import transfer_item
 
         if not self.inventory:
-            print(f"The {self.nickname} is already empty.")
+            narrate(f"The {self.nickname} is already empty.")
             return
 
         # Snapshot inventory since transfer_item modifies it
@@ -464,7 +464,7 @@ class Container(Object):
             taken_labels.append(label)
 
         if taken_labels:
-            print(f"Jean takes {', '.join(taken_labels)}.")
+            narrate(f"Jean takes {', '.join(taken_labels)}.")
         self.refresh_description()
         self.process_events()
 
@@ -698,13 +698,13 @@ class Shrine(Object):
                     )
 
     def pray(self, player):
-        print("Jean kneels down and begins to pray for intercession.")
+        narrate("Jean kneels down and begins to pray for intercession.")
         time.sleep(random.randint(3, 10))
 
         # Robustly handle missing prayer_msg
         prayer_messages = getattr(player, "prayer_msg", ["Jean prays silently."])
         selection = random.randint(0, len(prayer_messages) - 1)
-        print(prayer_messages[selection])
+        narrate(prayer_messages[selection])
         if getattr(self, "event", None) is not None:
             time.sleep(random.randint(3, 10))
             self.event.process()
@@ -757,11 +757,11 @@ class HealingSpring(Object):
                     )
 
     def drink(self, player):
-        print(
+        narrate(
             "Jean bends down to the water and, cupping it in his hands, begins to sip eagerly."
         )
         time.sleep(2)
-        print("The water is cool and refreshing as it goes down his throat.")
+        narrate("The water is cool and refreshing as it goes down his throat.")
         time.sleep(1)
         cprint("HP restored!", "green")
         player.hp = player.maxhp
@@ -773,9 +773,9 @@ class HealingSpring(Object):
 
     @staticmethod
     def clean(player):
-        print("Jean summarily begins washing himself in the cool water of the spring.")
+        narrate("Jean summarily begins washing himself in the cool water of the spring.")
         time.sleep(2)
-        print(
+        narrate(
             "Jean closes his eyes for a moment, enjoying the feeling of simple cleanliness."
         )
         time.sleep(1)
@@ -855,7 +855,7 @@ class Passageway(Object):
                 _ref = f"the {_n[4:]}"
             else:
                 _ref = f"the {_n.lower()}"
-            print(f"Jean steps through {_ref}...")
+            narrate(f"Jean steps through {_ref}...")
             time.sleep(0.5)
             player.teleport(self.teleport_map, self.teleport_tile)
             if self.events_after:
@@ -864,7 +864,7 @@ class Passageway(Object):
             if not self.persist:
                 self.tile.objects.remove(self)
         else:
-            print(
+            narrate(
                 "The passageway is not properly configured. Please contact the developer."
             )
         functions.await_input()
@@ -903,7 +903,7 @@ class MarketBell(Object):
         """Player rings the bell. If an event is attached, process it. Otherwise provide a simple cue."""
         cprint("Jean reaches up and rings the bell.", color="cyan")
         time.sleep(0.4)
-        print(
+        narrate(
             "A clear, bright tone rings through the arcade, briefly carrying above the market din."
         )
         if self.event is not None:
@@ -957,11 +957,11 @@ class Fountain(Object):
         functions.await_input()
 
     def listen(self):
-        print("Jean closes his eyes a moment, listening to the gentle splash of water.")
+        narrate("Jean closes his eyes a moment, listening to the gentle splash of water.")
         functions.await_input()
 
     def admire(self):
-        print("The craftsmanship of the fountain is simple but pleasant.")
+        narrate("The craftsmanship of the fountain is simple but pleasant.")
         functions.await_input()
 
     def use(self):  # alias
@@ -1007,9 +1007,9 @@ class StreetLantern(Object):
 
     def light(self):
         if self.lit:
-            print("The lantern is already lit.")
+            narrate("The lantern is already lit.")
             return
-        print("Jean strikes a spark and coaxes the lantern to life.")
+        narrate("Jean strikes a spark and coaxes the lantern to life.")
         self.lit = True
         self._update_description()
         if self.event_on:
@@ -1020,9 +1020,9 @@ class StreetLantern(Object):
 
     def douse(self):
         if not self.lit:
-            print("The lantern is already dark.")
+            narrate("The lantern is already dark.")
             return
-        print("Jean shields the flame and pinches it out.")
+        narrate("Jean shields the flame and pinches it out.")
         self.lit = False
         self._update_description()
         if self.event_off:
@@ -1035,7 +1035,7 @@ class StreetLantern(Object):
         self.douse()
 
     def inspect(self):
-        print(self.description)
+        narrate(self.description)
         functions.await_input()
 
 
@@ -1076,9 +1076,9 @@ class NoticeBoard(Object):
         self._read_once = False
 
     def read(self):
-        print("Jean scans the various notes:")
+        narrate("Jean scans the various notes:")
         for note in self.notes:
-            print(f"  - {note}")
+            narrate(f"  - {note}")
         if self.event and (not self._read_once or getattr(self.event, "repeat", False)):
             time.sleep(0.3)
             self.event.process()
@@ -1115,17 +1115,17 @@ class PrayerCandleRack(Object):
 
     def light(self):
         if self.lit_candles >= 20:
-            print("All the candles are already lit.")
+            narrate("All the candles are already lit.")
             functions.await_input()
             return
         self.lit_candles += 1
-        print(f"Jean lights a small candle. ({self.lit_candles} now flicker.)")
+        narrate(f"Jean lights a small candle. ({self.lit_candles} now flicker.)")
         functions.await_input()
 
     def pray(self):
-        print("Jean bows his head silently before the little flames.")
+        narrate("Jean bows his head silently before the little flames.")
         time.sleep(5)
-        print(
+        narrate(
             "A strange feeling fills his chest, as if there's a tune he can't quite remember."
         )
         time.sleep(0.5)
@@ -1161,9 +1161,9 @@ class MarketGong(Object):
             "cyan",
         )
         time.sleep(0.7)
-        print("The deep tone rolls outward and slowly fades.")
+        narrate("The deep tone rolls outward and slowly fades.")
         time.sleep(1)
-        print(
+        narrate(
             "Some nearby shoppers glance over, momentarily distracted. More than a few wear a confused expression."
         )
         if self.event:
@@ -1234,23 +1234,23 @@ class GeminateGeode(Object):
             name for cls, name in self._INGREDIENT_DEFS if not self._has_ingredient(cls)
         ]
         if missing:
-            print(f"The depressions wait. Jean is missing: {', '.join(missing)}.")
-            print("The ritual carving in the Atrium showed the sequence clearly.")
+            narrate(f"The depressions wait. Jean is missing: {', '.join(missing)}.")
+            narrate("The ritual carving in the Atrium showed the sequence clearly.")
             return
         # All three fragments present — solve the puzzle
-        print(
+        narrate(
             "\nJean places the blue crystal in the first depression. The vein above it pulses."
         )
         time.sleep(1)
-        print(
+        narrate(
             "The amber stone settles into the second. A harmonic hum begins, low and resonant."
         )
         time.sleep(1)
-        print("The pale grey fragment locks into the third.")
+        narrate("The pale grey fragment locks into the third.")
         time.sleep(0.5)
-        print("\nA sound like a struck bell fills the chamber — the geode cracks open.")
+        narrate("\nA sound like a struck bell fills the chamber — the geode cracks open.")
         time.sleep(1)
-        print(
+        narrate(
             "Inside: a stone pauldron, inlaid with the same tricolor veins as the walls. "
             "Still luminous."
         )
@@ -1273,4 +1273,4 @@ class GeminateGeode(Object):
         self.place(player)
 
     def examine(self):
-        print(self.description)
+        narrate(self.description)

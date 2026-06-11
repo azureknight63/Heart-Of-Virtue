@@ -1,6 +1,6 @@
 """Mastery moves — one per stat. Unlock when the stat exceeds 30 and is the player's highest."""
 
-from neotermcolor import colored, cprint
+from narration import colored, cprint, narrate
 import random
 import states
 import functions
@@ -53,7 +53,7 @@ class Pulverize(Move):
 
     def execute(self, player):
         self.prep_colors()
-        print(self.stage_announce[1])
+        narrate(self.stage_announce[1])
         target = self.target
         hit_chance = max(5, int(98 - target.finesse + player.finesse * 0.7 + player.intelligence * 0.3))
         roll = random.randint(0, 100)
@@ -115,7 +115,7 @@ class KillingPrecision(Move):
 
     def execute(self, player):
         self.prep_colors()
-        print(self.stage_announce[1])
+        narrate(self.stage_announce[1])
         target = self.target
         power = int(player.eq_weapon.damage * 1.5 + player.finesse * 2.5)
         # Only 20% of protection applies
@@ -175,7 +175,7 @@ class LightningAssault(Move):
 
     def execute(self, player):
         self.prep_colors()
-        print(self.stage_announce[1])
+        narrate(self.stage_announce[1])
         target = self.target
         hit_chance = max(5, int(98 - target.finesse + player.finesse * 0.7 + player.intelligence * 0.3))
         _ensure_weapon_exp(player)
@@ -244,7 +244,7 @@ class Ironhide(Move):
         return _is_highest(self.user, self.user.endurance)
 
     def execute(self, player):
-        print(self.stage_announce[1])
+        narrate(self.stage_announce[1])
         heal = int(player.maxhp * 0.30)
         player.hp = min(player.hp + heal, player.maxhp)
         cprint(f"{player.name} recovers {heal} HP!", "green")
@@ -303,7 +303,7 @@ class WarCry(Move):
         return _is_highest(self.user, self.user.charisma)
 
     def execute(self, player):
-        print(self.stage_announce[1])
+        narrate(self.stage_announce[1])
         affected = 0
         for enemy in list(getattr(player, "combat_list", [])):
             if not enemy.is_alive():
@@ -358,7 +358,7 @@ class SecretPlans(Move):
         return _is_highest(self.user, self.user.intelligence)
 
     def execute(self, player):
-        print(self.stage_announce[1])
+        narrate(self.stage_announce[1])
         targets = [player] + list(getattr(player, "combat_list_allies", []))
         for entity in targets:
             if not entity.is_alive():
@@ -423,7 +423,7 @@ class BloodOfMartyrs(Move):
         self._absorb_state = result if result else absorb_state
 
     def execute(self, player):
-        print(self.stage_announce[1])
+        narrate(self.stage_announce[1])
         # Collect absorbed damage from the state
         absorbed = 0
         for state in list(player.states):

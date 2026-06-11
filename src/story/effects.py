@@ -4,7 +4,7 @@ Effects are small, one-time-only events typically fired during combat or in resp
 
 from typing import List, Optional
 
-from neotermcolor import colored, cprint
+from narration import colored, cprint, narrate
 import random
 import time
 
@@ -21,13 +21,13 @@ def memory_border(style="top"):
     if style == "top":
         # Play the memory flash animation
         animations.animate_to_main_screen("memory_flash")
-        print()  # Blank line after animation
+        narrate()  # Blank line after animation
         cprint(border, "magenta")
         cprint("✧ A MEMORY STIRS ✧".center(79), "magenta", attrs=["bold"])
         cprint(border, "magenta")
-        print()  # Blank line for readability
+        narrate()  # Blank line for readability
     elif style == "bottom":
-        print()  # Blank line before bottom border
+        narrate()  # Blank line before bottom border
         cprint(border, "magenta")
         cprint("✧ THE MEMORY FADES ✧".center(79), "magenta", attrs=["bold"])
         cprint(border, "magenta")
@@ -81,10 +81,10 @@ class MemoryFlash(Event):
             # First pass: display the memory and aftermath, then pause for input
             # Pause before the memory begins
             time.sleep(1)
-            print()
+            narrate()
             cprint("For a moment, there is only silence...", "white")
             time.sleep(0.5)  # Reduced for API responsiveness
-            print()
+            narrate()
 
             # Top border with animation
             memory_border("top")
@@ -96,7 +96,7 @@ class MemoryFlash(Event):
 
             # Bottom border
             memory_border("bottom")
-            print()
+            narrate()
 
             # Aftermath - Jean's reaction to the memory
             if self.aftermath_text:
@@ -119,9 +119,9 @@ class MemoryFlash(Event):
             return
 
         # Second pass: user has clicked continue
-        print()
+        narrate()
         cprint("═" * 79, "cyan")
-        print()
+        narrate()
         self.needs_input = False
         self.completed = True
 
@@ -201,7 +201,7 @@ class GoldFromHeaven(
             self.pass_conditions_to_process()
 
     def process(self):
-        print("Oddly enough, a pouch of gold materializes in front of you.")
+        narrate("Oddly enough, a pouch of gold materializes in front of you.")
         self.tile.spawn_item("Gold", amt=77)
 
 
@@ -402,16 +402,16 @@ class StMichael(Shrine):
     def process(self, user_input=None):
         if user_input is None:
             # Terminal path: print prose + choices and collect input directly
-            print("This, particularly, is a shrine to Saint Michael the Archangel.")
-            print("There is a small statue depicting St Michael spearing a vicious dragon.")
-            print("""An inscription on the shrine reads,
+            narrate("This, particularly, is a shrine to Saint Michael the Archangel.")
+            narrate("There is a small statue depicting St Michael spearing a vicious dragon.")
+            narrate("""An inscription on the shrine reads,
 
         Sáncte Míchael Archángele, defénde nos in proélio, cóntra nequítiam et insídias diáboli ésto præsídium.
         Ímperet ílli Déus, súpplices deprecámur: tuque, prínceps milítiæ cæléstis, Sátanam aliósque spíritus malígnos,
         qui ad perditiónem animárum pervagántur in múndo, divína virtúte, in inférnum detrúde. Ámen.
 
         """)
-            print(
+            narrate(
                 "Suddenly, Jean has the feeling of intense heat all around him. "
                 "He hears a voice echoing inside his head."
             )
@@ -421,7 +421,7 @@ class StMichael(Shrine):
                 "red",
             )
             for i, choice in enumerate(self.available_choices):
-                print("{}: {}".format(i, choice[0]))
+                narrate("{}: {}".format(i, choice[0]))
             self.needs_input = True
             return
 
@@ -617,7 +617,7 @@ class PulsingGlandEvent(NPCSpawnerEvent):
     def process(self):
         if self.has_run and not self.repeat:
             return
-        print(
+        narrate(
             "A gland on the wall convulses and ruptures — "
             "a slime drops wetly from the burst sac."
         )

@@ -6,6 +6,7 @@ import inspect
 import random
 import items
 import functions
+from narration import narrate
 
 
 class Loot:
@@ -39,7 +40,7 @@ class Loot:
         try:
             ench_pool = int(enchantment)
         except Exception:
-            print(
+            narrate(
                 "###ERR: Enchantment couldn't be turned into an int! {}".format(
                     enchantment
                 )

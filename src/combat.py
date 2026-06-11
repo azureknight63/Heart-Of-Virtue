@@ -1,4 +1,4 @@
-from neotermcolor import colored, cprint
+from narration import colored, cprint, narrate
 import time
 import random
 
@@ -82,9 +82,9 @@ def combat(player, event_config: Optional[CombatEventConfig] = None):
                         for _ in range(count):
                             player.combat_list.append(enemy_class())
                     else:
-                        print(f"Error: Unknown enemy type '{enemy_name}'")
+                        narrate(f"Error: Unknown enemy type '{enemy_name}'")
             except ImportError:
-                print("Error: Could not import npc module for enemy generation")
+                narrate("Error: Could not import npc module for enemy generation")
 
         # Override allies if specified (not fully implemented in player structure yet, but placeholder)
         if event_config.ally_list:
@@ -328,12 +328,12 @@ def combat(player, event_config: Optional[CombatEventConfig] = None):
                 continue
 
             # True victory - no enemies remain and no events triggered
-            print("Victory!")
+            narrate("Victory!")
             player.fatigue = player.maxfatigue
             gained_exp = ""
             for subtype, value in player.combat_exp.items():
                 gained_exp += "{0:<10}:{1:>6}\n".format(subtype, int(value))
-            print("Jean gained exp in the following: \n\n{}".format(gained_exp))
+            narrate("Jean gained exp in the following: \n\n{}".format(gained_exp))
             for subtype, value in player.combat_exp.items():
                 player.gain_exp(int(value), exp_type=subtype)
                 player.combat_exp[subtype] = 0
@@ -365,11 +365,11 @@ def combat(player, event_config: Optional[CombatEventConfig] = None):
                 + colored(str(heat_display), "red")
                 + colored("%", "red")
             )
-            print("\n" + beat_str + "                  " + heat_str)
+            narrate("\n" + beat_str + "                  " + heat_str)
             if beat == 0:
                 player.fatigue = player.maxfatigue
             player.show_bars()
-            print("\nWhat will you do?\n")
+            narrate("\nWhat will you do?\n")
             available_moves = "\n"
             viable_moves = player.refresh_moves()
             for i, move in enumerate(viable_moves):
@@ -410,7 +410,7 @@ def combat(player, event_config: Optional[CombatEventConfig] = None):
                         )
                     move_str = colored(move_str, "red")
                 available_moves += move_str
-            print(available_moves)
+            narrate(available_moves)
             selected_move = input("Selection: ")
             while not is_input_integer(selected_move):  # only allow integers here
                 cprint("Invalid selection.", "red", attrs=["bold"])
@@ -456,11 +456,11 @@ def combat(player, event_config: Optional[CombatEventConfig] = None):
                                     )  # sort acceptable_targets
                                     # by distance
                                     while target is None:
-                                        print("Select a target: \n")
+                                        narrate("Select a target: \n")
                                         for index, enemy in enumerate(
                                             acceptable_targets
                                         ):
-                                            print(
+                                            narrate(
                                                 colored(str(index), "magenta")
                                                 + ": "
                                                 + colored(
@@ -497,9 +497,9 @@ def combat(player, event_config: Optional[CombatEventConfig] = None):
                                     key=lambda tup: tup[1]
                                 )  # sort acceptable_targets by distance
                                 while target is None:
-                                    print("Select a target: \n")
+                                    narrate("Select a target: \n")
                                     for index, enemy in enumerate(acceptable_targets):
-                                        print(
+                                        narrate(
                                             colored(str(index), "magenta")
                                             + ": "
                                             + colored(
@@ -543,7 +543,7 @@ def combat(player, event_config: Optional[CombatEventConfig] = None):
                         if player.current_move:
                             player.current_move.cast()
                             # Display the player's action to the UI
-                            print(
+                            narrate(
                                 colored(
                                     "Jean uses " + player.current_move.name + "!",
                                     "cyan",
@@ -582,14 +582,14 @@ def combat(player, event_config: Optional[CombatEventConfig] = None):
                     # recall_friends() still brings them along between battles.
                     ally.hp = 1
                     ally.knocked_out = True
-                    print(
+                    narrate(
                         colored(ally.name, "yellow", attrs="bold")
                         + " has been knocked out!"
                     )
                 else:
                     ally.die()
                     if not ally.is_alive():
-                        print(
+                        narrate(
                             colored(ally.name, "yellow", attrs="bold")
                             + " has fallen in battle!"
                         )

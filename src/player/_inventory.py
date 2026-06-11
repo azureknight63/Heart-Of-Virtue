@@ -8,7 +8,7 @@ import functions  # type: ignore
 from functions import stack_inv_items
 from switch import switch
 from universe import tile_exists as tile_exists
-from neotermcolor import colored, cprint
+from narration import colored, cprint, narrate
 
 
 class PlayerInventoryMixin:
@@ -68,7 +68,7 @@ class PlayerInventoryMixin:
                 msg = random.choice(phrases).format(
                     item=getattr(item, "name", str(item))
                 )
-                print(msg)
+                narrate(msg)
                 time.sleep(0.15)
                 dropped = True
         if dropped:
@@ -164,7 +164,7 @@ class PlayerInventoryMixin:
                     # add to inventory
                     self.inventory.append(target_item)
                 if target_item.isequipped:
-                    print("{} is already equipped.".format(target_item.name))
+                    narrate("{} is already equipped.".format(target_item.name))
                     answer = input(
                         colored("Would you like to remove it? (y/n) ", "cyan")
                     )
@@ -319,7 +319,7 @@ class PlayerInventoryMixin:
             # Display choices
             for i, item in enumerate(choices):
                 if getattr(item, "isequipped", False):
-                    print(
+                    narrate(
                         i,
                         ": ",
                         item.name,
@@ -327,7 +327,7 @@ class PlayerInventoryMixin:
                         "\n",
                     )
                 else:
-                    print(i, ": ", item.name, "\n")
+                    narrate(i, ": ", item.name, "\n")
 
             inventory_selection = input(colored("Equip which? ", "cyan"))
             if not functions.is_input_integer(inventory_selection):
@@ -388,7 +388,7 @@ class PlayerInventoryMixin:
                                 item_preference_value = colored("(P)", "magenta")
                         if hasattr(item, "isequipped"):
                             if item.isequipped:
-                                print(
+                                narrate(
                                     i,
                                     ": ",
                                     item.name,
@@ -398,7 +398,7 @@ class PlayerInventoryMixin:
                                     "\n",
                                 )
                             else:
-                                print(
+                                narrate(
                                     i,
                                     ": ",
                                     item.name,
@@ -408,7 +408,7 @@ class PlayerInventoryMixin:
                                 )
                         else:
                             if hasattr(item, "count"):
-                                print(
+                                narrate(
                                     i,
                                     ": ",
                                     item.name,
@@ -420,7 +420,7 @@ class PlayerInventoryMixin:
                                     "\n",
                                 )
                             else:
-                                print(
+                                narrate(
                                     i,
                                     ": ",
                                     item.name,
@@ -444,7 +444,7 @@ class PlayerInventoryMixin:
                                 )
                                 break
                             if "use" in item.interactions and hasattr(item, "use"):
-                                print("{} used {}!".format(self.name, item.name))
+                                narrate("{} used {}!".format(self.name, item.name))
                                 item.use(_target, user=self)
                             elif "prefer" in item.interactions and hasattr(
                                 item, "prefer"
@@ -548,7 +548,7 @@ class PlayerInventoryMixin:
                 continue
             if item not in self.inventory:
                 self.inventory.append(item)
-                print(f"Jean adds {item_designation} to his inventory.")
+                narrate(f"Jean adds {item_designation} to his inventory.")
             else:
-                print(f"{item_designation} is already in Jean's inventory.")
+                narrate(f"{item_designation} is already in Jean's inventory.")
         self.stack_inv_items()

@@ -51,6 +51,7 @@ As a module (to be imported) you get the following function:
 __version__ = "1.0"
 
 import random
+from narration import narrate
 
 consonants = [
     ("b", 2),
@@ -144,6 +145,6 @@ if __name__ == "__main__":
         num = 1
 
     for i in range(num):
-        print(generate())
+        narrate(generate())
 
 # end of file.

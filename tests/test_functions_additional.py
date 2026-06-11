@@ -111,11 +111,13 @@ def test_enumerate_for_interactions_single_and_multi(monkeypatch):
 
 # ---------- screen_clear ----------
 
-def test_screen_clear_calls_system(monkeypatch):
+def test_screen_clear_is_noop(monkeypatch):
+    # Terminal clearing was retired with terminal mode; screen_clear is now a
+    # no-op that must not shell out to the OS.
     calls = []
     monkeypatch.setattr(os, 'system', lambda cmd: calls.append(cmd) or 0)
-    functions.screen_clear()
-    assert any(cmd in ('cls', 'clear') for cmd in calls)
+    assert functions.screen_clear() is None
+    assert calls == []
 
 
 # ---------- check_for_combat ----------
@@ -320,14 +322,16 @@ def test_list_module_names_and_seek_class_error():
         functions.seek_class('NonExistentClass', package='not_a_pkg')
 
 
-def test_await_input(monkeypatch):
-    captured = {}
+def test_await_input_is_noop(monkeypatch):
+    # The blocking "press Enter" pause was retired with terminal mode;
+    # await_input must no longer call input().
+    called = {'input': False}
     def fake_input(prompt=''):
-        captured['prompt'] = prompt
+        called['input'] = True
         return ''
     monkeypatch.setattr(builtins, 'input', fake_input)
-    functions.await_input()
-    assert '(Press Enter)' in captured.get('prompt','')
+    assert functions.await_input() is None
+    assert called['input'] is False
 
 # Append required imports for new tests
 import pytest  # noqa: E402  (placed at end intentionally for minimal diff)

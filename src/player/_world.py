@@ -2,7 +2,7 @@
 
 import time
 
-from neotermcolor import cprint
+from narration import cprint
 
 
 class PlayerWorldMixin:

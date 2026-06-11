@@ -1,6 +1,6 @@
 """Move base class, PassiveMove base, and shared combat helpers."""
 
-from neotermcolor import colored, cprint  # noqa: F401
+from narration import colored, cprint, narrate  # noqa: F401
 import random  # noqa: F401
 import math  # noqa: F401
 import states  # noqa: F401
@@ -162,7 +162,7 @@ class Move:  # master class for all moves
         if hasattr(self, "refresh_announcements"):
             self.refresh_announcements(self.user)
         if self.stage_announce[0] != "":
-            print(
+            narrate(
                 self.stage_announce[0]
             )  # Print the prep announce message for the move
         self.beats_left = self.stage_beat[0]
@@ -213,12 +213,12 @@ class Move:  # master class for all moves
     def execute(self, user):
         # print("######{}: I'm in the execute stage now".format(self.name)) #debug message
         if self.stage_announce[1] != "":
-            print(self.stage_announce[1])
+            narrate(self.stage_announce[1])
 
     def recoil(self):
         # print("######{}: I'm in the recoil stage now".format(self.name)) #debug message
         if self.stage_announce[2] != "":
-            print(self.stage_announce[2])
+            narrate(self.stage_announce[2])
 
     def cooldown(self, user):
         # print("######{}: I'm in the cooldown stage now".format(self.name)) #debug message
@@ -256,7 +256,7 @@ class Move:  # master class for all moves
                 self.targetcolor = "cyan"
 
     def parry(self):
-        print(
+        narrate(
             colored(self.target.name, self.targetcolor)
             + colored(" parried the attack from ", "red")
             + colored(self.user.name, self.usercolor)
@@ -277,7 +277,7 @@ class Move:  # master class for all moves
     def hit(self, damage, glance):
         if damage > 0:
             if glance:
-                print(
+                narrate(
                     colored(self.user.name, self.usercolor)
                     + colored(" just barely hit ", "yellow")
                     + colored(self.target.name, self.targetcolor)
@@ -286,7 +286,7 @@ class Move:  # master class for all moves
                     + colored(" damage!", "yellow")
                 )
             else:
-                print(
+                narrate(
                     colored(self.user.name, self.usercolor)
                     + colored(" struck ", "yellow")
                     + colored(self.target.name, self.targetcolor)
@@ -311,7 +311,7 @@ class Move:  # master class for all moves
                 )  # reduce heat by the percentage of dmg done to maxhp
                 self.target.combat_exp["Basic"] += 15
         elif damage == 0:
-            print(
+            narrate(
                 colored(self.user.name, self.usercolor)
                 + colored(" struck ", "yellow")
                 + colored(self.target.name, self.targetcolor)
@@ -334,7 +334,7 @@ class Move:  # master class for all moves
                 self.target.combat_exp["Basic"] += 15
 
     def miss(self):
-        print(colored(self.user.name, self.usercolor) + "'s attack just missed!")
+        narrate(colored(self.user.name, self.usercolor) + "'s attack just missed!")
         if self.target.name == "Jean":
             for state in self.target.states:
                 if state.name == "Dodging":
@@ -462,7 +462,7 @@ class Move:  # master class for all moves
     def standard_execute_attack(self, player, power, base_damage_type):
         glance = False  # switch for determining a glancing blow
         self.prep_colors()
-        print(self.stage_announce[1])
+        narrate(self.stage_announce[1])
 
         # Face the target when attacking
         if (

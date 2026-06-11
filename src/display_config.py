@@ -4,7 +4,7 @@ Provides functions to display combat information based on player config settings
 Respects flags like show_combat_distance, show_unit_positions, show_damage_modifiers, etc.
 """
 
-from neotermcolor import colored
+from narration import colored
 
 
 class CombatDisplayConfig:

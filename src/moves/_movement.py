@@ -1,6 +1,6 @@
 """Positioning and movement moves: Dodge, Parry, Advance, Withdraw, BullCharge, TacticalRetreat, FlankingManeuver, QuietMovement, TacticalPositioning, Turn, QuickSwap."""
 
-from neotermcolor import colored, cprint  # noqa: F401
+from narration import colored, cprint, narrate  # noqa: F401
 import random  # noqa: F401
 import math  # noqa: F401
 import states  # noqa: F401
@@ -50,7 +50,7 @@ class Dodge(Move):
 
     def execute(self, user):
         # print("######{}: I'm in the execute stage now".format(self.name)) #debug message
-        print(self.stage_announce[1])
+        narrate(self.stage_announce[1])
         for state in self.user.states:  # remove any other instances of Dodging
             if isinstance(state, states.Dodging):
                 self.user.states.remove(state)
@@ -113,7 +113,7 @@ class Parry(Move):
 
     def execute(self, user):
         # print("######{}: I'm in the execute stage now".format(self.name)) #debug message
-        print(self.stage_announce[1])
+        narrate(self.stage_announce[1])
         self.user.states.append(states.Parrying(user))
         self.user.fatigue -= self.fatigue_cost
 
@@ -927,9 +927,9 @@ class Turn(Move):
 
     def _prompt_direction_selection(self):
         """Display menu for player to select a direction or face a combatant."""
-        print("\n" + colored("=" * 50, "magenta"))
-        print(colored("Which direction would you like to face?", "cyan"))
-        print(colored("=" * 50, "magenta"))
+        narrate("\n" + colored("=" * 50, color="magenta"))
+        narrate("Which direction would you like to face?", color="cyan")
+        narrate("=" * 50, color="magenta")
 
         # Create list of options
         options = []
@@ -978,8 +978,8 @@ class Turn(Move):
 
         # Display options
         for idx, option in enumerate(options):
-            print(colored(f"{idx}: {option['label']}", "yellow"))
-        print(colored("x: Cancel", "red"))
+            narrate(f"{idx}: {option['label']}", color="yellow")
+        narrate("x: Cancel", color="red")
 
         # Get selection
         selection = input(colored("Selection: ", "cyan"))
@@ -1186,7 +1186,7 @@ class QuickSwap(Move):
             cprint("No nearby allies to swap with!", "red")
             return
 
-        print("\nAvailable allies to swap with:")
+        narrate("\nAvailable allies to swap with:")
         for i, ally in enumerate(nearby_allies, 1):
             if hasattr(self.user, "combat_position") and hasattr(
                 ally, "combat_position"
@@ -1196,7 +1196,7 @@ class QuickSwap(Move):
                 )
             else:
                 distance = self.user.combat_proximity.get(ally, 0)
-            print(f"  {i}. {ally.name} ({distance} ft away)")
+            narrate(f"  {i}. {ally.name} ({distance} ft away)")
 
     def execute(self, user):
         """Execute the position swap with selected ally."""

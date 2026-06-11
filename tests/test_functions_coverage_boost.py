@@ -289,29 +289,19 @@ class TestEnumerateForInteractions:
 
 
 class TestScreenClear:
-    """Lines 208-215."""
+    """screen_clear is a no-op now that terminal mode is gone."""
 
-    def test_screen_clear_nt(self):
-        """Line 210-211: on nt, calls cls."""
+    def test_screen_clear_noop_nt(self):
+        """Must not shell out, even on nt."""
         with patch("os.name", "nt"), patch("os.system") as mock_sys:
-            functions.screen_clear()
-        mock_sys.assert_called_once_with("cls")
+            assert functions.screen_clear() is None
+        mock_sys.assert_not_called()
 
-    def test_screen_clear_posix(self):
-        """Line 212-213: on non-nt, calls clear."""
+    def test_screen_clear_noop_posix(self):
+        """Must not shell out on posix either."""
         with patch("os.name", "posix"), patch("os.system") as mock_sys:
-            functions.screen_clear()
-        mock_sys.assert_called_once_with("clear")
-
-    def test_screen_clear_exception_fallback(self):
-        """Lines 214-215: exception path prints newlines."""
-        with (
-            patch("os.name", "nt"),
-            patch("os.system", side_effect=Exception("fail")),
-            patch("builtins.print") as mock_print,
-        ):
-            functions.screen_clear()
-        mock_print.assert_called()
+            assert functions.screen_clear() is None
+        mock_sys.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

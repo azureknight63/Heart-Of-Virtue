@@ -42,6 +42,7 @@ from items import (
     Arrow,
 )
 from objects import Container  # type: ignore
+from narration import narrate
 from shop_conditions import (  # type: ignore
     ValueModifierCondition,
     RestockWeightBoostCondition,
@@ -125,7 +126,7 @@ class MerchantShopMixin:
                 )
                 collected_messages.append(msg)
                 if not silent:
-                    print(msg)
+                    narrate(msg)
                     time.sleep(0.15)
                 took_any = True
         if took_any and not silent:

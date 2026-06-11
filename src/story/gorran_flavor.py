@@ -24,7 +24,7 @@ Stage 4 — shorthand, very sparse, each line earned
 import logging
 import random
 
-from neotermcolor import colored
+from narration import colored, narrate
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Stage 0 — Narrated base pools (present at all stages)
@@ -281,7 +281,7 @@ def maybe_combat_flavor(player, beat, cooldown):
             pool = _combat_general_for_stage(stage)
 
         line = random.choice(pool)
-        print(colored(line, "yellow"))
+        narrate(line, color="yellow")
 
         # _prev_hp_for_flavor: intentional dynamic attribute — tracks Gorran's
         # HP between beats so we can detect when he took a hit this beat.
@@ -323,7 +323,7 @@ def maybe_explore_flavor(player):
         stage = get_gorran_stage(player)
         pool = _explore_for_stage(stage)
         line = random.choice(pool)
-        print(colored(line, "yellow"))
+        narrate(line, color="yellow")
         story["gorran_explore_last_tick"] = str(current_tick)
 
     except Exception as e:
