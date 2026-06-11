@@ -41,14 +41,6 @@
                     "hide_factor": 0,
                     "discovery_message": "a merchant's tent!",
                     "announce": "A small merchant's tent is pitched just inside the camp boundary.",
-                    "keywords": [
-                        "enter",
-                        "jambo",
-                        "tent",
-                        "shop",
-                        "go",
-                        "in"
-                    ],
                     "events": [],
                     "tile": null,
                     "player": null,
@@ -70,13 +62,6 @@
                     "hide_factor": 0,
                     "discovery_message": "the camp boundary leading back east!",
                     "announce": "The camp's eastern boundary opens onto the descent road.",
-                    "keywords": [
-                        "leave",
-                        "exit",
-                        "go",
-                        "east",
-                        "out"
-                    ],
                     "events": [],
                     "tile": null,
                     "player": null,
@@ -162,14 +147,6 @@
                     "hide_factor": 0,
                     "discovery_message": "the ferry landing!",
                     "announce": "The ferry craft is tied at the landing here.",
-                    "keywords": [
-                        "cross",
-                        "ferry",
-                        "board",
-                        "enter",
-                        "go",
-                        "west"
-                    ],
                     "events": [],
                     "tile": null,
                     "player": null,
