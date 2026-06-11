@@ -10,7 +10,7 @@ from unittest.mock import patch
 from src.api.constants import ITEM_USE_RANGE
 from src.functions import check_for_combat
 from src.inventory_utils import get_gold
-from src.narration import capture_narration
+from src.narration import capture_narration, narrate
 
 if TYPE_CHECKING:
     from src import player as player_module
@@ -1436,7 +1436,7 @@ class GameService:
                         target._parent_container.refresh_description()
 
                     if action == "take":
-                        print(f"{player.name} takes {target.name}.")
+                        narrate(f"{player.name} takes {target.name}.")
                     else:
                         # Proceed with equipment logic
                         target.equip(player)
