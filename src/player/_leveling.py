@@ -178,16 +178,19 @@ class PlayerLevelingMixin:
             if selection.upper() == "R":
                 # Distribute all remaining points as random proportional weights
                 weights = [random.random() for _ in attributes]
-                total_weight = sum(weights)
-                allocated = 0
+                remaining_points = points
                 gains = []
                 for idx, (attr, attr_name, _) in enumerate(attributes):
                     # Give every stat its proportional slice; last attr absorbs rounding
                     if idx == len(attributes) - 1:
-                        share = points - allocated
+                        share = remaining_points
                     else:
-                        share = round(weights[idx] / total_weight * points)
-                    allocated += share
+                        sum_remaining_weights = sum(weights[idx:])
+                        if sum_remaining_weights == 0:
+                            share = 0
+                        else:
+                            share = round(weights[idx] / sum_remaining_weights * remaining_points)
+                    remaining_points -= share
                     gains.append((attr, attr_name, share))
 
                 cprint("Randomizing attribute points...", "cyan")

@@ -403,14 +403,17 @@ def allocate_level_up_points():
                 "faith_base",
             ]
             weights = [random.random() for _ in attributes_list]
-            total_weight = sum(weights)
-            allocated = 0
+            remaining_points = remaining
             for idx, attr in enumerate(attributes_list):
                 if idx == len(attributes_list) - 1:
-                    share = remaining - allocated
+                    share = remaining_points
                 else:
-                    share = round(weights[idx] / total_weight * remaining)
-                allocated += share
+                    sum_remaining_weights = sum(weights[idx:])
+                    if sum_remaining_weights == 0:
+                        share = 0
+                    else:
+                        share = round(weights[idx] / sum_remaining_weights * remaining_points)
+                remaining_points -= share
                 setattr(player, attr, int(getattr(player, attr, 0) or 0) + share)
             
             player.pending_attribute_points = 0
