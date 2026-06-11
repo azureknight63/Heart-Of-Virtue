@@ -1081,18 +1081,6 @@ class TestPlayerCore:
             assert mock_print.called
             assert mock_cprint.called
 
-    def test_print_inventory(self, player):
-        with patch('interface.InventoryInterface') as mock_iface:
-            player.print_inventory()
-            mock_iface.assert_called_once_with(player)
-            mock_iface.return_value.run.assert_called_once()
-
-    def test_take(self, player):
-        with patch('interface.RoomTakeInterface') as mock_iface:
-            player.take("all")
-            mock_iface.assert_called_once_with(player)
-            mock_iface.return_value.run.assert_called_once_with("all")
-
     def test_refresh_merchants(self, player):
         player.universe = MagicMock()
 

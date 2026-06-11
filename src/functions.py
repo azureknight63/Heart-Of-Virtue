@@ -82,7 +82,7 @@ def enumerate_for_interactions(subjects, player, args_list, action_input):
            - (single-token mode only) the raw action input exactly matches one of its 'keywords'.
       3. If zero candidates are found -> return False (not handled).
          If exactly one candidate -> execute its method immediately.
-         If multiple candidates -> display a menu (similar to RoomTakeInterface) allowing
+         If multiple candidates -> present a disambiguation choice allowing
          the player to choose one; selection 0 or 'x' cancels.
 
     Parameters

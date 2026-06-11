@@ -515,20 +515,6 @@ class PlayerInventoryMixin:
                 self.weight_current += addweight
         self.weight_current = round(self.weight_current, 2)
 
-    def take(self, phrase=""):
-        """Open the room take interface or delegate phrase-based shortcuts.
-
-        This delegates interactive UI to `RoomTakeInterface` (in `interface.py`) while
-        preserving the helper methods `_take_all_items`, `_take_specific_item`, and
-        `_take_item` which the interface uses.
-        """
-        # Import here to avoid circular import issues at module import time
-        from interface import RoomTakeInterface
-
-        iface = RoomTakeInterface(self)
-        # If phrase is provided, pass it through (interface supports 'all' and name shortcuts)
-        iface.run(phrase)
-
     def add_items_to_inventory(self, items_received: list):
         """Add a list of items to the player's inventory, checking weight limits."""
         for item in items_received:

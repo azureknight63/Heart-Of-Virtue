@@ -256,12 +256,6 @@ class PlayerUIMixin:
             else:
                 finished = True
 
-    def print_inventory(self):
-        """Open the interactive inventory UI."""
-        from interface import InventoryInterface
-
-        InventoryInterface(self).run()
-
     def print_status(self):
         """Print Jean's full status: stats, protection, resistances, and susceptibilities."""
         functions.refresh_stat_bonuses(self)

@@ -79,15 +79,6 @@ class MoveSouthWest(Action):
         )
 
 
-class ViewInventory(Action):
-    def __init__(self):
-        super().__init__(
-            method=Player.print_inventory,
-            name="View inventory",
-            hotkey=("i", "inv", "inventory"),
-        )
-
-
 class ViewStatus(Action):
     def __init__(self):
         super().__init__(
@@ -158,11 +149,6 @@ class Menu(Action):
 class Save(Action):
     def __init__(self):
         super().__init__(method=Player.save, name="Save", hotkey=("sav", "save"))
-
-
-class Take(Action):
-    def __init__(self):
-        super().__init__(method=Player.take, name="Take Item", hotkey=("t", "take"))
 
 
 class ViewMap(Action):
