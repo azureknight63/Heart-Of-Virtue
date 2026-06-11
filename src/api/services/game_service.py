@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 from src.api.constants import ITEM_USE_RANGE
 from src.functions import check_for_combat
-from src.interface import get_gold
+from src.inventory_utils import get_gold
 
 if TYPE_CHECKING:
     from src import player as player_module
@@ -1402,9 +1402,9 @@ class GameService:
                 except ImportError:
                     from src.items import Item
                 try:
-                    from interface import transfer_item
+                    from inventory_utils import transfer_item
                 except ImportError:
-                    from src.interface import transfer_item
+                    from src.inventory_utils import transfer_item
                 try:
                     from events import LootEvent
                 except ImportError:
@@ -5147,7 +5147,7 @@ class GameService:
         Returns:
             Dict with success, updated shop_state, sell_inventory, and message.
         """
-        from src.interface import transfer_gold, transfer_item
+        from src.inventory_utils import transfer_gold, transfer_item
         from src.api.serializers.shop_serializer import ShopSerializer
 
         merchant = self._find_merchant(player, npc_id)
@@ -5227,7 +5227,7 @@ class GameService:
         Returns:
             Dict with success, updated shop_state, sell_inventory, and message.
         """
-        from src.interface import transfer_gold, transfer_item
+        from src.inventory_utils import transfer_gold, transfer_item
         from src.api.serializers.shop_serializer import ShopSerializer
 
         merchant = self._find_merchant(player, npc_id)
@@ -5344,7 +5344,7 @@ class GameService:
         Returns:
             Dict with success, updated shop_state, sell_inventory, and message.
         """
-        from src.interface import transfer_gold, transfer_item
+        from src.inventory_utils import transfer_gold, transfer_item
         from src.api.serializers.shop_serializer import ShopSerializer
 
         merchant = self._find_merchant(player, npc_id)

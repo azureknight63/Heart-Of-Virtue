@@ -446,9 +446,9 @@ class Container(Object):
             return
 
         try:
-            from interface import transfer_item
+            from inventory_utils import transfer_item
         except ImportError:
-            from src.interface import transfer_item
+            from src.inventory_utils import transfer_item
 
         if not self.inventory:
             print(f"The {self.nickname} is already empty.")

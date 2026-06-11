@@ -186,9 +186,9 @@ class LootEvent(Event):
         from neotermcolor import cprint
 
         try:
-            from interface import transfer_item
+            from inventory_utils import transfer_item
         except ImportError:
-            from src.interface import transfer_item
+            from src.inventory_utils import transfer_item
 
         if user_input == "all":
             snapshot = list(self.container.inventory)
