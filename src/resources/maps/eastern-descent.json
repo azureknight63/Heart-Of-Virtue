@@ -5,7 +5,7 @@
     "(0,2)": {
         "id": "tile_0_2",
         "title": "GrondiaEasternGate",
-        "description": "The mountain air hits without warning — cold, thin, carrying the smell of raw stone and something older than either. Behind Jean, the Eastern Gate of Grondia has drawn itself shut: a slow grinding of counterweights that finishes with a sound like a word being swallowed. The rock face here is dressed stone giving way to undressed rock within a few paces. A worn path descends east along the bluff's edge.",
+        "description": "The mountain air hits without warning \u2014 cold, thin, carrying the smell of raw stone and something older than either. Behind Jean, the Eastern Gate of Grondia has drawn itself shut: a slow grinding of counterweights that finishes with a sound like a word being swallowed. The rock face here is dressed stone giving way to undressed rock within a few paces. A worn path descends east along the bluff's edge.",
         "exits": [
             "east"
         ],
@@ -33,7 +33,7 @@
     "(1,2)": {
         "id": "tile_1_2",
         "title": "HighLedge",
-        "description": "A narrow ledge of pale grey rock juts east from the gate bluff, swept clean by the wind that funnels up the mountain's eastern face. The sky is enormous here — a shock after weeks of stone ceilings. Far below and to the south, the land is visible: a dark river threading through pale ground, and beyond it, nothing defined yet.",
+        "description": "A narrow ledge of pale grey rock juts east from the gate bluff, swept clean by the wind that funnels up the mountain's eastern face. The sky is enormous here \u2014 a shock after weeks of stone ceilings. Far below and to the south, the land is visible: a dark river threading through pale ground, and beyond it, nothing defined yet.",
         "exits": [
             "west",
             "east"
@@ -53,7 +53,7 @@
     "(2,2)": {
         "id": "tile_2_2",
         "title": "Windbreak",
-        "description": "Two boulders the size of cart horses lean against each other, forming a rough shelter where the constant wind off the peak cannot follow. The ground between them is scoured clean. Someone — something — has slept here: a dark stain on the lee-side rock that might be old fire, might be older. Where the boulders meet the slope below, a narrow gap opens into the boulder field.",
+        "description": "Two boulders the size of cart horses lean against each other, forming a rough shelter where the constant wind off the peak cannot follow. The ground between them is scoured clean. Someone \u2014 something \u2014 has slept here: a dark stain on the lee-side rock that might be old fire, might be older. Where the boulders meet the slope below, a narrow gap opens into the boulder field.",
         "exits": [
             "west",
             "east",
@@ -68,7 +68,7 @@
     "(3,2)": {
         "id": "tile_3_2",
         "title": "WaymarkerStone",
-        "description": "A boulder taller than Jean stands alone at a widening in the path, as though placed rather than fallen. Its south face has been worked — not carved with skill, but with patience. Marks run in a vertical column down the stone: angular, deliberate.",
+        "description": "A boulder taller than Jean stands alone at a widening in the path, as though placed rather than fallen. Its south face has been worked \u2014 not carved with skill, but with patience. Marks run in a vertical column down the stone: angular, deliberate.",
         "exits": [
             "west",
             "east",
@@ -84,7 +84,7 @@
                 "__module__": "objects",
                 "props": {
                     "name": "Carved Stone Marker",
-                    "description": "The marks are Golemite script — older than the current Ecumerium district by at least two generations, if Jean's rough reading is right. It names this point Veth Orak — 'the eastern watch.' Below the name, a tally: forty-three vertical strokes in groups of five, then a single horizontal slash. Forty-four rotations of the watch, then nothing. At the bottom, a single glyph Jean doesn't recognize — it looks like the Golemite symbol for door, but inverted.",
+                    "description": "The marks are Golemite script \u2014 older than the current Ecumerium district by at least two generations, if Jean's rough reading is right. It names this point Veth Orak \u2014 'the eastern watch.' Below the name, a tally: forty-three vertical strokes in groups of five, then a single horizontal slash. Forty-four rotations of the watch, then nothing. At the bottom, a single glyph Jean doesn't recognize \u2014 it looks like the Golemite symbol for door, but inverted.",
                     "idle_message": "Marks have been cut into the stone's south face.",
                     "hidden": false,
                     "hide_factor": 0,
@@ -106,7 +106,7 @@
     "(3,1)": {
         "id": "tile_3_1",
         "title": "WaymarkerCave",
-        "description": "A low opening in the rock, easy to miss — the overhang that creates it casts shadow at most angles, and the entrance is narrow enough that a person would need to turn sideways. Inside, the cave opens into a space large enough to stand upright. The air is cool and still. Old ash marks on the floor. Someone used this as a shelter, more than once, over a long period.",
+        "description": "A low opening in the rock, easy to miss \u2014 the overhang that creates it casts shadow at most angles, and the entrance is narrow enough that a person would need to turn sideways. Inside, the cave opens into a space large enough to stand upright. The air is cool and still. Old ash marks on the floor. Someone used this as a shelter, more than once, over a long period.",
         "exits": [
             "south"
         ],
@@ -173,7 +173,7 @@
     "(4,2)": {
         "id": "tile_4_2",
         "title": "CrowsPerch",
-        "description": "The path narrows to a ledge barely wide enough for two abreast, the drop on the south side steeper here than anywhere above. A cluster of large black birds occupy the rock above, watching with no particular urgency. Their droppings have whitened the stone below their roost. The smell is sharp. The ledge forks here — a climb north follows the mountain face toward higher ground, while the main descent continues south into the boulder field below.",
+        "description": "The path narrows to a ledge barely wide enough for two abreast, the drop on the south side steeper here than anywhere above. A cluster of large black birds occupy the rock above, watching with no particular urgency. Their droppings have whitened the stone below their roost. The smell is sharp. The ledge forks here \u2014 a climb north follows the mountain face toward higher ground, while the main descent continues south into the boulder field below.",
         "exits": [
             "west",
             "north",
@@ -188,7 +188,7 @@
     "(4,1)": {
         "id": "tile_4_1",
         "title": "UpperRidge",
-        "description": "The path climbs steeply here, following a natural ledge in the mountain's north face. The rock is lighter in colour — pale grey shot through with quartz — and the wind off the upper heights is constant and sharp. To the east, the ledge continues along the exposed face. Below and behind, the wide expanse of the gate approach is visible, and further south, the boulder field. The scale of the descent ahead is clearer from here than from anywhere else on the slope.",
+        "description": "The path climbs steeply here, following a natural ledge in the mountain's north face. The rock is lighter in colour \u2014 pale grey shot through with quartz \u2014 and the wind off the upper heights is constant and sharp. To the east, the ledge continues along the exposed face. Below and behind, the wide expanse of the gate approach is visible, and further south, the boulder field. The scale of the descent ahead is clearer from here than from anywhere else on the slope.",
         "exits": [
             "south",
             "east"
@@ -202,7 +202,7 @@
     "(5,1)": {
         "id": "tile_5_1",
         "title": "NorthFaceTrail",
-        "description": "The trail follows the mountain's north face — a ledge barely wide enough for confident passage, the mountain pulling away on the uphill side and nothing on the downhill. The rock is wet with seep water that runs in dark vertical lines across the face. The temperature drops noticeably; the wind from the north is direct and cold. Below and to the south, the slope's full extent is visible.",
+        "description": "The trail follows the mountain's north face \u2014 a ledge barely wide enough for confident passage, the mountain pulling away on the uphill side and nothing on the downhill. The rock is wet with seep water that runs in dark vertical lines across the face. The temperature drops noticeably; the wind from the north is direct and cold. Below and to the south, the slope's full extent is visible.",
         "exits": [
             "west",
             "east",
@@ -304,7 +304,7 @@
     "(6,1)": {
         "id": "tile_6_1",
         "title": "Precipice",
-        "description": "The ledge ends in open air to the north — the mountain face drops away in a sheer crack, the bottom invisible. But standing here and looking south and southeast, the land below is laid out without obstruction: the boulder field filling the slope, the dark thread of the river, and beyond, so far it might be cloud, the pale open expanse of the Resolute Plains.",
+        "description": "The ledge ends in open air to the north \u2014 the mountain face drops away in a sheer crack, the bottom invisible. But standing here and looking south and southeast, the land below is laid out without obstruction: the boulder field filling the slope, the dark thread of the river, and beyond, so far it might be cloud, the pale open expanse of the Resolute Plains.",
         "exits": [
             "west",
             "east"
@@ -318,7 +318,7 @@
     "(7,1)": {
         "id": "tile_7_1",
         "title": "EasternOverlook",
-        "description": "The north face terminates here in a broad, windswept shelf with a near-vertical drop on three sides. The view east is unobstructed — on clear days the Resolute Plains are visible as a distant pale band beyond the foothills, and the road that leads to them is visible below: a pale thread threading east through scrub. The road is real. It goes somewhere. Jean can see it from here with complete clarity. This is not the way.",
+        "description": "The north face terminates here in a broad, windswept shelf with a near-vertical drop on three sides. The view east is unobstructed \u2014 on clear days the Resolute Plains are visible as a distant pale band beyond the foothills, and the road that leads to them is visible below: a pale thread threading east through scrub. The road is real. It goes somewhere. Jean can see it from here with complete clarity. This is not the way.",
         "exits": [
             "west"
         ],
@@ -331,7 +331,7 @@
     "(4,3)": {
         "id": "tile_4_3",
         "title": "FirstSwitchback",
-        "description": "The main path bends here, forced south by a shelf of rock that angles across the slope. The ground is loose: flat stones stacked by frost and time, shifting underfoot. The boulder field begins in earnest to the west — shapes too large and too numerous to count, crowded together with narrow dark passages between them.",
+        "description": "The main path bends here, forced south by a shelf of rock that angles across the slope. The ground is loose: flat stones stacked by frost and time, shifting underfoot. The boulder field begins in earnest to the west \u2014 shapes too large and too numerous to count, crowded together with narrow dark passages between them.",
         "exits": [
             "north",
             "west",
@@ -346,7 +346,7 @@
     "(3,3)": {
         "id": "tile_3_3",
         "title": "ScreeShelf",
-        "description": "A wide shelf of loose flat stones tilts gently southward — the accumulated wreckage of a larger boulder that shattered at some point, its pieces spreading. The footing here is treacherous: each step shifts what's below. The scree is scored with claw marks wider than Jean's palm.",
+        "description": "A wide shelf of loose flat stones tilts gently southward \u2014 the accumulated wreckage of a larger boulder that shattered at some point, its pieces spreading. The footing here is treacherous: each step shifts what's below. The scree is scored with claw marks wider than Jean's palm.",
         "exits": [
             "east",
             "west",
@@ -367,7 +367,7 @@
     "(2,3)": {
         "id": "tile_2_3",
         "title": "BoulderGate",
-        "description": "Two boulders flank the only clear passage here — not a gate anyone built, but one the mountain made. The rock faces on either side are close enough that pack and shoulders brush both at once. Beyond, the maze opens into irregular chambers of stone. The rock above the passage shows a faint worn groove where countless hands have braced for the squeeze.",
+        "description": "Two boulders flank the only clear passage here \u2014 not a gate anyone built, but one the mountain made. The rock faces on either side are close enough that pack and shoulders brush both at once. Beyond, the maze opens into irregular chambers of stone. The rock above the passage shows a faint worn groove where countless hands have braced for the squeeze.",
         "exits": [
             "east",
             "north",
@@ -383,7 +383,7 @@
     "(1,3)": {
         "id": "tile_1_3",
         "title": "RainCatch",
-        "description": "A natural basin in the rock — barely the size of a wash basin — holds a few inches of standing water, cold and perfectly clear. Pale green algae lines the basin edge. A faint smell of mineral water. The mud at the basin's edge holds overlapping prints.",
+        "description": "A natural basin in the rock \u2014 barely the size of a wash basin \u2014 holds a few inches of standing water, cold and perfectly clear. Pale green algae lines the basin edge. A faint smell of mineral water. The mud at the basin's edge holds overlapping prints.",
         "exits": [
             "east"
         ],
@@ -443,7 +443,7 @@
     "(2,4)": {
         "id": "tile_2_4",
         "title": "HollowClearing",
-        "description": "The boulders open briefly into a rough oval clearing — not large, but large enough to see the sky directly overhead. The ground here is darker than the surrounding scree: earth and old leaf litter carried by the wind over years. Deep scratches mark the boulders on all sides at roughly hip height.",
+        "description": "The boulders open briefly into a rough oval clearing \u2014 not large, but large enough to see the sky directly overhead. The ground here is darker than the surrounding scree: earth and old leaf litter carried by the wind over years. Deep scratches mark the boulders on all sides at roughly hip height.",
         "exits": [
             "north",
             "east",
@@ -469,7 +469,7 @@
     "(1,4)": {
         "id": "tile_1_4",
         "title": "MossShelf",
-        "description": "A wide horizontal surface of rock, perhaps two metres above the path, extends along the boulder face. Reaching it requires a short scramble. The surface is covered in a thick, damp moss — vivid green against the grey, incongruous this high on the slope. Something small lives in the moss; the surface is dimpled with tiny burrow-openings.",
+        "description": "A wide horizontal surface of rock, perhaps two metres above the path, extends along the boulder face. Reaching it requires a short scramble. The surface is covered in a thick, damp moss \u2014 vivid green against the grey, incongruous this high on the slope. Something small lives in the moss; the surface is dimpled with tiny burrow-openings.",
         "exits": [
             "east"
         ],
@@ -518,7 +518,7 @@
                     "idle_message": "The moss surface is cool and dense underfoot.",
                     "hidden": true,
                     "hide_factor": 3,
-                    "discovery_message": "In a crack running along the base of the moss shelf: a small bundle, damp but intact. Someone left this deliberately — the crack is too regular to be accidental.",
+                    "discovery_message": "In a crack running along the base of the moss shelf: a small bundle, damp but intact. Someone left this deliberately \u2014 the crack is too regular to be accidental.",
                     "announce": "The moss surface is cool and dense underfoot.",
                     "keywords": [
                         "search",
@@ -536,7 +536,7 @@
     "(3,4)": {
         "id": "tile_3_4",
         "title": "HoundsWarren",
-        "description": "A cluster of medium boulders has collapsed inward, forming a rough hollow at ground level — low-ceilinged, littered with old bone fragments and tufts of coarse grey fur snagged on the rock edges. The entrance faces west. The smell is animal. Passages open in multiple directions: the scree above to the north, the cleared hollow to the west, and lower ground to the south. The ground to the east carries the marks of heavy repeated use.",
+        "description": "A cluster of medium boulders has collapsed inward, forming a rough hollow at ground level \u2014 low-ceilinged, littered with old bone fragments and tufts of coarse grey fur snagged on the rock edges. The entrance faces west. The smell is animal. Passages open in multiple directions: the scree above to the north, the cleared hollow to the west, and lower ground to the south. The ground to the east carries the marks of heavy repeated use.",
         "exits": [
             "north",
             "west",
@@ -563,7 +563,7 @@
     "(5,3)": {
         "id": "tile_5_3",
         "title": "DeepCrack",
-        "description": "A deep vertical crack runs through the rock here — not wide enough to enter, but deep enough that no light reaches the bottom. The crack smells faintly of sulfur, or something like it. The rock around the crack's edges is slightly discoloured — a pale orange band, as though heat once passed through here.",
+        "description": "A deep vertical crack runs through the rock here \u2014 not wide enough to enter, but deep enough that no light reaches the bottom. The crack smells faintly of sulfur, or something like it. The rock around the crack's edges is slightly discoloured \u2014 a pale orange band, as though heat once passed through here.",
         "exits": [
             "west",
             "east"
@@ -583,7 +583,7 @@
     "(6,3)": {
         "id": "tile_6_3",
         "title": "FarReach",
-        "description": "The easternmost point accessible on this slope — a narrow platform of rock where the boulder maze butts up against the raw cliff face, creating a dead end open to the sky. Wind moves through constantly. At the base of the cliff face, a dark gap suggests a shallow recess, large enough to have sheltered someone.",
+        "description": "The easternmost point accessible on this slope \u2014 a narrow platform of rock where the boulder maze butts up against the raw cliff face, creating a dead end open to the sky. Wind moves through constantly. At the base of the cliff face, a dark gap suggests a shallow recess, large enough to have sheltered someone.",
         "exits": [
             "west"
         ],
@@ -655,7 +655,7 @@
     "(4,4)": {
         "id": "tile_4_4",
         "title": "EasternTrailhead",
-        "description": "The boulders part just enough here to reveal what was once a proper trail heading east — more worn than the surrounding rock, edged on both sides by stones set deliberately in the ground, though many have shifted or sunk over time. The trail looks maintained for longer than it looks abandoned.",
+        "description": "The boulders part just enough here to reveal what was once a proper trail heading east \u2014 more worn than the surrounding rock, edged on both sides by stones set deliberately in the ground, though many have shifted or sunk over time. The trail looks maintained for longer than it looks abandoned.",
         "exits": [
             "west",
             "east"
@@ -669,7 +669,7 @@
     "(5,4)": {
         "id": "tile_5_4",
         "title": "AddersShelf",
-        "description": "A narrow shelf of rock, cut into the hillside along the old trail. The shelf is warm — it faces south and catches the sun for most of the day. Coiled things have been here: smooth depressions in the dust, old shed skins draped over a low rock like discarded clothing.",
+        "description": "A narrow shelf of rock, cut into the hillside along the old trail. The shelf is warm \u2014 it faces south and catches the sun for most of the day. Coiled things have been here: smooth depressions in the dust, old shed skins draped over a low rock like discarded clothing.",
         "exits": [
             "west",
             "east"
@@ -689,7 +689,7 @@
     "(6,4)": {
         "id": "tile_6_4",
         "title": "RoadEast",
-        "description": "The trail widens here into something that was, unmistakably, a road. The ground is level, the verge cleared. Ahead, the mountain's eastern shoulder drops away and the land opens — genuinely open, in a way Jean hasn't seen in weeks. The Resolute Plains begin somewhere out there in the haze. The road leads to them.",
+        "description": "The trail widens here into something that was, unmistakably, a road. The ground is level, the verge cleared. Ahead, the mountain's eastern shoulder drops away and the land opens \u2014 genuinely open, in a way Jean hasn't seen in weeks. The Resolute Plains begin somewhere out there in the haze. The road leads to them.",
         "exits": [
             "west"
         ],
@@ -732,7 +732,7 @@
     "(4,5)": {
         "id": "tile_4_5",
         "title": "NestHollow",
-        "description": "A low hollow beneath an overhang, barely deep enough to shelter in. The floor is dry and pale — shed scales, dozens of them, layered over each other in the dust. The scales are large: each one roughly the size of a playing card, dark grey with silver edges that catch the light at certain angles.",
+        "description": "A low hollow beneath an overhang, barely deep enough to shelter in. The floor is dry and pale \u2014 shed scales, dozens of them, layered over each other in the dust. The scales are large: each one roughly the size of a playing card, dark grey with silver edges that catch the light at certain angles.",
         "exits": [
             "west"
         ],
@@ -765,7 +765,7 @@
     "(1,5)": {
         "id": "tile_1_5",
         "title": "GrassBreak",
-        "description": "The gradient eases here — not flat, but no longer the lean-into-it effort of the upper slope. The rock underfoot gives way to packed earth threaded through with root systems. To the east, the boulders are smaller and more scattered, like a field thinning out. The sound of water is just barely present — more felt than heard.",
+        "description": "The gradient eases here \u2014 not flat, but no longer the lean-into-it effort of the upper slope. The rock underfoot gives way to packed earth threaded through with root systems. To the east, the boulders are smaller and more scattered, like a field thinning out. The sound of water is just barely present \u2014 more felt than heard.",
         "exits": [
             "east",
             "south"
@@ -779,7 +779,7 @@
     "(1,6)": {
         "id": "tile_1_6",
         "title": "BankApproach",
-        "description": "The slope levels completely. Underfoot is soft river-bottom soil, damp at the edges where the bank floods seasonally. A rough track leads east — wide enough for a cart, though no cart has been through recently. The river is audible but not yet visible past the bank's low rise.",
+        "description": "The slope levels completely. Underfoot is soft river-bottom soil, damp at the edges where the bank floods seasonally. A rough track leads east \u2014 wide enough for a cart, though no cart has been through recently. The river is audible but not yet visible past the bank's low rise.",
         "exits": [
             "north",
             "east"
@@ -793,7 +793,7 @@
     "(2,6)": {
         "id": "tile_2_6",
         "title": "EasternBank",
-        "description": "The riverbank proper: a shelf of packed gravel and dark earth dropping perhaps a metre to the water's edge. The river itself is wide — thirty metres or more — moving with a low, unhurried strength. The water is cold-looking, grey-green, carrying occasional debris. On the far bank, the land is dark and different: lower, flatter, the beginning of something else entirely.",
+        "description": "The riverbank proper: a shelf of packed gravel and dark earth dropping perhaps a metre to the water's edge. The river itself is wide \u2014 thirty metres or more \u2014 moving with a low, unhurried strength. The water is cold-looking, grey-green, carrying occasional debris. On the far bank, the land is dark and different: lower, flatter, the beginning of something else entirely.",
         "exits": [
             "west",
             "east"
@@ -807,61 +807,61 @@
     "(3,6)": {
         "id": "tile_3_6",
         "title": "NomadCamp",
-        "description": "The camp occupies a natural hollow in the bank — sheltered from the prevailing wind, with a clear sightline upstream. The shelters are lean-tos of oiled canvas over light poles, practical to a degree that suggests long use. A fire ring sits at the centre, its stones black with years of use. The smell of woodsmoke and dried meat is warm and immediate after hours of cold rock.",
+        "description": "The hollow here shelters a small encampment from the prevailing wind \u2014 lean-tos of oiled canvas visible to the west, angled against the river gusts. A steady thread of woodsmoke rises above the canvas. A line of weathered stakes marks the camp's eastern boundary. The smell of woodsmoke and dried meat reaches out to meet the road.",
         "bgm": "nomad_camp",
         "exits": [
             "west",
             "east"
         ],
         "block_exit": [],
-        "events": [
+        "events": [],
+        "items": [],
+        "npcs": [],
+        "objects": [
             {
-                "__class__": "NomadCampArrivalEvent",
-                "__module__": "story.ch03",
+                "__class__": "Passageway",
+                "__module__": "objects",
                 "props": {
-                    "name": "NomadCampArrival",
-                    "player": null,
+                    "name": "Camp Entrance",
+                    "description": "A gap in the stake boundary where the ground is worn smooth by regular passage.",
+                    "idle_message": "A gap in the boundary stakes opens into the camp.",
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": "a worn gap leading into the camp!",
+                    "announce": "A gap in the boundary stakes opens into the camp.",
+                    "keywords": [
+                        "enter",
+                        "camp",
+                        "go",
+                        "in",
+                        "west"
+                    ],
+                    "events": [],
                     "tile": null,
-                    "repeat": false,
-                    "thread": null,
-                    "has_run": false,
-                    "params": null,
-                    "referenceobj": null
+                    "player": null,
+                    "events_before": [],
+                    "events_after": [],
+                    "teleport_map": "eastern-descent-nomad-camp",
+                    "teleport_tile": [
+                        2,
+                        0
+                    ],
+                    "persist": true
                 }
             }
-        ],
-        "items": [],
-        "npcs": [
-            {
-                "__class__": "Mara",
-                "__module__": "npc",
-                "props": null
-            },
-            {
-                "__class__": "Devet",
-                "__module__": "npc",
-                "props": null
-            }
-        ],
-        "objects": []
+        ]
     },
     "(4,6)": {
         "id": "tile_4_6",
         "title": "CampsEdge",
-        "description": "The camp's east edge is defined by a line of larger stones arranged in a rough semicircle — a windbreak or boundary marker, well-established. Beyond it, the bank continues east, empty and featureless. A low post has been driven into the ground here; on it hangs a small wooden shape on a cord, turning slowly in the river wind.",
+        "description": "The camp's east edge is defined by a line of larger stones arranged in a rough semicircle \u2014 a windbreak or boundary marker, well-established. Beyond it, the bank continues east, empty and featureless. A low post has been driven into the ground here; on it hangs a small wooden shape on a cord, turning slowly in the river wind.",
         "exits": [
             "west"
         ],
         "block_exit": [],
         "events": [],
         "items": [],
-        "npcs": [
-            {
-                "__class__": "Liss",
-                "__module__": "npc",
-                "props": null
-            }
-        ],
+        "npcs": [],
         "objects": []
     }
 }

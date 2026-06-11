@@ -235,10 +235,52 @@ class JamboHealsU(Merchant):
             self.shop = None
 
     def talk(self, player):  # pragma: no cover - simple flavor
-        print(
-            "Jambo chuckles: 'Feeling a bit under the weather, friend? Well no worry; Jambo Heals U! "
-            "Come and see my selection of potions and draughts!'"
+        on_nomad_camp = (
+            getattr(player, "map", None) is not None
+            and player.map.get("name") == "eastern-descent-nomad-camp"
         )
+        gorran_in_party = any(
+            getattr(a, "name", "") == "Gorran"
+            for a in getattr(player, "combat_list_allies", [])
+        )
+
+        lines = [
+            # always available
+            (
+                "\"The road west is long,\" Jambo says, not unkindly. \"Jambo has been west. "
+                "The west does not care if Jean is prepared. Jambo cares. "
+                "This is the difference. Come, let us fix this.\""
+            ),
+            (
+                "Jambo studies Jean for a moment with his merchant's eye. "
+                "\"Jean looks like someone who has been sleeping somewhere cold "
+                "and eating somewhere worse. A Restorative. Maybe two. "
+                "Jambo recommends this strongly.\""
+            ),
+            (
+                "\"River crossings — Jambo has always said this — very good for business. "
+                "People come from the mountains. People go to the plains. "
+                "Everybody needs something in the middle. "
+                "Jambo is always in the middle. This is not an accident.\""
+            ),
+        ]
+
+        if on_nomad_camp:
+            lines.append(
+                "Jambo gestures at the river with evident satisfaction. "
+                "\"Good crossing, this. Steady traffic. Everybody tired, everybody needs "
+                "something. Jambo has timed this very well.\""
+            )
+
+        if gorran_in_party:
+            lines.append(
+                "Jambo glances at Gorran with the look of a man mentally cataloguing "
+                "a new market segment. \"Jambo has sold to many interesting customers. "
+                "The stone one — does he need potions? Jambo thinks not. "
+                "Jambo asks anyway. This is good business practice.\""
+            )
+
+        print(random.choice(lines))
 
     def trade(self, player):
         # Collect any merchandise Jean brought in so it appears in the Buy list.
@@ -248,9 +290,8 @@ class JamboHealsU(Merchant):
 
         self.shop = Shop(merchant=self, player=player, shop_name="Jambo Heals U")
         self.shop.exit_message = (
-            "Jambo waves enthusiastically and loudly calls out, "
-            "'Jambo wishes you well on your travels "
-            "and don't forget: When you blue, Jambo Heals U!'"
+            "Jambo waves Jean off cheerfully. 'Good luck, friend. Come back if you bleed. "
+            "Come back even if you don't. Jambo is always here, right where he is needed.'"
         )
         self.shop.player = player
         self.shop.run()
