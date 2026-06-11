@@ -27,6 +27,11 @@ _buffer: "contextvars.ContextVar[list | None]" = contextvars.ContextVar(
 _echo_stdout: "contextvars.ContextVar[bool]" = contextvars.ContextVar(
     "narration_echo_stdout", default=True
 )
+# Live callbacks invoked with each structured entry as it is emitted. Used by the
+# combat adapter to attribute animations to the active entity in real time.
+_listeners: "contextvars.ContextVar[tuple]" = contextvars.ContextVar(
+    "narration_listeners", default=()
+)
 
 
 def colored(text, color=None, on_color=None, attrs=None):
@@ -55,8 +60,7 @@ def narrate(*parts, color=None, attrs=None, mtype="narration", sep=" ", **meta):
     """
     raw = sep.join("" if p is None else str(p) for p in parts)
     clean = _ANSI_ESCAPE.sub("", raw)
-    buf = _buffer.get()
-    if buf is not None and clean.strip():
+    if clean.strip():
         entry = {"text": clean, "type": mtype}
         if color:
             entry["color"] = color
@@ -64,7 +68,14 @@ def narrate(*parts, color=None, attrs=None, mtype="narration", sep=" ", **meta):
             entry["attrs"] = list(attrs)
         if meta:
             entry.update(meta)
-        buf.append(entry)
+        buf = _buffer.get()
+        if buf is not None:
+            buf.append(entry)
+        for cb in _listeners.get():
+            try:
+                cb(entry)
+            except Exception:
+                pass
     if _echo_stdout.get():
         # Mirror to stdout for non-API contexts (unit tests / debugging).
         if color and clean.strip():
@@ -96,21 +107,27 @@ class capture_narration:
         # messages is a list of structured dicts
     """
 
-    def __init__(self, echo=False):
+    def __init__(self, echo=False, listener=None):
         self._echo = echo
+        self._listener = listener
         self._buf = None
         self._buf_token = None
         self._echo_token = None
+        self._listener_token = None
 
     def __enter__(self):
         self._buf = []
         self._buf_token = _buffer.set(self._buf)
         self._echo_token = _echo_stdout.set(self._echo)
+        if self._listener is not None:
+            self._listener_token = _listeners.set(_listeners.get() + (self._listener,))
         return self._buf
 
     def __exit__(self, *exc):
-        _buffer.reset(self._buf_token)
+        if self._listener_token is not None:
+            _listeners.reset(self._listener_token)
         _echo_stdout.reset(self._echo_token)
+        _buffer.reset(self._buf_token)
         return False
 
 

@@ -1576,23 +1576,27 @@ class TestSynchronizeDistances:
 
 
 class TestCaptureOutput:
-    def test_captures_print_and_syncs_to_log(self):
+    def test_captures_narration_and_syncs_to_log(self):
+        from narration import narrate
+
         player = _make_player()
         player.combat_log = []
         player.combat_beat = 1
         adapter = _make_adapter(player)
         with adapter._capture_output():
-            print("A combat event happened")
+            narrate("A combat event happened")
         # After exiting context, output should be synced
         assert any("combat event" in e["message"] for e in player.combat_log)
 
     def test_clears_capture_after_context(self):
+        from narration import narrate
+
         player = _make_player()
         player.combat_log = []
         player.combat_beat = 1
         adapter = _make_adapter(player)
         with adapter._capture_output():
-            print("something")
+            narrate("something")
         assert adapter.output_capture.get_log() == []
 
 
