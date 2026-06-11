@@ -2,11 +2,9 @@
 
 ## Project Overview
 
-Text-based Adventure RPG (ASCII/retro aesthetic) following a crusader named Jean Claire. The project has two modes of play:
-- **Terminal/CLI**: Original Python implementation
-- **Web**: Flask REST API + React SPA (current focus on `web-api` branch)
+Text-based Adventure RPG (ASCII/retro aesthetic) following a crusader named Jean Claire. The game is played **entirely via the web app** — a Flask REST API wrapping the Python game engine, with a React SPA frontend. (The original terminal/CLI play mode has been removed; see "Terminal-mode removal" below.)
 
-The Python game engine is the source of truth. The web layer wraps it without rewriting it.
+The Python game engine is the source of truth. The web layer wraps it without rewriting it. Engine output flows through the **narration sink** (`src/narration.py`) as structured messages rather than terminal `print`; the API reads those messages directly instead of scraping stdout.
 
 ## Tech Stack
 
@@ -73,10 +71,7 @@ config_combat_testing.ini   # Combat testing config (agent-only; pass CONFIG_FIL
 ## Running the Project
 
 ```bash
-# Terminal game
-python src/game.py
-
-# API server (localhost:5000)
+# API server (localhost:5000) — the game runs entirely through this
 python tools/run_api.py
 
 # Frontend dev server (localhost:3000)
@@ -239,6 +234,14 @@ Key architectural work already merged into the codebase:
 - `NPCSpawnerEvent.evaluate_for_map_entry` tile fallback added — uses `self.tile` when `spawn_tile` is `None` (JSON deserialization issue), fixing Lurker and map-entry spawners via the API
 - `GameService.move_player` calls `player.universe.game_tick_events()` on every move — required for map-entry spawners (NPCSpawnerEvents) to fire; mirrors the terminal game loop
 - `src/moves.py` split into `src/moves/` package (13 submodules, 73 classes) — `PassiveMove` base class added to eliminate ~200 lines of repeated passive-move boilerplate; all callers unchanged via `__init__.py` re-exports
+
+### Terminal-mode removal (in progress)
+
+The game is web-API-only; the terminal play mode is being dismantled in phases:
+- **Done:** CLI entry points deleted (`game.py`, `intro_scene.py`, `open_terminal.py`); inventory helpers extracted to `src/inventory_utils.py`; **narration sink** added (`src/narration.py`) — engine emits structured `{text, color, type}` messages via `cprint`/`narrate` into a context-local buffer (`capture_narration()`), echoing to stdout only when no capture is active (keeps `capsys` tests working). ~470 `print()` calls and ~35 modules repointed off `neotermcolor`. The combat adapter consumes the narration buffer via a live listener instead of scraping stdout (`_capture_output`).
+- **Remaining:** convert `GameService` event/interact capture from `redirect_stdout` + input-mocking (`_make_mock_input`/`_build_event_patches`) to `capture_narration` + the structured event protocol (`input_type`/`input_options`/`process(user_input)`); route all container/shop/take interaction verbs through events so the terminal menu classes in `interface.py` (`ShopInterface`, `ContainerLootInterface`, `RoomTakeInterface`, `InventoryInterface`) can be deleted; convert the `TheAdjutant` debug menu to a debug endpoint; remove the dead terminal `combat()` loop and CLI `input()` branches.
+
+**Narration gotcha:** `narrate(*parts, color=None, ...)` joins parts like `print`; color must be passed as a keyword (`narrate(text, color="red")`), never positionally. `cprint(text, color)` keeps the old signature.
 
 ## Bug-Hunt Harness
 
