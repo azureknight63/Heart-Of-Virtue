@@ -269,9 +269,9 @@ def test_stack_inv_items_non_stackables_graceful():
     functions.stack_inv_items(target)
 
 
-def test_print_slow(monkeypatch, capsys):
-    # Speed up by removing sleep
-    monkeypatch.setattr(functions.time, 'sleep', lambda *_: None)
+def test_print_slow(capsys):
+    # print_slow now emits the whole line via the narration sink (no terminal
+    # typewriter / time.sleep); when no capture is active it echoes to stdout.
     functions.print_slow("Hello World", speed="fast")
     captured = capsys.readouterr().out
     assert "Hello World" in captured

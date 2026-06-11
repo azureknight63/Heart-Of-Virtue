@@ -24,7 +24,7 @@ Stage 4 — shorthand, very sparse, each line earned
 import logging
 import random
 
-from narration import colored, narrate
+from narration import narrate
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Stage 0 — Narrated base pools (present at all stages)

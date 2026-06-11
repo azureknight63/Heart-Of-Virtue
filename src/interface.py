@@ -1,9 +1,4 @@
-from functions import stack_inv_items, cprint
-from player import Player
-from npc import NPC
-from objects import Object
-from items import Item
-import copy as _copy
+from functions import cprint
 
 # ANSI color codes
 RESET = "\033[0m"

@@ -7,6 +7,7 @@ merchant subclasses with their own inventories and shop personalities.
 """
 
 import functions  # type: ignore
+import random
 from items import (  # type: ignore
     Item,
     Shortsword,

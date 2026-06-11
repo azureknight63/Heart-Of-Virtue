@@ -825,7 +825,6 @@ class GameService:
             Dictionary with event result and output
         """
         import contextlib
-        import io
         from src.api.serializers.event_serializer import EventSerializer
 
         # Validate event exists
@@ -1252,8 +1251,6 @@ class GameService:
         Returns:
             Dictionary with interaction result and output text
         """
-        import contextlib
-        import io
         from unittest.mock import patch
         import inspect
         import re
