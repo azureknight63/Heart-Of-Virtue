@@ -373,6 +373,8 @@ def allocate_level_up_points():
             "endurance_base",
             "charisma_base",
             "intelligence_base",
+            "faith_base",
+            "randomize",
         }
 
         if attribute not in allowed:
@@ -381,31 +383,62 @@ def allocate_level_up_points():
                 400,
             )
 
-        try:
-            amount_int = int(amount)
-        except Exception:
-            return jsonify({"success": False, "error": "Invalid amount"}), 400
-
-        if amount_int <= 0:
-            return (
-                jsonify({"success": False, "error": "Amount must be positive"}),
-                400,
-            )
-
         remaining = int(getattr(player, "pending_attribute_points", 0) or 0)
-        if amount_int > remaining:
-            return (
-                jsonify({"success": False, "error": "Not enough points"}),
-                400,
-            )
 
-        # Apply allocation
-        setattr(
-            player,
-            attribute,
-            int(getattr(player, attribute, 0) or 0) + amount_int,
-        )
-        player.pending_attribute_points = remaining - amount_int
+        if attribute == "randomize":
+            if remaining <= 0:
+                return (
+                    jsonify({"success": False, "error": "No pending points to randomize"}),
+                    400,
+                )
+            
+            import random
+            attributes_list = [
+                "strength_base",
+                "finesse_base",
+                "speed_base",
+                "endurance_base",
+                "charisma_base",
+                "intelligence_base",
+                "faith_base",
+            ]
+            weights = [random.random() for _ in attributes_list]
+            total_weight = sum(weights)
+            allocated = 0
+            for idx, attr in enumerate(attributes_list):
+                if idx == len(attributes_list) - 1:
+                    share = remaining - allocated
+                else:
+                    share = round(weights[idx] / total_weight * remaining)
+                allocated += share
+                setattr(player, attr, int(getattr(player, attr, 0) or 0) + share)
+            
+            player.pending_attribute_points = 0
+        else:
+            try:
+                amount_int = int(amount)
+            except Exception:
+                return jsonify({"success": False, "error": "Invalid amount"}), 400
+
+            if amount_int <= 0:
+                return (
+                    jsonify({"success": False, "error": "Amount must be positive"}),
+                    400,
+                )
+
+            if amount_int > remaining:
+                return (
+                    jsonify({"success": False, "error": "Not enough points"}),
+                    400,
+                )
+
+            # Apply allocation
+            setattr(
+                player,
+                attribute,
+                int(getattr(player, attribute, 0) or 0) + amount_int,
+            )
+            player.pending_attribute_points = remaining - amount_int
 
         # Clear stale level-up events once all points are spent so they don't
         # accumulate across sessions and re-trigger SFX on future status polls.

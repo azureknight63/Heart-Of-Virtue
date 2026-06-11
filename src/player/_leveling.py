@@ -166,13 +166,40 @@ class PlayerLevelingMixin:
         while points > 0:
             print(
                 f'You have {colored(str(points), "yellow")} additional attribute points to distribute. '
-                f"Please select an attribute to increase:\n"
+                f"Please select an attribute to increase, or [R]andomize the rest:\n"
             )
             for attr, attr_name, i in attributes:
                 print(f"({i}) {attr_name} - {getattr(self, attr)}")
+            print(f"(R) Randomize — spend all {colored(str(points), 'yellow')} remaining points randomly")
 
-            selection = input("Selection: ")
-            if not selection.isdigit() or (1 > int(selection) > 7):
+            selection = input("Selection: ").strip()
+
+            # ── Randomize branch ─────────────────────────────────────────
+            if selection.upper() == "R":
+                # Distribute all remaining points as random proportional weights
+                weights = [random.random() for _ in attributes]
+                total_weight = sum(weights)
+                allocated = 0
+                gains = []
+                for idx, (attr, attr_name, _) in enumerate(attributes):
+                    # Give every stat its proportional slice; last attr absorbs rounding
+                    if idx == len(attributes) - 1:
+                        share = points - allocated
+                    else:
+                        share = round(weights[idx] / total_weight * points)
+                    allocated += share
+                    gains.append((attr, attr_name, share))
+
+                cprint("Randomizing attribute points...", "cyan")
+                for attr, attr_name, share in gains:
+                    if share > 0:
+                        setattr(self, attr, getattr(self, attr) + share)
+                        cprint(f"{attr_name} +{share}", "green")
+                points = 0
+                continue
+            # ─────────────────────────────────────────────────────────────
+
+            if not selection.isdigit() or not (1 <= int(selection) <= 7):
                 cprint(
                     "Invalid selection. You must enter a choice between 1 and 7.",
                     "red",
