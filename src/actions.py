@@ -160,15 +160,6 @@ class ViewMap(Action):
         )
 
 
-class Attack(Action):
-    def __init__(self):
-        super().__init__(
-            method=Player.attack,
-            name="Attack",
-            hotkey=("a", "at", "atk", "attack"),
-        )
-
-
 # DEBUG / CHEATS
 
 

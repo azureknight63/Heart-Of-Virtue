@@ -87,7 +87,6 @@ class MapTile:
                 actions.Menu(),
                 actions.Save(),
                 actions.ViewMap(),
-                actions.Attack(),
                 actions.ViewStatus(),
             ]
         else:

@@ -27,58 +27,6 @@ class TestPlayerCore:
         assert "D" in grid
         assert "*" in grid
 
-    def test_attack_no_target(self, player):
-        player.current_room = MagicMock()
-        player.current_room.npcs_here = []
-
-        with patch('builtins.print') as mock_print:
-            player.attack()
-            # Should print "There's nothing here for Jean to attack."
-            mock_print.assert_called()
-            # Check if "nothing here for Jean to attack" is in any of the calls
-            found = False
-            for call in mock_print.call_args_list:
-                if "nothing here for Jean to attack" in call[0][0]:
-                    found = True
-                    break
-            assert found
-
-    def test_attack_with_target(self, player):
-        player.current_room = MagicMock()
-        target = MagicMock()
-        target.name = "Goblin"
-        target.hidden = False
-        target.finesse = 10
-        target.protection = 0
-        target.hp = 100
-        target.is_alive.return_value = True
-        target.alert_message = "is angry!"
-        target.current_health = 100
-        target.maxhealth = 100
-
-        player.current_room.npcs_here = [target]
-        player.strength = 10
-        player.finesse = 10
-        player.eq_weapon = MagicMock()
-        player.eq_weapon.name = "Sword"
-        player.eq_weapon.damage = 10
-        player.eq_weapon.str_mod = 1.0
-        player.eq_weapon.fin_mod = 1.0
-        player.combat_exp = {"Basic": 0}
-
-        # Mock input to select target '0'
-        # Mock random to ensure a hit
-        with patch('builtins.input', return_value='0'):
-            with patch('random.randint', return_value=50): # hit_chance = (98-10)+10 = 98. 50 < 98 is a hit.
-                with patch('random.uniform', return_value=1.0):
-                    with patch('functions.check_for_combat', return_value=[]):
-                        with patch('player._combat.combat.combat') as mock_combat_module:
-                            player.attack()
-                            assert target.hp < 100
-                            assert target.in_combat is True
-                            assert player.combat_list == [target]
-                            mock_combat_module.assert_called_once_with(player)
-
     def test_testevent(self, player):
         player.current_room = MagicMock()
         player.testevent("EventName")
@@ -733,75 +681,6 @@ class TestPlayerCore:
 
         player.search()
         assert npc.hidden is False
-
-    @patch('builtins.input', return_value='0')
-    @patch('player._combat.combat.combat')
-    @patch('functions.check_for_combat', return_value=[])
-    @patch('random.randint', return_value=50)
-    @patch('random.uniform', return_value=1.0)
-    def test_attack_interactive(self, mock_uniform, mock_randint, mock_check, mock_combat_mod, mock_input, player):
-        npc = MagicMock()
-        npc.name = "Goblin"
-        npc.hidden = False
-        npc.finesse = 10
-        npc.protection = 5
-        npc.hp = 20
-        npc.is_alive.return_value = True
-        npc.alert_message = "attacks!"
-        npc.current_health = 20
-        npc.maxhealth = 20
-
-        player.current_room = MagicMock()
-        player.current_room.npcs_here = [npc]
-        player.eq_weapon = MagicMock()
-        player.eq_weapon.name = "Sword"
-        player.eq_weapon.damage = 10
-        player.eq_weapon.str_mod = 1.0
-        player.eq_weapon.fin_mod = 0.0
-        player.strength = 10
-        player.finesse = 10
-        player.combat_exp = {"Basic": 0}
-
-        player.attack()
-
-        # power = 10 + (10 * 1.0) + (10 * 0.0) = 20
-        # damage = (20 - 5) * 1.0 = 15
-        assert npc.hp == 5
-        assert player.combat_exp["Basic"] == 10
-        mock_combat_mod.assert_called_once_with(player)
-
-    @patch('player.random.uniform', return_value=1.0)
-    @patch('player.random.randint', return_value=50)
-    @patch('functions.check_for_combat', return_value=[])
-    def test_attack_phrase(self, mock_check, mock_randint, mock_uniform, player):
-        npc = MagicMock()
-        npc.name = "Goblin"
-        npc.hidden = False
-        npc.finesse = 10
-        npc.protection = 5
-        npc.hp = 20
-        npc.is_alive.return_value = True
-        npc.alert_message = "attacks!"
-        npc.announce = "A green creature"
-        npc.idle_message = ""
-        npc.current_health = 20
-        npc.maxhealth = 20
-
-        player.current_room = MagicMock()
-        player.current_room.npcs_here = [npc]
-        player.eq_weapon = MagicMock()
-        player.eq_weapon.name = "Sword"
-        player.eq_weapon.damage = 10
-        player.eq_weapon.str_mod = 1.0
-        player.eq_weapon.fin_mod = 0.0
-        player.strength = 10
-        player.finesse = 10
-        player.combat_exp = {"Basic": 0}
-
-        with patch('player._combat.combat.combat') as mock_combat_mod:
-            player.attack(phrase="green")
-            assert npc.hp == 5
-            mock_combat_mod.assert_called_once_with(player)
 
     def test_teleport_success(self, player):
         mock_tile = MagicMock()

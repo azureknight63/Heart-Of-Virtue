@@ -139,11 +139,10 @@ class CombatEvent(Event):
 
             return {"combat_ready": True}
 
-        # Terminal fallback
-        from src.combat import combat
-
-        # We assume combat() has been updated to accept an optional config
-        combat(self.player, event_config=self.config)
+        # The web client always sends "combat_start" (the sole input option).
+        # Any other input is a no-op — there is no terminal combat loop to fall
+        # back to.
+        return {"combat_ready": False}
 
 
 class LootEvent(Event):

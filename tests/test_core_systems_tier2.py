@@ -35,7 +35,6 @@ import random
 from unittest.mock import Mock, MagicMock, patch
 
 # CRITICAL: Import these modules directly so coverage sees them
-import combat
 import states
 import combatant
 from moves import Move, PassiveMove
@@ -830,93 +829,6 @@ class TestMoveTargeting:
     def test_move_target_none_initially(self, fake_player):
         """Move target starts as player initially."""
         pass
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# COMBAT LOOP TESTS
-# ═══════════════════════════════════════════════════════════════════════════════
-
-class TestCombatInitialization:
-    """Test combat loop setup and initialization."""
-
-    @patch('combat.CombatDisplayConfig')
-    @patch('combat.GameLogger')
-    @patch('combat.DebugManager')
-    @patch('combat.CoordinateSystemConfig')
-    @patch('combat.CombatBattlefieldWindow')
-    @patch('positions.initialize_combat_positions')
-    @patch('functions.refresh_stat_bonuses')
-    def test_combat_sets_in_combat_flag(
-        self, mock_refresh, mock_positions, mock_window, mock_coord,
-        mock_debug, mock_logger, mock_display, fake_player
-    ):
-        """combat() sets player.in_combat = True."""
-        fake_player.combat_list = []
-
-        # Combat ends immediately with no enemies
-        try:
-            combat.combat(fake_player)
-        except Exception:
-            pass  # May fail due to mocks
-
-        # Just verify flag was set somewhere in execution
-        assert hasattr(fake_player, 'in_combat')
-
-    def test_evaluate_combat_events_handles_empty_list(self, fake_player):
-        """_evaluate_combat_events() handles empty event list."""
-        fake_player.combat_events = []
-
-        # Should not raise
-        combat._evaluate_combat_events(fake_player)
-
-    def test_evaluate_combat_events_calls_check_conditions(self, fake_player):
-        """_evaluate_combat_events() calls check_combat_conditions on each event."""
-        event1 = Mock()
-        event1.check_combat_conditions = Mock()
-        event1.name = "TestEvent"
-
-        fake_player.combat_events = [event1]
-
-        combat._evaluate_combat_events(fake_player)
-
-        event1.check_combat_conditions.assert_called_once()
-
-    def test_evaluate_combat_events_handles_failing_event(self, fake_player, capsys):
-        """_evaluate_combat_events() catches and logs exceptions from events."""
-        event1 = Mock()
-        event1.check_combat_conditions = Mock(side_effect=ValueError("Test error"))
-        event1.name = "BrokenEvent"
-
-        fake_player.combat_events = [event1]
-
-        # Should not raise
-        combat._evaluate_combat_events(fake_player)
-
-
-class TestCombatEventConfiguration:
-    """Test combat event config handling."""
-
-    @patch('combat.CombatDisplayConfig')
-    @patch('combat.GameLogger')
-    @patch('combat.DebugManager')
-    @patch('combat.CoordinateSystemConfig')
-    @patch('combat.CombatBattlefieldWindow')
-    @patch('positions.initialize_combat_positions')
-    @patch('functions.refresh_stat_bonuses')
-    def test_combat_with_event_config_none(
-        self, mock_refresh, mock_positions, mock_window, mock_coord,
-        mock_debug, mock_logger, mock_display, fake_player
-    ):
-        """combat() handles event_config=None gracefully."""
-        fake_player.combat_list = []
-        fake_player.combat_list_allies = []
-
-        try:
-            combat.combat(fake_player, event_config=None)
-        except Exception:
-            pass
-
-        # Just verify it doesn't crash
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

@@ -186,20 +186,21 @@ class TestCombatEvent:
 
         assert "TestCombat begins!" in event.description
 
-    @patch('src.combat.combat')
-    def test_combat_event_process_terminal_fallback(self, mock_combat_func):
-        """Test CombatEvent process method in terminal mode."""
+    def test_combat_event_process_non_combat_start_is_noop(self):
+        """Without the 'combat_start' input, process() is a safe no-op.
+
+        The terminal combat() fallback has been removed; the web client always
+        sends 'combat_start'.
+        """
         config = CombatEventConfig()
         mock_player = MagicMock()
         mock_tile = MagicMock()
 
         event = CombatEvent("TestCombat", player=mock_player, tile=mock_tile, config=config)
 
-        # Call process without user_input (terminal mode)
         result = event.process()
 
-        # Should call combat function
-        mock_combat_func.assert_called_once_with(mock_player, event_config=config)
+        assert result == {"combat_ready": False}
 
     def test_combat_event_process_api_mode(self):
         """Test CombatEvent process method in API mode."""
