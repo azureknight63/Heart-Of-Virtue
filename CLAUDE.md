@@ -102,7 +102,9 @@ cd frontend && npm test -- --run --coverage
 Use `python -m pytest` rather than bare `pytest` — the virtualenv may not expose the
 `pytest` binary on PATH, causing silent import failures.
 
-The `tests/api/`, `tests/broken/`, and `tests/uat/` directories are excluded from the default run. Don't add them to standard test runs.
+The `tests/api/`, `tests/broken/`, and `tests/uat/` directories are excluded from the default run. Don't add them to standard test runs. **Full-app integration tests that build a real session/universe** (via `create_app(TestingConfig)` + `/api/test/session`) belong in `tests/api/` — creating a real session mutates module-level item/merchant registries and pollutes downstream shop/spawn tests in the default suite. The other route tests avoid this by using a *mocked* `session_manager`.
+
+**Test-pollution gotcha:** stray root-level scripts (`test_*_fix.py`, `reproduce_*.py`, etc.) that do `sys.modules['flask'] = MagicMock()` at import will poison every Flask test in a full run — pytest collects them from the rootdir, so each later route/serializer test sees a `MagicMock` app and fails (while passing in isolation). `pytest.ini`'s `addopts` ignore-list neutralizes the known ones; add new such scripts there. To find a collection-time culprit, hook `pytest_collection_finish` and check `type(sys.modules['flask'])`.
 
 ## Test Coverage Strategy
 
@@ -234,12 +236,17 @@ Key architectural work already merged into the codebase:
 - `NPCSpawnerEvent.evaluate_for_map_entry` tile fallback added — uses `self.tile` when `spawn_tile` is `None` (JSON deserialization issue), fixing Lurker and map-entry spawners via the API
 - `GameService.move_player` calls `player.universe.game_tick_events()` on every move — required for map-entry spawners (NPCSpawnerEvents) to fire; mirrors the terminal game loop
 - `src/moves.py` split into `src/moves/` package (13 submodules, 73 classes) — `PassiveMove` base class added to eliminate ~200 lines of repeated passive-move boilerplate; all callers unchanged via `__init__.py` re-exports
+- Terminal-mode teardown (Phase 2): all four `interface.py` menu classes removed, dead `combat()` loop deleted, `TheAdjutant` menu converted to the `/api/debug` blueprint, event capture moved fully onto the narration sink + structured protocol (see "Terminal-mode removal" below for details and what remains)
 
-### Terminal-mode removal (in progress)
+### Terminal-mode removal (mostly complete)
 
 The game is web-API-only; the terminal play mode is being dismantled in phases:
 - **Done:** CLI entry points deleted (`game.py`, `intro_scene.py`, `open_terminal.py`); inventory helpers extracted to `src/inventory_utils.py`; **narration sink** added (`src/narration.py`) — engine emits structured `{text, color, type}` messages via `cprint`/`narrate` into a context-local buffer (`capture_narration()`), echoing to stdout only when no capture is active (keeps `capsys` tests working). ~470 `print()` calls and ~35 modules repointed off `neotermcolor`. The combat adapter consumes the narration buffer via a live listener instead of scraping stdout (`_capture_output`).
-- **Remaining:** convert `GameService` event/interact capture from `redirect_stdout` + input-mocking (`_make_mock_input`/`_build_event_patches`) to `capture_narration` + the structured event protocol (`input_type`/`input_options`/`process(user_input)`); route all container/shop/take interaction verbs through events so the terminal menu classes in `interface.py` (`ShopInterface`, `ContainerLootInterface`, `RoomTakeInterface`, `InventoryInterface`) can be deleted; convert the `TheAdjutant` debug menu to a debug endpoint; remove the dead terminal `combat()` loop and CLI `input()` branches.
+- **Done:** all four terminal menu classes deleted from `interface.py` — `ContainerLootInterface` (loot verbs route through `events.LootEvent`), `ShopInterface` (+`ShopBuyMenu`/`ShopSellMenu`; pricing moved onto the `Merchant` — `buy_modifier`/`sell_modifier`/`shop_name` — read by `GameService.shop_buy/sell` + `ShopSerializer`), `RoomTakeInterface` (web uses `Item.take()` + `interact_with_target`), and `InventoryInterface`/`InventoryCategorySubmenu`/`BaseInterface` (web uses the `/inventory` routes). `interface.py` is now a thin shim re-exporting `get_gold`/`transfer_gold`/`transfer_item`. The dead `Player.take`/`Player.print_inventory`/`Player.attack` verbs and their `actions.py` action classes (`ViewInventory`/`Take`/`Attack`) were removed too.
+- **Done:** dead terminal `combat()` loop deleted (`src/combat.py` removed; the web client drives combat through `ApiCombatAdapter`). `CombatEvent`'s terminal fallback removed (always `combat_start` in web).
+- **Done:** `TheAdjutant` debug menu converted to a **test-only debug endpoint** (`src/api/routes/debug.py`, `debug_bp`, registered only when `app.config["TESTING"]`). The Adjutant's input() menu was replaced by parametrized operation methods (`set_hp`, `set_level`, `set_attributes`, `set_heat`, `restore`, `learn_all_skills`, `list_skills`, `player_state`, `arena_rosters`, `add_combatant`, `remove_combatant`, `clear_room`, `set_combatant_stats`).
+- **Done:** event output capture fully on `capture_narration` (last `redirect_stdout` in `move_player` converted); `WhisperingStatue` — the only event that called `input()` directly — converted to the structured protocol.
+- **Remaining:** the engine still has ~25 terminal `input()` calls in non-event methods (`functions.py`, `player/*`, `items.py`) — equip/use/drop confirmations, selection menus, save naming. `GameService._make_mock_input`/`_build_event_patches` are **retained as a safety net** (a non-blocking cycling input stub) so any such legacy loop reached as a side effect of event processing terminates instead of hanging the request. Removing the net requires de-terminal'ing those call sites (route them through the structured protocol / web UI) first.
 
 **Narration gotcha:** `narrate(*parts, color=None, ...)` joins parts like `print`; color must be passed as a keyword (`narrate(text, color="red")`), never positionally. `cprint(text, color)` keeps the old signature.
 
@@ -360,7 +367,7 @@ only on `console_errors` and `network_failures` (the significant ones).
 
 ### Key NPCs added in `npc.py`
 
-- **`TheAdjutant`** — friendly NPC at `(0, 0)`. `talk` opens a runtime menu: set Jean's HP/level/attributes/heat/skills and manage the NPC roster on each tile (add/remove/clear/edit by class name). Changes take effect immediately — no restart needed.
+- **`TheAdjutant`** — friendly NPC at `(0, 0)`. `talk` narrates flavor only; runtime configuration (Jean's HP/level/attributes/heat/skills and the per-tile NPC roster) is driven by the **test-only debug endpoint** (`/api/debug/*`, `src/api/routes/debug.py`), which calls the Adjutant's parametrized operation methods. The endpoint is registered only when `app.config["TESTING"]` is true, so it is never reachable in production. Changes take effect immediately — no restart needed.
 - **`StatusDummy` / "Pell"** — test target at `(1, 1)`. Every status resistance is 0.0 and every damage resistance is 1.0 so effects land reliably. High HP (500), very low damage (3).
 
 ---
