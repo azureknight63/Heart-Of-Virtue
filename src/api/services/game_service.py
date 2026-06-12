@@ -1,7 +1,6 @@
 import logging
 import uuid
 import contextlib
-import itertools
 import re
 from typing import TYPE_CHECKING, Dict, Any, Optional, List
 from unittest.mock import patch
@@ -125,41 +124,17 @@ class GameService:
             modules.append(event.__module__)
         return modules
 
-    # Priority-ordered responses that cover all known menu formats in story events.
-    # The cycle lets a single mock_input function terminate *any* while-loop guard
-    # within at most len(_MOCK_INPUT_CYCLE) calls: letter menus (a/b/c), numeric
-    # menus (1/2/3), and legacy zero-indexed menus (0).
-    _MOCK_INPUT_CYCLE = ["a", "1", "b", "2", "c", "3", "0", "n", "y"]
+    def _build_event_patches(self, target_modules) -> List[Any]:
+        """Build patches that neutralize terminal timing/animation during events.
 
-    @staticmethod
-    def _make_mock_input():
-        """Return a non-blocking input() stub for any legacy engine prompt.
-
-        Event output flows through the narration sink, so prompts no longer need
-        to be buffered here.  The stub still cycles through harmless responses
-        (including cancel/exit values) so that any legacy ``while True: input()``
-        loop reached as a side effect of event processing terminates instead of
-        hanging the API request.  Retained as a safety net until the engine's
-        remaining terminal input() call sites are removed.
-        """
-        _cycle = itertools.cycle(GameService._MOCK_INPUT_CYCLE)
-
-        def mock_input(prompt=""):
-            return next(_cycle)
-
-        return mock_input
-
-    def _build_event_patches(self, target_modules, mock_input) -> List[Any]:
-        """Build patches that neutralize blocking/timing during event processing.
-
-        Engine narrative output now flows through the narration sink (captured via
-        ``capture_narration``), so cprint/print_slow are no longer patched here.
-        We still suppress blocking ``input()`` (forced via ``mock_input`` until the
-        structured interaction protocol fully replaces it), terminal pauses, and
-        animation playback.
+        Engine narrative output flows through the narration sink (captured via
+        ``capture_narration``), and the engine no longer calls ``input()`` on any
+        event/interact-reachable path (the terminal menus were removed), so input
+        is no longer mocked here.  We still suppress terminal pauses
+        (``await_input``), animation playback, and ``time.sleep`` so events resolve
+        instantly without blocking the API request.
         """
         patches = [
-            patch("builtins.input", mock_input),
             patch("time.sleep", return_value=None),
         ]
 
@@ -173,7 +148,6 @@ class GameService:
                         create=True,
                     ),
                     patch(f"{mod}.time.sleep", return_value=None, create=True),
-                    patch(f"{mod}.input", mock_input, create=True),
                 ]
             )
 
@@ -739,12 +713,10 @@ class GameService:
             # Try to trigger the event and capture output
             if hasattr(event, "check_conditions"):
                 try:
-                    mock_input = self._make_mock_input()
-
                     target_modules = self._get_event_target_modules(
                         event, include_animations=True
                     )
-                    patches = self._build_event_patches(target_modules, mock_input)
+                    patches = self._build_event_patches(target_modules)
 
                     # Capture structured narration emitted during event processing.
                     with capture_narration() as _msgs, contextlib.ExitStack() as stack:
@@ -837,16 +809,12 @@ class GameService:
         result = {"success": True, "event_id": event_id}
 
         try:
-            # Any incidental input() during processing resolves to the supplied
-            # user_input; structured choices come through process(user_input=...).
-            def mock_input(prompt=""):
-                return user_input
-
-            # Build robust patch list across multiple core modules
+            # Structured choices come through process(user_input=...); the engine
+            # no longer calls input() on event-reachable paths.
             target_modules = self._get_event_target_modules(
                 event, include_animations=False
             )
-            patches = self._build_event_patches(target_modules, mock_input)
+            patches = self._build_event_patches(target_modules)
 
             # Capture structured narration emitted during event processing.
             with capture_narration() as _msgs, contextlib.ExitStack() as stack:
@@ -1343,15 +1311,11 @@ class GameService:
         # Execute action and capture output
         events_triggered = []
         try:
-            def mock_input(prompt=""):
-                # Return 'x' to exit any legacy terminal interactive loops.
-                return "x"
-
             # Narrative output is captured via the narration sink; we still
-            # neutralize blocking input and timing for any legacy code paths.
+            # neutralize terminal pauses/timing. Interaction targets no longer
+            # call input() (the terminal item/object menus were removed).
             with (
                 capture_narration() as _msgs,
-                patch("builtins.input", mock_input),
                 patch("functions.await_input", return_value=None),
                 patch("time.sleep", return_value=None),
                 patch("src.functions.await_input", return_value=None),
@@ -1852,12 +1816,10 @@ class GameService:
 
             if hasattr(event, method_name):
                 try:
-                    mock_input = self._make_mock_input()
-
                     target_modules = self._get_event_target_modules(
                         event, include_animations=True
                     )
-                    patches = self._build_event_patches(target_modules, mock_input)
+                    patches = self._build_event_patches(target_modules)
 
                     # Capture structured narration emitted during processing.
                     with capture_narration() as _msgs, contextlib.ExitStack() as stack:

@@ -43,43 +43,9 @@ def _src_dir():
 
 # -------- load_select edge: no saves ---------
 
-def test_load_select_no_files(monkeypatch):
-    monkeypatch.setattr(functions, 'saves_list', lambda: [])
-    assert functions.load_select() is None
-
-
 # -------- load_select cancel path with one file ---------
 
-def test_load_select_cancel(monkeypatch, tmp_path):
-    base = _src_dir()
-    fname = 'tmp_cov_load_cancel.sav'
-    full = os.path.join(base, fname)
-    with open(full, 'wb') as f:
-        pickle.dump(SimplePlayer(), f, pickle.HIGHEST_PROTOCOL)
-    monkeypatch.setattr(functions, 'saves_list', lambda: [fname])
-    monkeypatch.setattr(builtins, 'input', lambda _='': 'x')
-    assert functions.load_select() is None
-    # cleanup
-    try: os.remove(full)
-    except Exception: pass
-
-
 # -------- save_select new file and cancel paths ---------
-
-def test_save_select_new_and_cancel(monkeypatch):
-    player = SimplePlayer()
-    # Sequence: create new file then exit (function returns None after loop)
-    seq = iter(['n', 'tmp_cov_newfile', 'x'])
-    monkeypatch.setattr(builtins, 'input', lambda _='': next(seq))
-    functions.save_select(player)
-    assert os.path.exists('tmp_cov_newfile.sav')
-    # Cancel path
-    seq2 = iter(['x'])
-    monkeypatch.setattr(builtins, 'input', lambda _='': next(seq2))
-    functions.save_select(player)  # should just exit
-    try: os.remove('tmp_cov_newfile.sav')
-    except Exception: pass
-
 
 # -------- load error path (corrupt file) ---------
 

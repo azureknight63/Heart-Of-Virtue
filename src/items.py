@@ -1,6 +1,5 @@
 from __future__ import annotations
 import random
-import time
 import math
 from narration import colored, cprint, narrate
 import functions
@@ -217,11 +216,10 @@ class Item:
                     if quantity is not None:
                         drop_count = str(quantity)
                     else:
-                        drop_count = input(
-                            "How many would you like to drop? (Carrying {}) ".format(
-                                getattr(self, "count")
-                            )
-                        )
+                        # No quantity specified (e.g. interact "drop"): drop the
+                        # whole stack. The web client passes an explicit quantity
+                        # when the player chooses a partial amount.
+                        drop_count = str(getattr(self, "count"))
 
                     if functions.is_input_integer(drop_count):
                         if 0 <= int(drop_count) <= getattr(self, "count"):
@@ -286,11 +284,10 @@ class Item:
                 if quantity is not None:
                     take_count_str = str(quantity)
                 else:
-                    take_count_str = input(
-                        "How many would you like to take? (Available {}) ".format(
-                            getattr(self, "count")
-                        )
-                    )
+                    # No quantity specified (e.g. interact "take"): take the whole
+                    # stack. The web client passes an explicit quantity for a
+                    # partial take.
+                    take_count_str = str(getattr(self, "count"))
 
                 if functions.is_input_integer(take_count_str):
                     take_count = int(take_count_str)
@@ -3271,61 +3268,30 @@ class Book(Special):
         narrate()
         cprint(f"--- Page {page_num} of {total_pages} ---", "cyan")
 
-    def _show_page_navigation(self, current_page: int, total_pages: int) -> str:
-        """Display navigation options and get user input."""
-        narrate()
-        options: list[str] = []
-        if current_page > 1:
-            options.append(colored("P: Previous Page", "yellow"))
-        if current_page < total_pages:
-            options.append(colored("N: Next Page", "yellow"))
-        options.append(colored("C: Close Book", "red"))
-
-        narrate(" | ".join(options))
-
-        choice = input(colored("Selection: ", "cyan")).strip().lower()
-        return choice
-
     def read(self) -> None:
-        """Read the book, with pagination for long texts."""
+        """Read the book — emits the full text via narration.
+
+        Non-interactive: long texts are emitted page by page (with page markers)
+        in one pass rather than via a terminal pagination prompt. The web client
+        handles scrolling.
+        """
         if self.text:
             cprint("Jean begins reading...", color="cyan")
-            time.sleep(0.5)
 
-            # Check if text is long enough to paginate (threshold: ~600 chars)
+            # Page markers are preserved for long texts, but emitted in one pass.
             if len(self.text) > 600:
                 pages = self._paginate_text(self.text)
-                current_page = 1
-
-                while True:
-                    self._display_page(
-                        pages[current_page - 1], current_page, len(pages)
-                    )
-                    choice = self._show_page_navigation(current_page, len(pages))
-
-                    if choice in ("p", "prev", "previous") and current_page > 1:
-                        current_page -= 1
-                    elif choice in ("n", "next") and current_page < len(pages):
-                        current_page += 1
-                    elif choice in ("c", "close", "x", "exit"):
-                        cprint("Jean closes the book.", "cyan")
-                        break
-                    else:
-                        cprint("Invalid choice. Please try again.", "red")
-                        time.sleep(1)
+                for page_num, page in enumerate(pages, 1):
+                    self._display_page(page, page_num, len(pages))
             else:
-                # Short text - just print it normally
                 functions.print_slow(self.text, speed="fast")
-                functions.await_input()
         else:
             narrate(self.description)
 
         if self.event:
-            time.sleep(0.5)
             self.event.process()
             if not getattr(self.event, "repeat", False):
                 self.event = None
-            functions.await_input()
 
     def use(self, player: "Player", user=None) -> None:
         """API-friendly reading method: prints the full text without interactive pagination.

@@ -88,15 +88,6 @@ class ViewStatus(Action):
         )
 
 
-class SkillMenu(Action):
-    def __init__(self):
-        super().__init__(
-            method=Player.skillmenu,
-            name="View skill menu",
-            hotkey=("k", "skill", "skillmenu"),
-        )
-
-
 class Look(Action):
     def __init__(self):
         super().__init__(method=Player.look, name="Look", hotkey=("l", "look"))

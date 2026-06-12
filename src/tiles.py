@@ -78,7 +78,6 @@ class MapTile:
             )  # first, add the available directions in the current room
             default_moves = [  # these are the default moves available to the player
                 actions.ListCommands(),
-                actions.SkillMenu(),
                 actions.Look(),
                 actions.View(),
                 actions.Equip(),

@@ -22,27 +22,25 @@ class PlayerExplorationMixin:
             functions.advise_player_actions(self)
 
     def view(self, phrase=""):
-        """Describe a specific entity in the current room by name phrase or interactive menu."""
-        # print(phrase)
+        """Describe a specific entity in the current room by name phrase.
+
+        With no phrase, lists what can be looked at (non-interactive — the web
+        client picks a target and views it by name).
+        """
         if phrase == "":
-            stuff_here = {}
-            for i, thing in enumerate(
-                self.current_room.npcs_here
-                + self.current_room.items_here
-                + self.current_room.objects_here
-            ):
-                if not thing.hidden and thing.name != "null":
-                    stuff_here[str(i)] = thing
-            if len(stuff_here) > 0:
-                narrate("What would you like to view?\n\n")
-                for k, v in stuff_here.items():
-                    narrate(k, ": ", v.name)
-                choice = input("Selection: ")
-                if choice in stuff_here:
-                    narrate(stuff_here[choice].description)
-                    functions.await_input()
-                else:
-                    narrate("Invalid selection.")
+            stuff_here = [
+                thing
+                for thing in (
+                    self.current_room.npcs_here
+                    + self.current_room.items_here
+                    + self.current_room.objects_here
+                )
+                if not thing.hidden and thing.name != "null"
+            ]
+            if stuff_here:
+                narrate("Jean can look at:\n")
+                for thing in stuff_here:
+                    narrate(thing.name)
             else:
                 narrate("Jean doesn't see anything remarkable here to look at.\n")
         else:

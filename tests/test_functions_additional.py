@@ -57,57 +57,7 @@ def test_execute_arbitrary_method_zero_and_one_arg(monkeypatch):
     assert called == {'zero': True, 'one': True}
 
 
-def test_confirm_yes_no(monkeypatch):
-    player = DummyPlayer()
-
-    class Thing:
-        name = "Rock"
-        def examine(self, p):
-            p.flags.append('examined')
-
-    t = Thing()
-    # First call: yes
-    seq = iter(['y', 'n'])
-    monkeypatch.setattr(builtins, 'input', lambda _='': next(seq))
-    result_yes = functions.confirm(t, 'examine', player, ['examine'])
-    result_no = functions.confirm(t, 'examine', player, ['examine'])
-    assert result_yes is True and result_no is False and 'examined' in player.flags
-
-
 # ---------- enumerate_for_interactions ----------
-
-def test_enumerate_for_interactions_single_and_multi(monkeypatch):
-    player = DummyPlayer()
-
-    class Obj:
-        def __init__(self, name):
-            self.name = name
-            self.interactions = ['examine']
-            self.called = False
-        def examine(self, p):
-            self.called = True
-
-    o1 = Obj('Apple')
-    subjects = [o1]
-    # Single candidate immediate execution
-    handled = functions.enumerate_for_interactions(subjects, player, ['examine'], 'examine')
-    assert handled and o1.called
-
-    # Multi-candidate with selection
-    o2 = Obj('Apple Core')
-    o1.called = False
-    o2.called = False
-    subjects = [o1, o2]
-    # Choose second item (input '2')
-    monkeypatch.setattr(builtins, 'input', lambda _='': '2')
-    handled_multi = functions.enumerate_for_interactions(subjects, player, ['examine', 'apple'], 'examine apple')
-    assert handled_multi and o2.called and not o1.called
-
-    # Cancellation path
-    monkeypatch.setattr(builtins, 'input', lambda _='': 'x')
-    cancelled = functions.enumerate_for_interactions(subjects, player, ['examine', 'apple'], 'examine apple')
-    assert cancelled is False
-
 
 # ---------- screen_clear ----------
 

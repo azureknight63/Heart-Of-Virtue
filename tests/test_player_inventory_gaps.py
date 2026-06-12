@@ -320,25 +320,6 @@ def test_equip_item_testing_mode_no_starting_exp():
 # ---------------------------------------------------------------------------
 
 
-def test_equip_item_already_equipped_unequip():
-    """When item is already equipped and user says 'y', it is unequipped."""
-    p = _make_player()
-    item = _make_equippable(maintype="Weapon")
-    item.isequipped = True
-    item.interactions = ["unequip"]
-    p.fists = MagicMock()
-    p.inventory = [item]
-    p.weight_tolerance = 100.0
-    p.weight_current = 0.0
-
-    with patch("builtins.input", return_value="y"):
-        with patch("player._inventory.cprint"):
-            p.equip_item(item_object=item)
-
-    assert item.isequipped is False
-    assert p.eq_weapon == p.fists
-
-
 def test_equip_item_already_equipped_keep():
     """When item is already equipped and user says 'n', it stays equipped."""
     p = _make_player()
@@ -468,19 +449,6 @@ def test_use_item_by_phrase_confirm_yes():
     potion.use.assert_called_once()
 
 
-def test_use_item_by_phrase_confirm_no():
-    """use_item with a phrase and 'n' confirmation does NOT call item.use."""
-    p = _make_player()
-    potion = _make_consumable("Healing Potion")
-    potion.announce = "healing potion"
-    p.inventory = [potion]
-
-    with patch("builtins.input", return_value="n"):
-        p.use_item(phrase="healing")
-
-    potion.use.assert_not_called()
-
-
 # ---------------------------------------------------------------------------
 # use_item — interactive menu paths
 # ---------------------------------------------------------------------------
@@ -530,46 +498,6 @@ def test_use_item_menu_non_integer_input():
     potion.use.assert_not_called()
 
 
-def test_use_item_menu_prefer_interaction():
-    """use_item calls item.prefer when interactions contains 'prefer'."""
-    import items as items_mod
-
-    p = _make_player()
-    special = MagicMock(spec=items_mod.Special)
-    special.name = "Relic"
-    special.announce = "relic"
-    special.count = 1
-    special.merchandise = False
-    special.interactions = ["prefer"]
-    special.prefer = MagicMock()
-    p.inventory = [special]
-    p.preferences = {}
-    p.in_combat = False
-
-    inputs = iter(["s", "0", "x"])
-    with patch("builtins.input", side_effect=inputs):
-        with patch("player._inventory.cprint"):
-            p.use_item(phrase="")
-
-    special.prefer.assert_called_once_with(p)
-
-
-def test_use_item_exits_after_combat_use():
-    """use_item sets exit_loop when item is used during combat."""
-    p = _make_player()
-    p.in_combat = True
-    potion = _make_consumable("Battle Potion")
-    p.inventory = [potion]
-    p.preferences = {}
-
-    inputs = iter(["c", "0"])
-    with patch("builtins.input", side_effect=inputs):
-        with patch("player._inventory.cprint"):
-            p.use_item(phrase="")
-
-    potion.use.assert_called_once()
-
-
 # ---------------------------------------------------------------------------
 # use_item — equipped item displayed with (Equipped) marker (line 390-401)
 # ---------------------------------------------------------------------------
@@ -590,31 +518,6 @@ def test_use_item_menu_shows_equipped_marker():
         with patch("player._inventory.cprint"):
             with patch("builtins.print"):
                 p.use_item(phrase="")
-
-
-def test_use_item_menu_item_without_count():
-    """use_item menu handles items without a count attribute."""
-    import items as items_mod
-
-    p = _make_player()
-    special = MagicMock(spec=items_mod.Special)
-    special.name = "Ancient Scroll"
-    special.announce = "ancient scroll"
-    special.merchandise = False
-    special.interactions = ["use"]
-    special.use = MagicMock()
-    del special.count  # No count attribute
-    del special.isequipped  # No isequipped attribute
-    p.inventory = [special]
-    p.preferences = {}
-    p.in_combat = False
-
-    inputs = iter(["s", "0", "x"])
-    with patch("builtins.input", side_effect=inputs):
-        with patch("player._inventory.cprint"):
-            p.use_item(phrase="")
-
-    special.use.assert_called_once()
 
 
 # ---------------------------------------------------------------------------

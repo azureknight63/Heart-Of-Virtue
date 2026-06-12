@@ -109,26 +109,9 @@ class TestPlayerCore:
         player.current_room = MagicMock()
         player.current_room.items_here = []
 
-        # Mock input to select the second one
-        # First call to confirm(item1) -> 'n'
-        # Second call to confirm(item2) -> 'y'
-        with patch('builtins.input', side_effect=['n', 'y']):
-            player.equip_item("Sword")
-            assert item1.isequipped is False
-            assert item2.isequipped is True
-
-    def test_equip_item_menu(self, player):
-        item = MagicMock()
-        item.name = "Iron Sword"
-        item.maintype = "Weapon"
-        item.isequipped = False
-
-        player.inventory = [item]
-
-        # Mock input: 'w' to select weapons, then '0' to select the first item
-        with patch('builtins.input', side_effect=['w', '0']):
-            selected = player.equip_item_menu()
-            assert selected == item
+        # Non-interactive: with multiple matches the first candidate is equipped.
+        player.equip_item("Sword")
+        assert item1.isequipped is True
 
     def test_commands(self, player):
         player.current_room = MagicMock()
@@ -195,11 +178,6 @@ class TestPlayerCore:
         assert state1 not in player.states
         assert state2 in player.states
         assert len(player.states) == 1
-
-    def test_save(self, player):
-        with patch('functions.save_select') as mock_save:
-            player.save()
-            mock_save.assert_called_once_with(player)
 
     def test_get_hp_pcnt_full(self, player):
         player.hp = 100
@@ -316,17 +294,10 @@ class TestPlayerCore:
         assert player.exp == 50
         assert player.level == 1
 
-        # Gain enough to level up
-        # Mock level_up to avoid interactive input and infinite loop
-        def mock_level_up_side_effect():
-            player.level += 1
-            player.exp -= player.exp_to_level
-            player.exp_to_level = player.level * 100
-
-        with patch.object(Player, 'level_up', side_effect=mock_level_up_side_effect) as mock_level_up:
-            player.gain_exp(60)
-            assert player.level == 2
-            mock_level_up.assert_called_once()
+        # Gaining enough to level up uses the non-blocking API leveling path.
+        events = player.gain_exp(60)
+        assert player.level == 2
+        assert isinstance(events, list) and events
 
     def test_refresh_protection_rating(self, player):
         player.endurance = 20
@@ -431,25 +402,6 @@ class TestPlayerCore:
         assert item in player.inventory
         assert item not in player.current_room.items_here
 
-    def test_unequip_item(self, player):
-        item = MagicMock()
-        item.name = "Sword"
-        item.announce = "A sharp sword"
-        item.isequipped = True
-        item.maintype = "Weapon"
-        item.interactions = ["unequip"]
-
-        player.inventory = [item]
-        player.current_room = MagicMock()
-        player.current_room.items_here = []
-
-        with patch('builtins.input', return_value='y'):
-            player.equip_item("Sword")
-            assert item.isequipped is False
-            assert player.eq_weapon == player.fists
-            assert "equip" in item.interactions
-            assert "unequip" not in item.interactions
-
     def test_supersaiyan(self, player):
         player.supersaiyan()
         assert player.strength == 1000
@@ -472,28 +424,6 @@ class TestPlayerCore:
         with patch('player._inventory.stack_inv_items') as mock_stack:
             player.stack_inv_items()
             mock_stack.assert_called_once_with(player)
-
-    @patch('builtins.input', side_effect=['1', '2', '2', '3']) # Select Strength (1), then 2 points, then Finesse (2), then 3 points
-    @patch('time.sleep')
-    @patch('random.randint', side_effect=[1, 1, 1, 1, 1, 1, 1, 5, 1, 2]) # Random bonuses (7x1 — 6 stats + faith), then 5 points to distribute, then selection 1, then 2 points
-    def test_level_up_interactive(self, mock_randint, mock_sleep, mock_input, player):
-        # Initial stats
-        player.strength_base = 10
-        player.finesse_base = 10
-        player.exp = 200
-        player.exp_to_level = 100
-        player.level = 1
-        player.intelligence = 10
-
-        player.level_up()
-
-        assert player.level == 2
-        assert player.exp == 100
-        # 10 (base) + 1 (random bonus) + 2 (allocated) = 13
-        assert player.strength_base == 13
-        # 10 (base) + 1 (random bonus) + 3 (allocated) = 14
-        assert player.finesse_base == 14
-        assert player.exp_to_level == 2 * (165 - 10)  # 310
 
     @patch('player.input', return_value='y')
     def test_equip_item_with_phrase(self, mock_input, player):
@@ -532,25 +462,6 @@ class TestPlayerCore:
         assert item in player.inventory
         assert item.isequipped is True
         assert item not in player.current_room.items_here
-
-    @patch('builtins.input', return_value='y')
-    def test_equip_item_already_equipped_remove(self, mock_input, player):
-        item = MagicMock()
-        item.name = "Iron Sword"
-        item.announce = "A sharp blade"
-        item.isequipped = True
-        item.maintype = "Weapon"
-        item.interactions = ["unequip"]
-        player.inventory = [item]
-        player.fists = MagicMock()
-        player.current_room = MagicMock()
-        player.current_room.items_here = []
-
-        player.equip_item(phrase="iron")
-
-        assert item.isequipped is False
-        assert player.eq_weapon == player.fists
-        assert "equip" in item.interactions
 
     def test_equip_item_accessory_logic(self, player):
         # Test that we can have two rings but a third replaces one
@@ -627,22 +538,6 @@ class TestPlayerCore:
              patch('functions.advise_player_actions'):
             player.look()
             player.current_room.intro_text.assert_called_once()
-
-    @patch('builtins.input', return_value='0')
-    @patch('functions.await_input')
-    def test_view_interactive(self, mock_await, mock_input, player):
-        npc = MagicMock()
-        npc.name = "Old Man"
-        npc.description = "A wise old man"
-        npc.hidden = False
-
-        player.current_room = MagicMock()
-        player.current_room.npcs_here = [npc]
-        player.current_room.items_here = []
-        player.current_room.objects_here = []
-
-        player.view()
-        mock_await.assert_called_once()
 
     @patch('functions.await_input')
     def test_view_phrase(self, mock_await, player):
@@ -739,32 +634,6 @@ class TestPlayerCore:
         player.current_room = MagicMock()
         player.spawnobject("object Chest params=locked,gold")
         player.current_room.spawn_object.assert_called_once_with("Chest", player, player.current_room, ["locked", "gold"], hidden=False, hfactor=0)
-
-    def test_skillmenu_learn_skill(self, player):
-        # Setup skilltree and skill_exp
-        player.skill_exp = {"Combat": 1000}
-        mock_skill = MagicMock()
-        mock_skill.name = "Power Strike"
-        mock_skill.description = "A powerful strike."
-
-        player.skilltree = MagicMock()
-        player.skilltree.subtypes = {"Combat": {mock_skill: 500}}
-        player.known_moves = []
-
-        # Inputs:
-        # "0" (select Combat)
-        # "0" (select Power Strike)
-        # "learn" (learn it)
-        # "k" (return to skill menu)
-        # "x" (exit)
-        with patch('builtins.input', side_effect=["0", "0", "learn", "k", "x"]), \
-             patch('player.Player.learn_skill') as mock_learn, \
-             patch('functions.await_input'), \
-             patch('player.functions.is_input_integer', side_effect=lambda x: x.isdigit()):
-            player.skillmenu()
-
-            mock_learn.assert_called_once_with(mock_skill)
-            assert player.skill_exp["Combat"] == 500
 
     def test_view_map(self, player):
         mock_tile1 = MagicMock()
@@ -996,30 +865,6 @@ class TestPlayerCore:
             m2.update_goods.assert_called_once()
             m3.update_goods.assert_called_once()
 
-    def test_level_up_interactive_2(self, player):
-        player.level = 1
-        player.exp = 200
-        player.exp_to_level = 100
-        player.intelligence = 10
-        player.strength_base = 10
-        player.finesse_base = 10
-        player.speed_base = 10
-        player.endurance_base = 10
-        player.charisma_base = 10
-        player.intelligence_base = 10
-
-        # random.randint(0, 2) called 7 times for bonuses (6 stats + faith), then random.randint(6, 9) for points
-        with patch('random.randint', side_effect=[1, 1, 1, 1, 1, 1, 1, 8]), \
-             patch('builtins.input', side_effect=["1", "5", "1", "3"]), \
-             patch('functions.cprint'), \
-             patch('builtins.print'), \
-             patch('time.sleep'):
-            player.level_up()
-
-            # Initial strength 10 + 1 (bonus) + 5 (allocated) + 3 (allocated) = 19
-            assert player.strength_base == 19
-            assert player.level == 2
-
     def test_stack_gold(self, player):
         gold1 = items.Gold(10)
         gold2 = items.Gold(20)
@@ -1068,26 +913,6 @@ class TestPlayerCore:
 
         with patch('builtins.input', return_value="y"):
             player.use_item("Potion")
-            mock_item.use.assert_called_once_with(player, user=player)
-
-    def test_use_item_interactive(self, player):
-        mock_item = MagicMock(spec=items.Restorative)
-        mock_item.name = "Potion"
-        mock_item.interactions = ["use"]
-        mock_item.merchandise = False
-        mock_item.__class__ = items.Restorative
-
-        player.inventory = [mock_item]
-
-        # Inputs:
-        # "c" (select Consumables)
-        # "0" (select Potion)
-        # "x" (exit)
-        with patch('builtins.input', side_effect=["c", "0", "x"]), \
-             patch('functions.cprint'), \
-             patch('builtins.print'), \
-             patch('functions.is_input_integer', side_effect=lambda x: x.isdigit()):
-            player.use_item()
             mock_item.use.assert_called_once_with(player, user=player)
 
     def test_add_items_to_inventory_2(self, player):
