@@ -667,6 +667,15 @@ class SessionManager:
                             item.interactions.append("unequip")
                         if hasattr(item, "interactions") and "equip" in item.interactions:
                             item.interactions.remove("equip")
+                    if new_maintype == "Weapon" and hasattr(player, "eq_weapon"):
+                        player.eq_weapon = item
+                    try:
+                        item.on_equip(player)
+                    except Exception as _equip_err:
+                        print(
+                            f"[SessionManager] [WARN] on_equip raised for {item_class_name}: {_equip_err}",
+                            flush=True,
+                        )
                     print(
                         f"[SessionManager] [OK] Applied starting equipment: {item_class_name} (enchant {enchantment_level})",
                         flush=True,
@@ -676,6 +685,20 @@ class SessionManager:
                         f"[SessionManager] [ERROR] Equipment class not found: {item_class_name}",
                         flush=True,
                     )
+            # Refresh stats and protection once after all starting equipment is equipped
+            try:
+                try:
+                    import functions as _functions
+                except ImportError:
+                    from src import functions as _functions
+                _functions.refresh_stat_bonuses(player)
+                if hasattr(player, "refresh_protection_rating"):
+                    player.refresh_protection_rating()
+            except Exception as e:
+                print(
+                    f"[SessionManager] [ERROR] Error refreshing stats after starting equipment: {e}",
+                    flush=True,
+                )
         except Exception as e:
             print(
                 f"[SessionManager] [ERROR] Error applying starting equipment: {e}",

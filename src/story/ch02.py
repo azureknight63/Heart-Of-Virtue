@@ -366,79 +366,6 @@ class Ch02GuideToCitadel(
             self.tile.remove_event(self.name)
 
 
-class Ch02ArenaEntrance(Event):
-    """
-    Fires once when Jean first arrives at the King Slime arena — before combat
-    begins. Narrates the isolation (Gorran couldn't follow), the shape of the
-    corrupted pools, and the King Slime with something embedded inside it.
-
-    Attach to the same arena tile as AfterDefeatingKingSlime.
-    """
-
-    def __init__(
-        self, player, tile, params=None, repeat=False, name="Ch02ArenaEntrance"
-    ):
-        super().__init__(
-            name=name, player=player, tile=tile, repeat=repeat, params=params
-        )
-
-    def check_conditions(self):
-        story = getattr(self.player.universe, "story", {})
-        if story.get("arena_entered"):
-            self.tile.remove_event(self.name)
-            return
-        king_slime_present = any(
-            n.__class__.__name__ == "KingSlime" for n in self.tile.npcs_here
-        )
-        if king_slime_present:
-            self.pass_conditions_to_process()
-
-    def process(self):
-        if not self.player.skip_dialog:
-            print_slow(
-                "The corridor narrowed and the smell changed — thick with something sweet and wrong, "
-                "like rot and copper together.",
-                delay=0.03,
-            )
-            time.sleep(1)
-            print_slow(
-                "Jean came this way alone. The passageway behind him was empty. "
-                "Gorran's footsteps had stopped at the last junction — the air grew too heavy, "
-                "the corruption too dense for stone to tolerate, and Gorran knew it "
-                "before Jean did. He made one sound, low and short, and did not follow.",
-                delay=0.03,
-            )
-            time.sleep(1.5)
-            await_input()
-            print_slow(
-                "The arena opened before him. A circular cavern, pools filling it wall to wall — "
-                "churning, pulsating green that moved with its own slow intention. "
-                "The smell was overwhelming. The light cast no shadows.",
-                delay=0.03,
-            )
-            time.sleep(1)
-            print_slow(
-                "At the far end, something large rose from the center of the pools. "
-                "It had no face, no shape that lent itself to naming — only mass, and a slow "
-                "purposeful movement. Within that mass, something that did not belong: "
-                "a glint, sharp and pale, glimpsed through the churning surface. "
-                "Consumed. Held. Not yet dissolved.",
-                delay=0.03,
-            )
-            time.sleep(1.5)
-            print_slow(
-                "Jean had cleared drains before. Found the blockage. Removed what had lodged "
-                "where it shouldn't be. This was the same job.",
-                delay=0.04,
-            )
-            time.sleep(1)
-            print_slow("He told himself that.", delay=0.05)
-            time.sleep(1)
-            await_input()
-        self.player.universe.story["arena_entered"] = "1"
-        self.tile.remove_event(self.name)
-
-
 class AfterDefeatingKingSlime(Event):
     """
     Fires once KingSlime is absent from the arena tile.
@@ -466,6 +393,8 @@ class AfterDefeatingKingSlime(Event):
             self.pass_conditions_to_process()
 
     def process(self):
+        if self.player.universe.story.get("king_slime_defeated"):
+            return
         time.sleep(1)
         print_slow("The churning stilled. A deep, resonant silence settled over the cavern.")
         time.sleep(1)
@@ -519,11 +448,12 @@ class AfterDefeatingKingSlime(Event):
 
         # Teleport Gorran to the arena. He lives as an ally NPC; find him wherever
         # he currently is (atrium fallback, then combat_list_allies).
-        current_map = self.player.universe.current_map
+        # player.map is a dict keyed by (x, y) tuples, not an object with .tiles.
+        current_map = self.player.map
         gorran = None
         atrium_coords = (2, 1)
-        if atrium_coords in current_map.tiles:
-            atrium_tile = current_map.tiles[atrium_coords]
+        if atrium_coords in current_map:
+            atrium_tile = current_map[atrium_coords]
             for npc in list(atrium_tile.npcs_here):
                 if npc.__class__.__name__ == "Gorran":
                     atrium_tile.npcs_here.remove(npc)
@@ -572,16 +502,22 @@ class AfterDefeatingKingSlime(Event):
         )
         time.sleep(1)
 
-        self._cleanse_pool_tiles(self.player, current_map)
+        self._cleanse_pool_tiles(self.player)
 
         self.tile.remove_event(self.name)
 
-    def _cleanse_pool_tiles(self, player, current_map):
+    def _cleanse_pool_tiles(self, player, current_map=None):
         """Update corrupted channel tile descriptions to reflect the post-cleansing state.
 
         Physical damage (acid pitting, dissolved floors, staining) persists as geological
         evidence. Active slime, living corruption, and all rumbling references are gone.
         """
+        # Use universe.maps lookup so the correct map is found even if player.map
+        # is pointing elsewhere (e.g., after a flee from a random encounter).
+        current_map = next(
+            (m for m in player.universe.maps if m.get("name") == "grondelith-mineral-pools"),
+            current_map,  # fall back to the passed-in map if not found
+        )
         cleansed = {
             (2, 2): (
                 "The colour has returned. Where the channels ran green, they run clear now — "
@@ -646,9 +582,172 @@ class AfterDefeatingKingSlime(Event):
             ),
         }
         for coords, description in cleansed.items():
-            if coords in current_map.tiles:
-                tile = current_map.tiles[coords]
+            if coords in current_map:
+                tile = current_map[coords]
                 tile.spawn_object("TileDescription", player, tile, description=description)
+
+
+class Ch02GorranAtPools(Event):
+    """
+    Fires once when Jean first enters the Grondelith map (tile 2,0).
+
+    Gorran led Jean this far but cannot follow into the corrupted interior —
+    the corruption is too dense for stone to tolerate. He settles at the
+    Atrium threshold (tile 2,1), where he will wait until King Slime is
+    defeated. AfterDefeatingKingSlime already looks for him at (2,1).
+
+    Attach to tile (2,0) in grondelith-mineral-pools.json.
+    """
+
+    def __init__(
+        self, player, tile, params=None, repeat=False, name="Ch02GorranAtPools"
+    ):
+        super().__init__(
+            name=name, player=player, tile=tile, repeat=repeat, params=params
+        )
+        # Set description for API serialization
+        self.description = (
+            "Gorran stops at the threshold of the corrupted interior, unable to proceed. "
+            "He settles at the atrium entrance to wait for Jean's return."
+        )
+
+    def check_conditions(self):
+        story = getattr(self.player.universe, "story", {})
+        if story.get("gorran_at_pools"):
+            self.tile.remove_event(self.name)
+            return
+        self.pass_conditions_to_process()
+
+    def process(self):
+        # Spawn Gorran at the Atrium (2,1) — where AfterDefeatingKingSlime
+        # expects to find him. Don't place him on this entry tile so he doesn't
+        # block the passage or trigger combat checks.
+        # Use universe.maps lookup rather than player.map so the correct tile is
+        # found even when player.map is pointing to a combat arena after a flee.
+        pools_map = next(
+            (m for m in self.player.universe.maps if m.get("name") == "grondelith-mineral-pools"),
+            None,
+        )
+        atrium_tile = pools_map.get((2, 1)) if pools_map else None
+        if atrium_tile is not None:
+            gorran_already_there = any(
+                n.__class__.__name__ == "Gorran" for n in atrium_tile.npcs_here
+            )
+            if not gorran_already_there:
+                # Check if Gorran is in the player's party
+                gorran_in_party = None
+                for ally in list(getattr(self.player, "combat_list_allies", [])):
+                    if ally.__class__.__name__ == "Gorran":
+                        gorran_in_party = ally
+                        break
+
+                if gorran_in_party is not None:
+                    # Remove Gorran from party and move to tile
+                    self.player.combat_list_allies.remove(gorran_in_party)
+                    gorran_in_party.tile = atrium_tile
+                    atrium_tile.npcs_here.append(gorran_in_party)
+                else:
+                    # Spawn new Gorran if not in party
+                    atrium_tile.spawn_npc("Gorran")
+
+        if not self.player.skip_dialog:
+            print_slow(
+                "Gorran had come to the threshold and no further. He stood at the entrance "
+                "to the atrium — that great vaulted space with its spring-fed pools — "
+                "facing south, one hand resting against the stone arch.",
+                delay=0.03,
+            )
+            time.sleep(1.5)
+            print_slow(
+                "Jean came up beside him. The air changed here. Even at the threshold he could "
+                "feel it — a heaviness below the mineral scent, something sweet and wrong.",
+                delay=0.03,
+            )
+            time.sleep(1)
+            print_slow(
+                "Gorran did not look at him. He tapped his own chest twice — slow, deliberate. "
+                "Then he pointed south, toward the deeper passages. Then he drew his hand back.",
+                delay=0.03,
+            )
+            time.sleep(1)
+            print_slow(
+                "He made a sound. Low and brief. The Golemite equivalent of: I know.",
+                delay=0.04,
+            )
+            time.sleep(1)
+            print_slow(
+                "He lowered himself beside the arch — that slow, deliberate settling of stone "
+                "finding its position. He would wait here. Jean understood that.",
+                delay=0.03,
+            )
+            time.sleep(1.5)
+            await_input()
+
+        self.player.universe.story["gorran_at_pools"] = "1"
+        self.tile.remove_event(self.name)
+
+
+class Ch02ArenaEntrance(Event):
+    """
+    Fires once when Jean first enters the arena tile (2,6) with King Slime present.
+
+    Delivers the isolation/atmosphere narrative as Jean faces the King Slime.
+    Sets story["arena_entered"] = "1".
+
+    Attach to the arena tile in grondelith-mineral-pools.json.
+    """
+
+    def __init__(
+        self, player, tile, params=None, repeat=False, name="Ch02ArenaEntrance"
+    ):
+        super().__init__(
+            name=name, player=player, tile=tile, repeat=repeat, params=params
+        )
+        # Set description for API serialization
+        self.description = (
+            "Jean enters the arena where the King Slime waits. The isolation and "
+            "weight of the moment settles over the water."
+        )
+
+    def check_conditions(self):
+        story = getattr(self.player.universe, "story", {})
+        if story.get("arena_entered"):
+            self.tile.remove_event(self.name)
+            return
+        # Only fire if King Slime is still present
+        king_alive = any(n.__class__.__name__ == "KingSlime" for n in self.tile.npcs_here)
+        if king_alive:
+            self.pass_conditions_to_process()
+
+    def process(self):
+        if not self.player.skip_dialog:
+            print_slow(
+                "The chamber opened before Jean — vast, vaulted, filled entirely with water. "
+                "The pool covered the floor from wall to wall, its surface roiling with a "
+                "sickly green luminescence.",
+                delay=0.03,
+            )
+            time.sleep(1)
+            print_slow(
+                "In the center of that corrupted expanse sat a single stone island. "
+                "On it: a shape. Massive. Waiting.",
+                delay=0.03,
+            )
+            time.sleep(1.5)
+            print_slow(
+                "The green in the water pulsed. The sound that came from it was not a voice — "
+                "it was something older. Something hungry.",
+                delay=0.03,
+            )
+            time.sleep(1)
+            print_slow(
+                "Jean stepped forward. The water began to churn.",
+                delay=0.04,
+            )
+            time.sleep(1.5)
+
+        self.player.universe.story["arena_entered"] = "1"
+        self.tile.remove_event(self.name)
 
 
 class Ch02FragmentReminder(Event):
