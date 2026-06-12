@@ -4,7 +4,7 @@ Effects are small, one-time-only events typically fired during combat or in resp
 
 from typing import List, Optional
 
-from narration import colored, cprint, narrate
+from narration import cprint, narrate
 import random
 import time
 
@@ -661,25 +661,10 @@ class WhisperingStatue(Event):
         return self.input_options
 
     def process(self, user_input=None):
-        # Determine if we are in API mode (user_input provided) or CLI mode (user_input is None)
-        if user_input is None:
-            # CLI mode: get input interactively
-            cprint(self.description, "cyan")
-            cprint(self.input_prompt, "yellow")
-            try:
-                choice = input(colored("\nYour answer (1-3): ", "white"))
-            except (EOFError, OSError, ValueError):
-                choice = "1"
-        else:
-            # API mode: use provided input
-            choice = user_input
-
-        # If still no choice, default to "1"
-        if not choice:
-            choice = "1"
-
-        if not choice:
-            choice = "1"
+        # The web client drives this via the structured interaction protocol:
+        # user_input carries the player's choice ("1"/"2"/"3"). Default to "1"
+        # when absent (the riddle's correct answer / safe default).
+        choice = user_input or "1"
 
         time.sleep(1)
 

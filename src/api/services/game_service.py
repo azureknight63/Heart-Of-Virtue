@@ -1,7 +1,6 @@
 import logging
 import uuid
 import contextlib
-import io
 import itertools
 import re
 from typing import TYPE_CHECKING, Dict, Any, Optional, List
@@ -133,20 +132,19 @@ class GameService:
     _MOCK_INPUT_CYCLE = ["a", "1", "b", "2", "c", "3", "0", "n", "y"]
 
     @staticmethod
-    def _make_mock_input(output_buffer: io.StringIO):
-        """Return a mock_input closure backed by a cycling response list.
+    def _make_mock_input():
+        """Return a non-blocking input() stub for any legacy engine prompt.
 
-        Writes the prompt to output_buffer (so it appears in captured event
-        output), then returns the next value from _MOCK_INPUT_CYCLE.  Using a
-        cycle means repeated calls within the same event processing invocation
-        will try different values, so any while-loop with a finite valid-input
-        set will terminate even if the first choice isn't accepted.
+        Event output flows through the narration sink, so prompts no longer need
+        to be buffered here.  The stub still cycles through harmless responses
+        (including cancel/exit values) so that any legacy ``while True: input()``
+        loop reached as a side effect of event processing terminates instead of
+        hanging the API request.  Retained as a safety net until the engine's
+        remaining terminal input() call sites are removed.
         """
         _cycle = itertools.cycle(GameService._MOCK_INPUT_CYCLE)
 
         def mock_input(prompt=""):
-            if prompt:
-                output_buffer.write(str(prompt) + "\n")
             return next(_cycle)
 
         return mock_input
@@ -606,12 +604,11 @@ class GameService:
         player.location_y = new_y
         player.current_room = new_tile
 
-        # Move any party members to the new room (mirrors game.py terminal behaviour)
+        # Move any party members to the new room (mirrors the terminal behaviour).
+        # recall_friends() narrates via the narration sink; capture (and discard)
+        # those messages so they don't echo to stdout.
         if len(getattr(player, "combat_list_allies", [])) > 1:
-            import io
-            import contextlib
-
-            with contextlib.redirect_stdout(io.StringIO()):
+            with capture_narration():
                 try:
                     player.recall_friends()
                 except Exception:
@@ -741,9 +738,8 @@ class GameService:
             # For non-input events, process normally
             # Try to trigger the event and capture output
             if hasattr(event, "check_conditions"):
-                f = io.StringIO()
                 try:
-                    mock_input = self._make_mock_input(f)
+                    mock_input = self._make_mock_input()
 
                     target_modules = self._get_event_target_modules(
                         event, include_animations=True
@@ -1855,9 +1851,8 @@ class GameService:
             )
 
             if hasattr(event, method_name):
-                f = io.StringIO()
                 try:
-                    mock_input = self._make_mock_input(f)
+                    mock_input = self._make_mock_input()
 
                     target_modules = self._get_event_target_modules(
                         event, include_animations=True
