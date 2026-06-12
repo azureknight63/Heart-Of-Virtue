@@ -6,8 +6,8 @@ Provides structured access to all game settings.
 
 import configparser
 from pathlib import Path
-from dataclasses import dataclass
-from typing import Tuple
+from dataclasses import dataclass, field
+from typing import Dict, List, Tuple
 
 
 @dataclass
@@ -52,6 +52,12 @@ class GameConfig:
     allow_quicksave: bool = True
     auto_load_latest: bool = False
     learn_all_skills: bool = False
+
+    # === [game] section: Story pre-seeding ===
+    # Comma-separated list of "flag" or "flag=value" entries to inject into universe.story
+    # e.g. starting_story_flags = king_slime_defeated, votha_krr_response_given
+    # Entries without an explicit value default to "1".
+    starting_story_flags: List[str] = field(default_factory=list)
 
     # === [game] section: Display ===
     show_combat_distance: bool = True
@@ -192,6 +198,16 @@ class ConfigManager:
         )
         self.config.animation_speed = section.getfloat("animation_speed", fallback=1.0)
         self.config.starting_exp = section.getint("starting_exp", fallback=0)
+
+        # Story flag pre-seeding: parse comma-separated "flag" or "flag=value" tokens
+        raw_flags = section.get("starting_story_flags", fallback="")
+        parsed_flags: List[str] = []
+        if raw_flags.strip():
+            for token in raw_flags.split(","):
+                token = token.strip()
+                if token:
+                    parsed_flags.append(token)
+        self.config.starting_story_flags = parsed_flags
 
         # Debug settings
         self.config.debug_mode = section.getboolean("debug_mode", fallback=False)

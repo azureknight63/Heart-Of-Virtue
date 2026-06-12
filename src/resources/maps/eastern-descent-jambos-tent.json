@@ -28,14 +28,6 @@
                     "hide_factor": 0,
                     "discovery_message": "a tent flap leading out!",
                     "announce": "A tent flap opens back out to the camp.",
-                    "keywords": [
-                        "enter",
-                        "go",
-                        "leave",
-                        "exit",
-                        "out",
-                        "camp"
-                    ],
                     "events": [],
                     "tile": null,
                     "player": null,
@@ -82,7 +74,6 @@
                     "hide_factor": 0,
                     "discovery_message": "a large wooden crate!",
                     "announce": "A large wooden crate is here.",
-                    "keywords": ["loot", "check", "view", "examine", "inspect", "peruse"],
                     "events": [],
                     "tile": null,
                     "player": null

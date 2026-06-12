@@ -129,6 +129,17 @@ _\\|//__( | )______)_/
         if config.starting_exp > 0:
             player.apply_starting_experience(config.starting_exp)
 
+        # Pre-seed story flags from config (supports "flag" or "flag=value" syntax)
+        if config.starting_story_flags:
+            for token in config.starting_story_flags:
+                if "=" in token:
+                    flag_key, flag_val = token.split("=", 1)
+                    player.universe.story[flag_key.strip()] = flag_val.strip()
+                else:
+                    player.universe.story[token.strip()] = "1"
+            if testing_mode:
+                print(f"Story flags seeded: {dict(player.universe.story)}")
+
         starting_map = next(
             (
                 map_item
