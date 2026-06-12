@@ -315,6 +315,11 @@ def create_app(config_class=None):
     # Only registered when TESTING=True so it is never reachable in production.
     if app.config.get("TESTING"):
 
+        # Combat-testing / debug endpoints (replaces TheAdjutant's terminal menu).
+        from src.api.routes.debug import debug_bp
+
+        app.register_blueprint(debug_bp, url_prefix="/api/debug")
+
         @app.route("/api/test/session", methods=["POST"])
         def test_create_session():
             from flask import jsonify, request as _req

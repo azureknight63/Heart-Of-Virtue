@@ -705,40 +705,38 @@ class TestTheAdjutantGetArenaTile:
         assert result is None
 
 
+
 class TestTheAdjutantClearRoom:
     def test_clear_room_empties_npcs_here(self):
         from src.npc._adjutant import TheAdjutant
 
         adj = TheAdjutant()
-        mock_tile = MagicMock()
-        mock_tile.npcs_here = [MagicMock(), MagicMock()]
+        tile = MagicMock()
+        tile.npcs_here = [MagicMock(), MagicMock()]
         player = MagicMock()
+        player.map = {(1, 0): tile}
 
-        # Patch _pick_arena to return predictable values
-        adj._pick_arena = MagicMock(return_value=("Fodder Pit", (1, 0)))
-        adj._get_arena_tile = MagicMock(return_value=mock_tile)
+        result = adj.clear_room(player, "Fodder Pit")
+        assert result["cleared"] == 2
+        assert tile.npcs_here == []
 
-        adj._clear_room(player)
-        assert mock_tile.npcs_here == []
-
-    def test_clear_room_tile_not_found(self, capsys):
+    def test_clear_room_tile_not_found(self):
         from src.npc._adjutant import TheAdjutant
 
         adj = TheAdjutant()
         player = MagicMock()
-        adj._pick_arena = MagicMock(return_value=("Fodder Pit", (1, 0)))
-        adj._get_arena_tile = MagicMock(return_value=None)
-        adj._clear_room(player)  # Should not raise
-        captured = capsys.readouterr()
-        assert "not loaded" in captured.out.lower() or captured.out == ""
+        player.map = {}  # arena coords absent
+        result = adj.clear_room(player, "Fodder Pit")
+        assert result["success"] is False
 
-    def test_clear_room_cancel(self):
+    def test_clear_room_unknown_arena(self):
         from src.npc._adjutant import TheAdjutant
 
         adj = TheAdjutant()
         player = MagicMock()
-        adj._pick_arena = MagicMock(return_value=(None, None))
-        adj._clear_room(player)  # Should return immediately without error
+        player.map = {}
+        result = adj.clear_room(player, "Nowhere")
+        assert result["success"] is False
 
 
 class TestTheAdjutantAddCombatant:
@@ -746,110 +744,60 @@ class TestTheAdjutantAddCombatant:
         from src.npc._adjutant import TheAdjutant
 
         adj = TheAdjutant()
-        mock_tile = MagicMock()
-        mock_tile.npcs_here = []
+        tile = MagicMock()
+        tile.npcs_here = []
         player = MagicMock()
+        player.map = {(1, 0): tile}
 
-        adj._pick_arena = MagicMock(return_value=("Fodder Pit", (1, 0)))
-        adj._get_arena_tile = MagicMock(return_value=mock_tile)
+        result = adj.add_combatant(player, "Fodder Pit", "Slime")
+        assert result["success"] is True
+        assert len(tile.npcs_here) == 1
 
-        with patch("builtins.input", return_value="Slime"):
-            adj._add_combatant(player)
-
-        assert len(mock_tile.npcs_here) == 1
-
-    def test_add_unknown_class_prints_error(self, capsys):
+    def test_add_unknown_class_returns_error(self):
         from src.npc._adjutant import TheAdjutant
 
         adj = TheAdjutant()
-        mock_tile = MagicMock()
-        mock_tile.npcs_here = []
+        tile = MagicMock()
+        tile.npcs_here = []
         player = MagicMock()
+        player.map = {(1, 0): tile}
 
-        adj._pick_arena = MagicMock(return_value=("Fodder Pit", (1, 0)))
-        adj._get_arena_tile = MagicMock(return_value=mock_tile)
-
-        with patch("builtins.input", return_value="BogusNPC"):
-            adj._add_combatant(player)
-
-        captured = capsys.readouterr()
-        assert "not found" in captured.out.lower()
-
-    def test_add_combatant_cancel(self):
-        from src.npc._adjutant import TheAdjutant
-
-        adj = TheAdjutant()
-        player = MagicMock()
-        adj._pick_arena = MagicMock(return_value=(None, None))
-        adj._add_combatant(player)  # Should return silently
-
-    def test_add_combatant_empty_name_returns(self):
-        from src.npc._adjutant import TheAdjutant
-
-        adj = TheAdjutant()
-        mock_tile = MagicMock()
-        mock_tile.npcs_here = []
-        player = MagicMock()
-
-        adj._pick_arena = MagicMock(return_value=("Fodder Pit", (1, 0)))
-        adj._get_arena_tile = MagicMock(return_value=mock_tile)
-
-        with patch("builtins.input", return_value=""):
-            adj._add_combatant(player)
-
-        assert len(mock_tile.npcs_here) == 0
+        result = adj.add_combatant(player, "Fodder Pit", "BogusNPC")
+        assert result["success"] is False
+        assert len(tile.npcs_here) == 0
 
 
 class TestTheAdjutantRemoveCombatant:
-    def test_remove_existing_npc(self, capsys):
+    def test_remove_existing_npc(self):
         from src.npc._adjutant import TheAdjutant
 
         adj = TheAdjutant()
-        mock_tile = MagicMock()
-        npc_a = MagicMock()
-        npc_a.name = "Slime X"
-        npc_a.friend = False
-        npc_b = MagicMock()
-        npc_b.name = "Lurker Y"
-        npc_b.friend = False
-        mock_tile.npcs_here = [npc_a, npc_b]
+        tile = MagicMock()
+        npc_a, npc_b = MagicMock(), MagicMock()
+        npc_a.name, npc_b.name = "Slime X", "Lurker Y"
+        tile.npcs_here = [npc_a, npc_b]
         player = MagicMock()
+        player.map = {(1, 0): tile}
 
-        adj._pick_arena = MagicMock(return_value=("Fodder Pit", (1, 0)))
-        adj._get_arena_tile = MagicMock(return_value=mock_tile)
+        result = adj.remove_combatant(player, "Fodder Pit", 0)
+        assert result["success"] is True
+        assert tile.npcs_here == [npc_b]
 
-        with patch("builtins.input", return_value="1"):
-            adj._remove_combatant(player)
-
-        assert len(mock_tile.npcs_here) == 1
-        assert mock_tile.npcs_here[0] is npc_b
-
-    def test_remove_from_empty_tile_prints_message(self, capsys):
+    def test_remove_bad_index_returns_error(self):
         from src.npc._adjutant import TheAdjutant
 
         adj = TheAdjutant()
-        mock_tile = MagicMock()
-        mock_tile.npcs_here = []
+        tile = MagicMock()
+        tile.npcs_here = []
         player = MagicMock()
+        player.map = {(1, 0): tile}
 
-        adj._pick_arena = MagicMock(return_value=("Fodder Pit", (1, 0)))
-        adj._get_arena_tile = MagicMock(return_value=mock_tile)
-
-        adj._remove_combatant(player)
-        captured = capsys.readouterr()
-        assert "empty" in captured.out.lower()
-
-    def test_remove_combatant_cancel(self):
-        from src.npc._adjutant import TheAdjutant
-
-        adj = TheAdjutant()
-        player = MagicMock()
-        adj._pick_arena = MagicMock(return_value=(None, None))
-        adj._remove_combatant(player)  # Should return silently
+        result = adj.remove_combatant(player, "Fodder Pit", 0)
+        assert result["success"] is False
 
 
 class TestTheAdjutantKeywordDispatch:
-    """All keyword methods just call _adjutant_menu — verify dispatch."""
+    """All keyword verbs narrate (no terminal menu)."""
 
     @pytest.fixture
     def adj(self):
@@ -860,8 +808,8 @@ class TestTheAdjutantKeywordDispatch:
     @pytest.mark.parametrize(
         "method_name", ["talk", "set", "adjust", "configure", "help"]
     )
-    def test_keyword_dispatches_to_menu(self, adj, method_name):
+    def test_keyword_verb_narrates(self, adj, method_name):
         player = MagicMock()
-        with patch.object(adj, "_adjutant_menu") as mock_menu:
+        with patch("src.npc._adjutant.narrate") as mock_narrate:
             getattr(adj, method_name)(player)
-        mock_menu.assert_called_once_with(player)
+        mock_narrate.assert_called_once()

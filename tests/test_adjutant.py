@@ -1,7 +1,15 @@
-import pytest
+"""Tests for TheAdjutant's debug operations.
+
+The legacy terminal input() menu was replaced by parametrized operation methods
+(driven by the test-only debug blueprint). These tests exercise those methods
+directly.
+"""
+
 from unittest.mock import MagicMock, patch
+
 from npc._adjutant import TheAdjutant
 from npc._enemies import Slime
+
 
 class MockPlayer:
     def __init__(self):
@@ -13,23 +21,22 @@ class MockPlayer:
         self.level = 1
         self.exp = 0
         self.exp_to_level = 100
-        self.strength = 10
-        self.finesse = 10
-        self.speed = 10
-        self.endurance = 10
-        self.charisma = 10
-        self.intelligence = 10
-        self.faith = 10
-        self.strength_base = 10
-        self.finesse_base = 10
-        self.speed_base = 10
-        self.endurance_base = 10
-        self.charisma_base = 10
-        self.intelligence_base = 10
-        self.faith_base = 10
+        for attr in ("strength", "finesse", "speed", "endurance",
+                     "charisma", "intelligence", "faith"):
+            setattr(self, attr, 10)
+            setattr(self, attr + "_base", 10)
         self.known_moves = []
         self.map = None
-        self.recall_friends = MagicMock()
+
+
+def _arena_player(coords=(1, 0), npcs=None):
+    """A MockPlayer whose map has a single loaded arena tile at `coords`."""
+    player = MockPlayer()
+    tile = MagicMock()
+    tile.npcs_here = list(npcs) if npcs else []
+    player.map = {coords: tile}
+    return player, tile
+
 
 def test_adjutant_basic_properties():
     adj = TheAdjutant()
@@ -38,277 +45,168 @@ def test_adjutant_basic_properties():
     assert adj.pronouns["personal"] == "it"
     assert len(adj.known_moves) > 0
 
-@patch("builtins.print")
-def test_adjutant_keyword_dispatches(mock_print):
+
+def test_keyword_verbs_narrate_without_menu():
     adj = TheAdjutant()
     player = MockPlayer()
-    
-    with patch.object(adj, "_adjutant_menu") as mock_menu:
+    with patch("npc._adjutant.narrate") as mock_narrate:
         adj.talk(player)
         adj.set(player)
         adj.adjust(player)
         adj.configure(player)
         adj.help(player)
-        assert mock_menu.call_count == 5
+    assert mock_narrate.call_count == 5
+    # No terminal menu lingering.
+    assert not hasattr(adj, "_adjutant_menu")
 
-@patch("builtins.print")
-def test_adjutant_menu_exit(mock_print):
+
+# --- Player stat operations -------------------------------------------------
+
+def test_player_state_returns_stats():
     adj = TheAdjutant()
     player = MockPlayer()
-    
-    with patch("builtins.input", side_effect=["0"]):
-        adj._adjutant_menu(player)
+    state = adj.player_state(player)
+    assert state["hp"] == 100
+    assert state["level"] == 1
+    assert state["attributes"]["strength"] == 10
 
-@patch("builtins.print")
-def test_adjutant_menu_set_hp(mock_print):
+
+def test_set_hp_clamps():
     adj = TheAdjutant()
     player = MockPlayer()
+    result = adj.set_hp(player, 15, 30)
+    assert player.maxhp == 30 and player.hp == 15
+    assert result["hp"] == 15
+    # hp clamped to maxhp
+    adj.set_hp(player, 999, 50)
+    assert player.hp == 50
 
-    # Test valid HP change
-    with patch("builtins.input", side_effect=["1", "15", "30", "0"]):
-        adj._adjutant_menu(player)
-        assert player.maxhp == 30
-        assert player.hp == 15
 
-    # Test invalid input handling
-    with patch("builtins.input", side_effect=["1", "invalid", "0"]):
-        adj._adjutant_menu(player)
-
-@patch("builtins.print")
-def test_adjutant_menu_set_level_and_exp(mock_print):
+def test_set_level():
     adj = TheAdjutant()
     player = MockPlayer()
+    adj.set_level(player, 10, 500)
+    assert player.level == 10 and player.exp == 500
+    adj.set_level(player, 250, -5)
+    assert player.level == 100 and player.exp == 0
 
-    with patch("builtins.input", side_effect=["2", "10", "500", "0"]):
-        adj._adjutant_menu(player)
-        assert player.level == 10
-        assert player.exp == 500
 
-    with patch("builtins.input", side_effect=["2", "invalid", "0"]):
-        adj._adjutant_menu(player)
-
-@patch("builtins.print")
-def test_adjutant_menu_set_attributes(mock_print):
+def test_set_attributes_updates_known_and_ignores_unknown():
     adj = TheAdjutant()
     player = MockPlayer()
+    result = adj.set_attributes(player, {"strength": 15, "bogus": 99})
+    assert player.strength == 15 and player.strength_base == 15
+    assert result["updated"] == {"strength": 15}
 
-    # Input: choice "3", strength->15, finesse->(blank/skip), others invalid/blank, then exit
-    with patch("builtins.input", side_effect=["3", "15", "", "invalid", "", "", "", "", "0"]):
-        adj._adjutant_menu(player)
-        assert player.strength == 15
-        assert player.strength_base == 15
 
-@patch("builtins.print")
-def test_adjutant_menu_set_heat(mock_print):
+def test_set_heat_clamps():
     adj = TheAdjutant()
     player = MockPlayer()
+    adj.set_heat(player, 2.5)
+    assert player.heat == 2.5
+    adj.set_heat(player, 99)
+    assert player.heat == 10.0
 
-    with patch("builtins.input", side_effect=["4", "2.5", "0"]):
-        adj._adjutant_menu(player)
-        assert player.heat == 2.5
 
-    with patch("builtins.input", side_effect=["4", "invalid", "0"]):
-        adj._adjutant_menu(player)
-
-@patch("builtins.print")
-def test_adjutant_menu_restore(mock_print):
+def test_restore_full():
     adj = TheAdjutant()
     player = MockPlayer()
-    player.hp = 5
-    player.fatigue = 2
+    player.hp, player.fatigue = 5, 2
+    adj.restore(player)
+    assert player.hp == 100 and player.fatigue == 10
 
-    with patch("builtins.input", side_effect=["5", "0"]):
-        adj._adjutant_menu(player)
-        assert player.hp == 100
-        assert player.fatigue == 10
 
-@patch("builtins.print")
-def test_adjutant_menu_learn_all_skills(mock_print):
+def test_learn_all_skills_delegates():
     adj = TheAdjutant()
     player = MockPlayer()
-
-    # Successful skills learning
     with patch("functions.learn_all_skills_from_skilltree") as mock_learn:
-        with patch("builtins.input", side_effect=["6", "0"]):
-            adj._adjutant_menu(player)
-            assert mock_learn.called
+        result = adj.learn_all_skills(player)
+        assert mock_learn.called
+        assert result["success"] is True
 
-    # Exception handling
-    with patch("functions.learn_all_skills_from_skilltree", side_effect=Exception("Failed")):
-        with patch("builtins.input", side_effect=["6", "0"]):
-            adj._adjutant_menu(player)
 
-@patch("builtins.print")
-def test_adjutant_menu_list_moves(mock_print):
+def test_list_skills():
     adj = TheAdjutant()
     player = MockPlayer()
-    
-    # Empty moves
-    player.known_moves = []
-    with patch("builtins.input", side_effect=["7", "0"]):
-        adj._adjutant_menu(player)
-
-    # With moves
+    assert adj.list_skills(player) == []
     move = MagicMock()
     move.name = "Thrust"
     player.known_moves = [move]
-    with patch("builtins.input", side_effect=["7", "0"]):
-        adj._adjutant_menu(player)
+    assert adj.list_skills(player) == ["Thrust"]
 
-@patch("builtins.print")
-def test_adjutant_menu_invalid_and_combatant_flow(mock_print):
+
+# --- Arena combatant management ---------------------------------------------
+
+def test_arena_rosters_reports_loaded_and_unloaded():
+    player, tile = _arena_player(coords=(1, 0), npcs=[Slime()])
     adj = TheAdjutant()
-    player = MockPlayer()
-    
-    with patch("builtins.input", side_effect=["99", "0"]):
-        adj._adjutant_menu(player)
+    rosters = adj.arena_rosters(player)
+    assert rosters["Fodder Pit"]["loaded"] is True
+    assert rosters["Fodder Pit"]["npcs"][0]["name"]
+    # Other arenas are not in the map -> not loaded
+    assert rosters["The Crucible"]["loaded"] is False
 
-@patch("builtins.print")
-def test_combatant_menu_options(mock_print):
+
+def test_add_combatant_known_class():
+    player, tile = _arena_player()
     adj = TheAdjutant()
-    player = MockPlayer()
-    
-    # Mock arena tiles
-    fodder_pit_tile = MagicMock()
-    fodder_pit_tile.npcs_here = []
-    
-    player.map = {
-        (1, 0): fodder_pit_tile,
-        (2, 0): None, # Not loaded
-    }
-    
-    # Test sub-menu exit, invalid option
-    with patch("builtins.input", side_effect=["8", "99", "0", "0"]):
-        adj._adjutant_menu(player)
+    result = adj.add_combatant(player, "Fodder Pit", "Slime")
+    assert result["success"] is True
+    assert len(tile.npcs_here) == 1
+    assert tile.npcs_here[0].__class__.__name__ == "Slime"
 
-@patch("builtins.print")
-def test_add_combatant(mock_print):
+
+def test_add_combatant_unknown_class():
+    player, tile = _arena_player()
     adj = TheAdjutant()
-    player = MockPlayer()
-    
-    tile = MagicMock()
-    tile.npcs_here = []
-    player.map = {
-        (1, 0): tile
-    }
-    
-    # 1. Pick cancel
-    with patch("builtins.input", side_effect=["8", "1", "0", "0", "0"]):
-        adj._adjutant_menu(player)
-        assert len(tile.npcs_here) == 0
+    result = adj.add_combatant(player, "Fodder Pit", "FakeClass")
+    assert result["success"] is False
+    assert len(tile.npcs_here) == 0
 
-    # 2. Pick fodder pit (1), add Slime
-    with patch("builtins.input", side_effect=["8", "1", "1", "Slime", "0", "0"]):
-        adj._adjutant_menu(player)
-        assert len(tile.npcs_here) == 1
-        assert tile.npcs_here[0].__class__.__name__ == "Slime"
 
-    # 3. Pick fodder pit (1), invalid class, empty input
-    with patch("builtins.input", side_effect=["8", "1", "1", "", "0", "0"]):
-        adj._adjutant_menu(player)
-
-    with patch("builtins.input", side_effect=["8", "1", "1", "FakeClass", "0", "0"]):
-        adj._adjutant_menu(player)
-
-    # 4. Attempt to add to a non-loaded tile
-    with patch("builtins.input", side_effect=["8", "1", "2", "0", "0"]): # Choose Crucible (2) which is None
-        player.map = {(2, 0): None}
-        adj._adjutant_menu(player)
-
-@patch("builtins.print")
-def test_remove_combatant(mock_print):
+def test_add_combatant_unknown_arena():
+    player, _ = _arena_player()
     adj = TheAdjutant()
+    result = adj.add_combatant(player, "Nowhere", "Slime")
+    assert result["success"] is False
+
+
+def test_add_combatant_tile_not_loaded():
     player = MockPlayer()
-    
-    tile = MagicMock()
-    slime1 = Slime()
-    tile.npcs_here = [slime1]
-    player.map = {
-        (1, 0): tile
-    }
-    
-    # 1. Remove cancel
-    with patch("builtins.input", side_effect=["8", "2", "1", "0", "0", "0"]):
-        adj._adjutant_menu(player)
-        assert len(tile.npcs_here) == 1
-
-    # 2. Remove index 1
-    with patch("builtins.input", side_effect=["8", "2", "1", "1", "0", "0"]):
-        adj._adjutant_menu(player)
-        assert len(tile.npcs_here) == 0
-
-    # 3. Remove from empty tile
-    with patch("builtins.input", side_effect=["8", "2", "1", "0", "0"]):
-        adj._adjutant_menu(player)
-
-@patch("builtins.print")
-def test_clear_room(mock_print):
+    player.map = {}  # arena coords absent
     adj = TheAdjutant()
-    player = MockPlayer()
-    
-    tile = MagicMock()
-    tile.npcs_here = [Slime(), Slime()]
-    player.map = {
-        (1, 0): tile
-    }
-    
-    with patch("builtins.input", side_effect=["8", "3", "1", "0", "0"]):
-        adj._adjutant_menu(player)
-        assert len(tile.npcs_here) == 0
+    result = adj.add_combatant(player, "Fodder Pit", "Slime")
+    assert result["success"] is False
 
-@patch("builtins.print")
-def test_set_combatant_stats(mock_print):
+
+def test_remove_combatant():
+    player, tile = _arena_player(npcs=[Slime()])
     adj = TheAdjutant()
-    player = MockPlayer()
-    
-    tile = MagicMock()
+    result = adj.remove_combatant(player, "Fodder Pit", 0)
+    assert result["success"] is True
+    assert len(tile.npcs_here) == 0
+    # bad index
+    assert adj.remove_combatant(player, "Fodder Pit", 5)["success"] is False
+
+
+def test_clear_room():
+    player, tile = _arena_player(npcs=[Slime(), Slime()])
+    adj = TheAdjutant()
+    result = adj.clear_room(player, "Fodder Pit")
+    assert result["cleared"] == 2
+    assert tile.npcs_here == []
+
+
+def test_set_combatant_stats():
     npc = Slime()
-    tile.npcs_here = [npc]
-    player.map = {
-        (1, 0): tile
-    }
-    
-    # Edit NPC: hp->50, maxhp->100, aggro->false, friend->true, others blank
-    inputs = [
-        "8", "4", "1", "1", 
-        "50", "100", "10", "5", "3", "12", "15", "8", "10", "10", "10", "10",
-        "false", "true", "0", "0"
-    ]
-    with patch("builtins.input", side_effect=inputs):
-        adj._adjutant_menu(player)
-        assert npc.hp == 50
-        assert npc.maxhp == 100
-        assert npc.aggro is False
-        assert npc.friend is True
-
-    # Test select cancel and invalid indices
-    inputs = [
-        "8", "4", "1", "0", "0", "0"
-    ]
-    with patch("builtins.input", side_effect=inputs):
-        adj._adjutant_menu(player)
-
-    # Test when npc list empty
-    tile.npcs_here = []
-    inputs = [
-        "8", "4", "1", "0", "0"
-    ]
-    with patch("builtins.input", side_effect=inputs):
-        adj._adjutant_menu(player)
-
-    # Test invalid string instead of int select
-    tile.npcs_here = [npc]
-    inputs = [
-        "8", "4", "1", "invalid", "0", "0"
-    ]
-    with patch("builtins.input", side_effect=inputs):
-        adj._adjutant_menu(player)
-
-    # Test invalid stat values (should skip)
-    inputs = [
-        "8", "4", "1", "1",
-        "invalid", "", "", "", "", "", "", "", "", "", "", "",
-        "invalid_bool", "invalid_bool", "0", "0"
-    ]
-    with patch("builtins.input", side_effect=inputs):
-        adj._adjutant_menu(player)
+    player, _ = _arena_player(npcs=[npc])
+    adj = TheAdjutant()
+    result = adj.set_combatant_stats(
+        player, "Fodder Pit", 0,
+        {"hp": 50, "maxhp": 100, "aggro": False, "friend": True, "bogus": 1},
+    )
+    assert npc.hp == 50 and npc.maxhp == 100
+    assert npc.aggro is False and npc.friend is True
+    assert "bogus" not in result["updated"]
+    # bad index
+    assert adj.set_combatant_stats(player, "Fodder Pit", 9, {})["success"] is False
