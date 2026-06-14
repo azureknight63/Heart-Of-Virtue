@@ -346,42 +346,18 @@ class Wait(Move):  # player chooses how many beats he'd like to wait
         self.duration = None
 
     def execute(self, player):
-        # In API mode, check if duration was provided
-        if hasattr(player, "_combat_adapter"):
-            if self.duration is None:
-                # Duration not set yet - this shouldn't happen if adapter handles it correctly
-                # Default to 5 as fallback
-                duration = 5
-            else:
-                duration = self.duration
-
-            self.stage_beat[2] = duration - 2
-            # Add feedback to combat log
-            if hasattr(player, "combat_log"):
-                player.combat_log.append(
-                    {
-                        "round": getattr(player, "combat_beat", 0),
-                        "message": f"Jean waits for {duration} beats...",
-                        "type": "info",
-                    }
-                )
-            return
-
-        # Terminal mode - prompt for input
-        duration = ""
-        while not functions.is_input_integer(duration):
-            duration = input(
-                "Number of beats to wait (min 3, max 10): ",
-            )
-            if functions.is_input_integer(duration):
-                duration = int(duration)
-                if duration > 10 or duration < 3:
-                    cprint(
-                        "You must enter a duration between 3 and 10 beats.",
-                        "red",
-                    )
-                    duration = ""
+        # Duration comes from the combat adapter's select_number flow; default
+        # to 5 beats when unset. (No terminal prompt.)
+        duration = self.duration if self.duration is not None else 5
         self.stage_beat[2] = duration - 2
+        if hasattr(player, "combat_log"):
+            player.combat_log.append(
+                {
+                    "round": getattr(player, "combat_beat", 0),
+                    "message": f"Jean waits for {duration} beats...",
+                    "type": "info",
+                }
+            )
 
 
 class Attack(Move):  # basic attack function, always uses equipped weapon, player only
@@ -639,32 +615,10 @@ class UseItem(Move):
         return False
 
     def execute(self, player):
-        possible_targets = [player] + [
-            a
-            for a in player.combat_list_allies[1:]
-            if a.is_alive() and not getattr(a, "knocked_out", False)
-        ]
-        target = player
-        if len(possible_targets) > 1:
-            while True:
-                cprint("Use item on whom?", "cyan")
-                for i, t in enumerate(possible_targets):
-                    narrate(
-                        colored(str(i), "magenta") + ": " + colored(t.name, "magenta")
-                    )
-                cprint("x: Cancel", "magenta")
-                choice = input(colored("Target: ", "cyan"))
-                if choice.lower() == "x":
-                    return
-                if not functions.is_input_integer(choice):
-                    cprint("Invalid selection!", "red")
-                    continue
-                idx = int(choice)
-                if 0 <= idx < len(possible_targets):
-                    target = possible_targets[idx]
-                    break
-                cprint("Invalid selection!", "red")
-        player.use_item(target=target)
+        # In the web client, using an item in combat is driven by the
+        # /inventory/use route (item.use directly, with range enforcement); the
+        # terminal item-picker menu has been removed. Selecting this move just
+        # opens/closes the bag (flavor via stage_announce).
         player.combat_exp["Basic"] += 1
 
 

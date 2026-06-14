@@ -164,28 +164,15 @@ class ShootBow(
                     arrowtype.count > 0
                 ):  # in case the arrow stack hasn't had a chance to remove itself, check the count
                     arrowtypes.append(arrowtype)
-        if len(arrowtypes) > 1:  # build our menu
-            show_menu = True
+        if len(arrowtypes) > 1:
+            # Use the player's preferred arrow if available; otherwise default to
+            # the first type (no terminal menu).
+            self.arrow = arrowtypes[0]
+            preferred = player.preferences.get("arrow")
             for arrow in arrowtypes:
-                if arrow.name == player.preferences["arrow"]:
+                if arrow.name == preferred:
                     self.arrow = arrow
-                    show_menu = False
-            if show_menu:
-                cprint("Select an arrow type...", "cyan")
-                for i, v in enumerate(arrowtypes):
-                    narrate(
-                        colored(str(i) + ": " + v.name, "cyan") + "(" + v.helptext + ")"
-                    )
-                arrow_selection = None
-                while not arrow_selection:
-                    arrow_selection = input(colored("Selection: ", "cyan"))
-                    if functions.is_input_integer(arrow_selection):
-                        arrow_selection = int(arrow_selection)
-                        if arrow_selection < len(arrowtypes):
-                            self.arrow = arrowtypes[arrow_selection]
-                            break
-                    cprint("Invalid selection! Please try again.", "red")
-                    arrow_selection = None
+                    break
         else:
             self.arrow = arrowtypes[0]
         narrate(

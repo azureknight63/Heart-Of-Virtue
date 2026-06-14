@@ -403,15 +403,6 @@ class TestUseItem:
         move = UseItem(player)
         assert move.viable() is True
 
-    def test_execute_single_target_calls_use_item(self):
-        player = _make_player()
-        player.combat_list_allies = [player]  # only Jean, no others
-        player.combat_exp = {"Basic": 0}
-        player.use_item = MagicMock()
-        move = UseItem(player)
-        move.execute(player)
-        player.use_item.assert_called_once_with(target=player)
-
     def test_execute_grants_combat_exp(self):
         player = _make_player()
         player.combat_list_allies = [player]

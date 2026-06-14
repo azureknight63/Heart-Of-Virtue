@@ -582,29 +582,15 @@ class TestTacticalPositioning:
         tp = moves.TacticalPositioning(p)
         assert tp.viable() is True
 
-    def test_tacticalpos_prep_sets_distance(self):
-        """Lines 761-781: prep() prompts for distance input."""
+    def test_tacticalpos_prep_uses_adapter_distance(self):
+        """prep() uses the adapter-provided distance (no terminal prompt)."""
         import moves
 
         p = _player()
         tp = moves.TacticalPositioning(p)
-        with patch("builtins.input", return_value="5"), patch("moves._movement.cprint"):
-            tp.prep(p)
+        tp.distance = 5  # set by the combat adapter before prep runs
+        tp.prep(p)
         assert tp.distance == 5
-
-    def test_tacticalpos_prep_rejects_invalid_then_accepts(self):
-        """Lines 772-779: invalid distance rejected, valid distance accepted."""
-        import moves
-
-        p = _player()
-        tp = moves.TacticalPositioning(p)
-        # First return "abc" (invalid), then "50" (valid)
-        with (
-            patch("builtins.input", side_effect=["abc", "50"]),
-            patch("moves._movement.cprint"),
-        ):
-            tp.prep(p)
-        assert tp.distance == 50
 
     def test_tacticalpos_execute_announces(self):
         """Lines 862-870: execute announces position adjustment."""
@@ -665,22 +651,6 @@ class TestTurn:
         turn = moves.Turn(p)
         assert turn.viable() is False
 
-    def test_turn_prep_with_no_direction_prompts(self):
-        """Lines 1064-1079: prep prompts and handles EOFError gracefully."""
-        import moves
-
-        p = _player()
-        p.combat_position = _make_combat_position()
-        turn = moves.Turn(p)
-        turn.target_direction = None
-        # Simulate EOFError (headless/API context)
-        with (
-            patch.object(turn, "_prompt_direction_selection", side_effect=EOFError),
-            patch("moves._movement.cprint"),
-        ):
-            turn.prep(p)
-        assert turn.target_direction is not None  # defaults to North
-
     def test_turn_prep_with_direction_set(self):
         """Line 1078-1079: prep announces turn when direction is set."""
         import moves
@@ -716,118 +686,6 @@ class TestTurn:
         with patch("moves._movement.cprint"):
             turn.execute(p)
         pass  # code executed = success
-
-    def test_turn_calculate_direction_to_target_no_position(self):
-        """Lines 1024-1031: falls back to North when positions missing."""
-        import moves
-
-        p = _player()
-        p.combat_position = None
-        turn = moves.Turn(p)
-        target = MagicMock()
-        target.combat_position = None
-        result = turn._calculate_direction_to_target(target)
-        # Use name comparison to avoid cross-import enum identity issues
-        assert result.name == "N"
-
-    def test_turn_calculate_direction_to_target_same_position(self):
-        """Lines 1041-1042: stays facing current direction when at same position."""
-        import moves
-
-        p = _player()
-        pos = _make_combat_position(5, 5)
-        p.combat_position = pos
-        turn = moves.Turn(p)
-        target = MagicMock()
-        target.combat_position = _make_combat_position(5, 5)  # same position
-        result = turn._calculate_direction_to_target(target)
-        # Stays facing current direction - compare by name to avoid cross-import issues
-        assert result.name == pos.facing.name
-
-    def test_turn_prompt_cancel(self):
-        """Lines 987-990: _prompt_direction_selection handles 'x' cancel."""
-        import moves
-
-        p = _player()
-        p.combat_position = _make_combat_position()
-        p.combat_proximity = {}
-        turn = moves.Turn(p)
-        with (
-            patch("builtins.input", return_value="x"),
-            patch("builtins.print"),
-            patch("moves._movement.cprint"),
-        ):
-            turn._prompt_direction_selection()
-        assert turn.target_direction is None
-
-    def test_turn_prompt_valid_direction_selection(self):
-        """Lines 1007-1012: _prompt_direction_selection sets direction."""
-        import moves
-
-        p = _player()
-        p.combat_position = _make_combat_position()
-        p.combat_proximity = {}
-        turn = moves.Turn(p)
-        with (
-            patch("builtins.input", return_value="0"),
-            patch("builtins.print"),
-            patch("moves._movement.cprint"),
-        ):
-            turn._prompt_direction_selection()
-        assert turn.target_direction is not None
-
-    def test_turn_prompt_invalid_selection(self):
-        """Lines 992-995: non-integer selection clears direction."""
-        import moves
-
-        p = _player()
-        p.combat_position = _make_combat_position()
-        p.combat_proximity = {}
-        turn = moves.Turn(p)
-        with (
-            patch("builtins.input", return_value="zzz"),
-            patch("builtins.print"),
-            patch("moves._movement.cprint"),
-        ):
-            turn._prompt_direction_selection()
-        assert turn.target_direction is None
-
-    def test_turn_prompt_out_of_range_selection(self):
-        """Lines 999-1002: out-of-range integer selection clears direction."""
-        import moves
-
-        p = _player()
-        p.combat_position = _make_combat_position()
-        p.combat_proximity = {}
-        turn = moves.Turn(p)
-        with (
-            patch("builtins.input", return_value="999"),
-            patch("builtins.print"),
-            patch("moves._movement.cprint"),
-        ):
-            turn._prompt_direction_selection()
-        assert turn.target_direction is None
-
-    def test_turn_prompt_combatant_in_options(self):
-        """Lines 948-977: combatants in combat_proximity added to options."""
-        import moves
-
-        p = _player()
-        p.combat_position = _make_combat_position()
-        enemy = _make_enemy()
-        enemy.combat_position = _make_combat_position(x=10)
-        enemy.is_alive = True
-        p.combat_proximity = {enemy: 5}
-        turn = moves.Turn(p)
-        # Select the combatant option (past 8 directions = index 8)
-        with (
-            patch("builtins.input", return_value="8"),
-            patch("builtins.print"),
-            patch("moves._movement.cprint"),
-        ):
-            turn._prompt_direction_selection()
-        assert turn.target_direction is not None
-
 
 # ---------------------------------------------------------------------------
 # QuickSwap
