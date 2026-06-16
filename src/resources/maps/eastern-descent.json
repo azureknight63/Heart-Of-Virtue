@@ -90,11 +90,6 @@
                     "hide_factor": 0,
                     "discovery_message": "Carved marks on the stone's face!",
                     "announce": "Marks have been cut into the stone's south face.",
-                    "keywords": [
-                        "read",
-                        "examine",
-                        "look"
-                    ],
                     "events": [],
                     "tile": null,
                     "player": null,
@@ -157,12 +152,6 @@
                     "hide_factor": 3,
                     "discovery_message": "In the deepest shadow of the cave: a small bundle wrapped in oilskin, pressed into a crack at floor level. Someone left it here deliberately.",
                     "announce": "The far corner of the cave is in deep shadow.",
-                    "keywords": [
-                        "search",
-                        "look",
-                        "check",
-                        "examine"
-                    ],
                     "events": [],
                     "tile": null,
                     "player": null
@@ -275,12 +264,6 @@
                     "hide_factor": 2,
                     "discovery_message": "Pressed into the angle where both faces meet: a small oilskin bundle, tucked away from the weather. A hunter's stash, or a traveler's emergency reserve.",
                     "announce": "Where the two rock faces meet at the hollow's base, the shadow is densest.",
-                    "keywords": [
-                        "search",
-                        "look",
-                        "corner",
-                        "examine"
-                    ],
                     "events": [],
                     "tile": null,
                     "player": null
@@ -427,12 +410,6 @@
                     "hide_factor": 3,
                     "discovery_message": "Behind the basin, wedged into a crack below the waterline: a wax-sealed clay pot, still intact.",
                     "announce": "The rock around the water basin is slick with moisture.",
-                    "keywords": [
-                        "search",
-                        "look",
-                        "check basin",
-                        "examine"
-                    ],
                     "events": [],
                     "tile": null,
                     "player": null
@@ -520,12 +497,6 @@
                     "hide_factor": 3,
                     "discovery_message": "In a crack running along the base of the moss shelf: a small bundle, damp but intact. Someone left this deliberately \u2014 the crack is too regular to be accidental.",
                     "announce": "The moss surface is cool and dense underfoot.",
-                    "keywords": [
-                        "search",
-                        "look",
-                        "check",
-                        "climb"
-                    ],
                     "events": [],
                     "tile": null,
                     "player": null
@@ -639,12 +610,6 @@
                     "hide_factor": 2,
                     "discovery_message": "Inside the recess: a merchant's satchel, leather cracked but intact. The contents have survived in better condition than the bag.",
                     "announce": "The base of the cliff face is in shadow.",
-                    "keywords": [
-                        "search",
-                        "look",
-                        "check recess",
-                        "examine gap"
-                    ],
                     "events": [],
                     "tile": null,
                     "player": null
@@ -829,13 +794,6 @@
                     "hide_factor": 0,
                     "discovery_message": "a worn gap leading into the camp!",
                     "announce": "A gap in the boundary stakes opens into the camp.",
-                    "keywords": [
-                        "enter",
-                        "camp",
-                        "go",
-                        "in",
-                        "west"
-                    ],
                     "events": [],
                     "tile": null,
                     "player": null,

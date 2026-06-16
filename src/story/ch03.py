@@ -3,7 +3,7 @@ Chapter 03 events
 """
 
 from src.events import Event, dialogue
-from src.functions import print_slow, await_input
+from src.functions import print_slow
 from neotermcolor import colored
 import time
 
@@ -27,6 +27,9 @@ class GorranGestureEvent(Event):
         if story.get("gorran_gesture_done") == "1":
             if self in self.tile.events_here:
                 self.tile.events_here.remove(self)
+            return
+        prev = getattr(self.player, "previous_tile", None)
+        if prev is None:
             return
         self.pass_conditions_to_process()
 

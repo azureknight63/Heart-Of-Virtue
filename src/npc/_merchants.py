@@ -6,6 +6,7 @@ the buy/sell/trade verbs.  MiloCurioDealer and JamboHealsU are concrete
 merchant subclasses with their own inventories and shop personalities.
 """
 
+import random
 import functions  # type: ignore
 from items import (  # type: ignore
     Item,

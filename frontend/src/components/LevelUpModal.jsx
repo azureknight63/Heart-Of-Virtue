@@ -28,6 +28,7 @@ export default function LevelUpModal({ player, onAllocatePoints }) {
     { key: 'endurance_base', label: 'Endurance', value: player?.endurance_base },
     { key: 'charisma_base', label: 'Charisma', value: player?.charisma_base },
     { key: 'intelligence_base', label: 'Intelligence', value: player?.intelligence_base },
+    { key: 'faith_base', label: 'Faith', value: player?.faith_base },
   ], [player])
 
   const playSFXRef = React.useRef(playSFX)
@@ -60,6 +61,24 @@ export default function LevelUpModal({ player, onAllocatePoints }) {
       }
     } catch (e) {
       setError(e.response?.data?.error || e.message || 'Failed to allocate points.')
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  const handleRandomize = async () => {
+    setError('')
+    try {
+      setIsSubmitting(true)
+      const result = await onAllocatePoints('randomize', remainingPoints)
+      if (result && result.success) {
+        setAmount('1')
+        setError('')
+      } else {
+        setError(result?.error || 'Failed to randomize points.')
+      }
+    } catch (e) {
+      setError(e.response?.data?.error || e.message || 'Failed to randomize points.')
     } finally {
       setIsSubmitting(false)
     }
@@ -157,14 +176,25 @@ export default function LevelUpModal({ player, onAllocatePoints }) {
             />
           </div>
 
-          <GameButton
-            onClick={handleAllocate}
-            disabled={isSubmitting || remainingPoints <= 0}
-            variant="primary"
-            style={{ width: '100%', padding: '10px', fontSize: '12px' }}
-          >
-            {isSubmitting ? 'ALLOCATING...' : 'ALLOCATE POINTS'}
-          </GameButton>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <GameButton
+              onClick={handleAllocate}
+              disabled={isSubmitting || remainingPoints <= 0}
+              variant="primary"
+              style={{ flex: 2, padding: '10px', fontSize: '12px' }}
+            >
+              {isSubmitting ? 'ALLOCATING...' : 'ALLOCATE POINTS'}
+            </GameButton>
+            
+            <GameButton
+              onClick={handleRandomize}
+              disabled={isSubmitting || remainingPoints <= 0}
+              variant="secondary"
+              style={{ flex: 1, padding: '10px', fontSize: '12px' }}
+            >
+              RANDOMIZE
+            </GameButton>
+          </div>
 
           {error && (
             <div style={{ color: colors.danger, fontSize: '12px', fontFamily: 'monospace', textAlign: 'center' }}>

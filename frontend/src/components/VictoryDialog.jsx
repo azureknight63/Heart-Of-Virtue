@@ -28,6 +28,7 @@ export default function VictoryDialog({ endState, onClose, onAllocatePoints, onC
       { key: 'endurance_base', label: 'Endurance', value: endState?.attributes?.endurance_base },
       { key: 'charisma_base', label: 'Charisma', value: endState?.attributes?.charisma_base },
       { key: 'intelligence_base', label: 'Intelligence', value: endState?.attributes?.intelligence_base },
+      { key: 'faith_base', label: 'Faith', value: endState?.attributes?.faith_base },
     ]
   }, [endState])
 
@@ -295,14 +296,50 @@ export default function VictoryDialog({ endState, onClose, onAllocatePoints, onC
                     />
                   </div>
 
-                  <GameButton
-                    onClick={handleAllocate}
-                    disabled={isSubmitting || remainingPoints <= 0}
-                    variant={remainingPoints > 0 ? 'primary' : 'secondary'}
-                    style={{ width: '100%', padding: '10px', fontSize: '12px' }}
-                  >
-                    {isSubmitting ? 'ALLOCATING...' : 'ALLOCATE POINTS'}
-                  </GameButton>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <GameButton
+                      onClick={handleAllocate}
+                      disabled={isSubmitting || remainingPoints <= 0}
+                      variant="primary"
+                      style={{ flex: 2, padding: '10px', fontSize: '12px' }}
+                    >
+                      {isSubmitting ? 'ALLOCATING...' : 'ALLOCATE POINTS'}
+                    </GameButton>
+
+                    <GameButton
+                      onClick={async () => {
+                        setError('')
+                        try {
+                          setIsSubmitting(true)
+                          const result = await onAllocatePoints('randomize', remainingPoints)
+                          if (result && result.success) {
+                            if ((result.remaining_points ?? 1) === 0) {
+                              setIsSubmitting(false)
+                              if (hasLoot && onContinueToLoot) {
+                                onContinueToLoot()
+                              } else {
+                                onClose()
+                              }
+                              return
+                            }
+                            setAmount('1')
+                            setError('')
+                          } else {
+                            setError(result?.error || 'Failed to randomize points.')
+                          }
+                        } catch (e) {
+                          setError(e.response?.data?.error || e.message || 'Failed to randomize points.')
+                        } finally {
+                          setIsSubmitting(false)
+                        }
+                      }}
+                      disabled={isSubmitting || remainingPoints <= 0}
+                      variant="secondary"
+                      style={{ flex: 1, padding: '10px', fontSize: '12px' }}
+                    >
+                      RANDOMIZE
+                    </GameButton>
+                  </div>
                 </div>
               )}
 

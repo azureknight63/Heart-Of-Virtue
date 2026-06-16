@@ -241,7 +241,8 @@ def gorran_npc():
 def flask_app():
     """Create a Flask app instance for testing."""
     from src.api.app import create_app
-    app = create_app(testing=True)
+    from src.api.config import TestingConfig
+    app = create_app(TestingConfig)
     return app
 
 
