@@ -391,7 +391,7 @@ def allocate_level_up_points():
                     jsonify({"success": False, "error": "No pending points to randomize"}),
                     400,
                 )
-            
+
             import random
             attributes_list = [
                 "strength_base",
@@ -415,7 +415,7 @@ def allocate_level_up_points():
                         share = round(weights[idx] / sum_remaining_weights * remaining_points)
                 remaining_points -= share
                 setattr(player, attr, int(getattr(player, attr, 0) or 0) + share)
-            
+
             player.pending_attribute_points = 0
         else:
             try:

@@ -3,7 +3,7 @@ Chapter 03 events
 """
 
 from src.events import Event, dialogue
-from src.functions import print_slow, await_input
+from src.functions import print_slow
 from neotermcolor import colored
 import time
 

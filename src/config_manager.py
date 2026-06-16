@@ -7,7 +7,7 @@ Provides structured access to all game settings.
 import configparser
 from pathlib import Path
 from dataclasses import dataclass, field
-from typing import Dict, List, Tuple
+from typing import List, Tuple
 
 
 @dataclass
