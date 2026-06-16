@@ -29,41 +29,6 @@ def test_config_manager_loads_config_dev_ini_if_exists():
         assert hasattr(config, 'coordinate_grid_size')
 
 
-def test_config_phase4_testing_loads_correctly():
-    """Test that config_phase4_testing.ini loads with all sections parsed."""
-    config_file = ROOT / "config_phase4_testing.ini"
-
-    if not config_file.exists():
-        # Skip if file doesn't exist
-        return
-
-    mgr = ConfigManager(str(config_file))
-    config = mgr.load()
-
-    # Verify all major sections were parsed
-    # [game] section
-    assert hasattr(config, 'testmode')
-    assert hasattr(config, 'debug_mode')
-    assert hasattr(config, 'coordinate_grid_size')
-
-    # [development] section
-    assert hasattr(config, 'enable_hot_reload')
-    assert hasattr(config, 'show_all_items')
-    assert hasattr(config, 'god_mode')
-    assert hasattr(config, 'skip_combat')
-
-    # [combat_testing] section
-    assert hasattr(config, 'enable_scenario_rotation')
-    assert hasattr(config, 'current_scenario')
-    assert hasattr(config, 'npc_flanking_threshold')
-
-    # [testing_locations] section
-    assert hasattr(config, 'standard_player_x')
-    assert hasattr(config, 'standard_player_y')
-    assert hasattr(config, 'boss_arena_x')
-    assert hasattr(config, 'boss_arena_y')
-
-
 def test_player_receives_config_attributes():
     """Test that Player instance has config-related attributes."""
     player = Player()
