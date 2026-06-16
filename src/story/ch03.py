@@ -28,6 +28,9 @@ class GorranGestureEvent(Event):
             if self in self.tile.events_here:
                 self.tile.events_here.remove(self)
             return
+        prev = getattr(self.player, "previous_tile", None)
+        if prev is None:
+            return
         self.pass_conditions_to_process()
 
     def process(self):
