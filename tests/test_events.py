@@ -186,20 +186,21 @@ class TestCombatEvent:
 
         assert "TestCombat begins!" in event.description
 
-    @patch('src.combat.combat')
-    def test_combat_event_process_terminal_fallback(self, mock_combat_func):
-        """Test CombatEvent process method in terminal mode."""
+    def test_combat_event_process_non_combat_start_is_noop(self):
+        """Without the 'combat_start' input, process() is a safe no-op.
+
+        The terminal combat() fallback has been removed; the web client always
+        sends 'combat_start'.
+        """
         config = CombatEventConfig()
         mock_player = MagicMock()
         mock_tile = MagicMock()
 
         event = CombatEvent("TestCombat", player=mock_player, tile=mock_tile, config=config)
 
-        # Call process without user_input (terminal mode)
         result = event.process()
 
-        # Should call combat function
-        mock_combat_func.assert_called_once_with(mock_player, event_config=config)
+        assert result == {"combat_ready": False}
 
     def test_combat_event_process_api_mode(self):
         """Test CombatEvent process method in API mode."""
@@ -296,8 +297,8 @@ class TestLootEvent:
         assert event.input_options[2]["value"] == "all"
         assert event.input_options[3]["value"] == "exit"
 
-    @patch('neotermcolor.cprint')
-    @patch('interface.transfer_item')
+    @patch('narration.cprint')
+    @patch('inventory_utils.transfer_item')
     def test_loot_event_process_take_all(self, mock_transfer_item, mock_cprint):
         """Test LootEvent process with 'all' input."""
         mock_container = MagicMock()
@@ -320,8 +321,8 @@ class TestLootEvent:
         assert event.needs_input is False
         assert result == {"success": True}
 
-    @patch('neotermcolor.cprint')
-    @patch('interface.transfer_item')
+    @patch('narration.cprint')
+    @patch('inventory_utils.transfer_item')
     def test_loot_event_process_take_specific_item(self, mock_transfer_item, mock_cprint):
         """Test LootEvent process with specific item index."""
         mock_container = MagicMock()
@@ -349,7 +350,7 @@ class TestLootEvent:
 
         event = LootEvent("TestLoot", container=mock_container)
 
-        with patch('neotermcolor.cprint') as mock_cprint:
+        with patch('narration.cprint') as mock_cprint:
             result = event.process(user_input="999")
 
             mock_cprint.assert_called_once_with("Invalid item choice.", "red")

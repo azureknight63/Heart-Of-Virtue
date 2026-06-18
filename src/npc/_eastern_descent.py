@@ -13,6 +13,7 @@ import random
 import moves  # type: ignore
 from ._base import Friend
 from ._chat_llm import HumanNPCLLMMixin
+from narration import narrate
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Eastern Descent — Nomad Camp NPCs
@@ -85,7 +86,7 @@ class NomadCamper(HumanNPCLLMMixin, Friend):
 
     def talk(self, player):
         """Terminal fallback — static dialogue. Web uses chat_open/chat_respond via the API."""
-        print(random.choice(self._TALK_LINES))
+        narrate(random.choice(self._TALK_LINES))
 
 
 class NomadScout(HumanNPCLLMMixin, Friend):
@@ -149,7 +150,7 @@ class NomadScout(HumanNPCLLMMixin, Friend):
 
     def talk(self, player):
         """Terminal fallback — static dialogue. Web uses chat_open/chat_respond via the API."""
-        print(random.choice(self._TALK_LINES))
+        narrate(random.choice(self._TALK_LINES))
 
 
 class NomadTrader(HumanNPCLLMMixin, Friend):
@@ -215,4 +216,4 @@ class NomadTrader(HumanNPCLLMMixin, Friend):
 
     def talk(self, player):
         """Terminal fallback — static dialogue. Web uses chat_open/chat_respond via the API."""
-        print(random.choice(self._TALK_LINES))
+        narrate(random.choice(self._TALK_LINES))

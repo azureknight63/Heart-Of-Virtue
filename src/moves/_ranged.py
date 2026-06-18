@@ -1,6 +1,6 @@
 """Ranged weapon moves: ShootBow, ShootCrossbow and crossbow skills; passives EagleEye, MarksmanEye."""
 
-from neotermcolor import colored, cprint  # noqa: F401
+from narration import colored, cprint, narrate  # noqa: F401
 import random  # noqa: F401
 import math  # noqa: F401
 import states  # noqa: F401
@@ -164,31 +164,18 @@ class ShootBow(
                     arrowtype.count > 0
                 ):  # in case the arrow stack hasn't had a chance to remove itself, check the count
                     arrowtypes.append(arrowtype)
-        if len(arrowtypes) > 1:  # build our menu
-            show_menu = True
+        if len(arrowtypes) > 1:
+            # Use the player's preferred arrow if available; otherwise default to
+            # the first type (no terminal menu).
+            self.arrow = arrowtypes[0]
+            preferred = player.preferences.get("arrow")
             for arrow in arrowtypes:
-                if arrow.name == player.preferences["arrow"]:
+                if arrow.name == preferred:
                     self.arrow = arrow
-                    show_menu = False
-            if show_menu:
-                cprint("Select an arrow type...", "cyan")
-                for i, v in enumerate(arrowtypes):
-                    print(
-                        colored(str(i) + ": " + v.name, "cyan") + "(" + v.helptext + ")"
-                    )
-                arrow_selection = None
-                while not arrow_selection:
-                    arrow_selection = input(colored("Selection: ", "cyan"))
-                    if functions.is_input_integer(arrow_selection):
-                        arrow_selection = int(arrow_selection)
-                        if arrow_selection < len(arrowtypes):
-                            self.arrow = arrowtypes[arrow_selection]
-                            break
-                    cprint("Invalid selection! Please try again.", "red")
-                    arrow_selection = None
+                    break
         else:
             self.arrow = arrowtypes[0]
-        print(
+        narrate(
             "{} knocks a {} and takes aim!".format(player.name, self.arrow.name.lower())
         )
         self.base_range = player.eq_weapon.range_base * self.arrow.range_base_modifier
@@ -264,7 +251,7 @@ class ShootBow(
             range_min <= target_distance <= range_max
         ):  # check if target is still in range
             hit_chance = self.calculate_hit_chance(self.target)
-            print(self.stage_announce[1])
+            narrate(self.stage_announce[1])
             if self.arrow.count > 1:
                 self.arrow.count -= 1
             else:
@@ -410,7 +397,7 @@ class ShootCrossbow(Move):
     def execute(self, player):
         glance = False
         self.prep_colors()
-        print(self.stage_announce[1])
+        narrate(self.stage_announce[1])
 
         if (
             hasattr(self.user, "combat_position")
@@ -599,7 +586,7 @@ class AimedShot(Move):
     def execute(self, player):
         glance = False
         self.prep_colors()
-        print(self.stage_announce[1])
+        narrate(self.stage_announce[1])
 
         if (
             hasattr(self.user, "combat_position")
@@ -719,7 +706,7 @@ class PinningBolt(Move):
     def execute(self, player):
         glance = False
         self.prep_colors()
-        print(self.stage_announce[1])
+        narrate(self.stage_announce[1])
 
         if (
             hasattr(self.user, "combat_position")

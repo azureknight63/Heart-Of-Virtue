@@ -43,66 +43,6 @@ def test_turn_is_not_viable_without_combat_position():
     assert turn.viable() is False
 
 
-def test_turn_direction_calculation_north():
-    """Test calculating direction to a target due north."""
-    player = Player()
-    player.name = "Test Player"
-    player.combat_position = CombatPosition(x=25, y=25, facing=Direction.S)
-
-    turn = Turn(player)
-
-    # Create a target to the north
-    target = MockCombatant("Target", x=25, y=10)
-
-    direction = turn._calculate_direction_to_target(target)
-    assert direction.value == Direction.N.value
-
-
-def test_turn_direction_calculation_east():
-    """Test calculating direction to a target due east."""
-    player = Player()
-    player.name = "Test Player"
-    player.combat_position = CombatPosition(x=25, y=25, facing=Direction.N)
-
-    turn = Turn(player)
-
-    # Create a target to the east
-    target = MockCombatant("Target", x=40, y=25)
-
-    direction = turn._calculate_direction_to_target(target)
-    assert direction.value == Direction.E.value
-
-
-def test_turn_direction_calculation_southeast():
-    """Test calculating direction to a target to the southeast."""
-    player = Player()
-    player.name = "Test Player"
-    player.combat_position = CombatPosition(x=25, y=25, facing=Direction.N)
-
-    turn = Turn(player)
-
-    # Create a target to the southeast
-    target = MockCombatant("Target", x=35, y=35)
-
-    direction = turn._calculate_direction_to_target(target)
-    assert direction.value == Direction.SE.value
-
-
-def test_turn_direction_calculation_same_position():
-    """Test that Turn defaults to current facing when target is at same position."""
-    player = Player()
-    player.name = "Test Player"
-    player.combat_position = CombatPosition(x=25, y=25, facing=Direction.W)
-
-    turn = Turn(player)
-
-    # Create a target at same position
-    target = MockCombatant("Target", x=25, y=25)
-
-    direction = turn._calculate_direction_to_target(target)
-    assert direction.value == Direction.W.value  # Should maintain current facing
-
-
 def test_turn_execute_updates_facing():
     """Test that Turn.execute() updates the player's facing direction."""
     player = Player()

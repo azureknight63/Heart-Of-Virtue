@@ -3,9 +3,8 @@
 import random
 import time
 
-import combat  # type: ignore
 import functions  # type: ignore
-from neotermcolor import colored, cprint
+from narration import cprint, narrate
 
 
 class PlayerCombatMixin:
@@ -17,12 +16,12 @@ class PlayerCombatMixin:
             chance = random.randint(0, 1000)
             if chance > 995:
                 message = random.randint(0, len(self.combat_idle_msg) - 1)
-                print(self.combat_idle_msg[message])
+                narrate(self.combat_idle_msg[message])
         else:
             chance = random.randint(0, 1000)  # combat hurt (injured)
             if chance > 950:
                 message = random.randint(0, len(self.combat_hurt_msg) - 1)
-                print(self.combat_hurt_msg[message])
+                narrate(self.combat_hurt_msg[message])
 
     def change_heat(self, mult=1, add=0):
         """Adjust combat heat multiplier, clamped to [0.5, 10] with 2 decimal precision."""
@@ -51,7 +50,7 @@ class PlayerCombatMixin:
         """Play the player death sequence: hurt messages, ASCII art, then await input."""
         for i in range(random.randint(2, 5)):
             message = random.randint(0, len(self.combat_hurt_msg) - 1)
-            print(self.combat_hurt_msg[message])
+            narrate(self.combat_hurt_msg[message])
             time.sleep(0.5)
 
         cprint("Jean groans weakly, then goes completely limp.", "red")
@@ -104,7 +103,7 @@ he lets out a barely audible whisper:""",
             "red",
         )
         time.sleep(0.5)
-        print("\n\n")
+        narrate("\n\n")
         cprint("Jean has died!", "red")
         time.sleep(5)
         functions.await_input()
@@ -134,123 +133,3 @@ he lets out a barely audible whisper:""",
                     if hasattr(item, "fin_mod"):
                         add_prot += item.fin_mod * self.finesse
                     self.protection += add_prot
-
-    def attack(
-        self, phrase=""
-    ):  # todo add ability to strike with a ranged weapon like a bow
-        """Attack a target in the current room by phrase match or interactive menu."""
-        target = None
-
-        def strike():
-            print(
-                colored(
-                    "Jean strikes with his " + self.eq_weapon.name + "!",
-                    "green",
-                )
-            )
-            power = (
-                self.eq_weapon.damage
-                + (self.strength * self.eq_weapon.str_mod)
-                + (self.finesse * self.eq_weapon.fin_mod)
-            )
-            hit_chance = int(98 - target.finesse + (self.finesse * 0.7) + (self.intelligence * 0.3))
-            if hit_chance < 5:  # Minimum value for hit chance
-                hit_chance = 5
-            roll = random.randint(0, 100)
-            damage = (power - target.protection) * random.uniform(0.8, 1.2)
-            if damage <= 0:
-                damage = 0
-            glance = False
-            if hit_chance >= roll and hit_chance - roll < 10:  # glancing blow
-                damage /= 2
-                glance = True
-            damage = int(damage)
-            self.combat_exp["Basic"] += 10
-            if hit_chance >= roll:  # a hit!
-                if glance:
-                    print(
-                        colored(self.name, "cyan")
-                        + colored(" just barely hit ", "yellow")
-                        + colored(target.name, "magenta")
-                        + colored(" for ", "yellow")
-                        + colored(damage, "red")
-                        + colored(" damage!", "yellow")
-                    )
-                else:
-                    print(
-                        colored(self.name, "cyan")
-                        + colored(" struck ", "yellow")
-                        + colored(target.name, "magenta")
-                        + colored(" for ", "yellow")
-                        + colored(damage, "red")
-                        + colored(" damage!", "yellow")
-                    )
-                target.hp -= damage
-            else:
-                print(colored("Jean", "cyan") + "'s attack just missed!")
-
-        if phrase == "":
-            targets_here = {}
-            for i, possible_target in enumerate(self.current_room.npcs_here):
-                if not possible_target.hidden and possible_target.name != "null":
-                    targets_here[str(i)] = possible_target
-            if len(targets_here) > 0:
-                print("Which target would you like to attack?\n\n")
-                for k, v in targets_here.items():
-                    print(k, ": ", v.name)
-                choice = input("Selection: ")
-                if choice in targets_here:
-                    target = targets_here[choice]
-                    strike()
-                else:
-                    print("Invalid selection.")
-                    return
-            else:
-                print("There's nothing here for Jean to attack.\n")
-                return
-        else:
-            lower_phrase = phrase.lower()
-            success = False
-            for i, potential_target in enumerate(self.current_room.npcs_here):
-                if not potential_target.hidden and potential_target.name != "null":
-                    announce = ""
-                    idle = ""
-                    if hasattr(potential_target, "announce"):
-                        announce = potential_target.announce
-                    if hasattr(potential_target, "idle_message"):
-                        idle = potential_target.idle_message
-                    search_item = (
-                        potential_target.name.lower()
-                        + " "
-                        + announce.lower()
-                        + " "
-                        + idle.lower()
-                    )
-                    if lower_phrase in search_item:
-                        target = potential_target
-                        strike()
-                        success = True
-                        break
-            if not success:
-                print("That's not a valid target for Jean to attack.\n")
-                return
-
-        # The following is not accessible if the strike was never attempted (no valid target, invalid selection, etc.)
-        # Engage the target in combat!
-        if target.is_alive():
-            print(target.name + " " + target.alert_message)
-
-        target.in_combat = True
-        self.combat_list = [target]
-
-        check_other_aggro_enemies = functions.check_for_combat(
-            self
-        )  # run an aggro check;
-        # will add additional enemies to the fray if they spot the player
-        if target in check_other_aggro_enemies:
-            check_other_aggro_enemies.remove(target)
-        self.combat_list = self.combat_list + check_other_aggro_enemies
-
-        if target.is_alive() or check_other_aggro_enemies:
-            print(colored("Jean readies himself for battle!", "red"))
-        combat.combat(self)

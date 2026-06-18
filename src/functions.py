@@ -1,13 +1,10 @@
-import textwrap
 import math
 import os
 import inspect
 import re
 import random
 import pickle
-import datetime
 import importlib
-import time
 import pkgutil
 
 from typing import Any
@@ -18,7 +15,7 @@ if TYPE_CHECKING:  # only for type hints; avoids runtime circular imports
     from player import Player
     from tiles import MapTile
 
-from neotermcolor import colored, cprint
+from narration import colored, cprint, narrate
 from os import listdir
 from os.path import isfile, join
 
@@ -28,13 +25,13 @@ This module contains general functions to use throughout the game
 
 
 def print_slow(text, speed="slow"):
-    speeds = {"slow": 1, "medium": 2, "fast": 4}
-    printspeed = speeds.get(speed, 1) if not isinstance(speed, int) else speed
-    rate = 0.1 / printspeed
-    wrap = textwrap.fill(text, 80)
-    for letter in wrap:
-        print(letter, end="", flush=True)
-        time.sleep(rate)
+    """Emit narrative text as a single message.
+
+    The terminal typewriter effect has been retired with terminal mode; the web
+    frontend is responsible for any progressive-reveal animation. ``speed`` is
+    accepted for signature compatibility and ignored.
+    """
+    narrate(text)
 
 
 def execute_arbitrary_method(method, player):
@@ -48,171 +45,13 @@ def execute_arbitrary_method(method, player):
         method(player)
 
 
-def confirm(thing, action, player, args_list):
-    """Prompt the user to confirm an action on `thing`.
-
-    Parameters:
-      thing: target object to act upon
-      action: string name of the method/interaction to call on `thing` if confirmed
-      player: the player instance (passed to the action when executed)
-      args_list: full argument list from the original command (used for display)
-    """
-    # Use the first token of the original args for a friendly prompt if available
-    prompt_verb = args_list[0].title() if args_list else ""
-    check = input(colored(f"{prompt_verb} {thing.name}? (y/n)", "cyan"))
-    if check.lower() in ("y", "yes"):
-        execute_arbitrary_method(thing.__getattribute__(action), player)
-        return True
-    return False
-
-
-def enumerate_for_interactions(subjects, player, args_list, action_input):
-    """Resolve and execute an interaction on one of several candidate subjects.
-
-    This function unifies the logic for handling both single-verb inputs (e.g. "look")
-    and verb + target inputs (e.g. "take apple"). It searches a provided iterable of
-    candidate objects (items, NPCs, room objects, inventory objects) for those that
-    expose the requested interaction.
-
-    Resolution rules:
-      1. Parse the action verb from args_list[0]. If additional tokens exist, treat
-         args_list[1] as a target fragment used to filter candidates by fuzzy
-         substring matching over object name / description style fields.
-      2. A subject is considered to support the action if:
-           - it declares an 'interactions' list containing the verb (case-insensitive), OR
-           - it has an attribute/method named after the verb (fallback), OR
-           - (single-token mode only) the raw action input exactly matches one of its 'keywords'.
-      3. If zero candidates are found -> return False (not handled).
-         If exactly one candidate -> execute its method immediately.
-         If multiple candidates -> display a menu (similar to RoomTakeInterface) allowing
-         the player to choose one; selection 0 or 'x' cancels.
-
-    Parameters
-    ----------
-    subjects : iterable
-        Collection of game entities to inspect.
-    player : object
-        Player instance passed to interaction methods when needed.
-    args_list : list[str]
-        Tokenized user command (first element: verb; second (optional): target fragment).
-    action_input : str
-        The raw (possibly original-cased) action input used for keyword matches in single-token mode.
-
-    Returns
-    -------
-    bool
-        True if an interaction was executed; False otherwise or if user cancelled.
-    """
-    if not args_list:
-        return False
-
-    action_attr = args_list[0]
-    verb = action_attr.lower()
-    multi_token = len(args_list) > 1
-    target_fragment = (
-        args_list[1].lower() if multi_token and isinstance(args_list[1], str) else None
-    )
-    raw_input_lower = action_input.lower() if isinstance(action_input, str) else ""
-
-    candidates = []  # list of (thing, resolved_method_name)
-
-    for thing in subjects:
-        if getattr(thing, "hidden", False):
-            continue
-        # Exclude Gold
-        if verb == "drop" and getattr(thing, "name", "").lower() == "gold":
-            continue
-
-        # Build search corpus once for potential target filtering
-        search_corpus = " ".join(
-            filter(
-                None,
-                [
-                    getattr(thing, "name", ""),
-                    getattr(thing, "idle_message", ""),
-                    getattr(thing, "description", ""),
-                    getattr(thing, "announce", ""),
-                ],
-            )
-        ).lower()
-
-        if multi_token:
-            # Require fuzzy target match
-            if target_fragment and target_fragment not in search_corpus:
-                continue
-            # Action support: interactions OR method OR (keywords only used in single-token mode)
-            supported = False
-            inters = getattr(thing, "interactions", None)
-            if inters and any(isinstance(i, str) and i.lower() == verb for i in inters):
-                supported = True
-            elif hasattr(thing, action_attr):
-                supported = True
-            if supported:
-                candidates.append((thing, action_attr))
-        else:
-            # Single-token mode: allow keyword exact matches or interactions or attr fallback
-            kws = getattr(thing, "keywords", None)
-            if kws and any(
-                isinstance(k, str) and raw_input_lower == k.lower() for k in kws
-            ):
-                candidates.append((thing, action_attr))
-                continue
-            inters = getattr(thing, "interactions", None)
-            if inters and any(
-                isinstance(i, str) and raw_input_lower == i.lower() for i in inters
-            ):
-                candidates.append((thing, action_attr))
-                continue
-            # Fallback: method presence (only if no keywords/interactions matched)
-            if hasattr(thing, action_attr):
-                candidates.append((thing, action_attr))
-
-    if not candidates:
-        return False
-
-    # Single candidate: execute immediately
-    if len(candidates) == 1:
-        thing, method_name = candidates[0]
-        execute_arbitrary_method(getattr(thing, method_name), player)
-        return True
-
-    # Multiple candidates: show selection menu
-    print(
-        colored(
-            f"Multiple targets match '{verb}' command:"
-            + (f" '{target_fragment}'" if target_fragment else ""),
-            "cyan",
-        )
-    )
-    for idx, (thing, _m) in enumerate(candidates, start=1):
-        display_name = getattr(thing, "name", str(thing))
-        print(colored(f"{idx}: {display_name}", "yellow"))
-    print(colored("X: Cancel", "red"))
-
-    selection = input(colored("Selection: ", "cyan")).strip().lower()
-    if selection in ("0", "x", "X", "cancel"):
-        print(colored("Jean decides against it for now.", "yellow"))
-        return False
-    if selection.isdigit():
-        choice = int(selection)
-        if 1 <= choice <= len(candidates):
-            thing, method_name = candidates[choice - 1]
-            execute_arbitrary_method(getattr(thing, method_name), player)
-            return True
-
-    print(colored("Invalid selection. Nothing happens.", "red"))
-    return False
-
-
 def screen_clear():
-    try:
-        # Prefer native terminal clear; fallback to printing newlines
-        if os.name == "nt":
-            os.system("cls")
-        else:
-            os.system("clear")
-    except Exception:
-        print("\n" * 100)
+    """No-op retained for compatibility.
+
+    Clearing the terminal is meaningless in the web client, which manages its own
+    display surface. Kept so existing callers don't need to change.
+    """
+    return None
 
 
 def _print_visible_lines(seq, attr_getter):
@@ -226,8 +65,8 @@ def _print_visible_lines(seq, attr_getter):
             except Exception:
                 lines.append(str(obj))
     if lines:
-        print("\n".join(lines))
-        print()
+        narrate("\n".join(lines))
+        narrate()
 
 
 def print_npcs_in_room(room):
@@ -696,65 +535,6 @@ def reset_stats(target):  # resets all stats to base level
             pass
 
 
-def load_select():
-    """Interactive save selection.
-
-    Returns:
-        Deserialized player object on success, or None if the user cancels or no saves are found.
-    """
-    saves = saves_list()
-    if not saves:
-        cprint("No save files detected.", "red")
-        return None
-
-    base_path = os.path.dirname(os.path.abspath(__file__))
-
-    while True:
-        print("Select the file you wish to load.")
-        for i, file in enumerate(saves):
-            file_path = os.path.join(base_path, file)
-            try:
-                timestamp = str(
-                    datetime.datetime.fromtimestamp(os.path.getmtime(file_path))
-                )
-                timestamp = timestamp[:-7]
-            except Exception:
-                timestamp = "unknown"
-            try:
-                check_playtime = load(file_path)
-                playtime = str(
-                    datetime.timedelta(
-                        seconds=getattr(check_playtime, "time_elapsed", 0)
-                    )
-                )
-                playtime = playtime[:-7]
-                descriptor = f"play time: {playtime}" if playtime else "play time: 0"
-            except Exception:
-                descriptor = colored("UNREADABLE (legacy/incompatible)", "red")
-            print(f"{i}: {file} (last modified {timestamp}) ({descriptor})")
-
-        print("x: Cancel")
-        choice = input("Selection: ").strip()
-        if choice.lower() == "x":
-            print("Load operation cancelled.")
-            return None
-
-        if is_input_integer(choice):
-            idx = int(choice)
-            if 0 <= idx < len(saves):
-                candidate = os.path.join(base_path, saves[idx])
-                try:
-                    return load(candidate)
-                except TypeError:
-                    cprint("Invalid selection.", "red")
-                except Exception as e:
-                    cprint(f"Unable to load selected file: {e}", "red")
-            else:
-                cprint("Invalid selection.", "red")
-        else:
-            cprint("Invalid selection.", "red")
-
-
 class _MissingLegacyPlaceholder:
     """Generic benign placeholder for legacy objects whose classes can't be imported anymore."""
 
@@ -957,52 +737,6 @@ def load(filename):
         raise RuntimeError(f"Corrupt or incompatible save '{filename}': {e}") from e
 
 
-def save_select(player):
-    save_complete = False
-    while not save_complete:
-        print(
-            "Save as a new file or overwrite existing?\nn: New file\no: Overwrite existing\nx: Cancel"
-        )
-        choice = input("Selection: ")
-        if choice == "n":
-            while True:
-                filename = input("Enter a name for your save: ")
-                try:
-                    save(player, filename)
-                    save_complete = True
-                    break
-                except SyntaxError:
-                    cprint(
-                        "Invalid file name. Please enter a valid file name (no spaces or special characters): "
-                    )
-        elif choice == "o":
-            overwrite_complete = False
-            while not overwrite_complete:
-                print("Select a file to overwrite.\n")
-                for i, filename in enumerate(saves_list()):
-                    if "autosave" not in filename:
-                        timestamp = str(
-                            datetime.datetime.fromtimestamp(os.path.getmtime(filename))
-                        )
-                        timestamp = timestamp[:-7]
-                        print(
-                            "{}: {} (last modified {})".format(i, filename, timestamp)
-                        )
-                print("x: Cancel")
-                choice = input("Selection: ")
-                if is_input_integer(choice):
-                    for i, filename in enumerate(saves_list()):
-                        if int(choice) == i:
-                            save(player, filename)
-                            overwrite_complete = True
-                            save_complete = True
-                            break
-                elif choice == "x":
-                    overwrite_complete = True
-        elif choice == "x":
-            save_complete = True
-
-
 def save(player, filename):  # player is the player object
     if filename.endswith(".sav"):
         with open("{}".format(filename), "wb") as f:
@@ -1116,7 +850,12 @@ def seek_class(classname, package="all", allow_other_modules=True):
 
 
 def await_input():
-    input(colored("\n(Press Enter)", "yellow"))
+    """No-op retained for compatibility.
+
+    There is no blocking "press Enter" pause in the web client; pacing between
+    narrative beats is handled by the frontend.
+    """
+    return None
 
 
 def inflict(state, target, chance=1.0, force=False):
@@ -1275,13 +1014,13 @@ def add_preference(player, preftype, setting):
     if preftype == "arrow":
         if player.preferences[preftype] != setting:
             player.preferences[preftype] = setting
-            print("Jean made " + colored(setting, "magenta") + " his preference.")
+            narrate("Jean made " + colored(setting, color="magenta") + " his preference.")
         else:
             player.preferences[preftype] = "None"
-            print("Jean stopped preferring a specific {}.".format(preftype))
+            narrate("Jean stopped preferring a specific {}.".format(preftype))
     else:
         player.preferences[preftype] = setting
-        print("Jean made " + colored(setting, "purple") + " his preference.")
+        narrate("Jean made " + colored(setting, "purple") + " his preference.")
 
 
 def escape_ansi(line):
@@ -1438,7 +1177,7 @@ def stack_inv_items(target):
 def advise_player_actions(player: "Player", room: "MapTile" = None):
     if room is None:
         room = player.current_room
-    print("\nChoose an action:\n")
+    narrate("\nChoose an action:\n")
     available_actions = room.adjacent_moves()
     move_separator = colored(" | ", "cyan")
     available_moves = move_separator.join(
@@ -1449,8 +1188,8 @@ def advise_player_actions(player: "Player", room: "MapTile" = None):
     chunk_size = 5
     for i in range(0, len(actions_split), chunk_size):
         chunk = "|".join(actions_split[i:i + chunk_size])
-        print(chunk)
-    print("\nFor a list of additional commands, enter 'c'.\n")
+        narrate(chunk)
+    narrate("\nFor a list of additional commands, enter 'c'.\n")
 
 
 def learn_all_skills_from_skilltree(player: "Player"):

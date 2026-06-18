@@ -682,8 +682,8 @@ class TestValidateShopTransaction:
         """Test validation checks required fields."""
         game_service = GameService()
 
-        merchant = Mock(spec=[])  # No specific attributes
-        merchant.shop = Mock()
+        # Has pricing (so lazy-init is skipped) but no 'inventory' field.
+        merchant = Mock(spec=["buy_modifier"])
 
         result = game_service._validate_shop_transaction(
             merchant, 5, required_fields=["inventory"]

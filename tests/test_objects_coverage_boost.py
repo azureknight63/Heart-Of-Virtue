@@ -229,7 +229,7 @@ class TestContainer:
         gold = items.Gold(5)
         c.inventory = [gold]
         with (
-            patch("interface.transfer_item") as mock_transfer,
+            patch("inventory_utils.transfer_item") as mock_transfer,
             patch("builtins.print"),
             patch.object(c, "refresh_description"),
             patch.object(c, "process_events"),
@@ -238,13 +238,9 @@ class TestContainer:
         mock_transfer.assert_called()
 
     def test_loot_opens_closed_container(self):
-        """Lines 472-473: loot() opens a closed container."""
+        """loot() opens a closed container (transfer is handled by LootEvent)."""
         c, p, _ = self._make_container()
-        with (
-            patch("builtins.print"),
-            patch("interface.ContainerLootInterface") as mock_cli,
-        ):
-            mock_cli.return_value.run = MagicMock()
+        with patch("builtins.print"):
             c.loot()
         assert c.state == "opened"
 

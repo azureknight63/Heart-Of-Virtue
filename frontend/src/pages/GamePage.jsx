@@ -96,6 +96,7 @@ export default function GamePage() {
   // Event management hook
   const {
     currentEvent,
+    eventsChecked,
     eventHistory,
     eventQueue,
     isEventDialogActive,
@@ -652,8 +653,8 @@ export default function GamePage() {
         onSkipLoot={handleSkipLoot}
       />
 
-      {/* Level-up modal for EXP gained outside of combat */}
-      {!showVictoryDialog && !showDefeatDialog && (player?.pending_attribute_points ?? 0) > 0 && (
+      {/* Level-up modal — waits for initial event check to prevent racing with EventDialog on load */}
+      {!showVictoryDialog && !showDefeatDialog && eventsChecked && !currentEvent && (player?.pending_attribute_points ?? 0) > 0 && (
         <LevelUpModal
           player={player}
           onAllocatePoints={handleAllocatePoints}

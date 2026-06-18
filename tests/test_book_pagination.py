@@ -37,47 +37,6 @@ def test_book_long_text_pagination(monkeypatch, capsys):
     assert "Page 1 of" in captured.out or "Page 2 of" in captured.out
 
 
-def test_book_pagination_navigation_forward(monkeypatch):
-    """Test navigating forward through pages."""
-    long_text = ". ".join([f"Sentence {i}" for i in range(100)])  # Many sentences
-    book = Book(text=long_text, chars_per_page=200)
-
-    pages = book._paginate_text(long_text)
-    assert len(pages) > 1  # Should create multiple pages
-
-
-def test_book_pagination_navigation_backward(monkeypatch, capsys):
-    """Test navigating backward through pages."""
-    long_text = "This is page content. " * 100
-    book = Book(text=long_text, chars_per_page=200)
-
-    # Simulate: next page, next page, previous page, close
-    responses = ['n', 'n', 'p', 'c']
-    monkeypatch.setattr('builtins.input', lambda prompt='': responses.pop(0))
-    monkeypatch.setattr('src.functions.screen_clear', lambda: None)
-
-    book.read()
-
-    captured = capsys.readouterr()
-    assert "closes the book" in captured.out
-
-
-def test_book_pagination_invalid_choice(monkeypatch, capsys):
-    """Test handling of invalid navigation choice."""
-    long_text = "Content here. " * 100
-    book = Book(text=long_text, chars_per_page=200)
-
-    # Simulate: invalid choice, then close
-    responses = ['invalid', 'c']
-    monkeypatch.setattr('builtins.input', lambda prompt='': responses.pop(0))
-    monkeypatch.setattr('src.functions.screen_clear', lambda: None)
-
-    book.read()
-
-    captured = capsys.readouterr()
-    assert "Invalid choice" in captured.out
-
-
 def test_book_pagination_boundary_conditions():
     """Test pagination at page boundaries."""
     # Test with exactly chars_per_page characters

@@ -71,113 +71,6 @@ class EventThatSpawnsEnemies(Event):
         self.player.combat_list.append(mock_enemy)
 
 
-class TestCombatEventEvaluation:
-    """Test the _evaluate_combat_events function."""
-
-    @pytest.fixture
-    def mock_player(self):
-        """Create a mock player with combat attributes."""
-        player = Mock()
-        player.combat_events = []
-        player.combat_list = []
-        player.combat_list_allies = [None]  # Not empty
-        return player
-
-    def test_evaluate_combat_events_with_empty_list(self, mock_player):
-        """Empty event list should exit gracefully."""
-        from src.combat import _evaluate_combat_events
-
-        mock_player.combat_events = []
-        # Should not raise any exception
-        _evaluate_combat_events(mock_player)
-
-    def test_evaluate_combat_events_with_no_attribute(self):
-        """Player without combat_events should not crash."""
-        from src.combat import _evaluate_combat_events
-
-        player = Mock(spec=[])  # No combat_events attribute
-        # Should not raise any exception
-        _evaluate_combat_events(player)
-
-    def test_evaluate_combat_events_with_valid_event(self, mock_player):
-        """Valid event should be evaluated without error."""
-        from src.combat import _evaluate_combat_events
-
-        valid_event = Mock()
-        valid_event.check_combat_conditions = Mock()
-        mock_player.combat_events = [valid_event]
-
-        _evaluate_combat_events(mock_player)
-
-        # Event's check method should have been called
-        valid_event.check_combat_conditions.assert_called_once()
-
-    def test_evaluate_combat_events_with_failing_event(self, mock_player, capsys):
-        """Event that throws exception should be logged, not crash."""
-        from src.combat import _evaluate_combat_events
-
-        failing_event = Mock()
-        failing_event.name = "FailingEvent"
-        failing_event.check_combat_conditions = Mock(side_effect=RuntimeError("Test error"))
-
-        mock_player.combat_events = [failing_event]
-
-        # Should not raise, but should handle gracefully
-        _evaluate_combat_events(mock_player)
-
-        # Verify the event was attempted
-        failing_event.check_combat_conditions.assert_called_once()
-
-    def test_evaluate_combat_events_with_missing_name_attribute(self, mock_player):
-        """Event without name attribute should not crash during logging."""
-        from src.combat import _evaluate_combat_events
-
-        nameless_event = Mock(spec=[])  # No name attribute
-        nameless_event.check_combat_conditions = Mock(side_effect=ValueError("No name"))
-
-        mock_player.combat_events = [nameless_event]
-
-        # Should not raise even though event has no name
-        _evaluate_combat_events(mock_player)
-
-    def test_evaluate_combat_events_with_multiple_events(self, mock_player):
-        """Multiple events should all be evaluated even if one fails."""
-        from src.combat import _evaluate_combat_events
-
-        event1 = Mock()
-        event1.name = "Event1"
-        event1.check_combat_conditions = Mock()
-
-        event2 = Mock()
-        event2.name = "Event2"
-        event2.check_combat_conditions = Mock(side_effect=RuntimeError("Failed"))
-
-        event3 = Mock()
-        event3.name = "Event3"
-        event3.check_combat_conditions = Mock()
-
-        mock_player.combat_events = [event1, event2, event3]
-
-        # Should evaluate all three even though event2 fails
-        _evaluate_combat_events(mock_player)
-
-        event1.check_combat_conditions.assert_called_once()
-        event2.check_combat_conditions.assert_called_once()
-        event3.check_combat_conditions.assert_called_once()
-
-    def test_evaluate_combat_events_with_event_missing_method(self, mock_player):
-        """Event without check_combat_conditions method should be skipped."""
-        from src.combat import _evaluate_combat_events
-
-        incomplete_event = Mock(spec=['name'])  # No check_combat_conditions
-        incomplete_event.name = "IncompleteEvent"
-
-        mock_player.combat_events = [incomplete_event]
-
-        # Should not crash
-        _evaluate_combat_events(mock_player)
-
-
 class TestAPICombatEventEvaluation:
     """Test the API combat adapter's _evaluate_combat_events method."""
 
@@ -260,13 +153,13 @@ class TestCombatEventIntegration:
         reinforcement = EventThatSpawnsEnemies(mock_player, None)
         mock_player.combat_events = [reinforcement]
 
-        from src.combat import _evaluate_combat_events
+        from src.api.combat_adapter import ApiCombatAdapter
 
         # Before evaluation, combat_list is empty
         assert len(mock_player.combat_list) == 0
 
         # Evaluate events
-        _evaluate_combat_events(mock_player)
+        ApiCombatAdapter(mock_player)._evaluate_combat_events()
 
         # After evaluation, reinforcement should have injected an enemy
         assert len(mock_player.combat_list) == 1
@@ -287,10 +180,10 @@ class TestCombatEventIntegration:
 
         mock_player.combat_events = [broken_event, working_event]
 
-        from src.combat import _evaluate_combat_events
+        from src.api.combat_adapter import ApiCombatAdapter
 
         # Should handle broken event and still process working event
-        _evaluate_combat_events(mock_player)
+        ApiCombatAdapter(mock_player)._evaluate_combat_events()
 
         # Working event should have injected an enemy despite broken event
         assert len(mock_player.combat_list) == 1
@@ -309,8 +202,8 @@ class TestEventErrorLogging:
 
         mock_player.combat_events = [event_with_name]
 
-        from src.combat import _evaluate_combat_events
-        _evaluate_combat_events(mock_player)
+        from src.api.combat_adapter import ApiCombatAdapter
+        ApiCombatAdapter(mock_player)._evaluate_combat_events()
 
         # Check that warning was printed (cprint doesn't capture easily, so we check it was called)
         # The actual output verification would require mocking cprint
@@ -324,7 +217,7 @@ class TestEventErrorLogging:
 
         mock_player.combat_events = [nameless_event]
 
-        from src.combat import _evaluate_combat_events
+        from src.api.combat_adapter import ApiCombatAdapter
 
         # Should not crash when accessing non-existent name
-        _evaluate_combat_events(mock_player)
+        ApiCombatAdapter(mock_player)._evaluate_combat_events()

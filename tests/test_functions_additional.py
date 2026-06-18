@@ -57,65 +57,17 @@ def test_execute_arbitrary_method_zero_and_one_arg(monkeypatch):
     assert called == {'zero': True, 'one': True}
 
 
-def test_confirm_yes_no(monkeypatch):
-    player = DummyPlayer()
-
-    class Thing:
-        name = "Rock"
-        def examine(self, p):
-            p.flags.append('examined')
-
-    t = Thing()
-    # First call: yes
-    seq = iter(['y', 'n'])
-    monkeypatch.setattr(builtins, 'input', lambda _='': next(seq))
-    result_yes = functions.confirm(t, 'examine', player, ['examine'])
-    result_no = functions.confirm(t, 'examine', player, ['examine'])
-    assert result_yes is True and result_no is False and 'examined' in player.flags
-
-
 # ---------- enumerate_for_interactions ----------
-
-def test_enumerate_for_interactions_single_and_multi(monkeypatch):
-    player = DummyPlayer()
-
-    class Obj:
-        def __init__(self, name):
-            self.name = name
-            self.interactions = ['examine']
-            self.called = False
-        def examine(self, p):
-            self.called = True
-
-    o1 = Obj('Apple')
-    subjects = [o1]
-    # Single candidate immediate execution
-    handled = functions.enumerate_for_interactions(subjects, player, ['examine'], 'examine')
-    assert handled and o1.called
-
-    # Multi-candidate with selection
-    o2 = Obj('Apple Core')
-    o1.called = False
-    o2.called = False
-    subjects = [o1, o2]
-    # Choose second item (input '2')
-    monkeypatch.setattr(builtins, 'input', lambda _='': '2')
-    handled_multi = functions.enumerate_for_interactions(subjects, player, ['examine', 'apple'], 'examine apple')
-    assert handled_multi and o2.called and not o1.called
-
-    # Cancellation path
-    monkeypatch.setattr(builtins, 'input', lambda _='': 'x')
-    cancelled = functions.enumerate_for_interactions(subjects, player, ['examine', 'apple'], 'examine apple')
-    assert cancelled is False
-
 
 # ---------- screen_clear ----------
 
-def test_screen_clear_calls_system(monkeypatch):
+def test_screen_clear_is_noop(monkeypatch):
+    # Terminal clearing was retired with terminal mode; screen_clear is now a
+    # no-op that must not shell out to the OS.
     calls = []
     monkeypatch.setattr(os, 'system', lambda cmd: calls.append(cmd) or 0)
-    functions.screen_clear()
-    assert any(cmd in ('cls', 'clear') for cmd in calls)
+    assert functions.screen_clear() is None
+    assert calls == []
 
 
 # ---------- check_for_combat ----------
@@ -267,9 +219,9 @@ def test_stack_inv_items_non_stackables_graceful():
     functions.stack_inv_items(target)
 
 
-def test_print_slow(monkeypatch, capsys):
-    # Speed up by removing sleep
-    monkeypatch.setattr(functions.time, 'sleep', lambda *_: None)
+def test_print_slow(capsys):
+    # print_slow now emits the whole line via the narration sink (no terminal
+    # typewriter / time.sleep); when no capture is active it echoes to stdout.
     functions.print_slow("Hello World", speed="fast")
     captured = capsys.readouterr().out
     assert "Hello World" in captured
@@ -320,14 +272,16 @@ def test_list_module_names_and_seek_class_error():
         functions.seek_class('NonExistentClass', package='not_a_pkg')
 
 
-def test_await_input(monkeypatch):
-    captured = {}
+def test_await_input_is_noop(monkeypatch):
+    # The blocking "press Enter" pause was retired with terminal mode;
+    # await_input must no longer call input().
+    called = {'input': False}
     def fake_input(prompt=''):
-        captured['prompt'] = prompt
+        called['input'] = True
         return ''
     monkeypatch.setattr(builtins, 'input', fake_input)
-    functions.await_input()
-    assert '(Press Enter)' in captured.get('prompt','')
+    assert functions.await_input() is None
+    assert called['input'] is False
 
 # Append required imports for new tests
 import pytest  # noqa: E402  (placed at end intentionally for minimal diff)

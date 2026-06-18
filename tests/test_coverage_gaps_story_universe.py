@@ -1483,11 +1483,14 @@ class TestGorranGestureEvent:
             ev.check_conditions()
             mock_pass.assert_called_once()
 
-    def test_conditions_fail_without_previous_tile(self):
-        ev, player, tile = self._make(coming_from_grondia=False)
+    def test_conditions_skip_when_gate_already_set(self):
+        ev, player, tile = self._make(coming_from_grondia=True)
+        player.universe.story["gorran_gesture_done"] = "1"
+        tile.events_here = [ev]
         with patch.object(ev, "pass_conditions_to_process") as mock_pass:
             ev.check_conditions()
             mock_pass.assert_not_called()
+        assert ev not in tile.events_here
 
     def test_process_skip_dialog_is_noop(self):
         ev, player, tile = self._make(coming_from_grondia=True)
@@ -1538,7 +1541,6 @@ class TestEasternRoadTurnbackEvent:
         with (
             patch("story.ch03.print_slow"),
             patch("story.ch03.time.sleep"),
-            patch("story.ch03.print"),
             patch("story.ch03.colored", return_value=""),
         ):
             ev.process()
@@ -1558,6 +1560,97 @@ class TestEasternRoadTurnbackEvent:
         ev, player, tile = self._make()
         player.universe = None
         ev.process()  # should not raise
+
+
+class TestMaraObservationEvent:
+    """MaraObservationEvent — sets the 'nomad_camp_reached' completion gate.
+
+    (Formerly NomadCampArrivalEvent; renamed when the nomad-camp beats were
+    split across dedicated events.)
+    """
+
+    def setup_method(self):
+        from story.ch03 import MaraObservationEvent
+
+        self.cls = MaraObservationEvent
+
+    def _make(self, already_reached=False):
+        player = _make_player()
+        player.universe.story = {}
+        if already_reached:
+            player.universe.story["nomad_camp_reached"] = "1"
+        else:
+            # Conditions only pass once the three character beats are complete.
+            player.universe.story.update(
+                {
+                    "mara_intro_done": "1",
+                    "devet_intro_done": "1",
+                    "liss_gorran_done": "1",
+                }
+            )
+        tile = _make_tile()
+        tile.events_here = []
+        return self.cls(player=player, tile=tile), player, tile
+
+    def test_instantiate(self):
+        ev, *_ = self._make()
+        assert ev.name == "MaraObservation"
+        assert ev.repeat is False
+
+    def test_conditions_pass_when_not_reached(self):
+        ev, player, tile = self._make(already_reached=False)
+        with patch.object(ev, "pass_conditions_to_process") as mock_pass:
+            ev.check_conditions()
+            mock_pass.assert_called_once()
+
+    def test_conditions_remove_self_when_already_reached(self):
+        ev, player, tile = self._make(already_reached=True)
+        tile.events_here = [ev]
+        ev.check_conditions()
+        assert ev not in tile.events_here
+
+    def test_process_skip_dialog_sets_gate(self):
+        ev, player, tile = self._make()
+        player.skip_dialog = True
+        ev.process()
+        assert player.universe.story.get("nomad_camp_reached") == "1"
+
+    def test_process_full_sets_gate(self):
+        ev, player, tile = self._make()
+        player.skip_dialog = False
+        # has_mace=False branch
+        with (
+            patch("story.ch03.print_slow"),
+            patch("story.ch03.dialogue"),
+            patch("story.ch03.time.sleep"),
+        ):
+            ev.process()
+        assert player.universe.story.get("nomad_camp_reached") == "1"
+
+    def test_process_full_with_mace(self):
+        ev, player, tile = self._make()
+        player.skip_dialog = False
+        mace = Mock()
+        mace.__class__.__name__ = "Mace"
+        player.inventory = [mace]
+        with (
+            patch("story.ch03.print_slow"),
+            patch("story.ch03.dialogue"),
+            patch("story.ch03.time.sleep"),
+        ):
+            ev.process()
+        assert player.universe.story.get("nomad_camp_reached") == "1"
+
+    def test_set_gate_with_no_universe(self):
+        ev, player, tile = self._make()
+        player.universe = None
+        ev._set_gate()  # should not raise
+
+    def test_set_gate_with_none_story(self):
+        ev, player, tile = self._make()
+        player.universe.story = None
+        player.universe.__class__.__name__ = "Universe"
+        ev._set_gate()  # should not raise
 
 
 # ===========================================================================

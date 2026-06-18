@@ -412,29 +412,6 @@ class TestInventoryCoverage:
 
         assert heavy_item not in p.inventory
 
-    def test_equip_item_already_equipped_removes_on_y(self):
-        """If item is already equipped and user answers y, it should be unequipped."""
-        p = _make_player()
-        sword = items.RustedIronMace()
-        sword.isequipped = True
-        # Add interactions if missing
-        if "unequip" not in sword.interactions:
-            sword.interactions.append("unequip")
-        if "equip" in sword.interactions:
-            sword.interactions.remove("equip")
-        p.inventory.append(sword)
-        p.current_room = _make_tile()
-        p.current_room.items_here = []
-
-        with (
-            patch("builtins.input", return_value="y"),
-            patch("builtins.print"),
-            patch("neotermcolor.cprint"),
-        ):
-            p.equip_item(item_object=sword)
-
-        assert not sword.isequipped
-
     def test_equip_item_already_equipped_no_remove_on_n(self):
         """If item is already equipped and user answers n, it stays equipped."""
         p = _make_player()
@@ -726,8 +703,3 @@ class TestUIGridCoverage:
         mock_save.assert_called_once_with(p)
         assert p.main_menu is True
 
-    def test_save_calls_save_select(self):
-        p = _make_player()
-        with patch("functions.save_select") as mock_save:
-            p.save()
-        mock_save.assert_called_once_with(p)

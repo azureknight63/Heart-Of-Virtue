@@ -265,6 +265,11 @@ describe('NpcChatPanel', () => {
       await waitFor(() => {
         expect(npcChat.respond).toHaveBeenCalled()
       })
+
+      // Let the delayed mock response resolve before the test (and its
+      // jsdom environment) tears down, otherwise the finally block's
+      // setLoading(false) fires after teardown and throws.
+      await new Promise((resolve) => setTimeout(resolve, 150))
     })
   })
 

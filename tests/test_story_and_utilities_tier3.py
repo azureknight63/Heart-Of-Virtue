@@ -18,47 +18,6 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 
-class TestOpenTerminal(unittest.TestCase):
-    """Test src/open_terminal.py - terminal startup logic."""
-
-    def test_open_window_windows_platform(self):
-        """Test open_window on Windows platform."""
-        from open_terminal import open_window
-
-        with patch("os.name", "nt"):
-            with patch("subprocess.call") as mock_call:
-                open_window("test_animation")
-                mock_call.assert_called_once()
-                args = mock_call.call_args[0][0]
-                assert "start /wait python animations.py test_animation" in args
-
-    def test_open_window_non_windows_platform(self):
-        """Test open_window on non-Windows platform."""
-        from open_terminal import open_window
-
-        with patch("os.name", "posix"):
-            with patch("builtins.print") as mock_print:
-                open_window("test_animation")
-                mock_print.assert_called()
-                args = mock_print.call_args[0][0]
-                assert "Non-windows" in args or "not yet supported" in args
-
-    def test_open_window_different_animation_names(self):
-        """Test open_window with various animation names."""
-        from open_terminal import open_window
-
-        animations = ["memory_flash", "combat", "level_up", "death"]
-
-        with patch("os.name", "nt"):
-            with patch("subprocess.call") as mock_call:
-                for anim in animations:
-                    mock_call.reset_mock()
-                    open_window(anim)
-                    mock_call.assert_called_once()
-                    args = mock_call.call_args[0][0]
-                    assert anim in args
-
-
 class TestVerifyCombatEvent(unittest.TestCase):
     """Test src/verify_combat_event.py - combat event loading and validation."""
 

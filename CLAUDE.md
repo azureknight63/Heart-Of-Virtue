@@ -2,11 +2,9 @@
 
 ## Project Overview
 
-Text-based Adventure RPG (ASCII/retro aesthetic) following a crusader named Jean Claire. The project has two modes of play:
-- **Terminal/CLI**: Original Python implementation
-- **Web**: Flask REST API + React SPA (current focus on `web-api` branch)
+Text-based Adventure RPG (ASCII/retro aesthetic) following a crusader named Jean Claire. The game is played **entirely via the web app** — a Flask REST API wrapping the Python game engine, with a React SPA frontend. (The original terminal/CLI play mode has been removed; see "Terminal-mode removal" below.)
 
-The Python game engine is the source of truth. The web layer wraps it without rewriting it.
+The Python game engine is the source of truth. The web layer wraps it without rewriting it. Engine output flows through the **narration sink** (`src/narration.py`) as structured messages rather than terminal `print`; the API reads those messages directly instead of scraping stdout.
 
 ## Tech Stack
 
@@ -73,10 +71,7 @@ config_combat_testing.ini   # Combat testing config (agent-only; pass CONFIG_FIL
 ## Running the Project
 
 ```bash
-# Terminal game
-python src/game.py
-
-# API server (localhost:5000)
+# API server (localhost:5000) — the game runs entirely through this
 python tools/run_api.py
 
 # Frontend dev server (localhost:3000)
@@ -107,7 +102,9 @@ cd frontend && npm test -- --run --coverage
 Use `python -m pytest` rather than bare `pytest` — the virtualenv may not expose the
 `pytest` binary on PATH, causing silent import failures.
 
-The `tests/api/`, `tests/broken/`, and `tests/uat/` directories are excluded from the default run. Don't add them to standard test runs.
+The `tests/api/`, `tests/broken/`, and `tests/uat/` directories are excluded from the default run. Don't add them to standard test runs. **Full-app integration tests that build a real session/universe** (via `create_app(TestingConfig)` + `/api/test/session`) belong in `tests/api/` — creating a real session mutates module-level item/merchant registries and pollutes downstream shop/spawn tests in the default suite. The other route tests avoid this by using a *mocked* `session_manager`.
+
+**Test-pollution gotcha:** stray root-level scripts (`test_*_fix.py`, `reproduce_*.py`, etc.) that do `sys.modules['flask'] = MagicMock()` at import will poison every Flask test in a full run — pytest collects them from the rootdir, so each later route/serializer test sees a `MagicMock` app and fails (while passing in isolation). `pytest.ini`'s `addopts` ignore-list neutralizes the known ones; add new such scripts there. To find a collection-time culprit, hook `pytest_collection_finish` and check `type(sys.modules['flask'])`.
 
 ## Test Coverage Strategy
 
@@ -239,6 +236,21 @@ Key architectural work already merged into the codebase:
 - `NPCSpawnerEvent.evaluate_for_map_entry` tile fallback added — uses `self.tile` when `spawn_tile` is `None` (JSON deserialization issue), fixing Lurker and map-entry spawners via the API
 - `GameService.move_player` calls `player.universe.game_tick_events()` on every move — required for map-entry spawners (NPCSpawnerEvents) to fire; mirrors the terminal game loop
 - `src/moves.py` split into `src/moves/` package (13 submodules, 73 classes) — `PassiveMove` base class added to eliminate ~200 lines of repeated passive-move boilerplate; all callers unchanged via `__init__.py` re-exports
+- Terminal-mode teardown (Phase 2): all four `interface.py` menu classes removed, dead `combat()` loop deleted, `TheAdjutant` menu converted to the `/api/debug` blueprint, event capture moved fully onto the narration sink + structured protocol (see "Terminal-mode removal" below for details and what remains)
+
+### Terminal-mode removal (mostly complete)
+
+The game is web-API-only; the terminal play mode is being dismantled in phases:
+- **Done:** CLI entry points deleted (`game.py`, `intro_scene.py`, `open_terminal.py`); inventory helpers extracted to `src/inventory_utils.py`; **narration sink** added (`src/narration.py`) — engine emits structured `{text, color, type}` messages via `cprint`/`narrate` into a context-local buffer (`capture_narration()`), echoing to stdout only when no capture is active (keeps `capsys` tests working). ~470 `print()` calls and ~35 modules repointed off `neotermcolor`. The combat adapter consumes the narration buffer via a live listener instead of scraping stdout (`_capture_output`).
+- **Done:** all four terminal menu classes deleted from `interface.py` — `ContainerLootInterface` (loot verbs route through `events.LootEvent`), `ShopInterface` (+`ShopBuyMenu`/`ShopSellMenu`; pricing moved onto the `Merchant` — `buy_modifier`/`sell_modifier`/`shop_name` — read by `GameService.shop_buy/sell` + `ShopSerializer`), `RoomTakeInterface` (web uses `Item.take()` + `interact_with_target`), and `InventoryInterface`/`InventoryCategorySubmenu`/`BaseInterface` (web uses the `/inventory` routes). `interface.py` is now a thin shim re-exporting `get_gold`/`transfer_gold`/`transfer_item`. The dead `Player.take`/`Player.print_inventory`/`Player.attack` verbs and their `actions.py` action classes (`ViewInventory`/`Take`/`Attack`) were removed too.
+- **Done:** dead terminal `combat()` loop deleted (`src/combat.py` removed; the web client drives combat through `ApiCombatAdapter`). `CombatEvent`'s terminal fallback removed (always `combat_start` in web).
+- **Done:** `TheAdjutant` debug menu converted to a **test-only debug endpoint** (`src/api/routes/debug.py`, `debug_bp`, registered only when `app.config["TESTING"]`). The Adjutant's input() menu was replaced by parametrized operation methods (`set_hp`, `set_level`, `set_attributes`, `set_heat`, `restore`, `learn_all_skills`, `list_skills`, `player_state`, `arena_rosters`, `add_combatant`, `remove_combatant`, `clear_room`, `set_combatant_stats`).
+- **Done:** event output capture fully on `capture_narration` (last `redirect_stdout` in `move_player` converted); `WhisperingStatue` — the only event that called `input()` directly — converted to the structured protocol.
+- **Done:** de-terminal'd every `input()` in the event/interact-reachable engine modules (`functions.py`, `player/*`, `items.py`) — `Item.drop/take` default to the full stack, `Book.read` is non-interactive, `equip_item`/`use_item` take the first phrase match, `gain_exp` always uses `_level_up_api`; deleted the dead terminal helpers (`confirm`, `load_select`, `save_select`, `enumerate_for_interactions`, `equip_item_menu`, `skillmenu`, `level_up`) and the `SkillMenu` action. **The input-mocking net is removed**: `GameService._build_event_patches` no longer patches `input()` (only `await_input`/`animate`/`time.sleep`), and `_make_mock_input`/`_MOCK_INPUT_CYCLE` are gone.
+- **Done:** removed the terminal `input()` from combat moves (`moves/*`). The adapter drives moves via `cast()`/`advance()` and supplies selections through structured commands (`select_number`/`select_direction`/`select_target`) that set attributes (`duration`/`distance`/`target_direction`/`target`) on the move *before* its stage runs; each move now reads that attribute (defaulting sensibly) instead of prompting. `Turn`'s terminal `_prompt_direction_selection`/`_calculate_direction_to_target` were deleted; `ShootBow` defaults to the preferred/first arrow; `UseItem`'s in-combat item use is the `/inventory/use` route. **`src/` is now free of engine `input()`** — only the `animations.py` `__main__` CLI guard remains.
+- **Remaining:** a few non-event terminal command methods (`Player.menu`, `Player.commands`, terminal action classes in `actions.py`/`tiles.py`'s `callerIsApi=False` list) linger but are not API-invoked (and no longer call `input()`).
+
+**Narration gotcha:** `narrate(*parts, color=None, ...)` joins parts like `print`; color must be passed as a keyword (`narrate(text, color="red")`), never positionally. `cprint(text, color)` keeps the old signature.
 
 ## Bug-Hunt Harness
 
@@ -357,7 +369,7 @@ only on `console_errors` and `network_failures` (the significant ones).
 
 ### Key NPCs added in `npc.py`
 
-- **`TheAdjutant`** — friendly NPC at `(0, 0)`. `talk` opens a runtime menu: set Jean's HP/level/attributes/heat/skills and manage the NPC roster on each tile (add/remove/clear/edit by class name). Changes take effect immediately — no restart needed.
+- **`TheAdjutant`** — friendly NPC at `(0, 0)`. `talk` narrates flavor only; runtime configuration (Jean's HP/level/attributes/heat/skills and the per-tile NPC roster) is driven by the **test-only debug endpoint** (`/api/debug/*`, `src/api/routes/debug.py`), which calls the Adjutant's parametrized operation methods. The endpoint is registered only when `app.config["TESTING"]` is true, so it is never reachable in production. Changes take effect immediately — no restart needed.
 - **`StatusDummy` / "Pell"** — test target at `(1, 1)`. Every status resistance is 0.0 and every damage resistance is 1.0 so effects land reliably. High HP (500), very low damage (3).
 
 ---

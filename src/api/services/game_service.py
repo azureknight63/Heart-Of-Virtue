@@ -1,15 +1,14 @@
 import logging
 import uuid
 import contextlib
-import io
-import itertools
 import re
 from typing import TYPE_CHECKING, Dict, Any, Optional, List
 from unittest.mock import patch
 
 from src.api.constants import ITEM_USE_RANGE
 from src.functions import check_for_combat
-from src.interface import get_gold
+from src.inventory_utils import get_gold
+from src.narration import capture_narration, narrate
 
 if TYPE_CHECKING:
     from src import player as player_module
@@ -125,45 +124,23 @@ class GameService:
             modules.append(event.__module__)
         return modules
 
-    # Priority-ordered responses that cover all known menu formats in story events.
-    # The cycle lets a single mock_input function terminate *any* while-loop guard
-    # within at most len(_MOCK_INPUT_CYCLE) calls: letter menus (a/b/c), numeric
-    # menus (1/2/3), and legacy zero-indexed menus (0).
-    _MOCK_INPUT_CYCLE = ["a", "1", "b", "2", "c", "3", "0", "n", "y"]
+    def _build_event_patches(self, target_modules) -> List[Any]:
+        """Build patches that neutralize terminal timing/animation during events.
 
-    @staticmethod
-    def _make_mock_input(output_buffer: io.StringIO):
-        """Return a mock_input closure backed by a cycling response list.
-
-        Writes the prompt to output_buffer (so it appears in captured event
-        output), then returns the next value from _MOCK_INPUT_CYCLE.  Using a
-        cycle means repeated calls within the same event processing invocation
-        will try different values, so any while-loop with a finite valid-input
-        set will terminate even if the first choice isn't accepted.
+        Engine narrative output flows through the narration sink (captured via
+        ``capture_narration``), and the engine no longer calls ``input()`` on any
+        event/interact-reachable path (the terminal menus were removed), so input
+        is no longer mocked here.  We still suppress terminal pauses
+        (``await_input``), animation playback, and ``time.sleep`` so events resolve
+        instantly without blocking the API request.
         """
-        _cycle = itertools.cycle(GameService._MOCK_INPUT_CYCLE)
-
-        def mock_input(prompt=""):
-            if prompt:
-                output_buffer.write(str(prompt) + "\n")
-            return next(_cycle)
-
-        return mock_input
-
-    def _build_event_patches(
-        self, target_modules, mock_input, mock_cprint, mock_print_slow
-    ) -> List[Any]:
         patches = [
-            patch("builtins.input", mock_input),
-            patch("neotermcolor.cprint", mock_cprint),
             patch("time.sleep", return_value=None),
         ]
 
         for mod in set(target_modules):
             patches.extend(
                 [
-                    patch(f"{mod}.cprint", mock_cprint, create=True),
-                    patch(f"{mod}.print_slow", mock_print_slow, create=True),
                     patch(f"{mod}.await_input", return_value=None, create=True),
                     patch(
                         f"{mod}.animate_to_main_screen",
@@ -171,7 +148,6 @@ class GameService:
                         create=True,
                     ),
                     patch(f"{mod}.time.sleep", return_value=None, create=True),
-                    patch(f"{mod}.input", mock_input, create=True),
                 ]
             )
 
@@ -602,12 +578,11 @@ class GameService:
         player.location_y = new_y
         player.current_room = new_tile
 
-        # Move any party members to the new room (mirrors game.py terminal behaviour)
+        # Move any party members to the new room (mirrors the terminal behaviour).
+        # recall_friends() narrates via the narration sink; capture (and discard)
+        # those messages so they don't echo to stdout.
         if len(getattr(player, "combat_list_allies", [])) > 1:
-            import io
-            import contextlib
-
-            with contextlib.redirect_stdout(io.StringIO()):
+            with capture_narration():
                 try:
                     player.recall_friends()
                 except Exception:
@@ -737,29 +712,14 @@ class GameService:
             # For non-input events, process normally
             # Try to trigger the event and capture output
             if hasattr(event, "check_conditions"):
-                f = io.StringIO()
                 try:
-                    # Patch functions to capture output without blocking
-                    def mock_cprint(text, *args, **kwargs):
-                        f.write(str(text) + "\n")
-
-                    def mock_print_slow(text, speed="slow"):
-                        f.write(str(text) + "\n")
-
-                    mock_input = self._make_mock_input(f)
-
                     target_modules = self._get_event_target_modules(
                         event, include_animations=True
                     )
-                    patches = self._build_event_patches(
-                        target_modules,
-                        mock_input,
-                        mock_cprint,
-                        mock_print_slow,
-                    )
+                    patches = self._build_event_patches(target_modules)
 
-                    # Capture stdout only (stderr is global/not thread-safe to redirect)
-                    with contextlib.redirect_stdout(f), contextlib.ExitStack() as stack:
+                    # Capture structured narration emitted during event processing.
+                    with capture_narration() as _msgs, contextlib.ExitStack() as stack:
 
                         for p in patches:
                             try:
@@ -804,7 +764,9 @@ class GameService:
                     )
 
                 # Capture and clean output
-                clean_output = self._clean_event_output(f.getvalue())
+                clean_output = self._clean_event_output(
+                    "\n".join(m.get("text", "") for m in _msgs)
+                )
                 if clean_output:
                     event_data["output_text"] = clean_output
 
@@ -831,7 +793,6 @@ class GameService:
             Dictionary with event result and output
         """
         import contextlib
-        import io
         from src.api.serializers.event_serializer import EventSerializer
 
         # Validate event exists
@@ -845,33 +806,18 @@ class GameService:
         event = pending["event"]
 
         # Process the event with user input
-        f = io.StringIO()
         result = {"success": True, "event_id": event_id}
 
         try:
-            # Patch functions to capture output without blocking
-            def mock_cprint(text, *args, **kwargs):
-                f.write(str(text) + "\n")
-
-            def mock_print_slow(text, speed="slow"):
-                f.write(str(text) + "\n")
-
-            def mock_input(prompt=""):
-                return user_input
-
-            # Build robust patch list across multiple core modules
+            # Structured choices come through process(user_input=...); the engine
+            # no longer calls input() on event-reachable paths.
             target_modules = self._get_event_target_modules(
                 event, include_animations=False
             )
-            patches = self._build_event_patches(
-                target_modules,
-                mock_input,
-                mock_cprint,
-                mock_print_slow,
-            )
+            patches = self._build_event_patches(target_modules)
 
-            # Capture stdout only (stderr is global/not thread-safe to redirect)
-            with contextlib.redirect_stdout(f), contextlib.ExitStack() as stack:
+            # Capture structured narration emitted during event processing.
+            with capture_narration() as _msgs, contextlib.ExitStack() as stack:
 
                 for p in patches:
                     try:
@@ -931,7 +877,9 @@ class GameService:
             _log.exception("Event input processing failed for event_id=%s", event_id)
 
         # Capture and clean output
-        clean_output = self._clean_event_output(f.getvalue())
+        clean_output = self._clean_event_output(
+            "\n".join(m.get("text", "") for m in _msgs)
+        )
         if clean_output:
             result["output_text"] = clean_output
 
@@ -1267,8 +1215,6 @@ class GameService:
         Returns:
             Dictionary with interaction result and output text
         """
-        import contextlib
-        import io
         from unittest.mock import patch
         import inspect
         import re
@@ -1363,34 +1309,16 @@ class GameService:
         _pre_y = player.location_y
 
         # Execute action and capture output
-        f = io.StringIO()
         events_triggered = []
         try:
-            # We need to patch await_input to prevent blocking, and time.sleep to prevent delays
-            # Also patch cprint and print_slow to capture colored output
-            def mock_cprint(text, *args, **kwargs):
-                f.write(str(text) + "\n")
-
-            def mock_print_slow(text, speed="slow"):
-                # Just write the text directly without character-by-character delays
-                f.write(str(text) + "\n")
-
-            def mock_input(prompt=""):
-                # Return 'x' to exit any terminal-based interactive loops (like loot menus)
-                return "x"
-
-            # Patch at multiple levels since different modules import differently
+            # Narrative output is captured via the narration sink; we still
+            # neutralize terminal pauses/timing. Interaction targets no longer
+            # call input() (the terminal item/object menus were removed).
             with (
-                contextlib.redirect_stdout(f),
-                patch("builtins.input", mock_input),
+                capture_narration() as _msgs,
                 patch("functions.await_input", return_value=None),
-                patch("functions.print_slow", mock_print_slow),
                 patch("time.sleep", return_value=None),
-                patch("neotermcolor.cprint", mock_cprint),
                 patch("src.functions.await_input", return_value=None),
-                patch("src.functions.print_slow", mock_print_slow),
-                patch("src.items.cprint", mock_cprint),
-                patch("items.cprint", mock_cprint),
             ):
 
                 try:
@@ -1402,9 +1330,9 @@ class GameService:
                 except ImportError:
                     from src.items import Item
                 try:
-                    from interface import transfer_item
+                    from inventory_utils import transfer_item
                 except ImportError:
-                    from src.interface import transfer_item
+                    from src.inventory_utils import transfer_item
                 try:
                     from events import LootEvent
                 except ImportError:
@@ -1430,28 +1358,43 @@ class GameService:
                     or hasattr(target, "_parent_container")
                 )
 
-                if is_container and action in ["loot", "check"]:
+                if is_container and action in [
+                    "loot",
+                    "check",
+                    "view",
+                    "examine",
+                    "inspect",
+                    "peruse",
+                ]:
                     target.open()
-                    # Create a LootEvent and store it
-                    loot_event = LootEvent(
-                        f"Looting {target.name}", player, tile, target
-                    )
-                    event_data = EventSerializer.serialize_with_input(loot_event)
+                    # Only surface the loot menu if the container actually
+                    # opened. A locked container's open() is a no-op (state
+                    # stays "closed"); creating a LootEvent anyway would expose
+                    # its contents and bypass the lock. open() narrates why it
+                    # failed, which flows out via the narration sink below.
+                    if getattr(target, "state", None) == "opened":
+                        # Create a LootEvent and store it
+                        loot_event = LootEvent(
+                            f"Looting {target.name}", player, tile, target
+                        )
+                        event_data = EventSerializer.serialize_with_input(
+                            loot_event
+                        )
 
-                    if session_data is not None:
-                        event_id = str(uuid.uuid4())
-                        event_data["event_id"] = event_id
+                        if session_data is not None:
+                            event_id = str(uuid.uuid4())
+                            event_data["event_id"] = event_id
 
-                        if "pending_events" not in session_data:
-                            session_data["pending_events"] = {}
-                        session_data["pending_events"][event_id] = {
-                            "event": loot_event,
-                            "tile_x": tile.x,
-                            "tile_y": tile.y,
-                            "event_data": event_data,
-                        }
+                            if "pending_events" not in session_data:
+                                session_data["pending_events"] = {}
+                            session_data["pending_events"][event_id] = {
+                                "event": loot_event,
+                                "tile_x": tile.x,
+                                "tile_y": tile.y,
+                                "event_data": event_data,
+                            }
 
-                    events_triggered.append(event_data)
+                        events_triggered.append(event_data)
                 elif (
                     is_item
                     and action in ["take", "equip"]
@@ -1468,7 +1411,7 @@ class GameService:
                         target._parent_container.refresh_description()
 
                     if action == "take":
-                        print(f"{player.name} takes {target.name}.")
+                        narrate(f"{player.name} takes {target.name}.")
                     else:
                         # Proceed with equipment logic
                         target.equip(player)
@@ -1496,7 +1439,7 @@ class GameService:
                 "message": f"Error executing action: {str(e)}",
             }
 
-        output = f.getvalue()
+        output = "\n".join(m.get("text", "") for m in _msgs)
 
         # Clean up output (remove ANSI codes)
         ansi_escape = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
@@ -1872,29 +1815,14 @@ class GameService:
             )
 
             if hasattr(event, method_name):
-                f = io.StringIO()
                 try:
-                    # Patch functions to capture output without blocking
-                    def mock_cprint(text, *args, **kwargs):
-                        f.write(str(text) + "\n")
-
-                    def mock_print_slow(text, speed="slow"):
-                        f.write(str(text) + "\n")
-
-                    mock_input = self._make_mock_input(f)
-
                     target_modules = self._get_event_target_modules(
                         event, include_animations=True
                     )
-                    patches = self._build_event_patches(
-                        target_modules,
-                        mock_input,
-                        mock_cprint,
-                        mock_print_slow,
-                    )
+                    patches = self._build_event_patches(target_modules)
 
-                    # Capture stdout/stderr and patch blocking functions
-                    with contextlib.redirect_stdout(f), contextlib.ExitStack() as stack:
+                    # Capture structured narration emitted during processing.
+                    with capture_narration() as _msgs, contextlib.ExitStack() as stack:
 
                         for p in patches:
                             try:
@@ -1930,7 +1858,9 @@ class GameService:
                     event_data["error"] = str(e)
 
                 # Capture and clean output
-                clean_output = self._clean_event_output(f.getvalue())
+                clean_output = self._clean_event_output(
+                    "\n".join(m.get("text", "") for m in _msgs)
+                )
                 triggered = False
                 if clean_output:
                     event_data["output_text"] = clean_output
@@ -5042,7 +4972,7 @@ class GameService:
         if merchant is None:
             return {"error": "Merchant not found at this location"}
 
-        if merchant.shop is None:
+        if not hasattr(merchant, "buy_modifier"):
             merchant.initialize_shop()
 
         # Validate quantity
@@ -5078,7 +5008,7 @@ class GameService:
         if merchant is None:
             return {"success": False, "error": "Merchant not found at this location"}
 
-        if merchant.shop is None:
+        if not hasattr(merchant, "buy_modifier"):
             merchant.initialize_shop()
 
         # Stock the merchant on first API access — update_goods() is normally
@@ -5147,7 +5077,7 @@ class GameService:
         Returns:
             Dict with success, updated shop_state, sell_inventory, and message.
         """
-        from src.interface import transfer_gold, transfer_item
+        from src.inventory_utils import transfer_gold, transfer_item
         from src.api.serializers.shop_serializer import ShopSerializer
 
         merchant = self._find_merchant(player, npc_id)
@@ -5156,7 +5086,7 @@ class GameService:
         if validation_error:
             return {"success": False, **validation_error}
 
-        buy_mod = getattr(merchant.shop, "buy_modifier", 1.0)
+        buy_mod = getattr(merchant, "buy_modifier", 1.0)
 
         # Locate item in merchant inventory
         target_item = None
@@ -5227,7 +5157,7 @@ class GameService:
         Returns:
             Dict with success, updated shop_state, sell_inventory, and message.
         """
-        from src.interface import transfer_gold, transfer_item
+        from src.inventory_utils import transfer_gold, transfer_item
         from src.api.serializers.shop_serializer import ShopSerializer
 
         merchant = self._find_merchant(player, npc_id)
@@ -5236,7 +5166,7 @@ class GameService:
         if validation_error:
             return {"success": False, **validation_error}
 
-        sell_mod = getattr(merchant.shop, "sell_modifier", 0.5)
+        sell_mod = getattr(merchant, "sell_modifier", 0.5)
 
         # Locate item in player inventory
         target_item = None
@@ -5344,7 +5274,7 @@ class GameService:
         Returns:
             Dict with success, updated shop_state, sell_inventory, and message.
         """
-        from src.interface import transfer_gold, transfer_item
+        from src.inventory_utils import transfer_gold, transfer_item
         from src.api.serializers.shop_serializer import ShopSerializer
 
         merchant = self._find_merchant(player, npc_id)

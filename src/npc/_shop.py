@@ -14,7 +14,9 @@ Attributes expected on the host class (provided by Merchant.__init__):
     self.enchantment_rate   float
     self.base_gold          int
     self.shop_conditions    dict
-    self.shop               ShopInterface | None
+    self.buy_modifier       float   (price multiplier when buying; default 1.0)
+    self.sell_modifier      float   (price multiplier when selling; default 0.5)
+    self.shop_name          str
     self.current_room       Room | None
     self.name               str
 """
@@ -42,6 +44,7 @@ from items import (
     Arrow,
 )
 from objects import Container  # type: ignore
+from narration import narrate
 from shop_conditions import (  # type: ignore
     ValueModifierCondition,
     RestockWeightBoostCondition,
@@ -125,7 +128,7 @@ class MerchantShopMixin:
                 )
                 collected_messages.append(msg)
                 if not silent:
-                    print(msg)
+                    narrate(msg)
                     time.sleep(0.15)
                 took_any = True
         if took_any and not silent:
@@ -135,24 +138,24 @@ class MerchantShopMixin:
     # ── Shop initialisation ────────────────────────────────────────────────────
 
     def initialize_shop(self):
-        """Initialise or re-initialise the ShopInterface attached to this merchant.
+        """Initialise this merchant's shop pricing attributes.
 
-        Called at the end of Merchant.__init__.  Override in concrete subclasses
-        to set a custom shop name, exit message, etc.
+        Called at the end of Merchant.__init__.  The terminal ShopInterface has
+        been removed; the web API drives shopping through
+        GameService.shop_buy/shop_sell and ShopSerializer, which read these
+        attributes directly off the merchant.  Concrete subclasses may set a
+        custom ``shop_name`` (before or after super().__init__()).
         """
         if self.inventory is None:
             self.inventory = []
-        # Local import to avoid circular import with interface -> npc
-        try:
-            from interface import ShopInterface as Shop
-        except Exception:
-            Shop = None
-        if Shop:
-            self.shop = Shop(
-                merchant=self, player=None, shop_name=f"{self.name}'s Shop"
-            )
-        else:
-            self.shop = None
+        # Price modifiers: full price to buy, half value when selling back.
+        # (Previously held on the ShopInterface; never mutated at runtime.)
+        if not hasattr(self, "buy_modifier"):
+            self.buy_modifier = 1.0
+        if not hasattr(self, "sell_modifier"):
+            self.sell_modifier = 0.5
+        if not getattr(self, "shop_name", None):
+            self.shop_name = f"{self.name}'s Shop"
 
     # ── Stock counting ─────────────────────────────────────────────────────────
 

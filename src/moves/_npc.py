@@ -1,6 +1,6 @@
 """NPC moves: NpcAttack, NpcRest, NpcIdle and enemy special abilities."""
 
-from neotermcolor import colored, cprint  # noqa: F401
+from narration import colored, cprint, narrate  # noqa: F401
 import random  # noqa: F401
 import math  # noqa: F401
 import states  # noqa: F401
@@ -75,7 +75,7 @@ class NpcAttack(Move):  # basic attack function, NPCs only
     ):  # adjusts the move's attributes to match the current game state
         if isinstance(self.user, str):
             # Log the error but try to recover if possible
-            print(
+            narrate(
                 f"### ERROR: self.user is a string: '{self.user}' in {self.name}.evaluate()"
             )
             # If we're lucky, the caller might đã set a valid user on us recently,
@@ -86,7 +86,7 @@ class NpcAttack(Move):  # basic attack function, NPCs only
 
         # Double check that self.user is an object with a damage attribute
         if not hasattr(self.user, "damage"):
-            print(f"### ERROR: self.user {type(self.user)} has no 'damage' attribute!")
+            narrate(f"### ERROR: self.user {type(self.user)} has no 'damage' attribute!")
             return
 
         power = self.user.damage * random.uniform(0.8, 1.2)
@@ -128,7 +128,7 @@ class NpcAttack(Move):  # basic attack function, NPCs only
 
     def execute(self, npc):
         self.refresh_announcements(npc)
-        print(self.stage_announce[1])
+        narrate(self.stage_announce[1])
 
         # Face the target when attacking
         if (
@@ -203,7 +203,7 @@ class NpcRest(Move):  # standard rest to restore fatigue for NPCs.
         ]
 
     def execute(self, npc):
-        print(self.stage_announce[1])
+        narrate(self.stage_announce[1])
         recovery_amt = int(
             math.ceil((self.user.maxfatigue * 0.25) * random.uniform(0.8, 1.2))
         )
@@ -238,7 +238,7 @@ class NpcIdle(Move):  # NPC does nothing for a few beats.
         self.stage_announce = ["", str(npc.name + npc.idle_message), "", ""]
 
     def execute(self, npc):
-        print(self.stage_announce[1])
+        narrate(self.stage_announce[1])
 
 
 class TelegraphedSurge(NpcAttack):
@@ -456,7 +456,7 @@ class GorranClub(Move):  # Gorran's special club attack! Massive damage, long re
 
     def execute(self, npc):
         self.refresh_announcements(npc)
-        print(self.stage_announce[1])
+        narrate(self.stage_announce[1])
 
         # Face the target when attacking
         if (
@@ -590,7 +590,7 @@ class VenomClaw(Move):  # Poisonous attack
 
     def execute(self, npc):
         self.refresh_announcements(npc)
-        print(self.stage_announce[1])
+        narrate(self.stage_announce[1])
 
         # Face the target when attacking
         if (
@@ -726,7 +726,7 @@ class SpiderBite(Move):  # Poisonous attack
 
     def execute(self, npc):
         self.refresh_announcements(npc)
-        print(self.stage_announce[1])
+        narrate(self.stage_announce[1])
 
         # Face the target when attacking
         if (
@@ -862,7 +862,7 @@ class BatBite(Move):  # Vampiric / life-draining bite for bat-type NPCs
 
     def execute(self, npc):
         self.refresh_announcements(npc)
-        print(self.stage_announce[1])
+        narrate(self.stage_announce[1])
 
         # Face the target when attacking
         if (
@@ -935,7 +935,7 @@ class MineralSpit(NpcAttack):
 
     def execute(self, npc):
         self.refresh_announcements(npc)
-        print(self.stage_announce[1])
+        narrate(self.stage_announce[1])
         self.prep_colors()
         glance = False
         if self.viable():
@@ -994,7 +994,7 @@ class SoulDrain(NpcAttack):
 
     def execute(self, npc):
         self.refresh_announcements(npc)
-        print(self.stage_announce[1])
+        narrate(self.stage_announce[1])
         self.prep_colors()
         glance = False
         if self.viable():
@@ -1052,7 +1052,7 @@ class WailStrike(NpcAttack):
 
     def execute(self, npc):
         self.refresh_announcements(npc)
-        print(self.stage_announce[1])
+        narrate(self.stage_announce[1])
         self.prep_colors()
         glance = False
         if self.viable():

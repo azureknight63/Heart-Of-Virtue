@@ -2070,9 +2070,18 @@ class ApiCombatAdapter:
 
     @contextlib.contextmanager
     def _capture_output(self):
-        """Context manager to capture print output and sync to player log."""
-        # Redirect stdout to our capture object
-        with contextlib.redirect_stdout(self.output_capture):
+        """Context manager to capture narration output and sync to player log.
+
+        Engine combat moves emit through the narration sink rather than stdout.
+        We register a live listener so each message is handed to the capture
+        object the instant it is emitted — preserving per-entity animation
+        attribution via ``output_capture.active_entity``.
+        """
+        from narration import capture_narration
+
+        with capture_narration(
+            listener=lambda entry: self.output_capture.write(entry.get("text", ""))
+        ):
             yield
 
         # Sync captured entries to player log (with deduplication)

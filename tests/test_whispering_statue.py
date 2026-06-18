@@ -16,49 +16,35 @@ class TestWhisperingStatue(unittest.TestCase):
         self.tile = MagicMock()
         self.event = WhisperingStatue(self.player, self.tile)
 
-    @patch('functions.await_input')
     @patch('story.effects.cprint')
-    @patch('story.effects.input')
     @patch('story.effects.time.sleep')
-    @patch('builtins.print')
-    def test_correct_answer(self, mock_print, mock_sleep, mock_input, mock_cprint, mock_await):
-        # Setup input for correct answer ("1")
-        mock_input.return_value = "1"
+    def test_correct_answer(self, mock_sleep, mock_cprint):
+        # Structured protocol: the player's choice arrives via user_input.
+        self.event.process(user_input="1")
 
-        # Run process
-        self.event.process()
-
-        # Verify interactions
-        mock_input.assert_called_once()
-
-        # Verify success outcome
-        # Should spawn Gold (as per my implementation)
+        # Correct answer ("1") spawns Gold; no Slime ambush.
         self.tile.spawn_item.assert_called_with('Gold', amt=500)
-
-        # Verify failure outcome did NOT happen
         self.tile.spawn_npc.assert_not_called()
+        # Event completes and no longer needs input.
+        self.assertTrue(self.event.completed)
+        self.assertFalse(self.event.needs_input)
 
-    @patch('functions.await_input')
     @patch('story.effects.cprint')
-    @patch('story.effects.input')
     @patch('story.effects.time.sleep')
-    @patch('builtins.print')
-    def test_incorrect_answer(self, mock_print, mock_sleep, mock_input, mock_cprint, mock_await):
-        # Setup input for incorrect answer ("2")
-        mock_input.return_value = "2"
+    def test_incorrect_answer(self, mock_sleep, mock_cprint):
+        self.event.process(user_input="2")
 
-        # Run process
-        self.event.process()
-
-        # Verify interactions
-        mock_input.assert_called_once()
-
-        # Verify failure outcome
-        # Should spawn Slime
+        # Wrong answer spawns a Slime; no Gold reward.
         self.tile.spawn_npc.assert_called_with('Slime')
-
-        # Verify success outcome did NOT happen
         self.tile.spawn_item.assert_not_called()
+
+    @patch('story.effects.cprint')
+    @patch('story.effects.time.sleep')
+    def test_no_input_defaults_to_correct_answer(self, mock_sleep, mock_cprint):
+        # When called without user_input, the riddle defaults to the safe "1".
+        self.event.process()
+        self.tile.spawn_item.assert_called_with('Gold', amt=500)
+        self.tile.spawn_npc.assert_not_called()
 
 if __name__ == '__main__':
     unittest.main()

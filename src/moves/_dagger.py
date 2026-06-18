@@ -1,6 +1,6 @@
 """Dagger weapon moves: Slash, Backstab, FeintAndPivot and passive ShadowStep."""
 
-from neotermcolor import colored, cprint  # noqa: F401
+from narration import colored, cprint, narrate  # noqa: F401
 import random  # noqa: F401
 import math  # noqa: F401
 import states  # noqa: F401
@@ -129,7 +129,7 @@ class Slash(
     def execute(self, player):
         glance = False  # switch for determining a glancing blow
         self.prep_colors()
-        print(self.stage_announce[1])
+        narrate(self.stage_announce[1])
 
         # Face the target when attacking
         if (
