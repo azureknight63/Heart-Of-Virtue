@@ -151,31 +151,6 @@ def pytest_configure(config):
                     sys.modules[f'src.{bare_name}'] = full_mod
 
 
-def pytest_collection_modifyitems(config, items):
-    """Skip tkinter tests to speed up web app iteration cycle."""
-    skip_tkinter = pytest.mark.skip(reason="Skipping tkinter tests - not used in web app implementation")
-
-    tkinter_test_files = {
-        "test_tkinter_cols.py",
-        "test_tkinter_get.py",
-        "test_find_column.py",
-        "test_map_generator.py",
-        "test_map_generator_additional.py",
-        "test_map_generator_more.py",
-        "verify_colors.py",
-        "test_battlefield_colors.py",
-        "test_battlefield_window.py",
-        "test_coloring_fix.py",
-        "test_player_debug.py",
-        "test_player_render.py",
-        "test_viewport_boundaries.py",
-    }
-
-    for item in items:
-        if any(test_file in str(item.fspath) for test_file in tkinter_test_files):
-            item.add_marker(skip_tkinter)
-
-
 import pytest
 
 def isinstance_by_class_name(obj, *class_names):

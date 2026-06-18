@@ -57,12 +57,11 @@ Tests for utility functions:
 pytest tests/ -k "functions"
 ```
 
-### Game Mechanics Tests (6 files) - Prefix: `test_game_*`, `test_*state*`, `test_*weight*`, `test_*memory*`, `test_phase*`
+### Game Mechanics Tests (5 files) - Prefix: `test_game_*`, `test_*state*`, `test_*weight*`, `test_phase*`
 Tests for core game loop and mechanics:
 - `test_game_logger.py` - Game logging system
 - `test_game_tick_events.py` - Game loop events
 - `test_states.py` - Status effect system
-- `test_memory_flash.py` - Memory mechanics
 - `test_phase3_integration.py` - Phase 3 integration
 - `test_weight_tolerance.py` - Weight calculations
 
@@ -97,11 +96,8 @@ python tests/manual_test_special_category.py
 python tests/manual_test_weight.py
 ```
 
-### Map Tests (7 files) - Prefix: `test_map*`, `test_*tile*`, `test_*event_tile*`, `test_room_*`, `test_view_map*`
+### Map Tests (4 files) - Prefix: `test_map*`, `test_*tile*`, `test_*event_tile*`, `test_room_*`, `test_view_map*`
 Tests for maps and world:
-- `test_map_generator.py` - Core generation
-- `test_map_generator_additional.py` - Extended features
-- `test_map_generator_more.py` - More features
 - `test_tiles.py` - Tile system
 - `test_event_tile_assignment.py` - Event placement
 - `test_room_take_interface.py` - Room interaction
@@ -323,7 +319,7 @@ Tests for utility functions in `src/functions.py`:
 - `test_functions_io_pickle.py` - Save/load persistence
 - `test_functions_select_autosave.py` - Autosave management
 
-### `game_mechanics/` - Game Mechanics Tests (6 files)
+### `game_mechanics/` - Game Mechanics Tests (5 files)
 Tests for core game loop and mechanics:
 - Game event logging and tick system
 - Game state changes and updates
@@ -362,18 +358,16 @@ python tests/manual/manual_test_special_category.py
 python tests/manual/manual_test_weight.py
 ```
 
-### `maps/` - Map System Tests (7 files)
-Tests for map generation, tiles, and world navigation:
-- Map generator functionality
+### `maps/` - Map System Tests (4 files)
+Tests for map tiles and world navigation:
 - Tile system and properties
 - Event assignments on tiles
 - Room/tile interaction interface
 - Map viewing and navigation
 
 **Key Files:**
-- `test_map_generator.py` - Core map generation
-- `test_map_generator_additional.py`, `test_map_generator_more.py` - Extended functionality
 - `test_tiles.py` - Tile system
+- `test_event_tile_assignment.py` - Event placement
 
 ### `misc/` - Miscellaneous Tests (6 files)
 Tests that don't fit cleanly into other categories:
@@ -526,10 +520,7 @@ The `conftest.py` handles module shimming after imports, so tests can use bare i
 
 ## Migration Notes
 
-- All original test files have been preserved
 - `conftest.py` remains in `tests/` root for discovery
-- `phase4_test_executor.py` remains in root (references tests/ subdirectories)
-- `PHASE4_TEST_RESULTS.json` remains in root (output location)
 - `uat/` directory was pre-existing and is left as-is
 - `__pycache__/` is automatically generated and can be ignored
 

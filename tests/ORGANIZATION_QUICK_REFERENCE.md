@@ -9,10 +9,10 @@ tests/
 ├── combat/              (7 files)   - Turn-based combat & moves
 ├── config/              (7 files)   - Configuration & managers
 ├── functions/           (4 files)   - Core utility functions
-├── game_mechanics/      (6 files)   - Game loop & mechanics
+├── game_mechanics/      (5 files)   - Game loop & mechanics
 ├── items/               (5 files)   - Items & inventory
 ├── manual/              (3 files)   - Manual testing utilities
-├── maps/                (7 files)   - Map generation & tiles
+├── maps/                (4 files)   - Map tiles & navigation
 ├── misc/                (6 files)   - Miscellaneous tests
 ├── npc_ai/              (9 files)   - NPC behavior & AI
 ├── positions/           (3 files)   - Coordinate system
@@ -56,10 +56,10 @@ pytest -k "combat" -v
 | **combat** | 7 | Combat system, moves, attacks | test_moves_attack.py, test_advance_viable.py |
 | **config** | 7 | Configuration, managers | test_config_integration.py, test_coordinate_config.py |
 | **functions** | 4 | Utility functions | test_functions_io_pickle.py, test_functions_utilities.py |
-| **game_mechanics** | 6 | Game loop, events, states | test_game_tick_events.py, test_states.py |
+| **game_mechanics** | 5 | Game loop, events, states | test_game_tick_events.py, test_states.py |
 | **items** | 5 | Items, equipment, loot | test_commodity_items.py, test_loot_tables.py |
 | **manual** | 3 | Manual verification | manual_npc_spawner_check.py |
-| **maps** | 7 | Maps, tiles, generation | test_map_generator.py, test_tiles.py |
+| **maps** | 4 | Maps, tiles, world | test_tiles.py, test_event_tile_assignment.py |
 | **misc** | 6 | Miscellaneous features | test_animations.py, test_universe.py |
 | **npc_ai** | 9 | NPCs, merchants, AI | test_merchant.py, test_mynx.py, test_llm_openrouter.py |
 | **positions** | 3 | Coordinate math, positioning | test_positions_math.py, test_positions_integration.py |
@@ -104,8 +104,7 @@ pytest tests/combat/test_new_combat_feature.py
 
 ## Migration Details
 
-✅ **Preserved:** All original test files remain (just reorganized)  
-✅ **Preserved:** `conftest.py`, `phase4_test_executor.py`, PHASE4 results  
+✅ **Preserved:** `conftest.py` and the reorganized test suite  
 ✅ **Added:** 11 new subdirectories with `__init__.py` for each  
 ✅ **Added:** `TEST_ORGANIZATION.md` (comprehensive guide)  
 ✅ **Working:** All pytest discovery and execution  
