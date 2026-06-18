@@ -18,6 +18,7 @@ from items import Item  # type: ignore
 
 from ._combat import NPCCombatMixin
 from ._loot import NPCLootMixin, loot
+from narration import narrate
 
 
 class NPC(NPCCombatMixin, NPCLootMixin, Combatant):
@@ -194,4 +195,4 @@ class Friend(NPC):
         return None
 
     def talk(self, player):
-        print(self.name + " has nothing to say.")
+        narrate(self.name + " has nothing to say.")

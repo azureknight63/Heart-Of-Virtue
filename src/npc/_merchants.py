@@ -22,6 +22,7 @@ from items import (  # type: ignore
 
 from ._base import NPC
 from ._shop import MerchantShopMixin
+from narration import narrate
 
 
 class Merchant(NPC, MerchantShopMixin):
@@ -100,23 +101,19 @@ class Merchant(NPC, MerchantShopMixin):
             base_gold  # Amount of gold the merchant has to buy items from the player
         )
         self.shop_conditions = {"value": [], "availability": [], "unique": []}
-        self.shop = None
         self.initialize_shop()
 
     def talk(self, player):
-        print(self.name + " has nothing to say.")
+        narrate(self.name + " has nothing to say.")
 
     def trade(self, player):
         """
-        This method is called when the player wants to trade with the merchant.
-        It should handle the trading logic, such as buying and selling items.
+        Called when the player trades with the merchant. The web client drives
+        buying/selling through the /shop/* routes; this engine verb only absorbs
+        any merchandise Jean carried over so it surfaces in the Buy list.
         """
-        print(f"{self.name} is ready to trade with you.")
-        # First, absorb any merchandise Jean carried over so it appears in the Buy menu.
+        narrate(f"{self.name} is ready to trade with you.")
         self._collect_player_merchandise(player)
-        if self.shop:
-            self.shop.player = player
-            self.shop.run()
 
     def buy(self, player):
         self.trade(player)
@@ -158,32 +155,19 @@ class MiloCurioDealer(Merchant):
             stock_count=30,
             base_gold=self.base_gold,
         )
-        if self.shop:
-            self.shop.exit_message = (
-                "Milo nods as you leave his shop, "
-                "already looking for new curiosities to add to his collection."
-            )
+        self.shop_name = "The Wandering Curiosities Shop"
 
     def talk(self, player):  # noqa
-        print(
+        narrate(
             "Milo grins: 'Looking for something rare, friend? I've got just the thing!'"
         )
 
     def trade(self, player):
-        print(
+        narrate(
             "Milo opens his patchwork coat, revealing a dazzling array of curiosities."
         )
         # Collect merchandise items first (in case Jean picked something up on Milo's floor)
         self._collect_player_merchandise(player)
-        # Local import to avoid circular import at module load
-        from interface import ShopInterface as Shop
-
-        shop = Shop(
-            merchant=self,
-            player=player,
-            shop_name="The Wandering Curiosities Shop",
-        )
-        shop.run()
 
 
 class JamboHealsU(Merchant):
@@ -221,19 +205,7 @@ class JamboHealsU(Merchant):
             charisma=14,
             intelligence=14,
         )
-
-    def initialize_shop(self):
-        """Override to set the canonical shop name used by both terminal and web API."""
-        if self.inventory is None:
-            self.inventory = []
-        try:
-            from interface import ShopInterface as Shop
-        except Exception:
-            Shop = None
-        if Shop:
-            self.shop = Shop(merchant=self, player=None, shop_name="Jambo Heals U")
-        else:
-            self.shop = None
+        self.shop_name = "Jambo Heals U"
 
     def talk(self, player):  # pragma: no cover - simple flavor
         on_nomad_camp = (
@@ -281,18 +253,8 @@ class JamboHealsU(Merchant):
                 "Jambo asks anyway. This is good business practice.\""
             )
 
-        print(random.choice(lines))
+        narrate(random.choice(lines))
 
     def trade(self, player):
         # Collect any merchandise Jean brought in so it appears in the Buy list.
         self._collect_player_merchandise(player)
-        # Local import to avoid circular import at module load
-        from interface import ShopInterface as Shop
-
-        self.shop = Shop(merchant=self, player=player, shop_name="Jambo Heals U")
-        self.shop.exit_message = (
-            "Jambo waves Jean off cheerfully. 'Good luck, friend. Come back if you bleed. "
-            "Come back even if you don't. Jambo is always here, right where he is needed.'"
-        )
-        self.shop.player = player
-        self.shop.run()

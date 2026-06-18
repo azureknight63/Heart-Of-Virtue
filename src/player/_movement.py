@@ -5,7 +5,7 @@ import time
 
 import functions  # type: ignore
 from universe import tile_exists as tile_exists
-from neotermcolor import colored, cprint
+from narration import colored, cprint, narrate
 
 
 class PlayerMovementMixin:
@@ -29,7 +29,7 @@ class PlayerMovementMixin:
             cprint("{} cannot go that way.".format(self.name), "red")
             time.sleep(1)
         else:
-            print(tile.intro_text())
+            narrate(tile.intro_text())
             functions.print_items_in_room(tile)
             functions.print_objects_in_room(tile)
             functions.advise_player_actions(self, tile)
@@ -101,12 +101,12 @@ class PlayerMovementMixin:
                     self.universe.game_tick += 1
                     self.location_x = x
                     self.location_y = y
-                    print(tile.intro_text())
+                    narrate(tile.intro_text())
                     return
                 else:
-                    print(f"### INVALID TELEPORT LOCATION: {target_map} | {x},{y} ###")
+                    narrate(f"### INVALID TELEPORT LOCATION: {target_map} | {x},{y} ###")
                     return
-        print(f"### INVALID TELEPORT LOCATION: {target_map} | {x},{y} ###")
+        narrate(f"### INVALID TELEPORT LOCATION: {target_map} | {x},{y} ###")
 
     def recall_friends(self):
         """Move all allied NPCs to the player's current room."""
@@ -120,12 +120,12 @@ class PlayerMovementMixin:
                 friend.current_room = self.current_room
                 friend.current_room.npcs_here.append(friend)
         if party_size == 1:
-            print(
+            narrate(
                 colored(self.combat_list_allies[1].name, "cyan")
                 + colored(" follows Jean.", "green")
             )
         elif party_size == 2:
-            print(
+            narrate(
                 colored(self.combat_list_allies[1].name, "cyan")
                 + colored(" and ", "green")
                 + colored(self.combat_list_allies[2].name, "cyan")
@@ -142,4 +142,4 @@ class PlayerMovementMixin:
                 + colored(self.combat_list_allies[party_size].name, "cyan")
                 + colored(" follow Jean.", "green")
             )
-            print(output)
+            narrate(output)

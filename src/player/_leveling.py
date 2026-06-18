@@ -1,9 +1,8 @@
 """Leveling mixin for Player — gain_exp, level_up, and skill learning."""
 
 import random
-import time
 
-from neotermcolor import colored, cprint
+from narration import cprint
 
 
 class PlayerLevelingMixin:
@@ -50,17 +49,13 @@ class PlayerLevelingMixin:
         if self.level < 100:
             self.exp += amt
 
-        # In API mode (frontend), do not prompt for input during level-up.
-        if api_mode or hasattr(self, "_combat_adapter"):
-            events = []
-            while self.exp >= self.exp_to_level:
-                events.append(self._level_up_api())
-            return events
-
+        # Web-only: always level up via the non-blocking API path (the terminal
+        # stat-allocation prompt has been removed). `api_mode` is retained for
+        # caller compatibility.
+        events = []
         while self.exp >= self.exp_to_level:
-            self.level_up()
-
-        return None
+            events.append(self._level_up_api())
+        return events
 
     def _level_up_api(self):
         """API-safe level up that mirrors terminal behavior without blocking for input.
@@ -118,117 +113,3 @@ class PlayerLevelingMixin:
             self.known_moves.append(skill)
         return skill
         # if not success, Jean already knows the skill so no need to do anything!
-
-    def level_up(self):
-        """Terminal-mode level up: prints ASCII art, awards random stat increases, prompts for attribute allocation."""
-        cprint(
-            r"""
-                         .'  '.____.' '.           ..
-        '''';;;,~~~,,~~''   /  *    ,\  ''~~,,,..''  '.,_
-                           / ,    *   \
-                          /*    * .  * \
-                         /  . *     ,   \
-                        / *     ,  *   , \
-                       /  .  *       *  . \
-        """,
-            "yellow",
-        )
-        cprint("Jean has reached a new level!", "cyan")
-        self.level += 1
-        print(colored("He is now level {}".format(self.level)))
-        self.exp -= self.exp_to_level
-        self.exp_to_level = self.level * (165 - self.intelligence)
-        cprint(
-            "{} exp needed for the next level.".format(self.exp_to_level - self.exp),
-            "yellow",
-        )
-
-        attributes = [
-            ("strength_base", colored("Strength", "magenta"), 1),
-            ("finesse_base", colored("Finesse", "magenta"), 2),
-            ("speed_base", colored("Speed", "magenta"), 3),
-            ("endurance_base", colored("Endurance", "magenta"), 4),
-            ("charisma_base", colored("Charisma", "magenta"), 5),
-            ("intelligence_base", colored("Intelligence", "magenta"), 6),
-            ("faith_base", colored("Faith", "magenta"), 7),
-        ]
-
-        for attr, attr_name, i in attributes:
-            bonus = random.randint(0, 2)
-            if bonus != 0:
-                current_value = getattr(self, attr)
-                setattr(self, attr, current_value + bonus)
-                print(f"{attr_name} went up by {colored(str(bonus), 'yellow')}.")
-                time.sleep(2)
-
-        points = random.randint(6, 9)
-
-        while points > 0:
-            print(
-                f'You have {colored(str(points), "yellow")} additional attribute points to distribute. '
-                f"Please select an attribute to increase, or [R]andomize the rest:\n"
-            )
-            for attr, attr_name, i in attributes:
-                print(f"({i}) {attr_name} - {getattr(self, attr)}")
-            print(f"(R) Randomize — spend all {colored(str(points), 'yellow')} remaining points randomly")
-
-            selection = input("Selection: ").strip()
-
-            # ── Randomize branch ─────────────────────────────────────────
-            if selection.upper() == "R":
-                # Distribute all remaining points as random proportional weights
-                weights = [random.random() for _ in attributes]
-                remaining_points = points
-                gains = []
-                for idx, (attr, attr_name, _) in enumerate(attributes):
-                    # Give every stat its proportional slice; last attr absorbs rounding
-                    if idx == len(attributes) - 1:
-                        share = remaining_points
-                    else:
-                        sum_remaining_weights = sum(weights[idx:])
-                        if sum_remaining_weights == 0:
-                            share = 0
-                        else:
-                            share = round(weights[idx] / sum_remaining_weights * remaining_points)
-                    remaining_points -= share
-                    gains.append((attr, attr_name, share))
-
-                cprint("Randomizing attribute points...", "cyan")
-                for attr, attr_name, share in gains:
-                    if share > 0:
-                        setattr(self, attr, getattr(self, attr) + share)
-                        cprint(f"{attr_name} +{share}", "green")
-                points = 0
-                continue
-            # ─────────────────────────────────────────────────────────────
-
-            if not selection.isdigit() or not (1 <= int(selection) <= 7):
-                cprint(
-                    "Invalid selection. You must enter a choice between 1 and 7.",
-                    "red",
-                )
-                continue
-
-            selection = int(selection)
-            set_attr = ""
-            set_attr_name = ""
-            for attr, attr_name, i in attributes:
-                if selection == i:
-                    set_attr, set_attr_name = attr, attr_name
-                    break
-
-            amt = input(
-                f"How many points would you like to allocate? ({points} available, 0 to cancel) "
-            )
-            if not amt.isdigit() or not (0 <= int(amt) <= points):
-                cprint(
-                    f"Invalid selection. You must enter an amount between 0 and {points}.",
-                    "red",
-                )
-                continue
-
-            amt = int(amt)
-            if amt > 0:
-                setattr(self, set_attr, getattr(self, set_attr) + amt)
-                points -= amt
-                cprint(f"{set_attr_name} increased by {amt}!", "green")

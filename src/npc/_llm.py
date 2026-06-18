@@ -23,6 +23,7 @@ import random
 import re
 import time
 from pathlib import Path
+from narration import narrate
 
 
 class MynxLLMMixin:
@@ -106,7 +107,7 @@ class MynxLLMMixin:
         if os.getenv("MYNX_LLM_ENABLED", "0") not in ("1", "true", "True"):
             self._llm_adapter = None
             if _debug:
-                print(
+                narrate(
                     "[MYNX_LLM_DEBUG] Adapter disabled: set MYNX_LLM_ENABLED=1 to enable."
                 )
             return None
@@ -116,7 +117,7 @@ class MynxLLMMixin:
             if not adapter_path.exists():
                 self._llm_adapter = None
                 if _debug:
-                    print(
+                    narrate(
                         f"[MYNX_LLM_DEBUG] llm_client.py not found at {adapter_path}."
                     )
                 return None
@@ -126,7 +127,7 @@ class MynxLLMMixin:
             if not (spec and spec.loader):
                 self._llm_adapter = None
                 if _debug:
-                    print(
+                    narrate(
                         "[MYNX_LLM_DEBUG] Failed to create module spec for llm_client."
                     )
                 return None
@@ -136,7 +137,7 @@ class MynxLLMMixin:
             if Adapter is None:
                 self._llm_adapter = None
                 if _debug:
-                    print(
+                    narrate(
                         "[MYNX_LLM_DEBUG] MynxLLMAdapter class not found in llm_client module."
                     )
                 return None
@@ -146,18 +147,18 @@ class MynxLLMMixin:
             except Exception as e:
                 avail = False
                 if _debug:
-                    print(f"[MYNX_LLM_DEBUG] Exception checking availability: {e}")
+                    narrate(f"[MYNX_LLM_DEBUG] Exception checking availability: {e}")
             if avail is True:
                 self._llm_adapter = inst
                 if _debug:
                     status = (
                         inst.debug_status() if hasattr(inst, "debug_status") else "ok"
                     )
-                    print(f"[MYNX_LLM_DEBUG] Adapter available: {status}")
+                    narrate(f"[MYNX_LLM_DEBUG] Adapter available: {status}")
             else:
                 if _debug and hasattr(inst, "debug_status"):
                     try:
-                        print(
+                        narrate(
                             f"[MYNX_LLM_DEBUG] Adapter unavailable: {inst.debug_status()}"
                         )
                     except Exception:
@@ -166,7 +167,7 @@ class MynxLLMMixin:
         except Exception as e:
             self._llm_adapter = None
             if _debug:
-                print(f"[MYNX_LLM_DEBUG] Exception loading adapter: {e}")
+                narrate(f"[MYNX_LLM_DEBUG] Exception loading adapter: {e}")
         return self._llm_adapter
 
     # ── Text sanitisation ──────────────────────────────────────────────────────
@@ -480,7 +481,7 @@ class MynxLLMMixin:
         ctx = " ".join(filter(None, parts))
         if os.getenv("MYNX_LLM_DEBUG", "0") in ("1", "true", "True"):
             try:
-                print(
+                narrate(
                     f"[MYNX_LLM_DEBUG] Built context ({len(ctx)} chars): {ctx[:4000]}"
                 )
             except Exception:
@@ -584,7 +585,7 @@ class MynxLLMMixin:
         else:
             action_print = "Jean interacts with the mynx."
         try:
-            print(action_print)
+            narrate(action_print)
         except Exception:
             pass
 
@@ -624,7 +625,7 @@ class MynxLLMMixin:
                     ):
                         if _debug:
                             try:
-                                print(
+                                narrate(
                                     f"[MYNX_LLM_DEBUG] Raw structured description: {result.get('description')}"
                                 )
                             except Exception:
@@ -649,7 +650,7 @@ class MynxLLMMixin:
                     if isinstance(text_resp, str) and text_resp:
                         if _debug:
                             try:
-                                print(f"[MYNX_LLM_DEBUG] Raw plain text: {text_resp}")
+                                narrate(f"[MYNX_LLM_DEBUG] Raw plain text: {text_resp}")
                             except Exception:
                                 pass
                         sanitized = self._sanitize_mynx_llm_text(text_resp, roster_set)
@@ -671,11 +672,11 @@ class MynxLLMMixin:
                                 self._append_llm_history(p, checked)
                             except Exception:
                                 pass
-                            print(checked)
+                            narrate(checked)
                             return checked
             except Exception as e:
                 if _debug:
-                    print(
+                    narrate(
                         f"[MYNX_LLM_DEBUG] Generation/validation error, falling back: {e}"
                     )
 
@@ -748,7 +749,7 @@ class MynxLLMMixin:
         self._llm_last_response = structured_obj
         if structured:
             return structured_obj
-        print(text)
+        narrate(text)
         try:
             delay = float(os.getenv("MYNX_FALLBACK_DELAY", "1.5"))
         except Exception:

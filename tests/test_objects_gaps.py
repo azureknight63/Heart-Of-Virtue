@@ -253,26 +253,22 @@ def test_container_loot_closed_opens_first():
 
     c.open = mock_open
 
-    with patch("interface.ContainerLootInterface") as mock_iface:
-        mock_iface.return_value.run = MagicMock()
-        c.loot()
+    c.loot()
 
     assert "open" in calls
 
 
 def test_container_loot_locked_does_not_open():
-    """Container.loot when state is not 'opened' after open() returns early."""
+    """Container.loot on a locked container opens (no-op when locked) without error."""
     from objects import Container
 
     player = _make_player()
     tile = _make_tile()
     c = Container(name="Chest", player=player, tile=tile, locked=True)
 
-    # open() will be called but won't change state (locked)
-    with patch("interface.ContainerLootInterface"):
-        c.loot()
-        # Interface should NOT be instantiated if container didn't open
-        # (since locked containers open() may not change state)
+    # loot() ensures the container is opened; a locked container stays closed.
+    c.loot()
+    assert c.state != "opened"
 
 
 # ---------------------------------------------------------------------------

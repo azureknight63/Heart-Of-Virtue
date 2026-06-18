@@ -4,7 +4,7 @@ import random
 import time
 
 import functions  # type: ignore
-from neotermcolor import colored, cprint
+from narration import colored, cprint, narrate
 
 
 class PlayerExplorationMixin:
@@ -15,36 +15,34 @@ class PlayerExplorationMixin:
         if target is not None:
             self.view(target)
         else:
-            print(self.current_room.intro_text())
-            print()
+            narrate(self.current_room.intro_text())
+            narrate()
             functions.print_items_in_room(self.current_room)
             functions.print_objects_in_room(self.current_room)
             functions.advise_player_actions(self)
 
     def view(self, phrase=""):
-        """Describe a specific entity in the current room by name phrase or interactive menu."""
-        # print(phrase)
+        """Describe a specific entity in the current room by name phrase.
+
+        With no phrase, lists what can be looked at (non-interactive — the web
+        client picks a target and views it by name).
+        """
         if phrase == "":
-            stuff_here = {}
-            for i, thing in enumerate(
-                self.current_room.npcs_here
-                + self.current_room.items_here
-                + self.current_room.objects_here
-            ):
-                if not thing.hidden and thing.name != "null":
-                    stuff_here[str(i)] = thing
-            if len(stuff_here) > 0:
-                print("What would you like to view?\n\n")
-                for k, v in stuff_here.items():
-                    print(k, ": ", v.name)
-                choice = input("Selection: ")
-                if choice in stuff_here:
-                    print(stuff_here[choice].description)
-                    functions.await_input()
-                else:
-                    print("Invalid selection.")
+            stuff_here = [
+                thing
+                for thing in (
+                    self.current_room.npcs_here
+                    + self.current_room.items_here
+                    + self.current_room.objects_here
+                )
+                if not thing.hidden and thing.name != "null"
+            ]
+            if stuff_here:
+                narrate("Jean can look at:\n")
+                for thing in stuff_here:
+                    narrate(thing.name)
             else:
-                print("Jean doesn't see anything remarkable here to look at.\n")
+                narrate("Jean doesn't see anything remarkable here to look at.\n")
         else:
             lower_phrase = phrase.lower()
             for i, thing in enumerate(
@@ -63,7 +61,7 @@ class PlayerExplorationMixin:
                         thing.name.lower() + " " + announce.lower() + " " + idle.lower()
                     )
                     if lower_phrase in search_item:
-                        print(thing.description)
+                        narrate(thing.description)
                         functions.await_input()
                         break
 
@@ -73,7 +71,7 @@ class PlayerExplorationMixin:
         Reveals any hidden entities if the player's search ability exceeds their hide factor.
         Prints discovery messages for found entities, or a message if nothing is found.
         """
-        print("Jean searches around the area...")
+        narrate("Jean searches around the area...")
         search_ability = int(
             ((self.finesse * 2) + (self.intelligence * 3) + self.faith)
             * random.uniform(0.5, 1.5)
@@ -83,23 +81,23 @@ class PlayerExplorationMixin:
         for hidden in self.current_room.npcs_here:
             if hidden.hidden:
                 if search_ability > hidden.hide_factor:
-                    print("Jean uncovered " + hidden.discovery_message)
+                    narrate("Jean uncovered " + hidden.discovery_message)
                     something_found = True
                     hidden.hidden = False
         for hidden in self.current_room.items_here:
             if hidden.hidden:
                 if search_ability > hidden.hide_factor:
-                    print("Jean found " + hidden.discovery_message)
+                    narrate("Jean found " + hidden.discovery_message)
                     something_found = True
                     hidden.hidden = False
         for hidden in self.current_room.objects_here:
             if hidden.hidden:
                 if search_ability > hidden.hide_factor:
-                    print("Jean found " + hidden.discovery_message)
+                    narrate("Jean found " + hidden.discovery_message)
                     something_found = True
                     hidden.hidden = False
         if not something_found:
-            print("...but he couldn't find anything of interest.")
+            narrate("...but he couldn't find anything of interest.")
 
     def view_map(self):
         """Display a map of discovered tiles with player position marked.
@@ -190,7 +188,7 @@ class PlayerExplorationMixin:
                 )
 
         # Render map lines with enlarged display
-        print()  # Blank line before map
+        narrate()  # Blank line before map
         for y in range(min_y, max_y + 1):
             # Build line with spacing between characters for better visibility
             chars = [grid.get((x, y), "·") for x in range(min_x, max_x + 1)]
@@ -226,7 +224,7 @@ class PlayerExplorationMixin:
                     else:
                         line_parts.append(" ")
 
-            print(" " + "".join(line_parts))
+            narrate(" " + "".join(line_parts))
 
             # Add vertical connector line if needed
             if y < max_y:
@@ -296,6 +294,6 @@ class PlayerExplorationMixin:
                         if not connector_added:
                             vertical_parts.append(" ")
 
-                print(" " + "".join(vertical_parts))
+                narrate(" " + "".join(vertical_parts))
 
         functions.await_input()

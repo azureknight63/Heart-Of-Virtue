@@ -1,6 +1,6 @@
 """Unarmed/fist moves: PowerStrike, Jab and passives IronFist, CleaveInstinct, HeavyHanded."""
 
-from neotermcolor import colored, cprint  # noqa: F401
+from narration import colored, cprint, narrate  # noqa: F401
 import random  # noqa: F401
 import math  # noqa: F401
 import states  # noqa: F401
@@ -120,7 +120,7 @@ class PowerStrike(Move):
 
     def execute(self, npc):
         self.refresh_announcements(npc)
-        print(self.stage_announce[1])
+        narrate(self.stage_announce[1])
 
         # Face the target when attacking
         if (
@@ -234,7 +234,7 @@ class Jab(Move):
 
     def execute(self, npc):
         self.refresh_announcements(npc)
-        print(self.stage_announce[1])
+        narrate(self.stage_announce[1])
 
         # Face the target when attacking
         if (

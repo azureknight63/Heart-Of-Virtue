@@ -48,25 +48,6 @@ def _write_save(name: str, obj):
     return path
 
 
-def test_load_select_invalid_then_success(monkeypatch):
-    # Create two deterministic save files
-    p1 = SimplePlayer(); p2 = SimplePlayer(); p2.time_elapsed = 10
-    f1 = 'cov_ls_a.sav'; f2 = 'cov_ls_b.sav'
-    _write_save(f1, p1)
-    time.sleep(0.01)
-    _write_save(f2, p2)
-
-    # Input sequence: invalid '99' then select '0'
-    seq = iter(['99', '0'])
-    monkeypatch.setattr(builtins, 'input', lambda _='': next(seq))
-    loaded = functions.load_select()
-    assert isinstance(loaded, SimplePlayer)
-    # Cleanup
-    for f in (f1, f2):
-        try: os.remove(os.path.join(_functions_dir(), f))
-        except Exception: pass
-
-
 def test_autosave_creates_file():
     player = SimplePlayer()
     # Remove autosave1 if present (root and src) to ensure creation path

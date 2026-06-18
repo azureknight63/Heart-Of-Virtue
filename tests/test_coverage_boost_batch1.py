@@ -539,10 +539,10 @@ class TestPlayerMovementMixin:
         """Lines 68-69: do_action with phrase passes phrase to method."""
         p = _player()
         action = MagicMock()
-        action.method.__name__ = "attack"
-        with patch.object(p, "attack") as mock_attack:
+        action.method.__name__ = "search"
+        with patch.object(p, "search") as mock_search:
             p.do_action(action, phrase="goblin")
-            mock_attack.assert_called_once_with("goblin")
+            mock_search.assert_called_once_with("goblin")
 
     def test_flee_no_available_moves(self):
         """Lines 73-75: flee prints error when no adjacent moves."""
@@ -954,35 +954,6 @@ class TestPlayerCombatMixin:
         p.refresh_protection_rating()
         # protection = 10/10 + 2 + 1*4 = 7
         assert p.protection == pytest.approx(7.0)
-
-    def test_attack_no_targets_in_room(self):
-        """Lines 208-209: attack when no enemies in room."""
-        p = _player()
-        p.current_room = _mock_tile()
-        p.current_room.npcs_here = []
-
-        with patch("builtins.print") as mock_print:
-            p.attack()
-
-        printed = " ".join(str(c) for c in mock_print.call_args_list)
-        assert "nothing" in printed.lower() or "no" in printed.lower()
-
-    def test_attack_phrase_no_match(self):
-        """Lines 234-235: attack with phrase that matches nothing."""
-        p = _player()
-        visible_npc = MagicMock()
-        visible_npc.hidden = False
-        visible_npc.name = "Goblin"
-        visible_npc.announce = ""
-        visible_npc.idle_message = ""
-        p.current_room = _mock_tile()
-        p.current_room.npcs_here = [visible_npc]
-
-        with patch("builtins.print") as mock_print:
-            p.attack(phrase="dragon")
-
-        printed = " ".join(str(c) for c in mock_print.call_args_list)
-        assert "not a valid target" in printed.lower()
 
     def test_refresh_moves_returns_viable_moves(self):
         """Lines 115-118: refresh_moves returns only viable moves."""

@@ -1,6 +1,6 @@
 """Pick weapon moves: ChipAway, ExploitWeakness, Stupefy, WorkTheGap."""
 
-from neotermcolor import colored, cprint  # noqa: F401
+from narration import colored, cprint, narrate  # noqa: F401
 import random  # noqa: F401
 import math  # noqa: F401
 import states  # noqa: F401
@@ -203,7 +203,7 @@ class ExploitWeakness(Move):
     def execute(self, player):
         glance = False
         self.prep_colors()
-        print(self.stage_announce[1])
+        narrate(self.stage_announce[1])
 
         if (
             hasattr(self.user, "combat_position")
@@ -330,7 +330,7 @@ class Stupefy(Move):
     def execute(self, player):
         glance = False
         self.prep_colors()
-        print(self.stage_announce[1])
+        narrate(self.stage_announce[1])
 
         if (
             hasattr(self.user, "combat_position")

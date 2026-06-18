@@ -2,7 +2,7 @@
 
 import traceback
 
-from neotermcolor import cprint
+from narration import cprint, narrate
 
 
 class PlayerDebugMixin:
@@ -98,17 +98,17 @@ class PlayerDebugMixin:
 
     def print_story_vars(self):
         """Print all story variables (debug)."""
-        print(self.universe.story)
+        narrate(self.universe.story)
 
     def alter(self, phrase=""):
         """Set a story variable by key/value pair (debug)."""
         params = phrase.split(" ")
         if len(params) < 2:
-            print("### ERR IN SETTING VAR; BAD ARGUMENTS: " + phrase + " ###")
+            narrate("### ERR IN SETTING VAR; BAD ARGUMENTS: " + phrase + " ###")
             return
         key, value = params[0], params[1]
         if key not in self.universe.story:
-            print("### ERR IN SETTING VAR; NO ENTRY: " + key + " " + value + " ###")
+            narrate("### ERR IN SETTING VAR; NO ENTRY: " + key + " " + value + " ###")
             return
         self.universe.story[key] = value
-        print("### SUCCESS: " + key + " changed to " + value + " ###")
+        narrate("### SUCCESS: " + key + " changed to " + value + " ###")

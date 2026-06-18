@@ -1,6 +1,6 @@
 """Spear weapon moves: KeepAway, Lunge, Impale, ArmorPierce and passive SentinelsVigil."""
 
-from neotermcolor import colored, cprint  # noqa: F401
+from narration import colored, cprint, narrate  # noqa: F401
 import random  # noqa: F401
 import math  # noqa: F401
 import states  # noqa: F401
@@ -80,7 +80,7 @@ class KeepAway(Move):
     def execute(self, player):
         glance = False
         self.prep_colors()
-        print(self.stage_announce[1])
+        narrate(self.stage_announce[1])
 
         if (
             hasattr(self.user, "combat_position")
@@ -283,7 +283,7 @@ class Lunge(Move):
             except Exception:
                 pass
 
-        print(self.stage_announce[1])
+        narrate(self.stage_announce[1])
 
         if self.viable():
             hit_chance = max(5, int(98 - self.target.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3)))
@@ -391,7 +391,7 @@ class Impale(Move):
     def execute(self, player):
         glance = False
         self.prep_colors()
-        print(self.stage_announce[1])
+        narrate(self.stage_announce[1])
 
         if (
             hasattr(self.user, "combat_position")
@@ -524,7 +524,7 @@ class ArmorPierce(Move):
     def execute(self, player):
         glance = False
         self.prep_colors()
-        print(self.stage_announce[1])
+        narrate(self.stage_announce[1])
 
         if (
             hasattr(self.user, "combat_position")

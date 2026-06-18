@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Final
 from src.scenario_config import ScenarioConfig
 from src.coordinate_config import CoordinateSystemConfig
+from narration import narrate
 
 RESOURCES_DIR: Final = Path(__file__).parent / "resources"
 
@@ -104,7 +105,7 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
                     self._load_single_json_map(player, jf)
                     loaded += 1
                 except Exception as e:
-                    print(f"ERROR: Failed to load map from {jf}: {e}")
+                    narrate(f"ERROR: Failed to load map from {jf}: {e}")
         return loaded
 
     def _deserialize_saved_instance(self, payload):

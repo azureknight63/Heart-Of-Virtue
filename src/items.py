@@ -1,8 +1,7 @@
 from __future__ import annotations
 import random
-import time
 import math
-from neotermcolor import colored, cprint
+from narration import colored, cprint, narrate
 import functions
 from typing import Any, Dict, List, Optional, Tuple, Union, TYPE_CHECKING
 
@@ -217,11 +216,10 @@ class Item:
                     if quantity is not None:
                         drop_count = str(quantity)
                     else:
-                        drop_count = input(
-                            "How many would you like to drop? (Carrying {}) ".format(
-                                getattr(self, "count")
-                            )
-                        )
+                        # No quantity specified (e.g. interact "drop"): drop the
+                        # whole stack. The web client passes an explicit quantity
+                        # when the player chooses a partial amount.
+                        drop_count = str(getattr(self, "count"))
 
                     if functions.is_input_integer(drop_count):
                         if 0 <= int(drop_count) <= getattr(self, "count"):
@@ -240,7 +238,7 @@ class Item:
                                     self.stack_grammar()
                                 player.current_room.stack_duplicate_items()
                             else:
-                                print("Jean changed his mind.")
+                                narrate("Jean changed his mind.")
                             break
                         else:
                             cprint("Invalid amount!", "red")
@@ -286,11 +284,10 @@ class Item:
                 if quantity is not None:
                     take_count_str = str(quantity)
                 else:
-                    take_count_str = input(
-                        "How many would you like to take? (Available {}) ".format(
-                            getattr(self, "count")
-                        )
-                    )
+                    # No quantity specified (e.g. interact "take"): take the whole
+                    # stack. The web client passes an explicit quantity for a
+                    # partial take.
+                    take_count_str = str(getattr(self, "count"))
 
                 if functions.is_input_integer(take_count_str):
                     take_count = int(take_count_str)
@@ -357,7 +354,7 @@ class Item:
                             if hasattr(player.current_room, "stack_duplicate_items"):
                                 player.current_room.stack_duplicate_items()
                         else:
-                            print("Jean changed his mind.")
+                            narrate("Jean changed his mind.")
                         break
                     else:
                         cprint("Invalid amount!", "red")
@@ -2261,13 +2258,13 @@ class JeanWeddingBand(Accessory):
         if len(self.equip_states) > 0:
             for state in self.equip_states:
                 player.apply_state(state)
-        print(
+        narrate(
             "As he slides on the band, Jean's face appears placid. "
             "His heart, however, is filled with sadness, and a coldness grips his stomach."
         )
 
     def on_unequip(self, player: "Player") -> None:
-        print(
+        narrate(
             "Jean's frown twitches slightly as his finger is released from the weight of the band. "
             "He glances briefly at the faded inscription on the ring's inner wall "
             "before stuffing the small baubel into his bag."
@@ -2477,7 +2474,7 @@ class Restorative(Consumable):
             )
             return
         if player.hp < player.maxhp:
-            print(
+            narrate(
                 f"{player.name} quaffs down the Restorative. The liquid burns slightly in his throat for a moment, before the \n"
                 "sensation is replaced with a period of numbness. He feels his limbs getting a bit lighter, his \n"
                 "muscles relaxing, and the myriad of scratches and cuts closing up.\n"
@@ -2493,7 +2490,7 @@ class Restorative(Consumable):
             if self.count <= 0:
                 _user.inventory.remove(self)
         else:
-            print("{} is already at full health.".format(player.name))
+            narrate("{} is already at full health.".format(player.name))
 
 
 class Draught(Consumable):
@@ -2551,7 +2548,7 @@ class Draught(Consumable):
             )
             return
         if player.fatigue < player.maxfatigue:
-            print(
+            narrate(
                 "{} gulps down the {}. It's surprisingly sweet and warm. The burden of fatigue seems \n"
                 "to have lifted off of his shoulders for the time being.".format(
                     player.name, self.name
@@ -2568,7 +2565,7 @@ class Draught(Consumable):
             if self.count <= 0:
                 _user.inventory.remove(self)
         else:
-            print("{} is already fully rested.".format(player.name))
+            narrate("{} is already fully rested.".format(player.name))
 
 
 class Antidote(Consumable):
@@ -2635,7 +2632,7 @@ class Antidote(Consumable):
                     poisons.append(state)
 
         if poisons:
-            print(
+            narrate(
                 f"{player.name} sips gingerly at the Antidote. The liquid feels very cool as it slides thickly down \n"
                 "his throat. He shudders uncontrollably for a moment as the medicine flows into his \n"
                 "bloodstream, doing its work on whatever toxic agent made its home there.\n"
@@ -2656,7 +2653,7 @@ class Antidote(Consumable):
                 _user.inventory.remove(self)
             return
         else:
-            print("{} is not beset by poison.".format(player.name))
+            narrate("{} is not beset by poison.".format(player.name))
 
 
 # ---------------------------------------------------------------------------
@@ -2702,7 +2699,7 @@ class SlimeFlask(Consumable):
             return
         targets = [s for s in player.states if getattr(s, "name", "") == "Slimed"]
         if targets:
-            print(
+            narrate(
                 f"{player.name} splashes the Grondelith water across the slime coating. "
                 "The corrosive residue hisses and dissolves."
             )
@@ -2715,7 +2712,7 @@ class SlimeFlask(Consumable):
             if self.count <= 0:
                 _user.inventory.remove(self)
         else:
-            print("{} has no slime coating to dissolve.".format(player.name))
+            narrate("{} has no slime coating to dissolve.".format(player.name))
 
 
 class MineralSolvent(Consumable):
@@ -2757,7 +2754,7 @@ class MineralSolvent(Consumable):
             return
         targets = [s for s in player.states if getattr(s, "statustype", "") == "stone"]
         if targets:
-            print(
+            narrate(
                 f"{player.name} applies the Grotto water to the mineral crust. "
                 "The sediment cracks and crumbles away."
             )
@@ -2770,7 +2767,7 @@ class MineralSolvent(Consumable):
             if self.count <= 0:
                 _user.inventory.remove(self)
         else:
-            print("{} has no mineral crust to dissolve.".format(player.name))
+            narrate("{} has no mineral crust to dissolve.".format(player.name))
 
 
 class Respite(Consumable):
@@ -2809,7 +2806,7 @@ class Respite(Consumable):
             return
         targets = [s for s in player.states if getattr(s, "statustype", "") == "enraged"]
         if targets:
-            print(
+            narrate(
                 f"{player.name} drinks the Atrium water slowly. "
                 "The fire in the chest subsides. The quiet is not empty — it is chosen."
             )
@@ -2826,7 +2823,7 @@ class Respite(Consumable):
             if self.count <= 0:
                 _user.inventory.remove(self)
         else:
-            print("{} is not burning.".format(player.name))
+            narrate("{} is not burning.".format(player.name))
 
 
 class Relic(Consumable):
@@ -2863,7 +2860,7 @@ class Relic(Consumable):
         _user = user if user is not None else player
         targets = [s for s in player.states if getattr(s, "statustype", "") == "apathy"]
         if targets:
-            print(
+            narrate(
                 f"{player.name} holds the stone from the Via Dolorosa. "
                 "He is not sure how long he stands there. Long enough."
             )
@@ -2876,7 +2873,7 @@ class Relic(Consumable):
             if self.count <= 0:
                 _user.inventory.remove(self)
         else:
-            print(
+            narrate(
                 "{} turns the stone over in their hand. Nothing needs healing right now.".format(
                     player.name
                 )
@@ -3253,7 +3250,7 @@ class Book(Special):
         """Display a single page with header and footer."""
         functions.screen_clear()
         cprint(f"--- {self.name} (Page {page_num} of {total_pages}) ---", "cyan")
-        print()
+        narrate()
         # Wrap text to 80 characters for readability, preserving paragraph breaks
         import textwrap
 
@@ -3267,78 +3264,47 @@ class Book(Special):
                 wrapped_paragraphs.append(wrapped)
         # Join paragraphs with blank lines
         wrapped = "\n\n".join(wrapped_paragraphs)
-        print(wrapped)
-        print()
+        narrate(wrapped)
+        narrate()
         cprint(f"--- Page {page_num} of {total_pages} ---", "cyan")
 
-    def _show_page_navigation(self, current_page: int, total_pages: int) -> str:
-        """Display navigation options and get user input."""
-        print()
-        options: list[str] = []
-        if current_page > 1:
-            options.append(colored("P: Previous Page", "yellow"))
-        if current_page < total_pages:
-            options.append(colored("N: Next Page", "yellow"))
-        options.append(colored("C: Close Book", "red"))
-
-        print(" | ".join(options))
-
-        choice = input(colored("Selection: ", "cyan")).strip().lower()
-        return choice
-
     def read(self) -> None:
-        """Read the book, with pagination for long texts."""
+        """Read the book — emits the full text via narration.
+
+        Non-interactive: long texts are emitted page by page (with page markers)
+        in one pass rather than via a terminal pagination prompt. The web client
+        handles scrolling.
+        """
         if self.text:
             cprint("Jean begins reading...", color="cyan")
-            time.sleep(0.5)
 
-            # Check if text is long enough to paginate (threshold: ~600 chars)
+            # Page markers are preserved for long texts, but emitted in one pass.
             if len(self.text) > 600:
                 pages = self._paginate_text(self.text)
-                current_page = 1
-
-                while True:
-                    self._display_page(
-                        pages[current_page - 1], current_page, len(pages)
-                    )
-                    choice = self._show_page_navigation(current_page, len(pages))
-
-                    if choice in ("p", "prev", "previous") and current_page > 1:
-                        current_page -= 1
-                    elif choice in ("n", "next") and current_page < len(pages):
-                        current_page += 1
-                    elif choice in ("c", "close", "x", "exit"):
-                        cprint("Jean closes the book.", "cyan")
-                        break
-                    else:
-                        cprint("Invalid choice. Please try again.", "red")
-                        time.sleep(1)
+                for page_num, page in enumerate(pages, 1):
+                    self._display_page(page, page_num, len(pages))
             else:
-                # Short text - just print it normally
                 functions.print_slow(self.text, speed="fast")
-                functions.await_input()
         else:
-            print(self.description)
+            narrate(self.description)
 
         if self.event:
-            time.sleep(0.5)
             self.event.process()
             if not getattr(self.event, "repeat", False):
                 self.event = None
-            functions.await_input()
 
     def use(self, player: "Player", user=None) -> None:
         """API-friendly reading method: prints the full text without interactive pagination.
         This is called by the /inventory/use endpoint so text can be captured via redirect_stdout.
         """
         cprint(f"--- {self.name} ---", "cyan")
-        print()
+        narrate()
         text = self.text
         if text:
-            print(text)
+            narrate(text)
         else:
-            print(self.description)
-        print()
+            narrate(self.description)
+        narrate()
         cprint(f"--- {self.name} ---", "cyan")
 
 
@@ -3582,9 +3548,9 @@ class DriedCrystalSap(Consumable):
         _user = user if user is not None else player
         heal = min(self.power, player.maxhp - player.hp)
         if heal <= 0:
-            print("{} is already in good health.".format(player.name))
+            narrate("{} is already in good health.".format(player.name))
             return
-        print(
+        narrate(
             f"{player.name} bites into the waxy lump. "
             "The ozone smell sharpens for a moment."
         )
@@ -3626,8 +3592,8 @@ class FabricariumRejectionShard(Special):
         self.announce = "A discarded piece of shaped stone lies here."
 
     def examine(self, player: "Player" = None) -> None:  # type: ignore[override]
-        print(self.description)
-        print(
+        narrate(self.description)
+        narrate(
             "The grooves are close — very close. Whatever tolerance the Grondite craftspeople "
             "work to, this fell just outside it."
         )
@@ -3865,7 +3831,7 @@ class ConclaveSignalStone(Key):
         self.interactions = ["examine", "drop"]
 
     def examine(self, player: "Player" = None) -> None:  # type: ignore[override]
-        print(self.description)
+        narrate(self.description)
 
 
 class FabricariumCompactSeal(Key):
@@ -3890,7 +3856,7 @@ class FabricariumCompactSeal(Key):
         self.interactions = ["examine", "drop"]
 
     def examine(self, player: "Player" = None) -> None:  # type: ignore[override]
-        print(self.description)
+        narrate(self.description)
 
 
 class GronditeAlloyBracer(Accessory):
@@ -3976,7 +3942,7 @@ class IronRation(Consumable):
             )
             return
         if player.hp < player.maxhp:
-            print(
+            narrate(
                 "{} tears into the rations. The hardtack is stale, the meat tough, "
                 "but he chews through them methodically. The familiar taste settles "
                 "something in him.\n".format(player.name)
@@ -3992,7 +3958,7 @@ class IronRation(Consumable):
             if self.count <= 0:
                 _user.inventory.remove(self)
         else:
-            print("{} is already in good health.".format(player.name))
+            narrate("{} is already in good health.".format(player.name))
 
     def eat(self, player: "Player", user=None) -> None:
         self.use(player, user=user)
@@ -4054,7 +4020,7 @@ class Bitterroot(Consumable):
             )
             return
         if player.hp < player.maxhp:
-            print(
+            narrate(
                 "{} places the bitterroot on his tongue. The taste is immediate — "
                 "sharp, almost painful, cutting through every sense. For a moment he gags. "
                 "Then warmth spreads from his chest outward, and the ache in his muscles "
@@ -4071,7 +4037,7 @@ class Bitterroot(Consumable):
             if self.count <= 0:
                 _user.inventory.remove(self)
         else:
-            print("{} is already in good health.".format(player.name))
+            narrate("{} is already in good health.".format(player.name))
 
     def eat(self, player: "Player", user=None) -> None:
         self.use(player, user=user)

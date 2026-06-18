@@ -2,7 +2,7 @@
 Chapter 01 events
 """
 
-from neotermcolor import cprint, colored
+from narration import cprint, colored, narrate
 import time
 import random
 
@@ -554,7 +554,7 @@ class Ch01PostRumbler2(Event):
         if self.player.combat_list:
             enemy = self.player.combat_list[0]
             enemy.hp = 0  # instagib one of the rock creatures
-            print(colored(enemy.name, "magenta") + " exploded into fragments of light!")
+            narrate(colored(enemy.name, color="magenta") + " exploded into fragments of light!")
             if enemy in target_tile.npcs_here:
                 target_tile.npcs_here.remove(enemy)
             if enemy in self.player.combat_list:
@@ -720,19 +720,19 @@ class AfterTheRumblerFight(Event):
 
     def process(self):
         time.sleep(5)
-        print("The Rock-Man lowers his club to the ground and turns toward Jean.")
+        narrate("The Rock-Man lowers his club to the ground and turns toward Jean.")
         time.sleep(3)
         dialogue(
             "Jean",
             "I suppose I should thank you for saving my skin. What is your name?",
             "cyan",
         )
-        print(
+        narrate(
             "The Rock-Man stands immobile for a long moment, then slowly gestures toward himself. "
             "He begins to speak in low, rumbling tones, little of which Jean can understand."
         )
         time.sleep(3)
-        print(
+        narrate(
             "Seeming to sense Jean's incomprehension, the Rock-Man places his open palm on his chest before emitting what could "
             "best be described as an avalanche falling in love with an earthquake."
         )
@@ -744,17 +744,17 @@ class AfterTheRumblerFight(Event):
             "I've never seen their like in my life!",
             "cyan",
         )
-        print(
+        narrate(
             "Gorran lets out a deep, low rumble, then gestures toward the wall from which he apparently came."
         )
         time.sleep(3)
-        print(
+        narrate(
             "Gorran points at himself, then at Jean, and finally gestures toward the recently opened passage."
         )
-        print(
+        narrate(
             "He makes a series of rumbling sounds and waves his hands, clearly inviting Jean to approach him again."
         )
-        print(
+        narrate(
             "It seems Gorran wants to communicate further, but words are not his way. Perhaps Jean should try speaking to him once more."
         )
 
@@ -783,7 +783,7 @@ class AfterGorranIntro(Event):
 
     def process(self):
         time.sleep(1)
-        print(
+        narrate(
             "Gorran gestures toward the opening in the wall. The two walk over. Jean can see that the opening is "
             "much too small for him to\npass through. Gorran waves an arm toward it and, miraculously, "
             "the opening widens with a loud rumble. Gorran walks through.\n"

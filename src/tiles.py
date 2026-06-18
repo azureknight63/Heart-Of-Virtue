@@ -5,7 +5,7 @@ __author__ = "Alex Egbert"
 import importlib
 import random
 
-from neotermcolor import colored
+from narration import colored
 
 import actions  # type: ignore
 import functions  # type: ignore
@@ -78,18 +78,14 @@ class MapTile:
             )  # first, add the available directions in the current room
             default_moves = [  # these are the default moves available to the player
                 actions.ListCommands(),
-                actions.ViewInventory(),
-                actions.SkillMenu(),
                 actions.Look(),
                 actions.View(),
                 actions.Equip(),
-                actions.Take(),
                 actions.Use(),
                 actions.Search(),
                 actions.Menu(),
                 actions.Save(),
                 actions.ViewMap(),
-                actions.Attack(),
                 actions.ViewStatus(),
             ]
         else:

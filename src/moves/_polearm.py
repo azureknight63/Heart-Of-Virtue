@@ -1,6 +1,6 @@
 """Polearm/halberd moves: OverheadSmash, Sweep, BracePosition, HalberdSpin and passive ReachMastery."""
 
-from neotermcolor import colored, cprint  # noqa: F401
+from narration import colored, cprint  # noqa: F401
 import random  # noqa: F401
 import math  # noqa: F401
 import states  # noqa: F401

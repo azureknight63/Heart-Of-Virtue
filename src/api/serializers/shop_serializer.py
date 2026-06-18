@@ -86,17 +86,17 @@ class ShopSerializer:
         flush_stale_buyback(merchant, tick) before serialize_state if needed.
 
         Args:
-            merchant: Merchant NPC instance (has .shop, .inventory, ._buyback_ledger).
+            merchant: Merchant NPC instance (has .buy_modifier, .sell_modifier,
+                .shop_name, .inventory, ._buyback_ledger).
             player: Player instance (has .inventory, .weight_current, .weight_tolerance).
             current_game_tick: player.universe.game_tick value.
 
         Returns:
             JSON-safe dict with stock, buyback_items, player state, merchant gold.
         """
-        shop = getattr(merchant, "shop", None)
-        buy_mod = getattr(shop, "buy_modifier", 1.0) if shop else 1.0
-        sell_mod = getattr(shop, "sell_modifier", 0.5) if shop else 0.5
-        shop_name = getattr(shop, "title", None) or f"{merchant.name}'s Shop"
+        buy_mod = getattr(merchant, "buy_modifier", 1.0)
+        sell_mod = getattr(merchant, "sell_modifier", 0.5)
+        shop_name = getattr(merchant, "shop_name", None) or f"{merchant.name}'s Shop"
 
         # Serialize regular stock (exclude Gold items and non-merchandise items;
         # only merchandise==True items belong in the BUY tab)

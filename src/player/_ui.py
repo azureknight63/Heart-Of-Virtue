@@ -3,7 +3,7 @@
 import math
 
 import functions  # type: ignore
-from neotermcolor import colored, cprint
+from narration import colored, cprint, narrate
 
 
 def generate_output_grid(
@@ -120,148 +120,6 @@ def generate_output_grid(
 class PlayerUIMixin:
     """Terminal UI display methods for the Player."""
 
-    def skillmenu(self):
-        """
-        Opens the skill menu for the player so he may inspect or learn skills
-        :return:
-        """  # todo various issues with this menu; needs colorization as well. Could benefit from gridding.
-        # Learning a skill does not update the preceding menu.
-        menu = (
-            []
-        )  # each entry is a tuple; the first element of the tuple is the subcat name,
-        # the second is "0: Subtype (*****0 exp); 0 skills"
-        for item, exp in self.skill_exp.items():
-            skillcount = len(
-                self.skilltree.subtypes[item]
-            )  # number of skills in the subcategory
-            menu.append((item, f"{item} ({exp:>6,} exp); {skillcount} skills"))
-        finished = False
-        while not finished:
-            cprint(
-                "*** SKILL MENU ***\n\nSelect a category to view or learn skills.\n\n",
-                "cyan",
-            )
-            for i, v in enumerate(menu):
-                cprint("{}: {}".format(i, v[1]), "cyan")
-            cprint("x: Exit menu", "cyan")
-            selection = None
-            while not selection:
-                response = input(colored("Selection: ", "cyan"))
-                if functions.is_input_integer(response):
-                    if (len(menu) > int(response)) and (
-                        int(response) >= 0
-                    ):  # handles index errors
-                        selection = response
-                elif response.lower() == "x":
-                    selection = response.lower()
-                else:
-                    selection = "x"
-            if selection != "x":
-                # Display all available skills, including those learned already
-                skills_to_display = (
-                    []
-                )  # list of tuples; (skill_object, requirement, display_text, is_learned)
-                subcat = menu[int(selection)][0]
-                for skill, req in self.skilltree.subtypes[subcat].items():
-                    known = False
-                    for known_skill in self.known_moves:
-                        if skill.name == known_skill.name:
-                            known = True
-                            break
-                    if known:
-                        skills_to_display.append(
-                            (
-                                skill,
-                                req,
-                                "{} (LEARNED)".format(skill.name),
-                                True,
-                            )
-                        )
-                    else:
-                        skills_to_display.append(
-                            (
-                                skill,
-                                req,
-                                "{} ({})".format(skill.name, req),
-                                False,
-                            )
-                        )
-                inner_selection_finished = False
-                while not inner_selection_finished:
-                    for i, v in enumerate(skills_to_display):
-                        cprint("{}: {}".format(i, v[2]), "cyan")
-                    cprint("k: Return to skill menu", "cyan")
-                    cprint("x: Exit menu", "cyan")
-                    inner_selection = None
-                    while not inner_selection:
-                        response = input(colored("Selection: ", "cyan"))
-                        if functions.is_input_integer(response):
-                            if len(skills_to_display) > int(response):
-                                inner_selection = response
-                        elif response.lower() in ["k", "x"]:
-                            inner_selection = response.lower()
-                        else:
-                            cprint("Invalid response! Please try again.", "red")
-                    if (
-                        inner_selection == "k"
-                    ):  # The player wishes to exit the inner menu and return to
-                        # the main skill menu
-                        inner_selection_finished = True
-                    if (
-                        inner_selection == "x"
-                    ):  # The player wishes to exit the menu entirely
-                        inner_selection_finished = True
-                        finished = True
-                    elif functions.is_input_integer(inner_selection):
-                        # The player has chosen a skill to investigate. Show details and provide a small menu of
-                        # actions to perform
-                        idx = int(inner_selection)  # type: ignore[assignment]
-                        skill_menu_choice = skills_to_display[idx]
-                        skill_object = skill_menu_choice[0]
-                        info = """
-    === SKILL INFORMATION ===
-    {}
-    -------------------------
-    {}
-    -------------------------""".format(skill_object.name, skill_object.description)
-                        cprint(info, "cyan")
-                        cprint(
-                            "Available {} experience: {}\n".format(
-                                subcat, self.skill_exp[subcat]
-                            )
-                        )
-                        if not skill_menu_choice[3]:
-                            if self.skill_exp[subcat] >= skill_menu_choice[1]:
-                                cprint(
-                                    "Cost: {}\n\nTo learn this skill, enter 'LEARN'.\n"
-                                    "Enter anything else to return to the skill menu.".format(
-                                        skill_menu_choice[1]
-                                    ),
-                                    "cyan",
-                                )
-                                response = input(colored("Selection: ", "cyan"))
-                                if response.lower() == "learn":
-                                    self.learn_skill(skill_object)
-                                    self.skill_exp[subcat] -= skill_menu_choice[1]
-                                    functions.await_input()
-                            else:
-                                cprint(
-                                    "Cost: {}".format(skill_menu_choice[1]),
-                                    "red",
-                                )
-                                functions.await_input()
-                        else:
-                            cprint("Jean knows this skill.", "cyan")
-                            functions.await_input()
-            else:
-                finished = True
-
-    def print_inventory(self):
-        """Open the interactive inventory UI."""
-        from interface import InventoryInterface
-
-        InventoryInterface(self).run()
-
     def print_status(self):
         """Print Jean's full status: stats, protection, resistances, and susceptibilities."""
         functions.refresh_stat_bonuses(self)
@@ -277,7 +135,7 @@ class PlayerUIMixin:
             ),
             "Level: {} // Exp to next: {}".format(self.level, self.exp_to_level),
         ]
-        print(
+        narrate(
             generate_output_grid(
                 output_grid_data,
                 border="+++",
@@ -334,7 +192,7 @@ class PlayerUIMixin:
                     attrs=["bold", "dark"],
                 )
             )
-        print(
+        narrate(
             generate_output_grid(
                 output_grid_data,
                 cols=2,
@@ -396,9 +254,9 @@ class PlayerUIMixin:
                     )
                 )
         if len(output_grid_data) == 0:
-            print("None")
+            narrate("None")
         else:
-            print(
+            narrate(
                 generate_output_grid(
                     output_grid_data,
                     border="-",
@@ -448,9 +306,9 @@ class PlayerUIMixin:
                     )
                 )
         if len(output_grid_data) == 0:
-            print("None")
+            narrate("None")
         else:
-            print(
+            narrate(
                 generate_output_grid(
                     output_grid_data,
                     border="~",
@@ -470,10 +328,12 @@ class PlayerUIMixin:
         self.main_menu = True
 
     def save(self):
+        """No-op in the web client.
+
+        Saving is handled by the /api/saves routes; the terminal save menu has
+        been removed.
         """
-        Opens the save menu for the player to save his progress.
-        """
-        functions.save_select(self)
+        return
 
     def commands(self):
         """Print all available room actions with their hotkeys."""
@@ -515,4 +375,4 @@ class PlayerUIMixin:
         else:
             fat_string = ""
 
-        print(hp_string + fat_string)
+        narrate(hp_string + fat_string)

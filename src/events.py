@@ -3,7 +3,7 @@ Combat states to be used within combat module. May also spill over to the standa
  States are objects applied to a player/npc that hang around until they expire or are removed.
 """
 
-from neotermcolor import colored
+from narration import colored
 from functions import print_slow, await_input
 from typing import Optional
 
@@ -139,11 +139,10 @@ class CombatEvent(Event):
 
             return {"combat_ready": True}
 
-        # Terminal fallback
-        from src.combat import combat
-
-        # We assume combat() has been updated to accept an optional config
-        combat(self.player, event_config=self.config)
+        # The web client always sends "combat_start" (the sole input option).
+        # Any other input is a no-op — there is no terminal combat loop to fall
+        # back to.
+        return {"combat_ready": False}
 
 
 class LootEvent(Event):
@@ -183,12 +182,12 @@ class LootEvent(Event):
             self.needs_input = False
             return {"success": True, "message": "Interaction ended."}
 
-        from neotermcolor import cprint
+        from narration import cprint
 
         try:
-            from interface import transfer_item
+            from inventory_utils import transfer_item
         except ImportError:
-            from src.interface import transfer_item
+            from src.inventory_utils import transfer_item
 
         if user_input == "all":
             snapshot = list(self.container.inventory)

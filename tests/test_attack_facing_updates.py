@@ -22,6 +22,22 @@ import src.functions as functions  # type: ignore
 class TestAttackMovesFacing:
     """Verify that attack moves update user's facing toward target."""
 
+    @pytest.fixture(autouse=True)
+    def _api_mode(self):
+        """Run moves in API mode so terminal GIF animations are skipped.
+
+        The game is web-only; in production set_api_mode(True) makes
+        animate_to_main_screen a no-op. Without it, a move with a real
+        animation (e.g. the base Attack) tries to open a curses screen and
+        fails under pytest's redirected stdin.
+        """
+        import src.animations as animations
+
+        prev = animations._API_MODE
+        animations.set_api_mode(True)
+        yield
+        animations.set_api_mode(prev)
+
     @pytest.fixture
     def player(self):
         """Create a test player."""
