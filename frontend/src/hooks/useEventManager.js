@@ -64,6 +64,7 @@ export function useEventManager({
     const [currentEvent, setCurrentEvent] = useState(null)
     const [eventHistory, setEventHistory] = useState([])
     const [isInteractionDelayActive, setIsInteractionDelayActive] = useState(false)
+    const [eventsChecked, setEventsChecked] = useState(false)
 
     // Refs for deduplication and delay tracking
     const processedEventIds = useRef(new Set())
@@ -151,7 +152,8 @@ export function useEventManager({
             }
         } catch (err) {
             console.error('Failed to fetch pending events after retries:', err)
-            // Silently fail - this is a recovery feature, not critical
+        } finally {
+            setEventsChecked(true)
         }
     }, [handleEventsTriggered])
 
@@ -372,6 +374,7 @@ export function useEventManager({
     return {
         eventQueue,
         currentEvent,
+        eventsChecked,
         eventHistory,
         isEventDialogActive,
         isInteractionDelayActive,
