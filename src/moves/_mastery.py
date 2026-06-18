@@ -12,7 +12,9 @@ def _all_stats(p):
 
 
 def _is_highest(p, stat_val):
-    return stat_val == max(_all_stats(p))
+    stats = _all_stats(p)
+    highest = max(stats)
+    return stat_val == highest and stats.count(highest) == 1
 
 
 class Pulverize(Move):
