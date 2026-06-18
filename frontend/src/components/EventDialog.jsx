@@ -224,7 +224,7 @@ function EventDialog({ event, history = [], onClose, onSubmitInput }) {
             zIndex={3000}
             maxWidth={dialogMaxWidth}
             width={dialogWidth}
-            allowInternalScroll={false}
+            allowInternalScroll={true}
         >
             <div
                 ref={dialogRef}
@@ -236,8 +236,6 @@ function EventDialog({ event, history = [], onClose, onSubmitInput }) {
                     flexDirection: 'column',
                     gap: spacing.lg,
                     outline: 'none',
-                    height: '100%',
-                    maxHeight: '75vh', // Keep dialog from getting too tall
                 }}
             >
                 {/* Event History Toggle (only if multiple messages) */}
