@@ -123,15 +123,15 @@ class TestMasteryLearnableWhen:
         move = MoveClass(player)
         assert move.learnable_when(player) is False
 
-    def test_true_when_tied_for_highest_above_30(self, MoveClass, stat_name):
+    def test_false_when_tied_for_highest_above_30(self, MoveClass, stat_name):
         player = _make_player()
         setattr(player, stat_name, 35)
         # Tie with another stat at the same value
         other = "strength" if stat_name != "strength" else "finesse"
         setattr(player, other, 35)
         move = MoveClass(player)
-        # Both tied at 35 — the stat still equals max, so learnable
-        assert move.learnable_when(player) is True
+        # Tied at 35 — no single dominant stat, so not learnable
+        assert move.learnable_when(player) is False
 
 
 # ---------------------------------------------------------------------------
