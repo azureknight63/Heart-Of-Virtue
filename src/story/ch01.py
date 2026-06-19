@@ -667,9 +667,20 @@ class Ch01PostRumbler3(Event):
         )
         time.sleep(1)
 
-        # Add Gorran as an ally
-        gorran = self.tile.spawn_npc("Gorran", delay=0)
-        self.player.combat_list_allies.append(gorran)
+        # Add Gorran as an ally. If he's already in the party (e.g. via the
+        # starting_party_members config option), reuse that instance instead
+        # of spawning a duplicate.
+        gorran = next(
+            (
+                ally
+                for ally in self.player.combat_list_allies
+                if type(ally).__name__ == "Gorran"
+            ),
+            None,
+        )
+        if gorran is None:
+            gorran = self.tile.spawn_npc("Gorran", delay=0)
+            self.player.combat_list_allies.append(gorran)
         gorran.in_combat = True
         gorran.reset_combat_moves()
 

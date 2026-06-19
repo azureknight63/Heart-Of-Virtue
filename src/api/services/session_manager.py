@@ -742,6 +742,12 @@ class SessionManager:
             ally.friend = True
             if ally not in player.combat_list_allies:
                 player.combat_list_allies.append(ally)
+            if npc_type == "Gorran":
+                # Without this, Gorran's name property falls back to "Rock-Man"
+                # until the Ch01 story event would have naturally set it.
+                story = getattr(getattr(player, "universe", None), "story", None)
+                if isinstance(story, dict):
+                    story["gorran_first"] = "1"
             print(
                 f"[SessionManager] [OK] Added starting party member: {npc_type}",
                 flush=True,
