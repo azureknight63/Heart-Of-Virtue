@@ -20,6 +20,20 @@ export default function PartyPanel({ player, onClose, onRefetch }) {
     (it) => it.can_use && !it.is_merchandise
   )
 
+  // Stack duplicate item instances (same name) into a single entry with a summed quantity,
+  // mirroring the inventory's stacking convention so the picker doesn't show repeated rows.
+  const stackedConsumables = Object.values(
+    consumables.reduce((stacks, item) => {
+      const existing = stacks[item.name]
+      if (existing) {
+        existing.quantity = (existing.quantity || 1) + (item.quantity || 1)
+      } else {
+        stacks[item.name] = { ...item, quantity: item.quantity || 1 }
+      }
+      return stacks
+    }, {})
+  )
+
   const handleUseItem = async (item, member) => {
     setIsLoading(true)
     try {
@@ -240,7 +254,7 @@ export default function PartyPanel({ player, onClose, onRefetch }) {
               💊 USE ON — {useItemTarget.name}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '50vh', overflowY: 'auto' }}>
-              {consumables.map((item) => (
+              {stackedConsumables.map((item) => (
                 <button
                   key={item.id}
                   onClick={() => handleUseItem(item, useItemTarget)}
