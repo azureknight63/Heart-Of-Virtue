@@ -1339,53 +1339,6 @@
                         "value": [],
                         "availability": [],
                         "unique": []
-                    },
-                    "shop": {
-                        "__class__": "ShopInterface",
-                        "__module__": "interface",
-                        "props": {
-                            "merchant": "<circular_ref:JamboHealsU>",
-                            "player": null,
-                            "base_buy_modifier": 1.0,
-                            "base_sell_modifier": 0.5,
-                            "buy_modifier": 1.0,
-                            "sell_modifier": 0.5,
-                            "buy_menu": {
-                                "__class__": "ShopBuyMenu",
-                                "__module__": "interface",
-                                "props": {
-                                    "shop": "<circular_ref:ShopInterface>",
-                                    "title": "Buy Menu",
-                                    "choices": [],
-                                    "exit_label": "Back",
-                                    "exit_message": "Leaving Buy Menu!"
-                                }
-                            },
-                            "sell_menu": {
-                                "__class__": "ShopSellMenu",
-                                "__module__": "interface",
-                                "props": {
-                                    "shop": "<circular_ref:ShopInterface>",
-                                    "title": "Sell Menu",
-                                    "choices": [],
-                                    "exit_label": "Back",
-                                    "exit_message": "Leaving Sell Menu!"
-                                }
-                            },
-                            "choices": [
-                                {
-                                    "label": "Buy",
-                                    "submenu": "<circular_ref:ShopBuyMenu>"
-                                },
-                                {
-                                    "label": "Sell",
-                                    "submenu": "<circular_ref:ShopSellMenu>"
-                                }
-                            ],
-                            "title": "Jambo's Shop",
-                            "exit_label": "Leave Shop",
-                            "exit_message": "Jambo waves enthusiastically and loudly calls out, 'Jambo wishes you well on your travels and don't forget: When you blue, Jambo Heals U!'"
-                        }
                     }
                 }
             }
