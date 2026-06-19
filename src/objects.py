@@ -443,6 +443,7 @@ class Container(Object):
             self.open()
 
         if self.state != "opened":
+            narrate(f"The {self.nickname} must be opened before you can take items from it.")
             return
 
         try:
