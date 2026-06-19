@@ -1682,6 +1682,29 @@ class Halberd(Weapon):
         )
 
 
+class Longsword(Weapon):
+    level: int = 1
+
+    def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
+        super().__init__(
+            name="Longsword",
+            description="A well-balanced longsword with a full crossguard. Its length and reach make it a versatile choice for both cutting and thrusting attacks.",
+            isequipped=False,
+            value=150,
+            damage=30,
+            str_req=8,
+            fin_req=8,
+            str_mod=1.0,
+            fin_mod=1.0,
+            weight=3,
+            maintype="Weapon",
+            subtype="Sword",
+            wpnrange=(2, 5),
+            merchandise=merchandise,
+            enchantment_level=enchantment_level,
+        )
+
+
 class Hammer(Weapon):
     level: int = 0
 

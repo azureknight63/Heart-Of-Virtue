@@ -37,6 +37,8 @@ from ._enemies import (
     KingSlime,
     StatusDummy,
     CorruptedStoneCreature,
+    TalusHound,
+    ScarpAdder,
 )
 from ._merchants import Merchant, MiloCurioDealer, JamboHealsU
 from ._friends import (
@@ -46,6 +48,9 @@ from ._friends import (
     GronditeWorker,
     GronditeElder,
     GronditeConclaveElder,
+    Mara,
+    Devet,
+    Liss,
 )
 from ._adjutant import TheAdjutant
 from ._eastern_descent import NomadCamper, NomadScout, NomadTrader
@@ -70,6 +75,8 @@ __all__ = [
     "KingSlime",
     "StatusDummy",
     "CorruptedStoneCreature",
+    "TalusHound",
+    "ScarpAdder",
     # Merchant NPCs
     "Merchant",
     "MiloCurioDealer",
@@ -81,6 +88,9 @@ __all__ = [
     "GronditeWorker",
     "GronditeElder",
     "GronditeConclaveElder",
+    "Mara",
+    "Devet",
+    "Liss",
     # Arena testing NPC
     "TheAdjutant",
     # Eastern Descent — nomad camp NPCs
