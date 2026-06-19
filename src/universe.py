@@ -119,7 +119,8 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
                 if mod_name and cls_name:
                     module = __import__(mod_name, fromlist=[cls_name])
                     return getattr(module, cls_name)
-            except Exception:
+            except Exception as e:
+                narrate(f"ERROR: Failed to resolve class type '{spec}': {e}")
                 return None
 
         if not isinstance(payload, dict) or "__class__" not in payload:
@@ -185,7 +186,8 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
                 except Exception:
                     pass
             return inst
-        except Exception:
+        except Exception as e:
+            narrate(f"ERROR: Failed to deserialize '{mod_name}.{cls_name}': {e}")
             return None
 
     def _load_single_json_map(self, player, json_path: Path):
