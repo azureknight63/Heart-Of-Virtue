@@ -59,6 +59,12 @@ class GameConfig:
     # Entries without an explicit value default to "1".
     starting_story_flags: List[str] = field(default_factory=list)
 
+    # === [game] section: Starting party ===
+    # Comma-separated list of NPC class names (from the npc package) to spawn
+    # at the player's starting tile and add to combat_list_allies immediately.
+    # e.g. starting_party_members = Gorran
+    starting_party_members: List[str] = field(default_factory=list)
+
     # === [game] section: Display ===
     show_combat_distance: bool = True
     show_unit_positions: bool = True
@@ -208,6 +214,16 @@ class ConfigManager:
                 if token:
                     parsed_flags.append(token)
         self.config.starting_story_flags = parsed_flags
+
+        # Starting party members: parse comma-separated NPC class names
+        raw_party = section.get("starting_party_members", fallback="")
+        parsed_party: List[str] = []
+        if raw_party.strip():
+            for token in raw_party.split(","):
+                token = token.strip()
+                if token:
+                    parsed_party.append(token)
+        self.config.starting_party_members = parsed_party
 
         # Debug settings
         self.config.debug_mode = section.getboolean("debug_mode", fallback=False)

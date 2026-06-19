@@ -705,6 +705,48 @@ class SessionManager:
                 flush=True,
             )
 
+    def _apply_starting_party_members(self, player) -> None:
+        """Spawn configured starting_party_members and add them to combat_list_allies.
+
+        Mirrors the narrative flow in story/ch01.py where Gorran is spawned onto
+        the player's tile and appended to combat_list_allies — but applied at
+        new-game setup instead of waiting for the story event to trigger it.
+        """
+        if not self.game_config:
+            return
+        members = getattr(self.game_config, "starting_party_members", None)
+        if not members:
+            return
+        if not hasattr(player, "combat_list_allies"):
+            return
+
+        tile = None
+        if getattr(player, "map", None):
+            tile = player.map.get((player.location_x, player.location_y))
+        if tile is None:
+            print(
+                "[SessionManager] [ERROR] Could not place starting party members: no starting tile",
+                flush=True,
+            )
+            return
+
+        for npc_type in members:
+            try:
+                ally = tile.spawn_npc(npc_type, delay=0)
+            except Exception as e:
+                print(
+                    f"[SessionManager] [ERROR] Could not spawn starting party member {npc_type}: {e}",
+                    flush=True,
+                )
+                continue
+            ally.friend = True
+            if ally not in player.combat_list_allies:
+                player.combat_list_allies.append(ally)
+            print(
+                f"[SessionManager] [OK] Added starting party member: {npc_type}",
+                flush=True,
+            )
+
     def _create_player_for_session(self, username: str) -> object:
         """Create a fresh player instance for a session.
 
@@ -837,6 +879,9 @@ class SessionManager:
             # Apply starting equipment (equipped gear) from config
             self._apply_starting_equipment(player)
 
+            # Apply starting party members (e.g. Gorran) from config
+            self._apply_starting_party_members(player)
+
             # Apply player stats from config if available
             self._apply_player_stats_from_config(player)
 
@@ -873,6 +918,9 @@ class SessionManager:
 
             # Apply starting equipment (equipped gear) from config
             self._apply_starting_equipment(player)
+
+            # Apply starting party members (e.g. Gorran) from config
+            self._apply_starting_party_members(player)
 
             # Apply player stats from config if available
             self._apply_player_stats_from_config(player)
