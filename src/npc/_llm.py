@@ -23,7 +23,7 @@ import random
 import re
 import time
 from pathlib import Path
-from narration import narrate
+from src.narration import narrate
 
 
 class MynxLLMMixin:

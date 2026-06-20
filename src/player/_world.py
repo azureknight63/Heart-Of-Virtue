@@ -2,7 +2,7 @@
 
 import time
 
-from narration import cprint
+from src.narration import cprint
 
 
 class PlayerWorldMixin:

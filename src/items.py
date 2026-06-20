@@ -1,7 +1,7 @@
 from __future__ import annotations
 import random
 import math
-from narration import colored, cprint, narrate
+from src.narration import colored, cprint, narrate
 import functions
 from typing import Any, Dict, List, Optional, Tuple, Union, TYPE_CHECKING
 

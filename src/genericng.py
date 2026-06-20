@@ -51,7 +51,7 @@ As a module (to be imported) you get the following function:
 __version__ = "1.0"
 
 import random
-from narration import narrate
+from src.narration import narrate
 
 consonants = [
     ("b", 2),

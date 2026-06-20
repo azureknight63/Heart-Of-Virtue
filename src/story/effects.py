@@ -4,7 +4,7 @@ Effects are small, one-time-only events typically fired during combat or in resp
 
 from typing import List, Optional
 
-from narration import cprint, narrate
+from src.narration import cprint, narrate
 import random
 import time
 

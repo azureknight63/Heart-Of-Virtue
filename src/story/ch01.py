@@ -2,7 +2,7 @@
 Chapter 01 events
 """
 
-from narration import cprint, colored, narrate
+from src.narration import cprint, colored, narrate
 import time
 import random
 

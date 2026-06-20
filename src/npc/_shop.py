@@ -44,7 +44,7 @@ from items import (
     Arrow,
 )
 from objects import Container  # type: ignore
-from narration import narrate
+from src.narration import narrate
 from shop_conditions import (  # type: ignore
     ValueModifierCondition,
     RestockWeightBoostCondition,

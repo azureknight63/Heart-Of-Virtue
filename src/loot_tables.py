@@ -6,7 +6,7 @@ import inspect
 import random
 import items
 import functions
-from narration import narrate
+from src.narration import narrate
 
 
 class Loot:

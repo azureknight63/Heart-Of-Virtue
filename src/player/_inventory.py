@@ -7,7 +7,7 @@ import items  # type: ignore
 import functions  # type: ignore
 from functions import stack_inv_items
 from universe import tile_exists as tile_exists
-from narration import cprint, narrate
+from src.narration import cprint, narrate
 
 
 class PlayerInventoryMixin:

@@ -297,7 +297,7 @@ class TestLootEvent:
         assert event.input_options[2]["value"] == "all"
         assert event.input_options[3]["value"] == "exit"
 
-    @patch('narration.cprint')
+    @patch('src.narration.cprint')
     @patch('inventory_utils.transfer_item')
     def test_loot_event_process_take_all(self, mock_transfer_item, mock_cprint):
         """Test LootEvent process with 'all' input."""
@@ -321,7 +321,7 @@ class TestLootEvent:
         assert event.needs_input is False
         assert result == {"success": True}
 
-    @patch('narration.cprint')
+    @patch('src.narration.cprint')
     @patch('inventory_utils.transfer_item')
     def test_loot_event_process_take_specific_item(self, mock_transfer_item, mock_cprint):
         """Test LootEvent process with specific item index."""
@@ -350,7 +350,7 @@ class TestLootEvent:
 
         event = LootEvent("TestLoot", container=mock_container)
 
-        with patch('narration.cprint') as mock_cprint:
+        with patch('src.narration.cprint') as mock_cprint:
             result = event.process(user_input="999")
 
             mock_cprint.assert_called_once_with("Invalid item choice.", "red")

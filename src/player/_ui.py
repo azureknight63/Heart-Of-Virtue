@@ -3,7 +3,7 @@
 import math
 
 import functions  # type: ignore
-from narration import colored, cprint, narrate
+from src.narration import colored, cprint, narrate
 
 
 def generate_output_grid(

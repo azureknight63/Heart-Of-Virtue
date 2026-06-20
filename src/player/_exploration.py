@@ -4,7 +4,7 @@ import random
 import time
 
 import functions  # type: ignore
-from narration import colored, cprint, narrate
+from src.narration import colored, cprint, narrate
 
 
 class PlayerExplorationMixin:

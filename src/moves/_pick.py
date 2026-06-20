@@ -1,6 +1,6 @@
 """Pick weapon moves: ChipAway, ExploitWeakness, Stupefy, WorkTheGap."""
 
-from narration import colored, cprint, narrate  # noqa: F401
+from src.narration import colored, cprint, narrate  # noqa: F401
 import random  # noqa: F401
 import math  # noqa: F401
 import states  # noqa: F401
