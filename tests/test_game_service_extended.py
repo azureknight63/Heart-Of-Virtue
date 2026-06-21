@@ -532,6 +532,76 @@ class TestGetPlayerSkills:
         assert "known_moves" in result
         assert "skill_tree" in result
 
+    def test_get_player_skills_hides_unmet_mastery_skill(
+        self, game_service, extended_mock_player
+    ):
+        """A stat-gated mastery skill whose learnable_when() is False and that
+        isn't known yet should be omitted entirely, not listed as disabled."""
+        mastery_skill = MagicMock()
+        mastery_skill.name = "Lightning Assault"
+        mastery_skill.learnable_when.return_value = False
+        extended_mock_player.skilltree.subtypes["Basic"][mastery_skill] = 2500
+        extended_mock_player.skill_exp["Basic"] = 3300
+        extended_mock_player.known_moves = []
+
+        result = game_service.get_player_skills(extended_mock_player)
+        names = [s["name"] for s in result["skill_tree"]["Basic"]]
+        assert "Lightning Assault" not in names
+
+    def test_get_player_skills_shows_mastery_skill_when_dominant(
+        self, game_service, extended_mock_player
+    ):
+        """Once learnable_when() is True, the mastery skill appears and is
+        flagged can_learn given sufficient exp and not already known."""
+        mastery_skill = MagicMock()
+        mastery_skill.name = "Lightning Assault"
+        mastery_skill.learnable_when.return_value = True
+        extended_mock_player.skilltree.subtypes["Basic"][mastery_skill] = 2500
+        extended_mock_player.skill_exp["Basic"] = 3300
+        extended_mock_player.known_moves = []
+
+        result = game_service.get_player_skills(extended_mock_player)
+        entries = [s for s in result["skill_tree"]["Basic"] if s["name"] == "Lightning Assault"]
+        assert len(entries) == 1
+        assert entries[0]["can_learn"] is True
+        assert entries[0]["is_known"] is False
+
+    def test_get_player_skills_keeps_known_mastery_skill_even_if_unmet(
+        self, game_service, extended_mock_player
+    ):
+        """A mastery skill the player already knows must stay listed (as
+        known) even if the dominant-stat condition no longer holds — only
+        not-yet-learned skills are hidden by the gate."""
+        mastery_skill = MagicMock()
+        mastery_skill.name = "Lightning Assault"
+        mastery_skill.learnable_when.return_value = False
+        extended_mock_player.skilltree.subtypes["Basic"][mastery_skill] = 2500
+
+        known_move = MagicMock()
+        known_move.name = "Lightning Assault"
+        extended_mock_player.known_moves = [known_move]
+
+        result = game_service.get_player_skills(extended_mock_player)
+        entries = [s for s in result["skill_tree"]["Basic"] if s["name"] == "Lightning Assault"]
+        assert len(entries) == 1
+        assert entries[0]["is_known"] is True
+        assert entries[0]["can_learn"] is False
+
+    def test_get_player_skills_non_gated_skill_unaffected(
+        self, game_service, extended_mock_player
+    ):
+        """A skill without learnable_when (or one that always returns True)
+        is never hidden by the new gate, regardless of exp."""
+        plain_skill = MagicMock(spec=["name"])
+        plain_skill.name = "Dodge"
+        extended_mock_player.skilltree.subtypes["Basic"][plain_skill] = 100
+        extended_mock_player.skill_exp["Basic"] = 0
+        extended_mock_player.known_moves = []
+
+        result = game_service.get_player_skills(extended_mock_player)
+        names = [s["name"] for s in result["skill_tree"]["Basic"]]
+        assert "Dodge" in names
+
 
 # ============================================================================
 # AWARD SYSTEM TESTS
