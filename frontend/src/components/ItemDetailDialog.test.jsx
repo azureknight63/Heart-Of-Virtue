@@ -452,18 +452,17 @@ describe('ItemDetailDialog', () => {
       name: 'Health Potion',
     };
 
-    const mockOnItemUsedInCombat = vi.fn();
     apiClient.post.mockResolvedValue({ data: { success: true, message: 'You feel better.' } });
 
     render(
       <ItemDetailDialog
         item={consumableItem}
         player={mockPlayer}
+        onClose={mockOnClose}
         onBack={mockOnBack}
         onItemRemoved={mockOnItemRemoved}
         onRefetch={mockOnRefetch}
         combatMode={true}
-        onItemUsedInCombat={mockOnItemUsedInCombat}
       />
     );
 
@@ -477,12 +476,12 @@ describe('ItemDetailDialog', () => {
     // Click Ok on success dialog
     fireEvent.click(screen.getByText(/Ok/i));
 
-    // Should call onItemUsedInCombat instead of onBack
-    expect(mockOnItemUsedInCombat).toHaveBeenCalled();
+    // Should call onClose instead of onBack
+    expect(mockOnClose).toHaveBeenCalled();
     expect(mockOnBack).not.toHaveBeenCalled();
   });
 
-  it('calls onBack (not onItemUsedInCombat) when item is used outside combat', async () => {
+  it('calls onBack (not onClose) when item is used outside combat', async () => {
     const consumableItem = {
       ...mockItem,
       can_equip: false,
@@ -491,18 +490,17 @@ describe('ItemDetailDialog', () => {
       name: 'Health Potion',
     };
 
-    const mockOnItemUsedInCombat = vi.fn();
     apiClient.post.mockResolvedValue({ data: { success: true, message: 'You feel better.' } });
 
     render(
       <ItemDetailDialog
         item={consumableItem}
         player={mockPlayer}
+        onClose={mockOnClose}
         onBack={mockOnBack}
         onItemRemoved={mockOnItemRemoved}
         onRefetch={mockOnRefetch}
         combatMode={false}
-        onItemUsedInCombat={mockOnItemUsedInCombat}
       />
     );
 
@@ -515,9 +513,9 @@ describe('ItemDetailDialog', () => {
     // Click Ok on success dialog
     fireEvent.click(screen.getByText(/Ok/i));
 
-    // Should call onBack, not onItemUsedInCombat
+    // Should call onBack, not onClose
     expect(mockOnBack).toHaveBeenCalled();
-    expect(mockOnItemUsedInCombat).not.toHaveBeenCalled();
+    expect(mockOnClose).not.toHaveBeenCalled();
   });
 
   // ---------------------------------------------------------------------------
