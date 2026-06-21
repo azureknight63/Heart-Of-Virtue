@@ -8,7 +8,7 @@ import { INVENTORY_TABS, categorizeItems, getRarityColor, getItemIcon } from '..
  * InventoryDialog - Main container for the player's inventory
  * Displays items in categories and allows inspection via ItemDetailDialog
  */
-export default function InventoryDialog({ items, player, onClose, onRefetch, combatMode = false }) {
+export default function InventoryDialog({ items, player, onClose, onRefetch, combatMode = false, onItemUsedInCombat }) {
   const [activeTab, setActiveTab] = useState(combatMode ? 'consumables' : 'weapons')
   const [selectedItem, setSelectedItem] = useState(null)
   const [localInventory, setLocalInventory] = useState(items || player?.inventory || [])
@@ -87,6 +87,7 @@ export default function InventoryDialog({ items, player, onClose, onRefetch, com
               onItemRemoved={() => setSelectedItem(null)}
               onItemUpdated={(id, updates) => setSelectedItem(prev => prev && prev.id === id ? { ...prev, ...updates } : prev)}
               combatMode={combatMode}
+              onItemUsedInCombat={onItemUsedInCombat}
             />
           ) : (
             <>

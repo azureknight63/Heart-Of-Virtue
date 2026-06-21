@@ -3,7 +3,7 @@ import apiClient from '../api/client'
 import { player as playerApi } from '../api/endpoints'
 import BookReaderDialog from './BookReaderDialog'
 
-export default function ItemDetailDialog({ item, player, onClose, onBack, onRefetch, onItemRemoved, onItemUpdated, combatMode = false }) {
+export default function ItemDetailDialog({ item, player, onClose, onBack, onRefetch, onItemRemoved, onItemUpdated, combatMode = false, onItemUsedInCombat }) {
   const [isLoading, setIsLoading] = useState(false)
   const [actionMessage, setActionMessage] = useState('')
   const [showDropConfirm, setShowDropConfirm] = useState(false)
@@ -670,7 +670,11 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
               <button
                 onClick={() => {
                   setActionResult(null)
-                  onBack() // Go back to inventory list
+                  if (combatMode && onItemUsedInCombat) {
+                    onItemUsedInCombat() // Close entire inventory in combat
+                  } else {
+                    onBack() // Go back to inventory list
+                  }
                 }}
                 style={{
                   padding: '8px 32px',

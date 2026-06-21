@@ -823,6 +823,7 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
           onClose={() => setShowInventory(false)}
           onRefetch={onRefetch}
           combatMode={mode === 'combat'}
+          onItemUsedInCombat={() => setShowInventory(false)}
         />
       )}
 

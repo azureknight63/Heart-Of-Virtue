@@ -443,6 +443,83 @@ describe('ItemDetailDialog', () => {
     });
   });
 
+  it('closes entire inventory dialog when item is used in combat mode', async () => {
+    const consumableItem = {
+      ...mockItem,
+      can_equip: false,
+      can_use: true,
+      maintype: 'Consumable',
+      name: 'Health Potion',
+    };
+
+    const mockOnItemUsedInCombat = vi.fn();
+    apiClient.post.mockResolvedValue({ data: { success: true, message: 'You feel better.' } });
+
+    render(
+      <ItemDetailDialog
+        item={consumableItem}
+        player={mockPlayer}
+        onBack={mockOnBack}
+        onItemRemoved={mockOnItemRemoved}
+        onRefetch={mockOnRefetch}
+        combatMode={true}
+        onItemUsedInCombat={mockOnItemUsedInCombat}
+      />
+    );
+
+    fireEvent.click(screen.getByText(/Use/i));
+
+    await waitFor(() => {
+      expect(apiClient.post).toHaveBeenCalledWith('/inventory/use', { item_id: 1 });
+      expect(screen.getByText(/You feel better./i)).toBeDefined();
+    });
+
+    // Click Ok on success dialog
+    fireEvent.click(screen.getByText(/Ok/i));
+
+    // Should call onItemUsedInCombat instead of onBack
+    expect(mockOnItemUsedInCombat).toHaveBeenCalled();
+    expect(mockOnBack).not.toHaveBeenCalled();
+  });
+
+  it('calls onBack (not onItemUsedInCombat) when item is used outside combat', async () => {
+    const consumableItem = {
+      ...mockItem,
+      can_equip: false,
+      can_use: true,
+      maintype: 'Consumable',
+      name: 'Health Potion',
+    };
+
+    const mockOnItemUsedInCombat = vi.fn();
+    apiClient.post.mockResolvedValue({ data: { success: true, message: 'You feel better.' } });
+
+    render(
+      <ItemDetailDialog
+        item={consumableItem}
+        player={mockPlayer}
+        onBack={mockOnBack}
+        onItemRemoved={mockOnItemRemoved}
+        onRefetch={mockOnRefetch}
+        combatMode={false}
+        onItemUsedInCombat={mockOnItemUsedInCombat}
+      />
+    );
+
+    fireEvent.click(screen.getByText(/Use/i));
+
+    await waitFor(() => {
+      expect(screen.getByText(/You feel better./i)).toBeDefined();
+    });
+
+    // Click Ok on success dialog
+    fireEvent.click(screen.getByText(/Ok/i));
+
+    // Should call onBack, not onItemUsedInCombat
+    expect(mockOnBack).toHaveBeenCalled();
+    expect(mockOnItemUsedInCombat).not.toHaveBeenCalled();
+  });
+
   // ---------------------------------------------------------------------------
   // Book reading (handleRead)
   // ---------------------------------------------------------------------------
