@@ -340,12 +340,21 @@ export function useEventManager({
                     // sees the text and the Continue/choice prompt in one dialog
                     // instead of an extra intermediate frame.
                     // Spread to avoid mutating the API response object.
-                    data.event = { ...data.event, output_text: trimmedOutput }
+                    data.event = {
+                        ...data.event,
+                        output_text: trimmedOutput,
+                        // Carry staged conversation data through the merge so
+                        // multi-stage events keep their portraits/beats.
+                        ...(data.segments ? { segments: data.segments } : {}),
+                        ...(data.conversation ? { conversation: data.conversation } : {})
+                    }
                 } else {
                     const resultEvent = {
                         name: 'Event Result',
                         output_text: trimmedOutput,
                         needs_input: false,
+                        ...(data.segments ? { segments: data.segments } : {}),
+                        ...(data.conversation ? { conversation: data.conversation } : {}),
                         ...(data.is_death_scene ? { is_death_scene: true } : {})
                     }
                     setCurrentEvent(resultEvent)

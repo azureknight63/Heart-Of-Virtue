@@ -54,6 +54,11 @@ class EventSerializer:
             event_data["delay_mode"] = event.delay_mode
             event_data["delay_duration"] = getattr(event, "delay_duration", 3000)
 
+        # Optional presentation hint (e.g. "memory_flash") so the client can
+        # wrap the event in dedicated UI flair.
+        if getattr(event, "presentation", None):
+            event_data["presentation"] = event.presentation
+
         return event_data
 
     @staticmethod

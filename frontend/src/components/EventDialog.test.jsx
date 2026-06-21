@@ -312,4 +312,68 @@ describe('EventDialog', () => {
     // Close button visible immediately (isComplete=true on mount)
     expect(screen.getByRole('button', { name: /Close/i })).toBeDefined();
   });
+
+  describe('staged conversation mode', () => {
+    const stagedEvent = {
+      event_id: 'mem-1',
+      name: 'Ch01_Memory_Amelia',
+      output_text: 'You always were too stubborn.',
+      needs_input: false,
+      segments: [
+        {
+          text: 'You always were too stubborn.',
+          speaker: 'Amelia',
+          emotion: 'happy',
+          in_conversation: true,
+        },
+      ],
+      conversation: {
+        cast: [
+          { id: 'Jean', name: 'Jean', side: 'left', emotion: 'neutral' },
+          { id: 'Amelia', name: 'Amelia', side: 'right', emotion: 'happy' },
+        ],
+      },
+    };
+
+    it('renders the ConversationStage when segments are present', () => {
+      render(<EventDialog event={stagedEvent} onClose={mockOnClose} onSubmitInput={mockOnSubmitInput} />);
+      expect(screen.getByTestId('conversation-stage')).toBeDefined();
+      // The plain typewriter path must NOT be used for staged events.
+      expect(screen.queryByTestId('event-text-container')).toBeNull();
+    });
+
+    it('falls back to the plain typewriter when there are no segments', () => {
+      const plainEvent = { ...stagedEvent, segments: undefined, conversation: undefined };
+      render(<EventDialog event={plainEvent} onClose={mockOnClose} onSubmitInput={mockOnSubmitInput} />);
+      expect(screen.queryByTestId('conversation-stage')).toBeNull();
+      expect(screen.getByTestId('event-text-container')).toBeDefined();
+    });
+
+    it('does not stage a death scene even if segments exist', () => {
+      const deathStaged = { ...stagedEvent, is_death_scene: true };
+      render(<EventDialog event={deathStaged} onClose={mockOnClose} onSubmitInput={mockOnSubmitInput} />);
+      expect(screen.queryByTestId('conversation-stage')).toBeNull();
+      expect(document.querySelector('pre')).not.toBeNull();
+    });
+
+    it('applies Memory Flash flair when presentation is memory_flash', () => {
+      const memEvent = {
+        event_id: 'mem-2',
+        name: 'Generic Event',
+        presentation: 'memory_flash',
+        output_text: 'A faded recollection.',
+        needs_input: false,
+      };
+      render(<EventDialog event={memEvent} onClose={mockOnClose} onSubmitInput={mockOnSubmitInput} />);
+      // Appears in both the dialog title and the in-body banner.
+      expect(screen.getAllByText(/A Memory Stirs/i).length).toBeGreaterThanOrEqual(2);
+      expect(document.querySelector('.memory-flash-frame')).not.toBeNull();
+      expect(document.querySelector('.memory-flash-banner')).not.toBeNull();
+    });
+
+    it('does not apply Memory Flash flair to ordinary events', () => {
+      render(<EventDialog event={{ event_id: 'e9', name: 'Lever', output_text: 'A lever.', needs_input: false }} onClose={mockOnClose} onSubmitInput={mockOnSubmitInput} />);
+      expect(document.querySelector('.memory-flash-frame')).toBeNull();
+    });
+  });
 });
