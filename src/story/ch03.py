@@ -4,7 +4,7 @@ Chapter 03 events
 
 from src.events import Event, dialogue
 from src.functions import print_slow
-from narration import colored, narrate
+from src.narration import colored, narrate
 import time
 
 

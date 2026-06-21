@@ -2,7 +2,7 @@
 
 import traceback
 
-from narration import cprint, narrate
+from src.narration import cprint, narrate
 
 
 class PlayerDebugMixin:

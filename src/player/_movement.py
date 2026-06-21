@@ -5,7 +5,7 @@ import time
 
 import functions  # type: ignore
 from universe import tile_exists as tile_exists
-from narration import colored, cprint, narrate
+from src.narration import colored, cprint, narrate
 
 
 class PlayerMovementMixin:

@@ -18,7 +18,7 @@ from items import Item  # type: ignore
 
 from ._combat import NPCCombatMixin
 from ._loot import NPCLootMixin, loot
-from narration import narrate
+from src.narration import narrate
 
 
 class NPC(NPCCombatMixin, NPCLootMixin, Combatant):

@@ -1,6 +1,6 @@
 """Mastery moves — one per stat. Unlock when the stat exceeds 30 and is the player's highest."""
 
-from narration import colored, cprint, narrate
+from src.narration import colored, cprint, narrate
 import random
 import states
 import functions

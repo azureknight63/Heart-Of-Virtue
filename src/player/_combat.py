@@ -4,7 +4,7 @@ import random
 import time
 
 import functions  # type: ignore
-from narration import cprint, narrate
+from src.narration import cprint, narrate
 
 
 class PlayerCombatMixin:

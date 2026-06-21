@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Final
 from src.scenario_config import ScenarioConfig
 from src.coordinate_config import CoordinateSystemConfig
-from narration import narrate
+from src.narration import narrate
 
 RESOURCES_DIR: Final = Path(__file__).parent / "resources"
 

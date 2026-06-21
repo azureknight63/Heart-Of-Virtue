@@ -40,7 +40,7 @@ from ._friends import (  # noqa: F401
 )
 from ._merchants import JamboHealsU, MiloCurioDealer, Merchant  # noqa: F401
 
-from narration import narrate
+from src.narration import narrate
 
 
 # Arena tile coordinates (map-tile coordinates, not combat-grid).

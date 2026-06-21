@@ -22,7 +22,7 @@ from items import (  # type: ignore
 
 from ._base import NPC
 from ._shop import MerchantShopMixin
-from narration import narrate
+from src.narration import narrate
 
 
 class Merchant(NPC, MerchantShopMixin):

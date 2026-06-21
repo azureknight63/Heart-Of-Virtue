@@ -15,7 +15,7 @@ if TYPE_CHECKING:  # only for type hints; avoids runtime circular imports
     from player import Player
     from tiles import MapTile
 
-from narration import colored, cprint, narrate
+from src.narration import colored, cprint, narrate
 from os import listdir
 from os.path import isfile, join
 

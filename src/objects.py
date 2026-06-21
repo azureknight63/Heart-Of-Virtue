@@ -2,7 +2,7 @@ from __future__ import annotations
 import random
 import time
 import states
-from narration import colored, cprint, narrate
+from src.narration import colored, cprint, narrate
 
 import functions as functions
 from player import Player

@@ -21,7 +21,7 @@ import random
 
 import functions  # type: ignore
 import loot_tables  # type: ignore
-from narration import colored, cprint, narrate  # type: ignore
+from src.narration import colored, cprint, narrate  # type: ignore
 # Single Loot instance shared across the package via import
 loot = loot_tables.Loot()
 

@@ -1,6 +1,6 @@
 """Spear weapon moves: KeepAway, Lunge, Impale, ArmorPierce and passive SentinelsVigil."""
 
-from narration import colored, cprint, narrate  # noqa: F401
+from src.narration import colored, cprint, narrate  # noqa: F401
 import random  # noqa: F401
 import math  # noqa: F401
 import states  # noqa: F401

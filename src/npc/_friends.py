@@ -12,7 +12,7 @@ from pathlib import Path
 import functions  # type: ignore
 import genericng  # type: ignore
 import moves  # type: ignore
-from narration import colored, narrate  # type: ignore
+from src.narration import colored, narrate  # type: ignore
 from ._base import Friend
 from ._chat_llm import HumanNPCLLMMixin
 from ._llm import MynxLLMMixin
