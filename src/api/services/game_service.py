@@ -2555,6 +2555,13 @@ class GameService:
                         not hasattr(skill, "learnable_when")
                         or skill.learnable_when(player)
                     )
+
+                    # Stat-gated mastery skills stay hidden entirely until their
+                    # linked stat is dominant — don't show them as a disabled
+                    # option the player can never act on.
+                    if not stat_ok and not is_known:
+                        continue
+
                     category_skills.append(
                         {
                             "name": skill.name,
