@@ -169,15 +169,23 @@ class TheAdjutant(Friend):
         return {"success": True, "level": player.level, "exp": player.exp}
 
     def set_attributes(self, player, attrs):
-        """Set one or more of Jean's base attributes from a {name: value} dict."""
+        """Set one or more of Jean's base attributes from a {name: value} dict.
+
+        Accepts either the bare stat name ("speed") or the "_base" suffixed
+        form ("speed_base") — both are common conventions elsewhere in the
+        API (e.g. level-up allocation), so both must resolve here or callers
+        silently no-op (the value is dropped but the call still reports
+        success).
+        """
         updated = {}
         for attr, value in (attrs or {}).items():
-            if attr not in PLAYER_ATTRS:
+            base_attr = attr[:-5] if attr.endswith("_base") else attr
+            if base_attr not in PLAYER_ATTRS:
                 continue
             v = int(value)
-            setattr(player, attr, v)
-            setattr(player, attr + "_base", v)
-            updated[attr] = v
+            setattr(player, base_attr, v)
+            setattr(player, base_attr + "_base", v)
+            updated[base_attr] = v
         return {"success": True, "updated": updated}
 
     def set_heat(self, player, heat):
