@@ -670,7 +670,11 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
               <button
                 onClick={() => {
                   setActionResult(null)
-                  onBack() // Go back to inventory list
+                  if (combatMode && onClose) {
+                    onClose() // Close entire inventory in combat
+                  } else {
+                    onBack() // Go back to inventory list
+                  }
                 }}
                 style={{
                   padding: '8px 32px',

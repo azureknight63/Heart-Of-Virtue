@@ -82,6 +82,7 @@ export default function InventoryDialog({ items, player, onClose, onRefetch, com
             <ItemDetailDialog
               item={selectedItem}
               player={player}
+              onClose={onClose}
               onBack={() => setSelectedItem(null)}
               onRefetch={onRefetch}
               onItemRemoved={() => setSelectedItem(null)}
