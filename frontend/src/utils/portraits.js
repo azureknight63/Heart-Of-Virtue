@@ -8,7 +8,18 @@
  * immediately without code changes.
  */
 
-export const PLACEHOLDER_PORTRAIT = '/assets/portraits/_placeholder.png'
+/**
+ * Resolve a public-asset path against the Vite base URL. The app is served
+ * under a sub-path (e.g. `/games/HeartOfVirtue/`), so a root-absolute
+ * `/assets/...` would 404 in production. Mirrors AudioContext's getAssetPath.
+ */
+export function assetPath(path) {
+    const base = (import.meta.env.BASE_URL || '/').replace(/\/$/, '')
+    const clean = path.startsWith('/') ? path : `/${path}`
+    return `${base}${clean}`
+}
+
+export const PLACEHOLDER_PORTRAIT = assetPath('/assets/portraits/_placeholder.png')
 
 export const EMOTIONS = ['neutral', 'happy', 'sad', 'angry', 'surprised', 'skeptical']
 
@@ -36,7 +47,7 @@ export function normalizeEmotion(emotion) {
 export function portraitUrl(speaker, emotion) {
     const slug = speakerSlug(speaker)
     if (!slug) return PLACEHOLDER_PORTRAIT
-    return `/assets/portraits/${slug}/${normalizeEmotion(emotion)}.png`
+    return assetPath(`/assets/portraits/${slug}/${normalizeEmotion(emotion)}.png`)
 }
 
 /** Shared `onError` handler: swap a failed portrait to the placeholder once. */
