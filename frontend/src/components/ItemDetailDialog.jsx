@@ -46,7 +46,7 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
         setActionMessage(`✓ ${item.name} used on ${ally.name}!`)
         setActionResult({
           message: (
-            <div style={{ whiteSpace: 'pre-wrap', textAlign: 'left', fontSize: '14px', fontFamily: 'monospace' }}>
+            <div style={{ whiteSpace: 'pre-wrap', textAlign: 'center', fontSize: '14px', fontFamily: 'monospace' }}>
               <strong>{player?.name || 'Player'}</strong> used <span style={{ color: '#ffff00' }}>{item.name}</span> on <strong>{ally.name}</strong>.{data.message ? `\n\n${data.message}` : ''}
             </div>
           )
