@@ -3,6 +3,49 @@ import apiClient from '../api/client'
 import { player as playerApi } from '../api/endpoints'
 import BookReaderDialog from './BookReaderDialog'
 
+// Display labels for the scalar stat-bonus keys the backend emits (see
+// inventory.py's _BONUS_ATTRS) — keep in sync if new bonus stats are added.
+const BONUS_STAT_LABELS = {
+  strength: 'STR',
+  finesse: 'FIN',
+  maxhp: 'Max HP',
+  maxfatigue: 'Max Fatigue',
+  speed: 'SPD',
+  endurance: 'END',
+  charisma: 'CHA',
+  intelligence: 'INT',
+  faith: 'FTH',
+  weight_tolerance: 'Weight Tolerance',
+}
+
+// Equip-comparison recommendation styling (see inventory.py's ItemComparisonSerializer)
+const REC_COLORS = { upgrade: '#00ff88', downgrade: '#ff6666', sidegrade: '#ffcc00' }
+const REC_LABELS = { upgrade: '↑ UPGRADE', downgrade: '↓ DOWNGRADE', sidegrade: '↔ SIDEGRADE' }
+
+const capitalize = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s)
+const formatSigned = (value) => `${value >= 0 ? '+' : ''}${value}`
+const formatSignedPercent = (value) => `${value >= 0 ? '+' : ''}${Math.round(value * 100)}%`
+
+// Describes a single consumable effect descriptor (see inventory.py's
+// _CONSUMABLE_EFFECTS) without per-target context, for the main item panel.
+function describeEffect(effect) {
+  switch (effect.type) {
+    case 'heal': {
+      const statLabel = effect.stat === 'hp' ? 'HP' : 'Fatigue'
+      const [min, max] = effect.range || [effect.power, effect.power]
+      return min === max ? `Restores ${min} ${statLabel}` : `Restores ${min}-${max} ${statLabel}`
+    }
+    case 'status_remove':
+      return `Cures ${effect.status_name}`
+    case 'status_apply':
+      return `Inflicts ${effect.status_name} for ${effect.duration} beats`
+    case 'attr_buff':
+      return `${formatSigned(effect.amount)} ${effect.label || effect.stat?.toUpperCase()} for ${effect.duration} beats`
+    default:
+      return null
+  }
+}
+
 export default function ItemDetailDialog({ item, player, onClose, onBack, onRefetch, onItemRemoved, onItemUpdated, combatMode = false }) {
   const [isLoading, setIsLoading] = useState(false)
   const [actionMessage, setActionMessage] = useState('')
@@ -320,6 +363,38 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
             </div>
           )}
 
+          {/* Damage Property (weapons) */}
+          {typeof item.damage === 'number' && (
+            <div style={{
+              backgroundColor: 'rgba(30, 15, 0, 0.6)',
+              padding: '6px',
+              textAlign: 'center',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'center',
+            }}>
+              <div style={{ color: '#ffaa00', fontWeight: 'bold', fontSize: '13px', marginBottom: '3px' }}>Damage</div>
+              <div style={{ color: '#ff8866', fontSize: '14px' }}>
+                ⚔️ {item.damage}{item.damage_type ? ` (${capitalize(item.damage_type)})` : ''}
+              </div>
+            </div>
+          )}
+
+          {/* Protection Property (armor) */}
+          {typeof item.protection === 'number' && (
+            <div style={{
+              backgroundColor: 'rgba(30, 15, 0, 0.6)',
+              padding: '6px',
+              textAlign: 'center',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'center',
+            }}>
+              <div style={{ color: '#ffaa00', fontWeight: 'bold', fontSize: '13px', marginBottom: '3px' }}>Protection</div>
+              <div style={{ color: '#88ccff', fontSize: '14px' }}>🛡️ {item.protection}</div>
+            </div>
+          )}
+
           {/* Weight Property */}
           <div style={{
             backgroundColor: 'rgba(30, 15, 0, 0.6)',
@@ -377,6 +452,113 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
           )}
 
         </div>
+
+        {/* Comparison vs. currently equipped item in the same slot */}
+        {item.comparison && (
+          <div style={{
+            backgroundColor: 'rgba(30, 15, 0, 0.6)',
+            border: `1px solid ${REC_COLORS[item.comparison.recommendation] || '#664400'}`,
+            borderRadius: '4px',
+            padding: '8px 10px',
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+              <span style={{ color: '#ffaa00', fontWeight: 'bold', fontSize: '13px', textTransform: 'uppercase' }}>
+                vs. Equipped{item.comparison.current ? `: ${item.comparison.current.name}` : ''}
+              </span>
+              <span style={{ color: REC_COLORS[item.comparison.recommendation] || '#ffee99', fontWeight: 'bold', fontSize: '12px' }}>
+                {REC_LABELS[item.comparison.recommendation] || item.comparison.recommendation}
+              </span>
+            </div>
+            {item.comparison.reason && (
+              <div style={{ color: '#ffee99', fontSize: '13px', marginBottom: item.comparison.differences ? '8px' : 0 }}>
+                {item.comparison.reason}
+              </div>
+            )}
+            {item.comparison.differences && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                <DiffChip label="DMG" value={item.comparison.differences.damage_diff} />
+                <DiffChip label="DEF" value={item.comparison.differences.protection_diff} />
+                <DiffChip label="WT" value={item.comparison.differences.weight_diff} invert />
+                <DiffChip label="VAL" value={item.comparison.differences.value_diff} suffix="g" />
+                {Object.entries(item.comparison.differences.bonus_diffs || {}).map(([stat, diff]) => (
+                  <DiffChip key={`bonus-${stat}`} label={BONUS_STAT_LABELS[stat] || capitalize(stat)} value={diff} />
+                ))}
+                {Object.entries(item.comparison.differences.resistance_diffs || {}).map(([type, diff]) => (
+                  <DiffChip key={`res-${type}`} label={`${capitalize(type)} Res`} value={diff} percent />
+                ))}
+                {Object.entries(item.comparison.differences.status_resistance_diffs || {}).map(([type, diff]) => (
+                  <DiffChip key={`sres-${type}`} label={`${capitalize(type)} Resist`} value={diff} percent />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Consumable Effects */}
+        {item.effects && item.effects.length > 0 && (
+          <div style={{
+            backgroundColor: 'rgba(30, 15, 0, 0.6)',
+            border: '1px solid #664400',
+            borderRadius: '4px',
+            padding: '8px 10px',
+          }}>
+            <div style={{ color: '#ffaa00', fontWeight: 'bold', fontSize: '13px', textTransform: 'uppercase', marginBottom: '6px' }}>
+              Effects
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              {item.effects.map((effect, i) => {
+                const text = describeEffect(effect)
+                return text ? (
+                  <div key={i} style={{ color: '#aaffcc', fontSize: '13px' }}>
+                    ✦ {text}
+                  </div>
+                ) : null
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Stat Bonuses */}
+        {item.bonuses && Object.keys(item.bonuses).length > 0 && (
+          <div style={{
+            backgroundColor: 'rgba(30, 15, 0, 0.6)',
+            border: '1px solid #664400',
+            borderRadius: '4px',
+            padding: '8px 10px',
+          }}>
+            <div style={{ color: '#ffaa00', fontWeight: 'bold', fontSize: '13px', textTransform: 'uppercase', marginBottom: '6px' }}>
+              Bonuses
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+              {Object.entries(item.bonuses).map(([stat, value]) => (
+                <DiffChip key={stat} label={BONUS_STAT_LABELS[stat] || capitalize(stat)} value={value} />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Resistances (damage + status) */}
+        {((item.resistances && Object.keys(item.resistances).length > 0) ||
+          (item.status_resistances && Object.keys(item.status_resistances).length > 0)) && (
+          <div style={{
+            backgroundColor: 'rgba(30, 15, 0, 0.6)',
+            border: '1px solid #664400',
+            borderRadius: '4px',
+            padding: '8px 10px',
+          }}>
+            <div style={{ color: '#ffaa00', fontWeight: 'bold', fontSize: '13px', textTransform: 'uppercase', marginBottom: '6px' }}>
+              Resistances
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+              {Object.entries(item.resistances || {}).map(([type, value]) => (
+                <DiffChip key={`res-${type}`} label={`${type.toUpperCase()} Res`} value={value} percent />
+              ))}
+              {Object.entries(item.status_resistances || {}).map(([type, value]) => (
+                <DiffChip key={`sres-${type}`} label={`${capitalize(type)} Resist`} value={value} percent />
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Equipped Status — outside the grid to avoid auto-fit column count distortion */}
         {item.is_equipped && (
@@ -1019,5 +1201,31 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
         />
       )}
     </div>
+  )
+}
+
+// Renders a labeled signed value (stat bonus, resistance, or equip-comparison
+// diff). `invert` flips the good/bad color (e.g. weight: lower is better).
+function DiffChip({ label, value, suffix = '', invert = false, percent = false }) {
+  if (!value) return null
+  const isGood = invert ? value < 0 : value > 0
+  const color = isGood ? '#00ff88' : '#ff6666'
+  const displayValue = percent ? formatSignedPercent(value) : formatSigned(value)
+  return (
+    <span style={{
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: '3px',
+      padding: '2px 7px',
+      borderRadius: '3px',
+      fontSize: '11px',
+      fontWeight: 'bold',
+      fontFamily: 'monospace',
+      border: `1px solid ${color}66`,
+      backgroundColor: `${color}1a`,
+      color,
+    }}>
+      {label} {displayValue}{suffix}
+    </span>
   )
 }
