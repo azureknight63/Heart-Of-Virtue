@@ -71,6 +71,7 @@ class MockArmor(MockItem):
     def __init__(self, name="Leather Armor", armor=5, **kwargs):
         super().__init__(name=name, **kwargs)
         self.armor = armor
+        self.protection = armor
         self.stat_bonuses = {"defense": 3}
         self.resistance_bonuses = {"piercing": 0.8}
 
@@ -324,7 +325,7 @@ class TestItemDetailSerializer:
         item = MockItem()
         result = ItemDetailSerializer.serialize(item)
 
-        assert result["stats"]["armor"] == 0
+        assert result["stats"]["protection"] == 0
         assert result["stats"]["damage"] == 0
         assert result["bonuses"]["stat_bonuses"] == {}
 
@@ -384,7 +385,7 @@ class TestItemComparisonSerializer:
 
         result = ItemComparisonSerializer.serialize(current, candidate)
 
-        assert result["differences"]["armor_diff"] == 7
+        assert result["differences"]["protection_diff"] == 7
         assert result["recommendation"] == "upgrade"
 
 
