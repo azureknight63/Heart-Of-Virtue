@@ -10,7 +10,7 @@ from .reporter import BugReport, BugSeverity, BugCategory
 # Stored with forward slashes; the traceback's backslashes are normalized before
 # matching (see classify), so Windows frames like src\moves\_sword.py match too.
 _ENGINE_PATHS = {
-    "src/combatant.py", "src/combat_adapter.py",
+    "src/combatant.py", "combat_adapter.py",
     "src/moves", "src/states.py", "src/player",
     "src/npc", "src/universe.py", "src/items.py",
 }
