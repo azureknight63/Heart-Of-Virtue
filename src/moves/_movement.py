@@ -966,6 +966,7 @@ class QuickSwap(Move):
             target=target,
             user=user,
         )
+        self.accepts_ally_target = True
         self.evaluate()
 
     def viable(self):
@@ -1041,12 +1042,18 @@ class QuickSwap(Move):
         """Execute the position swap with selected ally."""
         nearby_allies = self._get_nearby_allies()
 
-        if not nearby_allies:
-            cprint(f"{user.name} couldn't find an ally to swap with!", "red")
-            return
-
-        # For single ally, use that one; for multiple, first viable
-        target_ally = nearby_allies[0]
+        # Check if a target was selected and validate it's still nearby
+        if self.target:
+            if self.target not in nearby_allies:
+                # Target is no longer nearby (moved away or died)
+                raise ValueError(f"Selected ally is no longer within swapping range")
+            target_ally = self.target
+        else:
+            # No target explicitly selected - use first nearby ally (legacy behavior)
+            if not nearby_allies:
+                cprint(f"{user.name} couldn't find an ally to swap with!", "red")
+                return
+            target_ally = nearby_allies[0]
 
         try:
             # Swap using coordinate system if available
