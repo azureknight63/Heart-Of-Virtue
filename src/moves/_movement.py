@@ -1048,7 +1048,7 @@ class QuickSwap(Move):
         if self.target and self.target is not user:
             if self.target not in nearby_allies:
                 # Target is no longer nearby (moved away or died)
-                raise ValueError(f"Selected ally is no longer within swapping range")
+                raise ValueError("Selected ally is no longer within swapping range")
             target_ally = self.target
         else:
             # No target explicitly selected (or target is user) - use first nearby ally
