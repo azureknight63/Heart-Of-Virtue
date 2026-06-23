@@ -49,7 +49,6 @@ class Dodge(Move):
             self.fatigue_cost = 10
 
     def execute(self, user):
-        # print("######{}: I'm in the execute stage now".format(self.name)) #debug message
         narrate(self.stage_announce[1])
         for state in self.user.states:  # remove any other instances of Dodging
             if isinstance(state, states.Dodging):
@@ -65,9 +64,7 @@ class Parry(Move):
         execute = 1
         recoil = 5
         cooldown = 2
-        fatigue_cost = 0
-        if fatigue_cost <= 10:
-            fatigue_cost = 10
+        fatigue_cost = 0  # placeholder; self.evaluate() sets the real cost below
         super().__init__(
             name="Parry",
             description=description,
@@ -112,7 +109,6 @@ class Parry(Move):
             self.fatigue_cost = 10
 
     def execute(self, user):
-        # print("######{}: I'm in the execute stage now".format(self.name)) #debug message
         narrate(self.stage_announce[1])
         self.user.states.append(states.Parrying(user))
         self.user.fatigue -= self.fatigue_cost
@@ -715,7 +711,6 @@ class QuietMovement(Move):
         pass
 
     def execute(self, user):
-        # print("######{}: I'm in the execute stage now".format(self.name)) #debug message
         pass
 
     def viable(self):

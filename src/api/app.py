@@ -335,7 +335,7 @@ def create_app(config_class=None):
         def test_heal_player():
             """Restore player to full HP and fatigue. Test mode only — never active in production."""
             from flask import jsonify, request as _req
-            from src.api.middleware.auth import get_session_and_player
+            from src.api.routes.debug import get_session_and_player
 
             session_manager, session, player, error = get_session_and_player(_req)
             if error:

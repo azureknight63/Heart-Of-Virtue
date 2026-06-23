@@ -205,19 +205,12 @@ class ShootBow(
             cooldown = 0
         fatigue_cost = max(10, int(math.ceil(100 - (2 * self.user.endurance))))
         fatigue_cost = _apply_carry_fatigue(self.user, fatigue_cost)
-        # effective_range = self.user.eq_weapon.range_base + (100 / self.user.eq_weapon.range_decay)
-        # weapon_name = self.user.eq_weapon.name
-        # self.stage_announce[1] = colored("Jean lets his " + weapon_name + " fly!", "green")
-        # ^^^ TBD when arrow is selected
         self.power = power
         self.stage_beat = [prep, execute, recoil, cooldown]
         self.fatigue_cost = fatigue_cost
-        # self.mvrange = (6, effective_range)
         # Only set base_damage_type if arrow is available
         if hasattr(self, "arrow") and self.arrow:
             self.base_damage_type = items.get_base_damage_type(self.arrow)
-        # self.base_range = self.user.eq_weapon.range_base
-        # self.decay = self.user.eq_weapon.range_decay
 
     def execute(self, player):
         glance = False  # switch for determining a glancing blow
@@ -240,13 +233,6 @@ class ShootBow(
         )
         range_max = effective_range
         target_distance = player.combat_proximity[self.target]
-        # close_range_distraction = 0  # all enemies will be checked;
-        # # if any are closer than the weapon's min range, accuracy is halved
-        # for e, dist in self.user.combat_proximity.items():
-        #     if e != self.user:
-        #         if dist < range_min:
-        #             close_range_distraction = 1
-        #             break
         if (
             range_min <= target_distance <= range_max
         ):  # check if target is still in range

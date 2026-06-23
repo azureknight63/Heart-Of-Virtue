@@ -2183,9 +2183,6 @@ class GameService:
             }
             return adapter.process_command(command)
 
-        elif move_type == "flee":
-            return self.flee_combat(player)
-
         else:
             return {"error": f"Unknown move type: {move_type}"}
 
