@@ -250,6 +250,119 @@ class TestBowAndArrows:
         assert self.player.fatigue >= shoot_bow.fatigue_cost, f"Player has enough fatigue - Player fatigue: {self.player.fatigue}, Cost: {shoot_bow.fatigue_cost}"
 
 
+class TestShootMovesAlwaysKnown:
+    """Regression tests for GitHub issue #238: Attack covers the player swinging
+    a bow/crossbow at an enemy, while ShootBow/ShootCrossbow cover firing
+    projectiles. Both must always be known by default and gated only by
+    viable() (weapon equipped + ammo present + target in range) — not by a
+    skilltree purchase.
+    """
+
+    def test_shoot_bow_and_crossbow_known_by_default(self):
+        """A fresh Player should know ShootBow and ShootCrossbow without learning them."""
+        player = Player()
+
+        # Engine modules (e.g. src/player) import moves via bare `import moves`,
+        # while tests import via `from src.moves import ...` — these resolve to
+        # distinct module objects, so isinstance() can't be relied on here.
+        # Match by class name instead (same workaround used in test_learn_all_skills.py).
+        assert any(m.__class__.__name__ == "ShootBow" for m in player.known_moves), \
+            "ShootBow should be in known_moves by default"
+        assert any(m.__class__.__name__ == "ShootCrossbow" for m in player.known_moves), \
+            "ShootCrossbow should be in known_moves by default"
+
+    def test_shoot_crossbow_not_purchasable_in_skilltree(self):
+        """ShootCrossbow must not appear as a purchasable Crossbow skill anymore."""
+        player = Player()
+
+        crossbow_skills = player.skilltree.subtypes["Crossbow"]
+        assert not any(skill.__class__.__name__ == "ShootCrossbow" for skill in crossbow_skills), \
+            "ShootCrossbow should no longer be purchasable via the skilltree"
+
+    def test_shoot_bow_not_in_bow_skilltree(self):
+        """ShootBow has never been (and should not become) a purchasable Bow skill."""
+        player = Player()
+
+        bow_skills = player.skilltree.subtypes["Bow"]
+        assert not any(skill.__class__.__name__ == "ShootBow" for skill in bow_skills), \
+            "ShootBow should not be purchasable via the skilltree"
+
+    def test_shoot_bow_from_known_moves_is_viable_with_bow_and_arrows(self):
+        """The default-known ShootBow instance should become viable once a bow
+        is equipped, arrows are carried, and an enemy is in range."""
+        player = Player()
+        player.combat_position = CombatPosition(x=15, y=25, facing=Direction.E)
+        player.combat_proximity = {}
+
+        shoot_bow = next(m for m in player.known_moves if m.__class__.__name__ == "ShootBow")
+
+        # Unarmed: not viable yet
+        assert not shoot_bow.viable()
+
+        player.eq_weapon = Longbow()
+        arrow = WoodenArrow()
+        arrow.count = 20
+        player.inventory.append(arrow)
+
+        enemy = NPC(
+            name="Target",
+            description="A test target",
+            damage=10,
+            aggro=True,
+            exp_award=50,
+            maxhp=100,
+            finesse=5,
+        )
+        enemy.hp = 100
+        enemy.is_alive = lambda: enemy.hp > 0
+        enemy.combat_position = CombatPosition(x=25, y=25, facing=Direction.W)
+        player.combat_proximity[enemy] = 10
+
+        assert shoot_bow.viable(), "ShootBow should be viable with a bow, arrows, and a target in range"
+
+    def test_shoot_crossbow_from_known_moves_is_viable_with_crossbow(self):
+        """The default-known ShootCrossbow instance should become viable once a
+        crossbow is equipped and an enemy is in range."""
+        from src.items import Crossbow as CrossbowWeapon
+
+        player = Player()
+        player.combat_proximity = {}
+
+        shoot_crossbow = next(m for m in player.known_moves if m.__class__.__name__ == "ShootCrossbow")
+
+        # Unarmed: not viable yet
+        assert not shoot_crossbow.viable()
+
+        player.eq_weapon = CrossbowWeapon()
+        # NOTE: the real Crossbow item never sets wpnrange (only the unused
+        # range_base/range_decay pair), so it inherits the Weapon base class's
+        # melee default of (0, 5) — a separate, pre-existing bug from this
+        # issue. Set it explicitly here so this test exercises ShootCrossbow's
+        # acquisition fix in isolation, not that unrelated item-stat bug.
+        player.eq_weapon.wpnrange = (6, 40)
+        # In real combat, combat_adapter calls advance()/evaluate() on every known
+        # move every beat, which refreshes cached fields like mvrange from the
+        # newly-equipped weapon. Mirror that refresh here rather than relying on
+        # the stale mvrange captured at Player() construction time (when Fists
+        # was equipped).
+        shoot_crossbow.evaluate()
+
+        enemy = NPC(
+            name="Target",
+            description="A test target",
+            damage=10,
+            aggro=True,
+            exp_award=50,
+            maxhp=100,
+            finesse=5,
+        )
+        enemy.hp = 100
+        enemy.is_alive = lambda: enemy.hp > 0
+        player.combat_proximity[enemy] = 15
+
+        assert shoot_crossbow.viable(), "ShootCrossbow should be viable with a crossbow and a target in range"
+
+
 class TestSpecialAbilities:
     """Test suite for special abilities with coordinate system."""
 
