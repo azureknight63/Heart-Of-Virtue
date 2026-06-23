@@ -1043,13 +1043,15 @@ class QuickSwap(Move):
         nearby_allies = self._get_nearby_allies()
 
         # Check if a target was selected and validate it's still nearby
-        if self.target:
+        # (only validate if target is not the user itself — the user might be set
+        # as default target in __init__, but real selection happens from nearby_allies)
+        if self.target and self.target is not user:
             if self.target not in nearby_allies:
                 # Target is no longer nearby (moved away or died)
                 raise ValueError(f"Selected ally is no longer within swapping range")
             target_ally = self.target
         else:
-            # No target explicitly selected - use first nearby ally (legacy behavior)
+            # No target explicitly selected (or target is user) - use first nearby ally
             if not nearby_allies:
                 cprint(f"{user.name} couldn't find an ally to swap with!", "red")
                 return
