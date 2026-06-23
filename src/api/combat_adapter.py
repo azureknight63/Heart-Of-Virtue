@@ -1998,11 +1998,13 @@ class ApiCombatAdapter:
             # Default to adjacent if no range specified but targeted
             range_min, range_max = 0, 5
 
-        # Special handling for bow
-        if move.name == "Shoot Bow" and self.player.eq_weapon:
-            range_max = self.player.eq_weapon.range_base + (
-                100 / self.player.eq_weapon.range_decay
-            )
+        # Moves that compute their range dynamically (e.g. ranged weapons
+        # whose effective range extends past their melee wpnrange via
+        # range_base/range_decay) override get_effective_range_max() —
+        # see Move.get_effective_range_max in src/moves/_base.py.
+        effective_max = move.get_effective_range_max(self.player)
+        if effective_max is not None:
+            range_max = effective_max
 
         # Iterate over combat_list instead of combat_proximity to ensure we use the correct enemy instances
         for enemy in self.player.combat_list:

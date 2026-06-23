@@ -334,17 +334,16 @@ class TestShootMovesAlwaysKnown:
         assert not shoot_crossbow.viable()
 
         player.eq_weapon = CrossbowWeapon()
-        # NOTE: the real Crossbow item never sets wpnrange (only the unused
-        # range_base/range_decay pair), so it inherits the Weapon base class's
-        # melee default of (0, 5) — a separate, pre-existing bug from this
-        # issue. Set it explicitly here so this test exercises ShootCrossbow's
-        # acquisition fix in isolation, not that unrelated item-stat bug.
-        player.eq_weapon.wpnrange = (6, 40)
-        # In real combat, combat_adapter calls advance()/evaluate() on every known
-        # move every beat, which refreshes cached fields like mvrange from the
-        # newly-equipped weapon. Mirror that refresh here rather than relying on
-        # the stale mvrange captured at Player() construction time (when Fists
-        # was equipped).
+        # Crossbow.wpnrange stays at the Weapon base class's melee default of
+        # (0, 5) — that's correct, since Attack (swinging the crossbow) uses
+        # wpnrange. ShootCrossbow's own range comes from the weapon's
+        # range_base/range_decay instead (mirroring ShootBow), so no wpnrange
+        # override is needed here.
+        # In real combat, combat_adapter calls advance()/evaluate() on every
+        # known move every beat, which refreshes cached fields like
+        # power/fatigue_cost from the newly-equipped weapon. Mirror that
+        # refresh here rather than relying on the stale values captured at
+        # Player() construction time (when Fists was equipped).
         shoot_crossbow.evaluate()
 
         enemy = NPC(
@@ -361,6 +360,88 @@ class TestShootMovesAlwaysKnown:
         player.combat_proximity[enemy] = 15
 
         assert shoot_crossbow.viable(), "ShootCrossbow should be viable with a crossbow and a target in range"
+
+    def test_attack_stays_melee_range_while_shoot_bow_reaches_long_range(self):
+        """Attack (swinging the bow) stays melee-range (wpnrange=(0,5)),
+        while ShootBow (firing an arrow) reaches its effective long range
+        via range_base/range_decay — same target, same weapon."""
+        player = Player()
+        player.combat_position = CombatPosition(x=15, y=25, facing=Direction.E)
+        player.combat_proximity = {}
+        player.eq_weapon = Longbow()
+        arrow = WoodenArrow()
+        arrow.count = 20
+        player.inventory.append(arrow)
+
+        attack = next(
+            m for m in player.known_moves if m.__class__.__name__ == "Attack"
+        )
+        shoot_bow = next(
+            m for m in player.known_moves if m.__class__.__name__ == "ShootBow"
+        )
+        attack.evaluate()
+
+        enemy = NPC(
+            name="Distant Target",
+            description="A test target",
+            damage=10,
+            aggro=True,
+            exp_award=50,
+            maxhp=100,
+            finesse=5,
+        )
+        enemy.hp = 100
+        enemy.is_alive = lambda: enemy.hp > 0
+        enemy.combat_position = CombatPosition(x=45, y=25, facing=Direction.W)
+        # past melee wpnrange, well within the bow's long range
+        player.combat_proximity[enemy] = 30
+
+        assert not attack.viable(), "Attack should stay melee-range and miss"
+        assert (
+            shoot_bow.viable()
+        ), "ShootBow should reach a target via range_base/range_decay"
+
+    def test_attack_stays_melee_range_while_shoot_crossbow_reaches_long_range(
+        self,
+    ):
+        """Attack (swinging the crossbow) stays melee-range (wpnrange=(0,5)),
+        while ShootCrossbow (firing a bolt) reaches its effective long range
+        via range_base/range_decay — same target, same weapon."""
+        from src.items import Crossbow as CrossbowWeapon
+
+        player = Player()
+        player.combat_proximity = {}
+        player.eq_weapon = CrossbowWeapon()
+
+        attack = next(
+            m for m in player.known_moves if m.__class__.__name__ == "Attack"
+        )
+        shoot_crossbow = next(
+            m
+            for m in player.known_moves
+            if m.__class__.__name__ == "ShootCrossbow"
+        )
+        attack.evaluate()
+        shoot_crossbow.evaluate()
+
+        enemy = NPC(
+            name="Distant Target",
+            description="A test target",
+            damage=10,
+            aggro=True,
+            exp_award=50,
+            maxhp=100,
+            finesse=5,
+        )
+        enemy.hp = 100
+        enemy.is_alive = lambda: enemy.hp > 0
+        # past melee wpnrange, well within the crossbow's long range
+        player.combat_proximity[enemy] = 30
+
+        assert not attack.viable(), "Attack should stay melee-range and miss"
+        assert (
+            shoot_crossbow.viable()
+        ), "ShootCrossbow should reach a target via range_base/range_decay"
 
 
 class TestSpecialAbilities:
