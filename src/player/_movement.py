@@ -129,7 +129,7 @@ class PlayerMovementMixin:
                 colored(self.combat_list_allies[1].name, "cyan")
                 + colored(" and ", "green")
                 + colored(self.combat_list_allies[2].name, "cyan")
-                + colored("follow Jean.", "green")
+                + colored(" follow Jean.", "green")
             )
         elif party_size >= 3:
             output = ""
@@ -138,7 +138,7 @@ class PlayerMovementMixin:
                     self.combat_list_allies[friend + 1].name, "cyan"
                 ) + colored(", ", "green")
             output += (
-                colored(", and ", "green")
+                colored("and ", "green")
                 + colored(self.combat_list_allies[party_size].name, "cyan")
                 + colored(" follow Jean.", "green")
             )

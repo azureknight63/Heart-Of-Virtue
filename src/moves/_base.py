@@ -174,8 +174,6 @@ class Move:  # master class for all moves
             user.current_move == self or self.current_stage > 0
         ):  # only advance the move if it's the player's
             # current move or if it's already been used (past prep stage)
-            # print("###DEBUG: " + user.name + " " + self.name + " STAGE: " + str(self.current_stage) +
-            #      " BEATS LEFT: " + str(self.beats_left))
             if self.beats_left > 0:
                 self.beats_left -= 1
                 self.beat_update(user)
@@ -207,21 +205,17 @@ class Move:  # master class for all moves
         self, user
     ):  # what happens during these stages. Each move will overwrite prep/execute/recoil/cooldown
         # depending on whether something is supposed to happen at that stage
-        # print("######{}: I'm in the prep stage now".format(self.name)) #debug message
         pass
 
     def execute(self, user):
-        # print("######{}: I'm in the execute stage now".format(self.name)) #debug message
         if self.stage_announce[1] != "":
             narrate(self.stage_announce[1])
 
     def recoil(self):
-        # print("######{}: I'm in the recoil stage now".format(self.name)) #debug message
         if self.stage_announce[2] != "":
             narrate(self.stage_announce[2])
 
     def cooldown(self, user):
-        # print("######{}: I'm in the cooldown stage now".format(self.name)) #debug message
         pass
 
     def evaluate(

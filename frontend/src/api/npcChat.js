@@ -5,7 +5,8 @@ import apiClient from './client'
  * Uses apiClient which automatically handles auth tokens via localStorage.authToken
  */
 
-const BASE = '/api/npc/chat'
+// apiClient already prefixes baseURL ('/api'), so paths here must be relative to it.
+const BASE = '/npc/chat'
 
 const npcChat = {
   /**
