@@ -78,6 +78,13 @@ class Combatant:
         for state in self.states[:]:
             state.process(self)
 
+    def is_stunned(self):
+        """True if any active state blocks move selection for this beat
+        (e.g. WarCryStunned). Checked by combat orchestration, not by
+        select_move() itself, so it applies even to NPC subclasses that
+        override select_move() entirely."""
+        return any(getattr(state, "_stunned", False) for state in self.states)
+
     def get_equipped_items(self):
         """Return all items in inventory that are currently equipped."""
         return [item for item in self.inventory if getattr(item, "isequipped", False)]

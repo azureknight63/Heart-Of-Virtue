@@ -326,7 +326,9 @@ class TestNewStates:
         target = _make_player()
         s = states.WarCryStunned(target)
         assert s._stunned is True
-        assert s.beats_max == 1
+        # beats_max=2 gives 1 effective skip: cycle_states() removes the state
+        # in the same call that runs just before the _stunned check for that beat.
+        assert s.beats_max == 2
 
     def test_secret_plans_state_boosts_stats(self):
         target = _make_player(strength=20, finesse=20, speed=20)

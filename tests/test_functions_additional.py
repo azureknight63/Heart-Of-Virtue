@@ -132,6 +132,24 @@ def test_refresh_stat_bonuses_items_and_states():
     assert player.maxfatigue <= pre_penalty_base + 10  # sanity bound
 
 
+def test_refresh_stat_bonuses_applies_real_disoriented_state():
+    """End-to-end check (no mocks): a real Disoriented state's declarative
+    add_fin bonus actually reduces target.finesse when the unmocked
+    refresh_stat_bonuses sums it, closing the gap left when Disoriented
+    stopped mutating finesse directly."""
+    from src.states import Disoriented
+
+    player = DummyPlayer()
+    player.protection = 20
+    state = Disoriented(player)  # add_fin computed from player.finesse == 10
+    player.states.append(state)
+
+    functions.refresh_stat_bonuses(player)
+
+    assert state.add_fin < 0
+    assert player.finesse == player.finesse_base + state.add_fin
+
+
 # ---------- check_parry ----------
 
 def test_check_parry():
