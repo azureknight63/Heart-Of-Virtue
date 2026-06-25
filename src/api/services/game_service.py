@@ -2393,6 +2393,16 @@ class GameService:
         max_weight = getattr(player, "weight_tolerance", 20.0)
         weight_pct = (weight / max_weight * 100) if max_weight > 0 else 0
 
+        player_states = [
+            {
+                "name": s.name,
+                "status_type": getattr(s, "statustype", "generic"),
+                "beats_left": getattr(s, "beats_left", 0),
+            }
+            for s in getattr(player, "states", [])
+            if not getattr(s, "hidden", False)
+        ]
+
         return {
             "name": getattr(player, "name", "Unknown"),
             "level": getattr(player, "level", 1),
@@ -2411,7 +2421,8 @@ class GameService:
             "weight": weight,
             "max_weight": max_weight,
             "weight_pct": weight_pct,
-            "state": "normal",  # TODO: Get actual status effects
+            "state": player_states[0]["name"] if player_states else "normal",
+            "states": player_states,
             "party_members": [
                 {
                     "id": f"ally_{id(a)}",
