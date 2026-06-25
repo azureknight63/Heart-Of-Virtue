@@ -647,6 +647,28 @@ class WarCryStunned(State):
         self._stunned = True
 
 
+class Staggered(State):
+    """Applied by Heavy Handed passive. Target's next moves have +5 prep beats."""
+
+    def __init__(self, target):
+        super().__init__(
+            name="Staggered",
+            target=target,
+            beats_max=3,
+            compounding=False,
+            combat=True,
+            world=False,
+            statustype="stun",
+            persistent=False,
+            description="Reeling from a heavy blow — next moves are slower.",
+        )
+        self.prep_penalty = 5
+        self.penalty_consumed = False
+
+    def on_application(self, target):
+        cprint(f"{target.name} reels from the heavy blow!", "yellow")
+
+
 class SecretPlansState(State):
     """Applied by Secret Plans. +30% strength, finesse, speed for 25 beats."""
 

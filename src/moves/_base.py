@@ -48,6 +48,22 @@ def _ensure_weapon_exp(user):
         pass
 
 
+def select_weighted_target(candidates):
+    """Pick a random combat target, weighting down targets with Shadow Step.
+
+    Targets with Shadow Step in known_moves get weight 0.5; others get weight 1.0.
+    """
+    if not candidates:
+        return None
+    weights = []
+    for c in candidates:
+        w = 1.0
+        if any(getattr(m, "name", "") == "Shadow Step" for m in getattr(c, "known_moves", [])):
+            w = 0.5
+        weights.append(w)
+    return random.choices(candidates, weights=weights, k=1)[0]
+
+
 default_animations = {
     "p": "None",  # prep
     "e": "None",  # execute
@@ -165,7 +181,29 @@ class Move:  # master class for all moves
             narrate(
                 self.stage_announce[0]
             )  # Print the prep announce message for the move
-        self.beats_left = self.stage_beat[0]
+
+        # CleaveInstinct passive: next move after a kill gets prep=1 (skip zero-beat moves)
+        prep = self.stage_beat[0]
+        if (
+            prep > 0
+            and getattr(self.user, "_cleave_instinct_pending", False)
+            and any(
+                getattr(m, "name", "") == "Cleave Instinct"
+                for m in getattr(self.user, "known_moves", [])
+            )
+        ):
+            prep = 1
+            self.user._cleave_instinct_pending = False
+
+        # Staggered state: add +5 prep beats to caster's next move (consumed after first use)
+        if prep > 0 and isinstance(getattr(self.user, "states", None), list):
+            for state in self.user.states:
+                if getattr(state, "name", "") == "Staggered" and not getattr(state, "penalty_consumed", False):
+                    prep += getattr(state, "prep_penalty", 5)
+                    state.penalty_consumed = True
+                    break
+
+        self.beats_left = prep
 
     def advance(self, user):
         self.user = user  # Ensure user is always current
