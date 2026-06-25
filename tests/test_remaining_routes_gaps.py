@@ -19,7 +19,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from flask import Flask
 
-from src.api.services.game_service import GameService
+from conftest import wire_real_allocate_level_up_points
 
 # ---------------------------------------------------------------------------
 # App fixture helpers
@@ -35,14 +35,7 @@ def _build_app_with_route(blueprint, url_prefix, session_id="sess_abc"):
     sm = MagicMock()
     sm.get_active_session_count.return_value = 0
     gs = MagicMock()
-    # Route through the real implementation so tests that mutate `player`
-    # attributes directly still exercise the actual allocation logic. The
-    # real method calls self.get_player_stats(player) internally, so point
-    # it at the mock's configurable get_player_stats instead of computing
-    # stats for real (which chokes on an unconfigured MagicMock player).
-    _real_gs = GameService()
-    _real_gs.get_player_stats = gs.get_player_stats
-    gs.allocate_level_up_points.side_effect = _real_gs.allocate_level_up_points
+    wire_real_allocate_level_up_points(gs)
 
     session = MagicMock()
     session.session_id = session_id

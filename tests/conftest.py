@@ -174,6 +174,21 @@ def isinstance_by_class_name(obj, *class_names):
 # Actually, don't do this - it might break other code. Users should use the function explicitly.
 
 
+def wire_real_allocate_level_up_points(gs):
+    """
+    Route a mocked GameService's allocate_level_up_points through the real
+    implementation, so tests that mutate `player` attributes directly still
+    exercise the actual allocation logic. The real method calls
+    self.get_player_stats(player) internally, so point it at the mock's
+    configurable get_player_stats instead of computing stats for real (which
+    chokes on an unconfigured MagicMock player).
+    """
+    from src.api.services.game_service import GameService
+    real_gs = GameService()
+    real_gs.get_player_stats = gs.get_player_stats
+    gs.allocate_level_up_points.side_effect = real_gs.allocate_level_up_points
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # NPC and Player Fixtures for Performance Optimization
 # ─────────────────────────────────────────────────────────────────────────────
