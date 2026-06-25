@@ -1,21 +1,18 @@
 """Phase 3 supplemental read-endpoint checks.
 
-Covers the remaining read endpoints from the reputation, npc_availability,
-and dialogue_context blueprints that weren't probed by the original phase3
-scenario.  All checks use _check_no_crash — any non-5xx is acceptable.
+Covers the remaining read endpoints from the reputation blueprint that
+weren't probed by the original phase3 scenario.  All checks use
+_check_no_crash — any non-5xx is acceptable.
 
 Endpoints covered:
-  GET  /api/locations/<id>/npcs                  (npc_availability_bp)
-  GET  /api/npcs/<id>/timeline                   (npc_availability_bp)
-  POST /api/npcs/<id>/check-availability         (npc_availability_bp)
-  POST /api/npcs/<id>/location                   (npc_availability_bp — bad body)
-  GET  /api/npc/<id>/dialogue/available          (dialogue_context_bp)
-  POST /api/dialogue/start                       (dialogue_context_bp — missing fields)
-  POST /api/dialogue/select                      (dialogue_context_bp — missing fields)
   GET  /api/reputation/dialogue/<npc>/<node>     (reputation_bp)
   GET  /api/reputation/quest/<npc>/<type>        (reputation_bp)
   PUT  /api/reputation/npc/<id>                  (reputation_bp)
-  GET  /api/npc/quests/<id>/status               (npc_bp)
+  POST /api/reputation/npc/<id>/flag/<flag>      (reputation_bp)
+
+Note: the npc_availability_bp and dialogue_context_bp blueprints (and the
+npc_bp quest-status route) were removed as dead/mocked endpoints (#236) —
+do not re-add probes for them here.
 """
 
 from typing import List
@@ -36,81 +33,6 @@ class Phase3ReadsScenario(Scenario):
 
     def run(self, client: GameClient) -> List[BugReport]:
         bugs = []
-
-        # ------------------------------------------------------------------
-        # NPC availability — untested endpoints
-        # ------------------------------------------------------------------
-
-        # GET /api/locations/<id>/npcs
-        resp = client.get(f"/api/locations/{_BAD_ID}/npcs")
-        bug = self._check_no_crash(resp, f"/api/locations/{_BAD_ID}/npcs", "GET",
-                                   "Get NPCs at unknown location")
-        if bug:
-            bugs.append(bug)
-
-        # GET /api/npcs/<id>/timeline
-        resp = client.get(f"/api/npcs/{_BAD_ID}/timeline")
-        bug = self._check_no_crash(resp, f"/api/npcs/{_BAD_ID}/timeline", "GET",
-                                   "Get timeline for unknown NPC")
-        if bug:
-            bugs.append(bug)
-
-        # POST /api/npcs/<id>/check-availability — empty body
-        resp = client.post(f"/api/npcs/{_BAD_ID}/check-availability", json={})
-        bug = self._check_no_crash(resp, f"/api/npcs/{_BAD_ID}/check-availability", "POST",
-                                   "Check availability of unknown NPC")
-        if bug:
-            bugs.append(bug)
-
-        # POST /api/npcs/<id>/location — missing new_location_id
-        resp = client.post(f"/api/npcs/{_BAD_ID}/location", json={})
-        bug = self._check_no_crash(resp, f"/api/npcs/{_BAD_ID}/location", "POST",
-                                   "Update location of unknown NPC with no body")
-        if bug:
-            bugs.append(bug)
-
-        # ------------------------------------------------------------------
-        # Dialogue context — untested endpoints
-        # ------------------------------------------------------------------
-
-        # GET /api/npc/<id>/dialogue/available
-        resp = client.get(f"/api/npc/{_BAD_ID}/dialogue/available")
-        bug = self._check_no_crash(resp, f"/api/npc/{_BAD_ID}/dialogue/available", "GET",
-                                   "Get available dialogues for unknown NPC")
-        if bug:
-            bugs.append(bug)
-
-        # POST /api/dialogue/start — missing required fields
-        resp = client.post("/api/dialogue/start", json={})
-        bug = self._check_no_crash(resp, "/api/dialogue/start", "POST",
-                                   "Start dialogue with empty body")
-        if bug:
-            bugs.append(bug)
-
-        # POST /api/dialogue/start — valid fields, bad NPC/dialogue ID
-        body = {"npc_id": _BAD_ID, "dialogue_id": _BAD_ID}
-        resp = client.post("/api/dialogue/start", json=body)
-        bug = self._check_no_crash(resp, "/api/dialogue/start", "POST",
-                                   "Start dialogue with unknown NPC/dialogue IDs",
-                                   request_body=body)
-        if bug:
-            bugs.append(bug)
-
-        # POST /api/dialogue/select — missing required fields
-        resp = client.post("/api/dialogue/select", json={})
-        bug = self._check_no_crash(resp, "/api/dialogue/select", "POST",
-                                   "Select dialogue choice with empty body")
-        if bug:
-            bugs.append(bug)
-
-        # POST /api/dialogue/select — bad conversation/choice IDs
-        body = {"conversation_id": _BAD_ID, "choice_id": _BAD_ID}
-        resp = client.post("/api/dialogue/select", json=body)
-        bug = self._check_no_crash(resp, "/api/dialogue/select", "POST",
-                                   "Select unknown dialogue choice",
-                                   request_body=body)
-        if bug:
-            bugs.append(bug)
 
         # ------------------------------------------------------------------
         # Reputation — untested endpoints
@@ -146,17 +68,6 @@ class Phase3ReadsScenario(Scenario):
         resp = client.post(f"/api/reputation/npc/{_BAD_ID}/flag/{_BAD_ID}", json={})
         bug = self._check_no_crash(resp, f"/api/reputation/npc/{_BAD_ID}/flag/{_BAD_ID}", "POST",
                                    "Set unknown reputation flag with empty body")
-        if bug:
-            bugs.append(bug)
-
-        # ------------------------------------------------------------------
-        # NPC quest status
-        # ------------------------------------------------------------------
-
-        # GET /api/npc/quests/<id>/status
-        resp = client.get(f"/api/npc/quests/{_BAD_ID}/status")
-        bug = self._check_no_crash(resp, f"/api/npc/quests/{_BAD_ID}/status", "GET",
-                                   "Get status of unknown NPC quest")
         if bug:
             bugs.append(bug)
 

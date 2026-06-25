@@ -43,19 +43,25 @@ describe('NpcChatPanel', () => {
   const mockOpenResponse = {
     data: {
       npc_key: 'npc_session_123',
-      display_name: 'Mynx the Swift',
-      loquacity: { current: 2, max: 5 },
-      current_options: [
+      npc_name: 'Mynx the Swift',
+      npc_opening: 'Well, well, what do we have here?',
+      loquacity_current: 2,
+      loquacity_max: 5,
+      jean_options: [
         { text: 'Hi there', tone: 'curious' },
         { text: 'Leave me alone', tone: 'hostile' },
       ],
-      messages: [
-        {
-          speaker: 'npc',
-          text: 'Well, well, what do we have here?',
-          tone: 'curious',
-        },
-      ],
+      conversation_ended: false,
+      reputation: 0,
+      relationship: {
+        npc_id: 'Mynx the Swift',
+        npc_name: 'Mynx the Swift',
+        reputation: 0,
+        attitude: 'neutral',
+        emoji: '😐',
+        trust_level: 'Neutral',
+        locked_dialogue: false,
+      },
     },
   }
 
@@ -64,9 +70,11 @@ describe('NpcChatPanel', () => {
     npcChat.open.mockResolvedValue(mockOpenResponse)
     npcChat.respond.mockResolvedValue({
       data: {
-        messages: [],
-        current_options: [],
-        loquacity: { current: 0, max: 5 },
+        npc_response: '',
+        jean_options: [],
+        loquacity_current: 0,
+        loquacity_max: 5,
+        conversation_ended: false,
       },
     })
   })
@@ -177,7 +185,7 @@ describe('NpcChatPanel', () => {
       npcChat.open.mockResolvedValue({
         data: {
           ...mockOpenResponse.data,
-          messages: [],
+          npc_opening: null,
         },
       })
 
@@ -292,7 +300,9 @@ describe('NpcChatPanel', () => {
       const updatedResponse = {
         data: {
           ...mockOpenResponse.data,
-          loquacity: { current: 1, max: 5 },
+          npc_response: 'A measured reply.',
+          loquacity_current: 1,
+          loquacity_max: 5,
         },
       }
       npcChat.respond.mockResolvedValue(updatedResponse)
@@ -463,6 +473,91 @@ describe('NpcChatPanel', () => {
       await waitFor(() => {
         expect(npcChat.open).toHaveBeenCalledWith('DifferentNPC')
       })
+    })
+  })
+
+  describe('Relationship Badge', () => {
+    it('displays the relationship badge from the open response', async () => {
+      render(
+        <NpcChatPanel
+          npcId={mockNpcId}
+          npcName={mockNpcName}
+          onClose={mockOnClose}
+        />
+      )
+
+      await waitFor(() => {
+        const badge = screen.getByTestId('relationship-badge')
+        expect(badge).toBeInTheDocument()
+        expect(badge).toHaveTextContent('neutral')
+        expect(badge).toHaveTextContent('Neutral')
+      })
+    })
+
+    it('updates the relationship badge after a response', async () => {
+      npcChat.respond.mockResolvedValue({
+        data: {
+          npc_response: 'I suppose you are not so bad.',
+          jean_options: [],
+          loquacity_current: 1,
+          loquacity_max: 5,
+          conversation_ended: false,
+          relationship: {
+            npc_id: 'Mynx the Swift',
+            npc_name: 'Mynx the Swift',
+            reputation: 30,
+            attitude: 'favorable',
+            emoji: '🙂',
+            trust_level: 'Good Trust',
+            locked_dialogue: false,
+          },
+        },
+      })
+
+      render(
+        <NpcChatPanel
+          npcId={mockNpcId}
+          npcName={mockNpcName}
+          onClose={mockOnClose}
+        />
+      )
+
+      await waitFor(() => {
+        const buttons = screen.getAllByTestId('game-button')
+        expect(buttons.length).toBeGreaterThan(0)
+      })
+
+      const buttons = screen.getAllByTestId('game-button')
+      fireEvent.click(buttons[0])
+
+      await waitFor(() => {
+        const badge = screen.getByTestId('relationship-badge')
+        expect(badge).toHaveTextContent('favorable')
+        expect(badge).toHaveTextContent('Good Trust')
+      })
+    })
+
+    it('omits the badge when no relationship data is present', async () => {
+      npcChat.open.mockResolvedValue({
+        data: {
+          ...mockOpenResponse.data,
+          relationship: undefined,
+        },
+      })
+
+      render(
+        <NpcChatPanel
+          npcId={mockNpcId}
+          npcName={mockNpcName}
+          onClose={mockOnClose}
+        />
+      )
+
+      await waitFor(() => {
+        expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
+      })
+
+      expect(screen.queryByTestId('relationship-badge')).not.toBeInTheDocument()
     })
   })
 })

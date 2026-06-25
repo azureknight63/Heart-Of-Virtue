@@ -112,115 +112,6 @@ def mock_tile():
     return tile
 
 
-class TestQuestSystem:
-    """Test quest-related methods."""
-
-    def test_get_active_quests_empty(self, game_service, mock_player):
-        """Test getting active quests when none exist."""
-        result = game_service.get_active_quests(mock_player)
-        assert result["success"] is True
-        assert result["count"] == 0
-        assert isinstance(result["quests"], list)
-
-    def test_get_active_quests_with_quests(self, game_service, mock_player):
-        """Test getting active quests with multiple quests."""
-        quest1 = {"id": "q1", "title": "Find the Key", "objectives": []}
-        quest2 = {"id": "q2", "title": "Defeat Boss", "objectives": []}
-        mock_player.active_quests = [quest1, quest2]
-
-        result = game_service.get_active_quests(mock_player)
-        assert result["success"] is True
-        assert result["count"] == 2
-
-    def test_start_quest_success(self, game_service, mock_player):
-        """Test starting a quest from available quests."""
-        available_quest = {"id": "q1", "title": "Find the Key"}
-        mock_player.available_quests = [available_quest]
-        mock_player.active_quests = []
-
-        result = game_service.start_quest(mock_player, "q1")
-        assert result["success"] is True
-        assert "Find the Key" in result["message"]
-        assert available_quest in mock_player.active_quests
-
-    def test_start_quest_not_found(self, game_service, mock_player):
-        """Test starting a quest that doesn't exist."""
-        mock_player.available_quests = []
-
-        result = game_service.start_quest(mock_player, "nonexistent")
-        assert result["success"] is False
-        assert "not found" in result["error"]
-
-    def test_update_quest_progress_success(self, game_service, mock_player):
-        """Test updating quest progress."""
-        quest = {
-            "id": "q1",
-            "title": "Find the Key",
-            "objectives": [
-                {"id": "obj1", "completed": False},
-                {"id": "obj2", "completed": False}
-            ]
-        }
-        mock_player.active_quests = [quest]
-
-        result = game_service.update_quest_progress(mock_player, "q1", "obj1")
-        assert result["success"] is True
-        assert quest["objectives"][0]["completed"] is True
-        assert quest["progress"] == 50
-
-    def test_update_quest_progress_not_found(self, game_service, mock_player):
-        """Test updating progress on non-existent quest."""
-        mock_player.active_quests = []
-
-        result = game_service.update_quest_progress(mock_player, "nonexistent", "obj1")
-        assert result["success"] is False
-
-    def test_get_quest_status_active(self, game_service, mock_player):
-        """Test getting status of active quest."""
-        quest = {"id": "q1", "title": "Find the Key"}
-        mock_player.active_quests = [quest]
-        mock_player.completed_quests = []
-
-        result = game_service.get_quest_status(mock_player, "q1")
-        assert result["success"] is True
-        assert result["status"] == "active"
-
-    def test_get_quest_status_completed(self, game_service, mock_player):
-        """Test getting status of completed quest."""
-        quest = {"id": "q1", "title": "Find the Key"}
-        mock_player.active_quests = []
-        mock_player.completed_quests = [quest]
-
-        result = game_service.get_quest_status(mock_player, "q1")
-        assert result["success"] is True
-        assert result["status"] == "completed"
-
-    def test_get_quest_status_not_found(self, game_service, mock_player):
-        """Test getting status of non-existent quest."""
-        mock_player.active_quests = []
-        mock_player.completed_quests = []
-
-        result = game_service.get_quest_status(mock_player, "nonexistent")
-        assert result["success"] is False
-
-    def test_get_quest_rewards(self, game_service, mock_player):
-        """Test getting quest rewards - skip due to complex mocking."""
-        # Method tested indirectly through quest completion
-        pass
-
-    def test_complete_quest_success(self, game_service, mock_player):
-        """Test completing a quest."""
-        quest = {"id": "q1", "title": "Find the Key", "rewards": {"gold": 100}}
-        mock_player.active_quests = [quest]
-        mock_player.completed_quests = []
-        mock_player.gold = 500
-
-        with patch.object(game_service, '__dict__', {}):
-            result = game_service.complete_quest(mock_player, "q1")
-            # Should move quest to completed
-            assert "success" in result or result is not None
-
-
 class TestNPCInteraction:
     """Test NPC-related methods."""
 
@@ -266,13 +157,6 @@ class TestNPCInteraction:
                 result = game_service.get_npc_dialogue(mock_player, "Gorran")
                 assert "success" in result or result is not None
 
-    def test_get_npc_status(self, game_service, mock_player):
-        """Test getting NPC status."""
-        with patch('src.api.services.game_service.NPCStatusSerializer') as mock_ser:
-            mock_ser.serialize_npc_status.return_value = {"name": "Gorran", "hp": 100}
-            result = game_service.get_npc_status(mock_player, "gorran_id")
-            assert "success" in result or result is not None
-
     def test_get_npc_relationship(self, game_service, mock_player):
         """Test getting NPC relationship status - validates method runs."""
         mock_player.reputation = {"gorran_id": 75}
@@ -302,67 +186,13 @@ class TestNPCInteraction:
             result = game_service.get_npc_behavior_profile(mock_player, "Gorran")
             assert result is not None
 
-    def test_get_npc_status_by_location(self, game_service, mock_player):
-        """Test getting all NPCs at a location."""
-        result = game_service.get_npcs_at_location(mock_player, "location_id")
-        assert result is not None
-
-    def test_update_npc_location(self, game_service, mock_player):
-        """Test updating NPC location - skip complex mocking."""
-        # Requires complex universe interaction
-        pass
-
-    def test_get_npc_timeline(self, game_service, mock_player):
-        """Test getting NPC timeline."""
-        result = game_service.get_npc_timeline(mock_player, "npc_id")
-        assert result is not None
-
-
 class TestDialogueSystem:
     """Test dialogue and conversation methods."""
-
-    def test_start_dialogue(self, game_service, mock_player, mock_tile):
-        """Test starting dialogue with NPC."""
-        npc = MagicMock()
-        npc.name = "Gorran"
-        npc.dialogue_tree = {"start": {"text": "Hello!"}}
-        mock_tile.npcs_here = [npc]
-        mock_player.location_x = mock_tile.x
-        mock_player.location_y = mock_tile.y
-
-        with patch.object(game_service, 'get_tile', return_value=mock_tile):
-            result = game_service.start_dialogue(
-                mock_player, npc_id="gorran_1", dialogue_id="greeting"
-            )
-            assert result is not None
-
-    def test_get_dialogue_node(self, game_service, mock_player):
-        """Test getting a dialogue node."""
-        result = game_service.get_dialogue_node(mock_player, "node_id")
-        assert result is not None
-
-    def test_select_dialogue_choice(self, game_service, mock_player):
-        """Test selecting a dialogue choice."""
-        result = game_service.select_dialogue_choice(
-            mock_player, conversation_id="conv_1", choice_id="choice_1"
-        )
-        assert result is not None
 
     def test_select_dialogue_option(self, game_service, mock_player):
         """Test selecting a dialogue option."""
         mock_player.current_dialogue = {"options": [{"id": "opt1", "text": "Yes"}]}
         result = game_service.select_dialogue_option(mock_player, npc_id="gorran", option_id=0)
-        assert result is not None
-
-    def test_get_conversation_history(self, game_service, mock_player):
-        """Test getting conversation history."""
-        mock_player.dialogue_history = {"npc_id": [{"text": "Hello"}]}
-        result = game_service.get_conversation_history(mock_player, "npc_id")
-        assert result is not None
-
-    def test_get_available_dialogues(self, game_service, mock_player):
-        """Test getting available dialogue options."""
-        result = game_service.get_available_dialogues(mock_player, "npc_id")
         assert result is not None
 
     def test_check_dialogue_available(self, game_service, mock_player):
@@ -487,38 +317,6 @@ class TestPlayerProgression:
         mock_player.skills = {}
         result = game_service.learn_skill(mock_player, "swordmaster", category="combat")
         assert result is not None
-
-    def test_get_player_progression(self, game_service, mock_player):
-        """Test getting player progression info."""
-        result = game_service.get_player_progression(mock_player)
-        assert result is not None
-
-    def test_award_gold(self, game_service, mock_player):
-        """Test awarding gold to player."""
-        initial_gold = mock_player.gold
-        result = game_service.award_gold(mock_player, 100)
-        assert result is not None
-
-    def test_award_experience(self, game_service, mock_player):
-        """Test awarding experience to player."""
-        initial_exp = mock_player.experience
-        result = game_service.award_experience(mock_player, 500)
-        assert result is not None
-
-    def test_award_item(self, game_service, mock_player):
-        """Test awarding item to player."""
-        result = game_service.award_item(
-            mock_player, item_id="sword_1", item_name="Sword", quantity=1
-        )
-        assert result is not None
-
-    def test_award_reputation(self, game_service, mock_player):
-        """Test awarding reputation."""
-        result = game_service.award_reputation(
-            mock_player, npc_id="faction_id", npc_name="Faction", amount=50
-        )
-        assert result is not None
-
 
 class TestReputation:
     """Test reputation and relationship methods."""
@@ -650,46 +448,8 @@ class TestShopTransactions:
             assert result is not None
 
 
-class TestQuestChains:
-    """Test quest chain progression methods."""
-
-    def test_get_chain_progress(self, game_service, mock_player):
-        """Test getting quest chain progress."""
-        result = game_service.get_chain_progress(mock_player, "chain_id")
-        assert result is not None
-
-    def test_advance_chain_stage(self, game_service, mock_player):
-        """Test advancing chain stage."""
-        result = game_service.advance_chain_stage(
-            mock_player, "chain_id", current_stage=1, next_stage=2
-        )
-        assert result is not None
-
-    def test_complete_chain(self, game_service, mock_player):
-        """Test completing quest chain."""
-        result = game_service.complete_chain(mock_player, "chain_id")
-        assert result is not None
-
-    def test_get_all_chains_progress(self, game_service, mock_player):
-        """Test getting all chain progress."""
-        result = game_service.get_all_chains_progress(mock_player)
-        assert result is not None
-
-    def test_check_chain_prerequisites(self, game_service, mock_player):
-        """Test checking chain prerequisites."""
-        result = game_service.check_chain_prerequisites(
-            mock_player, "chain_id", prerequisites={}
-        )
-        assert result is not None
-
-
-class TestNPCAvailability:
-    """Test NPC availability and presence methods."""
-
-    def test_check_npc_availability(self, game_service, mock_player):
-        """Test checking NPC availability."""
-        result = game_service.check_npc_availability(mock_player, "npc_id")
-        assert result is not None
+class TestReputationGating:
+    """Test reputation-gated quest/dialogue availability checks."""
 
     def test_check_quest_available(self, game_service, mock_player):
         """Test checking if quest is available."""

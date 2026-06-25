@@ -19,7 +19,6 @@ try:
     from src.api.serializers.npc_ai import (
         NPCAIStateSerializer,
         DialogueStateSerializer,
-        QuestStateSerializer,
         NPCBehaviorProfileSerializer,
     )
     SERIALIZERS_AVAILABLE = True
@@ -248,90 +247,6 @@ class TestDialogueStateSerializer:
 
 
 @pytest.mark.skipif(
-    not SERIALIZERS_AVAILABLE, reason="Quest serializer not available"
-)
-class TestQuestStateSerializer:
-    """Tests for QuestStateSerializer."""
-
-    def test_serialize_quest_basic(self):
-        """Test serializing basic quest."""
-        quest = {
-            "id": "quest_001",
-            "title": "Find the Amulet",
-            "description": "Find the missing amulet",
-            "status": "active",
-            "progress": 50,
-            "objectives": [
-                {"id": "obj_1", "text": "Search the cave", "completed": True},
-                {"id": "obj_2", "text": "Find the thief", "completed": False}
-            ],
-            "rewards": {"experience": 100, "gold": 50},
-            "giver": "Elder"
-        }
-
-        result = QuestStateSerializer.serialize_quest(quest)
-
-        assert result["quest_id"] == "quest_001"
-        assert result["title"] == "Find the Amulet"
-        assert result["status"] == "active"
-        assert result["progress"] == 50
-        assert len(result["objectives"]) == 2
-
-    def test_serialize_active_quests(self):
-        """Test serializing active quests."""
-        class MockPlayer:
-            active_quests = [
-                {"id": "quest_001", "title": "Quest 1", "status": "active", "progress": 50},
-                {"id": "quest_002", "title": "Quest 2", "status": "active", "progress": 100}
-            ]
-
-        player = MockPlayer()
-        result = QuestStateSerializer.serialize_active_quests(player)
-
-        assert len(result) == 2
-        assert result[0]["quest_id"] == "quest_001"
-        assert result[1]["quest_id"] == "quest_002"
-
-    def test_serialize_quest_progress(self):
-        """Test serializing quest progress."""
-        quest = {
-            "id": "quest_001",
-            "title": "Test Quest",
-            "progress": 60,
-            "status": "active",
-            "objectives": [
-                {"id": "obj_1", "text": "Step 1", "completed": True},
-                {"id": "obj_2", "text": "Step 2", "completed": True},
-                {"id": "obj_3", "text": "Step 3", "completed": False}
-            ],
-            "current_step": "Step 2",
-            "next_step": "Step 3",
-            "started_at": "2025-11-08T10:00:00Z"
-        }
-
-        result = QuestStateSerializer.serialize_quest_progress(quest)
-
-        assert result["objectives_completed"] == 2
-        assert result["objectives_total"] == 3
-        assert result["status"] == "active"
-
-    def test_serialize_objectives(self):
-        """Test serializing quest objectives."""
-        objectives = [
-            {"id": "obj_1", "text": "Find item", "completed": True, "progress": 100},
-            {"id": "obj_2", "text": "Deliver item", "completed": False, "progress": 0},
-            {"text": "Final task", "completed": False}  # Missing ID
-        ]
-
-        result = QuestStateSerializer._serialize_objectives(objectives)
-
-        assert len(result) == 3
-        assert result[0]["completed"] is True
-        assert result[1]["completed"] is False
-        assert result[2]["id"] == "obj_2"  # Auto-generated ID
-
-
-@pytest.mark.skipif(
     not SERIALIZERS_AVAILABLE, reason="Behavior profile serializer not available"
 )
 class TestNPCBehaviorProfileSerializer:
@@ -461,18 +376,15 @@ def test_serializers_integrate():
     from src.api.serializers import (
         NPCAIStateSerializer,
         DialogueStateSerializer,
-        QuestStateSerializer,
         NPCBehaviorProfileSerializer,
     )
 
     # Verify all serializers are available
     assert NPCAIStateSerializer is not None
     assert DialogueStateSerializer is not None
-    assert QuestStateSerializer is not None
     assert NPCBehaviorProfileSerializer is not None
 
     # Verify they have required methods
     assert hasattr(NPCAIStateSerializer, "serialize_npc_ai_state")
     assert hasattr(DialogueStateSerializer, "serialize_dialogue_state")
-    assert hasattr(QuestStateSerializer, "serialize_quest")
     assert hasattr(NPCBehaviorProfileSerializer, "serialize_behavior_profile")

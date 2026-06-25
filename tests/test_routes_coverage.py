@@ -70,10 +70,6 @@ def _make_game_service():
     gs.get_npc_dialogue.return_value = {"success": True, "dialogue": []}
     gs.select_dialogue_option.return_value = {"success": True, "dialogue": []}
     gs.get_npc_behavior_profile.return_value = {"success": True, "profile": {}}
-    gs.get_active_quests.return_value = {"success": True, "quests": []}
-    gs.start_quest.return_value = {"success": True, "quest": {}}
-    gs.update_quest_progress.return_value = {"success": True, "progress": {}}
-    gs.get_quest_status.return_value = {"success": True, "status": {}}
     return gs
 
 
@@ -502,76 +498,6 @@ class TestNPCRoutes:
         with app.test_client() as c:
             rv = c.get("/api/npc/npc_001/profile", headers=AUTH)
         assert rv.status_code == 404
-
-    # ---- get_active_quests ----
-
-    def test_get_active_quests_success(self, client):
-        rv = client.get("/api/npc/quests/active", headers=AUTH)
-        assert rv.status_code == 200
-
-    def test_get_active_quests_no_auth(self, client):
-        rv = client.get("/api/npc/quests/active", headers=NO_AUTH)
-        assert rv.status_code == 401
-
-    # ---- accept_quest ----
-
-    def test_accept_quest_success(self, client):
-        rv = client.post("/api/npc/quests/q001/accept", headers=AUTH)
-        assert rv.status_code == 200
-
-    def test_accept_quest_not_found(self, app):
-        app._test_gs.start_quest.return_value = {"success": False}
-        with app.test_client() as c:
-            rv = c.post("/api/npc/quests/q001/accept", headers=AUTH)
-        assert rv.status_code == 404
-
-    def test_accept_quest_no_auth(self, client):
-        rv = client.post("/api/npc/quests/q001/accept", headers=NO_AUTH)
-        assert rv.status_code == 401
-
-    # ---- update_quest_progress ----
-
-    def test_update_quest_progress_success(self, client):
-        rv = client.post(
-            "/api/npc/quests/q001/progress",
-            headers=AUTH,
-            json={"objective_id": "obj_1"},
-        )
-        assert rv.status_code == 200
-
-    def test_update_quest_progress_missing_objective(self, client):
-        rv = client.post(
-            "/api/npc/quests/q001/progress",
-            headers=AUTH,
-            json={},
-        )
-        assert rv.status_code == 400
-
-    def test_update_quest_progress_not_found(self, app):
-        app._test_gs.update_quest_progress.return_value = {"success": False}
-        with app.test_client() as c:
-            rv = c.post(
-                "/api/npc/quests/q001/progress",
-                headers=AUTH,
-                json={"objective_id": "obj_1"},
-            )
-        assert rv.status_code == 404
-
-    # ---- get_quest_status ----
-
-    def test_get_quest_status_success(self, client):
-        rv = client.get("/api/npc/quests/q001/status", headers=AUTH)
-        assert rv.status_code == 200
-
-    def test_get_quest_status_not_found(self, app):
-        app._test_gs.get_quest_status.return_value = {"success": False}
-        with app.test_client() as c:
-            rv = c.get("/api/npc/quests/q001/status", headers=AUTH)
-        assert rv.status_code == 404
-
-    def test_get_quest_status_no_auth(self, client):
-        rv = client.get("/api/npc/quests/q001/status", headers=NO_AUTH)
-        assert rv.status_code == 401
 
 
 # ===========================================================================
