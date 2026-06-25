@@ -98,6 +98,19 @@ class GameService:
         u = getattr(player, "universe", None)
         return getattr(u, "game_tick", 0) if u else 0
 
+    @staticmethod
+    def _serialize_active_states(combatant: Any) -> List[Dict[str, Any]]:
+        """Serialize a combatant's non-hidden active status effects."""
+        return [
+            {
+                "name": s.name,
+                "status_type": getattr(s, "statustype", "generic"),
+                "beats_left": getattr(s, "beats_left", 0),
+            }
+            for s in getattr(combatant, "states", [])
+            if not getattr(s, "hidden", False)
+        ]
+
     def _get_event_target_modules(
         self, event, include_animations: bool = True
     ) -> List[str]:
@@ -2393,15 +2406,7 @@ class GameService:
         max_weight = getattr(player, "weight_tolerance", 20.0)
         weight_pct = (weight / max_weight * 100) if max_weight > 0 else 0
 
-        player_states = [
-            {
-                "name": s.name,
-                "status_type": getattr(s, "statustype", "generic"),
-                "beats_left": getattr(s, "beats_left", 0),
-            }
-            for s in getattr(player, "states", [])
-            if not getattr(s, "hidden", False)
-        ]
+        player_states = self._serialize_active_states(player)
 
         return {
             "name": getattr(player, "name", "Unknown"),
@@ -2439,15 +2444,7 @@ class GameService:
                         if getattr(player, "in_combat", False)
                         else True
                     ),
-                    "states": [
-                        {
-                            "name": s.name,
-                            "status_type": getattr(s, "statustype", "generic"),
-                            "beats_left": getattr(s, "beats_left", 0),
-                        }
-                        for s in getattr(a, "states", [])
-                        if not getattr(s, "hidden", False)
-                    ],
+                    "states": self._serialize_active_states(a),
                 }
                 for a in getattr(player, "combat_list_allies", [])[1:]
             ],
