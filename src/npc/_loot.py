@@ -30,6 +30,8 @@ class NPCLootMixin:
     """Death sequencing and loot distribution for NPC."""
 
     def die(self):
+        if self.check_revive():
+            return
         really_die = self.before_death()
         if really_die:
             narrate(colored(self.name, color="magenta") + " exploded into fragments of light!")

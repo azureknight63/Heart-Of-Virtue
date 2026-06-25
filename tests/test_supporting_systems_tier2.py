@@ -1172,11 +1172,11 @@ class TestItemOnEquip:
         )
 
         player = MagicMock()
-        player.apply_state = MagicMock()
+        player.apply_equip_states = MagicMock()
         item.equip_states = ["strength_boost"]
 
         item.on_equip(player)
-        player.apply_state.assert_called_with("strength_boost")
+        player.apply_equip_states.assert_called_with(item)
 
 
 class TestItemDrop:

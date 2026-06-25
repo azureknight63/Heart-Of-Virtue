@@ -97,8 +97,8 @@ class InventoryScenario(Scenario):
 
         # Equip non-existent item — should 400/404, not 500 -----------------
         body = {"item_id": "harness_nonexistent_item", "slot": "weapon"}
-        resp = client.post("/api/equipment/equip", json=body)
-        bug = self._check_no_crash(resp, "/api/equipment/equip", "POST",
+        resp = client.post("/api/inventory/equip", json=body)
+        bug = self._check_no_crash(resp, "/api/inventory/equip", "POST",
                                    "Equip unknown item_id", request_body=body)
         if bug:
             bugs.append(bug)

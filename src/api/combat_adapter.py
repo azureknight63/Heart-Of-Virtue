@@ -1144,7 +1144,7 @@ class ApiCombatAdapter:
         # Move execution finished
 
         # Check win/loss conditions
-        if not self.player.is_alive():
+        if not self.player.is_alive() and not self.player.check_revive():
             self.player.in_combat = False
             self.awaiting_input = False
             self._add_log_entry(
@@ -1777,6 +1777,8 @@ class ApiCombatAdapter:
         self.player.in_combat = False
         self.awaiting_input = False
         self.player.fatigue = self.player.maxfatigue
+        # Recharge single-use equip states (e.g. PhoenixRevive) consumed this battle
+        self.player.recharge_equip_states()
 
         # Snapshot the tile where victory occurred so post-combat events fire on
         # the right tile even if the player moves before the next status poll.

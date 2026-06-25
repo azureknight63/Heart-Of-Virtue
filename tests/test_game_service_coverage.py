@@ -232,23 +232,6 @@ class TestGameServiceInventory:
         result = game_service.drop_item(mock_player, 0)
         assert result is not None
     
-    def test_equip_item_valid(self, game_service, mock_player):
-        """Test equipping item."""
-        mock_weapon = MagicMock()
-        mock_weapon.maintype = "Weapon"
-        mock_weapon.isequipped = False
-        mock_player.inventory = [mock_weapon]
-        mock_player.eq_weapon = None
-        
-        result = game_service.equip_item(mock_player, 0)
-        assert result is not None
-    
-    def test_unequip_item_valid(self, game_service, mock_player):
-        """Test unequipping item."""
-        result = game_service.unequip_item(mock_player, "weapon")
-        assert result is not None
-
-
 class TestGameServiceRest:
     """Tests for rest mechanics."""
     

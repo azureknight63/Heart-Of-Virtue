@@ -202,12 +202,11 @@ class Item:
             return
         # Normal equip behavior: apply any equip states
         if len(self.equip_states) > 0:
-            for state in self.equip_states:
-                player.apply_state(state)
+            player.apply_equip_states(self)
         return
 
     def on_unequip(self, player: "Player") -> None:
-        pass
+        player.remove_equip_states(self)
 
     def drop(self, player: "Player", quantity: Optional[int] = None) -> None:
         if hasattr(self, "count"):
@@ -2279,14 +2278,14 @@ class JeanWeddingBand(Accessory):
 
     def on_equip(self, player: "Player") -> None:
         if len(self.equip_states) > 0:
-            for state in self.equip_states:
-                player.apply_state(state)
+            player.apply_equip_states(self)
         narrate(
             "As he slides on the band, Jean's face appears placid. "
             "His heart, however, is filled with sadness, and a coldness grips his stomach."
         )
 
     def on_unequip(self, player: "Player") -> None:
+        player.remove_equip_states(self)
         narrate(
             "Jean's frown twitches slightly as his finger is released from the weight of the band. "
             "He glances briefly at the faded inscription on the ring's inner wall "

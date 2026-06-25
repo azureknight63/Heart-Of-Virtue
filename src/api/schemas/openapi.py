@@ -401,66 +401,6 @@ def generate_openapi_schema() -> Dict[str, Any]:
                     },
                 }
             },
-            "/equipment/equip": {
-                "post": {
-                    "summary": "Equip an item",
-                    "tags": ["Equipment"],
-                    "security": [{"BearerAuth": []}],
-                    "requestBody": {
-                        "required": True,
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "type": "object",
-                                    "properties": {"item_index": {"type": "integer"}},
-                                    "required": ["item_index"],
-                                }
-                            }
-                        },
-                    },
-                    "responses": {
-                        "200": {
-                            "description": "Item equipped successfully",
-                        },
-                        "400": {
-                            "description": "Invalid item or cannot equip",
-                        },
-                        "401": {
-                            "description": "Unauthorized",
-                        },
-                    },
-                }
-            },
-            "/equipment/unequip": {
-                "post": {
-                    "summary": "Remove equipped item",
-                    "tags": ["Equipment"],
-                    "security": [{"BearerAuth": []}],
-                    "requestBody": {
-                        "required": True,
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "type": "object",
-                                    "properties": {"slot": {"type": "string"}},
-                                    "required": ["slot"],
-                                }
-                            }
-                        },
-                    },
-                    "responses": {
-                        "200": {
-                            "description": "Item unequipped successfully",
-                        },
-                        "400": {
-                            "description": "Invalid slot or nothing equipped",
-                        },
-                        "401": {
-                            "description": "Unauthorized",
-                        },
-                    },
-                }
-            },
             "/combat/start": {
                 "post": {
                     "summary": "Start a combat encounter",

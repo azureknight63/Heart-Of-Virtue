@@ -1593,155 +1593,6 @@ class GameService:
         """
         return EquipmentSerializer.serialize(player)
 
-    def equip_item(
-        self, player: "player_module.Player", item_index: int
-    ) -> Dict[str, Any]:
-        """Equip an item from inventory by index.
-
-        Args:
-            player: The Player instance
-            item_index: Index of item in inventory to equip
-
-        Returns:
-            Result of action with equipment changes
-        """
-        inventory = getattr(player, "inventory", [])
-
-        # Validate index
-        if (
-            not isinstance(item_index, int)
-            or item_index < 0
-            or item_index >= len(inventory)
-        ):
-            return {
-                "success": False,
-                "error": f"Invalid item index: {item_index}",
-            }
-
-        item = inventory[item_index]
-
-        # Check if item can be equipped
-        if not hasattr(item, "isequipped"):
-            return {
-                "success": False,
-                "error": f"Item '{getattr(item, 'name', 'Unknown')}' cannot be equipped",
-            }
-
-        try:
-            # Mark as equipped
-            item.isequipped = True
-
-            # Update player's equipment based on item type
-            maintype = getattr(item, "maintype", None)
-
-            if maintype == "Weapon":
-                player.eq_weapon = item
-            elif maintype == "Shield":
-                player.shield = item
-            elif maintype in ["Armor", "Helm", "Boots", "Gloves"]:
-                # Map maintype to common player slot names
-                slot_map = {
-                    "Armor": "body",
-                    "Helm": "head",
-                    "Boots": "feet",
-                    "Gloves": "hands",
-                }
-                slot_name = slot_map.get(maintype)
-
-                # Check for item-defined slot name as well
-                if hasattr(item, "type_s"):
-                    slot_name = item.type_s.lower()
-                elif hasattr(item, "subtype") and not slot_name:
-                    slot_name = item.subtype.lower()
-
-                if slot_name and hasattr(player, slot_name):
-                    setattr(player, slot_name, item)
-                elif slot_name == "armor" and hasattr(player, "body"):
-                    player.body = item
-
-            # Refresh stat bonuses after equipment change
-            from src import functions
-
-            functions.refresh_stat_bonuses(player)
-
-            # Extract item type for response (use maintype, type_s, or subtype in order of preference)
-            item_type = (
-                maintype
-                or getattr(item, "type_s", None)
-                or getattr(item, "subtype", "Unknown")
-            )
-
-            return {
-                "success": True,
-                "item_name": getattr(item, "name", "Unknown"),
-                "item_type": item_type,
-                "equipment": EquipmentSerializer.serialize(player),
-            }
-        except Exception as e:
-            return {"success": False, "error": str(e)}
-
-    def unequip_item(self, player: "player_module.Player", slot: str) -> Dict[str, Any]:
-        """Unequip item from slot.
-
-        Args:
-            player: The Player instance
-            slot: Equipment slot name (weapon, shield, head, body, etc.)
-
-        Returns:
-            Result of action
-        """
-        # Map slot names to player attributes
-        slot_mapping = {
-            "weapon": "eq_weapon",
-            "shield": "shield",
-            "head": "head",
-            "body": "body",
-            "legs": "legs",
-            "feet": "feet",
-            "hands": "hands",
-            "accessory_1": "accessory_1",
-            "accessory_2": "accessory_2",
-        }
-
-        if slot not in slot_mapping:
-            return {"success": False, "error": f"Unknown slot: {slot}"}
-
-        attr_name = slot_mapping[slot]
-        item = getattr(player, attr_name, None)
-
-        if not item:
-            return {
-                "success": False,
-                "error": f"No item equipped in slot: {slot}",
-            }
-
-        try:
-            # Mark as unequipped
-            if hasattr(item, "isequipped"):
-                item.isequipped = False
-
-            # Clear the slot
-            if slot == "weapon":
-                # Equip fists if no weapon
-                if hasattr(player, "fists"):
-                    player.eq_weapon = player.fists
-            else:
-                setattr(player, attr_name, None)
-
-            # Refresh stat bonuses after equipment change
-            from src import functions
-
-            functions.refresh_stat_bonuses(player)
-
-            return {
-                "success": True,
-                "item_name": getattr(item, "name", "Unknown"),
-                "slot": slot,
-                "equipment": EquipmentSerializer.serialize(player),
-            }
-        except Exception as e:
-            return {"success": False, "error": str(e)}
-
     # ========================
     # Combat Methods
     # ========================
@@ -2899,6 +2750,10 @@ class GameService:
                     s for s in getattr(player, "states", [])
                     if getattr(s, "persistent", True)
                 ]
+                # Recharge equip-states (e.g. PhoenixRevive) consumed mid-battle —
+                # combat state is wiped above, so this load is effectively a fresh
+                # start that should restore any equipped item's granted states.
+                player.recharge_equip_states()
                 if hasattr(player, "_combat_adapter"):
                     del player._combat_adapter
                 if hasattr(player, "combat_adapter_state"):
