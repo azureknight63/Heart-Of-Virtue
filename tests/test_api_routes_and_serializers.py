@@ -27,6 +27,8 @@ from unittest.mock import MagicMock, patch
 from types import SimpleNamespace
 from flask import Flask
 
+from src.api.services.game_service import GameService
+
 # ---------------------------------------------------------------------------
 # Shared helpers
 # ---------------------------------------------------------------------------
@@ -132,6 +134,14 @@ def _make_game_service():
     gs.update_quest_progress.return_value = {"success": True, "progress": {}}
     gs.get_quest_status.return_value = {"success": True, "status": {}}
     gs.learn_skill.return_value = {"success": True, "remaining_exp": 100}
+    # Route through the real implementation so tests that mutate `player`
+    # attributes directly still exercise the actual allocation logic. The
+    # real method calls self.get_player_stats(player) internally, so point
+    # it at the mock's configurable get_player_stats instead of computing
+    # stats for real (which chokes on an unconfigured MagicMock player).
+    _real_gs = GameService()
+    _real_gs.get_player_stats = gs.get_player_stats
+    gs.allocate_level_up_points.side_effect = _real_gs.allocate_level_up_points
     return gs
 
 

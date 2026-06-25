@@ -4,41 +4,10 @@ import logging
 
 from flask import Blueprint, request, jsonify
 from src.api.serializers.inventory import InventorySerializer
+from src.api.middleware.auth import get_session_and_player
 
 player_bp = Blueprint("player", __name__)
 _log = logging.getLogger(__name__)
-
-
-def get_session_and_player(request):
-    """Extract session and player from request."""
-    from flask import current_app
-
-    auth_header = request.headers.get("Authorization", "")
-    if not auth_header.startswith("Bearer "):
-        return (
-            None,
-            None,
-            None,
-            (jsonify({"error": "Missing authorization"}), 401),
-        )
-
-    session_id = auth_header[7:]
-    session_manager = current_app.session_manager
-    session = session_manager.get_session(session_id)
-
-    if not session:
-        return (
-            None,
-            None,
-            None,
-            (jsonify({"error": "Invalid or expired session"}), 401),
-        )
-
-    player = session_manager.get_player(session_id)
-    if not player:
-        return None, None, None, (jsonify({"error": "Player not found"}), 404)
-
-    return session_manager, session, player, None
 
 
 @player_bp.route("/status", methods=["GET"])
@@ -62,7 +31,7 @@ def get_status():
         }
     """
     try:
-        session_manager, session, player, error = get_session_and_player(request)
+        session_manager, session, player, error = get_session_and_player()
         if error:
             return error[0], error[1]
 
@@ -114,7 +83,7 @@ def get_full_state():
         }
     """
     try:
-        session_manager, session, player, error = get_session_and_player(request)
+        session_manager, session, player, error = get_session_and_player()
         if error:
             return error[0], error[1]
 
@@ -177,7 +146,7 @@ def get_stats():
         }
     """
     try:
-        session_manager, session, player, error = get_session_and_player(request)
+        session_manager, session, player, error = get_session_and_player()
         if error:
             return error[0], error[1]
 
@@ -230,7 +199,7 @@ def get_skills():
         }
     """
     try:
-        session_manager, session, player, error = get_session_and_player(request)
+        session_manager, session, player, error = get_session_and_player()
         if error:
             return error[0], error[1]
 
@@ -287,7 +256,7 @@ def learn_skill():
         }
     """
     try:
-        session_manager, session, player, error = get_session_and_player(request)
+        session_manager, session, player, error = get_session_and_player()
         if error:
             return error[0], error[1]
 
@@ -358,7 +327,7 @@ def allocate_level_up_points():
         }
     """
     try:
-        session_manager, session, player, error = get_session_and_player(request)
+        session_manager, session, player, error = get_session_and_player()
         if error:
             return error[0], error[1]
 
@@ -366,113 +335,18 @@ def allocate_level_up_points():
         attribute = data.get("attribute")
         amount = data.get("amount")
 
-        allowed = {
-            "strength_base",
-            "finesse_base",
-            "speed_base",
-            "endurance_base",
-            "charisma_base",
-            "intelligence_base",
-            "faith_base",
-            "randomize",
-        }
-
-        if attribute not in allowed:
-            return (
-                jsonify({"success": False, "error": "Invalid attribute"}),
-                400,
-            )
-
-        remaining = int(getattr(player, "pending_attribute_points", 0) or 0)
-
-        if attribute == "randomize":
-            if remaining <= 0:
-                return (
-                    jsonify({"success": False, "error": "No pending points to randomize"}),
-                    400,
-                )
-
-            import random
-            attributes_list = [
-                "strength_base",
-                "finesse_base",
-                "speed_base",
-                "endurance_base",
-                "charisma_base",
-                "intelligence_base",
-                "faith_base",
-            ]
-            weights = [random.random() for _ in attributes_list]
-            remaining_points = remaining
-            for idx, attr in enumerate(attributes_list):
-                if idx == len(attributes_list) - 1:
-                    share = remaining_points
-                else:
-                    sum_remaining_weights = sum(weights[idx:])
-                    if sum_remaining_weights == 0:
-                        share = 0
-                    else:
-                        share = round(weights[idx] / sum_remaining_weights * remaining_points)
-                remaining_points -= share
-                setattr(player, attr, int(getattr(player, attr, 0) or 0) + share)
-
-            player.pending_attribute_points = 0
-        else:
-            try:
-                amount_int = int(amount)
-            except Exception:
-                return jsonify({"success": False, "error": "Invalid amount"}), 400
-
-            if amount_int <= 0:
-                return (
-                    jsonify({"success": False, "error": "Amount must be positive"}),
-                    400,
-                )
-
-            if amount_int > remaining:
-                return (
-                    jsonify({"success": False, "error": "Not enough points"}),
-                    400,
-                )
-
-            # Apply allocation
-            setattr(
-                player,
-                attribute,
-                int(getattr(player, attribute, 0) or 0) + amount_int,
-            )
-            player.pending_attribute_points = remaining - amount_int
-
-        # Clear stale level-up events once all points are spent so they don't
-        # accumulate across sessions and re-trigger SFX on future status polls.
-        if player.pending_attribute_points == 0 and hasattr(player, "pending_level_ups"):
-            player.pending_level_ups = []
-
-        # Refresh derived stats if available
-        try:
-            from src.functions import refresh_stat_bonuses
-
-            refresh_stat_bonuses(player)
-        except Exception:
-            pass
-
         from flask import current_app
 
-        game_service = current_app.game_service
-        stats = game_service.get_player_stats(player) if game_service else {}
+        result = current_app.game_service.allocate_level_up_points(
+            player, attribute, amount
+        )
+
+        if not result.get("success"):
+            return jsonify(result), 400
 
         session_manager.save_session(session.session_id)
 
-        return (
-            jsonify(
-                {
-                    "success": True,
-                    "remaining_points": int(player.pending_attribute_points),
-                    "stats": stats,
-                }
-            ),
-            200,
-        )
+        return jsonify(result), 200
 
     except Exception as e:
         return (

@@ -2659,6 +2659,107 @@ class GameService:
             "skills": self.get_player_skills(player),
         }
 
+    def allocate_level_up_points(
+        self, player: "player_module.Player", attribute: Optional[str], amount: Any
+    ) -> Dict[str, Any]:
+        """Allocate pending attribute points to a stat, or randomize distribution.
+
+        Args:
+            player: The Player instance
+            attribute: One of the allowed attribute keys, or "randomize"
+            amount: Points to allocate (ignored when attribute == "randomize")
+
+        Returns:
+            Dictionary with result. On success: {"success": True,
+            "remaining_points": int, "stats": {...}}.
+        """
+        allowed = {
+            "strength_base",
+            "finesse_base",
+            "speed_base",
+            "endurance_base",
+            "charisma_base",
+            "intelligence_base",
+            "faith_base",
+            "randomize",
+        }
+
+        if attribute not in allowed:
+            return {"success": False, "error": "Invalid attribute"}
+
+        remaining = int(getattr(player, "pending_attribute_points", 0) or 0)
+
+        if attribute == "randomize":
+            if remaining <= 0:
+                return {"success": False, "error": "No pending points to randomize"}
+
+            import random
+
+            attributes_list = [
+                "strength_base",
+                "finesse_base",
+                "speed_base",
+                "endurance_base",
+                "charisma_base",
+                "intelligence_base",
+                "faith_base",
+            ]
+            weights = [random.random() for _ in attributes_list]
+            remaining_points = remaining
+            for idx, attr in enumerate(attributes_list):
+                if idx == len(attributes_list) - 1:
+                    share = remaining_points
+                else:
+                    sum_remaining_weights = sum(weights[idx:])
+                    if sum_remaining_weights == 0:
+                        share = 0
+                    else:
+                        share = round(
+                            weights[idx] / sum_remaining_weights * remaining_points
+                        )
+                remaining_points -= share
+                setattr(player, attr, int(getattr(player, attr, 0) or 0) + share)
+
+            player.pending_attribute_points = 0
+        else:
+            try:
+                amount_int = int(amount)
+            except Exception:
+                return {"success": False, "error": "Invalid amount"}
+
+            if amount_int <= 0:
+                return {"success": False, "error": "Amount must be positive"}
+
+            if amount_int > remaining:
+                return {"success": False, "error": "Not enough points"}
+
+            setattr(
+                player,
+                attribute,
+                int(getattr(player, attribute, 0) or 0) + amount_int,
+            )
+            player.pending_attribute_points = remaining - amount_int
+
+        # Clear stale level-up events once all points are spent so they don't
+        # accumulate across sessions and re-trigger SFX on future status polls.
+        if player.pending_attribute_points == 0 and hasattr(
+            player, "pending_level_ups"
+        ):
+            player.pending_level_ups = []
+
+        try:
+            from src import functions
+
+            functions.refresh_stat_bonuses(player)
+        except Exception:
+            pass
+
+        return {
+            "success": True,
+            "remaining_points": int(player.pending_attribute_points),
+            "stats": self.get_player_stats(player),
+        }
+
     def get_available_commands(self, player: "player_module.Player") -> Dict[str, Any]:
         """Get available commands/actions for the player in current room.
 
