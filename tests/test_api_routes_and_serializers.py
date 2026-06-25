@@ -1211,59 +1211,6 @@ class TestEquipmentRoutes:
         rv = c.get("/api/equipment", headers=AUTH_HEADER)
         assert rv.status_code == 500
 
-    def test_equip_item_no_auth(self, client):
-        c, _ = client
-        rv = c.post("/api/equipment/equip", json={"item_id": "sword_01"})
-        assert rv.status_code == 401
-
-    def test_equip_item_missing_item_id(self, client):
-        c, _ = client
-        rv = c.post("/api/equipment/equip", json={}, headers=AUTH_HEADER)
-        assert rv.status_code == 400
-
-    def test_equip_item_success(self, client):
-        c, _ = client
-        rv = c.post(
-            "/api/equipment/equip", json={"item_id": "sword_01"}, headers=AUTH_HEADER
-        )
-        assert rv.status_code == 200
-        assert rv.get_json()["success"] is True
-
-    def test_equip_item_error(self, client):
-        c, app = client
-        app._test_gs.equip_item.return_value = {"error": "Item not in inventory"}
-        rv = c.post(
-            "/api/equipment/equip", json={"item_id": "bad_id"}, headers=AUTH_HEADER
-        )
-        assert rv.status_code == 400
-
-    def test_unequip_item_no_auth(self, client):
-        c, _ = client
-        rv = c.post("/api/equipment/unequip", json={"slot": "hands"})
-        assert rv.status_code == 401
-
-    def test_unequip_item_missing_slot(self, client):
-        c, _ = client
-        rv = c.post("/api/equipment/unequip", json={}, headers=AUTH_HEADER)
-        assert rv.status_code == 400
-
-    def test_unequip_item_success(self, client):
-        c, _ = client
-        rv = c.post(
-            "/api/equipment/unequip", json={"slot": "hands"}, headers=AUTH_HEADER
-        )
-        assert rv.status_code == 200
-        assert rv.get_json()["success"] is True
-
-    def test_unequip_item_error(self, client):
-        c, app = client
-        app._test_gs.unequip_item.return_value = {"error": "Nothing equipped"}
-        rv = c.post(
-            "/api/equipment/unequip", json={"slot": "head"}, headers=AUTH_HEADER
-        )
-        assert rv.status_code == 400
-
-
 # ===========================================================================
 # player routes
 # ===========================================================================

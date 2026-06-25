@@ -72,6 +72,16 @@ class Combatant:
     def is_alive(self):
         return self.hp > 0
 
+    def check_revive(self):
+        """Consult revive-capable states (e.g. PhoenixRevive) before death is
+        finalized. Returns True if a state revived this combatant, in which
+        case the caller must not proceed with death handling."""
+        for state in self.states[:]:
+            try_revive = getattr(state, "try_revive", None)
+            if try_revive and try_revive(self):
+                return True
+        return False
+
     def cycle_states(self):
         """Process all active states.  Iterates over a snapshot so states that
         remove themselves during process() do not cause skipped entries."""

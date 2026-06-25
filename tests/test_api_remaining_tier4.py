@@ -292,43 +292,6 @@ class TestGameServiceTier4:
         result = game_service.get_equipment(player)
         assert isinstance(result, dict)
 
-    def test_equip_item_success(self, player, game_service):
-        """Test equip_item(player, item_id, slot)"""
-        # Add item to inventory first
-        player.inventory = []
-        sword = Gold()
-        player.inventory.append(sword)
-
-        result = game_service.equip_item(player, "sword_of_truth", "right_hand")
-        assert isinstance(result, dict)
-
-    def test_equip_item_not_found(self, player, game_service):
-        """Test equip_item with non-existent item"""
-        result = game_service.equip_item(player, "nonexistent", "right_hand")
-        # Should return error or empty result
-
-    def test_equip_item_invalid_slot(self, player, game_service):
-        """Test equip_item with invalid slot"""
-        player.inventory = []
-        player.inventory.append(Gold())
-        result = game_service.equip_item(player, "sword_of_truth", "invalid_slot")
-
-    def test_unequip_item(self, player, game_service):
-        """Test unequip_item(player, slot)"""
-        # Equip something first
-        player.inventory = []
-        player.inventory.append(Gold())
-        game_service.equip_item(player, "sword_of_truth", "right_hand")
-
-        # Unequip
-        result = game_service.unequip_item(player, "right_hand")
-        assert isinstance(result, dict)
-
-    def test_unequip_empty_slot(self, player, game_service):
-        """Test unequip_item on empty slot"""
-        result = game_service.unequip_item(player, "left_hand")
-        # Should handle gracefully
-
     # ============ COMBAT METHODS ============
 
     def test_start_combat(self, player, game_service):

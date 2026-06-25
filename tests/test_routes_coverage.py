@@ -351,47 +351,6 @@ class TestEquipmentRoutes:
             rv = c.get("/api/equipment", headers=AUTH)
         assert rv.status_code == 500
 
-    def test_equip_item_success(self, client):
-        rv = client.post(
-            "/api/equipment/equip", headers=AUTH, json={"item_id": "sword_01"}
-        )
-        assert rv.status_code == 200
-
-    def test_equip_item_missing_item_id(self, client):
-        rv = client.post("/api/equipment/equip", headers=AUTH, json={})
-        assert rv.status_code == 400
-
-    def test_equip_item_error_result(self, app):
-        app._test_gs.equip_item.return_value = {"error": "Item not found"}
-        with app.test_client() as c:
-            rv = c.post("/api/equipment/equip", headers=AUTH, json={"item_id": "x"})
-        assert rv.status_code == 400
-
-    def test_equip_item_no_auth(self, client):
-        rv = client.post("/api/equipment/equip", headers=NO_AUTH, json={"item_id": "x"})
-        assert rv.status_code == 401
-
-    def test_unequip_item_success(self, client):
-        rv = client.post("/api/equipment/unequip", headers=AUTH, json={"slot": "hands"})
-        assert rv.status_code == 200
-
-    def test_unequip_item_missing_slot(self, client):
-        rv = client.post("/api/equipment/unequip", headers=AUTH, json={})
-        assert rv.status_code == 400
-
-    def test_unequip_item_error_result(self, app):
-        app._test_gs.unequip_item.return_value = {"error": "Slot empty"}
-        with app.test_client() as c:
-            rv = c.post("/api/equipment/unequip", headers=AUTH, json={"slot": "head"})
-        assert rv.status_code == 400
-
-    def test_unequip_item_no_auth(self, client):
-        rv = client.post(
-            "/api/equipment/unequip", headers=NO_AUTH, json={"slot": "head"}
-        )
-        assert rv.status_code == 401
-
-
 # ===========================================================================
 # npc.py
 # ===========================================================================

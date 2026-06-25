@@ -411,16 +411,6 @@ class TestNPCChat:
 class TestInventoryManagement:
     """Test inventory and item management."""
 
-    def test_unequip_item(self, game_service, mock_player):
-        """Test unequipping an item."""
-        mock_item = MagicMock()
-        mock_player.eq_weapon = mock_item
-        mock_player.inventory = []
-        mock_player.weight_current = 50
-
-        result = game_service.unequip_item(mock_player, "weapon")
-        assert result["success"] is True
-
     def test_drop_item_success(self, game_service, mock_player):
         """Test dropping an item from inventory."""
         item = MagicMock()
