@@ -119,8 +119,14 @@ class TestPhoenixReviveEquip:
         weapon = Weapon(
             name="Test Sword",
             description="Test",
-            damage_type="slashing",
+            value=50,
             damage=10,
+            isequipped=False,
+            str_req=0,
+            fin_req=0,
+            str_mod=0,
+            fin_mod=0,
+            weight=3.0,
             maintype="Weapon",
             subtype="Sword",
         )
@@ -140,8 +146,14 @@ class TestPhoenixReviveEquip:
         weapon = Weapon(
             name="Phoenix Blade",
             description="A blade that can revive",
-            damage_type="slashing",
+            value=50,
             damage=10,
+            isequipped=False,
+            str_req=0,
+            fin_req=0,
+            str_mod=0,
+            fin_mod=0,
+            weight=3.0,
             maintype="Weapon",
             subtype="Sword",
         )
@@ -190,13 +202,20 @@ class TestPhoenixReviveApplyMerge:
         weapon = Weapon(
             name="Phoenix Sword",
             description="Test",
-            damage_type="slashing",
+            value=50,
             damage=10,
+            isequipped=False,
+            str_req=0,
+            fin_req=0,
+            str_mod=0,
+            fin_mod=0,
+            weight=3.0,
             maintype="Weapon",
             subtype="Sword",
         )
         enchantment = OfThePhoenix(weapon)
         enchantment.modify()
+        weapon.equip_states = enchantment.equip_states
 
         # Apply equip states — should skip the new state since one with that name exists
         player_with_methods.apply_equip_states(weapon)
@@ -252,13 +271,20 @@ class TestPhoenixReviveUnequip:
         weapon = Weapon(
             name="Phoenix Sword",
             description="Test",
-            damage_type="slashing",
+            value=50,
             damage=10,
+            isequipped=False,
+            str_req=0,
+            fin_req=0,
+            str_mod=0,
+            fin_mod=0,
+            weight=3.0,
             maintype="Weapon",
             subtype="Sword",
         )
         enchantment = OfThePhoenix(weapon)
         enchantment.modify()
+        weapon.equip_states = enchantment.equip_states
 
         # Equip the weapon
         player_with_methods.apply_equip_states(weapon)
@@ -313,13 +339,20 @@ class TestPhoenixReviveVictoryRecharge:
         weapon = Weapon(
             name="Phoenix Sword",
             description="Test",
-            damage_type="slashing",
+            value=50,
             damage=10,
+            isequipped=False,
+            str_req=0,
+            fin_req=0,
+            str_mod=0,
+            fin_mod=0,
+            weight=3.0,
             maintype="Weapon",
             subtype="Sword",
         )
         enchantment = OfThePhoenix(weapon)
         enchantment.modify()
+        weapon.equip_states = enchantment.equip_states
 
         # Add weapon to equipped items
         player_with_methods.equipped["weapon"] = weapon
@@ -341,13 +374,20 @@ class TestPhoenixReviveVictoryRecharge:
         weapon = Weapon(
             name="Phoenix Sword",
             description="Test",
-            damage_type="slashing",
+            value=50,
             damage=10,
+            isequipped=False,
+            str_req=0,
+            fin_req=0,
+            str_mod=0,
+            fin_mod=0,
+            weight=3.0,
             maintype="Weapon",
             subtype="Sword",
         )
         enchantment = OfThePhoenix(weapon)
         enchantment.modify()
+        weapon.equip_states = enchantment.equip_states
 
         # Add weapon to equipped items
         player_with_methods.equipped["weapon"] = weapon
@@ -464,13 +504,20 @@ class TestPhoenixReviveIntegration:
         weapon = Weapon(
             name="Phoenix Blade",
             description="A blade blessed by phoenix fire",
-            damage_type="slashing",
+            value=50,
             damage=10,
+            isequipped=False,
+            str_req=0,
+            fin_req=0,
+            str_mod=0,
+            fin_mod=0,
+            weight=3.0,
             maintype="Weapon",
             subtype="Sword",
         )
         enchantment = OfThePhoenix(weapon)
         enchantment.modify()
+        weapon.equip_states = enchantment.equip_states
 
         # Step 1: Equip weapon — applies PhoenixRevive state
         realistic_player.equipped["weapon"] = weapon
@@ -505,13 +552,20 @@ class TestPhoenixReviveIntegration:
         weapon = Weapon(
             name="Phoenix Blade",
             description="A blade blessed by phoenix fire",
-            damage_type="slashing",
+            value=50,
             damage=10,
+            isequipped=False,
+            str_req=0,
+            fin_req=0,
+            str_mod=0,
+            fin_mod=0,
+            weight=3.0,
             maintype="Weapon",
             subtype="Sword",
         )
         enchantment = OfThePhoenix(weapon)
         enchantment.modify()
+        weapon.equip_states = enchantment.equip_states
 
         # Equip weapon
         realistic_player.apply_equip_states(weapon)
