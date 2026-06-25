@@ -10,43 +10,9 @@ Endpoints:
 """
 
 from flask import Blueprint, request, current_app, jsonify
+from src.api.middleware.auth import get_session_and_player
 
 npc_availability_bp = Blueprint("npc_availability", __name__, url_prefix="/api")
-
-
-def get_session_and_player(request):
-    """Extract and validate session from request header. Returns (session_manager, session, player, error_response) or error tuple."""
-    auth_header = request.headers.get("Authorization", "")
-    if not auth_header.startswith("Bearer "):
-        return (
-            None,
-            None,
-            None,
-            (jsonify({"success": False, "error": "Missing auth"}), 401),
-        )
-
-    session_id = auth_header[7:]
-    session_manager = current_app.session_manager
-    session = session_manager.get_session(session_id)
-
-    if not session:
-        return (
-            None,
-            None,
-            None,
-            (jsonify({"success": False, "error": "Invalid session"}), 401),
-        )
-
-    player = session_manager.get_player(session_id)
-    if not player:
-        return (
-            None,
-            None,
-            None,
-            (jsonify({"success": False, "error": "Player not found"}), 404),
-        )
-
-    return session_manager, session, player, None
 
 
 @npc_availability_bp.route("/npcs/<npc_id>/status", methods=["GET"])
@@ -56,7 +22,7 @@ def get_npc_status(npc_id):
 
     Returns NPC name, availability status, current location, and availability reasons.
     """
-    session_manager, session, player, error = get_session_and_player(request)
+    session_manager, session, player, error = get_session_and_player()
     if error:
         response, status_code = error
         return response, status_code
@@ -83,7 +49,7 @@ def get_npcs_at_location(location_id):
 
     Returns list of NPCs and their availability status.
     """
-    session_manager, session, player, error = get_session_and_player(request)
+    session_manager, session, player, error = get_session_and_player()
     if error:
         response, status_code = error
         return response, status_code
@@ -110,7 +76,7 @@ def check_npc_availability(npc_id):
 
     Returns availability status, reason if unavailable, and location.
     """
-    session_manager, session, player, error = get_session_and_player(request)
+    session_manager, session, player, error = get_session_and_player()
     if error:
         response, status_code = error
         return response, status_code
@@ -143,7 +109,7 @@ def update_npc_location(npc_id):
         "new_location_id": "location_id"
     }
     """
-    session_manager, session, player, error = get_session_and_player(request)
+    session_manager, session, player, error = get_session_and_player()
     if error:
         response, status_code = error
         return response, status_code
@@ -187,7 +153,7 @@ def get_npc_timeline(npc_id):
 
     Shows where NPCs appear and when, based on story progression.
     """
-    session_manager, session, player, error = get_session_and_player(request)
+    session_manager, session, player, error = get_session_and_player()
     if error:
         response, status_code = error
         return response, status_code

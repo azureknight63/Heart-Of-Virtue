@@ -27,39 +27,10 @@ from src.api.serializers.inventory import (
     InventorySerializer,
     ItemDetailSerializer,
 )
+from src.api.middleware.auth import get_session_and_player
 
 # Create blueprint
 inventory_bp = Blueprint("inventory", __name__)
-
-
-def get_session_and_player():
-    """Extract session and player from request."""
-    auth_header = request.headers.get("Authorization", "")
-    if not auth_header.startswith("Bearer "):
-        return (
-            None,
-            None,
-            jsonify({"success": False, "error": "Missing authorization"}),
-            401,
-        )
-
-    session_id = auth_header[7:]
-    session_manager = current_app.session_manager
-    session = session_manager.get_session(session_id)
-
-    if not session:
-        return (
-            None,
-            None,
-            jsonify({"success": False, "error": "Invalid or expired session"}),
-            401,
-        )
-
-    player = session_manager.get_player(session_id)
-    if not player:
-        return None, None, jsonify({"success": False, "error": "Player not found"}), 404
-
-    return session, player, None, None
 
 
 def get_item_and_index(player, item_id=None, item_index=None):
@@ -117,9 +88,9 @@ def get_inventory():
     Returns:
         JSON with complete inventory including weight and items
     """
-    session, player, error, status = get_session_and_player()
+    _, session, player, error = get_session_and_player()
     if error:
-        return error, status
+        return error
 
     try:
         inventory_data = InventorySerializer.serialize(player)
@@ -141,9 +112,9 @@ def examine_item():
     Returns:
         JSON with detailed item information
     """
-    session, player, error, status = get_session_and_player()
+    _, session, player, error = get_session_and_player()
     if error:
-        return error, status
+        return error
 
     try:
         item_index = request.args.get("index", type=int)
@@ -183,9 +154,9 @@ def drop_item():
     Returns:
         JSON with updated inventory
     """
-    session, player, error, status = get_session_and_player()
+    _, session, player, error = get_session_and_player()
     if error:
-        return error, status
+        return error
 
     try:
         data = request.get_json() or {}
@@ -262,9 +233,9 @@ def get_equipment():
     Returns:
         JSON with equipped items and stat bonuses
     """
-    session, player, error, status = get_session_and_player()
+    _, session, player, error = get_session_and_player()
     if error:
-        return error, status
+        return error
 
     try:
         equipment_data = EquipmentSerializer.serialize(player)
@@ -287,9 +258,9 @@ def equip_item():
     Returns:
         JSON with updated equipment and stats
     """
-    session, player, error, status = get_session_and_player()
+    _, session, player, error = get_session_and_player()
     if error:
-        return error, status
+        return error
 
     try:
         data = request.get_json() or {}
@@ -428,9 +399,9 @@ def use_item():
     Returns:
         JSON with result of item use
     """
-    session, player, error, status = get_session_and_player()
+    _, session, player, error = get_session_and_player()
     if error:
-        return error, status
+        return error
 
     try:
         data = request.get_json() or {}
@@ -596,9 +567,9 @@ def unequip_item():
     Returns:
         JSON with updated equipment
     """
-    session, player, error, status = get_session_and_player()
+    _, session, player, error = get_session_and_player()
     if error:
-        return error, status
+        return error
 
     try:
         data = request.get_json() or {}
@@ -660,9 +631,9 @@ def compare_items():
     Returns:
         JSON with comparison details and recommendation
     """
-    session, player, error, status = get_session_and_player()
+    _, session, player, error = get_session_and_player()
     if error:
-        return error, status
+        return error
 
     try:
         current_index = request.args.get("current_index", type=int)
@@ -720,9 +691,9 @@ def get_stats():
     Returns:
         JSON with all player statistics
     """
-    session, player, error, status = get_session_and_player()
+    _, session, player, error = get_session_and_player()
     if error:
-        return error, status
+        return error
 
     try:
         stats = current_app.game_service.get_player_stats(player)
@@ -738,9 +709,9 @@ def get_currency():
     Returns:
         JSON with gold and other currency amounts
     """
-    session, player, error, status = get_session_and_player()
+    _, session, player, error = get_session_and_player()
     if error:
-        return error, status
+        return error
 
     try:
         currency = {

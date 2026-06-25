@@ -1,61 +1,10 @@
 """Quest chain routes for Phase 3 Stage 3."""
 
 from flask import Blueprint, request, jsonify, current_app
-from typing import Any, Optional, Tuple
+
+from src.api.middleware.auth import get_session_and_player
 
 quest_chains_bp = Blueprint("quest_chains", __name__, url_prefix="/api/quest-chains")
-
-
-def get_session_and_player(
-    req: Any,
-) -> Tuple[Any, Any, Any, Optional[Any], Optional[int]]:
-    """Extract and validate session from request header.
-
-    Args:
-        req: Flask request object
-
-    Returns:
-        Tuple of (session_manager, session, player, error_response, error_code)
-    """
-    auth_header = req.headers.get("Authorization", "")
-    if not auth_header.startswith("Bearer "):
-        return (
-            None,
-            None,
-            None,
-            jsonify(
-                {
-                    "success": False,
-                    "error": "Missing or invalid authentication header",
-                }
-            ),
-            401,
-        )
-
-    session_id = auth_header[7:]
-    session_manager = current_app.session_manager
-    session = session_manager.get_session(session_id)
-
-    if not session:
-        return (
-            None,
-            None,
-            None,
-            jsonify({"success": False, "error": "Invalid or expired session"}),
-            401,
-        )
-
-    player = session_manager.get_player(session_id)
-    if not player:
-        return (
-            None,
-            None,
-            None,
-            jsonify({"success": False, "error": "Player not found for session"}),
-            404,
-        )
-
-    return session_manager, session, player, None, None
 
 
 @quest_chains_bp.route("/progress", methods=["GET"])
@@ -65,11 +14,9 @@ def get_all_chains_progress():
     Requires: Bearer token in Authorization header
     Returns: Progress data for all chains
     """
-    session_manager, session, player, error, status_code = get_session_and_player(
-        request
-    )
+    session_manager, session, player, error = get_session_and_player()
     if error:
-        return error, status_code
+        return error
 
     result = current_app.game_service.get_all_chains_progress(player)
 
@@ -86,11 +33,9 @@ def get_chain_progress(chain_id: str):
     Requires: Bearer token in Authorization header
     Returns: Progress data for the chain
     """
-    session_manager, session, player, error, status_code = get_session_and_player(
-        request
-    )
+    session_manager, session, player, error = get_session_and_player()
     if error:
-        return error, status_code
+        return error
 
     if not chain_id or not isinstance(chain_id, str):
         return (
@@ -119,11 +64,9 @@ def advance_chain_stage(chain_id: str):
     Requires: Bearer token in Authorization header
     Returns: Updated chain progression
     """
-    session_manager, session, player, error, status_code = get_session_and_player(
-        request
-    )
+    session_manager, session, player, error = get_session_and_player()
     if error:
-        return error, status_code
+        return error
 
     if not chain_id or not isinstance(chain_id, str):
         return (
@@ -195,11 +138,9 @@ def complete_chain(chain_id: str):
     Requires: Bearer token in Authorization header
     Returns: Completion result
     """
-    session_manager, session, player, error, status_code = get_session_and_player(
-        request
-    )
+    session_manager, session, player, error = get_session_and_player()
     if error:
-        return error, status_code
+        return error
 
     if not chain_id or not isinstance(chain_id, str):
         return (
@@ -233,11 +174,9 @@ def check_prerequisites(chain_id: str):
     Requires: Bearer token in Authorization header
     Returns: Prerequisite validation result
     """
-    session_manager, session, player, error, status_code = get_session_and_player(
-        request
-    )
+    session_manager, session, player, error = get_session_and_player()
     if error:
-        return error, status_code
+        return error
 
     if not chain_id or not isinstance(chain_id, str):
         return (

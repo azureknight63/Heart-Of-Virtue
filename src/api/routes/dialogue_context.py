@@ -21,53 +21,12 @@ Routes:
 from flask import Blueprint, request, jsonify, current_app
 import logging
 
+from src.api.middleware.auth import get_session_and_player
+
 # Blueprint definition
 dialogue_context_bp = Blueprint("dialogue_context", __name__, url_prefix="/api")
 
 logger = logging.getLogger(__name__)
-
-
-def get_session_and_player(request_obj):
-    """Extract and validate session from Bearer token.
-
-    Returns:
-        (session_manager, session, player, error_tuple) where error_tuple is None on success
-        or (error_response, status_code) on failure
-    """
-    auth_header = request_obj.headers.get("Authorization", "")
-    if not auth_header.startswith("Bearer "):
-        return (
-            None,
-            None,
-            None,
-            (
-                jsonify({"success": False, "error": "Missing authentication"}),
-                401,
-            ),
-        )
-
-    session_id = auth_header[7:]
-    session_manager = current_app.session_manager
-    session = session_manager.get_session(session_id)
-
-    if not session:
-        return (
-            None,
-            None,
-            None,
-            (jsonify({"success": False, "error": "Invalid session"}), 401),
-        )
-
-    player = session_manager.get_player(session_id)
-    if not player:
-        return (
-            None,
-            None,
-            None,
-            (jsonify({"success": False, "error": "Player not found"}), 404),
-        )
-
-    return session_manager, session, player, None
 
 
 # ========================
@@ -105,7 +64,7 @@ def start_dialogue():
         500: Server error
     """
     try:
-        session_manager, session, player, error = get_session_and_player(request)
+        session_manager, session, player, error = get_session_and_player()
         if error:
             response, status_code = error
             return response, status_code
@@ -187,7 +146,7 @@ def get_dialogue_node(node_id):
         500: Server error
     """
     try:
-        session_manager, session, player, error = get_session_and_player(request)
+        session_manager, session, player, error = get_session_and_player()
         if error:
             response, status_code = error
             return response, status_code
@@ -244,7 +203,7 @@ def select_dialogue_choice():
         500: Server error
     """
     try:
-        session_manager, session, player, error = get_session_and_player(request)
+        session_manager, session, player, error = get_session_and_player()
         if error:
             response, status_code = error
             return response, status_code
@@ -334,7 +293,7 @@ def get_conversation_history(npc_id):
         500: Server error
     """
     try:
-        session_manager, session, player, error = get_session_and_player(request)
+        session_manager, session, player, error = get_session_and_player()
         if error:
             response, status_code = error
             return response, status_code
@@ -421,7 +380,7 @@ def get_available_dialogues(npc_id):
         500: Server error
     """
     try:
-        session_manager, session, player, error = get_session_and_player(request)
+        session_manager, session, player, error = get_session_and_player()
         if error:
             response, status_code = error
             return response, status_code
