@@ -210,7 +210,6 @@ class ElderSlime(NPC):
         self.resistance_base["fire"] = 1.4
         self.resistance_base["earth"] = 0.85
         self.status_resistance_base["poison"] = 1.0
-        self.status_resistance_base["slimed"] = 1.0
         self.add_move(moves.NpcAttack(self), 3)
         self.add_move(moves.SlimeVolley(self), 4)
         self.add_move(moves.Advance(self), 3)
@@ -249,7 +248,6 @@ class KingSlime(NPC):
         self.resistance_base["fire"] = 1.5
         self.resistance_base["earth"] = 0.9
         self.status_resistance_base["poison"] = 1.0
-        self.status_resistance_base["slimed"] = 1.0
         self.loot = loot.lev1
         self.add_move(moves.NpcAttack(self), 5)
         self.add_move(moves.TidalSurge(self), 3)

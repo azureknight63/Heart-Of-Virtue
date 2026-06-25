@@ -2670,6 +2670,7 @@ class Antidote(Consumable):
             for poison in poisons:
                 poison.on_removal(poison.target)
                 player.states.remove(poison)
+            functions.refresh_stat_bonuses(player)
             self.count -= 1
             self.stack_grammar()
             if self.count <= 0:

@@ -23,6 +23,19 @@ from os.path import isfile, join
 This module contains general functions to use throughout the game
 """
 
+# Primary stats whose *_base counterpart drives reset_stats() and which must
+# never go negative after bonus summation in refresh_stat_bonuses(). Pools
+# (maxhp, maxfatigue) are intentionally excluded -- they aren't floor-clamped.
+PRIMARY_STAT_FIELDS = (
+    "strength",
+    "finesse",
+    "speed",
+    "endurance",
+    "charisma",
+    "intelligence",
+    "faith",
+)
+
 
 def print_slow(text, speed="slow"):
     """Emit narrative text as a single message.
@@ -346,6 +359,13 @@ def refresh_stat_bonuses(
         if v < 0:
             target.status_resistance[k] = 0
 
+    # Clamp negative primary stats to 0 (stacked debuffs should never invert sign,
+    # which would otherwise inflate downstream calculations like hit_chance)
+    for stat_field in PRIMARY_STAT_FIELDS:
+        stat_value = get_attr(target, stat_field, None)
+        if isinstance(stat_value, (int, float)) and stat_value < 0:
+            setattr(target, stat_field, 0)
+
     # Attribute-derived stat bumps (applied after item/state bonuses, before weight adjustments)
     # Strength adds a small amount of max HP: +2 per point above base 10
     try:
@@ -486,16 +506,9 @@ def is_input_integer(
 
 def reset_stats(target):  # resets all stats to base level
     # Map target attrs to their corresponding base attrs to avoid repetitive code
-    stat_pairs = (
-        ("strength", "strength_base"),
-        ("finesse", "finesse_base"),
+    stat_pairs = tuple((f, f"{f}_base") for f in PRIMARY_STAT_FIELDS) + (
         ("maxhp", "maxhp_base"),
         ("maxfatigue", "maxfatigue_base"),
-        ("speed", "speed_base"),
-        ("endurance", "endurance_base"),
-        ("charisma", "charisma_base"),
-        ("intelligence", "intelligence_base"),
-        ("faith", "faith_base"),
     )
 
     for attr, base_attr in stat_pairs:

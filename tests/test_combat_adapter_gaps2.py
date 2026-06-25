@@ -769,6 +769,78 @@ class TestProcessNpcFriendTargeting:
 
 
 # ---------------------------------------------------------------------------
+# _process_npc — stunned NPCs (e.g. War Cry) skip move selection
+# ---------------------------------------------------------------------------
+
+
+class TestProcessNpcStunned:
+    def test_stunned_npc_rests_instead_of_selecting_move(self):
+        player = _make_player()
+        enemy = _make_enemy()
+        enemy.states = [MagicMock(_stunned=True)]
+        enemy.is_stunned.return_value = True
+        player.combat_list = [enemy]
+        player.combat_list_allies = [player]
+
+        adapter = _make_adapter(player)
+        with patch.object(adapter, "_npc_try_heal_ally", return_value=False) as heal_mock:
+            adapter._process_npc(enemy)
+
+        # select_move() must never be consulted while stunned -- this also covers
+        # NPC subclasses (Mara, TalusHound) that override select_move() entirely,
+        # since the check goes through Combatant.is_stunned() rather than the mixin.
+        enemy.select_move.assert_not_called()
+        heal_mock.assert_not_called()
+        assert enemy.current_move is not None
+        assert enemy.current_move.name == "Rest"
+        # Target is still freshly selected even though the NPC can't act on it.
+        assert enemy.target == player
+
+    def test_unstunned_npc_selects_move_normally(self):
+        player = _make_player()
+        enemy = _make_enemy()
+        enemy.states = [MagicMock(_stunned=False)]
+        enemy.is_stunned.return_value = False
+        player.combat_list = [enemy]
+        player.combat_list_allies = [player]
+
+        adapter = _make_adapter(player)
+        with patch.object(adapter, "_npc_try_heal_ally", return_value=False):
+            adapter._process_npc(enemy)
+
+        enemy.select_move.assert_called_once()
+
+    def test_real_war_cry_stunned_survives_cycle_states_before_check(self):
+        """Regression: WarCryStunned must outlive the npc.cycle_states() call
+        that _process_npc runs immediately before the is_stunned() check. With
+        beats_max=1, State.process() would decrement beats_left to 0 and
+        remove the state in that same cycle_states() call, so the check below
+        would never see it and War Cry's stun would be a no-op."""
+        from src.states import WarCryStunned
+        from src.combatant import Combatant
+
+        player = _make_player()
+        enemy = _make_enemy()
+        state = WarCryStunned(enemy)
+        enemy.states = [state]
+        # Drive the mock enemy's cycle_states/is_stunned with the real Combatant
+        # logic (unbound methods called against the mock, mirroring NPC's MRO).
+        enemy.cycle_states = lambda: Combatant.cycle_states(enemy)
+        enemy.is_stunned = lambda: Combatant.is_stunned(enemy)
+        player.combat_list = [enemy]
+        player.combat_list_allies = [player]
+
+        adapter = _make_adapter(player)
+        with patch.object(adapter, "_npc_try_heal_ally", return_value=False) as heal_mock:
+            adapter._process_npc(enemy)
+
+        assert state in enemy.states  # not yet expired after one cycle_states() call
+        enemy.select_move.assert_not_called()
+        heal_mock.assert_not_called()
+        assert enemy.current_move.name == "Rest"
+
+
+# ---------------------------------------------------------------------------
 # refresh_suggestions — paused branch
 # ---------------------------------------------------------------------------
 

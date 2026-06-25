@@ -87,6 +87,7 @@ class State:  # master class for all states
                 self.steps_left -= 1
                 if self.steps_left <= 0:
                     target.states.remove(self)
+                    functions.refresh_stat_bonuses(target)
                     self.on_removal(target)
 
 
@@ -274,7 +275,7 @@ class Disoriented(State):
             persistent=False,
             description="Finesse -30%, Protection -25%. Defensive positioning is compromised.",
         )
-        self.sub_finesse = int(target.finesse * 0.3)  # Reduce finesse by 30%
+        self.add_fin = -int(target.finesse * 0.3)  # Reduce finesse by 30%
         self.sub_protection = int(target.protection * 0.25)  # Reduce protection by 25%
 
     def on_application(self, target):
@@ -282,17 +283,12 @@ class Disoriented(State):
             "{} is disoriented and struggling to maintain balance!".format(target.name),
             "yellow",
         )
-        # Apply stat reductions
-        target.finesse = max(0, target.finesse - self.sub_finesse)
         target.protection = max(0, target.protection - self.sub_protection)
         functions.refresh_stat_bonuses(target)
 
     def on_removal(self, target):
         cprint("{} regains their bearings!".format(target.name), "green")
-        # Undo the reductions applied at on_application
-        target.finesse += self.sub_finesse
         target.protection += self.sub_protection
-        functions.refresh_stat_bonuses(target)
 
 
 class Hawkeye(State):
@@ -636,7 +632,11 @@ class WarCryStunned(State):
         super().__init__(
             name="War Cry Stunned",
             target=target,
-            beats_max=1,
+            # beats_max=2 gives 1 effective skip of move selection: cycle_states()
+            # decrements and removes the state in the same call that runs just
+            # before _process_npc checks `_stunned` for this beat, so beats_max=1
+            # would expire before the check ever sees it.
+            beats_max=2,
             compounding=False,
             combat=True,
             world=False,

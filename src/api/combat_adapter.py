@@ -16,6 +16,7 @@ from datetime import datetime
 from typing import Dict, Any, List, Optional, TYPE_CHECKING
 
 import positions  # type: ignore
+import moves  # type: ignore
 from src.api.serializers.combat import (
     CombatStateSerializer,
     CombatantSerializer,
@@ -1401,18 +1402,23 @@ class ApiCombatAdapter:
             npc.combat_delay -= 1
         else:
             if npc.current_move is None:
-                # Ally-healing check: use a consumable on a nearby friendly below threshold
-                if self._npc_try_heal_ally(npc):
-                    return
-
                 # Select target
                 if not npc.friend:
                     npc.target = random.choice(self.player.combat_list_allies)
                 else:
                     npc.target = random.choice(self.player.combat_list)
 
-                # Select and cast move
-                npc.select_move()
+                if npc.is_stunned():
+                    # Stunned NPCs (e.g. War Cry) skip move selection entirely for
+                    # this beat, regardless of whether their class overrides
+                    # select_move().
+                    npc.current_move = moves.NpcRest(npc)
+                elif self._npc_try_heal_ally(npc):
+                    # Ally-healing check: use a consumable on a nearby friendly below threshold
+                    return
+                else:
+                    # Select and cast move
+                    npc.select_move()
                 if npc.current_move:
                     npc.current_move.target = npc.target
 

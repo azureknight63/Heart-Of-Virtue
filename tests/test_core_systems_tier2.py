@@ -362,7 +362,8 @@ class TestStateBaseClass:
         state.process(fake_player)
         assert state.steps_left == 4
 
-    def test_state_process_world_removes_when_expired(self, fake_player):
+    @patch('states.functions.refresh_stat_bonuses')
+    def test_state_process_world_removes_when_expired(self, mock_refresh, fake_player):
         """State.process() removes state when steps_left <= 0."""
         fake_player.in_combat = False
         fake_player.states = []
@@ -373,6 +374,7 @@ class TestStateBaseClass:
 
         state.process(fake_player)
         assert state not in fake_player.states
+        assert mock_refresh.called
 
     def test_state_process_does_nothing_when_not_in_combat_or_world(self, fake_player):
         """State.process() does nothing if combat=False and world=False."""
