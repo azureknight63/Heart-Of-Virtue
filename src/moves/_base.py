@@ -48,6 +48,22 @@ def _ensure_weapon_exp(user):
         pass
 
 
+def select_weighted_target(candidates):
+    """Pick a random combat target, weighting down targets with Shadow Step.
+
+    Targets with Shadow Step in known_moves get weight 0.5; others get weight 1.0.
+    """
+    if not candidates:
+        return None
+    weights = []
+    for c in candidates:
+        w = 1.0
+        if any(getattr(m, "name", "") == "Shadow Step" for m in getattr(c, "known_moves", [])):
+            w = 0.5
+        weights.append(w)
+    return random.choices(candidates, weights=weights, k=1)[0]
+
+
 default_animations = {
     "p": "None",  # prep
     "e": "None",  # execute
@@ -178,6 +194,13 @@ class Move:  # master class for all moves
         ):
             prep = 1
             self.user._cleave_instinct_pending = False
+
+        # Staggered state: add +5 prep beats to caster's next move
+        if prep > 0 and hasattr(self.user, "states"):
+            for state in self.user.states:
+                if getattr(state, "name", "") == "Staggered":
+                    prep += getattr(state, "prep_penalty", 5)
+                    break
 
         self.beats_left = prep
 

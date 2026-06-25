@@ -381,9 +381,13 @@ class ShootCrossbow(Move):
         )
         self.fatigue_cost = _apply_carry_fatigue(self.user, max(10, 100 - (2 * self.user.endurance)))
         self.mvrange = getattr(wpn, "wpnrange", (6, 40))
-        # Initialize range/decay from weapon
-        self.base_range = getattr(wpn, "range_base", 15)
-        self.decay = getattr(wpn, "range_decay", 0.06)
+        # Initialize range/decay from weapon (handle MagicMock in tests)
+        range_base = getattr(wpn, "range_base", 15)
+        if isinstance(range_base, (int, float)):
+            self.base_range = range_base
+        decay = getattr(wpn, "range_decay", 0.06)
+        if isinstance(decay, (int, float)):
+            self.decay = decay
         # MarksmanEye passive: reduce accuracy decay at range
         if any(
             getattr(m, "name", "") == "Marksman's Eye"
@@ -518,9 +522,13 @@ class BroadheadBolt(Move):
         )
         self.fatigue_cost = _apply_carry_fatigue(self.user, max(15, 110 - (2 * self.user.endurance)))
         self.mvrange = getattr(wpn, "wpnrange", (6, 40))
-        # Initialize range/decay from weapon
-        self.base_range = getattr(wpn, "range_base", 15)
-        self.decay = getattr(wpn, "range_decay", 0.06)
+        # Initialize range/decay from weapon (handle MagicMock in tests)
+        range_base = getattr(wpn, "range_base", 15)
+        if isinstance(range_base, (int, float)):
+            self.base_range = range_base
+        decay = getattr(wpn, "range_decay", 0.06)
+        if isinstance(decay, (int, float)):
+            self.decay = decay
         # MarksmanEye passive: reduce accuracy decay at range
         if any(
             getattr(m, "name", "") == "Marksman's Eye"
@@ -656,9 +664,13 @@ class AimedShot(Move):
         self.power = max(1, int(base * 1.5))
         self.fatigue_cost = _apply_carry_fatigue(self.user, max(10, 90 - (2 * self.user.endurance)))
         self.mvrange = getattr(wpn, "wpnrange", (6, 40))
-        # Initialize range/decay from weapon
-        self.base_range = getattr(wpn, "range_base", 15)
-        self.decay = getattr(wpn, "range_decay", 0.06)
+        # Initialize range/decay from weapon (handle MagicMock in tests)
+        range_base = getattr(wpn, "range_base", 15)
+        if isinstance(range_base, (int, float)):
+            self.base_range = range_base
+        decay = getattr(wpn, "range_decay", 0.06)
+        if isinstance(decay, (int, float)):
+            self.decay = decay
         # MarksmanEye passive: reduce accuracy decay at range
         if any(
             getattr(m, "name", "") == "Marksman's Eye"
@@ -795,9 +807,13 @@ class PinningBolt(Move):
         )
         self.fatigue_cost = _apply_carry_fatigue(self.user, max(10, 100 - (2 * self.user.endurance)))
         self.mvrange = getattr(wpn, "wpnrange", (6, 40))
-        # Initialize range/decay from weapon
-        self.base_range = getattr(wpn, "range_base", 15)
-        self.decay = getattr(wpn, "range_decay", 0.06)
+        # Initialize range/decay from weapon (handle MagicMock in tests)
+        range_base = getattr(wpn, "range_base", 15)
+        if isinstance(range_base, (int, float)):
+            self.base_range = range_base
+        decay = getattr(wpn, "range_decay", 0.06)
+        if isinstance(decay, (int, float)):
+            self.decay = decay
         # MarksmanEye passive: reduce accuracy decay at range
         if any(
             getattr(m, "name", "") == "Marksman's Eye"

@@ -859,14 +859,21 @@ class TestBroadheadBolt:
         assert move.viable() is True
 
     def test_execute_calls_standard_execute(self):
+        """BroadheadBolt executes with distance decay applied (no longer delegates to standard_execute_attack)."""
         user = _make_crossbow_user()
         enemy = _make_enemy()
         user.combat_proximity = {enemy: 15}
         move = BroadheadBolt(user)
         move.target = enemy
-        with patch.object(move, "standard_execute_attack") as mock_exec:
+        with (
+            patch.object(move, "viable", return_value=True),
+            patch.object(move, "hit") as mock_hit,
+            patch("moves._ranged.functions.check_parry", return_value=False),
+            patch("moves._ranged.random.randint", return_value=50),
+            patch("moves._ranged.random.uniform", return_value=1.0),
+        ):
             move.execute(user)
-        mock_exec.assert_called_once_with(user, move.power, "piercing")
+        mock_hit.assert_called_once()
 
 
 # ---------------------------------------------------------------------------
