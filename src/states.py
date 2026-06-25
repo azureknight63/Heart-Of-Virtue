@@ -663,6 +663,7 @@ class Staggered(State):
             description="Reeling from a heavy blow — next moves are slower.",
         )
         self.prep_penalty = 5
+        self.penalty_consumed = False
 
     def on_application(self, target):
         cprint(f"{target.name} reels from the heavy blow!", "yellow")

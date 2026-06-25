@@ -195,11 +195,12 @@ class Move:  # master class for all moves
             prep = 1
             self.user._cleave_instinct_pending = False
 
-        # Staggered state: add +5 prep beats to caster's next move
-        if prep > 0 and hasattr(self.user, "states"):
+        # Staggered state: add +5 prep beats to caster's next move (consumed after first use)
+        if prep > 0 and isinstance(getattr(self.user, "states", None), list):
             for state in self.user.states:
-                if getattr(state, "name", "") == "Staggered":
+                if getattr(state, "name", "") == "Staggered" and not getattr(state, "penalty_consumed", False):
                     prep += getattr(state, "prep_penalty", 5)
+                    state.penalty_consumed = True
                     break
 
         self.beats_left = prep
