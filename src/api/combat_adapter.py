@@ -1379,6 +1379,9 @@ class ApiCombatAdapter:
                     if enemy in self.player.combat_list:
                         self.player.combat_list.remove(enemy)
 
+                    # CleaveInstinct: mark that player killed an enemy (for next move's prep boost)
+                    self.player._cleave_instinct_pending = True
+
                     for ally in self.player.combat_list_allies:
                         if enemy in ally.combat_proximity:
                             del ally.combat_proximity[enemy]

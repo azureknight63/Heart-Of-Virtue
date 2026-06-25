@@ -165,7 +165,21 @@ class Move:  # master class for all moves
             narrate(
                 self.stage_announce[0]
             )  # Print the prep announce message for the move
-        self.beats_left = self.stage_beat[0]
+
+        # CleaveInstinct passive: next move after a kill gets prep=1 (skip zero-beat moves)
+        prep = self.stage_beat[0]
+        if (
+            prep > 0
+            and getattr(self.user, "_cleave_instinct_pending", False)
+            and any(
+                getattr(m, "name", "") == "Cleave Instinct"
+                for m in getattr(self.user, "known_moves", [])
+            )
+        ):
+            prep = 1
+            self.user._cleave_instinct_pending = False
+
+        self.beats_left = prep
 
     def advance(self, user):
         self.user = user  # Ensure user is always current

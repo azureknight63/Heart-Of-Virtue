@@ -23,15 +23,6 @@ def _crossbow_close_range_penalty(user, range_min):
     return any(dist < range_min for dist in user.combat_proximity.values())
 
 
-def _weapon_effective_range_max(user):
-    """Return the weapon's decay-based long range, or None if inapplicable."""
-    wpn = getattr(user, "eq_weapon", None)
-    decay = getattr(wpn, "range_decay", 0) if wpn else 0
-    if wpn and decay:
-        return getattr(wpn, "range_base", 0) + (100 / decay)
-    return None
-
-
 class ShootBow(
     Move
 ):  # ranged attack with a bow, player only. Requires having arrows in inventory;
@@ -81,7 +72,11 @@ class ShootBow(
 
     def get_effective_range_max(self, user):
         """Return the effective maximum range, accounting for weapon range and decay."""
-        return _weapon_effective_range_max(user)
+        wpn = getattr(user, "eq_weapon", None)
+        decay = getattr(wpn, "range_decay", 0) if wpn else 0
+        if wpn and decay:
+            return getattr(wpn, "range_base", 0) + (100 / decay)
+        return None
 
     def calculate_hit_chance(
         self, enemy
@@ -233,10 +228,13 @@ class ShootBow(
             )
 
         range_min = self.mvrange[0]
-        range_max = self.get_effective_range_max(self.user)
+        effective_range = self.user.eq_weapon.range_base + (
+            100 / self.user.eq_weapon.range_decay
+        )
+        range_max = effective_range
         target_distance = player.combat_proximity[self.target]
         if (
-            range_max is not None and range_min <= target_distance <= range_max
+            range_min <= target_distance <= range_max
         ):  # check if target is still in range
             hit_chance = self.calculate_hit_chance(self.target)
             narrate(self.stage_announce[1])
@@ -354,11 +352,9 @@ class ShootCrossbow(Move):
         )
         self.power = 0
         self.base_damage_type = "piercing"
+        self.base_range = 15
+        self.decay = 0.06
         self.evaluate()
-
-    def get_effective_range_max(self, user):
-        """Return the effective maximum range, accounting for weapon range and decay."""
-        return _weapon_effective_range_max(user)
 
     def viable(self):
         if not getattr(self.user, "eq_weapon", None):
@@ -367,10 +363,7 @@ class ShootCrossbow(Move):
             return False
         if not hasattr(self.user, "combat_proximity"):
             return False
-        rmin = self.mvrange[0]
-        rmax = self.get_effective_range_max(self.user)
-        if rmax is None:
-            return False
+        rmin, rmax = self.mvrange
         return any(rmin <= dist <= rmax for dist in self.user.combat_proximity.values())
 
     def evaluate(self):
@@ -387,6 +380,16 @@ class ShootCrossbow(Move):
             + int(self.user.finesse * wpn.fin_mod),
         )
         self.fatigue_cost = _apply_carry_fatigue(self.user, max(10, 100 - (2 * self.user.endurance)))
+        self.mvrange = getattr(wpn, "wpnrange", (6, 40))
+        # Initialize range/decay from weapon
+        self.base_range = getattr(wpn, "range_base", 15)
+        self.decay = getattr(wpn, "range_decay", 0.06)
+        # MarksmanEye passive: reduce accuracy decay at range
+        if any(
+            getattr(m, "name", "") == "Marksman's Eye"
+            for m in getattr(self.user, "known_moves", [])
+        ):
+            self.decay *= 0.7
 
     def execute(self, player):
         glance = False
@@ -403,13 +406,21 @@ class ShootCrossbow(Move):
                 self.user.combat_position, self.target.combat_position
             )
 
-        rmin = self.mvrange[0]
+        rmin, rmax = self.mvrange
         if not self.viable():
             hit_chance = -1
         else:
             hit_chance = max(5, int(98 - self.target.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3)))
             if _crossbow_close_range_penalty(self.user, rmin):
                 hit_chance = int(hit_chance * 0.5)
+            # Apply distance accuracy decay (like ShootBow)
+            if self.target in self.user.combat_proximity:
+                target_distance = self.user.combat_proximity[self.target]
+                if target_distance > self.base_range:
+                    accuracy_decay = (target_distance - self.base_range) * self.decay
+                    hit_chance -= accuracy_decay
+                    if hit_chance < 2:
+                        hit_chance = 2
 
         roll = random.randint(0, 100)
         damage = (
@@ -478,11 +489,9 @@ class BroadheadBolt(Move):
         )
         self.power = 0
         self.base_damage_type = "piercing"
+        self.base_range = 15
+        self.decay = 0.06
         self.evaluate()
-
-    def get_effective_range_max(self, user):
-        """Return the effective maximum range, accounting for weapon range and decay."""
-        return _weapon_effective_range_max(user)
 
     def viable(self):
         if not getattr(self.user, "eq_weapon", None):
@@ -491,10 +500,7 @@ class BroadheadBolt(Move):
             return False
         if not hasattr(self.user, "combat_proximity"):
             return False
-        rmin = self.mvrange[0]
-        rmax = self.get_effective_range_max(self.user)
-        if rmax is None:
-            return False
+        rmin, rmax = self.mvrange
         return any(rmin <= dist <= rmax for dist in self.user.combat_proximity.values())
 
     def evaluate(self):
@@ -511,9 +517,75 @@ class BroadheadBolt(Move):
             + int(self.user.finesse * wpn.fin_mod),
         )
         self.fatigue_cost = _apply_carry_fatigue(self.user, max(15, 110 - (2 * self.user.endurance)))
+        self.mvrange = getattr(wpn, "wpnrange", (6, 40))
+        # Initialize range/decay from weapon
+        self.base_range = getattr(wpn, "range_base", 15)
+        self.decay = getattr(wpn, "range_decay", 0.06)
+        # MarksmanEye passive: reduce accuracy decay at range
+        if any(
+            getattr(m, "name", "") == "Marksman's Eye"
+            for m in getattr(self.user, "known_moves", [])
+        ):
+            self.decay *= 0.7
 
     def execute(self, player):
-        self.standard_execute_attack(player, self.power, self.base_damage_type)
+        glance = False
+        self.prep_colors()
+        narrate(self.stage_announce[1])
+
+        if (
+            hasattr(self.user, "combat_position")
+            and self.user.combat_position is not None
+            and hasattr(self.target, "combat_position")
+            and self.target.combat_position is not None
+        ):
+            self.user.combat_position.facing = positions.turn_toward(
+                self.user.combat_position, self.target.combat_position
+            )
+
+        if self.viable():
+            hit_chance = max(5, int(98 - self.target.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3)))
+            # Apply distance accuracy decay
+            if self.target in self.user.combat_proximity:
+                target_distance = self.user.combat_proximity[self.target]
+                if target_distance > self.base_range:
+                    accuracy_decay = (target_distance - self.base_range) * self.decay
+                    hit_chance -= accuracy_decay
+                    if hit_chance < 2:
+                        hit_chance = 2
+        else:
+            hit_chance = -1
+
+        roll = random.randint(0, 100)
+        damage = (
+            (
+                (self.power * self.target.resistance[self.base_damage_type])
+                - self.target.protection
+            )
+            * player.heat
+        ) * random.uniform(0.8, 1.2)
+        damage = max(0, damage)
+        if hit_chance >= roll and hit_chance - roll < 10:
+            damage /= 2
+            glance = True
+        damage = int(damage)
+
+        if hasattr(player, "eq_weapon") and player.eq_weapon:
+            _ensure_weapon_exp(player)
+            player.combat_exp[player.eq_weapon.subtype] += 10
+        player.combat_exp["Basic"] += 5
+
+        if hit_chance >= roll:
+            if functions.check_parry(self.target):
+                self.parry()
+            else:
+                self.hit(damage, glance)
+        else:
+            self.miss()
+
+        self.user.fatigue -= self.fatigue_cost
+        if self.user.fatigue < 0:
+            self.user.fatigue = 0
 
 
 class AimedShot(Move):
@@ -555,11 +627,9 @@ class AimedShot(Move):
         )
         self.power = 0
         self.base_damage_type = "piercing"
+        self.base_range = 15
+        self.decay = 0.06
         self.evaluate()
-
-    def get_effective_range_max(self, user):
-        """Return the effective maximum range, accounting for weapon range and decay."""
-        return _weapon_effective_range_max(user)
 
     def viable(self):
         if not getattr(self.user, "eq_weapon", None):
@@ -568,10 +638,7 @@ class AimedShot(Move):
             return False
         if not hasattr(self.user, "combat_proximity"):
             return False
-        rmin = self.mvrange[0]
-        rmax = self.get_effective_range_max(self.user)
-        if rmax is None:
-            return False
+        rmin, rmax = self.mvrange
         return any(rmin <= dist <= rmax for dist in self.user.combat_proximity.values())
 
     def evaluate(self):
@@ -588,6 +655,16 @@ class AimedShot(Move):
         )
         self.power = max(1, int(base * 1.5))
         self.fatigue_cost = _apply_carry_fatigue(self.user, max(10, 90 - (2 * self.user.endurance)))
+        self.mvrange = getattr(wpn, "wpnrange", (6, 40))
+        # Initialize range/decay from weapon
+        self.base_range = getattr(wpn, "range_base", 15)
+        self.decay = getattr(wpn, "range_decay", 0.06)
+        # MarksmanEye passive: reduce accuracy decay at range
+        if any(
+            getattr(m, "name", "") == "Marksman's Eye"
+            for m in getattr(self.user, "known_moves", [])
+        ):
+            self.decay *= 0.7
 
     def execute(self, player):
         glance = False
@@ -604,7 +681,7 @@ class AimedShot(Move):
                 self.user.combat_position, self.target.combat_position
             )
 
-        rmin = self.mvrange[0]
+        rmin, rmax = self.mvrange
         if not self.viable():
             hit_chance = -1
         else:
@@ -613,6 +690,14 @@ class AimedShot(Move):
             )
             if _crossbow_close_range_penalty(self.user, rmin):
                 hit_chance = int(hit_chance * 0.5)
+            # Apply distance accuracy decay
+            if self.target in self.user.combat_proximity:
+                target_distance = self.user.combat_proximity[self.target]
+                if target_distance > self.base_range:
+                    accuracy_decay = (target_distance - self.base_range) * self.decay
+                    hit_chance -= accuracy_decay
+                    if hit_chance < 2:
+                        hit_chance = 2
 
         roll = random.randint(0, 100)
         damage = (
@@ -681,11 +766,9 @@ class PinningBolt(Move):
         )
         self.power = 0
         self.base_damage_type = "piercing"
+        self.base_range = 15
+        self.decay = 0.06
         self.evaluate()
-
-    def get_effective_range_max(self, user):
-        """Return the effective maximum range, accounting for weapon range and decay."""
-        return _weapon_effective_range_max(user)
 
     def viable(self):
         if not getattr(self.user, "eq_weapon", None):
@@ -694,10 +777,7 @@ class PinningBolt(Move):
             return False
         if not hasattr(self.user, "combat_proximity"):
             return False
-        rmin = self.mvrange[0]
-        rmax = self.get_effective_range_max(self.user)
-        if rmax is None:
-            return False
+        rmin, rmax = self.mvrange
         return any(rmin <= dist <= rmax for dist in self.user.combat_proximity.values())
 
     def evaluate(self):
@@ -714,6 +794,16 @@ class PinningBolt(Move):
             + int(self.user.finesse * wpn.fin_mod),
         )
         self.fatigue_cost = _apply_carry_fatigue(self.user, max(10, 100 - (2 * self.user.endurance)))
+        self.mvrange = getattr(wpn, "wpnrange", (6, 40))
+        # Initialize range/decay from weapon
+        self.base_range = getattr(wpn, "range_base", 15)
+        self.decay = getattr(wpn, "range_decay", 0.06)
+        # MarksmanEye passive: reduce accuracy decay at range
+        if any(
+            getattr(m, "name", "") == "Marksman's Eye"
+            for m in getattr(self.user, "known_moves", [])
+        ):
+            self.decay *= 0.7
 
     def execute(self, player):
         glance = False
@@ -730,13 +820,21 @@ class PinningBolt(Move):
                 self.user.combat_position, self.target.combat_position
             )
 
-        rmin = self.mvrange[0]
+        rmin, rmax = self.mvrange
         if not self.viable():
             hit_chance = -1
         else:
             hit_chance = max(5, int(98 - self.target.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3)))
             if _crossbow_close_range_penalty(self.user, rmin):
                 hit_chance = int(hit_chance * 0.5)
+            # Apply distance accuracy decay
+            if self.target in self.user.combat_proximity:
+                target_distance = self.user.combat_proximity[self.target]
+                if target_distance > self.base_range:
+                    accuracy_decay = (target_distance - self.base_range) * self.decay
+                    hit_chance -= accuracy_decay
+                    if hit_chance < 2:
+                        hit_chance = 2
 
         roll = random.randint(0, 100)
         damage = (

@@ -286,6 +286,17 @@ class DeathsHarvest(Move):
         if hit_chance >= roll and hit_chance - roll < 10:
             damage /= 2
             glance = True
+
+        # GrimPersistence passive: +25% damage vs targets below 35% HP
+        if (
+            any(
+                getattr(m, "name", "") == "Grim Persistence"
+                for m in getattr(player, "known_moves", [])
+            )
+            and self.target.hp < (self.target.maxhp * 0.35)
+        ):
+            damage *= 1.25
+
         damage = int(damage)
 
         if hasattr(player, "eq_weapon") and player.eq_weapon:
