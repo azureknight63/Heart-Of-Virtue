@@ -366,6 +366,12 @@ class ShootCrossbow(Move):
         rmin, rmax = self.mvrange
         return any(rmin <= dist <= rmax for dist in self.user.combat_proximity.values())
 
+    def get_effective_range_max(self, user):
+        """Return the effective maximum range, accounting for base_range and decay."""
+        if self.decay and self.decay > 0:
+            return self.base_range + (100 / self.decay)
+        return None
+
     def evaluate(self):
         wpn = getattr(self.user, "eq_weapon", None)
         if not wpn:
@@ -380,7 +386,7 @@ class ShootCrossbow(Move):
             + int(self.user.finesse * wpn.fin_mod),
         )
         self.fatigue_cost = _apply_carry_fatigue(self.user, max(10, 100 - (2 * self.user.endurance)))
-        self.mvrange = getattr(wpn, "wpnrange", (6, 40))
+        # mvrange stays static; effective range comes from range_base/decay via get_effective_range_max
         # Initialize range/decay from weapon (handle MagicMock in tests)
         range_base = getattr(wpn, "range_base", 15)
         if isinstance(range_base, (int, float)):
@@ -506,6 +512,12 @@ class BroadheadBolt(Move):
             return False
         rmin, rmax = self.mvrange
         return any(rmin <= dist <= rmax for dist in self.user.combat_proximity.values())
+
+    def get_effective_range_max(self, user):
+        """Return the effective maximum range, accounting for base_range and decay."""
+        if self.decay and self.decay > 0:
+            return self.base_range + (100 / self.decay)
+        return None
 
     def evaluate(self):
         wpn = getattr(self.user, "eq_weapon", None)
@@ -648,6 +660,12 @@ class AimedShot(Move):
             return False
         rmin, rmax = self.mvrange
         return any(rmin <= dist <= rmax for dist in self.user.combat_proximity.values())
+
+    def get_effective_range_max(self, user):
+        """Return the effective maximum range, accounting for base_range and decay."""
+        if self.decay and self.decay > 0:
+            return self.base_range + (100 / self.decay)
+        return None
 
     def evaluate(self):
         wpn = getattr(self.user, "eq_weapon", None)
@@ -792,6 +810,12 @@ class PinningBolt(Move):
         rmin, rmax = self.mvrange
         return any(rmin <= dist <= rmax for dist in self.user.combat_proximity.values())
 
+    def get_effective_range_max(self, user):
+        """Return the effective maximum range, accounting for base_range and decay."""
+        if self.decay and self.decay > 0:
+            return self.base_range + (100 / self.decay)
+        return None
+
     def evaluate(self):
         wpn = getattr(self.user, "eq_weapon", None)
         if not wpn:
@@ -806,7 +830,7 @@ class PinningBolt(Move):
             + int(self.user.finesse * wpn.fin_mod),
         )
         self.fatigue_cost = _apply_carry_fatigue(self.user, max(10, 100 - (2 * self.user.endurance)))
-        self.mvrange = getattr(wpn, "wpnrange", (6, 40))
+        # mvrange stays static; effective range comes from range_base/decay via get_effective_range_max
         # Initialize range/decay from weapon (handle MagicMock in tests)
         range_base = getattr(wpn, "range_base", 15)
         if isinstance(range_base, (int, float)):
