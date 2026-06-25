@@ -49,7 +49,8 @@ class TestPhoenixReviveState:
         player.hp = 0  # Lethal damage
 
         with patch("random.random", return_value=0.2):  # 0.2 < 0.25, should trigger
-            result = state.try_revive(player)
+            with patch("src.functions.refresh_stat_bonuses"):
+                result = state.try_revive(player)
 
         assert result is True
         assert player.hp == 50  # Revived to 50% of maxhp
@@ -89,7 +90,8 @@ class TestPhoenixReviveState:
         player.hp = 0
 
         with patch("random.random", return_value=0.0):
-            state.try_revive(player)
+            with patch("src.functions.refresh_stat_bonuses"):
+                state.try_revive(player)
 
         assert player.hp == 100  # 50% of 200
 
@@ -132,6 +134,7 @@ class TestPhoenixReviveEquip:
         )
         enchantment = OfThePhoenix(weapon)
         enchantment.modify()
+        weapon.equip_states = enchantment.equip_states
 
         # Simulate equip by calling apply_equip_states
         initial_state_count = len(mock_player.states)
@@ -425,7 +428,8 @@ class TestPhoenixReviveSecondLethalHit:
 
         # First lethal hit — revive triggers
         with patch("random.random", return_value=0.0):
-            result1 = state.try_revive(player)
+            with patch("src.functions.refresh_stat_bonuses"):
+                result1 = state.try_revive(player)
 
         assert result1 is True
         assert state not in player.states
@@ -527,7 +531,8 @@ class TestPhoenixReviveIntegration:
         # Step 2: Take lethal damage — revive triggers
         realistic_player.hp = 0
         with patch("random.random", return_value=0.0):
-            revived = realistic_player.check_revive()
+            with patch("src.functions.refresh_stat_bonuses"):
+                revived = realistic_player.check_revive()
 
         assert revived is True
         assert realistic_player.hp == 50
