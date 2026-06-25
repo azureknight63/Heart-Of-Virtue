@@ -214,5 +214,3 @@ def get_npc_profile(npc_id):
     return jsonify({"success": result.get("success"), "data": result}), (
         200 if result.get("success") else 404
     )
-
-

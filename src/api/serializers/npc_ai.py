@@ -12,7 +12,6 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 if TYPE_CHECKING:
     from src.npc import NPC
-    from src.player import Player
 
 
 class NPCAIStateSerializer:
