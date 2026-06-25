@@ -75,7 +75,7 @@ NO_AUTH = {}
 BAD_AUTH = {"Authorization": "NotBearer sid_m1"}
 
 
-def _app_for(bp, url_prefix=None, session=None, player=None, debug=False):
+def _app_for(bp, url_prefix=None, session=None, player=None, debug=False, testing=True):
     if session is None:
         session = _make_session()
     if player is None:
@@ -84,7 +84,7 @@ def _app_for(bp, url_prefix=None, session=None, player=None, debug=False):
     gs = _make_gs()
 
     app = Flask(__name__)
-    app.config["TESTING"] = True
+    app.config["TESTING"] = testing
     if debug:
         app.debug = True
     if url_prefix is not None:
@@ -558,7 +558,7 @@ class TestQuestRewards:
     def app(self):
         from src.api.routes.quest_rewards import quest_rewards_bp
 
-        return _app_for(quest_rewards_bp)
+        return _app_for(quest_rewards_bp, testing=False)
 
     @pytest.fixture
     def app_debug(self):
@@ -643,7 +643,7 @@ class TestQuestRewards:
             )
             assert rv.status_code == 200
 
-    # POST /api/quests/award-gold  (debug only)
+    # POST /api/quests/award-gold  (testing only)
     def test_award_gold_success_debug(self, client_debug):
         rv = client_debug.post(
             "/api/quests/award-gold",
@@ -654,7 +654,7 @@ class TestQuestRewards:
         data = rv.get_json()
         assert data["success"] is True
 
-    def test_award_gold_non_debug_returns_404(self, client):
+    def test_award_gold_non_testing_returns_404(self, client):
         rv = client.post(
             "/api/quests/award-gold",
             json={"amount": 100},
@@ -686,7 +686,7 @@ class TestQuestRewards:
         )
         assert rv.status_code == 400
 
-    # POST /api/quests/award-experience  (debug only)
+    # POST /api/quests/award-experience  (testing only)
     def test_award_experience_success_debug(self, client_debug):
         rv = client_debug.post(
             "/api/quests/award-experience",
@@ -695,7 +695,7 @@ class TestQuestRewards:
         )
         assert rv.status_code == 200
 
-    def test_award_experience_non_debug(self, client):
+    def test_award_experience_non_testing_returns_404(self, client):
         rv = client.post(
             "/api/quests/award-experience",
             json={"amount": 200},
@@ -711,7 +711,7 @@ class TestQuestRewards:
         )
         assert rv.status_code == 400
 
-    # POST /api/quests/award-item  (debug only)
+    # POST /api/quests/award-item  (testing only)
     def test_award_item_success_debug(self, client_debug):
         rv = client_debug.post(
             "/api/quests/award-item",
@@ -720,7 +720,7 @@ class TestQuestRewards:
         )
         assert rv.status_code == 200
 
-    def test_award_item_non_debug(self, client):
+    def test_award_item_non_testing_returns_404(self, client):
         rv = client.post(
             "/api/quests/award-item",
             json={"item_id": "x", "item_name": "y"},

@@ -11,56 +11,9 @@ from flask import Blueprint, request, jsonify, current_app, abort
 from src.api.services.validators import (
     validate_required_fields,
 )
+from src.api.middleware.auth import get_session_and_player
 
 quest_rewards_bp = Blueprint("quest_rewards", __name__, url_prefix="/api/quests")
-
-
-def get_session_and_player():
-    """Extract and validate session from Authorization header.
-
-    Returns:
-        Tuple of (session_manager, session, player, error_response, status_code)
-        or (None, None, None, error_response, status_code) on error
-    """
-    auth_header = request.headers.get("Authorization", "")
-    if not auth_header.startswith("Bearer "):
-        return (
-            None,
-            None,
-            None,
-            jsonify(
-                {
-                    "success": False,
-                    "error": "Missing or invalid Authorization header",
-                }
-            ),
-            401,
-        )
-
-    session_id = auth_header[7:]
-    session_manager = current_app.session_manager
-    session = session_manager.get_session(session_id)
-
-    if not session:
-        return (
-            None,
-            None,
-            None,
-            jsonify({"success": False, "error": "Invalid or expired session"}),
-            401,
-        )
-
-    player = session_manager.get_player(session_id)
-    if not player:
-        return (
-            None,
-            None,
-            None,
-            jsonify({"success": False, "error": "Player not found"}),
-            404,
-        )
-
-    return session_manager, session, player, None, None
 
 
 @quest_rewards_bp.route("/<quest_id>/rewards", methods=["GET"])
@@ -73,9 +26,9 @@ def get_quest_rewards(quest_id: str):
     Returns:
         JSON with quest reward details
     """
-    session_manager, session, player, error, status = get_session_and_player()
+    session_manager, session, player, error = get_session_and_player()
     if error:
-        return error, status
+        return error
 
     # Get rewards using GameService
     result = current_app.game_service.get_quest_rewards(player, quest_id)
@@ -103,9 +56,9 @@ def complete_quest(quest_id: str):
     Returns:
         JSON with quest completion details and rewards
     """
-    session_manager, session, player, error, status = get_session_and_player()
+    session_manager, session, player, error = get_session_and_player()
     if error:
-        return error, status
+        return error
 
     # Parse request body
     data = request.get_json() or {}
@@ -156,11 +109,11 @@ def award_gold():
     Returns:
         JSON with gold update info
     """
-    if not current_app.debug:
+    if not current_app.config.get("TESTING"):
         abort(404)
-    session_manager, session, player, error, status = get_session_and_player()
+    session_manager, session, player, error = get_session_and_player()
     if error:
-        return error, status
+        return error
 
     # Validate request
     is_valid, error_msg = validate_required_fields(request.get_json() or {}, ["amount"])
@@ -200,11 +153,11 @@ def award_experience():
     Returns:
         JSON with experience update info
     """
-    if not current_app.debug:
+    if not current_app.config.get("TESTING"):
         abort(404)
-    session_manager, session, player, error, status = get_session_and_player()
+    session_manager, session, player, error = get_session_and_player()
     if error:
-        return error, status
+        return error
 
     # Validate request
     is_valid, error_msg = validate_required_fields(request.get_json() or {}, ["amount"])
@@ -246,11 +199,11 @@ def award_item():
     Returns:
         JSON with item award info
     """
-    if not current_app.debug:
+    if not current_app.config.get("TESTING"):
         abort(404)
-    session_manager, session, player, error, status = get_session_and_player()
+    session_manager, session, player, error = get_session_and_player()
     if error:
-        return error, status
+        return error
 
     # Validate request
     is_valid, error_msg = validate_required_fields(
@@ -300,9 +253,9 @@ def award_reputation():
     Returns:
         JSON with reputation update info
     """
-    session_manager, session, player, error, status = get_session_and_player()
+    session_manager, session, player, error = get_session_and_player()
     if error:
-        return error, status
+        return error
 
     # Validate request
     is_valid, error_msg = validate_required_fields(
@@ -337,9 +290,9 @@ def get_progression():
     Returns:
         JSON with progression data
     """
-    session_manager, session, player, error, status = get_session_and_player()
+    session_manager, session, player, error = get_session_and_player()
     if error:
-        return error, status
+        return error
 
     result = current_app.game_service.get_player_progression(player)
 
