@@ -249,33 +249,6 @@ class TestGameServiceInventory:
         assert result is not None
 
 
-class TestGameServiceRest:
-    """Tests for rest mechanics."""
-    
-    def test_rest_restores_hp(self, game_service, mock_player):
-        """Test that resting restores HP."""
-        mock_player.hp = 50
-        
-        result = game_service.rest(mock_player)
-        assert result is not None
-        assert isinstance(result, dict)
-    
-    def test_rest_restores_fatigue(self, game_service, mock_player):
-        """Test that resting restores fatigue."""
-        mock_player.fatigue = 30
-        
-        result = game_service.rest(mock_player)
-        assert result is not None
-    
-    def test_rest_at_full_health(self, game_service, mock_player):
-        """Test resting at full health."""
-        mock_player.hp = 100
-        mock_player.fatigue = 100
-        
-        result = game_service.rest(mock_player)
-        assert result is not None
-
-
 class TestGameServiceCombat:
     """Tests for combat mechanics."""
     

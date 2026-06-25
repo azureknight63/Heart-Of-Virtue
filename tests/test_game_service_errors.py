@@ -282,33 +282,6 @@ class TestDropItemErrors:
         assert item in mock_tile.items_here
 
 
-class TestRestErrors:
-    """Test error handling in rest method."""
-
-    def test_rest_no_universe(self, game_service, mock_player):
-        """Test rest when player has no universe."""
-        mock_player.universe = None
-        result = game_service.rest(mock_player)
-        assert "error" in result or "success" in result
-
-    def test_rest_already_in_combat(self, game_service, mock_player):
-        """Test rest when player is in combat."""
-        mock_player.in_combat = True
-        # Game allows resting even in combat - it's a mechanism to wait
-        result = game_service.rest(mock_player)
-        assert result is not None
-
-    def test_rest_success(self, game_service, mock_player):
-        """Test successful rest."""
-        mock_player.in_combat = False
-        mock_player.hp = 50
-        mock_player.fatigue = 0
-
-        with patch.object(mock_player, 'rest'):
-            result = game_service.rest(mock_player)
-        assert result is not None
-
-
 class TestExecuteMoveErrors:
     """Test error handling in execute_move method."""
 

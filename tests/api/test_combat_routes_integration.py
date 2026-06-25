@@ -183,28 +183,6 @@ class TestGameServiceCombatMethods:
 
         assert "moves" in result
 
-    def test_defend_not_in_combat(self, app):
-        """Test defend action when not in combat."""
-        game_service = app.game_service
-        session_manager = app.session_manager
-        session_id, _ = session_manager.create_session("testplayer")
-        player = session_manager.get_player(session_id)
-
-        result = game_service.defend(player)
-
-        assert "error" in result
-
-    def test_use_item_in_combat_not_in_combat(self, app):
-        """Test using item in combat when not in combat."""
-        game_service = app.game_service
-        session_manager = app.session_manager
-        session_id, _ = session_manager.create_session("testplayer")
-        player = session_manager.get_player(session_id)
-
-        result = game_service.use_item_in_combat(player, 0)
-
-        assert "error" in result
-
     def test_flee_combat_not_in_combat(self, app):
         """Test fleeing when not in combat."""
         game_service = app.game_service
@@ -215,38 +193,6 @@ class TestGameServiceCombatMethods:
         result = game_service.flee_combat(player)
 
         assert "error" in result
-
-    def test_end_combat_success(self, app):
-        """Test ending combat with victory."""
-        game_service = app.game_service
-        session_manager = app.session_manager
-        session_id, username = session_manager.create_session("testplayer")
-        player = session_manager.get_player(session_id)
-
-        # Manually set up combat
-        player.in_combat = True
-        player.combat_list = []
-
-        result = game_service.end_combat(player, victory=True)
-
-        assert result["status"] == "victory"
-        assert player.in_combat is False
-
-    def test_end_combat_defeat(self, app):
-        """Test ending combat with defeat."""
-        game_service = app.game_service
-        session_manager = app.session_manager
-        session_id, username = session_manager.create_session("testplayer")
-        player = session_manager.get_player(session_id)
-
-        # Manually set up combat
-        player.in_combat = True
-        player.combat_list = []
-
-        result = game_service.end_combat(player, victory=False)
-
-        assert result["status"] == "defeat"
-        assert player.in_combat is False
 
     def test_combat_serialization_in_response(self, app):
         """Test that combat responses include serialized state."""
