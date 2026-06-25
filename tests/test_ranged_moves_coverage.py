@@ -99,6 +99,11 @@ def _make_crossbow_user(endurance=10, strength=5, finesse=10, intelligence=5):
     wpn.str_mod = 0.3
     wpn.fin_mod = 0.5
     wpn.wpnrange = (6, 40)
+    # Mirrors the real Crossbow item (src/items.py) — ShootCrossbow,
+    # BroadheadBolt, AimedShot, and PinningBolt compute their long range
+    # from these, not wpnrange.
+    wpn.range_base = 15
+    wpn.range_decay = 0.06
     user.eq_weapon = wpn
     user.combat_proximity = {}
     return user
@@ -689,11 +694,20 @@ class TestShootCrossbowEvaluate:
         assert move.power == 0
         assert move.fatigue_cost == 10
 
-    def test_evaluate_uses_weapon_range(self):
+    def test_evaluate_does_not_use_wpnrange(self):
+        """mvrange stays static (melee wpnrange is Attack's territory); the
+        long range comes from range_base/range_decay via
+        get_effective_range_max."""
         user = _make_crossbow_user()
         user.eq_weapon.wpnrange = (8, 60)
         move = ShootCrossbow(user)
-        assert move.mvrange == (8, 60)
+        assert move.mvrange == (6, 40)
+
+    def test_get_effective_range_max_uses_range_base_and_decay(self):
+        user = _make_crossbow_user()  # range_base=15, range_decay=0.06
+        move = ShootCrossbow(user)
+        expected = 15 + (100 / 0.06)
+        assert move.get_effective_range_max(user) == pytest.approx(expected)
 
 
 class TestShootCrossbowExecute:

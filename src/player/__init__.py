@@ -164,6 +164,8 @@ class Player(
             moves.Advance(self),
             moves.Withdraw(self),
             moves.Attack(self),
+            moves.ShootBow(self),
+            moves.ShootCrossbow(self),
             moves.Dodge(self),
             moves.CrusaderOath(self),
         ]

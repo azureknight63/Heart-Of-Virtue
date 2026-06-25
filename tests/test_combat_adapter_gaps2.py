@@ -95,6 +95,9 @@ def _make_move(
     else:
         del m.mvrange
     m.verbose_targeting = verbose_targeting
+    # Mirrors the real Move.get_effective_range_max() default (None means
+    # "use mvrange[1]") — see src/moves/_base.py.
+    m.get_effective_range_max.return_value = None
     return m
 
 
@@ -541,19 +544,20 @@ class TestGetAvailableMovesReasons:
 
 class TestGetAvailableTargetsBranches:
     def test_bow_range_uses_weapon_range(self):
-        move = _make_move("Shoot Bow", targeted=True)
-        weapon = MagicMock()
-        weapon.range_base = 50
-        weapon.range_decay = 10
+        # ShootBow (and other ranged moves) override get_effective_range_max()
+        # to compute range_base + 100/range_decay — _get_available_targets
+        # must use that value instead of mvrange[1]. See
+        # Move.get_effective_range_max in src/moves/_base.py.
+        move = _make_move("Shoot Bow", targeted=True, mvrange=(6, 40))
+        move.get_effective_range_max.return_value = 60  # 50 + 100/10
         player = _make_player()
         player.known_moves = [move]
-        player.eq_weapon = weapon
         enemy = _make_enemy()
         player.combat_list = [enemy]
         player.combat_proximity = {enemy: 55}
         adapter = _make_adapter(player)
         targets = adapter._get_available_targets(move)
-        # Enemy at 55 should be in range if range_max = 50 + 100/10 = 60
+        # Enemy at 55 should be in range since range_max = 60
         assert len(targets) > 0
 
     def test_ally_targets_included_when_accepts_ally(self):

@@ -187,9 +187,6 @@ class Skilltree:
                 ): 350,  # passive: signature pick ability — stacking protection reduction
             },
             "Crossbow": {
-                moves.ShootCrossbow(
-                    user
-                ): 50,  # base ranged attack, longer reload than bow
                 moves.BroadheadBolt(user): 400,  # heavy bolt, +25 base power
                 moves.AimedShot(user): 500,  # 25-beat aim, +50% power, +15 accuracy
                 moves.PinningBolt(user): 600,  # damage + Disoriented on hit
