@@ -414,19 +414,3 @@ class TestGetNpcBehaviorProfile:
         result = game_service.get_npc_behavior_profile(expanded_mock_player, "npc_id")
         assert isinstance(result, dict)
 
-
-# ========================= Advanced Dialogue Tests =========================
-class TestCheckDialogueAvailable:
-    """Tests for check_dialogue_available() method."""
-
-    def test_check_dialogue_available_method_exists(self, game_service):
-        """Test that check_dialogue_available method exists."""
-        assert hasattr(game_service, "check_dialogue_available")
-
-
-class TestCheckQuestAvailable:
-    """Tests for check_quest_available() method."""
-
-    def test_check_quest_available_method_exists(self, game_service):
-        """Test that check_quest_available method exists."""
-        assert hasattr(game_service, "check_quest_available")

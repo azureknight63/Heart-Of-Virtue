@@ -182,11 +182,6 @@ class TestBlueprintRegistration:
         shop_rules = [r for r in rules if "/shop" in r]
         assert len(shop_rules) > 0
 
-    def test_reputation_routes_registered(self):
-        rules = self._all_rules()
-        rep_rules = [r for r in rules if "/reputation" in r]
-        assert len(rep_rules) > 0
-
     def test_npc_chat_routes_registered(self):
         rules = self._all_rules()
         chat_rules = [r for r in rules if "/npc/chat" in r]

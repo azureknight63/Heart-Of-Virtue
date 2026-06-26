@@ -20,7 +20,6 @@ from src.api.serializers.npc_serializer import NPCSerializer
 from src.api.serializers.inventory import InventorySerializer, EquipmentSerializer
 from src.api.serializers.shop_serializer import ShopSerializer
 from src.api.serializers.world import WorldSerializer
-from src.api.serializers.reputation import PlayerReputationSerializer
 from src.api.serializers.event_serializer import EventSerializer
 from src.api.serializers.item_serializer import ItemSerializer
 from src.api.serializers.npc_ai import NPCAIStateSerializer

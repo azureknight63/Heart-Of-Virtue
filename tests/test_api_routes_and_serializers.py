@@ -10,7 +10,6 @@ Targets:
 - src/api/routes/equipment.py  (13% → ~80%)
 - src/api/routes/player.py  (13% → ~80%)
 - src/api/routes/shop.py  (14% → ~80%)
-- src/api/routes/reputation.py  (17% → ~80%)
 - src/api/routes/saves.py  (13% → ~50%)
 - src/api/routes/npc.py  (18% → ~75%)
 
@@ -105,12 +104,6 @@ def _make_game_service():
     gs.shop_buy.return_value = {"success": True, "message": "Bought item"}
     gs.shop_sell.return_value = {"success": True, "message": "Sold item"}
     gs.shop_buyback.return_value = {"success": True, "message": "Bought back item"}
-    gs.get_player_reputation.return_value = {"reputation": {}}
-    gs.get_npc_relationship.return_value = {"score": 0}
-    gs.update_reputation.return_value = {"reputation_change": {}}
-    gs.set_relationship_flag.return_value = {"flag_update": {}}
-    gs.check_dialogue_available.return_value = {"available": True}
-    gs.check_quest_available.return_value = {"available": True}
     gs.get_npc_state.return_value = {"success": True, "state": {}}
     gs.get_npc_dialogue.return_value = {"success": True, "dialogue": []}
     gs.select_dialogue_option.return_value = {"success": True, "dialogue": []}
@@ -1490,132 +1483,6 @@ class TestShopRoutes:
         c, _ = client
         rv = c.post("/api/shop/buyback", json={"npc_id": "m1"}, headers=AUTH_HEADER)
         assert rv.status_code == 400
-
-
-# ===========================================================================
-# reputation routes
-# ===========================================================================
-
-
-class TestReputationRoutes:
-    """Test reputation API endpoints."""
-
-    @pytest.fixture
-    def client(self):
-        from src.api.routes.reputation import reputation_bp
-
-        app = _make_minimal_app([(reputation_bp, None)])
-        with app.test_client() as c:
-            yield c, app
-
-    def test_get_player_reputation_no_auth(self, client):
-        c, _ = client
-        rv = c.get("/api/reputation/player")
-        assert rv.status_code == 401
-
-    def test_get_player_reputation_success(self, client):
-        c, _ = client
-        rv = c.get("/api/reputation/player", headers=AUTH_HEADER)
-        assert rv.status_code == 200
-        assert rv.get_json()["success"] is True
-
-    def test_get_npc_relationship_success(self, client):
-        c, _ = client
-        rv = c.get("/api/reputation/npc/mynx", headers=AUTH_HEADER)
-        assert rv.status_code == 200
-
-    def test_update_npc_relationship_no_amount(self, client):
-        c, _ = client
-        rv = c.put(
-            "/api/reputation/npc/mynx",
-            json={"reason": "quest"},
-            headers=AUTH_HEADER,
-        )
-        assert rv.status_code == 400
-
-    def test_update_npc_relationship_non_numeric_amount(self, client):
-        c, _ = client
-        rv = c.put(
-            "/api/reputation/npc/mynx",
-            json={"amount": "much"},
-            headers=AUTH_HEADER,
-        )
-        assert rv.status_code == 400
-
-    def test_update_npc_relationship_out_of_range(self, client):
-        c, _ = client
-        rv = c.put(
-            "/api/reputation/npc/mynx",
-            json={"amount": 150},
-            headers=AUTH_HEADER,
-        )
-        assert rv.status_code == 400
-
-    def test_update_npc_relationship_bad_reason(self, client):
-        c, _ = client
-        rv = c.put(
-            "/api/reputation/npc/mynx",
-            json={"amount": 10, "reason": 12345},
-            headers=AUTH_HEADER,
-        )
-        assert rv.status_code == 400
-
-    def test_update_npc_relationship_success(self, client):
-        c, _ = client
-        rv = c.put(
-            "/api/reputation/npc/mynx",
-            json={"amount": 25, "reason": "quest_complete"},
-            headers=AUTH_HEADER,
-        )
-        assert rv.status_code == 200
-        assert rv.get_json()["success"] is True
-
-    def test_update_npc_relationship_negative_amount(self, client):
-        c, _ = client
-        rv = c.put(
-            "/api/reputation/npc/gorran",
-            json={"amount": -50, "reason": "betrayal"},
-            headers=AUTH_HEADER,
-        )
-        assert rv.status_code == 200
-
-    def test_set_flag_no_value(self, client):
-        c, _ = client
-        rv = c.post(
-            "/api/reputation/npc/mynx/flag/romance",
-            json={},
-            headers=AUTH_HEADER,
-        )
-        assert rv.status_code == 400
-
-    def test_set_flag_non_bool_value(self, client):
-        c, _ = client
-        rv = c.post(
-            "/api/reputation/npc/mynx/flag/romance",
-            json={"value": "yes"},
-            headers=AUTH_HEADER,
-        )
-        assert rv.status_code == 400
-
-    def test_set_flag_success(self, client):
-        c, _ = client
-        rv = c.post(
-            "/api/reputation/npc/mynx/flag/romance",
-            json={"value": True},
-            headers=AUTH_HEADER,
-        )
-        assert rv.status_code == 200
-        assert rv.get_json()["success"] is True
-
-    def test_check_dialogue_available(self, client):
-        c, _ = client
-        rv = c.get("/api/reputation/dialogue/mynx/greeting", headers=AUTH_HEADER)
-        assert rv.status_code == 200
-
-    def test_check_quest_available(self, client):
-        c, _ = client
-        rv = c.get("/api/reputation/quest/mynx/escort", headers=AUTH_HEADER)
-        assert rv.status_code == 200
 
 
 # ===========================================================================

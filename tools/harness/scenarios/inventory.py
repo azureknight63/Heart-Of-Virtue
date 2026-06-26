@@ -70,7 +70,6 @@ class InventoryScenario(Scenario):
 
         # GET /api/status — player status (hp, name, level, ...) ------------
         # /api/status (player_bp) is the correct endpoint.
-        # /api/reputation/player is the reputation summary — fixed in b16c05a.
         resp = client.get("/api/status")
         bug = self._check_status(resp, 200, "/api/status", "GET", "Get player status")
         if bug:

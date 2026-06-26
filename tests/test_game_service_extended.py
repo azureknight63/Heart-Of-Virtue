@@ -6,7 +6,7 @@ Tests for high-impact, previously untested methods:
 - Awards: award_gold, award_experience, award_item, award_reputation
 - Combat: flee_combat, get_combat_status
 - Quests: update_quest_progress, get_quest_status, get_active_quests, complete_quest
-- NPC systems: get_npc_state, get_npc_relationship, update_reputation, set_relationship_flag
+- NPC systems: get_npc_state
 - World: collect_combat_loot, get_player_progression, get_npcs_at_location
 
 Target: Increase game_service.py coverage from 27% → 60%+ with 35-40 tests.
@@ -659,90 +659,6 @@ class TestCollectCombatLoot:
         # With 85/100 capacity and 20 weight item, should be skipped
         if result["skipped"]:
             assert any(s["name"] == "Heavy Item" for s in result["skipped"])
-
-
-# ============================================================================
-# REPUTATION SYSTEM TESTS
-# ============================================================================
-
-
-class TestGetPlayerReputation:
-    """Tests for get_player_reputation() - retrieve reputation state."""
-
-    def test_get_player_reputation_returns_dict(self, game_service, extended_mock_player):
-        """Test that get_player_reputation returns a dictionary."""
-        result = game_service.get_player_reputation(extended_mock_player)
-        assert isinstance(result, dict)
-
-    def test_get_player_reputation_has_npcs(self, game_service, extended_mock_player):
-        """Test that get_player_reputation returns reputation data."""
-        result = game_service.get_player_reputation(extended_mock_player)
-        assert "reputation" in result or "npcs" in result
-
-    def test_get_player_reputation_no_reputation(self, game_service, extended_mock_player):
-        """Test get_player_reputation handles missing reputation."""
-        extended_mock_player.reputation = {}
-        result = game_service.get_player_reputation(extended_mock_player)
-        assert isinstance(result, dict)
-        assert result.get("success") is True
-
-
-class TestUpdateReputation:
-    """Tests for update_reputation() - modify NPC reputation."""
-
-    def test_update_reputation_returns_dict(self, game_service, extended_mock_player):
-        """Test that update_reputation returns a dictionary."""
-        result = game_service.update_reputation(extended_mock_player, "merchant_1", 10)
-        assert isinstance(result, dict)
-
-    def test_update_reputation_success_flag(self, game_service, extended_mock_player):
-        """Test that update_reputation sets success flag."""
-        result = game_service.update_reputation(extended_mock_player, "merchant_1", 10)
-        assert result["success"] is True
-
-    def test_update_reputation_modifies_value(self, game_service, extended_mock_player):
-        """Test that update_reputation modifies the reputation value."""
-        initial_rep = extended_mock_player.reputation.get("merchant_1", 0)
-        game_service.update_reputation(extended_mock_player, "merchant_1", 10)
-        new_rep = extended_mock_player.reputation.get("merchant_1", 0)
-        assert new_rep > initial_rep
-
-    def test_update_reputation_initializes_if_missing(self, game_service, extended_mock_player):
-        """Test that update_reputation works with existing reputation."""
-        extended_mock_player.reputation = {}
-        result = game_service.update_reputation(extended_mock_player, "new_npc", 5)
-        assert result["success"] is True
-        assert "new_npc" in extended_mock_player.reputation
-
-
-class TestSetRelationshipFlag:
-    """Tests for set_relationship_flag() - set NPC relationship flags."""
-
-    def test_set_relationship_flag_returns_dict(self, game_service, extended_mock_player):
-        """Test that set_relationship_flag returns a dictionary."""
-        result = game_service.set_relationship_flag(extended_mock_player, "merchant_1", "flag_name", True)
-        assert isinstance(result, dict)
-
-    def test_set_relationship_flag_success_flag(self, game_service, extended_mock_player):
-        """Test that set_relationship_flag returns proper response."""
-        result = game_service.set_relationship_flag(extended_mock_player, "merchant_1", "flag_name", True)
-        assert isinstance(result, dict)
-        # May have success flag or other keys
-        assert len(result) > 0
-
-
-class TestGetNpcRelationship:
-    """Tests for get_npc_relationship() - retrieve NPC relationship state."""
-
-    def test_get_npc_relationship_returns_dict(self, game_service, extended_mock_player):
-        """Test that get_npc_relationship returns a dictionary."""
-        result = game_service.get_npc_relationship(extended_mock_player, "merchant_1")
-        assert isinstance(result, dict)
-
-    def test_get_npc_relationship_includes_reputation(self, game_service, extended_mock_player):
-        """Test that get_npc_relationship includes relationship data."""
-        result = game_service.get_npc_relationship(extended_mock_player, "merchant_1")
-        assert "relationship" in result or "reputation" in result
 
 
 # ============================================================================

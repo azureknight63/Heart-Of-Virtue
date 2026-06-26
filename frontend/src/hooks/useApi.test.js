@@ -15,7 +15,6 @@ vi.mock('../api/endpoints', () => ({
     player: {
       getStatus: vi.fn(),
       getFullState: vi.fn(),
-      getInventory: vi.fn(),
       getStats: vi.fn(),
       getSkills: vi.fn(),
     },
