@@ -82,6 +82,19 @@ class GameService:
         u = getattr(player, "universe", None)
         return getattr(u, "game_tick", 0) if u else 0
 
+    @staticmethod
+    def _serialize_active_states(combatant: Any) -> List[Dict[str, Any]]:
+        """Serialize a combatant's non-hidden active status effects."""
+        return [
+            {
+                "name": s.name,
+                "status_type": getattr(s, "statustype", "generic"),
+                "beats_left": getattr(s, "beats_left", 0),
+            }
+            for s in getattr(combatant, "states", [])
+            if not getattr(s, "hidden", False)
+        ]
+
     def _get_event_target_modules(
         self, event, include_animations: bool = True
     ) -> List[str]:
@@ -2228,6 +2241,8 @@ class GameService:
         max_weight = getattr(player, "weight_tolerance", 20.0)
         weight_pct = (weight / max_weight * 100) if max_weight > 0 else 0
 
+        player_states = self._serialize_active_states(player)
+
         return {
             "name": getattr(player, "name", "Unknown"),
             "level": getattr(player, "level", 1),
@@ -2246,7 +2261,8 @@ class GameService:
             "weight": weight,
             "max_weight": max_weight,
             "weight_pct": weight_pct,
-            "state": "normal",  # TODO: Get actual status effects
+            "state": player_states[0]["name"] if player_states else "normal",
+            "states": player_states,
             "party_members": [
                 {
                     "id": f"ally_{id(a)}",
@@ -2263,15 +2279,7 @@ class GameService:
                         if getattr(player, "in_combat", False)
                         else True
                     ),
-                    "states": [
-                        {
-                            "name": s.name,
-                            "status_type": getattr(s, "statustype", "generic"),
-                            "beats_left": getattr(s, "beats_left", 0),
-                        }
-                        for s in getattr(a, "states", [])
-                        if not getattr(s, "hidden", False)
-                    ],
+                    "states": self._serialize_active_states(a),
                 }
                 for a in getattr(player, "combat_list_allies", [])[1:]
             ],
@@ -2481,6 +2489,107 @@ class GameService:
             "message": f"Learned {skill_name}!",
             "remaining_exp": player.skill_exp[category],
             "skills": self.get_player_skills(player),
+        }
+
+    def allocate_level_up_points(
+        self, player: "player_module.Player", attribute: Optional[str], amount: Any
+    ) -> Dict[str, Any]:
+        """Allocate pending attribute points to a stat, or randomize distribution.
+
+        Args:
+            player: The Player instance
+            attribute: One of the allowed attribute keys, or "randomize"
+            amount: Points to allocate (ignored when attribute == "randomize")
+
+        Returns:
+            Dictionary with result. On success: {"success": True,
+            "remaining_points": int, "stats": {...}}.
+        """
+        allowed = {
+            "strength_base",
+            "finesse_base",
+            "speed_base",
+            "endurance_base",
+            "charisma_base",
+            "intelligence_base",
+            "faith_base",
+            "randomize",
+        }
+
+        if attribute not in allowed:
+            return {"success": False, "error": "Invalid attribute"}
+
+        remaining = int(getattr(player, "pending_attribute_points", 0) or 0)
+
+        if attribute == "randomize":
+            if remaining <= 0:
+                return {"success": False, "error": "No pending points to randomize"}
+
+            import random
+
+            attributes_list = [
+                "strength_base",
+                "finesse_base",
+                "speed_base",
+                "endurance_base",
+                "charisma_base",
+                "intelligence_base",
+                "faith_base",
+            ]
+            weights = [random.random() for _ in attributes_list]
+            remaining_points = remaining
+            for idx, attr in enumerate(attributes_list):
+                if idx == len(attributes_list) - 1:
+                    share = remaining_points
+                else:
+                    sum_remaining_weights = sum(weights[idx:])
+                    if sum_remaining_weights == 0:
+                        share = 0
+                    else:
+                        share = round(
+                            weights[idx] / sum_remaining_weights * remaining_points
+                        )
+                remaining_points -= share
+                setattr(player, attr, int(getattr(player, attr, 0) or 0) + share)
+
+            player.pending_attribute_points = 0
+        else:
+            try:
+                amount_int = int(amount)
+            except Exception:
+                return {"success": False, "error": "Invalid amount"}
+
+            if amount_int <= 0:
+                return {"success": False, "error": "Amount must be positive"}
+
+            if amount_int > remaining:
+                return {"success": False, "error": "Not enough points"}
+
+            setattr(
+                player,
+                attribute,
+                int(getattr(player, attribute, 0) or 0) + amount_int,
+            )
+            player.pending_attribute_points = remaining - amount_int
+
+        # Clear stale level-up events once all points are spent so they don't
+        # accumulate across sessions and re-trigger SFX on future status polls.
+        if player.pending_attribute_points == 0 and hasattr(
+            player, "pending_level_ups"
+        ):
+            player.pending_level_ups = []
+
+        try:
+            from src import functions
+
+            functions.refresh_stat_bonuses(player)
+        except Exception:
+            pass
+
+        return {
+            "success": True,
+            "remaining_points": int(player.pending_attribute_points),
+            "stats": self.get_player_stats(player),
         }
 
     def get_available_commands(self, player: "player_module.Player") -> Dict[str, Any]:
@@ -2889,157 +2998,6 @@ class GameService:
         # and return the initial combat state
         return player._combat_adapter.initialize_combat(enemies, reinit=is_reinit)
 
-    # [Legacy methods removed]
-
-    def _execute_attack(
-        self,
-        player: "player_module.Player",
-        enemies: List[Any],
-        target_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        """Execute a basic attack.
-
-        Args:
-            player: Player object
-            enemies: List of enemy NPCs
-            target_id: ID of target (defaults to first)
-
-        Returns:
-            Dictionary with attack result
-        """
-        target = (
-            enemies[0]
-            if not target_id
-            else next(
-                (e for e in enemies if str(getattr(e, "id", "")) == target_id),
-                enemies[0],
-            )
-        )
-
-        # Simple damage calculation
-        damage = getattr(player, "damage", 10) + 5
-        target.health = max(0, getattr(target, "health", 1) - damage)
-
-        return {
-            "success": True,
-            "action": "attack",
-            "damage_dealt": damage,
-            "target": getattr(target, "name", "Enemy"),
-            "target_health": getattr(target, "health", 0),
-            "target_defeated": getattr(target, "health", 1) <= 0,
-            "battle_state": CombatStateSerializer.serialize_combat_state(
-                player, enemies
-            ),
-        }
-
-    def _execute_spell(
-        self,
-        player: "player_module.Player",
-        enemies: List[Any],
-        spell_name: str,
-        target_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        """Execute a spell/ability.
-
-        Args:
-            player: Player object
-            enemies: List of enemy NPCs
-            spell_name: Name of spell
-            target_id: ID of target
-
-        Returns:
-            Dictionary with spell result
-        """
-        # TODO: Implement actual spell lookup and effects
-        target = (
-            enemies[0]
-            if not target_id
-            else next(
-                (e for e in enemies if str(getattr(e, "id", "")) == target_id),
-                enemies[0],
-            )
-        )
-
-        damage = 20  # Spell default damage
-        target.health = max(0, getattr(target, "health", 1) - damage)
-
-        return {
-            "success": True,
-            "action": "cast",
-            "spell": spell_name,
-            "damage_dealt": damage,
-            "target": getattr(target, "name", "Enemy"),
-            "target_health": getattr(target, "health", 0),
-            "target_defeated": getattr(target, "health", 1) <= 0,
-            "battle_state": CombatStateSerializer.serialize_combat_state(
-                player, enemies
-            ),
-        }
-
-    def defend(self, player: "player_module.Player") -> Dict[str, Any]:
-        """Take a defensive stance in combat.
-
-        Args:
-            player: Player object
-
-        Returns:
-            Dictionary with action result
-        """
-        if not getattr(player, "in_combat", False):
-            return {"error": "Not in combat"}
-
-        # Increase defense temporarily (stub)
-        player.armor = getattr(player, "armor", 0) + 5
-
-        enemies = getattr(player, "combat_list", [])
-        return {
-            "success": True,
-            "action": "defend",
-            "message": "Player takes a defensive stance",
-            "battle_state": CombatStateSerializer.serialize_combat_state(
-                player, enemies
-            ),
-        }
-
-    def use_item_in_combat(
-        self,
-        player: "player_module.Player",
-        item_index: int,
-        target_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        """Use an item in combat.
-
-        Args:
-            player: Player object
-            item_index: Index of item in inventory
-            target_id: ID of target (default: self)
-
-        Returns:
-            Dictionary with action result
-        """
-        if not getattr(player, "in_combat", False):
-            return {"error": "Not in combat"}
-
-        if not hasattr(player, "inventory") or not getattr(player, "inventory"):
-            return {"error": "No items in inventory"}
-
-        inventory = getattr(player, "inventory", [])
-        if item_index < 0 or item_index >= len(inventory):
-            return {"error": "Invalid item index"}
-
-        item = inventory[item_index]
-        item_name = getattr(item, "name", "Unknown Item")
-
-        # TODO: Apply item effects
-        # For now, remove item and return stub
-        return {
-            "success": True,
-            "action": "use_item",
-            "item": item_name,
-            "effect": "Item used",
-            "items_remaining": len(inventory) - 1,
-        }
-
     def flee_combat(self, player: "player_module.Player") -> Dict[str, Any]:
         """Attempt to flee from combat.
 
@@ -3101,128 +3059,6 @@ class GameService:
             "fled": True,
             "message": "Fled from combat successfully",
         }
-
-    def _get_turn_order(
-        self, player: "player_module.Player", enemies: List[Any]
-    ) -> List[str]:
-        """Calculate turn order based on speed stats.
-
-        Args:
-            player: Player object
-            enemies: List of enemy NPCs
-
-        Returns:
-            List of combatant identifiers in turn order
-        """
-        combatants = [("player", getattr(player, "speed", 10))] + [
-            (f"enemy_{i}", getattr(e, "speed", 5)) for i, e in enumerate(enemies)
-        ]
-        # Sort by speed (descending) - higher speed goes first
-        combatants.sort(key=lambda x: x[1], reverse=True)
-        return [c[0] for c in combatants]
-
-    def _advance_turn(self, player: "player_module.Player", enemies: List[Any]) -> None:
-        """Advance to the next combatant's turn.
-
-        Args:
-            player: Player object
-            enemies: List of enemy NPCs
-        """
-        turn_order = self._get_turn_order(player, enemies)
-        player.combat_turn_index = (player.combat_turn_index + 1) % len(turn_order)
-
-        # If we wrapped around, increment round
-        if player.combat_turn_index == 0:
-            player.combat_round += 1
-            player.combat_log.append(
-                {
-                    "round": player.combat_round,
-                    "message": f"--- Round {player.combat_round} ---",
-                    "type": "system",
-                }
-            )
-
-    def _process_npc_turns(
-        self,
-        player: "player_module.Player",
-        enemies: List[Any],
-        turn_order: List[str],
-    ) -> None:
-        """Process NPC turns until it's the player's turn again.
-
-        Args:
-            player: Player object
-            enemies: List of enemy NPCs
-            turn_order: Ordered list of combatant identifiers
-        """
-        import random
-
-        while player.combat_turn_index < len(turn_order):
-            current_combatant = turn_order[player.combat_turn_index]
-
-            # If it's player's turn, stop processing
-            if current_combatant == "player":
-                break
-
-            # Process NPC turn
-            if current_combatant.startswith("enemy_"):
-                enemy_index = int(current_combatant.split("_")[1])
-                if enemy_index < len(enemies):
-                    enemy = enemies[enemy_index]
-
-                    # Simple AI: attack the player
-                    damage = random.randint(5, 15)
-                    player.hp = max(0, player.hp - damage)
-
-                    player.combat_log.append(
-                        {
-                            "round": player.combat_round,
-                            "message": f"{enemy.name} attacks for {damage} damage! (Player HP: {player.hp}/{player.maxhp})",
-                            "type": "enemy_action",
-                            "actor": enemy.name,
-                            "damage": damage,
-                        }
-                    )
-
-                    # Check if player is defeated
-                    if player.hp <= 0:
-                        player.combat_log.append(
-                            {
-                                "round": player.combat_round,
-                                "message": "You have been defeated!",
-                                "type": "system",
-                            }
-                        )
-                        player.in_combat = False
-                        return
-
-            # Advance to next turn
-            self._advance_turn(player, enemies)
-
-    def end_combat(
-        self, player: "player_module.Player", victory: bool
-    ) -> Dict[str, Any]:
-        """End combat and return results.
-
-        Args:
-            player: Player object
-            victory: Whether player won
-
-        Returns:
-            Dictionary with combat results
-        """
-        enemies = getattr(player, "combat_list", [])
-        player.in_combat = False
-
-        result = CombatStateSerializer.serialize_battle_summary(
-            player, enemies, victory
-        )
-
-        # Reset combat lists
-        player.combat_list = []
-        player.combat_list_allies = []
-
-        return result
 
     # =====================
     # NPC Methods (Phase 5)
@@ -4339,31 +4175,6 @@ class GameService:
             "success": True,
             "message": f"Dropped {item.name}",
             "item_name": item.name,
-        }
-
-    def rest(self, player: "player_module.Player") -> Dict[str, Any]:
-        """Rest to restore HP and fatigue.
-
-        Args:
-            player: The Player instance
-
-        Returns:
-            Dictionary with rest result
-        """
-        old_hp = player.hp
-        old_fatigue = player.fatigue
-
-        # Restore HP and fatigue
-        player.hp = player.maxhp
-        player.fatigue = player.maxfatigue
-
-        return {
-            "success": True,
-            "message": "You rest and recover",
-            "hp_restored": player.hp - old_hp,
-            "fatigue_restored": player.fatigue - old_fatigue,
-            "current_hp": player.hp,
-            "current_fatigue": player.fatigue,
         }
 
     def get_combat_state(self, player: "player_module.Player") -> Dict[str, Any]:

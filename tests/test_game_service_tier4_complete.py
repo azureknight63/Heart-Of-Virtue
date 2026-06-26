@@ -228,14 +228,6 @@ class TestGameServicePlayerStatusMethods:
         except Exception:
             pass
 
-    def test_defend_action(self, game_service, player_setup):
-        """Test defend action"""
-        try:
-            result = game_service.defend(player_setup)
-            assert isinstance(result, dict) or result is None
-        except Exception:
-            pass
-
     def test_get_available_commands(self, game_service, player_setup):
         """Test get_available_commands in current context"""
         result = game_service.get_available_commands(player_setup)

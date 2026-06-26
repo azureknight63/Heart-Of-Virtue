@@ -12,56 +12,9 @@ from src.api.services.validators import (
     validate_required_fields,
     validate_npc_id,
 )
+from src.api.middleware.auth import get_session_and_player
 
 npc_bp = Blueprint("npc", __name__, url_prefix="/api/npc")
-
-
-def get_session_and_player():
-    """Extract and validate session from Authorization header.
-
-    Returns:
-        Tuple of (session_manager, session, player, error_response, status_code)
-        or (None, None, None, error_response, status_code) on error
-    """
-    auth_header = request.headers.get("Authorization", "")
-    if not auth_header.startswith("Bearer "):
-        return (
-            None,
-            None,
-            None,
-            jsonify(
-                {
-                    "success": False,
-                    "error": "Missing or invalid Authorization header",
-                }
-            ),
-            401,
-        )
-
-    session_id = auth_header[7:]
-    session_manager = current_app.session_manager
-    session = session_manager.get_session(session_id)
-
-    if not session:
-        return (
-            None,
-            None,
-            None,
-            jsonify({"success": False, "error": "Invalid or expired session"}),
-            401,
-        )
-
-    player = session_manager.get_player(session_id)
-    if not player:
-        return (
-            None,
-            None,
-            None,
-            jsonify({"success": False, "error": "Player not found"}),
-            404,
-        )
-
-    return session_manager, session, player, None, None
 
 
 @npc_bp.route("/<npc_id>/state", methods=["GET"])
@@ -80,9 +33,9 @@ def get_npc_state(npc_id):
         return jsonify({"success": False, "error": error}), 400
 
     # Get session and player
-    session_manager, session, player, error, status = get_session_and_player()
+    session_manager, session, player, error = get_session_and_player()
     if error:
-        return error, status
+        return error
 
     # Get NPC state
     result = current_app.game_service.get_npc_state(player, npc_id)
@@ -111,9 +64,9 @@ def get_npc_dialogue(npc_id):
         return jsonify({"success": False, "error": error}), 400
 
     # Get session and player
-    session_manager, session, player, error, status = get_session_and_player()
+    session_manager, session, player, error = get_session_and_player()
     if error:
-        return error, status
+        return error
 
     # Get dialogue
     result = current_app.game_service.get_npc_dialogue(player, npc_id)
@@ -151,9 +104,9 @@ def select_dialogue_option(npc_id):
         return jsonify({"success": False, "error": error}), 400
 
     # Get session and player
-    session_manager, session, player, error, status = get_session_and_player()
+    session_manager, session, player, error = get_session_and_player()
     if error:
-        return error, status
+        return error
 
     # Validate option_id is an integer
     try:
@@ -201,9 +154,9 @@ def get_npc_profile(npc_id):
         return jsonify({"success": False, "error": error}), 400
 
     # Get session and player
-    session_manager, session, player, error, status = get_session_and_player()
+    session_manager, session, player, error = get_session_and_player()
     if error:
-        return error, status
+        return error
 
     # Get profile
     result = current_app.game_service.get_npc_behavior_profile(player, npc_id)

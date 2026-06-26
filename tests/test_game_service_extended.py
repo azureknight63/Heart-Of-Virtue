@@ -4,7 +4,7 @@ Tests for high-impact, previously untested methods:
 - Shop system: shop_buy, shop_sell, shop_buyback, get_shop_state
 - Skills/abilities: learn_skill, get_player_skills, get_available_moves
 - Awards: award_gold, award_experience, award_item, award_reputation
-- Combat: defend, flee_combat, use_item_in_combat, end_combat, get_combat_status
+- Combat: flee_combat, get_combat_status
 - Quests: update_quest_progress, get_quest_status, get_active_quests, complete_quest
 - NPC systems: get_npc_state, get_npc_relationship, update_reputation, set_relationship_flag
 - World: collect_combat_loot, get_player_progression, get_npcs_at_location
@@ -750,22 +750,6 @@ class TestGetNpcRelationship:
 # ============================================================================
 
 
-class TestDefend:
-    """Tests for defend() - defend action during combat."""
-
-    def test_defend_returns_dict(self, game_service, extended_mock_player):
-        """Test that defend returns a dictionary."""
-        extended_mock_player.in_combat = True
-        result = game_service.defend(extended_mock_player)
-        assert isinstance(result, dict)
-
-    def test_defend_success_flag(self, game_service, extended_mock_player):
-        """Test that defend sets success flag."""
-        extended_mock_player.in_combat = True
-        result = game_service.defend(extended_mock_player)
-        assert result["success"] is True
-
-
 class TestFleeCombat:
     """Tests for flee_combat() - flee from combat."""
 
@@ -780,28 +764,6 @@ class TestFleeCombat:
         extended_mock_player.in_combat = False
         result = game_service.flee_combat(extended_mock_player)
         assert result.get("success") is False or "error" in result
-
-
-class TestEndCombat:
-    """Tests for end_combat() - end the current combat."""
-
-    def test_end_combat_returns_dict(self, game_service, extended_mock_player):
-        """Test that end_combat returns a dictionary."""
-        extended_mock_player.in_combat = True
-        extended_mock_player.combat_list = []
-        with patch("src.api.serializers.combat.CombatStateSerializer.serialize_battle_summary", return_value={}):
-            result = game_service.end_combat(extended_mock_player, victory=True)
-            assert isinstance(result, dict)
-
-    def test_end_combat_clears_combat(self, game_service, extended_mock_player):
-        """Test that end_combat clears combat state."""
-        extended_mock_player.in_combat = True
-        extended_mock_player.combat_list = [MagicMock()]
-        with patch("src.api.serializers.combat.CombatStateSerializer.serialize_battle_summary", return_value={}):
-            result = game_service.end_combat(extended_mock_player, victory=True)
-            assert isinstance(result, dict)
-            assert extended_mock_player.in_combat is False
-            assert extended_mock_player.combat_list == []
 
 
 # ============================================================================

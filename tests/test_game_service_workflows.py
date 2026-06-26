@@ -11,7 +11,7 @@ Target: 60-80 tests covering multi-step sequences, state transitions, and invari
 """
 
 import pytest
-from unittest.mock import MagicMock, Mock, patch, call
+from unittest.mock import MagicMock, patch
 from src.api.services.game_service import GameService
 
 
@@ -243,25 +243,6 @@ class TestCombatWorkflows:
         assert result.get("success") or "error" not in result
         mock_adapter.process_command.assert_called()
 
-    def test_combat_workflow_end_combat_transitions_to_not_in_combat(
-        self, game_service, player_with_universe, mock_enemy
-    ):
-        """Test that end_combat transitions player to not-in-combat state."""
-        player_with_universe.in_combat = True
-        player_with_universe.combat_list = [mock_enemy]
-        player_with_universe.combat_list_allies = []
-
-        with patch(
-            "src.api.serializers.combat.CombatStateSerializer.serialize_battle_summary"
-        ) as mock_summary:
-            mock_summary.return_value = {"victory": True}
-
-            result = game_service.end_combat(player_with_universe, True)
-
-            assert player_with_universe.in_combat is False
-            assert len(player_with_universe.combat_list) == 0
-            assert len(player_with_universe.combat_list_allies) == 0
-
     def test_combat_workflow_flee_from_combat(
         self, game_service, player_with_universe, mock_enemy
     ):
@@ -315,51 +296,6 @@ class TestCombatWorkflows:
         assert player_with_universe.hp <= initial_hp
         assert player_with_universe.hp >= 0
 
-    def test_combat_workflow_combat_lists_cleared_on_end(
-        self, game_service, player_with_universe, mock_enemy
-    ):
-        """Test invariant: combat_list and allies cleared after combat ends."""
-        player_with_universe.in_combat = True
-        player_with_universe.combat_list = [mock_enemy]
-        player_with_universe.combat_list_allies = []
-
-        with patch(
-            "src.api.serializers.combat.CombatStateSerializer.serialize_battle_summary"
-        ) as mock_summary:
-            mock_summary.return_value = {"victory": True}
-            game_service.end_combat(player_with_universe, True)
-
-        assert player_with_universe.combat_list == []
-        assert player_with_universe.combat_list_allies == []
-
-    def test_combat_workflow_combat_round_advances(
-        self, game_service, player_with_universe, mock_enemy
-    ):
-        """Test that combat_round increments through the combat."""
-        player_with_universe.in_combat = True
-        player_with_universe.combat_round = 1
-        enemies = [mock_enemy]
-
-        initial_round = player_with_universe.combat_round
-        game_service._advance_turn(player_with_universe, enemies)
-
-        # Round should either stay same or increment
-        assert player_with_universe.combat_round >= initial_round
-
-    def test_combat_workflow_turn_order_respects_speed(
-        self, game_service, player_with_universe, mock_enemy
-    ):
-        """Test invariant: turn order respects speed stat."""
-        player_with_universe.speed = 15
-        mock_enemy.speed = 5
-
-        turn_order = game_service._get_turn_order(
-            player_with_universe, [mock_enemy]
-        )
-
-        # Player should go first (higher speed)
-        assert turn_order[0] == "player"
-
     def test_combat_workflow_cannot_execute_move_not_awaiting_input(
         self, game_service, player_with_universe, mock_enemy
     ):
@@ -399,42 +335,6 @@ class TestCombatWorkflows:
             result = game_service.get_combat_status(player_with_universe)
 
             assert result.get("success") is not False
-
-    def test_combat_workflow_multi_enemy_combat(
-        self, game_service, player_with_universe, mock_enemy
-    ):
-        """Test workflow with multiple enemies."""
-        enemy2 = MagicMock()
-        enemy2.name = "Bat"
-        enemy2.hp = 15
-        enemy2.speed = 8
-
-        player_with_universe.in_combat = True
-        player_with_universe.combat_list = [mock_enemy, enemy2]
-
-        turn_order = game_service._get_turn_order(
-            player_with_universe, [mock_enemy, enemy2]
-        )
-
-        assert len(turn_order) == 3  # player + 2 enemies
-        assert "player" in turn_order
-
-    def test_combat_workflow_end_combat_on_player_death(
-        self, game_service, player_with_universe, mock_enemy
-    ):
-        """Test that combat ends when player HP reaches 0."""
-        player_with_universe.in_combat = True
-        player_with_universe.hp = 0
-        player_with_universe.combat_list = [mock_enemy]
-
-        with patch(
-            "src.api.serializers.combat.CombatStateSerializer.serialize_battle_summary"
-        ) as mock_summary:
-            mock_summary.return_value = {"victory": False}
-
-            result = game_service.end_combat(player_with_universe, False)
-
-            assert player_with_universe.in_combat is False
 
 
 # =============================================================================
@@ -702,18 +602,6 @@ class TestStateInvariants:
 
         assert None not in player_with_universe.combat_list
 
-    def test_invariant_turn_order_includes_all_combatants(
-        self, game_service, player_with_universe, mock_enemy
-    ):
-        """Invariant: turn_order must include player and all enemies."""
-        player_with_universe.speed = 10
-        enemies = [mock_enemy]
-
-        turn_order = game_service._get_turn_order(player_with_universe, enemies)
-
-        assert "player" in turn_order
-        assert len(turn_order) == len(enemies) + 1  # player + all enemies
-
     def test_invariant_reputation_never_negative(
         self, game_service, player_with_universe
     ):
@@ -759,69 +647,6 @@ class TestStateInvariants:
         quest["stage"] = max(1, quest["stage"])
 
         assert quest["stage"] >= 1
-
-
-# =============================================================================
-# COMPLEX WORKFLOW INTEGRATION TESTS
-# =============================================================================
-
-
-class TestComplexWorkflows:
-    """Test multi-step, cross-system workflows."""
-
-    def test_complex_workflow_start_combat_execute_move_end(
-        self, game_service, player_with_universe, mock_enemy
-    ):
-        """Test full combat sequence: start → execute move → end."""
-        player_with_universe.in_combat = False
-        player_with_universe.hp = 100
-        player_with_universe.maxhp = 100
-
-        # Mock adapter
-        mock_adapter = MagicMock()
-        mock_adapter.awaiting_input = True
-        mock_adapter.available_options = [{"name": "Slash", "index": 0}]
-        mock_adapter.process_command = MagicMock(
-            return_value={"success": True}
-        )
-
-        # Start combat
-        player_with_universe.in_combat = True
-        player_with_universe.combat_list = [mock_enemy]
-        player_with_universe._combat_adapter = mock_adapter
-
-        # Execute move
-        result = game_service.execute_move(
-            player_with_universe, "move", "0"
-        )
-        assert result.get("success") or "error" not in result
-
-        # End combat
-        with patch(
-            "src.api.serializers.combat.CombatStateSerializer.serialize_battle_summary"
-        ):
-            game_service.end_combat(player_with_universe, True)
-
-        assert player_with_universe.in_combat is False
-
-    def test_complex_workflow_state_cleanup_on_transition(
-        self, game_service, player_with_universe, mock_enemy
-    ):
-        """Test that state is properly cleaned up during transitions."""
-        player_with_universe.in_combat = True
-        player_with_universe.combat_list = [mock_enemy]
-        player_with_universe.combat_log = [
-            {"round": 1, "message": "Battle started"}
-        ]
-
-        with patch(
-            "src.api.serializers.combat.CombatStateSerializer.serialize_battle_summary"
-        ):
-            game_service.end_combat(player_with_universe, True)
-
-        # Old state should be cleaned
-        assert player_with_universe.combat_list == []
-        assert player_with_universe.in_combat is False
 
 
 # =============================================================================

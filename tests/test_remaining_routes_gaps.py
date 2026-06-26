@@ -14,8 +14,9 @@ mocks SessionManager and GameService so no DB or universe needed.
 import json
 from unittest.mock import MagicMock, patch
 
-import pytest
 from flask import Flask
+
+from conftest import wire_real_allocate_level_up_points
 
 # ---------------------------------------------------------------------------
 # App fixture helpers
@@ -31,6 +32,7 @@ def _build_app_with_route(blueprint, url_prefix, session_id="sess_abc"):
     sm = MagicMock()
     sm.get_active_session_count.return_value = 0
     gs = MagicMock()
+    wire_real_allocate_level_up_points(gs)
 
     session = MagicMock()
     session.session_id = session_id
@@ -563,5 +565,3 @@ class TestShopRouteGaps:
             headers=AUTH_HEADER,
         )
         assert resp.status_code == 500
-
-
