@@ -155,6 +155,7 @@ class TestCombatantResistances:
         assert 'stun' in obj.status_resistance
         assert 'poison' in obj.status_resistance
         assert 'stone' in obj.status_resistance
+        assert 'slimed' in obj.status_resistance
 
     def test_init_resistances_defaults_to_one_point_zero(self):
         """All resistance values should default to 1.0 (neutral)."""
