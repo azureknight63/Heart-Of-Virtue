@@ -23,7 +23,6 @@ export const player = {
 export const world = {
   getCurrentLocation: () => apiClient.get('/world'),
   move: (direction) => apiClient.post('/world/move', { direction }),
-  getExits: () => apiClient.get('/world/exits'),
   getTile: (x, y) => apiClient.get(`/world/tile?x=${x}&y=${y}`),
   getTilesBatch: (coordinates) => apiClient.post('/world/tiles/batch', { coordinates }),
   interact: (targetId, action, quantity) => apiClient.post('/world/interact', { target_id: targetId, action, quantity }),

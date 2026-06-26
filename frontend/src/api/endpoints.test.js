@@ -85,11 +85,6 @@ describe('endpoints', () => {
       expect(apiClient.post).toHaveBeenCalledWith('/world/move', { direction: 'north' });
     });
 
-    it('calls getExits endpoint', () => {
-      endpoints.world.getExits();
-      expect(apiClient.get).toHaveBeenCalledWith('/world/exits');
-    });
-
     it('calls getTile endpoint', () => {
       endpoints.world.getTile(10, 20);
       expect(apiClient.get).toHaveBeenCalledWith('/world/tile?x=10&y=20');
