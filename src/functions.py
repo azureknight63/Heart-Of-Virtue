@@ -261,7 +261,7 @@ def refresh_stat_bonuses(
          one recognized bonus attribute are collected.
       3. Supported bonus attributes:
            add_str, add_fin, add_maxhp, add_maxfatigue, add_speed, add_endurance,
-           add_charisma, add_intelligence, add_faith, add_weight_tolerance,
+           add_charisma, add_intelligence, add_faith, add_weight_tolerance, add_protection,
            add_resistance (dict), add_status_resistance (dict)
       4. Resistance & status resistance bonuses merge only for keys present in the target's
          base dictionaries. Status resistance cannot drop below 0.
@@ -290,6 +290,7 @@ def refresh_stat_bonuses(
         "add_intelligence": "intelligence",
         "add_faith": "faith",
         "add_weight_tolerance": "weight_tolerance",
+        "add_protection": "protection",
         "add_resistance": "_resistance_dict",  # sentinel: dict merge
         "add_status_resistance": "_status_resistance_dict",  # sentinel: dict merge
     }
@@ -424,13 +425,6 @@ def refresh_stat_bonuses(
             except Exception:
                 pass
 
-    # Refresh protection rating if applicable
-    if hasattr(target, "refresh_protection_rating"):
-        try:
-            target.refresh_protection_rating()
-        except Exception:
-            pass
-
     # Ensure all fatigue values are rounded up to the nearest integer and clamped
     if hasattr(target, "fatigue") and hasattr(target, "maxfatigue"):
         target.maxfatigue = int(math.ceil(target.maxfatigue))
@@ -544,6 +538,20 @@ def reset_stats(target):  # resets all stats to base level
     if hasattr(target, "weight_tolerance") and hasattr(target, "weight_tolerance_base"):
         try:
             target.weight_tolerance = getattr(target, "weight_tolerance_base")
+        except Exception:
+            pass
+
+    # Reset protection to its true base before bonuses (add_protection from states/
+    # items) are summed on top. Player recomputes protection dynamically from gear;
+    # NPCs fall back to the fixed value captured at construction.
+    if hasattr(target, "refresh_protection_rating"):
+        try:
+            target.refresh_protection_rating()
+        except Exception:
+            pass
+    elif hasattr(target, "protection_base"):
+        try:
+            target.protection = target.protection_base
         except Exception:
             pass
 

@@ -134,20 +134,93 @@ def test_refresh_stat_bonuses_items_and_states():
 
 def test_refresh_stat_bonuses_applies_real_disoriented_state():
     """End-to-end check (no mocks): a real Disoriented state's declarative
-    add_fin bonus actually reduces target.finesse when the unmocked
-    refresh_stat_bonuses sums it, closing the gap left when Disoriented
-    stopped mutating finesse directly."""
+    add_fin/add_protection bonuses actually reduce target.finesse/protection
+    when the unmocked refresh_stat_bonuses sums them, closing the gap left
+    when Disoriented stopped mutating finesse/protection directly (issue #259)."""
     from src.states import Disoriented
 
     player = DummyPlayer()
     player.protection = 20
-    state = Disoriented(player)  # add_fin computed from player.finesse == 10
+    player.protection_base = 20  # lacks refresh_protection_rating; reset_stats
+    # falls back to the protection_base path (mirrors a real NPC's fixed value)
+    state = Disoriented(player)  # add_fin/add_protection computed from current stats
     player.states.append(state)
 
     functions.refresh_stat_bonuses(player)
 
     assert state.add_fin < 0
     assert player.finesse == player.finesse_base + state.add_fin
+    assert state.add_protection < 0
+    assert player.protection == player.protection_base + state.add_protection
+
+    # Idempotency: repeated refreshes while the state remains active must not
+    # keep stacking the penalty (reset_stats restores protection_base first).
+    functions.refresh_stat_bonuses(player)
+    assert player.protection == player.protection_base + state.add_protection
+
+    # Removal: once the state is gone, refresh_stat_bonuses must restore
+    # protection to its true base -- no double-restore, no residual penalty.
+    player.states.remove(state)
+    functions.refresh_stat_bonuses(player)
+    assert player.protection == player.protection_base
+
+
+def test_refresh_stat_bonuses_real_player_protection_survives_recompute():
+    """Reproduces the exact GitHub issue #259 scenario end-to-end with a real
+    Player: Disoriented's protection penalty must not be silently wiped by
+    Player.refresh_protection_rating() recomputing protection from gear, and
+    must not double-restore (inflate) protection when the state expires."""
+    from src.player import Player
+    from src.states import Disoriented
+
+    player = Player()
+    functions.refresh_stat_bonuses(player)
+    baseline_protection = player.protection
+
+    state = Disoriented(player)
+    player.states.append(state)
+    functions.refresh_stat_bonuses(player)
+
+    assert state.add_protection < 0
+    assert player.protection == baseline_protection + state.add_protection
+
+    # Calling refresh_stat_bonuses again (e.g. from an equip/rest path) while
+    # the debuff is still active must not re-stack or wipe the penalty.
+    functions.refresh_stat_bonuses(player)
+    assert player.protection == baseline_protection + state.add_protection
+
+    # Removal restores the original value exactly -- no double-restore.
+    player.states.remove(state)
+    functions.refresh_stat_bonuses(player)
+    assert player.protection == baseline_protection
+
+
+def test_refresh_stat_bonuses_real_npc_petrified_protection_bonus():
+    """Same regression as above but for a real NPC and the Petrified buff
+    (positive add_protection). NPCs have no refresh_protection_rating, so this
+    exercises the protection_base fallback branch in reset_stats()."""
+    from src.npc import NPC
+    from src.states import Petrified
+
+    npc = NPC(name="RockRumbler", description="A lumbering creature", damage=8, aggro=70, exp_award=50, protection=30)
+    functions.refresh_stat_bonuses(npc)
+    baseline_protection = npc.protection
+
+    state = Petrified(npc)
+    npc.states.append(state)
+    functions.refresh_stat_bonuses(npc)
+
+    assert state.add_protection > 0
+    assert npc.protection == baseline_protection + state.add_protection
+
+    # Repeated refresh while active must not keep stacking the bonus.
+    functions.refresh_stat_bonuses(npc)
+    assert npc.protection == baseline_protection + state.add_protection
+
+    # Removal restores the original value exactly -- no double-restore.
+    npc.states.remove(state)
+    functions.refresh_stat_bonuses(npc)
+    assert npc.protection == baseline_protection
 
 
 # ---------- check_parry ----------

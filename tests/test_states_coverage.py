@@ -86,17 +86,18 @@ def test_enflamed_compound_steps_left_cap():
 # Slimed.on_removal() — lines 337-339
 # ---------------------------------------------------------------------------
 def test_slimed_on_removal():
+    """on_removal only announces; the protection penalty is declarative
+    (add_protection summed by refresh_stat_bonuses) and is never mutated
+    directly by on_removal."""
     target = FakeTarget()
     state = Slimed(target)
     original_protection = target.protection
-    # Manually apply the on_application effect so protection is reduced
-    target.protection = max(0, target.protection - state.sub_protection)
 
-    with patch('states.cprint'):
+    with patch('states.cprint') as mock_cprint:
         state.on_removal(target)
 
-    # protection should be restored
     assert target.protection == original_protection
+    assert mock_cprint.called
 
 
 # ---------------------------------------------------------------------------

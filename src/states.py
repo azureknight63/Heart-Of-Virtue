@@ -276,19 +276,17 @@ class Disoriented(State):
             description="Finesse -30%, Protection -25%. Defensive positioning is compromised.",
         )
         self.add_fin = -int(target.finesse * 0.3)  # Reduce finesse by 30%
-        self.sub_protection = int(target.protection * 0.25)  # Reduce protection by 25%
+        self.add_protection = -int(target.protection * 0.25)  # Reduce protection by 25%
 
     def on_application(self, target):
         cprint(
             "{} is disoriented and struggling to maintain balance!".format(target.name),
             "yellow",
         )
-        target.protection = max(0, target.protection - self.sub_protection)
         functions.refresh_stat_bonuses(target)
 
     def on_removal(self, target):
         cprint("{} regains their bearings!".format(target.name), "green")
-        target.protection += self.sub_protection
 
 
 class Hawkeye(State):
@@ -323,15 +321,13 @@ class Slimed(State):
         self.tick = 0
         self.execute_on = 6
         self.add_fin = -int(target.finesse * 0.20)
-        self.sub_protection = int(target.protection * 0.15)
+        self.add_protection = -int(target.protection * 0.15)
 
     def on_application(self, target):
-        target.protection = max(0, target.protection - self.sub_protection)
         functions.refresh_stat_bonuses(target)
         cprint("{} is coated in corrosive slime!".format(target.name), "cyan")
 
     def on_removal(self, target):
-        target.protection += self.sub_protection
         cprint("The corrosive slime finally sloughs away from {}.".format(target.name), "white")
 
     def effect(self, target):
@@ -430,10 +426,9 @@ class Petrified(State):
         self.execute_on = 6
         self.add_fin = -int(target.finesse * 0.20)
         self.add_speed = -int(target.speed * 0.35)
-        self.prot_bonus = int(target.protection * 0.25)
+        self.add_protection = int(target.protection * 0.25)
 
     def on_application(self, target):
-        target.protection += self.prot_bonus
         functions.refresh_stat_bonuses(target)
         cprint(
             "Mineral sediment from the pools settles into {}'s joints.".format(target.name),
@@ -441,7 +436,6 @@ class Petrified(State):
         )
 
     def on_removal(self, target):
-        target.protection = max(0, target.protection - self.prot_bonus)
         cprint(
             "The mineral crust cracks and falls away from {}.".format(target.name),
             "white",
