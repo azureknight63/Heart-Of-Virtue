@@ -736,7 +736,7 @@ class TestUseItem:
 
 
 class TestUnequipItem:
-    def test_missing_slot_returns_400(self):
+    def test_missing_item_params_returns_400(self):
         app, _, _, _ = _make_app()
         with app.test_client() as c:
             resp = c.post(
@@ -746,73 +746,88 @@ class TestUnequipItem:
             )
         assert resp.status_code == 400
 
-    def test_invalid_slot_returns_400(self):
-        app, _, _, _ = _make_app()
-        with patch(
-            "src.api.routes.inventory.validate_equipment_slot",
-            return_value=(False, "bad slot"),
-        ):
-            with app.test_client() as c:
-                resp = c.post(
-                    "/inventory/unequip",
-                    json={"slot": "invalidslot"},
-                    headers={"Authorization": AUTH},
-                )
+    def test_item_not_found_returns_400(self):
+        app, _, _, _ = _make_app(player=_make_player(items=[]))
+        with app.test_client() as c:
+            resp = c.post(
+                "/inventory/unequip",
+                json={"item_index": 5},
+                headers={"Authorization": AUTH},
+            )
         assert resp.status_code == 400
 
-    def test_slot_not_in_equipment_dict_returns_400(self):
-        player = _make_player()
-        player.equipped = {}
+    def test_item_not_equippable_returns_400(self):
+        item = MagicMock(spec=["name", "merchandise"])
+        item.name = "Herb"
+        item.merchandise = False
+        player = _make_player(items=[item])
         app, _, _, _ = _make_app(player=player)
-        with patch(
-            "src.api.routes.inventory.validate_equipment_slot",
-            return_value=(True, None),
-        ):
-            with app.test_client() as c:
-                resp = c.post(
-                    "/inventory/unequip",
-                    json={"slot": "head"},
-                    headers={"Authorization": AUTH},
-                )
+        with app.test_client() as c:
+            resp = c.post(
+                "/inventory/unequip",
+                json={"item_index": 0},
+                headers={"Authorization": AUTH},
+            )
         assert resp.status_code == 400
 
-    def test_no_item_in_slot_returns_400(self):
-        player = _make_player()
-        player.equipped = {"head": None}
+    def test_not_currently_equipped_returns_400(self):
+        item = _make_item("Helmet", isequipped=False, maintype="Armor")
+        player = _make_player(items=[item])
         app, _, _, _ = _make_app(player=player)
-        with patch(
-            "src.api.routes.inventory.validate_equipment_slot",
-            return_value=(True, None),
-        ):
-            with app.test_client() as c:
-                resp = c.post(
-                    "/inventory/unequip",
-                    json={"slot": "head"},
-                    headers={"Authorization": AUTH},
-                )
+        with app.test_client() as c:
+            resp = c.post(
+                "/inventory/unequip",
+                json={"item_index": 0},
+                headers={"Authorization": AUTH},
+            )
         assert resp.status_code == 400
 
-    def test_valid_slot_with_item_returns_success(self):
+    def test_unequip_success_clears_slot_and_refreshes_stats(self):
         item = _make_item("Helmet", isequipped=True, maintype="Armor")
-        player = _make_player()
-        player.equipped = {"head": item}
+        player = _make_player(items=[item])
         app, _, _, _ = _make_app(player=player)
         with (
-            patch(
-                "src.api.routes.inventory.validate_equipment_slot",
-                return_value=(True, None),
-            ),
-            patch("src.api.routes.inventory.EquipmentSerializer") as mock_ser,
+            patch("src.api.routes.inventory.EquipmentSerializer") as mock_eq,
+            patch("src.api.routes.inventory.InventorySerializer") as mock_inv,
+            patch("src.functions.refresh_stat_bonuses") as mock_refresh,
         ):
-            mock_ser.serialize.return_value = {}
+            mock_eq.serialize.return_value = {}
+            mock_inv.serialize.return_value = {}
             with app.test_client() as c:
                 resp = c.post(
                     "/inventory/unequip",
-                    json={"slot": "head"},
+                    json={"item_index": 0},
                     headers={"Authorization": AUTH},
                 )
         assert resp.status_code == 200
         assert resp.get_json()["success"] is True
+        # The actual bug being fixed: the slot must clear and on_unequip/
+        # refresh_stat_bonuses must be called — not just validated and ignored.
+        assert item.isequipped is False
+        item.on_unequip.assert_called_once_with(player)
+        mock_refresh.assert_called_once_with(player)
+
+    def test_unequip_weapon_resets_to_fists(self):
+        item = _make_item("Iron Sword", isequipped=True, maintype="Weapon")
+        player = _make_player(items=[item])
+        player.eq_weapon = item
+        app, _, _, _ = _make_app(player=player)
+        with (
+            patch("src.api.routes.inventory.EquipmentSerializer") as mock_eq,
+            patch("src.api.routes.inventory.InventorySerializer") as mock_inv,
+            patch("src.functions.refresh_stat_bonuses"),
+        ):
+            mock_eq.serialize.return_value = {}
+            mock_inv.serialize.return_value = {}
+            with app.test_client() as c:
+                resp = c.post(
+                    "/inventory/unequip",
+                    json={"item_index": 0},
+                    headers={"Authorization": AUTH},
+                )
+        assert resp.status_code == 200
+        assert item.isequipped is False
+        assert player.eq_weapon is player.fists
 
 
 # ---------------------------------------------------------------------------

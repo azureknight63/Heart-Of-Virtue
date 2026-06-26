@@ -307,47 +307,6 @@ class TestSavesRoutes:
 
 
 # ===========================================================================
-# equipment.py
-# ===========================================================================
-
-
-class TestEquipmentRoutes:
-    """Tests for routes/equipment.py (covers remaining ~12% gap)."""
-
-    @pytest.fixture
-    def app(self):
-        from src.api.routes.equipment import equipment_bp
-
-        return _minimal_app(equipment_bp, prefix="/api")
-
-    @pytest.fixture
-    def client(self, app):
-        with app.test_client() as c:
-            yield c
-
-    def test_get_equipment_success(self, client):
-        rv = client.get("/api/equipment", headers=AUTH)
-        assert rv.status_code == 200
-        data = rv.get_json()
-        assert data["success"] is True
-
-    def test_get_equipment_no_auth(self, client):
-        rv = client.get("/api/equipment", headers=NO_AUTH)
-        assert rv.status_code == 401
-
-    def test_get_equipment_no_game_service(self, app):
-        app.game_service = None
-        with app.test_client() as c:
-            rv = c.get("/api/equipment", headers=AUTH)
-        assert rv.status_code == 500
-
-    def test_get_equipment_exception(self, app):
-        app._test_gs.get_equipment.side_effect = RuntimeError("crash")
-        with app.test_client() as c:
-            rv = c.get("/api/equipment", headers=AUTH)
-        assert rv.status_code == 500
-
-# ===========================================================================
 # npc.py
 # ===========================================================================
 

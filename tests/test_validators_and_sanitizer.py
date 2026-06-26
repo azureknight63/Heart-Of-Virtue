@@ -360,14 +360,25 @@ class TestValidateItemIndex:
 
 class TestValidateEquipmentSlot:
     @pytest.mark.parametrize(
-        "slot", ["head", "chest", "legs", "hands", "feet", "back", "ring1", "ring2"]
+        "slot",
+        [
+            "weapon",
+            "shield",
+            "head",
+            "body",
+            "legs",
+            "hands",
+            "feet",
+            "accessory_1",
+            "accessory_2",
+        ],
     )
     def test_valid_slots(self, slot):
         ok, err = validate_equipment_slot(slot)
         assert ok is True
 
     def test_invalid_slot(self):
-        ok, err = validate_equipment_slot("wrist")
+        ok, err = validate_equipment_slot("chest")
         assert ok is False
 
     def test_case_sensitive(self):

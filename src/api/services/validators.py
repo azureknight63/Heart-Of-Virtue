@@ -233,14 +233,15 @@ def validate_equipment_slot(slot_name: str) -> Tuple[bool, Optional[str]]:
         Tuple of (is_valid, error_message)
     """
     valid_slots = [
+        "weapon",
+        "shield",
         "head",
-        "chest",
+        "body",
         "legs",
         "hands",
         "feet",
-        "back",
-        "ring1",
-        "ring2",
+        "accessory_1",
+        "accessory_2",
     ]
     if slot_name not in valid_slots:
         return (
