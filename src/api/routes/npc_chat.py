@@ -9,56 +9,9 @@ Provides REST API endpoints for:
 """
 
 from flask import Blueprint, request, jsonify, current_app
+from src.api.middleware.auth import get_session_and_player
 
 npc_chat_bp = Blueprint("npc_chat", __name__)
-
-
-def get_session_and_player():
-    """Extract and validate session from Authorization header.
-
-    Returns:
-        Tuple of (session_manager, session, player, error_response, status_code)
-        or (None, None, None, error_response, status_code) on error
-    """
-    auth_header = request.headers.get("Authorization", "")
-    if not auth_header.startswith("Bearer "):
-        return (
-            None,
-            None,
-            None,
-            jsonify(
-                {
-                    "success": False,
-                    "error": "Missing or invalid Authorization header",
-                }
-            ),
-            401,
-        )
-
-    session_id = auth_header[7:]
-    session_manager = current_app.session_manager
-    session = session_manager.get_session(session_id)
-
-    if not session:
-        return (
-            None,
-            None,
-            None,
-            jsonify({"success": False, "error": "Invalid or expired session"}),
-            401,
-        )
-
-    player = session_manager.get_player(session_id)
-    if not player:
-        return (
-            None,
-            None,
-            None,
-            jsonify({"success": False, "error": "Player not found"}),
-            404,
-        )
-
-    return session_manager, session, player, None, None
 
 
 @npc_chat_bp.route("/open", methods=["POST"])
@@ -74,9 +27,9 @@ def npc_chat_open():
         JSON response with conversation state
     """
     # Get session and player
-    session_manager, session, player, error, status = get_session_and_player()
+    session_manager, session, player, error = get_session_and_player()
     if error:
-        return error, status
+        return error
 
     # Get request body
     try:
@@ -113,9 +66,9 @@ def npc_chat_respond():
         JSON response with NPC reply and options
     """
     # Get session and player
-    session_manager, session, player, error, status = get_session_and_player()
+    session_manager, session, player, error = get_session_and_player()
     if error:
-        return error, status
+        return error
 
     # Get request body
     try:
@@ -157,9 +110,9 @@ def npc_chat_end():
         JSON response with conversation summary
     """
     # Get session and player
-    session_manager, session, player, error, status = get_session_and_player()
+    session_manager, session, player, error = get_session_and_player()
     if error:
-        return error, status
+        return error
 
     # Get request body
     try:
@@ -192,9 +145,9 @@ def npc_chat_history(npc_key):
         JSON response with conversation exchanges and metadata
     """
     # Get session and player
-    session_manager, session, player, error, status = get_session_and_player()
+    session_manager, session, player, error = get_session_and_player()
     if error:
-        return error, status
+        return error
 
     npc_key = npc_key.strip()
     if not npc_key:

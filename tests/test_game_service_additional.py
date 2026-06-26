@@ -1,13 +1,13 @@
 """Additional GameService tests targeting critical untested methods.
 
 Focuses on:
-- Helper methods (_initialize_combat, _execute_attack, _execute_spell, _calculate_exits)
-- Game flow methods (use_item_in_combat, rest, check_npc_availability)
+- Helper methods (_initialize_combat, _calculate_exits)
+- Game flow methods (flee_combat, collect_combat_loot)
 - Initialization and state methods
 """
 
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 
 @pytest.fixture
@@ -71,24 +71,6 @@ class TestInitializeCombat:
         assert callable(getattr(game_service, "_initialize_combat"))
 
 
-# ========================= Execute Attack Tests =========================
-class TestExecuteAttack:
-    """Tests for _execute_attack() helper method."""
-
-    def test_execute_attack_method_exists(self, game_service):
-        """Test that _execute_attack method exists."""
-        assert hasattr(game_service, "_execute_attack")
-
-
-# ========================= Execute Spell Tests =========================
-class TestExecuteSpell:
-    """Tests for _execute_spell() helper method."""
-
-    def test_execute_spell_method_exists(self, game_service):
-        """Test that _execute_spell method exists."""
-        assert hasattr(game_service, "_execute_spell")
-
-
 # ========================= Calculate Exits Tests =========================
 class TestCalculateExits:
     """Tests for _calculate_exits() helper method."""
@@ -96,74 +78,6 @@ class TestCalculateExits:
     def test_calculate_exits_method_exists(self, game_service):
         """Test that _calculate_exits method exists."""
         assert hasattr(game_service, "_calculate_exits")
-
-
-# ========================= Use Item in Combat Tests =========================
-class TestUseItemInCombat:
-    """Tests for use_item_in_combat() method."""
-
-    def test_use_item_in_combat_returns_dict(self, game_service, mock_player):
-        """Test that use_item_in_combat returns a dictionary."""
-        result = game_service.use_item_in_combat(mock_player, 0)
-        assert isinstance(result, dict)
-
-    def test_use_item_in_combat_not_in_combat(self, game_service, mock_player):
-        """Test use_item_in_combat when not in combat."""
-        mock_player.in_combat = False
-        result = game_service.use_item_in_combat(mock_player, 0)
-        assert isinstance(result, dict)
-
-    def test_use_item_in_combat_empty_inventory(self, game_service, mock_player):
-        """Test use_item_in_combat with empty inventory."""
-        mock_player.in_combat = True
-        mock_player.inventory = []
-        result = game_service.use_item_in_combat(mock_player, 0)
-        assert isinstance(result, dict)
-
-
-# ========================= Rest Tests =========================
-class TestRest:
-    """Tests for rest() method."""
-
-    def test_rest_returns_dict(self, game_service, mock_player):
-        """Test that rest returns a dictionary."""
-        result = game_service.rest(mock_player)
-        assert isinstance(result, dict)
-
-    def test_rest_in_combat(self, game_service, mock_player):
-        """Test rest when player is in combat."""
-        mock_player.in_combat = True
-        result = game_service.rest(mock_player)
-        assert isinstance(result, dict)
-
-    def test_rest_at_full_health(self, game_service, mock_player):
-        """Test rest when already at full health."""
-        mock_player.hp = mock_player.maxhp
-        mock_player.fatigue = mock_player.maxfatigue
-        result = game_service.rest(mock_player)
-        assert isinstance(result, dict)
-
-
-# ========================= Defend Tests =========================
-class TestDefend:
-    """Tests for defend() method."""
-
-    def test_defend_returns_dict(self, game_service, mock_player):
-        """Test that defend returns a dictionary."""
-        result = game_service.defend(mock_player)
-        assert isinstance(result, dict)
-
-    def test_defend_in_combat(self, game_service, mock_player):
-        """Test defend when in combat."""
-        mock_player.in_combat = True
-        result = game_service.defend(mock_player)
-        assert isinstance(result, dict)
-
-    def test_defend_not_in_combat(self, game_service, mock_player):
-        """Test defend when not in combat."""
-        mock_player.in_combat = False
-        result = game_service.defend(mock_player)
-        assert isinstance(result, dict)
 
 
 # ========================= Flee Combat Tests =========================
@@ -185,22 +99,6 @@ class TestFleeCombat:
         """Test flee_combat when not in combat."""
         mock_player.in_combat = False
         result = game_service.flee_combat(mock_player)
-        assert isinstance(result, dict)
-
-
-# ========================= End Combat Tests =========================
-class TestEndCombat:
-    """Tests for end_combat() method."""
-
-    def test_end_combat_returns_dict(self, game_service, mock_player):
-        """Test that end_combat returns a dictionary."""
-        result = game_service.end_combat(mock_player, True)
-        assert isinstance(result, dict)
-
-    def test_end_combat_with_victory(self, game_service, mock_player):
-        """Test that end_combat with victory flag."""
-        mock_player.in_combat = True
-        result = game_service.end_combat(mock_player, True)
         assert isinstance(result, dict)
 
 

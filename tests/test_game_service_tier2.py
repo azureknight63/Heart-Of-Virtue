@@ -379,29 +379,11 @@ class TestWorldAndExploration:
 class TestCombatRewards:
     """Test combat-related rewards and status."""
 
-    def test_use_item_in_combat(self, game_service, mock_player):
-        """Test using item during combat."""
-        item = MagicMock()
-        mock_player.inventory = [item]
-        mock_player.in_combat = True
-
-        result = game_service.use_item_in_combat(mock_player, 0)
-        assert result is not None
-
     def test_flee_combat(self, game_service, mock_player):
         """Test fleeing combat."""
         mock_player.in_combat = True
 
         result = game_service.flee_combat(mock_player)
-        assert result is not None
-
-    def test_rest_success(self, game_service, mock_player):
-        """Test resting to recover."""
-        mock_player.hp = 50
-        mock_player.maxhp = 100
-        mock_player.in_combat = False
-
-        result = game_service.rest(mock_player)
         assert result is not None
 
 

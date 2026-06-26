@@ -326,10 +326,10 @@ def create_app(config_class=None):
         @app.route("/api/test/heal", methods=["POST"])
         def test_heal_player():
             """Restore player to full HP and fatigue. Test mode only — never active in production."""
-            from flask import jsonify, request as _req
-            from src.api.routes.debug import get_session_and_player
+            from flask import jsonify
+            from src.api.middleware.auth import get_session_and_player
 
-            session_manager, session, player, error = get_session_and_player(_req)
+            session_manager, session, player, error = get_session_and_player()
             if error:
                 return error
             try:

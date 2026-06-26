@@ -10,33 +10,7 @@ import logging
 import requests
 from collections import defaultdict
 from flask import Blueprint, request, jsonify
-
-
-def get_session_and_player(request):
-    """Extract session and player from request.
-
-    Returns:
-        Tuple of (session_manager, session, player, None) on success
-        or (None, None, None, (jsonify_response, status_code)) on error
-    """
-    from flask import current_app
-
-    auth_header = request.headers.get("Authorization", "")
-    if not auth_header.startswith("Bearer "):
-        return None, None, None, (jsonify({"error": "Missing authorization"}), 401)
-
-    session_id = auth_header[7:]
-    session_manager = current_app.session_manager
-
-    session = session_manager.get_session(session_id)
-    if not session:
-        return None, None, None, (jsonify({"error": "Invalid or expired session"}), 401)
-
-    player = session_manager.get_player(session_id)
-    if not player:
-        return None, None, None, (jsonify({"error": "Player not found"}), 404)
-
-    return session_manager, session, player, None
+from src.api.middleware.auth import get_session_and_player
 
 
 logger = logging.getLogger(__name__)
@@ -210,7 +184,7 @@ def submit_feedback():
         }
     }
     """
-    session_manager, session, player, error = get_session_and_player(request)
+    session_manager, session, player, error = get_session_and_player()
     if error:
         return error[0], error[1]
 

@@ -25,6 +25,8 @@ from unittest.mock import MagicMock, patch
 from types import SimpleNamespace
 from flask import Flask
 
+from conftest import wire_real_allocate_level_up_points
+
 # ---------------------------------------------------------------------------
 # Shared helpers
 # ---------------------------------------------------------------------------
@@ -114,6 +116,7 @@ def _make_game_service():
     gs.select_dialogue_option.return_value = {"success": True, "dialogue": []}
     gs.get_npc_behavior_profile.return_value = {"success": True, "profile": {}}
     gs.learn_skill.return_value = {"success": True, "remaining_exp": 100}
+    wire_real_allocate_level_up_points(gs)
     return gs
 
 
