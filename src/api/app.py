@@ -367,10 +367,13 @@ def create_app(config_class=None):
 
         return generate_swagger_ui_html()
 
-    # Debug: List all routes
+    # Debug: List all routes (test-only — avoids leaking the URL map in prod)
     @app.route("/api/debug/routes", methods=["GET"])
     def list_routes():
         from flask import jsonify
+
+        if not app.config.get("TESTING"):
+            return jsonify({"success": False, "error": "Not found"}), 404
 
         routes = []
         for rule in app.url_map.iter_rules():
