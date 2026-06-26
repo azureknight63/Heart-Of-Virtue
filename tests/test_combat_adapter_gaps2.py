@@ -107,6 +107,7 @@ def _make_enemy(name="Goblin", hp=50, maxhp=50, alive=True, speed=5, friend=Fals
     e.hp = hp
     e.maxhp = maxhp
     e.is_alive.return_value = alive
+    e.check_revive.return_value = False
     e.speed = speed
     e.friend = friend
     e.known_moves = []

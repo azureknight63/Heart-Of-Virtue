@@ -122,7 +122,7 @@ class KeepAway(Move):
             else:
                 self.hit(damage, glance)
                 # Push target back
-                if self.target and self.target.is_alive:
+                if self.target and self.target.is_alive():
                     self._push_target(player)
         else:
             self.miss()
@@ -244,7 +244,7 @@ class Lunge(Move):
         self.prep_colors()
 
         # Step toward target
-        if self.target and self.target.is_alive:
+        if self.target and self.target.is_alive():
             try:
                 if (
                     hasattr(player, "combat_position")

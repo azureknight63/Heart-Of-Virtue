@@ -879,7 +879,7 @@ class CombatBattlefieldWindow:
             self.set_combatant(
                 player_name,
                 player.combat_position,
-                is_alive=(player.is_alive if hasattr(player, "is_alive") else True),
+                is_alive=(player.is_alive() if hasattr(player, "is_alive") else True),
                 is_player=True,
                 is_ally=True,
                 health_percent=health_pct,
@@ -914,7 +914,7 @@ class CombatBattlefieldWindow:
                 self.set_combatant(
                     ally_name,
                     ally.combat_position,
-                    is_alive=(ally.is_alive if hasattr(ally, "is_alive") else True),
+                    is_alive=(ally.is_alive() if hasattr(ally, "is_alive") else True),
                     is_player=False,
                     is_ally=True,
                     health_percent=health_pct,
@@ -948,7 +948,7 @@ class CombatBattlefieldWindow:
                 self.set_combatant(
                     enemy_name,
                     enemy.combat_position,
-                    is_alive=(enemy.is_alive if hasattr(enemy, "is_alive") else True),
+                    is_alive=(enemy.is_alive() if hasattr(enemy, "is_alive") else True),
                     is_player=False,
                     is_ally=False,
                     health_percent=health_pct,

@@ -906,7 +906,7 @@ class PinningBolt(Move):
                 self.parry()
             else:
                 self.hit(damage, glance)
-                if self.target and self.target.is_alive:
+                if self.target and self.target.is_alive():
                     already = any(
                         isinstance(s, states.Disoriented) for s in self.target.states
                     )

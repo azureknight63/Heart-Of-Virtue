@@ -74,7 +74,7 @@ def _make_user(subtype="Polearm", equip=True):
     user.combat_list = []
     user.combat_list_allies = []
     user.combat_position = None
-    user.is_alive = True
+    user.is_alive = lambda: True
     user.resistance = dict(RESISTANCE)
     if equip:
         user.eq_weapon = _make_weapon(subtype=subtype)
@@ -91,7 +91,7 @@ def _make_target(name="Enemy", hp=100, finesse=5, protection=0):
     tgt.finesse = finesse
     tgt.protection = protection
     tgt.states = []
-    tgt.is_alive = True
+    tgt.is_alive = lambda: True
     tgt.combat_position = None
     tgt.combat_proximity = {}
     tgt.resistance = dict(RESISTANCE)
@@ -180,7 +180,7 @@ class TestSweep:
     def test_viable_false_no_living_enemies(self):
         user = _make_user()
         tgt = _make_target()
-        tgt.is_alive = False
+        tgt.is_alive = lambda: False
         user.combat_proximity = {tgt: 3}
         move = Sweep(user)
         assert move.viable() is False
@@ -248,7 +248,7 @@ class TestSweep:
     def test_execute_skips_dead_enemies(self, monkeypatch):
         user = _make_user()
         tgt = _make_target(hp=0)
-        tgt.is_alive = False
+        tgt.is_alive = lambda: False
         user.combat_proximity = {tgt: 3}
         move = Sweep(user)
         move.power = 20
@@ -458,7 +458,7 @@ class TestHalberdSpin:
         user = _make_user()
         user.combat_position = None
         tgt = _make_target(hp=0)
-        tgt.is_alive = False
+        tgt.is_alive = lambda: False
         user.combat_proximity = {tgt: 5}
         move = HalberdSpin(user)
         move.power = 20
