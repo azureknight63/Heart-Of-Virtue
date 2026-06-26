@@ -473,6 +473,16 @@ class Move:  # master class for all moves
         fatigue_cost = max(floor_fatigue, int(fatigue_cost))
         fatigue_cost = _apply_carry_fatigue(self.user, fatigue_cost)
 
+        # BladeMastery passive: sword attacks cost less fatigue
+        if (
+            getattr(self.user.eq_weapon, "subtype", None) == "Sword"
+            and any(
+                getattr(m, "name", "") == "Blade Mastery"
+                for m in getattr(self.user, "known_moves", [])
+            )
+        ):
+            fatigue_cost = max(floor_fatigue, int(fatigue_cost * 0.85))
+
         # Range calculation
         mvrange = (
             self.user.eq_weapon.wpnrange[0] + int(mod_range_min),
@@ -515,6 +525,19 @@ class Move:  # master class for all moves
             hit_chance = (
                 -1
             )  # if attacking is no longer viable (enemy is out of range), then auto miss
+
+        # HauntingPresence passive: defender's unsettling aura rattles close-range attackers
+        if (
+            hit_chance > 0
+            and any(
+                getattr(m, "name", "") == "Haunting Presence"
+                for m in getattr(self.target, "known_moves", [])
+            )
+            and hasattr(self.target, "combat_proximity")
+            and self.target.combat_proximity.get(self.user, 9999) <= 3
+        ):
+            hit_chance = int(hit_chance * 0.85)
+
         roll = random.randint(0, 100)
         damage = (
             (
