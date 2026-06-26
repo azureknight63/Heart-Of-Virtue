@@ -3,7 +3,7 @@
 from flask import Blueprint, request, jsonify, current_app
 from typing import Any, Optional, Tuple
 
-reputation_bp = Blueprint("reputation", __name__, url_prefix="/api/reputation")
+reputation_bp = Blueprint("reputation", __name__)
 
 
 def get_session_and_player(

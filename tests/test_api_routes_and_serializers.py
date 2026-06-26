@@ -1501,7 +1501,7 @@ class TestReputationRoutes:
     def client(self):
         from src.api.routes.reputation import reputation_bp
 
-        app = _make_minimal_app([(reputation_bp, None)])
+        app = _make_minimal_app([(reputation_bp, "/api/reputation")])
         with app.test_client() as c:
             yield c, app
 
