@@ -4,7 +4,7 @@ from flask import Blueprint, request, jsonify, current_app
 
 from src.api.middleware.auth import get_session_and_player
 
-reputation_bp = Blueprint("reputation", __name__, url_prefix="/api/reputation")
+reputation_bp = Blueprint("reputation", __name__)
 
 
 @reputation_bp.route("/player", methods=["GET"])

@@ -926,7 +926,7 @@ class PinningBolt(Move):
             self.user.fatigue = 0
 
 
-class QuickReload(Move):
+class QuickReload(PassiveMove):
     """Passive: Crossbow reload training reduces prep time."""
 
     def __init__(self, user):
@@ -934,24 +934,7 @@ class QuickReload(Move):
             "Practiced hands load faster. "
             "Crossbow attacks require fewer beats to reload."
         )
-        super().__init__(
-            name="Quick Reload",
-            description=description,
-            xp_gain=0,
-            current_stage=0,
-            stage_beat=[0, 0, 0, 0],
-            targeted=False,
-            stage_announce=["", "", "", ""],
-            fatigue_cost=0,
-            beats_left=0,
-            target=user,
-            user=user,
-            category="Passive",
-            passive=True,
-        )
-
-    def viable(self):
-        return False
+        super().__init__(user, "Quick Reload", description)
 
 
 class MarksmanEye(PassiveMove):
