@@ -17,9 +17,7 @@ from flask import Blueprint, current_app, jsonify, request
 from src.api.constants import ITEM_USE_RANGE
 
 from src.api.services.validators import (
-    validate_equipment_slot,
     validate_item_index,
-    validate_required_fields,
 )
 from src.api.serializers.inventory import (
     EquipmentSerializer,
@@ -559,13 +557,14 @@ def use_item():
 
 @inventory_bp.route("/inventory/unequip", methods=["POST"])
 def unequip_item():
-    """Unequip an item from a slot.
+    """Unequip an item from inventory.
 
     JSON body:
-        slot: Equipment slot name (head, chest, etc.)
+        item_id: Unique ID of the item (preferred)
+        item_index: Item index in inventory (fallback)
 
     Returns:
-        JSON with updated equipment
+        JSON with updated equipment and inventory
     """
     _, session, player, error = get_session_and_player()
     if error:
@@ -573,45 +572,63 @@ def unequip_item():
 
     try:
         data = request.get_json() or {}
-        is_valid, error_msg = validate_required_fields(data, ["slot"])
-        if not is_valid:
-            return jsonify({"success": False, "error": error_msg}), 400
 
-        slot_name = data["slot"]
+        item_id = data.get("item_id")
+        item_index = data.get("item_index")
 
-        # Validate slot
-        is_valid, error_msg = validate_equipment_slot(slot_name)
-        if not is_valid:
-            return jsonify({"success": False, "error": error_msg}), 400
-
-        # Check if slot has item (handle both equipped and equipment)
-        equipment_dict = getattr(player, "equipped", None) or getattr(
-            player, "equipment", {}
-        )
-        if not equipment_dict or slot_name not in equipment_dict:
+        if not item_id and item_index is None:
             return (
-                jsonify({"success": False, "error": f"Invalid slot: {slot_name}"}),
+                jsonify({"success": False, "error": "Missing item_id or item_index"}),
                 400,
             )
 
-        item = equipment_dict.get(slot_name)
-        if not item:
+        # Find the item
+        item, actual_index = get_item_and_index(player, item_id, item_index)
+        if item is None:
+            return (
+                jsonify({"success": False, "error": "Item not found in inventory"}),
+                400,
+            )
+
+        if not hasattr(item, "isequipped"):
             return (
                 jsonify(
-                    {"success": False, "error": f"No item equipped in {slot_name}"}
+                    {
+                        "success": False,
+                        "error": f"{getattr(item, 'name', 'Item')} cannot be unequipped",
+                    }
                 ),
                 400,
             )
 
-        # For now, just validate and return success
-        # Full implementation requires game engine state manipulation
+        if not getattr(item, "isequipped", False):
+            return (
+                jsonify(
+                    {"success": False, "error": f"{item.name} is not equipped"}
+                ),
+                400,
+            )
+
+        item.isequipped = False
+        if hasattr(item, "on_unequip"):
+            item.on_unequip(player)
+        if getattr(item, "maintype", None) == "Weapon":
+            player.eq_weapon = getattr(player, "fists", None)
+
+        from src import functions
+
+        functions.refresh_stat_bonuses(player)
+
         equipment_data = EquipmentSerializer.serialize(player)
+        inventory_data = InventorySerializer.serialize(player)
+
         return (
             jsonify(
                 {
                     "success": True,
-                    "message": "Unequipped item",
+                    "message": f"{item.name} unequipped",
                     "equipment": equipment_data,
+                    "inventory": inventory_data,
                 }
             ),
             200,

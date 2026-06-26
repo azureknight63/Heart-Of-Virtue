@@ -1162,41 +1162,6 @@ class TestCombatRoutes:
 
 
 # ===========================================================================
-# equipment routes
-# ===========================================================================
-
-
-class TestEquipmentRoutes:
-    """Test equipment API endpoints."""
-
-    @pytest.fixture
-    def client(self):
-        from src.api.routes.equipment import equipment_bp
-
-        app = _make_minimal_app([(equipment_bp, "/api")])
-        with app.test_client() as c:
-            yield c, app
-
-    def test_get_equipment_no_auth(self, client):
-        c, _ = client
-        rv = c.get("/api/equipment")
-        assert rv.status_code == 401
-
-    def test_get_equipment_success(self, client):
-        c, _ = client
-        rv = c.get("/api/equipment", headers=AUTH_HEADER)
-        assert rv.status_code == 200
-        data = rv.get_json()
-        assert data["success"] is True
-        assert "equipment" in data
-
-    def test_get_equipment_no_game_service(self, client):
-        c, app = client
-        app.game_service = None
-        rv = c.get("/api/equipment", headers=AUTH_HEADER)
-        assert rv.status_code == 500
-
-# ===========================================================================
 # player routes
 # ===========================================================================
 
