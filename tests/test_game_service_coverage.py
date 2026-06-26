@@ -1,7 +1,7 @@
 """Comprehensive unit tests for GameService to improve coverage from 8% to 80%+.
 
 Focuses on high-impact public methods: get_world_info, move_player, interact_with_tile,
-use_item, rest, get_player_status, and combat-related methods.
+use_item, get_player_status, and combat-related methods.
 """
 
 import pytest
@@ -230,7 +230,8 @@ class TestGameServiceInventory:
         
         result = game_service.drop_item(mock_player, 0)
         assert result is not None
-    
+
+
 class TestGameServiceCombat:
     """Tests for combat mechanics."""
     

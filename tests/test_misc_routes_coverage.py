@@ -244,6 +244,3 @@ class TestNpcChat:
         with app.test_client() as c:
             rv = c.get("/npc-chat/history/ghost", headers=AUTH)
         assert rv.status_code == 400
-
-
-

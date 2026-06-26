@@ -2,7 +2,7 @@
 
 Focuses on:
 - Helper methods (_initialize_combat, _calculate_exits)
-- Game flow methods (check_npc_availability)
+- Game flow methods (flee_combat, collect_combat_loot)
 - Initialization and state methods
 """
 

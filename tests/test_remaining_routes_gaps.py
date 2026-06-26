@@ -565,5 +565,3 @@ class TestShopRouteGaps:
             headers=AUTH_HEADER,
         )
         assert resp.status_code == 500
-
-
