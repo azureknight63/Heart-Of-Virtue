@@ -11,6 +11,28 @@ from animations import animate_to_main_screen as animate  # noqa: F401
 from ._base import Move  # noqa: F401
 
 
+def _apply_sentinels_vigil(advancer, defender):
+    """SentinelsVigil passive: spear-wielding defender punishes an advance into range."""
+    if not any(
+        getattr(m, "name", "") == "Sentinel's Vigil"
+        for m in getattr(defender, "known_moves", [])
+    ):
+        return
+    if getattr(getattr(defender, "eq_weapon", None), "subtype", None) != "Spear":
+        return
+    if not getattr(advancer, "is_alive", True):
+        return
+    damage = max(1, int(defender.eq_weapon.damage * 0.3) + int(defender.strength * 0.2))
+    damage = max(0, int(damage - getattr(advancer, "protection", 0)))
+    if damage <= 0:
+        return
+    advancer.hp = max(0, advancer.hp - damage)
+    cprint(
+        f"{defender.name}'s spear darts out as {advancer.name} closes in, for {damage} damage!",
+        "cyan" if defender.name != "Jean" else "green",
+    )
+
+
 class Dodge(Move):
     def __init__(self, user):
         description = "Prepare to dodge incoming attacks."
@@ -107,6 +129,16 @@ class Parry(Move):
         self.fatigue_cost = 75 - ((2 * self.user.endurance) + (3 * self.user.finesse))
         if self.fatigue_cost <= 10:
             self.fatigue_cost = 10
+
+        # CounterGuard passive: maintaining a parry with a sword costs less fatigue
+        if (
+            getattr(getattr(self.user, "eq_weapon", None), "subtype", None) == "Sword"
+            and any(
+                getattr(m, "name", "") == "Counter Guard"
+                for m in getattr(self.user, "known_moves", [])
+            )
+        ):
+            self.fatigue_cost = max(10, int(self.fatigue_cost * 0.8))
 
     def execute(self, user):
         narrate(self.stage_announce[1])
@@ -249,6 +281,8 @@ class Advance(Move):
         user.combat_proximity[self.target] = int(new_distance)
         if hasattr(self.target, "combat_proximity"):
             self.target.combat_proximity[user] = int(new_distance)
+        if new_distance <= 3:
+            _apply_sentinels_vigil(user, self.target)
 
     def _beat_legacy(self, user):
         """Move one beat's worth in legacy system."""
@@ -264,6 +298,8 @@ class Advance(Move):
         if user.combat_proximity[self.target] < 3:
             user.combat_proximity[self.target] = 3
         self.target.combat_proximity[user] = user.combat_proximity[self.target]
+        if user.combat_proximity[self.target] <= 3:
+            _apply_sentinels_vigil(user, self.target)
 
     def execute(self, user):
         if self.target and self.target.is_alive:

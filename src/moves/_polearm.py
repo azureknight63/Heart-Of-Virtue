@@ -67,10 +67,20 @@ class OverheadSmash(Move):
             self.stage_beat = [2, 1, 4, 5]
             self.fatigue_cost = 25
             return
+        # ReachMastery passive: polearm attacks reach further
+        reach_bonus = (
+            2
+            if any(
+                getattr(m, "name", "") == "Reach Mastery"
+                for m in getattr(self.user, "known_moves", [])
+            )
+            else 0
+        )
         evaluation = self.standard_evaluate_attack(
             base_power=20,
             base_damage_type="crushing",
             mod_fatigue=25,
+            mod_range_max=reach_bonus,
         )
         self.power = evaluation[0]
         self.base_damage_type = evaluation[1]
@@ -140,7 +150,15 @@ class Sweep(Move):
             arc_range = getattr(
                 getattr(self.user, "eq_weapon", None), "wpnrange", (0, 6)
             )
-            self.mvrange = (1, arc_range[1] + 2)
+            reach_bonus = (
+                2
+                if any(
+                    getattr(m, "name", "") == "Reach Mastery"
+                    for m in getattr(self.user, "known_moves", [])
+                )
+                else 0
+            )
+            self.mvrange = (1, arc_range[1] + 2 + reach_bonus)
         except (TypeError, AttributeError):
             self.power = 1
 
@@ -320,7 +338,15 @@ class HalberdSpin(Move):
                     1, int(wpn.damage * 0.75) + int(self.user.strength * 0.3)
                 )
                 arc_range = getattr(wpn, "wpnrange", (0, 6))
-                self.mvrange = (1, arc_range[1] + 3)
+                reach_bonus = (
+                    2
+                    if any(
+                        getattr(m, "name", "") == "Reach Mastery"
+                        for m in getattr(self.user, "known_moves", [])
+                    )
+                    else 0
+                )
+                self.mvrange = (1, arc_range[1] + 3 + reach_bonus)
             else:
                 self.power = max(1, int(self.user.strength * 0.6))
         except (TypeError, AttributeError):

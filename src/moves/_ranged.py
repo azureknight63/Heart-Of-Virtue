@@ -180,6 +180,12 @@ class ShootBow(
         )
         self.base_range = player.eq_weapon.range_base * self.arrow.range_base_modifier
         self.decay = player.eq_weapon.range_decay * self.arrow.range_decay_modifier
+        # EagleEye passive: reduce accuracy decay at long range
+        if any(
+            getattr(m, "name", "") == "Eagle Eye"
+            for m in getattr(player, "known_moves", [])
+        ):
+            self.decay *= 0.7
         self.base_damage_type = items.get_base_damage_type(
             self.arrow
         )  # in case the arrow has a different base damage type than Piercing
