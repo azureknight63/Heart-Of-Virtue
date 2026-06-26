@@ -620,26 +620,6 @@ class TestShopRoutes:
         assert response.status_code in [401, 403]
 
 
-class TestReputationRoutes:
-    """Test reputation routes."""
-
-    def test_reputation_route_exists(self):
-        """Test reputation blueprint exists."""
-        from src.api.routes.reputation import reputation_bp
-        assert reputation_bp is not None
-
-    def test_get_reputation_unauthorized(self):
-        """Test get reputation requires auth."""
-        from src.api.app import create_app
-        result = create_app()
-        app = result[0] if isinstance(result, tuple) else result
-        app.config['TESTING'] = True
-        client = app.test_client()
-
-        response = client.get('/api/reputation')
-        assert response.status_code in [401, 403, 404]
-
-
 class TestSaveGameRoutes:
     """Test save/load game routes."""
 
@@ -866,7 +846,6 @@ class TestBlueprintRegistration:
             'src.api.routes.player',
             'src.api.routes.quest_chains',
             'src.api.routes.quest_rewards',
-            'src.api.routes.reputation',
             'src.api.routes.saves',
             'src.api.routes.shop',
             'src.api.routes.world',
@@ -894,7 +873,6 @@ class TestBlueprintRegistration:
             player_bp,
             quest_chains_bp,
             quest_rewards_bp,
-            reputation_bp,
             saves_bp,
             shop_bp,
             world_bp,

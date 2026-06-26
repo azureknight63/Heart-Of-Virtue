@@ -7,7 +7,6 @@ from .combat import combat_bp
 from .player import player_bp
 from .saves import saves_bp
 from .npc import npc_bp
-from .reputation import reputation_bp
 from .logs import logs_bp
 from .feedback import feedback_bp
 from .shop import shop_bp
@@ -20,7 +19,6 @@ __all__ = [
     "player_bp",
     "saves_bp",
     "npc_bp",
-    "reputation_bp",
     "logs_bp",
     "feedback_bp",
     "shop_bp",

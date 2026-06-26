@@ -1,23 +1,23 @@
-"""Phase 3 route checks: reputation and NPC.
+"""Phase 3 route checks: NPC.
 
 These routes were historically misregistered at /api/* instead of their
 intended prefixes.  This scenario verifies they are now reachable at the
 correct paths and do not crash on bad input.
 
 Registered prefixes (fixed in b16c05a):
-  - reputation  → /api/reputation/
   - npc         → /api/npc/
 
 Note: the quest-rewards, quest-chains, dialogue-context, and
 npc-availability blueprints (and their routes) were removed as dead/mocked
-endpoints (#236) — do not re-add probes for them here.
+endpoints (#236); the reputation blueprint was removed as a dead/unused
+endpoint (#252) — do not re-add probes for them here.
 """
 
 from typing import List
 
 from .base import Scenario
 from ..client import GameClient
-from ..reporter import BugReport, BugSeverity
+from ..reporter import BugReport
 
 _BAD_ID = "harness_nonexistent_id"
 
@@ -25,41 +25,12 @@ _BAD_ID = "harness_nonexistent_id"
 class Phase3Scenario(Scenario):
     name = "phase3"
     description = (
-        "Verify Phase 3 routes (reputation, NPC) are reachable at their "
+        "Verify Phase 3 routes (NPC) are reachable at their "
         "correct prefixes and do not crash on bad input."
     )
 
     def run(self, client: GameClient) -> List[BugReport]:
         bugs = []
-
-        # ------------------------------------------------------------------
-        # Reputation  (/api/reputation/)
-        # ------------------------------------------------------------------
-
-        # GET /api/reputation/player — player reputation summary
-        resp = client.get("/api/reputation/player")
-        bug = self._check_status(
-            resp, 200, "/api/reputation/player", "GET", "Reputation player summary"
-        )
-        if bug:
-            # 404 here would mean the route isn't registered — real bug
-            if resp.status_code == 404:
-                bug.title = "Reputation player summary: route not found (prefix misconfiguration?)"
-                bug.severity = BugSeverity.HIGH
-            bugs.append(bug)
-        else:
-            data = client.parse(resp)
-            bugs += self._check_fields(
-                data, ["success"],
-                "/api/reputation/player", "GET", "Reputation player summary", resp,
-            )
-
-        # GET /api/reputation/npc/<bad_id> — must not 500
-        resp = client.get(f"/api/reputation/npc/{_BAD_ID}")
-        bug = self._check_no_crash(resp, f"/api/reputation/npc/{_BAD_ID}", "GET",
-                                   "Reputation for unknown NPC")
-        if bug:
-            bugs.append(bug)
 
         # ------------------------------------------------------------------
         # NPC  (/api/npc/)

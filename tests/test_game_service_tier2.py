@@ -71,7 +71,6 @@ def mock_player():
     # Relationships and reputation
     player.reputation = {}
     player.npc_relationships = {}
-    player.set_relationship_flags = {}
 
     # Stats
     player.level = 5
@@ -157,22 +156,6 @@ class TestNPCInteraction:
                 result = game_service.get_npc_dialogue(mock_player, "Gorran")
                 assert "success" in result or result is not None
 
-    def test_get_npc_relationship(self, game_service, mock_player):
-        """Test getting NPC relationship status - validates method runs."""
-        mock_player.reputation = {"gorran_id": 75}
-
-        # Simply test that method doesn't crash; mocking internal calls
-        result = game_service.get_npc_relationship(mock_player, "gorran_id")
-        assert result is not None
-
-    def test_get_npc_relationship_not_found(self, game_service, mock_player):
-        """Test getting relationship with non-existent NPC."""
-        mock_player.reputation = {}
-
-        # Method should handle missing NPC gracefully
-        result = game_service.get_npc_relationship(mock_player, "nonexistent")
-        assert result is not None
-
     def test_get_npc_behavior_profile(self, game_service, mock_player, mock_tile):
         """Test getting NPC behavior profile."""
         npc = MagicMock()
@@ -193,14 +176,6 @@ class TestDialogueSystem:
         """Test selecting a dialogue option."""
         mock_player.current_dialogue = {"options": [{"id": "opt1", "text": "Yes"}]}
         result = game_service.select_dialogue_option(mock_player, npc_id="gorran", option_id=0)
-        assert result is not None
-
-    def test_check_dialogue_available(self, game_service, mock_player):
-        """Test checking if dialogue is available."""
-        mock_player.story = {}
-        result = game_service.check_dialogue_available(
-            mock_player, "npc_id", dialogue_node="test"
-        )
         assert result is not None
 
 
@@ -308,29 +283,6 @@ class TestPlayerProgression:
         result = game_service.learn_skill(mock_player, "swordmaster", category="combat")
         assert result is not None
 
-class TestReputation:
-    """Test reputation and relationship methods."""
-
-    def test_get_player_reputation(self, game_service, mock_player):
-        """Test getting player reputation."""
-        mock_player.reputation = {"faction1": 100}
-
-        result = game_service.get_player_reputation(mock_player)
-        assert result["success"] is True
-
-    def test_update_reputation(self, game_service, mock_player):
-        """Test updating reputation."""
-        mock_player.reputation = {}
-
-        result = game_service.update_reputation(mock_player, "faction1", 50)
-        assert result["success"] is True
-
-    def test_set_relationship_flag(self, game_service, mock_player):
-        """Test setting relationship flag."""
-        result = game_service.set_relationship_flag(mock_player, "npc_id", "met", True)
-        assert result is not None
-
-
 class TestWorldAndExploration:
     """Test world interaction and exploration methods."""
 
@@ -418,17 +370,6 @@ class TestShopTransactions:
         with patch.object(game_service, '_find_merchant', return_value=MagicMock()):
             result = game_service.shop_buyback(mock_player, "merchant_id", "item_id")
             assert result is not None
-
-
-class TestReputationGating:
-    """Test reputation-gated quest/dialogue availability checks."""
-
-    def test_check_quest_available(self, game_service, mock_player):
-        """Test checking if quest is available."""
-        result = game_service.check_quest_available(
-            mock_player, "npc_id", quest_type="primary"
-        )
-        assert result is not None
 
 
 class TestGetAvailableMethods:

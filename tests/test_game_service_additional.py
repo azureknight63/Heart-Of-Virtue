@@ -151,31 +151,3 @@ class TestGetAvailableCommands:
         mock_player.in_combat = True
         result = game_service.get_available_commands(mock_player)
         assert isinstance(result, dict)
-
-
-# ========================= Update Reputation Tests =========================
-class TestUpdateReputation:
-    """Tests for update_reputation() method."""
-
-    def test_update_reputation_method_exists(self, game_service):
-        """Test update_reputation method exists."""
-        assert hasattr(game_service, "update_reputation")
-
-    def test_update_reputation_callable(self, game_service):
-        """Test update_reputation is callable."""
-        assert callable(getattr(game_service, "update_reputation", None))
-
-
-# ========================= Set Relationship Flag Tests =========================
-class TestSetRelationshipFlag:
-    """Tests for set_relationship_flag() method."""
-
-    def test_set_relationship_flag_returns_dict(self, game_service, mock_player):
-        """Test that set_relationship_flag returns a dictionary."""
-        result = game_service.set_relationship_flag(mock_player, "npc_id", "flag_name", True)
-        assert isinstance(result, dict)
-
-    def test_set_relationship_flag_false(self, game_service, mock_player):
-        """Test set_relationship_flag with False value."""
-        result = game_service.set_relationship_flag(mock_player, "npc_id", "flag_name", False)
-        assert isinstance(result, dict)

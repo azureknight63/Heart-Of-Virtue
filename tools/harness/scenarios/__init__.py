@@ -11,7 +11,6 @@ from .phase3 import Phase3Scenario
 from .no_auth import NoAuthScenario
 from .combat_edge import CombatEdgeScenario
 from .inventory_actions import InventoryActionsScenario
-from .phase3_reads import Phase3ReadsScenario
 from .ch01_events import Ch01EventsScenario
 from .ch01_wrong_choice import Ch01WrongChoiceScenario
 from .grondia_happy_path import GroniaHappyPathScenario
@@ -28,7 +27,6 @@ _ALL_SCENARIOS = [
     NoAuthScenario(),
     CombatEdgeScenario(),
     InventoryActionsScenario(),
-    Phase3ReadsScenario(),
     Ch01EventsScenario(),
     Ch01WrongChoiceScenario(),
     GroniaHappyPathScenario(),

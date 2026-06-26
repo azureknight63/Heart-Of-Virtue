@@ -387,26 +387,6 @@ class TestQuestRoutes:
         assert response.status_code in [400, 404]
 
 
-class TestReputationRoutes:
-    """Test reputation routes."""
-
-    def test_get_reputation(self, client, authenticated_session):
-        """Test getting reputation with NPCs."""
-        session_id, player, session_manager = authenticated_session
-
-        response = client.get('/api/reputation',
-                            headers={'Authorization': f'Bearer {session_id}'})
-        assert response.status_code in [200, 404]
-
-    def test_get_npc_reputation(self, client, authenticated_session):
-        """Test getting reputation with specific NPC."""
-        session_id, player, session_manager = authenticated_session
-
-        response = client.get('/api/reputation/npc?npc_id=nonexistent',
-                            headers={'Authorization': f'Bearer {session_id}'})
-        assert response.status_code in [200, 400, 404]
-
-
 class TestDialogueRoutes:
     """Test dialogue routes."""
 

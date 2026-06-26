@@ -21,7 +21,6 @@ _PROTECTED = [
     ("GET",  "/api/combat/status"),     # combat_bp
     ("GET",  "/api/combat/log"),        # combat_bp
     ("GET",  "/api/auth/validate"),     # auth_bp
-    ("GET",  "/api/reputation/player"), # reputation_bp
     ("GET",  "/api/npc/probe/state"),   # npc_bp
 ]
 
