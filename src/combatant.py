@@ -34,6 +34,7 @@ _DEFAULT_STATUS_RESISTANCE = {
     "generic": 1.0,  # Default status type for all states
     "stun": 1.0,  # Unable to move; typically short duration
     "poison": 1.0,  # Drains HP every combat turn/game tick; persists
+    "slimed": 1.0,  # Corrosive slime coating; drains HP and lowers finesse/protection; persists
     "enflamed": 1.0,  # Fire damage over time (matches State.statustype="enflamed")
     "sloth": 1.0,  # Drains Fatigue every combat turn
     "apathy": 1.0,  # Drains HEAT every combat turn
