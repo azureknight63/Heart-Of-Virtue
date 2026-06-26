@@ -94,6 +94,14 @@ class PowerStrike(Move):
         cooldown += 3
         fatigue_cost = max(25, 100 - (2 * self.user.endurance))
         fatigue_cost = _apply_carry_fatigue(self.user, fatigue_cost)
+
+        # IronFist passive: +25% damage
+        if any(
+            getattr(m, "name", "") == "Iron Fist"
+            for m in getattr(self.user, "known_moves", [])
+        ):
+            power *= 1.25
+
         self.power = power
         self.stage_beat[0] = prep
         self.stage_beat[1] = execute
@@ -154,6 +162,16 @@ class PowerStrike(Move):
                 self.parry()
             else:
                 self.hit(damage, glance)
+                # HeavyHanded passive: apply Staggered on Bludgeon hit
+                if any(
+                    getattr(m, "name", "") == "Heavy Handed"
+                    for m in getattr(self.user, "known_moves", [])
+                ):
+                    if self.target and self.target.is_alive:
+                        try:
+                            self.target.states.append(states.Staggered(self.target))
+                        except Exception:
+                            pass
         else:
             self.miss()
         self.user.fatigue -= self.fatigue_cost
@@ -216,6 +234,14 @@ class Jab(Move):
         fatigue_cost = 50 - (3 * self.user.endurance)
         if fatigue_cost <= 5:
             fatigue_cost = 5
+
+        # IronFist passive: +25% damage when wielding Fists
+        if any(
+            getattr(m, "name", "") == "Iron Fist"
+            for m in getattr(self.user, "known_moves", [])
+        ):
+            power *= 1.25
+
         self.power = power
         self.stage_beat[0] = prep
         self.stage_beat[1] = execute
@@ -268,6 +294,16 @@ class Jab(Move):
                 self.parry()
             else:
                 self.hit(damage, glance)
+                # HeavyHanded passive: apply Staggered on Bludgeon hit (when wielding Fists or unarmed)
+                if any(
+                    getattr(m, "name", "") == "Heavy Handed"
+                    for m in getattr(self.user, "known_moves", [])
+                ):
+                    if self.target and self.target.is_alive:
+                        try:
+                            self.target.states.append(states.Staggered(self.target))
+                        except Exception:
+                            pass
         else:
             self.miss()
         self.user.fatigue -= self.fatigue_cost

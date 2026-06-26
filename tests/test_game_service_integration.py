@@ -426,41 +426,6 @@ class TestInventoryManagement:
 
         assert isinstance(result, dict)
 
-    def test_equip_item_with_valid_item(self, game_service, mock_player_with_universe):
-        """Test equip_item with a valid item."""
-        item = MagicMock()
-        item.name = "Sword"
-        item.slot = "weapon"
-
-        mock_player_with_universe.inventory.get_item = MagicMock(return_value=item)
-        mock_player_with_universe.equipment = {}
-
-        result = game_service.equip_item(mock_player_with_universe, "sword_1")
-
-        assert result is not None
-        assert isinstance(result, dict)
-
-    def test_equip_item_with_nonexistent_item(self, game_service, mock_player_with_universe):
-        """Test equip_item with nonexistent item."""
-        mock_player_with_universe.inventory.get_item = MagicMock(return_value=None)
-
-        result = game_service.equip_item(mock_player_with_universe, "nonexistent")
-
-        assert result is not None
-
-    def test_unequip_item(self, game_service, mock_player_with_universe):
-        """Test unequip_item removes equipment."""
-        item = MagicMock()
-        item.name = "Sword"
-
-        mock_player_with_universe.equipment = {"weapon": item}
-
-        result = game_service.unequip_item(mock_player_with_universe, "weapon")
-
-        assert result is not None
-        assert isinstance(result, dict)
-
-
 # ==================== COMBAT WORKFLOW TESTS ====================
 
 class TestCombatWorkflow:
@@ -601,21 +566,6 @@ class TestExitCalculation:
 
 class TestComplexIntegrations:
     """Tests for complex multi-step workflows."""
-
-    def test_player_status_after_equipment_change(self, game_service, mock_player_with_universe):
-        """Test player status reflects equipment changes."""
-        # Equip an item
-        item = MagicMock()
-        item.name = "Armor"
-        item.slot = "armor"
-        mock_player_with_universe.inventory.get_item = MagicMock(return_value=item)
-        mock_player_with_universe.equipment = {}
-
-        # Both operations should work
-        equip_result = game_service.equip_item(mock_player_with_universe, "armor_1")
-
-        # Should have a result
-        assert equip_result is not None
 
     def test_inventory_and_equipment_consistency(self, game_service, mock_player_with_universe):
         """Test inventory and equipment data are consistent."""

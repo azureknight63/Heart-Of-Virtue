@@ -23,6 +23,7 @@ from src.api.serializers.combat import (
 )
 from src.api.constants import ITEM_USE_RANGE, ALLY_HEAL_THRESHOLD
 from ai.combat_strategist import CombatStrategist
+from src.moves._base import select_weighted_target
 
 if TYPE_CHECKING:
     from player import Player
@@ -1144,7 +1145,7 @@ class ApiCombatAdapter:
         # Move execution finished
 
         # Check win/loss conditions
-        if not self.player.is_alive():
+        if not self.player.is_alive() and not self.player.check_revive():
             self.player.in_combat = False
             self.awaiting_input = False
             self._add_log_entry(
@@ -1379,6 +1380,9 @@ class ApiCombatAdapter:
                     if enemy in self.player.combat_list:
                         self.player.combat_list.remove(enemy)
 
+                    # CleaveInstinct: mark that player killed an enemy (for next move's prep boost)
+                    self.player._cleave_instinct_pending = True
+
                     for ally in self.player.combat_list_allies:
                         if enemy in ally.combat_proximity:
                             del ally.combat_proximity[enemy]
@@ -1404,9 +1408,9 @@ class ApiCombatAdapter:
             if npc.current_move is None:
                 # Select target
                 if not npc.friend:
-                    npc.target = random.choice(self.player.combat_list_allies)
+                    npc.target = select_weighted_target(self.player.combat_list_allies)
                 else:
-                    npc.target = random.choice(self.player.combat_list)
+                    npc.target = select_weighted_target(self.player.combat_list)
 
                 if npc.is_stunned():
                     # Stunned NPCs (e.g. War Cry) skip move selection entirely for
@@ -1777,6 +1781,8 @@ class ApiCombatAdapter:
         self.player.in_combat = False
         self.awaiting_input = False
         self.player.fatigue = self.player.maxfatigue
+        # Recharge single-use equip states (e.g. PhoenixRevive) consumed this battle
+        self.player.recharge_equip_states()
 
         # Snapshot the tile where victory occurred so post-combat events fire on
         # the right tile even if the player moves before the next status poll.

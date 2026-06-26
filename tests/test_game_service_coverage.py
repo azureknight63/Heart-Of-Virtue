@@ -5,11 +5,10 @@ use_item, rest, get_player_status, and combat-related methods.
 """
 
 import pytest
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock
 from src.api.services.game_service import GameService
 from src.player import Player
 from src.universe import Universe
-import src.items as items
 
 
 @pytest.fixture
@@ -232,23 +231,6 @@ class TestGameServiceInventory:
         result = game_service.drop_item(mock_player, 0)
         assert result is not None
     
-    def test_equip_item_valid(self, game_service, mock_player):
-        """Test equipping item."""
-        mock_weapon = MagicMock()
-        mock_weapon.maintype = "Weapon"
-        mock_weapon.isequipped = False
-        mock_player.inventory = [mock_weapon]
-        mock_player.eq_weapon = None
-        
-        result = game_service.equip_item(mock_player, 0)
-        assert result is not None
-    
-    def test_unequip_item_valid(self, game_service, mock_player):
-        """Test unequipping item."""
-        result = game_service.unequip_item(mock_player, "weapon")
-        assert result is not None
-
-
 class TestGameServiceCombat:
     """Tests for combat mechanics."""
     

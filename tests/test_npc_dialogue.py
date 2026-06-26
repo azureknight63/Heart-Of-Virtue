@@ -26,7 +26,6 @@ from src.npc import NPC, Friend
 from src.api.serializers.npc_ai import (
     NPCAIStateSerializer,
     DialogueStateSerializer,
-    QuestStateSerializer,
     NPCBehaviorProfileSerializer,
 )
 from src.api.serializers.npc_serializer import NPCSerializer

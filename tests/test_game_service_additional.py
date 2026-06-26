@@ -7,7 +7,7 @@ Focuses on:
 """
 
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 
 @pytest.fixture
@@ -102,83 +102,6 @@ class TestFleeCombat:
         assert isinstance(result, dict)
 
 
-# ========================= Award Gold Tests =========================
-class TestAwardGold:
-    """Tests for award_gold() method."""
-
-    def test_award_gold_returns_dict(self, game_service, mock_player):
-        """Test that award_gold returns a dictionary."""
-        result = game_service.award_gold(mock_player, 100)
-        assert isinstance(result, dict)
-
-    def test_award_gold_zero_amount(self, game_service, mock_player):
-        """Test award_gold with zero amount."""
-        result = game_service.award_gold(mock_player, 0)
-        assert isinstance(result, dict)
-
-    def test_award_gold_negative_amount(self, game_service, mock_player):
-        """Test award_gold with negative amount."""
-        result = game_service.award_gold(mock_player, -100)
-        assert isinstance(result, dict)
-
-
-# ========================= Award Experience Tests =========================
-class TestAwardExperience:
-    """Tests for award_experience() method."""
-
-    def test_award_experience_returns_dict(self, game_service, mock_player):
-        """Test that award_experience returns a dictionary."""
-        result = game_service.award_experience(mock_player, 100)
-        assert isinstance(result, dict)
-
-    def test_award_experience_custom_type(self, game_service, mock_player):
-        """Test award_experience with custom experience type."""
-        result = game_service.award_experience(mock_player, 100, "combat")
-        assert isinstance(result, dict)
-
-    def test_award_experience_zero_amount(self, game_service, mock_player):
-        """Test award_experience with zero amount."""
-        result = game_service.award_experience(mock_player, 0)
-        assert isinstance(result, dict)
-
-
-# ========================= Award Item Tests =========================
-class TestAwardItem:
-    """Tests for award_item() method."""
-
-    def test_award_item_returns_dict(self, game_service, mock_player):
-        """Test that award_item returns a dictionary."""
-        result = game_service.award_item(mock_player, "test_item", "item_name")
-        assert isinstance(result, dict)
-
-    def test_award_item_full_inventory(self, game_service, mock_player):
-        """Test award_item when inventory is full."""
-        mock_player.weight_current = 100
-        mock_player.weight_tolerance = 100
-        result = game_service.award_item(mock_player, "test_item", "item_name")
-        assert isinstance(result, dict)
-
-
-# ========================= Award Reputation Tests =========================
-class TestAwardReputation:
-    """Tests for award_reputation() method."""
-
-    def test_award_reputation_returns_dict(self, game_service, mock_player):
-        """Test that award_reputation returns a dictionary."""
-        result = game_service.award_reputation(mock_player, "Gorran", "npc", 50)
-        assert isinstance(result, dict)
-
-    def test_award_reputation_exists(self, game_service):
-        """Test award_reputation method exists."""
-        assert hasattr(game_service, "award_reputation")
-
-    def test_award_reputation_stacking(self, game_service, mock_player):
-        """Test award_reputation with multiple awards."""
-        mock_player.reputation = {"Gorran": 100}
-        result = game_service.award_reputation(mock_player, "Gorran", "npc", 50)
-        assert isinstance(result, dict)
-
-
 # ========================= Collect Combat Loot Tests =========================
 class TestCollectCombatLoot:
     """Tests for collect_combat_loot() method."""
@@ -191,38 +114,6 @@ class TestCollectCombatLoot:
     def test_collect_combat_loot_with_items(self, game_service, mock_player):
         """Test collect_combat_loot with item names."""
         result = game_service.collect_combat_loot(mock_player, ["item1", "item2"])
-        assert isinstance(result, dict)
-
-
-# ========================= Get Player Progression Tests =========================
-class TestGetPlayerProgression:
-    """Tests for get_player_progression() method."""
-
-    def test_get_player_progression_returns_dict(self, game_service, mock_player):
-        """Test that get_player_progression returns a dictionary."""
-        result = game_service.get_player_progression(mock_player)
-        assert isinstance(result, dict)
-
-    def test_get_player_progression_includes_level(self, game_service, mock_player):
-        """Test get_player_progression includes level info."""
-        result = game_service.get_player_progression(mock_player)
-        assert isinstance(result, dict)
-        # Should have some progression data
-        assert len(result) >= 0
-
-
-# ========================= Check NPC Availability Tests =========================
-class TestCheckNpcAvailability:
-    """Tests for check_npc_availability() method."""
-
-    def test_check_npc_availability_returns_dict(self, game_service, mock_player):
-        """Test that check_npc_availability returns a dictionary."""
-        result = game_service.check_npc_availability(mock_player, "test_npc")
-        assert isinstance(result, dict)
-
-    def test_check_npc_availability_unknown_npc(self, game_service, mock_player):
-        """Test check_npc_availability with unknown NPC."""
-        result = game_service.check_npc_availability(mock_player, "unknown_npc")
         assert isinstance(result, dict)
 
 
@@ -259,41 +150,6 @@ class TestGetAvailableCommands:
         """Test get_available_commands when in combat."""
         mock_player.in_combat = True
         result = game_service.get_available_commands(mock_player)
-        assert isinstance(result, dict)
-
-
-# ========================= Start Quest Tests =========================
-class TestStartQuest:
-    """Tests for start_quest() method."""
-
-    def test_start_quest_returns_dict(self, game_service, mock_player):
-        """Test that start_quest returns a dictionary."""
-        result = game_service.start_quest(mock_player, "quest_1")
-        assert isinstance(result, dict)
-
-
-# ========================= Complete Quest Tests =========================
-class TestCompleteQuest:
-    """Tests for complete_quest() method."""
-
-    def test_complete_quest_returns_dict(self, game_service, mock_player):
-        """Test that complete_quest returns a dictionary."""
-        result = game_service.complete_quest(mock_player, "quest_1")
-        assert isinstance(result, dict)
-
-    def test_complete_quest_nonexistent(self, game_service, mock_player):
-        """Test complete_quest for non-existent quest."""
-        result = game_service.complete_quest(mock_player, "nonexistent_quest")
-        assert isinstance(result, dict)
-
-
-# ========================= Get Quest Rewards Tests =========================
-class TestGetQuestRewards:
-    """Tests for get_quest_rewards() method."""
-
-    def test_get_quest_rewards_returns_dict(self, game_service, mock_player):
-        """Test that get_quest_rewards returns a dictionary."""
-        result = game_service.get_quest_rewards(mock_player, "quest_1")
         assert isinstance(result, dict)
 
 

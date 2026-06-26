@@ -575,6 +575,7 @@ class HumanNPCLLMMixin:
                     "turn": 0,
                     "llm_available": False,
                     "conversation_ended": True,
+                    "reputation": getattr(player, "reputation", {}).get(self.name, 0),
                 }
 
             self._ensure_personality(player)
@@ -635,6 +636,7 @@ class HumanNPCLLMMixin:
                 "turn": 0,
                 "llm_available": llm_available,
                 "conversation_ended": False,
+                "reputation": getattr(player, "reputation", {}).get(self.name, 0),
             }
         except Exception as e:
             logger.error(f"HumanNPCLLMMixin.chat_open error: {e}")
@@ -672,6 +674,7 @@ class HumanNPCLLMMixin:
             # Generate NPC response
             npc_response = None
             conversation_quality = "neutral"
+            reputation_delta = 0
 
             if llm_available:
                 for attempt in range(2):
@@ -690,6 +693,7 @@ class HumanNPCLLMMixin:
                             conversation_quality = result.get(
                                 "conversation_quality", "neutral"
                             )
+                            reputation_delta = result.get("reputation_delta", 0)
                             break
 
             if not npc_response:
@@ -701,6 +705,13 @@ class HumanNPCLLMMixin:
             # Drain loquacity
             drain = _LOQUACITY_DRAIN.get(conversation_quality, 8)
             self.loquacity_current = max(0, self.loquacity_current - drain)
+
+            # Apply the NPC's in-character reaction to Jean's reputation
+            if not hasattr(player, "reputation"):
+                player.reputation = {}
+            old_reputation = player.reputation.get(self.name, 0)
+            new_reputation = max(-100, min(100, old_reputation + reputation_delta))
+            player.reputation[self.name] = new_reputation
 
             # Persist exchange
             game_tick = getattr(getattr(player, "universe", None), "game_tick", 0) or 0
@@ -749,6 +760,8 @@ class HumanNPCLLMMixin:
                 "turn": len(self._chat_history),
                 "llm_available": llm_available,
                 "conversation_ended": conversation_ended,
+                "reputation": new_reputation,
+                "reputation_delta": reputation_delta,
             }
         except Exception as e:
             logger.error(f"HumanNPCLLMMixin.chat_respond error: {e}")

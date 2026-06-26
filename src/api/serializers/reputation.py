@@ -90,23 +90,38 @@ class NPCRelationshipSerializer:
     def _get_npc_name(npc_id: str) -> str:
         """Get NPC display name from ID.
 
+        `player.reputation` is keyed by the NPC's actual display name
+        (`self.name` on the NPC instance, per `HumanNPCLLMMixin`), not a
+        separate slug, so the id passed in already is the name.
+
         Args:
-            npc_id: NPC identifier
+            npc_id: NPC identifier (== NPC display name)
 
         Returns:
             NPC display name
         """
-        # Simple mapping - can be expanded
-        npc_names = {
-            "cave_guide": "Cave Guide",
-            "bat_trainer": "Bat Trainer",
-            "blacksmith": "Blacksmith",
-            "merchant": "Merchant",
-            "healer": "Healer",
-            "dragon_slayer": "Dragon Slayer Guild",
-            "hermit": "Old Hermit",
-        }
-        return npc_names.get(npc_id, npc_id.replace("_", " ").title())
+        return npc_id
+
+    # Max swing applied to a merchant's buy/sell modifier at +/-100 reputation.
+    REPUTATION_PRICE_SWING = 0.15
+
+    @staticmethod
+    def get_price_modifier(reputation: int) -> float:
+        """Reputation-scaled multiplier applied to a merchant's price modifiers.
+
+        Friendly merchants (positive reputation) charge less to buy and pay
+        more to sell; hostile merchants do the opposite. Scales linearly to a
+        +/-15% swing at the +/-100 reputation extremes.
+
+        Args:
+            reputation: Reputation score (-100 to +100)
+
+        Returns:
+            Discount fraction in [-0.15, 0.15] — positive means favorable to
+            the player. Apply as `buy_modifier * (1 - modifier)` and
+            `sell_modifier * (1 + modifier)`.
+        """
+        return (reputation / 100.0) * NPCRelationshipSerializer.REPUTATION_PRICE_SWING
 
 
 class PlayerReputationSerializer:
@@ -194,23 +209,17 @@ class PlayerReputationSerializer:
     def _get_npc_name(npc_id: str) -> str:
         """Get NPC display name from ID.
 
+        `player.reputation` is keyed by the NPC's actual display name
+        (`self.name` on the NPC instance, per `HumanNPCLLMMixin`), not a
+        separate slug, so the id passed in already is the name.
+
         Args:
-            npc_id: NPC identifier
+            npc_id: NPC identifier (== NPC display name)
 
         Returns:
             NPC display name
         """
-        # Simple mapping - can be expanded
-        npc_names = {
-            "cave_guide": "Cave Guide",
-            "bat_trainer": "Bat Trainer",
-            "blacksmith": "Blacksmith",
-            "merchant": "Merchant",
-            "healer": "Healer",
-            "dragon_slayer": "Dragon Slayer Guild",
-            "hermit": "Old Hermit",
-        }
-        return npc_names.get(npc_id, npc_id.replace("_", " ").title())
+        return npc_id
 
 
 class RelationshipFlagSerializer:

@@ -77,3 +77,49 @@ class TestShopSerializerReadsMerchant:
         assert state["buy_modifier"] == 1.0
         assert state["sell_modifier"] == 0.5
         assert state["shop_name"] == "Tester's Shop"
+
+
+class TestReputationPriceModifier:
+    """Reputation with a merchant mechanically shifts buy/sell modifiers."""
+
+    def test_friendly_reputation_discounts_buying_and_boosts_selling(self):
+        merchant = _base_merchant()
+        player = Player()
+        player.reputation = {"Tester": 100}
+
+        buy_mod = ShopSerializer.get_effective_buy_modifier(merchant, player)
+        sell_mod = ShopSerializer.get_effective_sell_modifier(merchant, player)
+
+        assert buy_mod == pytest.approx(0.85)
+        assert sell_mod == pytest.approx(0.575)
+
+    def test_hostile_reputation_inflates_buying_and_cuts_selling(self):
+        merchant = _base_merchant()
+        player = Player()
+        player.reputation = {"Tester": -100}
+
+        buy_mod = ShopSerializer.get_effective_buy_modifier(merchant, player)
+        sell_mod = ShopSerializer.get_effective_sell_modifier(merchant, player)
+
+        assert buy_mod == pytest.approx(1.15)
+        assert sell_mod == pytest.approx(0.425)
+
+    def test_neutral_or_missing_reputation_leaves_modifiers_unchanged(self):
+        merchant = _base_merchant()
+        player = Player()
+        player.inventory = []
+
+        assert ShopSerializer.get_effective_buy_modifier(merchant, player) == pytest.approx(1.0)
+        assert ShopSerializer.get_effective_sell_modifier(merchant, player) == pytest.approx(0.5)
+
+    def test_serialize_state_reflects_reputation_adjusted_modifiers(self):
+        merchant = _base_merchant()
+        merchant.inventory = [Restorative(count=2, merchandise=True)]
+        player = Player()
+        player.inventory = []
+        player.reputation = {"Tester": 100}
+
+        state = ShopSerializer.serialize_state(merchant, player, current_game_tick=0)
+
+        assert state["buy_modifier"] == pytest.approx(0.85)
+        assert state["sell_modifier"] == pytest.approx(0.575)

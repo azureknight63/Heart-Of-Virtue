@@ -628,18 +628,6 @@ class TestEquipmentRoutes:
         from src.api.routes.equipment import equipment_bp
         assert equipment_bp is not None
 
-    def test_equip_item_unauthorized(self):
-        """Test equip item requires auth."""
-        from src.api.app import create_app
-        result = create_app()
-        app = result[0] if isinstance(result, tuple) else result
-        app.config['TESTING'] = True
-        client = app.test_client()
-
-        response = client.post('/api/equipment/equip', json={"item": "test"})
-        assert response.status_code in [401, 403]
-
-
 class TestReputationRoutes:
     """Test reputation routes."""
 

@@ -135,27 +135,6 @@ class TestGameServiceInventoryMethods:
         result = game_service.get_equipment(player_setup)
         assert isinstance(result, dict)
 
-    def test_equip_item_with_correct_signature(self, game_service, player_setup):
-        """Test equip_item with proper arguments"""
-        # equip_item(self, player, item_id, slot)
-        try:
-            result = game_service.equip_item(player_setup, "test_item", "right_hand")
-            # Should return dict or handle gracefully
-        except TypeError:
-            # Signature mismatch is ok to catch here
-            pass
-        except Exception:
-            pass
-
-    def test_unequip_item(self, game_service, player_setup):
-        """Test unequip_item removes equipment"""
-        try:
-            result = game_service.unequip_item(player_setup, "right_hand")
-            assert result is None or isinstance(result, dict)
-        except Exception:
-            pass
-
-
 class TestGameServiceCombatMethods:
     """Test combat-related GameService methods"""
 

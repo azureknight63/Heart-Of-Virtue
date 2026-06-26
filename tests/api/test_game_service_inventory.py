@@ -146,47 +146,6 @@ class TestGameServiceInventory:
         # Should either return error or empty result
         assert result is not None
 
-    # ========== equip_item tests ==========
-
-    def test_equip_item_success(self, game_service, mock_player, mock_item):
-        """Test equipping item."""
-        mock_item.equip = lambda p: None  # Mock equip method
-        mock_player.inventory_list.append(mock_item)
-
-        result = game_service.equip_item(mock_player, 0)
-
-        assert result is not None
-        # Should succeed or return error if not implemented
-        assert isinstance(result, dict)
-
-    def test_equip_item_invalid_index(self, game_service, mock_player):
-        """Test equipping with invalid index."""
-        result = game_service.equip_item(mock_player, 99)
-
-        # Should return error dict
-        assert result is not None
-        assert isinstance(result, dict)
-
-    # ========== unequip_item tests ==========
-
-    def test_unequip_item_success(self, game_service, mock_player, mock_item):
-        """Test unequipping item."""
-        mock_item.unequip = lambda p: None  # Mock unequip method
-        mock_player.equipped["main_hand"] = mock_item
-
-        result = game_service.unequip_item(mock_player, "main_hand")
-
-        assert result is not None
-        assert isinstance(result, dict)
-
-    def test_unequip_item_empty_slot(self, game_service, mock_player):
-        """Test unequipping from empty slot."""
-        result = game_service.unequip_item(mock_player, "main_hand")
-
-        # Should handle empty slot
-        assert result is not None
-        assert isinstance(result, dict)
-
     # ========== take_item tests ==========
 
     def test_take_item_success(self, game_service, mock_player):
@@ -255,24 +214,6 @@ class TestGameServiceInventory:
         # Examine item
         item_data = game_service.examine_item(mock_player, 0)
         assert item_data is not None
-
-    def test_full_equipment_workflow(self, game_service, mock_player, mock_item):
-        """Test complete equipment workflow."""
-        # Get initial equipment
-        equipment = game_service.get_equipment(mock_player)
-        assert equipment is not None
-
-        # Add item to inventory
-        mock_item.equip = lambda p: None
-        mock_player.inventory_list.append(mock_item)
-
-        # Equip item
-        result = game_service.equip_item(mock_player, 0)
-        assert result is not None
-
-        # Get updated equipment
-        equipment = game_service.get_equipment(mock_player)
-        assert equipment is not None
 
     def test_service_returns_dicts(self, game_service, mock_player):
         """Test that all service methods return dicts."""

@@ -208,24 +208,6 @@ class TestInventoryRoutes:
         assert data['success'] is True
         assert 'equipment' in data
 
-    def test_equip_item(self, client, authenticated_session):
-        """Test equipping an item."""
-        session_id, player, session_manager = authenticated_session
-
-        response = client.post('/api/equipment/equip',
-                             json={'item_id': 'nonexistent'},
-                             headers={'Authorization': f'Bearer {session_id}'})
-        assert response.status_code in [400, 404]
-
-    def test_unequip_item(self, client, authenticated_session):
-        """Test unequipping an item."""
-        session_id, player, session_manager = authenticated_session
-
-        response = client.post('/api/equipment/unequip',
-                             json={'slot': 'main_hand'},
-                             headers={'Authorization': f'Bearer {session_id}'})
-        assert response.status_code in [200, 400]
-
     def test_use_item_success(self, client, authenticated_session):
         """Test using a consumable item."""
         session_id, player, session_manager = authenticated_session

@@ -113,6 +113,15 @@ class Reap(Move):
                     continue
 
             base_dmg = max(1, int(self.power - enemy.protection))
+            # GrimPersistence passive: +25% damage vs targets below 35% HP
+            if (
+                any(
+                    getattr(m, "name", "") == "Grim Persistence"
+                    for m in getattr(user, "known_moves", [])
+                )
+                and enemy.hp < (enemy.maxhp * 0.35)
+            ):
+                base_dmg = int(base_dmg * 1.25)
             hit_chance = max(5, int(85 - enemy.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3)))
             if random.randint(0, 100) <= hit_chance:
                 if functions.check_parry(enemy):
@@ -286,6 +295,17 @@ class DeathsHarvest(Move):
         if hit_chance >= roll and hit_chance - roll < 10:
             damage /= 2
             glance = True
+
+        # GrimPersistence passive: +25% damage vs targets below 35% HP
+        if (
+            any(
+                getattr(m, "name", "") == "Grim Persistence"
+                for m in getattr(player, "known_moves", [])
+            )
+            and self.target.hp < (self.target.maxhp * 0.35)
+        ):
+            damage *= 1.25
+
         damage = int(damage)
 
         if hasattr(player, "eq_weapon") and player.eq_weapon:

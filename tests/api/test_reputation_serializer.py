@@ -80,15 +80,24 @@ class TestNPCRelationshipSerializer:
         level = NPCRelationshipSerializer._calculate_trust_level(-25)
         assert level == "Suspicious"
 
-    def test_get_npc_name_known_npc(self):
-        """Test getting NPC name for known NPC."""
-        name = NPCRelationshipSerializer._get_npc_name("cave_guide")
-        assert name == "Cave Guide"
+    def test_get_npc_name_returns_input_unchanged(self):
+        """_get_npc_name is a passthrough: reputation is keyed by NPC display name already."""
+        name = NPCRelationshipSerializer._get_npc_name("Gorran")
+        assert name == "Gorran"
 
-    def test_get_npc_name_unknown_npc(self):
-        """Test getting NPC name for unknown NPC."""
-        name = NPCRelationshipSerializer._get_npc_name("custom_npc_123")
-        assert name == "Custom Npc 123"
+    def test_get_price_modifier_friendly(self):
+        """Max positive reputation yields the full +15% favorable swing."""
+        modifier = NPCRelationshipSerializer.get_price_modifier(100)
+        assert modifier == pytest.approx(0.15)
+
+    def test_get_price_modifier_hostile(self):
+        """Max negative reputation yields the full -15% unfavorable swing."""
+        modifier = NPCRelationshipSerializer.get_price_modifier(-100)
+        assert modifier == pytest.approx(-0.15)
+
+    def test_get_price_modifier_neutral(self):
+        """Zero reputation has no effect on price."""
+        assert NPCRelationshipSerializer.get_price_modifier(0) == 0.0
 
 
 class TestPlayerReputationSerializer:
@@ -159,10 +168,9 @@ class TestPlayerReputationSerializer:
         assert result["direction"] == "positive"
         assert result["attitude_changed"] is False
 
-    def test_get_npc_name_mapping(self):
-        """Test NPC name mapping."""
-        assert PlayerReputationSerializer._get_npc_name("healer") == "Healer"
-        assert PlayerReputationSerializer._get_npc_name("blacksmith") == "Blacksmith"
+    def test_get_npc_name_returns_input_unchanged(self):
+        """_get_npc_name is a passthrough: reputation is keyed by NPC display name already."""
+        assert PlayerReputationSerializer._get_npc_name("Mara") == "Mara"
 
 
 class TestRelationshipFlagSerializer:

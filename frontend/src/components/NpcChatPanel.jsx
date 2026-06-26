@@ -24,6 +24,7 @@ export default function NpcChatPanel({ npcId, npcName, onClose }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [latestNpcText, setLatestNpcText] = useState(null)
+  const [relationship, setRelationship] = useState(null)
   const retryFnRef = useRef(null)
   const { showTop, showBottom, check, ref: messagesRef } = useScrollIndicators()
 
@@ -39,17 +40,19 @@ export default function NpcChatPanel({ npcId, npcName, onClose }) {
         const data = response.data
 
         setNpcKey(data.npc_key)
-        setDisplayName(data.display_name || npcName)
-        setLoquacity(data.loquacity || { current: 0, max: 1 })
-        setCurrentOptions(data.current_options || [])
-        setMessages(data.messages || [])
+        setDisplayName(data.npc_name || npcName)
+        setLoquacity({
+          current: data.loquacity_current ?? 0,
+          max: data.loquacity_max ?? 1,
+        })
+        setCurrentOptions(data.jean_options || [])
+        setRelationship(data.relationship || null)
 
-        // Set the latest NPC text for TypewriterOutput if there are any messages
-        if (data.messages && data.messages.length > 0) {
-          const lastNpcMessage = [...data.messages].reverse().find((m) => m.speaker === 'npc')
-          if (lastNpcMessage) {
-            setLatestNpcText(lastNpcMessage.text)
-          }
+        if (data.npc_opening) {
+          setMessages([{ speaker: 'npc', text: data.npc_opening }])
+          setLatestNpcText(data.npc_opening)
+        } else {
+          setMessages([])
         }
 
         setPhase('waiting_jean')
@@ -92,10 +95,14 @@ export default function NpcChatPanel({ npcId, npcName, onClose }) {
       }
       setMessages((prev) => [...prev, newNpcMessage])
 
-      // Update loquacity and options
-      setLoquacity(data.loquacity || { current: 0, max: 1 })
-      setCurrentOptions(data.current_options || [])
+      // Update loquacity, options, and relationship standing
+      setLoquacity({
+        current: data.loquacity_current ?? 0,
+        max: data.loquacity_max ?? 1,
+      })
+      setCurrentOptions(data.jean_options || [])
       setLatestNpcText(data.npc_response)
+      setRelationship(data.relationship || null)
 
       // Check if conversation ended
       if (data.conversation_ended) {
@@ -141,6 +148,22 @@ export default function NpcChatPanel({ npcId, npcName, onClose }) {
   const loquacityPercentage =
     loquacity.max > 0 ? (loquacity.current / loquacity.max) * 100 : 0
 
+  // Color the relationship badge by attitude
+  const getRelationshipColor = () => {
+    if (!relationship) return colors.text.muted
+    switch (relationship.attitude) {
+      case 'friendly':
+      case 'favorable':
+        return colors.primary
+      case 'wary':
+      case 'hostile':
+      case 'enemy':
+        return colors.danger
+      default:
+        return colors.text.muted
+    }
+  }
+
   return (
     <BaseDialog
       title={displayName}
@@ -170,6 +193,26 @@ export default function NpcChatPanel({ npcId, npcName, onClose }) {
           }}
         />
       </div>
+
+      {/* Relationship Badge */}
+      {relationship && (
+        <div
+          data-testid="relationship-badge"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: spacing.sm,
+            marginBottom: spacing.md,
+            fontFamily: fonts.main,
+            fontSize: '12px',
+            color: getRelationshipColor(),
+          }}
+        >
+          <span>{relationship.emoji}</span>
+          <span style={{ textTransform: 'capitalize' }}>{relationship.attitude}</span>
+          <span style={{ color: colors.text.dim }}>&middot; {relationship.trust_level}</span>
+        </div>
+      )}
 
       {/* Messages Area */}
       <div style={{ position: 'relative', marginBottom: spacing.md }}>

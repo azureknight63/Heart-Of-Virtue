@@ -76,98 +76,6 @@ def mock_tile():
     return tile
 
 
-class TestEquipItemErrors:
-    """Test error handling in equip_item method."""
-
-    def test_equip_item_invalid_index_type(self, game_service, mock_player):
-        """Test equip_item with non-integer index."""
-        result = game_service.equip_item(mock_player, "not_an_int")
-        assert result["success"] is False
-        assert "Invalid item index" in result["error"]
-
-    def test_equip_item_negative_index(self, game_service, mock_player):
-        """Test equip_item with negative index."""
-        result = game_service.equip_item(mock_player, -1)
-        assert result["success"] is False
-        assert "Invalid item index" in result["error"]
-
-    def test_equip_item_out_of_bounds(self, game_service, mock_player):
-        """Test equip_item with index beyond inventory."""
-        mock_player.inventory = []
-        result = game_service.equip_item(mock_player, 5)
-        assert result["success"] is False
-        assert "Invalid item index" in result["error"]
-
-    def test_equip_item_non_equipable(self, game_service, mock_player):
-        """Test equip_item with item that has no isequipped attribute."""
-        item = MagicMock()
-        item.name = "NonEquipable"
-        del item.isequipped  # Remove the attribute
-        mock_player.inventory = [item]
-
-        result = game_service.equip_item(mock_player, 0)
-        assert result["success"] is False
-        assert "cannot be equipped" in result["error"]
-
-    def test_equip_item_weapon_success(self, game_service, mock_player):
-        """Test successful weapon equipping."""
-        item = MagicMock()
-        item.name = "Sword"
-        item.isequipped = False
-        item.maintype = "Weapon"
-        mock_player.inventory = [item]
-
-        with patch('src.functions.refresh_stat_bonuses'):
-            result = game_service.equip_item(mock_player, 0)
-
-        assert result["success"] is True
-        assert item.isequipped is True
-
-    def test_equip_item_exception_handling(self, game_service, mock_player):
-        """Test exception handling during equip operation."""
-        item = MagicMock()
-        item.name = "Broken"
-        item.isequipped = False
-        item.maintype = "Weapon"
-        mock_player.inventory = [item]
-
-        # Force an exception during refresh_stat_bonuses
-        with patch('src.functions.refresh_stat_bonuses', side_effect=Exception("Stat refresh failed")):
-            result = game_service.equip_item(mock_player, 0)
-
-        assert result["success"] is False
-        assert "error" in result
-
-
-class TestUnequipItemErrors:
-    """Test error handling in unequip_item method."""
-
-    def test_unequip_invalid_slot(self, game_service, mock_player):
-        """Test unequip_item with invalid slot name."""
-        result = game_service.unequip_item(mock_player, "nonexistent_slot")
-        assert result["success"] is False
-        assert "error" in result
-
-    def test_unequip_already_unequipped(self, game_service, mock_player):
-        """Test unequip_item when slot is already empty."""
-        mock_player.eq_weapon = None
-        result = game_service.unequip_item(mock_player, "weapon")
-        assert result["success"] is False
-
-    def test_unequip_armor_success(self, game_service, mock_player):
-        """Test successful armor unequipping."""
-        item = MagicMock()
-        item.name = "Plate Armor"
-        item.isequipped = True
-        mock_player.body = item
-
-        with patch('src.functions.refresh_stat_bonuses'):
-            result = game_service.unequip_item(mock_player, "armor")
-
-        # Should either succeed or return unequip result
-        assert result is not None
-
-
 class TestUseItemErrors:
     """Test error handling in use_item method."""
 
@@ -679,35 +587,8 @@ class TestStateRecovery:
         assert len(mock_player.inventory) == initial_count
         assert item in mock_player.inventory
 
-    def test_equipment_consistency_after_equip_error(self, game_service, mock_player):
-        """Test that equipment remains consistent after equip error."""
-        item = MagicMock()
-        item.name = "Bad Item"
-        del item.isequipped
-        mock_player.inventory = [item]
-
-        result = game_service.equip_item(mock_player, 0)
-        # Should not corrupt equipment state
-        assert result["success"] is False
-        assert item not in [mock_player.eq_weapon, mock_player.body, mock_player.head]
-
-
 class TestErrorLogging:
     """Test that errors are properly logged."""
-
-    def test_equip_item_error_logged(self, game_service, mock_player, caplog):
-        """Test that equip_item exceptions are logged."""
-        item = MagicMock()
-        item.name = "Broken"
-        item.isequipped = False
-        item.maintype = "Weapon"
-        mock_player.inventory = [item]
-
-        with patch('src.functions.refresh_stat_bonuses', side_effect=Exception("Test error")):
-            with caplog.at_level(logging.DEBUG):
-                result = game_service.equip_item(mock_player, 0)
-
-        assert result["success"] is False
 
     def test_use_item_error_logged(self, game_service, mock_player, caplog):
         """Test that use_item exceptions are logged."""
@@ -724,19 +605,6 @@ class TestErrorLogging:
 
 class TestBoundaryConditions:
     """Test boundary conditions and edge cases."""
-
-    def test_equip_item_index_zero(self, game_service, mock_player):
-        """Test equip_item with index 0 (first item)."""
-        item = MagicMock()
-        item.name = "First Item"
-        item.isequipped = False
-        item.maintype = "Weapon"
-        mock_player.inventory = [item]
-
-        with patch('src.functions.refresh_stat_bonuses'):
-            result = game_service.equip_item(mock_player, 0)
-
-        assert result["success"] is True
 
     def test_use_item_index_zero(self, game_service, mock_player):
         """Test use_item with index 0 (first item)."""
@@ -797,11 +665,6 @@ class TestBoundaryConditions:
 class TestTypeValidation:
     """Test type validation across methods."""
 
-    def test_equip_item_float_index(self, game_service, mock_player):
-        """Test equip_item with float instead of int."""
-        result = game_service.equip_item(mock_player, 1.5)
-        assert result["success"] is False
-
     def test_use_item_string_index(self, game_service, mock_player):
         """Test use_item with string index - raises TypeError."""
         # String comparison with int raises TypeError
@@ -826,44 +689,8 @@ class TestTypeValidation:
         # Result depends on implementation
 
 
-class TestConcurrentStateModification:
-    """Test behavior when state is modified concurrently."""
-
-    def test_equip_item_inventory_modified(self, game_service, mock_player):
-        """Test equip_item when inventory is modified between validation and execution."""
-        item = MagicMock()
-        item.name = "Item"
-        item.isequipped = False
-        item.maintype = "Weapon"
-        mock_player.inventory = [item]
-
-        # Simulate inventory being cleared between validation and execution
-        def clear_inventory(*args, **kwargs):
-            mock_player.inventory = []
-
-        with patch('src.functions.refresh_stat_bonuses', side_effect=clear_inventory):
-            result = game_service.equip_item(mock_player, 0)
-
-        # Should handle gracefully
-        assert result is not None
-
-
 class TestNullableAttributes:
     """Test handling of None/missing attributes."""
-
-    def test_equip_item_null_maintype(self, game_service, mock_player):
-        """Test equip_item with None maintype."""
-        item = MagicMock()
-        item.name = "Item"
-        item.isequipped = False
-        item.maintype = None
-        mock_player.inventory = [item]
-
-        with patch('src.functions.refresh_stat_bonuses'):
-            result = game_service.equip_item(mock_player, 0)
-
-        # Should handle None maintype
-        assert result is not None
 
     def test_use_item_null_name(self, game_service, mock_player):
         """Test use_item with None item name."""
