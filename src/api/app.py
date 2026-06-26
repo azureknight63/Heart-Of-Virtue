@@ -235,7 +235,6 @@ def create_app(config_class=None):
         auth_bp,
         world_bp,
         inventory_bp,
-        equipment_bp,
         combat_bp,
         player_bp,
         saves_bp,
@@ -249,7 +248,6 @@ def create_app(config_class=None):
     app.register_blueprint(auth_bp, url_prefix="/api")
     app.register_blueprint(world_bp, url_prefix="/api")
     app.register_blueprint(inventory_bp, url_prefix="/api")
-    app.register_blueprint(equipment_bp, url_prefix="/api")
     app.register_blueprint(combat_bp, url_prefix="/api/combat")
     app.register_blueprint(player_bp, url_prefix="/api")
     app.register_blueprint(saves_bp, url_prefix="/api")

@@ -10,6 +10,7 @@ import positions  # noqa: F401
 from animations import animate_to_main_screen as animate  # noqa: F401
 from ._base import (
     Move,
+    PassiveMove,
     _ensure_weapon_exp,
 )  # noqa: F401
 
@@ -391,7 +392,7 @@ class Stupefy(Move):
             self.user.fatigue = 0
 
 
-class WorkTheGap(Move):
+class WorkTheGap(PassiveMove):
     """Passive: Sustained assault gradually strips enemy protection (future hook)."""
 
     def __init__(self, user):
@@ -399,21 +400,4 @@ class WorkTheGap(Move):
             "Every strike finds a new crack. "
             "Sustained assault with a pick progressively reduces the target's protection."
         )
-        super().__init__(
-            name="Work the Gap",
-            description=description,
-            xp_gain=0,
-            current_stage=0,
-            stage_beat=[0, 0, 0, 0],
-            targeted=False,
-            stage_announce=["", "", "", ""],
-            fatigue_cost=0,
-            beats_left=0,
-            target=user,
-            user=user,
-            category="Passive",
-            passive=True,
-        )
-
-    def viable(self):
-        return False
+        super().__init__(user, "Work the Gap", description)

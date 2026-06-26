@@ -316,7 +316,7 @@ class Slimed(State):
             compounding=True,
             combat=True,
             world=True,
-            statustype="poison",
+            statustype="slimed",
             persistent=True,
             description="Finesse -20%, Protection -15%. Deals periodic acid damage. Worsens if reapplied.",
         )

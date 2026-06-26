@@ -117,7 +117,7 @@ class Player(
         # Default status_resistance_base is 1.0 (immune) for all types.
         # Jean is a mortal crusader — he is vulnerable to these status effects.
         # Each value of 0.0 means fully vulnerable; items/levels can raise it.
-        for _stype in ("poison", "stun", "stone", "apathy", "enraged", "disoriented"):
+        for _stype in ("poison", "slimed", "stun", "stone", "apathy", "enraged", "disoriented"):
             self.status_resistance_base[_stype] = 0.0
             self.status_resistance[_stype] = 0.0
         self.weight_tolerance = 20.00

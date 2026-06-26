@@ -40,6 +40,12 @@ class TestPlayerCore:
         assert player.level == 1
         assert player.is_alive() is True
 
+    def test_player_vulnerable_to_slimed(self, player):
+        """Jean must be vulnerable to Slimed (statustype 'slimed'), inflicted by
+        ElderSlime/KingSlime's surge moves, not just to the generic poison default."""
+        assert player.status_resistance_base["slimed"] == 0.0
+        assert player.status_resistance["slimed"] == 0.0
+
     def test_get_hp_pcnt(self, player):
         player.hp = 50
         player.maxhp = 100

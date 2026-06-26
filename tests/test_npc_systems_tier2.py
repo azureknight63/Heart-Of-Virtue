@@ -557,6 +557,24 @@ class TestNPCResistances:
         spider = GiantSpider()
         assert spider.status_resistance_base["poison"] == 1
 
+    def test_elder_slime_immune_to_slimed(self):
+        """ElderSlime should be immune to the Slimed status it inflicts on others."""
+        elder = ElderSlime()
+        assert elder.status_resistance_base["slimed"] == 1.0
+        assert elder.status_resistance["slimed"] == 1.0
+        status = Slimed(elder)
+        from functions import inflict
+        assert inflict(status, elder, chance=1.0) is False
+
+    def test_king_slime_immune_to_slimed(self):
+        """KingSlime should be immune to the Slimed status it inflicts on others."""
+        king = KingSlime()
+        assert king.status_resistance_base["slimed"] == 1.0
+        assert king.status_resistance["slimed"] == 1.0
+        status = Slimed(king)
+        from functions import inflict
+        assert inflict(status, king, chance=1.0) is False
+
     def test_status_dummy_zero_resistances(self):
         """Test StatusDummy has neutral damage and zero status resistances."""
         dummy = StatusDummy()

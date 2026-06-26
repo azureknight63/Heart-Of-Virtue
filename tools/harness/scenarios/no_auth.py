@@ -17,7 +17,7 @@ _PROTECTED = [
     ("GET",  "/api/stats"),             # player_bp
     ("GET",  "/api/world"),             # world_bp
     ("GET",  "/api/inventory"),         # inventory_bp
-    ("GET",  "/api/equipment"),         # equipment_bp
+    ("GET",  "/api/equipment"),         # inventory_bp
     ("GET",  "/api/combat/status"),     # combat_bp
     ("GET",  "/api/combat/log"),        # combat_bp
     ("GET",  "/api/auth/validate"),     # auth_bp

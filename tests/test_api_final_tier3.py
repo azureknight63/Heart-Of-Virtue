@@ -620,14 +620,6 @@ class TestShopRoutes:
         assert response.status_code in [401, 403]
 
 
-class TestEquipmentRoutes:
-    """Test equipment routes."""
-
-    def test_equipment_route_exists(self):
-        """Test equipment blueprint exists."""
-        from src.api.routes.equipment import equipment_bp
-        assert equipment_bp is not None
-
 class TestSaveGameRoutes:
     """Test save/load game routes."""
 
@@ -849,7 +841,6 @@ class TestBlueprintRegistration:
         blueprint_modules = [
             'src.api.routes.auth',
             'src.api.routes.combat',
-            'src.api.routes.equipment',
             'src.api.routes.inventory',
             'src.api.routes.npc',
             'src.api.routes.player',
@@ -877,7 +868,6 @@ class TestBlueprintRegistration:
         from src.api.routes import (
             auth_bp,
             combat_bp,
-            equipment_bp,
             inventory_bp,
             npc_bp,
             player_bp,

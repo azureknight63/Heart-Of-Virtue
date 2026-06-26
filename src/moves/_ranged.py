@@ -180,6 +180,12 @@ class ShootBow(
         )
         self.base_range = player.eq_weapon.range_base * self.arrow.range_base_modifier
         self.decay = player.eq_weapon.range_decay * self.arrow.range_decay_modifier
+        # EagleEye passive: reduce accuracy decay at long range
+        if any(
+            getattr(m, "name", "") == "Eagle Eye"
+            for m in getattr(player, "known_moves", [])
+        ):
+            self.decay *= 0.7
         self.base_damage_type = items.get_base_damage_type(
             self.arrow
         )  # in case the arrow has a different base damage type than Piercing
@@ -920,7 +926,7 @@ class PinningBolt(Move):
             self.user.fatigue = 0
 
 
-class QuickReload(Move):
+class QuickReload(PassiveMove):
     """Passive: Crossbow reload training reduces prep time."""
 
     def __init__(self, user):
@@ -928,24 +934,7 @@ class QuickReload(Move):
             "Practiced hands load faster. "
             "Crossbow attacks require fewer beats to reload."
         )
-        super().__init__(
-            name="Quick Reload",
-            description=description,
-            xp_gain=0,
-            current_stage=0,
-            stage_beat=[0, 0, 0, 0],
-            targeted=False,
-            stage_announce=["", "", "", ""],
-            fatigue_cost=0,
-            beats_left=0,
-            target=user,
-            user=user,
-            category="Passive",
-            passive=True,
-        )
-
-    def viable(self):
-        return False
+        super().__init__(user, "Quick Reload", description)
 
 
 class MarksmanEye(PassiveMove):
