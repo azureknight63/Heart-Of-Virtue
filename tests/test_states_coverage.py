@@ -86,17 +86,18 @@ def test_enflamed_compound_steps_left_cap():
 # Slimed.on_removal() — lines 337-339
 # ---------------------------------------------------------------------------
 def test_slimed_on_removal():
+    """on_removal only announces; the protection penalty is declarative
+    (add_protection summed by refresh_stat_bonuses) and is never mutated
+    directly by on_removal."""
     target = FakeTarget()
     state = Slimed(target)
     original_protection = target.protection
-    # Manually apply the on_application effect so protection is reduced
-    target.protection = max(0, target.protection - state.sub_protection)
 
-    with patch('states.cprint'):
+    with patch('states.cprint') as mock_cprint:
         state.on_removal(target)
 
-    # protection should be restored
     assert target.protection == original_protection
+    assert mock_cprint.called
 
 
 # ---------------------------------------------------------------------------
@@ -110,12 +111,16 @@ def test_slimed_compound():
     state.steps_max = 20
     state.steps_left = 20
     original_add_fin = state.add_fin
+    original_add_protection = state.add_protection
 
     with patch('states.cprint'):
         state.compound(target)
 
     # add_fin should decrease
     assert state.add_fin < original_add_fin
+    # add_protection should also deepen (issue #259 follow-up: compound() must
+    # worsen every declarative penalty the state carries, not just add_fin)
+    assert state.add_protection < original_add_protection
     # beats_max *= 1.1
     assert state.beats_max == int(50 * 1.1)
 
@@ -178,6 +183,7 @@ def test_petrified_compound():
     state.steps_left = 20
     original_add_fin = state.add_fin
     original_add_speed = state.add_speed
+    original_add_protection = state.add_protection
 
     with patch('states.cprint'):
         state.compound(target)
@@ -185,6 +191,10 @@ def test_petrified_compound():
     # Both stat penalties deepen
     assert state.add_fin < original_add_fin
     assert state.add_speed < original_add_speed
+    # add_protection is a buff for Petrified, so it should grow more positive
+    # on reapplication (issue #259 follow-up: compound() must worsen/deepen
+    # every declarative bonus, not just add_fin/add_speed)
+    assert state.add_protection > original_add_protection
     assert state.beats_max == int(30 * 1.1)
 
 
