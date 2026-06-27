@@ -58,7 +58,7 @@ class Reap(Move):
             return False
         if not hasattr(self.user, "combat_proximity"):
             return False
-        return any(e.is_alive for e in self.user.combat_proximity)
+        return any(e.is_alive() for e in self.user.combat_proximity)
 
     def evaluate(self):
         try:
@@ -81,7 +81,7 @@ class Reap(Move):
         arc_range = wpn_range[1]
 
         for enemy in list(self.user.combat_proximity.keys()):
-            if not enemy.is_alive:
+            if not enemy.is_alive():
                 continue
 
             # Frontal arc check when coordinates available
@@ -187,13 +187,13 @@ class ReapersMark(Move):
             return False
         if not hasattr(self.user, "combat_proximity"):
             return False
-        return any(e.is_alive for e in self.user.combat_proximity)
+        return any(e.is_alive() for e in self.user.combat_proximity)
 
     def evaluate(self):
         pass
 
     def execute(self, user):
-        if self.target and self.target.is_alive:
+        if self.target and self.target.is_alive():
             self.target._reapers_mark = True
             cprint(
                 f"{user.name} marks {self.target.name} — death follows close behind.",

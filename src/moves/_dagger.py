@@ -220,7 +220,7 @@ class FeintAndPivot(Move):
         ):
             return False
 
-        if not self.target or not self.target.is_alive:
+        if not self.target or not self.target.is_alive():
             return False
 
         if (
@@ -352,7 +352,7 @@ class FeintAndPivot(Move):
 
     def execute(self, user):
         """Execute stage - attack and strategically reposition."""
-        if not self.target or not self.target.is_alive:
+        if not self.target or not self.target.is_alive():
             cprint("Target is no longer available!", "red")
             return
 

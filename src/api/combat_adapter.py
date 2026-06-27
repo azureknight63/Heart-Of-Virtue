@@ -1367,8 +1367,10 @@ class ApiCombatAdapter:
                 self._process_npc(enemy)
 
             # Check if enemy died (was dead before or died during turn/recoil)
-            # This check must happen regardless of whether they took a turn
-            if not enemy.is_alive():
+            # This check must happen regardless of whether they took a turn.
+            # Consult check_revive() first (mirrors the player path above) so a
+            # combatant carrying a revive state is not silently denied.
+            if not enemy.is_alive() and not enemy.check_revive():
                 enemy.die()
                 if not enemy.is_alive():
                     # Death message is handled by enemy.die() -> print() -> captured by output capture

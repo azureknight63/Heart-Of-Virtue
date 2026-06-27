@@ -297,7 +297,7 @@ class TalusHound(NPC):
             if (
                 npc is not self
                 and isinstance(npc, TalusHound)
-                and getattr(npc, "is_alive", True)
+                and (not hasattr(npc, "is_alive") or npc.is_alive())
             ):
                 pack_count += 1
         return pack_count

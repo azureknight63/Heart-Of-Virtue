@@ -127,7 +127,7 @@ class ChipAway(Move):
             else:
                 cprint(f"Strike {i + 1} missed!", "yellow")
 
-            if not self.target.is_alive:
+            if not self.target.is_alive():
                 break
 
         if hasattr(user, "eq_weapon") and user.eq_weapon:
@@ -245,14 +245,17 @@ class ExploitWeakness(Move):
                 self.parry()
             else:
                 self.hit(damage, glance)
-                if self.target and self.target.is_alive:
+                if self.target and self.target.is_alive():
                     already = any(
                         isinstance(s, states.Disoriented) for s in self.target.states
                     )
                     if not already:
                         try:
-                            self.target.states.append(states.Disoriented(self.target))
-                            cprint(f"{self.target.name} is disoriented!", "red")
+                            # inflict() emits the disoriented message via
+                            # Disoriented.on_application when the state lands.
+                            functions.inflict(
+                                states.Disoriented(self.target), self.target
+                            )
                         except Exception:
                             pass
         else:
@@ -372,7 +375,7 @@ class Stupefy(Move):
                 self.parry()
             else:
                 self.hit(damage, glance)
-                if self.target and self.target.is_alive:
+                if self.target and self.target.is_alive():
                     # Remove existing Disoriented, apply fresh one
                     self.target.states = [
                         s

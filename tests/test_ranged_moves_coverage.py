@@ -115,7 +115,7 @@ def _make_enemy(finesse=8, protection=2, resistance=None):
     enemy.finesse = finesse
     enemy.protection = protection
     enemy.states = []
-    enemy.is_alive = True
+    enemy.is_alive = lambda: True
     if resistance is None:
         enemy.resistance = {"piercing": 1.0, "blunt": 1.0, "slashing": 1.0}
     else:
