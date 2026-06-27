@@ -111,12 +111,16 @@ def test_slimed_compound():
     state.steps_max = 20
     state.steps_left = 20
     original_add_fin = state.add_fin
+    original_add_protection = state.add_protection
 
     with patch('states.cprint'):
         state.compound(target)
 
     # add_fin should decrease
     assert state.add_fin < original_add_fin
+    # add_protection should also deepen (issue #259 follow-up: compound() must
+    # worsen every declarative penalty the state carries, not just add_fin)
+    assert state.add_protection < original_add_protection
     # beats_max *= 1.1
     assert state.beats_max == int(50 * 1.1)
 
@@ -179,6 +183,7 @@ def test_petrified_compound():
     state.steps_left = 20
     original_add_fin = state.add_fin
     original_add_speed = state.add_speed
+    original_add_protection = state.add_protection
 
     with patch('states.cprint'):
         state.compound(target)
@@ -186,6 +191,10 @@ def test_petrified_compound():
     # Both stat penalties deepen
     assert state.add_fin < original_add_fin
     assert state.add_speed < original_add_speed
+    # add_protection is a buff for Petrified, so it should grow more positive
+    # on reapplication (issue #259 follow-up: compound() must worsen/deepen
+    # every declarative bonus, not just add_fin/add_speed)
+    assert state.add_protection > original_add_protection
     assert state.beats_max == int(30 * 1.1)
 
 

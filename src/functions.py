@@ -320,10 +320,14 @@ def refresh_stat_bonuses(
                 adder_group.append(state)
                 break
 
-    # Apply bonuses
+    # Apply bonuses. add_protection is deferred to its own pass below: Player's
+    # refresh_protection_rating() (called after this loop) recomputes protection
+    # from strength/finesse via equipped str_mod/fin_mod, so it must run only
+    # after those stats have been fully bonused -- otherwise it would read their
+    # pre-bonus values.
     for adder in adder_group:
         # Precompute which bonus attributes this adder actually supplies
-        present = [b for b in bonuses_map if hasattr(adder, b)]
+        present = [b for b in bonuses_map if b != "add_protection" and hasattr(adder, b)]
         for bonus_attr in present:
             target_field = bonuses_map[bonus_attr]
             bonus_value = get_attr(adder, bonus_attr)
@@ -424,6 +428,25 @@ def refresh_stat_bonuses(
                         target.maxfatigue = 0
             except Exception:
                 pass
+
+    # Recompute Player's gear-based protection now that strength/finesse/endurance
+    # bonuses above are fully applied (str_mod/fin_mod on equipped armor read the
+    # current, post-bonus values). NPCs already had protection reset to
+    # protection_base in reset_stats and need no further recompute here.
+    if hasattr(target, "refresh_protection_rating"):
+        try:
+            target.refresh_protection_rating()
+        except Exception:
+            pass
+
+    # Sum declarative add_protection bonuses (states/items) on top of the
+    # freshly-established base.
+    for adder in adder_group:
+        if hasattr(adder, "add_protection"):
+            try:
+                target.protection = target.protection + get_attr(adder, "add_protection")
+            except Exception:
+                continue
 
     # Ensure all fatigue values are rounded up to the nearest integer and clamped
     if hasattr(target, "fatigue") and hasattr(target, "maxfatigue"):
@@ -541,15 +564,13 @@ def reset_stats(target):  # resets all stats to base level
         except Exception:
             pass
 
-    # Reset protection to its true base before bonuses (add_protection from states/
-    # items) are summed on top. Player recomputes protection dynamically from gear;
-    # NPCs fall back to the fixed value captured at construction.
-    if hasattr(target, "refresh_protection_rating"):
-        try:
-            target.refresh_protection_rating()
-        except Exception:
-            pass
-    elif hasattr(target, "protection_base"):
+    # Reset protection to its true base before add_protection bonuses (from states/
+    # items) are summed on top. NPCs fall back to the fixed value captured at
+    # construction. Player's protection is recomputed dynamically from gear via
+    # refresh_protection_rating(), but that depends on strength/finesse, which
+    # haven't been re-bonused yet at this point -- so for Player that recompute
+    # happens later in refresh_stat_bonuses, after those bonuses are summed.
+    if hasattr(target, "protection_base"):
         try:
             target.protection = target.protection_base
         except Exception:

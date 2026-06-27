@@ -223,6 +223,43 @@ def test_refresh_stat_bonuses_real_npc_petrified_protection_bonus():
     assert npc.protection == baseline_protection
 
 
+def test_refresh_stat_bonuses_protection_recompute_sees_buffed_strength():
+    """Player.refresh_protection_rating() scales equipped armor's str_mod/fin_mod
+    bonus by self.strength/self.finesse. That recompute must run *after*
+    add_str/add_fin bonuses from states/items are summed -- otherwise armor
+    bonuses silently ignore active strength/finesse buffs (the bug introduced
+    by originally moving the protection-base reset into reset_stats() ahead of
+    the bonus-summing loop)."""
+    from src.player import Player
+
+    player = Player()
+
+    class StrScalingShield:
+        isequipped = True
+        protection = 5
+        str_mod = 1.0
+
+    player.inventory.append(StrScalingShield())
+    functions.refresh_stat_bonuses(player)
+    baseline_protection = player.protection
+
+    total_str_mod = sum(
+        getattr(item, "str_mod", 0) or 0
+        for item in player.inventory
+        if getattr(item, "isequipped", False)
+    )
+
+    class StrengthBuff:
+        add_str = 20
+
+    player.states.append(StrengthBuff())
+    functions.refresh_stat_bonuses(player)
+
+    assert player.strength == player.strength_base + 20
+    expected_extra = 20 * total_str_mod
+    assert player.protection == baseline_protection + expected_extra
+
+
 # ---------- check_parry ----------
 
 def test_check_parry():

@@ -343,6 +343,7 @@ class Slimed(State):
     def compound(self, target):
         cprint("The slime coating on {} thickens!".format(target.name), "cyan")
         self.add_fin -= int(target.finesse * 0.05)
+        self.add_protection -= int(target.protection * 0.05)
         self.beats_max = int(self.beats_max * 1.1)
         self.beats_left = min(self.beats_max, self.beats_left + int(self.beats_max / 4))
         self.steps_max = int(self.steps_max * 1.1)
@@ -461,6 +462,7 @@ class Petrified(State):
         )
         self.add_fin -= int(target.finesse * 0.10)
         self.add_speed -= int(target.speed * 0.10)
+        self.add_protection += int(target.protection * 0.10)
         self.beats_max = int(self.beats_max * 1.1)
         self.beats_left = min(self.beats_max, self.beats_left + int(self.beats_max / 4))
         self.steps_max = int(self.steps_max * 1.1)
