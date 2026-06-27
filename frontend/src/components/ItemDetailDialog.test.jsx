@@ -88,6 +88,34 @@ describe('ItemDetailDialog', () => {
     expect(mockOnBack).toHaveBeenCalled();
   });
 
+  it('renders engine flavor narration from the equip response', async () => {
+    apiClient.post.mockResolvedValue({
+      data: {
+        success: true,
+        messages: ['Jean put the Rusty Dagger back into his bag.'],
+      },
+    });
+
+    render(
+      <ItemDetailDialog
+        item={mockItem}
+        player={mockPlayer}
+        onClose={mockOnClose}
+        onBack={mockOnBack}
+        onItemUpdated={mockOnItemUpdated}
+        onRefetch={mockOnRefetch}
+      />
+    );
+
+    fireEvent.click(screen.getByText(/Equip/i));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/back into his bag/i)
+      ).toBeDefined();
+    });
+  });
+
   it('handles use action successfully', async () => {
     const consumableItem = {
       ...mockItem,

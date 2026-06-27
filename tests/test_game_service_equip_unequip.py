@@ -240,3 +240,43 @@ def test_service_drop_equipped_item_unequips_then_drops(game_service):
     assert item in tile.items_here
     assert item not in p.inventory
     assert p.eq_weapon is getattr(p, "fists", None)
+
+
+# ---------------------------------------------------------------------------
+# Narration capture — engine flavor is surfaced via the `messages` field
+# ---------------------------------------------------------------------------
+
+
+def test_service_equip_returns_engine_narration(game_service):
+    """cprint flavor from the engine equip is captured into `messages`."""
+    p = _make_player()
+    item = _make_equippable(maintype="Weapon", name="TestSword")
+    p.inventory = [item]
+
+    # Note: cprint is NOT patched here so real narration flows into the sink.
+    with patch("player._inventory.functions.refresh_stat_bonuses"):
+        result = game_service.equip_item(p, item)
+
+    assert result["success"] is True
+    assert any("equipped" in m.lower() for m in result["messages"])
+
+
+def test_service_drop_equipped_returns_unequip_narration(game_service):
+    """The unequip-before-drop flavor is captured into `messages`."""
+    p = _make_player()
+    item = _make_equippable(maintype="Weapon", name="TestSword")
+    item.isequipped = True
+    item.interactions = ["unequip"]
+    p.inventory = [item]
+    p.eq_weapon = item
+
+    tile = MagicMock()
+    tile.items_here = []
+    p.universe = MagicMock()
+    p.universe.get_tile.return_value = tile
+
+    with patch("player._inventory.functions.refresh_stat_bonuses"):
+        result = game_service.drop_item(p, item)
+
+    assert result["success"] is True
+    assert any("back into his bag" in m.lower() for m in result["messages"])

@@ -3991,8 +3991,13 @@ class GameService:
         if getattr(item, "merchandise", False):
             return {"error": f"You must purchase {item.name} before equipping it"}
 
-        player.equip_item(item_object=item)
-        return {"success": True, "message": f"{item.name} equipped"}
+        with capture_narration() as _msgs:
+            player.equip_item(item_object=item)
+        return {
+            "success": True,
+            "message": f"{item.name} equipped",
+            "messages": [m.get("text", "") for m in _msgs if m.get("text")],
+        }
 
     def unequip_item(self, player: "player_module.Player", item) -> Dict[str, Any]:
         """Unequip a currently-equipped inventory item via the engine.
@@ -4009,8 +4014,13 @@ class GameService:
         if not item.isequipped:
             return {"error": f"{item.name} is not equipped"}
 
-        player.unequip_item(item_object=item)
-        return {"success": True, "message": f"{item.name} unequipped"}
+        with capture_narration() as _msgs:
+            player.unequip_item(item_object=item)
+        return {
+            "success": True,
+            "message": f"{item.name} unequipped",
+            "messages": [m.get("text", "") for m in _msgs if m.get("text")],
+        }
 
     def drop_item(self, player: "player_module.Player", item) -> Dict[str, Any]:
         """Drop an inventory item onto the player's current tile.
@@ -4029,21 +4039,23 @@ class GameService:
         if not tile or not hasattr(tile, "items_here"):
             return {"error": "Cannot drop item: invalid current location"}
 
-        if getattr(item, "isequipped", False):
-            player.unequip_item(item_object=item)
+        with capture_narration() as _msgs:
+            if getattr(item, "isequipped", False):
+                player.unequip_item(item_object=item)
 
-        try:
-            player.inventory.remove(item)
-        except (ValueError, AttributeError):
-            return {"error": "Item not found in inventory"}
+            try:
+                player.inventory.remove(item)
+            except (ValueError, AttributeError):
+                return {"error": "Item not found in inventory"}
 
-        tile.items_here.append(item)
-        if hasattr(item, "stack_grammar"):
-            item.stack_grammar()
+            tile.items_here.append(item)
+            if hasattr(item, "stack_grammar"):
+                item.stack_grammar()
 
         return {
             "success": True,
             "message": f"Dropped {getattr(item, 'name', 'item')}",
+            "messages": [m.get("text", "") for m in _msgs if m.get("text")],
             "item_name": getattr(item, "name", None),
         }
 

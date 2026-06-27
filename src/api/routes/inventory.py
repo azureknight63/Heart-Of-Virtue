@@ -9,6 +9,7 @@ Provides endpoints for:
 
 import contextlib
 import io
+import logging
 import re
 from unittest.mock import patch
 
@@ -29,6 +30,8 @@ from src.api.middleware.auth import get_session_and_player
 
 # Create blueprint
 inventory_bp = Blueprint("inventory", __name__)
+
+logger = logging.getLogger(__name__)
 
 
 def get_item_and_index(player, item_id=None, item_index=None):
@@ -96,8 +99,9 @@ def get_inventory():
             jsonify({"success": True, "inventory": inventory_data}),
             200,
         )
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
+    except Exception:
+        logger.exception("Unhandled error in inventory route")
+        return jsonify({"success": False, "error": "An internal error occurred"}), 500
 
 
 @inventory_bp.route("/inventory/examine", methods=["GET"])
@@ -137,8 +141,9 @@ def examine_item():
             jsonify({"success": True, "item": item_data}),
             200,
         )
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
+    except Exception:
+        logger.exception("Unhandled error in inventory route")
+        return jsonify({"success": False, "error": "An internal error occurred"}), 500
 
 
 @inventory_bp.route("/inventory/drop", methods=["POST"])
@@ -189,13 +194,15 @@ def drop_item():
                 {
                     "success": True,
                     "message": "Item dropped",
+                    "messages": result.get("messages", []),
                     "inventory": inventory_data,
                 }
             ),
             200,
         )
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
+    except Exception:
+        logger.exception("Unhandled error in inventory route")
+        return jsonify({"success": False, "error": "An internal error occurred"}), 500
 
 
 @inventory_bp.route("/equipment", methods=["GET"])
@@ -215,8 +222,9 @@ def get_equipment():
             jsonify({"success": True, "equipment": equipment_data}),
             200,
         )
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
+    except Exception:
+        logger.exception("Unhandled error in inventory route")
+        return jsonify({"success": False, "error": "An internal error occurred"}), 500
 
 
 @inventory_bp.route("/inventory/equip", methods=["POST"])
@@ -268,14 +276,16 @@ def equip_item():
                 {
                     "success": True,
                     "message": result["message"],
+                    "messages": result.get("messages", []),
                     "equipment": equipment_data,
                     "inventory": inventory_data,
                 }
             ),
             200,
         )
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
+    except Exception:
+        logger.exception("Unhandled error in inventory route")
+        return jsonify({"success": False, "error": "An internal error occurred"}), 500
 
 
 @inventory_bp.route("/inventory/use", methods=["POST"])
@@ -446,8 +456,9 @@ def use_item():
             jsonify(response_data),
             200,
         )
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
+    except Exception:
+        logger.exception("Unhandled error in inventory route")
+        return jsonify({"success": False, "error": "An internal error occurred"}), 500
 
 
 @inventory_bp.route("/inventory/unequip", methods=["POST"])
@@ -498,14 +509,16 @@ def unequip_item():
                 {
                     "success": True,
                     "message": result["message"],
+                    "messages": result.get("messages", []),
                     "equipment": equipment_data,
                     "inventory": inventory_data,
                 }
             ),
             200,
         )
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
+    except Exception:
+        logger.exception("Unhandled error in inventory route")
+        return jsonify({"success": False, "error": "An internal error occurred"}), 500
 
 
 @inventory_bp.route("/inventory/compare", methods=["GET"])
@@ -565,8 +578,9 @@ def compare_items():
             jsonify({"success": True, "comparison": comparison_data}),
             200,
         )
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
+    except Exception:
+        logger.exception("Unhandled error in inventory route")
+        return jsonify({"success": False, "error": "An internal error occurred"}), 500
 
 
 @inventory_bp.route("/inventory/stats", methods=["GET"])
@@ -586,8 +600,9 @@ def get_stats():
     try:
         stats = current_app.game_service.get_player_stats(player)
         return jsonify({"success": True, "stats": stats}), 200
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
+    except Exception:
+        logger.exception("Unhandled error in inventory route")
+        return jsonify({"success": False, "error": "An internal error occurred"}), 500
 
 
 @inventory_bp.route("/inventory/currency", methods=["GET"])
@@ -611,5 +626,6 @@ def get_currency():
             jsonify({"success": True, "currency": currency}),
             200,
         )
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
+    except Exception:
+        logger.exception("Unhandled error in inventory route")
+        return jsonify({"success": False, "error": "An internal error occurred"}), 500
