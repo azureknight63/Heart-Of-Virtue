@@ -5,6 +5,7 @@ import logging
 from flask import Blueprint, request, jsonify
 
 from src.api.middleware.auth import get_session_and_player
+from src.api.services.validators import validate_direction
 
 world_bp = Blueprint("world", __name__)
 _log = logging.getLogger(__name__)
@@ -112,6 +113,10 @@ def move_player():
             )
 
         direction = data["direction"].lower()
+
+        is_valid, direction_error = validate_direction(direction)
+        if not is_valid:
+            return jsonify({"success": False, "error": direction_error}), 400
 
         from flask import current_app
 
@@ -227,7 +232,7 @@ def submit_event_input():
             return jsonify(result), 400
 
         # Detect player death caused by event processing
-        if getattr(player, "hp", 1) <= 0:
+        if game_service.is_player_dead(player):
             result["is_game_over"] = True
             result["is_death_scene"] = True
 
@@ -679,7 +684,7 @@ def trigger_room_events():
             )
 
         # Get current tile
-        tile = player.universe.get_tile(player.location_x, player.location_y)
+        tile = game_service.get_current_tile_object(player)
         if not tile:
             return (
                 jsonify({"success": False, "error": "Current tile not found"}),

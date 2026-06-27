@@ -198,47 +198,16 @@ def toggle_suggestions_pause():
         if error:
             return error
 
+        from flask import current_app
+
         data = request.get_json() or {}
         paused = bool(data.get("paused", False))
-        player.suggestions_paused = paused
-        if not paused:
-            # Clear stale data so the next status poll triggers a fresh fetch
-            player.suggested_moves = []
-            player.suggestions_loading = False
+        current_app.game_service.set_suggestions_paused(player, paused)
         return jsonify({"success": True, "paused": paused}), 200
 
     except Exception:
         logger.exception("Unhandled error in toggle_suggestions_pause")
         return jsonify({"success": False, "error": "An internal error occurred"}), 500
-
-
-@combat_bp.route("/log", methods=["GET"])
-def get_combat_log():
-    """Get full combat log.
-
-    Headers:
-        Authorization: Bearer <session_id>
-
-    Returns:
-        {
-            "success": bool,
-            "log": [...]
-        }
-    """
-    try:
-        session_manager, session, player, error = get_session_and_player()
-        if error:
-            return error
-
-        log = getattr(player, "combat_log", [])
-        return jsonify({"success": True, "log": log}), 200
-
-    except Exception:
-        logger.exception("Unhandled error in get_combat_log")
-        return (
-            jsonify({"success": False, "error": "An internal error occurred"}),
-            500,
-        )
 
 
 @combat_bp.route("/collect-loot", methods=["POST"])

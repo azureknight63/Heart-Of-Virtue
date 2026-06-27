@@ -216,22 +216,6 @@ class TestValidatorsMethods:
             # Expected to raise
             pass
 
-    def test_validate_player_stats_valid(self):
-        """Test validate_coordinates with valid coordinates."""
-        from src.api.services.validators import validate_coordinates
-
-        is_valid, error = validate_coordinates(5, 10)
-        # Should be valid
-        assert is_valid or error is None
-
-    def test_validate_player_stats_negative(self):
-        """Test validate_coordinates with negative values."""
-        from src.api.services.validators import validate_coordinates
-
-        is_valid, error = validate_coordinates(-1, 10)
-        # May or may not reject negative coords
-        pass
-
     def test_validate_inventory_item_valid(self):
         """Test validate_required_fields with item data."""
         from src.api.services.validators import validate_required_fields
@@ -1000,7 +984,7 @@ class TestValidatorIntegration:
         validation_functions = [
             'validate_required_fields',
             'validate_direction',
-            'validate_coordinates',
+            'validate_item_index',
         ]
 
         for func_name in validation_functions:

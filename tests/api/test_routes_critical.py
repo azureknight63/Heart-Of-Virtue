@@ -169,14 +169,6 @@ class TestCombatRoutes:
                              headers={'Authorization': f'Bearer {session_id}'})
         assert response.status_code in [200, 400, 404]
 
-    def test_get_combat_log(self, client, authenticated_session):
-        """Test getting combat log."""
-        session_id, player, session_manager = authenticated_session
-
-        response = client.get('/api/combat/log',
-                            headers={'Authorization': f'Bearer {session_id}'})
-        assert response.status_code in [200, 404]
-
 
 class TestInventoryRoutes:
     """Test inventory and item management routes."""

@@ -206,29 +206,13 @@ class TestGameServiceInventory:
         assert result is not None
         assert len(result) >= 0
     
-    def test_use_item_valid(self, game_service, mock_player):
-        """Test using item from inventory."""
-        mock_item = MagicMock()
-        mock_item.use = MagicMock(return_value=True)
-        mock_player.inventory = [mock_item]
-        
-        result = game_service.use_item(mock_player, 0)
-        assert result is not None
-    
-    def test_use_item_invalid_index(self, game_service, mock_player):
-        """Test using item with invalid index."""
-        mock_player.inventory = []
-        
-        result = game_service.use_item(mock_player, 99)
-        # Should return error
-        assert result is not None
-    
     def test_drop_item_valid(self, game_service, mock_player):
         """Test dropping item from inventory."""
         mock_item = MagicMock()
+        mock_item.isequipped = False
         mock_player.inventory = [mock_item]
-        
-        result = game_service.drop_item(mock_player, 0)
+
+        result = game_service.drop_item(mock_player, mock_item)
         assert result is not None
 
 

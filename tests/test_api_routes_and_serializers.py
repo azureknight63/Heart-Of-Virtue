@@ -1122,13 +1122,6 @@ class TestCombatRoutes:
         assert rv.status_code == 200
         assert rv.get_json()["paused"] is False
 
-    def test_get_combat_log(self, client):
-        c, _ = client
-        rv = c.get("/api/combat/log", headers=AUTH_HEADER)
-        assert rv.status_code == 200
-        assert rv.get_json()["success"] is True
-        assert isinstance(rv.get_json()["log"], list)
-
     def test_collect_loot_success(self, client):
         c, _ = client
         rv = c.post(

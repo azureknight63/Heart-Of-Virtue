@@ -239,11 +239,13 @@ class TestDropItem:
             )
         assert resp.status_code == 400
 
-    def test_tile_not_found_returns_400(self):
+    def test_service_error_returns_400(self):
         item = _make_item()
         player = _make_player(items=[item])
-        player.universe.get_tile.return_value = None
         app, _, _, _ = _make_app(player=player)
+        app.game_service.drop_item.return_value = {
+            "error": "Cannot drop item: invalid current location"
+        }
         with patch("src.api.routes.inventory.InventorySerializer") as mock_ser:
             mock_ser.serialize.return_value = {}
             with app.test_client() as c:
@@ -254,10 +256,14 @@ class TestDropItem:
                 )
         assert resp.status_code == 400
 
-    def test_drop_unequipped_item_success(self):
+    def test_drop_success_delegates_to_service(self):
         item = _make_item(isequipped=False)
         player = _make_player(items=[item])
         app, _, _, _ = _make_app(player=player)
+        app.game_service.drop_item.return_value = {
+            "success": True,
+            "message": "Dropped Iron Sword",
+        }
         with patch("src.api.routes.inventory.InventorySerializer") as mock_ser:
             mock_ser.serialize.return_value = {"items": []}
             with app.test_client() as c:
@@ -268,31 +274,17 @@ class TestDropItem:
                 )
         assert resp.status_code == 200
         assert resp.get_json()["success"] is True
-
-    def test_drop_equipped_weapon_unequips_first(self):
-        item = _make_item(isequipped=True, maintype="Weapon")
-        player = _make_player(items=[item])
-        app, _, _, _ = _make_app(player=player)
-        with (
-            patch("src.api.routes.inventory.InventorySerializer") as mock_ser,
-            patch("src.functions.refresh_stat_bonuses"),
-        ):
-            mock_ser.serialize.return_value = {}
-            with app.test_client() as c:
-                resp = c.post(
-                    "/inventory/drop",
-                    json={"item_index": 0},
-                    headers={"Authorization": AUTH},
-                )
-        # Item should have been unequipped
-        assert item.isequipped is False
-        assert resp.status_code == 200
+        app.game_service.drop_item.assert_called_once_with(player, item)
 
     def test_drop_by_item_id(self):
         item = _make_item(isequipped=False)
         player = _make_player(items=[item])
         item_id = str(id(item))
         app, _, _, _ = _make_app(player=player)
+        app.game_service.drop_item.return_value = {
+            "success": True,
+            "message": "Dropped Iron Sword",
+        }
         with patch("src.api.routes.inventory.InventorySerializer") as mock_ser:
             mock_ser.serialize.return_value = {}
             with app.test_client() as c:
@@ -302,21 +294,7 @@ class TestDropItem:
                     headers={"Authorization": AUTH},
                 )
         assert resp.status_code == 200
-
-    def test_item_with_stack_grammar_called(self):
-        item = _make_item(isequipped=False)
-        item.stack_grammar = MagicMock()
-        player = _make_player(items=[item])
-        app, _, _, _ = _make_app(player=player)
-        with patch("src.api.routes.inventory.InventorySerializer") as mock_ser:
-            mock_ser.serialize.return_value = {}
-            with app.test_client() as c:
-                c.post(
-                    "/inventory/drop",
-                    json={"item_index": 0},
-                    headers={"Authorization": AUTH},
-                )
-        item.stack_grammar.assert_called_once()
+        app.game_service.drop_item.assert_called_once_with(player, item)
 
 
 # ---------------------------------------------------------------------------
@@ -369,12 +347,15 @@ class TestEquipItem:
             )
         assert resp.status_code == 400
 
-    def test_item_not_equippable_returns_400(self):
+    def test_service_error_returns_400(self):
         item = MagicMock(spec=["name", "merchandise"])
         item.name = "Herb"
         item.merchandise = False
         player = _make_player(items=[item])
         app, _, _, _ = _make_app(player=player)
+        app.game_service.equip_item.return_value = {
+            "error": "Herb cannot be equipped"
+        }
         with app.test_client() as c:
             resp = c.post(
                 "/inventory/equip",
@@ -387,6 +368,9 @@ class TestEquipItem:
         item = _make_item(merchandise=True)
         player = _make_player(items=[item])
         app, _, _, _ = _make_app(player=player)
+        app.game_service.equip_item.return_value = {
+            "error": "You must purchase Iron Sword before equipping it"
+        }
         with app.test_client() as c:
             resp = c.post(
                 "/inventory/equip",
@@ -395,14 +379,17 @@ class TestEquipItem:
             )
         assert resp.status_code == 400
 
-    def test_equip_item_success(self):
+    def test_equip_success_delegates_to_service(self):
         item = _make_item(isequipped=False, maintype="Armor")
         player = _make_player(items=[item])
         app, _, _, _ = _make_app(player=player)
+        app.game_service.equip_item.return_value = {
+            "success": True,
+            "message": "Iron Sword equipped",
+        }
         with (
             patch("src.api.routes.inventory.EquipmentSerializer") as mock_eq,
             patch("src.api.routes.inventory.InventorySerializer") as mock_inv,
-            patch("src.functions.refresh_stat_bonuses"),
         ):
             mock_eq.serialize.return_value = {}
             mock_inv.serialize.return_value = {}
@@ -413,17 +400,23 @@ class TestEquipItem:
                     headers={"Authorization": AUTH},
                 )
         assert resp.status_code == 200
-        assert resp.get_json()["success"] is True
-        assert item.isequipped is True
+        body = resp.get_json()
+        assert body["success"] is True
+        assert body["message"] == "Iron Sword equipped"
+        app.game_service.equip_item.assert_called_once_with(player, item)
 
-    def test_unequip_already_equipped_item(self):
+    def test_equip_toggle_unequip_message(self):
+        """An already-equipped item returns the service's unequip message."""
         item = _make_item(isequipped=True, maintype="Armor")
         player = _make_player(items=[item])
         app, _, _, _ = _make_app(player=player)
+        app.game_service.equip_item.return_value = {
+            "success": True,
+            "message": "Iron Sword unequipped",
+        }
         with (
             patch("src.api.routes.inventory.EquipmentSerializer") as mock_eq,
             patch("src.api.routes.inventory.InventorySerializer") as mock_inv,
-            patch("src.functions.refresh_stat_bonuses"),
         ):
             mock_eq.serialize.return_value = {}
             mock_inv.serialize.return_value = {}
@@ -434,97 +427,7 @@ class TestEquipItem:
                     headers={"Authorization": AUTH},
                 )
         assert resp.status_code == 200
-        assert item.isequipped is False
-
-    def test_equip_weapon_sets_eq_weapon(self):
-        item = _make_item(isequipped=False, maintype="Weapon")
-        player = _make_player(items=[item])
-        app, _, _, _ = _make_app(player=player)
-        with (
-            patch("src.api.routes.inventory.EquipmentSerializer") as mock_eq,
-            patch("src.api.routes.inventory.InventorySerializer") as mock_inv,
-            patch("src.functions.refresh_stat_bonuses"),
-        ):
-            mock_eq.serialize.return_value = {}
-            mock_inv.serialize.return_value = {}
-            with app.test_client() as c:
-                c.post(
-                    "/inventory/equip",
-                    json={"item_index": 0},
-                    headers={"Authorization": AUTH},
-                )
-        assert player.eq_weapon is item
-
-    def test_equip_replaces_same_maintype(self):
-        item_old = _make_item("Old Sword", isequipped=True, maintype="Weapon")
-        item_new = _make_item("New Sword", isequipped=False, maintype="Weapon")
-        player = _make_player(items=[item_old, item_new])
-        app, _, _, _ = _make_app(player=player)
-        with (
-            patch("src.api.routes.inventory.EquipmentSerializer") as mock_eq,
-            patch("src.api.routes.inventory.InventorySerializer") as mock_inv,
-            patch("src.functions.refresh_stat_bonuses"),
-        ):
-            mock_eq.serialize.return_value = {}
-            mock_inv.serialize.return_value = {}
-            with app.test_client() as c:
-                c.post(
-                    "/inventory/equip",
-                    json={"item_index": 1},
-                    headers={"Authorization": AUTH},
-                )
-        # Old sword should be unequipped
-        assert item_old.isequipped is False
-        assert item_new.isequipped is True
-
-    def test_accessory_single_slot_replaces(self):
-        item_old = _make_item(
-            "Amulet", isequipped=True, maintype="Accessory", subtype="Amulet"
-        )
-        item_new = _make_item(
-            "Amulet2", isequipped=False, maintype="Accessory", subtype="Amulet"
-        )
-        player = _make_player(items=[item_old, item_new])
-        app, _, _, _ = _make_app(player=player)
-        with (
-            patch("src.api.routes.inventory.EquipmentSerializer") as mock_eq,
-            patch("src.api.routes.inventory.InventorySerializer") as mock_inv,
-            patch("src.functions.refresh_stat_bonuses"),
-        ):
-            mock_eq.serialize.return_value = {}
-            mock_inv.serialize.return_value = {}
-            with app.test_client() as c:
-                c.post(
-                    "/inventory/equip",
-                    json={"item_index": 1},
-                    headers={"Authorization": AUTH},
-                )
-        assert item_old.isequipped is False
-
-    def test_ring_allows_multiple_equipped(self):
-        item_old = _make_item(
-            "Ring1", isequipped=True, maintype="Accessory", subtype="Ring"
-        )
-        item_new = _make_item(
-            "Ring2", isequipped=False, maintype="Accessory", subtype="Ring"
-        )
-        player = _make_player(items=[item_old, item_new])
-        app, _, _, _ = _make_app(player=player)
-        with (
-            patch("src.api.routes.inventory.EquipmentSerializer") as mock_eq,
-            patch("src.api.routes.inventory.InventorySerializer") as mock_inv,
-            patch("src.functions.refresh_stat_bonuses"),
-        ):
-            mock_eq.serialize.return_value = {}
-            mock_inv.serialize.return_value = {}
-            with app.test_client() as c:
-                c.post(
-                    "/inventory/equip",
-                    json={"item_index": 1},
-                    headers={"Authorization": AUTH},
-                )
-        # Ring1 should remain equipped (rings allow multiples)
-        assert item_old.isequipped is True
+        assert resp.get_json()["message"] == "Iron Sword unequipped"
 
 
 # ---------------------------------------------------------------------------
@@ -756,24 +659,13 @@ class TestUnequipItem:
             )
         assert resp.status_code == 400
 
-    def test_item_not_equippable_returns_400(self):
-        item = MagicMock(spec=["name", "merchandise"])
-        item.name = "Herb"
-        item.merchandise = False
-        player = _make_player(items=[item])
-        app, _, _, _ = _make_app(player=player)
-        with app.test_client() as c:
-            resp = c.post(
-                "/inventory/unequip",
-                json={"item_index": 0},
-                headers={"Authorization": AUTH},
-            )
-        assert resp.status_code == 400
-
-    def test_not_currently_equipped_returns_400(self):
+    def test_service_error_returns_400(self):
         item = _make_item("Helmet", isequipped=False, maintype="Armor")
         player = _make_player(items=[item])
         app, _, _, _ = _make_app(player=player)
+        app.game_service.unequip_item.return_value = {
+            "error": "Helmet is not equipped"
+        }
         with app.test_client() as c:
             resp = c.post(
                 "/inventory/unequip",
@@ -782,14 +674,17 @@ class TestUnequipItem:
             )
         assert resp.status_code == 400
 
-    def test_unequip_success_clears_slot_and_refreshes_stats(self):
+    def test_unequip_success_delegates_to_service(self):
         item = _make_item("Helmet", isequipped=True, maintype="Armor")
         player = _make_player(items=[item])
         app, _, _, _ = _make_app(player=player)
+        app.game_service.unequip_item.return_value = {
+            "success": True,
+            "message": "Helmet unequipped",
+        }
         with (
             patch("src.api.routes.inventory.EquipmentSerializer") as mock_eq,
             patch("src.api.routes.inventory.InventorySerializer") as mock_inv,
-            patch("src.functions.refresh_stat_bonuses") as mock_refresh,
         ):
             mock_eq.serialize.return_value = {}
             mock_inv.serialize.return_value = {}
@@ -800,34 +695,10 @@ class TestUnequipItem:
                     headers={"Authorization": AUTH},
                 )
         assert resp.status_code == 200
-        assert resp.get_json()["success"] is True
-        # The actual bug being fixed: the slot must clear and on_unequip/
-        # refresh_stat_bonuses must be called — not just validated and ignored.
-        assert item.isequipped is False
-        item.on_unequip.assert_called_once_with(player)
-        mock_refresh.assert_called_once_with(player)
-
-    def test_unequip_weapon_resets_to_fists(self):
-        item = _make_item("Iron Sword", isequipped=True, maintype="Weapon")
-        player = _make_player(items=[item])
-        player.eq_weapon = item
-        app, _, _, _ = _make_app(player=player)
-        with (
-            patch("src.api.routes.inventory.EquipmentSerializer") as mock_eq,
-            patch("src.api.routes.inventory.InventorySerializer") as mock_inv,
-            patch("src.functions.refresh_stat_bonuses"),
-        ):
-            mock_eq.serialize.return_value = {}
-            mock_inv.serialize.return_value = {}
-            with app.test_client() as c:
-                resp = c.post(
-                    "/inventory/unequip",
-                    json={"item_index": 0},
-                    headers={"Authorization": AUTH},
-                )
-        assert resp.status_code == 200
-        assert item.isequipped is False
-        assert player.eq_weapon is player.fists
+        body = resp.get_json()
+        assert body["success"] is True
+        assert body["message"] == "Helmet unequipped"
+        app.game_service.unequip_item.assert_called_once_with(player, item)
 
 
 # ---------------------------------------------------------------------------
