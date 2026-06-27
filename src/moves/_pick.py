@@ -251,12 +251,11 @@ class ExploitWeakness(Move):
                     )
                     if not already:
                         try:
-                            if functions.inflict(
+                            # inflict() emits the disoriented message via
+                            # Disoriented.on_application when the state lands.
+                            functions.inflict(
                                 states.Disoriented(self.target), self.target
-                            ):
-                                cprint(
-                                    f"{self.target.name} is disoriented!", "red"
-                                )
+                            )
                         except Exception:
                             pass
         else:
