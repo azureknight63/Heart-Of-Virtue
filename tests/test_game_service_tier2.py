@@ -111,74 +111,6 @@ def mock_tile():
     return tile
 
 
-class TestNPCInteraction:
-    """Test NPC-related methods."""
-
-    def test_get_npc_state(self, game_service, mock_player, mock_tile):
-        """Test getting NPC state."""
-        npc = MagicMock()
-        npc.name = "Gorran"
-        npc.ai_state = {"mood": "friendly"}
-        mock_tile.npcs_here = [npc]
-        mock_player.location_x = mock_tile.x
-        mock_player.location_y = mock_tile.y
-
-        with patch.object(game_service, 'get_tile', return_value=mock_tile):
-            with patch('src.api.services.game_service.NPCAIStateSerializer') as mock_ser:
-                mock_ser.serialize_ai_state.return_value = {}
-                result = game_service.get_npc_state(mock_player, "Gorran")
-                assert "success" in result or result is not None
-
-    def test_get_npc_state_not_found(self, game_service, mock_player, mock_tile):
-        """Test getting state of non-existent NPC."""
-        mock_tile.npcs_here = []
-        mock_player.location_x = mock_tile.x
-        mock_player.location_y = mock_tile.y
-
-        with patch.object(game_service, 'get_tile', return_value=mock_tile):
-            with patch('src.api.services.game_service.NPCAIStateSerializer') as mock_ser:
-                mock_ser.serialize_ai_state.return_value = {}
-                result = game_service.get_npc_state(mock_player, "Nonexistent")
-                assert "success" in result or result is not None
-
-    def test_get_npc_dialogue(self, game_service, mock_player, mock_tile):
-        """Test getting NPC dialogue."""
-        npc = MagicMock()
-        npc.name = "Gorran"
-        npc.current_dialogue = {"text": "Hello!"}
-        mock_tile.npcs_here = [npc]
-        mock_player.location_x = mock_tile.x
-        mock_player.location_y = mock_tile.y
-
-        with patch.object(game_service, 'get_tile', return_value=mock_tile):
-            with patch('src.api.services.game_service.DialogueStateSerializer') as mock_ser:
-                mock_ser.serialize_dialogue_state.return_value = {}
-                result = game_service.get_npc_dialogue(mock_player, "Gorran")
-                assert "success" in result or result is not None
-
-    def test_get_npc_behavior_profile(self, game_service, mock_player, mock_tile):
-        """Test getting NPC behavior profile."""
-        npc = MagicMock()
-        npc.name = "Gorran"
-        npc.behavior_profile = {"combat_style": "aggressive"}
-        mock_tile.npcs_here = [npc]
-        mock_player.location_x = mock_tile.x
-        mock_player.location_y = mock_tile.y
-
-        with patch.object(game_service, 'get_tile', return_value=mock_tile):
-            result = game_service.get_npc_behavior_profile(mock_player, "Gorran")
-            assert result is not None
-
-class TestDialogueSystem:
-    """Test dialogue and conversation methods."""
-
-    def test_select_dialogue_option(self, game_service, mock_player):
-        """Test selecting a dialogue option."""
-        mock_player.current_dialogue = {"options": [{"id": "opt1", "text": "Yes"}]}
-        result = game_service.select_dialogue_option(mock_player, npc_id="gorran", option_id=0)
-        assert result is not None
-
-
 class TestNPCChat:
     """Test NPC chat methods."""
 
@@ -282,6 +214,7 @@ class TestPlayerProgression:
         mock_player.skills = {}
         result = game_service.learn_skill(mock_player, "swordmaster", category="combat")
         assert result is not None
+
 
 class TestWorldAndExploration:
     """Test world interaction and exploration methods."""

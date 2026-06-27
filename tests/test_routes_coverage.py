@@ -4,7 +4,6 @@ Coverage-gap tests for API routes.
 Targets:
 - src/api/routes/saves.py  (42% -> ~90%)
 - src/api/routes/equipment.py  (88% -> ~100%)
-- src/api/routes/npc.py  (87% -> ~100%)
 - src/api/routes/logs.py  (79% -> ~100%)
 
 Strategy: minimal Flask app using mocked session_manager and game_service,
@@ -66,10 +65,6 @@ def _make_game_service():
     gs.get_equipment.return_value = {"head": None, "body": None}
     gs.equip_item.return_value = {"item_id": "sword_01", "stat_changes": {}}
     gs.unequip_item.return_value = {"slot": "hands", "stat_changes": {}}
-    gs.get_npc_state.return_value = {"success": True, "state": {}}
-    gs.get_npc_dialogue.return_value = {"success": True, "dialogue": []}
-    gs.select_dialogue_option.return_value = {"success": True, "dialogue": []}
-    gs.get_npc_behavior_profile.return_value = {"success": True, "profile": {}}
     return gs
 
 
@@ -309,113 +304,6 @@ class TestSavesRoutes:
 # ===========================================================================
 # npc.py
 # ===========================================================================
-
-
-class TestNPCRoutes:
-    """Tests for routes/npc.py (covers remaining ~13% gap)."""
-
-    @pytest.fixture
-    def app(self):
-        from src.api.routes.npc import npc_bp
-
-        return _minimal_app(npc_bp)
-
-    @pytest.fixture
-    def client(self, app):
-        with app.test_client() as c:
-            yield c
-
-    # ---- get_npc_state ----
-
-    def test_get_npc_state_success(self, client):
-        rv = client.get("/api/npc/npc_001/state", headers=AUTH)
-        assert rv.status_code == 200
-
-    def test_get_npc_state_no_auth(self, client):
-        rv = client.get("/api/npc/npc_001/state", headers=NO_AUTH)
-        assert rv.status_code == 401
-
-    def test_get_npc_state_invalid_npc_id(self, client):
-        # NPC ID that exceeds the 100-char limit triggers the validator
-        long_id = "x" * 101
-        rv = client.get(f"/api/npc/{long_id}/state", headers=AUTH)
-        assert rv.status_code == 400
-
-    def test_get_npc_state_npc_not_found(self, app):
-        app._test_gs.get_npc_state.return_value = {"success": False}
-        with app.test_client() as c:
-            rv = c.get("/api/npc/npc_999/state", headers=AUTH)
-        assert rv.status_code == 404
-
-    # ---- get_npc_dialogue ----
-
-    def test_get_npc_dialogue_success(self, client):
-        rv = client.get("/api/npc/npc_001/dialogue", headers=AUTH)
-        assert rv.status_code == 200
-
-    def test_get_npc_dialogue_no_auth(self, client):
-        rv = client.get("/api/npc/npc_001/dialogue", headers=NO_AUTH)
-        assert rv.status_code == 401
-
-    def test_get_npc_dialogue_not_found(self, app):
-        app._test_gs.get_npc_dialogue.return_value = {"success": False}
-        with app.test_client() as c:
-            rv = c.get("/api/npc/npc_999/dialogue", headers=AUTH)
-        assert rv.status_code == 404
-
-    # ---- select_dialogue_option ----
-
-    def test_select_dialogue_option_success(self, client):
-        rv = client.post(
-            "/api/npc/npc_001/dialogue",
-            headers=AUTH,
-            json={"option_id": 0},
-        )
-        assert rv.status_code == 200
-
-    def test_select_dialogue_option_missing_option_id(self, client):
-        rv = client.post(
-            "/api/npc/npc_001/dialogue",
-            headers=AUTH,
-            json={},
-        )
-        assert rv.status_code == 400
-
-    def test_select_dialogue_option_negative(self, client):
-        rv = client.post(
-            "/api/npc/npc_001/dialogue",
-            headers=AUTH,
-            json={"option_id": -1},
-        )
-        assert rv.status_code == 400
-
-    def test_select_dialogue_option_invalid_type(self, client):
-        rv = client.post(
-            "/api/npc/npc_001/dialogue",
-            headers=AUTH,
-            json={"option_id": "abc"},
-        )
-        assert rv.status_code == 400
-
-    def test_select_dialogue_option_no_auth(self, client):
-        rv = client.post(
-            "/api/npc/npc_001/dialogue",
-            headers=NO_AUTH,
-            json={"option_id": 0},
-        )
-        assert rv.status_code == 401
-
-    # ---- get_npc_profile ----
-
-    def test_get_npc_profile_success(self, client):
-        rv = client.get("/api/npc/npc_001/profile", headers=AUTH)
-        assert rv.status_code == 200
-
-    def test_get_npc_profile_not_found(self, app):
-        app._test_gs.get_npc_behavior_profile.return_value = {"success": False}
-        with app.test_client() as c:
-            rv = c.get("/api/npc/npc_001/profile", headers=AUTH)
-        assert rv.status_code == 404
 
 
 # ===========================================================================

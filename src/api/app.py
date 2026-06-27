@@ -238,7 +238,6 @@ def create_app(config_class=None):
         combat_bp,
         player_bp,
         saves_bp,
-        npc_bp,
         logs_bp,
         feedback_bp,
         shop_bp,
@@ -251,7 +250,6 @@ def create_app(config_class=None):
     app.register_blueprint(combat_bp, url_prefix="/api/combat")
     app.register_blueprint(player_bp, url_prefix="/api")
     app.register_blueprint(saves_bp, url_prefix="/api")
-    app.register_blueprint(npc_bp, url_prefix="/api/npc")
     app.register_blueprint(npc_chat_bp, url_prefix="/api/npc/chat")
     app.register_blueprint(logs_bp, url_prefix="/api/logs")
     app.register_blueprint(feedback_bp, url_prefix="/api/feedback")

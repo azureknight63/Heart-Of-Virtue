@@ -443,62 +443,6 @@ class TestExecuteMove:
 
 # ====================== NPC TESTS ======================
 
-class TestGetNPCState:
-    """Test get_npc_state method - NPC state retrieval."""
-
-    def test_get_npc_state_valid_npc(self, game_service, mock_player):
-        """Test retrieving state of valid NPC."""
-        mock_npc = MagicMock()
-        mock_npc.id = "npc_1"
-        mock_npc.name = "Gorran"
-        mock_npc.hp = 50
-
-        # Mock universe to find NPC
-        mock_player.universe.get_npc_by_id = MagicMock(return_value=mock_npc)
-
-        # Test that method exists
-        assert hasattr(game_service, 'get_npc_state')
-
-    def test_get_npc_state_invalid_npc(self, game_service, mock_player):
-        """Test retrieving state of non-existent NPC."""
-        mock_player.universe.get_npc_by_id = MagicMock(return_value=None)
-
-        result = game_service.get_npc_state(mock_player, "invalid_npc")
-
-        # Should handle gracefully
-        assert result is None or "error" in result
-
-
-class TestGetNPCDialogue:
-    """Test get_npc_dialogue method - dialogue retrieval."""
-
-    def test_get_npc_dialogue_valid_npc(self, game_service, mock_player):
-        """Test retrieving dialogue from valid NPC."""
-        mock_npc = MagicMock()
-        mock_npc.id = "npc_1"
-        mock_npc.get_dialogue = MagicMock(return_value="Hello, Jean!")
-
-        mock_player.universe.get_npc_by_id = MagicMock(return_value=mock_npc)
-
-        result = game_service.get_npc_dialogue(mock_player, "npc_1")
-
-        # Method should exist and work
-        assert result is not None
-        assert isinstance(result, dict)
-
-    def test_get_npc_dialogue_no_dialogue(self, game_service, mock_player):
-        """Test NPC with no available dialogue."""
-        mock_npc = MagicMock()
-        mock_npc.get_dialogue = MagicMock(return_value=None)
-
-        mock_player.universe.get_npc_by_id = MagicMock(return_value=mock_npc)
-
-        result = game_service.get_npc_dialogue(mock_player, "npc_1")
-
-        # Should handle missing dialogue gracefully
-        assert result is not None
-        assert isinstance(result, dict)
-
 
 # ====================== STAT & ATTRIBUTE TESTS ======================
 

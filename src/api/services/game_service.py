@@ -23,11 +23,6 @@ from src.api.serializers.inventory import (
 from src.api.serializers.combat import (
     CombatStateSerializer,
 )
-from src.api.serializers.npc_ai import (
-    NPCAIStateSerializer,
-    DialogueStateSerializer,
-    NPCBehaviorProfileSerializer,
-)
 
 _log = logging.getLogger(__name__)
 
@@ -3063,121 +3058,6 @@ class GameService:
     # =====================
     # NPC Methods (Phase 5)
     # =====================
-
-    def get_npc_state(
-        self, player: "player_module.Player", npc_id: str
-    ) -> Dict[str, Any]:
-        """Get current state of an NPC.
-
-        Args:
-            player: Player object
-            npc_id: NPC identifier
-
-        Returns:
-            Dictionary with NPC state
-        """
-        # Find NPC in current tile
-        current_tile = player.universe.get_tile(player.location_x, player.location_y)
-        if not current_tile:
-            return {"success": False, "error": "Not on a valid tile"}
-
-        for npc in getattr(current_tile, "npcs_here", []):
-            if getattr(npc, "name", "") == npc_id:
-                return {
-                    "success": True,
-                    "npc": NPCAIStateSerializer.serialize_npc_ai_state(npc),
-                }
-
-        return {"success": False, "error": f"NPC '{npc_id}' not found"}
-
-    def get_npc_dialogue(
-        self, player: "player_module.Player", npc_id: str
-    ) -> Dict[str, Any]:
-        """Get dialogue options from an NPC.
-
-        Args:
-            player: Player object
-            npc_id: NPC identifier
-
-        Returns:
-            Dictionary with dialogue state
-        """
-        # Find NPC in current tile
-        current_tile = player.universe.get_tile(player.location_x, player.location_y)
-        if not current_tile:
-            return {"success": False, "error": "Not on a valid tile"}
-
-        for npc in getattr(current_tile, "npcs_here", []):
-            if getattr(npc, "name", "") == npc_id:
-                dialogue_state = DialogueStateSerializer.serialize_dialogue_state(
-                    npc, current_node="start"
-                )
-                return {"success": True, "dialogue": dialogue_state}
-
-        return {"success": False, "error": f"NPC '{npc_id}' not found"}
-
-    def select_dialogue_option(
-        self, player: "player_module.Player", npc_id: str, option_id: int
-    ) -> Dict[str, Any]:
-        """Select a dialogue option from an NPC.
-
-        Args:
-            player: Player object
-            npc_id: NPC identifier
-            option_id: Selected option index
-
-        Returns:
-            Dictionary with next dialogue state
-        """
-        # Find NPC in current tile
-        current_tile = player.universe.get_tile(player.location_x, player.location_y)
-        if not current_tile:
-            return {"success": False, "error": "Not on a valid tile"}
-
-        for npc in getattr(current_tile, "npcs_here", []):
-            if getattr(npc, "name", "") == npc_id:
-                # Update conversation history
-                if not hasattr(npc, "conversation_history"):
-                    npc.conversation_history = []
-
-                # Mark dialogue interaction
-                npc.last_interaction_time = str(
-                    __import__("datetime").datetime.now(
-                        __import__("datetime").timezone.utc
-                    )
-                )
-
-                # Return next dialogue node (stub implementation)
-                dialogue_state = DialogueStateSerializer.serialize_dialogue_state(
-                    npc, current_node="option_response"
-                )
-                return {"success": True, "dialogue": dialogue_state}
-
-        return {"success": False, "error": f"NPC '{npc_id}' not found"}
-
-    def get_npc_behavior_profile(
-        self, player: "player_module.Player", npc_id: str
-    ) -> Dict[str, Any]:
-        """Get NPC behavior profile.
-
-        Args:
-            player: Player object
-            npc_id: NPC identifier
-
-        Returns:
-            Dictionary with NPC behavior profile
-        """
-        # Find NPC in current tile
-        current_tile = player.universe.get_tile(player.location_x, player.location_y)
-        if not current_tile:
-            return {"success": False, "error": "Not on a valid tile"}
-
-        for npc in getattr(current_tile, "npcs_here", []):
-            if getattr(npc, "name", "") == npc_id:
-                profile = NPCBehaviorProfileSerializer.serialize_behavior_profile(npc)
-                return {"success": True, "profile": profile}
-
-        return {"success": False, "error": f"NPC '{npc_id}' not found"}
 
     def _find_chat_npc(self, player: "player_module.Player", npc_key: str):
         """Find an NPC on the current tile matching the given npc_key.

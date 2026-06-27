@@ -124,79 +124,13 @@ class TestGameServiceNPC:
 
         return MockNPC()
 
-    def test_get_npc_state_success(self, game_service, mock_universe, mock_player, mock_npc):
-        """Test getting NPC state when NPC exists."""
-        game_service.universe.set_tile_npcs(mock_player.x, mock_player.y, [mock_npc])
 
-        result = game_service.get_npc_state(mock_player, "TestNPC")
 
-        assert result["success"] is True
-        assert "npc" in result
-        assert result["npc"]["npc_id"] == "TestNPC"
-        assert result["npc"]["emotion_state"] == "neutral"
 
-    def test_get_npc_state_not_found(self, game_service, mock_player):
-        """Test getting NPC state when NPC doesn't exist."""
-        result = game_service.get_npc_state(mock_player, "NonexistentNPC")
 
-        assert result["success"] is False
-        assert "error" in result
 
-    def test_get_npc_dialogue_success(self, game_service, mock_universe, mock_player, mock_npc):
-        """Test getting dialogue from NPC."""
-        game_service.universe.set_tile_npcs(mock_player.x, mock_player.y, [mock_npc])
 
-        result = game_service.get_npc_dialogue(mock_player, "TestNPC")
 
-        assert result["success"] is True
-        assert "dialogue" in result
-        assert result["dialogue"]["npc_id"] == "TestNPC"
-        assert "options" in result["dialogue"]
-
-    def test_get_npc_dialogue_not_found(self, game_service, mock_player):
-        """Test getting dialogue from nonexistent NPC."""
-        result = game_service.get_npc_dialogue(mock_player, "NonexistentNPC")
-
-        assert result["success"] is False
-        assert "error" in result
-
-    def test_select_dialogue_option_success(
-        self, game_service, mock_universe, mock_player, mock_npc
-    ):
-        """Test selecting a dialogue option."""
-        game_service.universe.set_tile_npcs(mock_player.x, mock_player.y, [mock_npc])
-
-        result = game_service.select_dialogue_option(mock_player, "TestNPC", 0)
-
-        assert result["success"] is True
-        assert "dialogue" in result
-        assert mock_npc.last_interaction_time is not None
-
-    def test_select_dialogue_option_not_found(self, game_service, mock_player):
-        """Test selecting dialogue option from nonexistent NPC."""
-        result = game_service.select_dialogue_option(mock_player, "NonexistentNPC", 0)
-
-        assert result["success"] is False
-
-    def test_get_npc_behavior_profile_success(
-        self, game_service, mock_universe, mock_player, mock_npc
-    ):
-        """Test getting NPC behavior profile."""
-        game_service.universe.set_tile_npcs(mock_player.x, mock_player.y, [mock_npc])
-
-        result = game_service.get_npc_behavior_profile(mock_player, "TestNPC")
-
-        assert result["success"] is True
-        assert "profile" in result
-        assert result["profile"]["npc_id"] == "TestNPC"
-        assert result["profile"]["personality"]["archetype"] == "warrior"
-        assert result["profile"]["skills"]["combat"] == 0.9
-
-    def test_get_npc_behavior_profile_not_found(self, game_service, mock_player):
-        """Test getting profile from nonexistent NPC."""
-        result = game_service.get_npc_behavior_profile(mock_player, "NonexistentNPC")
-
-        assert result["success"] is False
 
     def test_get_active_quests_empty(self, game_service, mock_player):
         """Test getting active quests when none exist."""

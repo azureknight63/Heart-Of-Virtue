@@ -11,7 +11,6 @@ Targets:
 - src/api/routes/player.py  (13% → ~80%)
 - src/api/routes/shop.py  (14% → ~80%)
 - src/api/routes/saves.py  (13% → ~50%)
-- src/api/routes/npc.py  (18% → ~75%)
 
 Strategy: build a minimal Flask app per test class using mocked session_manager
 and game_service — avoids the full universe initialisation that causes isolation
@@ -104,10 +103,6 @@ def _make_game_service():
     gs.shop_buy.return_value = {"success": True, "message": "Bought item"}
     gs.shop_sell.return_value = {"success": True, "message": "Sold item"}
     gs.shop_buyback.return_value = {"success": True, "message": "Bought back item"}
-    gs.get_npc_state.return_value = {"success": True, "state": {}}
-    gs.get_npc_dialogue.return_value = {"success": True, "dialogue": []}
-    gs.select_dialogue_option.return_value = {"success": True, "dialogue": []}
-    gs.get_npc_behavior_profile.return_value = {"success": True, "profile": {}}
     gs.learn_skill.return_value = {"success": True, "remaining_exp": 100}
     wire_real_allocate_level_up_points(gs)
     return gs
@@ -1453,78 +1448,6 @@ class TestShopRoutes:
 # ===========================================================================
 # npc routes
 # ===========================================================================
-
-
-class TestNpcRoutes:
-    """Test NPC interaction route endpoints."""
-
-    @pytest.fixture
-    def client(self):
-        from src.api.routes.npc import npc_bp
-
-        app = _make_minimal_app([(npc_bp, None)])
-        with app.test_client() as c:
-            yield c, app
-
-    def test_get_npc_state_no_auth(self, client):
-        c, _ = client
-        rv = c.get("/api/npc/mynx_01/state")
-        assert rv.status_code == 401
-
-    def test_get_npc_state_invalid_id(self, client):
-        c, _ = client
-        # validate_npc_id rejects empty-ish ids; let's test a 200+ char id
-        long_id = "a" * 300
-        rv = c.get(f"/api/npc/{long_id}/state", headers=AUTH_HEADER)
-        # Either 400 (validation) or 200 — just should not 500
-        assert rv.status_code in (200, 400, 404)
-
-    def test_get_npc_state_success(self, client):
-        c, _ = client
-        rv = c.get("/api/npc/mynx_01/state", headers=AUTH_HEADER)
-        assert rv.status_code == 200
-
-    def test_get_npc_dialogue_success(self, client):
-        c, _ = client
-        rv = c.get("/api/npc/mynx_01/dialogue", headers=AUTH_HEADER)
-        assert rv.status_code == 200
-
-    def test_select_dialogue_option_missing_option_id(self, client):
-        c, _ = client
-        rv = c.post("/api/npc/mynx_01/dialogue", json={}, headers=AUTH_HEADER)
-        assert rv.status_code == 400
-
-    def test_select_dialogue_option_non_int(self, client):
-        c, _ = client
-        rv = c.post(
-            "/api/npc/mynx_01/dialogue",
-            json={"option_id": "two"},
-            headers=AUTH_HEADER,
-        )
-        assert rv.status_code == 400
-
-    def test_select_dialogue_option_negative(self, client):
-        c, _ = client
-        rv = c.post(
-            "/api/npc/mynx_01/dialogue",
-            json={"option_id": -1},
-            headers=AUTH_HEADER,
-        )
-        assert rv.status_code == 400
-
-    def test_select_dialogue_option_success(self, client):
-        c, _ = client
-        rv = c.post(
-            "/api/npc/mynx_01/dialogue",
-            json={"option_id": 0},
-            headers=AUTH_HEADER,
-        )
-        assert rv.status_code == 200
-
-    def test_get_npc_profile_success(self, client):
-        c, _ = client
-        rv = c.get("/api/npc/mynx_01/profile", headers=AUTH_HEADER)
-        assert rv.status_code == 200
 
 
 # ===========================================================================

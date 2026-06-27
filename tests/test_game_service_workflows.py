@@ -372,28 +372,6 @@ class TestDialogueWorkflows:
 class TestNPCWorkflows:
     """Test NPC state machine transitions."""
 
-    def test_npc_workflow_encounter_npc(
-        self, game_service, player_with_universe, mock_npc, mock_tile
-    ):
-        """Test encountering NPC on a tile."""
-        player_with_universe.universe.get_tile.return_value = mock_tile
-        mock_tile.npcs_here = [mock_npc]
-
-        result = game_service.get_npc_state(player_with_universe, "Gorran")
-
-        assert result.get("success") is True
-
-    def test_npc_workflow_npc_not_found(
-        self, game_service, player_with_universe, mock_tile
-    ):
-        """Test error when NPC not found on tile."""
-        player_with_universe.universe.get_tile.return_value = mock_tile
-        mock_tile.npcs_here = []
-
-        result = game_service.get_npc_state(player_with_universe, "NonExistent")
-
-        assert result.get("success") is False
-
     def test_npc_workflow_start_combat_with_npc(
         self, game_service, player_with_universe, mock_npc, mock_tile
     ):
@@ -434,34 +412,6 @@ class TestNPCWorkflows:
         }
 
         assert player_with_universe.npc_relationships["npc_gorran"]["affinity"] == 50
-
-    def test_npc_workflow_get_npc_dialogue(
-        self, game_service, player_with_universe, mock_npc
-    ):
-        """Test retrieving NPC dialogue options."""
-        with patch(
-            "src.api.services.game_service.GameService._find_chat_npc",
-            return_value=mock_npc
-        ):
-            result = game_service.get_npc_dialogue(
-                player_with_universe, "npc_gorran"
-            )
-
-            assert result is not None
-
-    def test_npc_workflow_select_dialogue_option_from_npc(
-        self, game_service, player_with_universe, mock_npc
-    ):
-        """Test selecting dialogue option from NPC."""
-        with patch(
-            "src.api.services.game_service.GameService._find_chat_npc",
-            return_value=mock_npc
-        ):
-            result = game_service.select_dialogue_option(
-                player_with_universe, "npc_gorran", "option_1"
-            )
-
-            assert result is not None
 
     def test_npc_workflow_npc_location_tracking(
         self, game_service, player_with_universe, mock_npc

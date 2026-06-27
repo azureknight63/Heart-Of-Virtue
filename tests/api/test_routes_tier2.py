@@ -198,49 +198,8 @@ class TestNPCRoutesTier2:
         """Get authorization header for session."""
         return {"Authorization": f"Bearer {session_id}"}
 
-    def test_npc_get_state(self, app_and_client):
-        """Test GET /npc/<npc_id>/state."""
-        client = app_and_client["client"]
-        session_id = app_and_client["session_id"]
-        headers = self.get_auth_header(session_id)
 
-        # Use a valid NPC ID
-        response = client.get(
-            "/api/npc/gorran/state",
-            headers=headers,
-        )
 
-        assert response.status_code in [200, 404]
-        if response.status_code == 200:
-            data = response.get_json()
-            assert "npc_id" in data or "success" in data
-
-    def test_npc_get_dialogue(self, app_and_client):
-        """Test GET /npc/<npc_id>/dialogue."""
-        client = app_and_client["client"]
-        session_id = app_and_client["session_id"]
-        headers = self.get_auth_header(session_id)
-
-        response = client.get(
-            "/api/npc/gorran/dialogue",
-            headers=headers,
-        )
-
-        assert response.status_code in [200, 404]
-
-    def test_npc_select_dialogue_option(self, app_and_client):
-        """Test POST /npc/<npc_id>/dialogue."""
-        client = app_and_client["client"]
-        session_id = app_and_client["session_id"]
-        headers = self.get_auth_header(session_id)
-
-        response = client.post(
-            "/api/npc/gorran/dialogue",
-            json={"choice_index": 0},
-            headers=headers,
-        )
-
-        assert response.status_code in [200, 400, 404]
 
     def test_npc_get_profile(self, app_and_client):
         """Test GET /npc/<npc_id>/profile."""
