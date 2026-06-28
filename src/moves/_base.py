@@ -27,6 +27,33 @@ def _apply_carry_fatigue(user, fatigue_cost):
     return fatigue_cost
 
 
+def _apply_work_the_gap(user, target, landed_hits=1):
+    """WorkTheGap passive: each landed pick strike shaves the target's
+    protection (a progressive armour strip), floored at 0.
+
+    No-op unless the user knows the "Work the Gap" passive and at least one
+    hit landed. Targets are enemies, whose protection is not recomputed each
+    beat, so the reduction persists for the rest of the fight.
+    """
+    if landed_hits <= 0:
+        return
+    if not any(
+        getattr(m, "name", "") == "Work the Gap"
+        for m in getattr(user, "known_moves", [])
+    ):
+        return
+    if not hasattr(target, "protection") or target.protection <= 0:
+        return
+    before = target.protection
+    target.protection = max(0, int(before) - 2 * landed_hits)
+    if target.protection < before:
+        cprint(
+            f"{getattr(target, 'name', 'The target')}'s guard is pried open "
+            f"(protection {int(before)} -> {int(target.protection)}).",
+            "cyan",
+        )
+
+
 # Helper to ensure weapon subtype EXP pools exist (referenced in parry/hit/standard_execute_attack)
 
 
@@ -202,6 +229,18 @@ class Move:  # master class for all moves
                     prep += getattr(state, "prep_penalty", 5)
                     state.penalty_consumed = True
                     break
+
+        # QuickReload passive: faster crossbow reload — shave ~20% of prep beats
+        # (floored at 1) while wielding a crossbow.
+        if (
+            prep > 1
+            and getattr(getattr(self.user, "eq_weapon", None), "subtype", None) == "Crossbow"
+            and any(
+                getattr(m, "name", "") == "Quick Reload"
+                for m in getattr(self.user, "known_moves", [])
+            )
+        ):
+            prep = max(1, int(round(prep * 0.8)))
 
         self.beats_left = prep
 

@@ -12,6 +12,7 @@ from ._base import (
     Move,
     PassiveMove,
     _ensure_weapon_exp,
+    _apply_work_the_gap,
 )  # noqa: F401
 
 
@@ -130,6 +131,8 @@ class ChipAway(Move):
             if not self.target.is_alive:
                 break
 
+        _apply_work_the_gap(user, self.target, total_hits)
+
         if hasattr(user, "eq_weapon") and user.eq_weapon:
             _ensure_weapon_exp(user)
             user.combat_exp[user.eq_weapon.subtype] += total_hits * 3
@@ -245,6 +248,7 @@ class ExploitWeakness(Move):
                 self.parry()
             else:
                 self.hit(damage, glance)
+                _apply_work_the_gap(player, self.target, 1)
                 if self.target and self.target.is_alive:
                     already = any(
                         isinstance(s, states.Disoriented) for s in self.target.states
@@ -372,6 +376,7 @@ class Stupefy(Move):
                 self.parry()
             else:
                 self.hit(damage, glance)
+                _apply_work_the_gap(player, self.target, 1)
                 if self.target and self.target.is_alive:
                     # Remove existing Disoriented, apply fresh one
                     self.target.states = [
