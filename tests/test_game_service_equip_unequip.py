@@ -261,6 +261,24 @@ def test_service_equip_returns_engine_narration(game_service):
     assert any("equipped" in m.lower() for m in result["messages"])
 
 
+def test_service_drop_returns_drop_narration(game_service):
+    """A plain drop narrates the drop itself into `messages`."""
+    p = _make_player()
+    item = _make_equippable(name="TestSword")
+    item.isequipped = False
+    p.inventory = [item]
+
+    tile = MagicMock()
+    tile.items_here = []
+    p.universe = MagicMock()
+    p.universe.get_tile.return_value = tile
+
+    result = game_service.drop_item(p, item)
+
+    assert result["success"] is True
+    assert any("drops" in m.lower() for m in result["messages"])
+
+
 def test_service_drop_equipped_returns_unequip_narration(game_service):
     """The unequip-before-drop flavor is captured into `messages`."""
     p = _make_player()

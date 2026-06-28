@@ -4051,6 +4051,9 @@ class GameService:
             tile.items_here.append(item)
             if hasattr(item, "stack_grammar"):
                 item.stack_grammar()
+            # Narrate the drop so `messages` is the single source of truth for
+            # the dialog (the engine has no drop verb; mirrors the take action).
+            narrate(f"{getattr(player, 'name', 'Jean')} drops {getattr(item, 'name', 'the item')}.")
 
         return {
             "success": True,

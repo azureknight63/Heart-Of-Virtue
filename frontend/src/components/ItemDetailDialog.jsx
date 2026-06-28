@@ -141,16 +141,14 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
         const isNowEquipped = !item.is_equipped
         setActionMessage(isNowEquipped ? '✓ Item equipped!' : '✗ Item unequipped!')
 
-        // Show success dialog, including any flavor narration from the engine
-        // (slot swaps, on-equip effects) surfaced via the backend `messages`.
+        // Prefer the engine's flavor narration (slot swaps, on-equip effects)
+        // as the single source of truth; fall back to a hardcoded line only
+        // when the backend returned no narration.
         setActionResult({
-          message: (
-            <>
-              {isNowEquipped
-                ? <><strong>{player?.name || 'Player'}</strong> equipped <br /><span style={{ color: '#ffff00', fontSize: '18px' }}>{item.name}</span>.</>
-                : <><strong>{player?.name || 'Player'}</strong> unequipped <br /><span style={{ color: '#ffff00', fontSize: '18px' }}>{item.name}</span>.</>}
-              {renderNarration(data.messages)}
-            </>
+          message: renderNarration(data.messages) || (
+            isNowEquipped
+              ? <><strong>{player?.name || 'Player'}</strong> equipped <br /><span style={{ color: '#ffff00', fontSize: '18px' }}>{item.name}</span>.</>
+              : <><strong>{player?.name || 'Player'}</strong> unequipped <br /><span style={{ color: '#ffff00', fontSize: '18px' }}>{item.name}</span>.</>
           )
         })
 
@@ -251,14 +249,12 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
       const data = response.data || response
       if (data.success) {
         setActionMessage('✓ Item dropped!')
-        // Show success dialog, including any flavor narration from the engine
-        // (e.g. unequip-before-drop) surfaced via the backend `messages`.
+        // Prefer the engine's drop narration (incl. any unequip-before-drop)
+        // as the single source of truth; fall back to a hardcoded line only
+        // when the backend returned no narration.
         setActionResult({
-          message: (
-            <>
-              <strong>{player?.name || 'Player'}</strong> dropped <br /><span style={{ color: '#ffff00', fontSize: '18px' }}>{item.name}</span>.
-              {renderNarration(data.messages)}
-            </>
+          message: renderNarration(data.messages) || (
+            <><strong>{player?.name || 'Player'}</strong> dropped <br /><span style={{ color: '#ffff00', fontSize: '18px' }}>{item.name}</span>.</>
           )
         })
 
