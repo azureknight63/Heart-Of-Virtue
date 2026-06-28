@@ -128,7 +128,7 @@ class ChipAway(Move):
             else:
                 cprint(f"Strike {i + 1} missed!", "yellow")
 
-            if not self.target.is_alive:
+            if not self.target.is_alive():
                 break
 
         _apply_work_the_gap(user, self.target, total_hits)
@@ -249,14 +249,17 @@ class ExploitWeakness(Move):
             else:
                 self.hit(damage, glance)
                 _apply_work_the_gap(player, self.target, 1)
-                if self.target and self.target.is_alive:
+                if self.target and self.target.is_alive():
                     already = any(
                         isinstance(s, states.Disoriented) for s in self.target.states
                     )
                     if not already:
                         try:
-                            self.target.states.append(states.Disoriented(self.target))
-                            cprint(f"{self.target.name} is disoriented!", "red")
+                            # inflict() emits the disoriented message via
+                            # Disoriented.on_application when the state lands.
+                            functions.inflict(
+                                states.Disoriented(self.target), self.target
+                            )
                         except Exception:
                             pass
         else:
@@ -377,7 +380,7 @@ class Stupefy(Move):
             else:
                 self.hit(damage, glance)
                 _apply_work_the_gap(player, self.target, 1)
-                if self.target and self.target.is_alive:
+                if self.target and self.target.is_alive():
                     # Remove existing Disoriented, apply fresh one
                     self.target.states = [
                         s

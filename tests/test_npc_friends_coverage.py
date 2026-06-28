@@ -184,7 +184,7 @@ class TestMaraGetOptimalRange:
         m.fatigue = m.maxfatigue
 
         enemy = Mock()
-        enemy.is_alive = True
+        enemy.is_alive = lambda: True
 
         player_ref = Mock()
         player_ref.combat_list = [enemy]
@@ -286,7 +286,7 @@ class TestMaraSelectMove:
     def _make_mara_with_enemy(self, proximity_dist):
         mara = self._make_mara()
         enemy = Mock()
-        enemy.is_alive = True
+        enemy.is_alive = lambda: True
         player_ref = Mock()
         player_ref.combat_list = [enemy]
         mara.player_ref = player_ref

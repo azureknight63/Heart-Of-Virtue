@@ -123,7 +123,6 @@ class PlayerUIMixin:
     def print_status(self):
         """Print Jean's full status: stats, protection, resistances, and susceptibilities."""
         functions.refresh_stat_bonuses(self)
-        self.refresh_protection_rating()
         cprint("=====\nStatus\n=====\n" "{}".format(self.name_long), "cyan")
         output_grid_data = [
             "Health: {} / {} ({})".format(self.hp, self.maxhp, self.maxhp_base),

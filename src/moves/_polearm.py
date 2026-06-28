@@ -136,7 +136,7 @@ class Sweep(Move):
             return False
         if not hasattr(self.user, "combat_proximity"):
             return False
-        return any(e.is_alive for e in self.user.combat_proximity)
+        return any(e.is_alive() for e in self.user.combat_proximity)
 
     def evaluate(self):
         try:
@@ -170,7 +170,7 @@ class Sweep(Move):
         arc_range = self.mvrange[1]
 
         for enemy in list(self.user.combat_proximity.keys()):
-            if not enemy.is_alive:
+            if not enemy.is_alive():
                 continue
 
             if (
@@ -326,7 +326,7 @@ class HalberdSpin(Move):
         if not hasattr(self.user, "combat_proximity"):
             return False
         return any(
-            e.is_alive and self.user.combat_proximity.get(e, 9999) <= self.mvrange[1]
+            e.is_alive() and self.user.combat_proximity.get(e, 9999) <= self.mvrange[1]
             for e in self.user.combat_proximity
         )
 
@@ -360,7 +360,7 @@ class HalberdSpin(Move):
         arc_range = self.mvrange[1]
 
         for enemy in list(self.user.combat_proximity.keys()):
-            if not enemy.is_alive:
+            if not enemy.is_alive():
                 continue
 
             if (

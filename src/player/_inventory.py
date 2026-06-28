@@ -218,7 +218,6 @@ class PlayerInventoryMixin:
                                 else:
                                     self.skill_exp[target_item.subtype] = 9999
                     functions.refresh_stat_bonuses(self)
-                    self.refresh_protection_rating()
 
     def use_item(self, phrase="", target=None):
         """Use a consumable or special item by phrase match.

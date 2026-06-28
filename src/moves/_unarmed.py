@@ -167,9 +167,9 @@ class PowerStrike(Move):
                     getattr(m, "name", "") == "Heavy Handed"
                     for m in getattr(self.user, "known_moves", [])
                 ):
-                    if self.target and self.target.is_alive:
+                    if self.target and self.target.is_alive():
                         try:
-                            self.target.states.append(states.Staggered(self.target))
+                            functions.inflict(states.Staggered(self.target), self.target)
                         except Exception:
                             pass
         else:
@@ -299,9 +299,9 @@ class Jab(Move):
                     getattr(m, "name", "") == "Heavy Handed"
                     for m in getattr(self.user, "known_moves", [])
                 ):
-                    if self.target and self.target.is_alive:
+                    if self.target and self.target.is_alive():
                         try:
-                            self.target.states.append(states.Staggered(self.target))
+                            functions.inflict(states.Staggered(self.target), self.target)
                         except Exception:
                             pass
         else:

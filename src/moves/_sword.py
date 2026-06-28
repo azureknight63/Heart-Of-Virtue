@@ -129,7 +129,7 @@ class WhirlAttack(Move):
 
         # Check if there are enemies within range
         for enemy in self.user.combat_proximity.keys():
-            if enemy.is_alive:
+            if enemy.is_alive():
                 if (
                     hasattr(enemy, "combat_position")
                     and enemy.combat_position is not None
@@ -173,7 +173,7 @@ class WhirlAttack(Move):
 
         # Find all enemies in range
         for enemy in list(self.user.combat_proximity.keys()):
-            if not enemy.is_alive:
+            if not enemy.is_alive():
                 continue
 
             if hasattr(enemy, "combat_position") and enemy.combat_position is not None:
@@ -249,7 +249,7 @@ class VertigoSpin(Move):
         ):
             return False
 
-        if not self.target or not self.target.is_alive:
+        if not self.target or not self.target.is_alive():
             return False
 
         if (
@@ -289,7 +289,7 @@ class VertigoSpin(Move):
 
     def execute(self, user):
         """Execute stage - spin attack and apply Disoriented status."""
-        if not self.target or not self.target.is_alive:
+        if not self.target or not self.target.is_alive():
             cprint("Target is no longer available!", "red")
             return
 
@@ -512,14 +512,17 @@ class DisarmingSlash(Move):
                 self.parry()
             else:
                 self.hit(damage, glance)
-                if self.target and self.target.is_alive:
+                if self.target and self.target.is_alive():
                     already = any(
                         isinstance(s, states.Disoriented) for s in self.target.states
                     )
                     if not already:
                         try:
-                            self.target.states.append(states.Disoriented(self.target))
-                            cprint(f"{self.target.name} is disoriented!", "red")
+                            # inflict() emits the disoriented message via
+                            # Disoriented.on_application when the state lands.
+                            functions.inflict(
+                                states.Disoriented(self.target), self.target
+                            )
                         except Exception:
                             pass
         else:

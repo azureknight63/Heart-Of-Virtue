@@ -195,7 +195,6 @@ class Item:
                 if "equip" not in self.interactions:
                     self.interactions.append("equip")
                 functions.refresh_stat_bonuses(player)
-                player.refresh_protection_rating()
             except Exception:
                 # If anything goes wrong here, fail gracefully without breaking the equip flow
                 pass
@@ -264,7 +263,6 @@ class Item:
                     if issubclass(self.__class__, Weapon):
                         player.eq_weapon = player.fists
         functions.refresh_stat_bonuses(player)
-        player.refresh_protection_rating()
 
     def take(self, player: "Player", quantity: Optional[int] = None) -> None:
         """Take the item from the ground."""
@@ -408,7 +406,6 @@ class Item:
             self.interactions.remove("unequip")
             self.interactions.append("equip")
             functions.refresh_stat_bonuses(player)
-            player.refresh_protection_rating()
 
 
 class Gold(Item):

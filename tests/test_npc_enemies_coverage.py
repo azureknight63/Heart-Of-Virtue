@@ -70,9 +70,9 @@ class TestTalusHoundCountPackMembers:
 
         hound = _make_hound()
         ally1 = TalusHound()
-        ally1.is_alive = True
+        ally1.is_alive = lambda: True
         ally2 = TalusHound()
-        ally2.is_alive = True
+        ally2.is_alive = lambda: True
         hound.combat_list = [hound, ally1, ally2]
         assert hound._count_pack_members() == 2
 
@@ -81,7 +81,7 @@ class TestTalusHoundCountPackMembers:
 
         hound = _make_hound()
         dead = TalusHound()
-        dead.is_alive = False
+        dead.is_alive = lambda: False
         hound.combat_list = [hound, dead]
         assert hound._count_pack_members() == 0
 
@@ -138,7 +138,7 @@ class TestTalusHoundSelectMoveSmallPack:
 
         hound = _make_hound()
         ally = TalusHound()
-        ally.is_alive = True
+        ally.is_alive = lambda: True
         hound.combat_list = [hound, ally]
         assert hound._count_pack_members() == 1
         hound.select_move()
@@ -153,9 +153,9 @@ class TestTalusHoundSelectMoveLargePack:
 
         hound = _make_hound()
         ally1 = TalusHound()
-        ally1.is_alive = True
+        ally1.is_alive = lambda: True
         ally2 = TalusHound()
-        ally2.is_alive = True
+        ally2.is_alive = lambda: True
         hound.combat_list = [hound, ally1, ally2]
         assert hound._count_pack_members() == 2
         hound.select_move()

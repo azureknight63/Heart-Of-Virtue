@@ -32,8 +32,11 @@ def _apply_work_the_gap(user, target, landed_hits=1):
     protection (a progressive armour strip), floored at 0.
 
     No-op unless the user knows the "Work the Gap" passive and at least one
-    hit landed. Targets are enemies, whose protection is not recomputed each
-    beat, so the reduction persists for the rest of the fight.
+    hit landed. The reduction is applied to ``protection_base`` (not just
+    ``protection``) so it survives ``refresh_stat_bonuses()``, which resets
+    ``protection -> protection_base`` every beat under the declarative
+    protection model — see functions.reset_stats. This makes the strip
+    persist for the rest of the fight.
     """
     if landed_hits <= 0:
         return
@@ -42,14 +45,19 @@ def _apply_work_the_gap(user, target, landed_hits=1):
         for m in getattr(user, "known_moves", [])
     ):
         return
-    if not hasattr(target, "protection") or target.protection <= 0:
+    cur = getattr(target, "protection", None)
+    if not isinstance(cur, (int, float)) or cur <= 0:
         return
-    before = target.protection
-    target.protection = max(0, int(before) - 2 * landed_hits)
+    before = int(cur)
+    amount = 2 * landed_hits
+    base = getattr(target, "protection_base", None)
+    if isinstance(base, (int, float)):
+        target.protection_base = max(0, int(base) - amount)
+    target.protection = max(0, before - amount)
     if target.protection < before:
         cprint(
             f"{getattr(target, 'name', 'The target')}'s guard is pried open "
-            f"(protection {int(before)} -> {int(target.protection)}).",
+            f"(protection {before} -> {int(target.protection)}).",
             "cyan",
         )
 

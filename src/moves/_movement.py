@@ -20,7 +20,7 @@ def _apply_sentinels_vigil(advancer, defender):
         return
     if getattr(getattr(defender, "eq_weapon", None), "subtype", None) != "Spear":
         return
-    if not getattr(advancer, "is_alive", True):
+    if hasattr(advancer, "is_alive") and not advancer.is_alive():
         return
     damage = max(1, int(defender.eq_weapon.damage * 0.3) + int(defender.strength * 0.2))
     damage = max(0, int(damage - getattr(advancer, "protection", 0)))
@@ -189,13 +189,13 @@ class Advance(Move):
 
         if self.target and self.target in self.user.combat_proximity:
             target_distance = self.user.combat_proximity[self.target]
-            if self.target.is_alive and target_distance > 1:
+            if self.target.is_alive() and target_distance > 1:
                 return True
             return False
 
         # Check for any combatant (enemy or ally) farther than adjacent
         for combatant, distance in self.user.combat_proximity.items():
-            if combatant.is_alive and distance > 1:
+            if combatant.is_alive() and distance > 1:
                 return True
         return False
 
@@ -207,12 +207,12 @@ class Advance(Move):
 
     def beat_update(self, user):
         if self.current_stage == 1:  # Execute stage
-            if not self.target or not self.target.is_alive:
+            if not self.target or not self.target.is_alive():
                 # Try to find a new target if possible
                 nearest_enemy = None
                 min_dist = float("inf")
                 for enemy in user.combat_proximity.keys():
-                    if enemy.is_alive:
+                    if enemy.is_alive():
                         dist = user.combat_proximity[enemy]
                         if dist < min_dist:
                             min_dist = dist
@@ -302,7 +302,7 @@ class Advance(Move):
             _apply_sentinels_vigil(user, self.target)
 
     def execute(self, user):
-        if self.target and self.target.is_alive:
+        if self.target and self.target.is_alive():
             cprint(
                 "{} finished advancing on {}.".format(user.name, self.target.name),
                 "green" if user.name == "Jean" else "red",
@@ -476,7 +476,7 @@ class BullCharge(Move):
 
     def beat_update(self, user):
         if self.current_stage == 1:  # Execute stage
-            if not self.target or not self.target.is_alive:
+            if not self.target or not self.target.is_alive():
                 return
 
             if self.can_use_coordinates(user):
@@ -525,7 +525,7 @@ class BullCharge(Move):
         self.target.combat_proximity[user] = user.combat_proximity[self.target]
 
     def execute(self, user):
-        if self.target and self.target.is_alive:
+        if self.target and self.target.is_alive():
             cprint(
                 f"{user.name} slammed into {self.target.name} during the charge!",
                 "green" if user.name == "Jean" else "red",
@@ -664,7 +664,7 @@ class FlankingManeuver(Move):
 
     def beat_update(self, user):
         if self.current_stage == 1:  # Execute stage
-            if not self.target or not self.target.is_alive:
+            if not self.target or not self.target.is_alive():
                 return
 
             if self.can_use_coordinates(user):
@@ -688,7 +688,7 @@ class FlankingManeuver(Move):
     def execute(self, user):
         if (
             self.target
-            and self.target.is_alive
+            and self.target.is_alive()
             and hasattr(user, "combat_position")
             and user.combat_position
         ):
@@ -710,7 +710,7 @@ class FlankingManeuver(Move):
                     f"{user.name} moved to the side of {self.target.name}!",
                     "green",
                 )
-        elif self.target and self.target.is_alive:
+        elif self.target and self.target.is_alive():
             cprint(f"{user.name} finished maneuvering.", "green")
 
 
@@ -799,7 +799,7 @@ class TacticalPositioning(Move):
 
     def beat_update(self, user):
         if self.current_stage == 1:  # Execute
-            if not self.target or not self.target.is_alive:
+            if not self.target or not self.target.is_alive():
                 return
 
             # Initialization of actual target distance with variance
@@ -877,7 +877,7 @@ class TacticalPositioning(Move):
         self.target.combat_proximity[user] = user.combat_proximity[self.target]
 
     def execute(self, user):
-        if self.target and self.target.is_alive:
+        if self.target and self.target.is_alive():
             cprint(
                 "{} finished adjusting position relative to {}.".format(
                     user.name, self.target.name

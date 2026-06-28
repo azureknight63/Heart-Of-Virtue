@@ -80,7 +80,7 @@ def _make_user(subtype, known_moves=None, **overrides):
     user.combat_list = []
     user.combat_list_allies = []
     user.combat_position = None
-    user.is_alive = True
+    user.is_alive = lambda: True
     user.resistance = dict(RESISTANCE)
     user.eq_weapon = _make_weapon(subtype)
     user.known_moves = known_moves or []
@@ -97,7 +97,7 @@ def _make_target(hp=100, finesse=0, protection=0, known_moves=None, **overrides)
     tgt.finesse = finesse
     tgt.protection = protection
     tgt.states = []
-    tgt.is_alive = True
+    tgt.is_alive = lambda: True
     tgt.combat_position = None
     tgt.combat_proximity = {}
     tgt.resistance = dict(RESISTANCE)
