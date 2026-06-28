@@ -17,10 +17,6 @@ class StartingRoom(MapTile):
         )
         self.symbol = "#"
 
-    def modify_player(self, the_player):
-        # Room has no action on player
-        pass
-
 
 class EmptyCave(MapTile):
     def __init__(
@@ -33,7 +29,3 @@ class EmptyCave(MapTile):
         """
         super().__init__(universe, current_map, x, y, description=description)
         self.symbol = "#"
-
-    def modify_player(self, the_player):
-        # Room has no action on player
-        pass

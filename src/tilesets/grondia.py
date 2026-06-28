@@ -17,10 +17,6 @@ class GrondiaPassage(MapTile):
         )
         self.symbol = "#"
 
-    def modify_player(self, the_player):
-        # Room has no action on player
-        pass
-
 
 class GrondiaGateWest(MapTile):
     def __init__(self, universe, current_map, x, y):
@@ -39,10 +35,6 @@ class GrondiaGateWest(MapTile):
         )
         self.symbol = "#"
 
-    def modify_player(self, the_player):
-        # Room has no action on player
-        pass
-
 
 class GrondiaAntechamber(MapTile):
     def __init__(self, universe, current_map, x, y):
@@ -60,10 +52,6 @@ class GrondiaAntechamber(MapTile):
         """,
         )
         self.symbol = "#"
-
-    def modify_player(self, the_player):
-        # Room has no action on player
-        pass
 
 
 class GrondiaArcology(MapTile):
@@ -84,10 +72,6 @@ class GrondiaArcology(MapTile):
         )
         self.symbol = "#"
 
-    def modify_player(self, the_player):
-        # Room has no action on player
-        pass
-
 
 class GrondiaResidences(MapTile):
     def __init__(self, universe, current_map, x, y):
@@ -104,10 +88,6 @@ class GrondiaResidences(MapTile):
         """,
         )
         self.symbol = "#"
-
-    def modify_player(self, the_player):
-        # Room has no action on player
-        pass
 
 
 class GrondiaConclave(MapTile):
@@ -127,10 +107,6 @@ class GrondiaConclave(MapTile):
         """,
         )
         self.symbol = "#"
-
-    def modify_player(self, the_player):
-        # Room has no action on player
-        pass
 
 
 class GrondiaCitadel(MapTile):
@@ -155,10 +131,6 @@ class GrondiaCitadel(MapTile):
         )
         self.symbol = "#"
 
-    def modify_player(self, the_player):
-        # Room has no action on player
-        pass
-
 
 class GrondiaEcumerium(MapTile):
     def __init__(self, universe, current_map, x, y):
@@ -179,10 +151,6 @@ class GrondiaEcumerium(MapTile):
         )
         self.symbol = "#"
 
-    def modify_player(self, the_player):
-        # Room has no action on player
-        pass
-
 
 class GrondiaFabricarium(MapTile):
     def __init__(self, universe, current_map, x, y):
@@ -202,10 +170,6 @@ class GrondiaFabricarium(MapTile):
         )
         self.symbol = "#"
 
-    def modify_player(self, the_player):
-        # Room has no action on player
-        pass
-
 
 class GrondiaGateEast(MapTile):
     def __init__(self, universe, current_map, x, y):
@@ -222,10 +186,6 @@ class GrondiaGateEast(MapTile):
         """,
         )
         self.symbol = "#"
-
-    def modify_player(self, the_player):
-        # Room has no action on player
-        pass
 
 
 class GrondiaGateSouth(MapTile):
@@ -244,10 +204,6 @@ class GrondiaGateSouth(MapTile):
         """,
         )
         self.symbol = "#"
-
-    def modify_player(self, the_player):
-        # Room has no action on player
-        pass
 
 
 class GrondelithMineralPoolsEntrance(
@@ -268,7 +224,3 @@ class GrondelithMineralPoolsEntrance(
         """,
         )
         self.symbol = "#"
-
-    def modify_player(self, the_player):
-        # Room has no action on player
-        pass

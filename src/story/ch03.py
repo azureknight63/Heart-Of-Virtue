@@ -14,7 +14,8 @@ class GorranGestureEvent(Event):
     Gorran pauses to place his palm against the sealed gate — a moment of farewell,
     or acknowledgment, or something Jean cannot name.
     This is Gorran's first step into the world beyond the stone city.
-    Event fires once on first entry to (0,2) when arriving from the west (Grondia).
+    Event fires once on first entry to the tile (any time the player arrives
+    here from another tile), then sets gorran_gesture_done so it won't repeat.
     """
 
     def __init__(self, player, tile, params=None, repeat=False, name="GorranGesture"):
@@ -329,8 +330,12 @@ class MaraObservationEvent(Event):
         if not self.player.skip_dialog:
             narrate("\n")
             time.sleep(0.3)
+            # Match any bludgeon/mace (RustedIronMace, Mace, …) — they are
+            # sibling Weapon subclasses sharing subtype "Bludgeon", so an exact
+            # class-name check missed Jean's starting RustedIronMace.
             has_mace = any(
-                item.__class__.__name__ == "Mace" for item in self.player.inventory
+                getattr(item, "subtype", None) == "Bludgeon"
+                for item in self.player.inventory
             )
             print_slow(
                 "A while later — Jean was sitting with the bowl, Gorran nearby, the fire "
