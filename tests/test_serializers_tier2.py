@@ -17,14 +17,10 @@ from src.api.combat_adapter import (
 )
 from src.api.serializers.combat import CombatStateSerializer, CombatantSerializer
 from src.api.serializers.npc_serializer import NPCSerializer
-from src.api.serializers.dialogue_context import DialogueContextSerializer
 from src.api.serializers.inventory import InventorySerializer, EquipmentSerializer
 from src.api.serializers.shop_serializer import ShopSerializer
 from src.api.serializers.world import WorldSerializer
-from src.api.serializers.quest_rewards import QuestRewardSerializer
-from src.api.serializers.reputation import PlayerReputationSerializer
 from src.api.serializers.event_serializer import EventSerializer
-from src.api.serializers.npc_availability import NPCAvailabilitySerializer
 from src.api.serializers.item_serializer import ItemSerializer
 from src.api.serializers.npc_ai import NPCAIStateSerializer
 

@@ -1427,6 +1427,9 @@ class TestGetAvailableTargets:
         move.targeted = True
         move.accepts_ally_target = accepts_ally
         move.verbose_targeting = False
+        # Mirrors the real Move.get_effective_range_max() default (None
+        # means "use mvrange[1]") — see src/moves/_base.py.
+        move.get_effective_range_max.return_value = None
         return move
 
     def test_enemy_in_range_included(self):
@@ -1483,12 +1486,19 @@ class TestGetAvailableTargets:
         player.combat_proximity = {enemy: 3}
         adapter = _make_adapter(player)
         move = MagicMock(
-            spec=["name", "targeted", "accepts_ally_target", "verbose_targeting"]
+            spec=[
+                "name",
+                "targeted",
+                "accepts_ally_target",
+                "verbose_targeting",
+                "get_effective_range_max",
+            ]
         )
         move.name = "Punch"
         move.targeted = True
         move.accepts_ally_target = False
         move.verbose_targeting = False
+        move.get_effective_range_max.return_value = None
         targets = adapter._get_available_targets(move)
         assert len(targets) == 1
 

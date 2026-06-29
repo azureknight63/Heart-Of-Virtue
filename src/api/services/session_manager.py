@@ -705,8 +705,6 @@ class SessionManager:
                 except ImportError:
                     from src import functions as _functions
                 _functions.refresh_stat_bonuses(player)
-                if hasattr(player, "refresh_protection_rating"):
-                    player.refresh_protection_rating()
             except Exception as e:
                 print(
                     f"[SessionManager] [ERROR] Error refreshing stats after starting equipment: {e}",

@@ -1072,9 +1072,11 @@ class NpcChatLLMAdapter(GenericLLMClient):
     ) -> Optional[Dict[str, Any]]:
         """Generate one NPC conversational turn.
 
-        Returns dict: {npc_text, conversation_quality, conversation_end}
+        Returns dict: {npc_text, conversation_quality, conversation_end, reputation_delta}
         conversation_quality: "positive" | "neutral" | "negative" | "offensive"
         conversation_end: bool
+        reputation_delta: int, -5..+5 — how much this exchange shifts the NPC's
+        opinion of Jean
         """
         history_block = self._format_history(history)
         if is_opening:
@@ -1086,10 +1088,14 @@ class NpcChatLLMAdapter(GenericLLMClient):
             f"{history_block}\n\n"
             f"[TASK]\n{task}\n\n"
             "Return ONLY this JSON (no code fences, no extra keys):\n"
-            '{"npc_text": "...", "conversation_quality": "positive|neutral|negative|offensive", "conversation_end": false}\n'
+            '{"npc_text": "...", "conversation_quality": "positive|neutral|negative|offensive", '
+            '"conversation_end": false, "reputation_delta": 0}\n'
             "conversation_quality reflects how the NPC felt about this exchange: "
             "positive=enjoyed/interested, neutral=tolerated, negative=annoyed/offended, offensive=deeply offended.\n"
-            "Set conversation_end to true ONLY if the NPC is done talking entirely (loquacity exhausted or deeply offended)."
+            "Set conversation_end to true ONLY if the NPC is done talking entirely (loquacity exhausted or deeply offended).\n"
+            "reputation_delta is a small integer from -5 to +5 reflecting how much this specific "
+            "exchange shifts the NPC's opinion of Jean — in character, based on what Jean actually said. "
+            "0 for a normal/unremarkable exchange. Only use the extremes (+/-5) for genuinely memorable moments."
         )
 
         temp = float(os.getenv("NPC_CHAT_TEMP_NPC", "0.65"))
@@ -1109,6 +1115,11 @@ class NpcChatLLMAdapter(GenericLLMClient):
         parsed["conversation_quality"] = quality
         parsed["conversation_end"] = bool(parsed.get("conversation_end", False))
         parsed["npc_text"] = _JSONTools.sanitize_text(parsed["npc_text"])
+        try:
+            delta = int(parsed.get("reputation_delta", 0))
+        except (TypeError, ValueError):
+            delta = 0
+        parsed["reputation_delta"] = max(-5, min(5, delta))
         return parsed
 
     # ------------------------------------------------------------------

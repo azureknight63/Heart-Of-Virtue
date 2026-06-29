@@ -275,8 +275,8 @@ def test_vertigo_spin(player, enemies):
             cprint(f"[OK] {target.name} applied with Disoriented status", "green")
             disoriented = [s for s in target.states if s.name == "Disoriented"][0]
             cprint(f"  - Duration: {disoriented.beats_left}/{disoriented.beats_max} beats", "cyan")
-            cprint(f"  - Finesse reduction: {disoriented.sub_finesse}", "cyan")
-            cprint(f"  - Protection reduction: {disoriented.sub_protection}", "cyan")
+            cprint(f"  - Finesse modifier: {disoriented.add_fin}", "cyan")
+            cprint(f"  - Protection modifier: {disoriented.add_protection}", "cyan")
         else:
             cprint(f"[WARN] No Disoriented status applied (check status implementation)", "yellow")
     else:

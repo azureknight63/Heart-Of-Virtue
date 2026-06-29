@@ -11,6 +11,28 @@ from animations import animate_to_main_screen as animate  # noqa: F401
 from ._base import Move  # noqa: F401
 
 
+def _apply_sentinels_vigil(advancer, defender):
+    """SentinelsVigil passive: spear-wielding defender punishes an advance into range."""
+    if not any(
+        getattr(m, "name", "") == "Sentinel's Vigil"
+        for m in getattr(defender, "known_moves", [])
+    ):
+        return
+    if getattr(getattr(defender, "eq_weapon", None), "subtype", None) != "Spear":
+        return
+    if hasattr(advancer, "is_alive") and not advancer.is_alive():
+        return
+    damage = max(1, int(defender.eq_weapon.damage * 0.3) + int(defender.strength * 0.2))
+    damage = max(0, int(damage - getattr(advancer, "protection", 0)))
+    if damage <= 0:
+        return
+    advancer.hp = max(0, advancer.hp - damage)
+    cprint(
+        f"{defender.name}'s spear darts out as {advancer.name} closes in, for {damage} damage!",
+        "cyan" if defender.name != "Jean" else "green",
+    )
+
+
 class Dodge(Move):
     def __init__(self, user):
         description = "Prepare to dodge incoming attacks."
@@ -49,7 +71,6 @@ class Dodge(Move):
             self.fatigue_cost = 10
 
     def execute(self, user):
-        # print("######{}: I'm in the execute stage now".format(self.name)) #debug message
         narrate(self.stage_announce[1])
         for state in self.user.states:  # remove any other instances of Dodging
             if isinstance(state, states.Dodging):
@@ -65,9 +86,7 @@ class Parry(Move):
         execute = 1
         recoil = 5
         cooldown = 2
-        fatigue_cost = 0
-        if fatigue_cost <= 10:
-            fatigue_cost = 10
+        fatigue_cost = 0  # placeholder; self.evaluate() sets the real cost below
         super().__init__(
             name="Parry",
             description=description,
@@ -111,8 +130,17 @@ class Parry(Move):
         if self.fatigue_cost <= 10:
             self.fatigue_cost = 10
 
+        # CounterGuard passive: maintaining a parry with a sword costs less fatigue
+        if (
+            getattr(getattr(self.user, "eq_weapon", None), "subtype", None) == "Sword"
+            and any(
+                getattr(m, "name", "") == "Counter Guard"
+                for m in getattr(self.user, "known_moves", [])
+            )
+        ):
+            self.fatigue_cost = max(10, int(self.fatigue_cost * 0.8))
+
     def execute(self, user):
-        # print("######{}: I'm in the execute stage now".format(self.name)) #debug message
         narrate(self.stage_announce[1])
         self.user.states.append(states.Parrying(user))
         self.user.fatigue -= self.fatigue_cost
@@ -161,13 +189,13 @@ class Advance(Move):
 
         if self.target and self.target in self.user.combat_proximity:
             target_distance = self.user.combat_proximity[self.target]
-            if self.target.is_alive and target_distance > 1:
+            if self.target.is_alive() and target_distance > 1:
                 return True
             return False
 
         # Check for any combatant (enemy or ally) farther than adjacent
         for combatant, distance in self.user.combat_proximity.items():
-            if combatant.is_alive and distance > 1:
+            if combatant.is_alive() and distance > 1:
                 return True
         return False
 
@@ -179,12 +207,12 @@ class Advance(Move):
 
     def beat_update(self, user):
         if self.current_stage == 1:  # Execute stage
-            if not self.target or not self.target.is_alive:
+            if not self.target or not self.target.is_alive():
                 # Try to find a new target if possible
                 nearest_enemy = None
                 min_dist = float("inf")
                 for enemy in user.combat_proximity.keys():
-                    if enemy.is_alive:
+                    if enemy.is_alive():
                         dist = user.combat_proximity[enemy]
                         if dist < min_dist:
                             min_dist = dist
@@ -253,6 +281,8 @@ class Advance(Move):
         user.combat_proximity[self.target] = int(new_distance)
         if hasattr(self.target, "combat_proximity"):
             self.target.combat_proximity[user] = int(new_distance)
+        if new_distance <= 3:
+            _apply_sentinels_vigil(user, self.target)
 
     def _beat_legacy(self, user):
         """Move one beat's worth in legacy system."""
@@ -268,9 +298,11 @@ class Advance(Move):
         if user.combat_proximity[self.target] < 3:
             user.combat_proximity[self.target] = 3
         self.target.combat_proximity[user] = user.combat_proximity[self.target]
+        if user.combat_proximity[self.target] <= 3:
+            _apply_sentinels_vigil(user, self.target)
 
     def execute(self, user):
-        if self.target and self.target.is_alive:
+        if self.target and self.target.is_alive():
             cprint(
                 "{} finished advancing on {}.".format(user.name, self.target.name),
                 "green" if user.name == "Jean" else "red",
@@ -444,7 +476,7 @@ class BullCharge(Move):
 
     def beat_update(self, user):
         if self.current_stage == 1:  # Execute stage
-            if not self.target or not self.target.is_alive:
+            if not self.target or not self.target.is_alive():
                 return
 
             if self.can_use_coordinates(user):
@@ -493,7 +525,7 @@ class BullCharge(Move):
         self.target.combat_proximity[user] = user.combat_proximity[self.target]
 
     def execute(self, user):
-        if self.target and self.target.is_alive:
+        if self.target and self.target.is_alive():
             cprint(
                 f"{user.name} slammed into {self.target.name} during the charge!",
                 "green" if user.name == "Jean" else "red",
@@ -632,7 +664,7 @@ class FlankingManeuver(Move):
 
     def beat_update(self, user):
         if self.current_stage == 1:  # Execute stage
-            if not self.target or not self.target.is_alive:
+            if not self.target or not self.target.is_alive():
                 return
 
             if self.can_use_coordinates(user):
@@ -656,7 +688,7 @@ class FlankingManeuver(Move):
     def execute(self, user):
         if (
             self.target
-            and self.target.is_alive
+            and self.target.is_alive()
             and hasattr(user, "combat_position")
             and user.combat_position
         ):
@@ -678,7 +710,7 @@ class FlankingManeuver(Move):
                     f"{user.name} moved to the side of {self.target.name}!",
                     "green",
                 )
-        elif self.target and self.target.is_alive:
+        elif self.target and self.target.is_alive():
             cprint(f"{user.name} finished maneuvering.", "green")
 
 
@@ -715,7 +747,6 @@ class QuietMovement(Move):
         pass
 
     def execute(self, user):
-        # print("######{}: I'm in the execute stage now".format(self.name)) #debug message
         pass
 
     def viable(self):
@@ -768,7 +799,7 @@ class TacticalPositioning(Move):
 
     def beat_update(self, user):
         if self.current_stage == 1:  # Execute
-            if not self.target or not self.target.is_alive:
+            if not self.target or not self.target.is_alive():
                 return
 
             # Initialization of actual target distance with variance
@@ -846,7 +877,7 @@ class TacticalPositioning(Move):
         self.target.combat_proximity[user] = user.combat_proximity[self.target]
 
     def execute(self, user):
-        if self.target and self.target.is_alive:
+        if self.target and self.target.is_alive():
             cprint(
                 "{} finished adjusting position relative to {}.".format(
                     user.name, self.target.name
@@ -971,6 +1002,7 @@ class QuickSwap(Move):
             target=target,
             user=user,
         )
+        self.accepts_ally_target = True
         self.evaluate()
 
     def viable(self):
@@ -1046,12 +1078,20 @@ class QuickSwap(Move):
         """Execute the position swap with selected ally."""
         nearby_allies = self._get_nearby_allies()
 
-        if not nearby_allies:
-            cprint(f"{user.name} couldn't find an ally to swap with!", "red")
-            return
-
-        # For single ally, use that one; for multiple, first viable
-        target_ally = nearby_allies[0]
+        # Check if a target was selected and validate it's still nearby
+        # (only validate if target is not the user itself — the user might be set
+        # as default target in __init__, but real selection happens from nearby_allies)
+        if self.target and self.target is not user:
+            if self.target not in nearby_allies:
+                # Target is no longer nearby (moved away or died)
+                raise ValueError("Selected ally is no longer within swapping range")
+            target_ally = self.target
+        else:
+            # No target explicitly selected (or target is user) - use first nearby ally
+            if not nearby_allies:
+                cprint(f"{user.name} couldn't find an ally to swap with!", "red")
+                return
+            target_ally = nearby_allies[0]
 
         try:
             # Swap using coordinate system if available

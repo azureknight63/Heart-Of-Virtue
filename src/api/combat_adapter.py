@@ -16,12 +16,14 @@ from datetime import datetime
 from typing import Dict, Any, List, Optional, TYPE_CHECKING
 
 import positions  # type: ignore
+import moves  # type: ignore
 from src.api.serializers.combat import (
     CombatStateSerializer,
     CombatantSerializer,
 )
 from src.api.constants import ITEM_USE_RANGE, ALLY_HEAL_THRESHOLD
 from ai.combat_strategist import CombatStrategist
+from src.moves._base import select_weighted_target
 
 if TYPE_CHECKING:
     from player import Player
@@ -1143,7 +1145,7 @@ class ApiCombatAdapter:
         # Move execution finished
 
         # Check win/loss conditions
-        if not self.player.is_alive():
+        if not self.player.is_alive() and not self.player.check_revive():
             self.player.in_combat = False
             self.awaiting_input = False
             self._add_log_entry(
@@ -1365,8 +1367,10 @@ class ApiCombatAdapter:
                 self._process_npc(enemy)
 
             # Check if enemy died (was dead before or died during turn/recoil)
-            # This check must happen regardless of whether they took a turn
-            if not enemy.is_alive():
+            # This check must happen regardless of whether they took a turn.
+            # Consult check_revive() first (mirrors the player path above) so a
+            # combatant carrying a revive state is not silently denied.
+            if not enemy.is_alive() and not enemy.check_revive():
                 enemy.die()
                 if not enemy.is_alive():
                     # Death message is handled by enemy.die() -> print() -> captured by output capture
@@ -1377,6 +1381,9 @@ class ApiCombatAdapter:
 
                     if enemy in self.player.combat_list:
                         self.player.combat_list.remove(enemy)
+
+                    # CleaveInstinct: mark that player killed an enemy (for next move's prep boost)
+                    self.player._cleave_instinct_pending = True
 
                     for ally in self.player.combat_list_allies:
                         if enemy in ally.combat_proximity:
@@ -1401,18 +1408,23 @@ class ApiCombatAdapter:
             npc.combat_delay -= 1
         else:
             if npc.current_move is None:
-                # Ally-healing check: use a consumable on a nearby friendly below threshold
-                if self._npc_try_heal_ally(npc):
-                    return
-
                 # Select target
                 if not npc.friend:
-                    npc.target = random.choice(self.player.combat_list_allies)
+                    npc.target = select_weighted_target(self.player.combat_list_allies)
                 else:
-                    npc.target = random.choice(self.player.combat_list)
+                    npc.target = select_weighted_target(self.player.combat_list)
 
-                # Select and cast move
-                npc.select_move()
+                if npc.is_stunned():
+                    # Stunned NPCs (e.g. War Cry) skip move selection entirely for
+                    # this beat, regardless of whether their class overrides
+                    # select_move().
+                    npc.current_move = moves.NpcRest(npc)
+                elif self._npc_try_heal_ally(npc):
+                    # Ally-healing check: use a consumable on a nearby friendly below threshold
+                    return
+                else:
+                    # Select and cast move
+                    npc.select_move()
                 if npc.current_move:
                     npc.current_move.target = npc.target
 
@@ -1771,6 +1783,8 @@ class ApiCombatAdapter:
         self.player.in_combat = False
         self.awaiting_input = False
         self.player.fatigue = self.player.maxfatigue
+        # Recharge single-use equip states (e.g. PhoenixRevive) consumed this battle
+        self.player.recharge_equip_states()
 
         # Snapshot the tile where victory occurred so post-combat events fire on
         # the right tile even if the player moves before the next status poll.
@@ -1998,11 +2012,13 @@ class ApiCombatAdapter:
             # Default to adjacent if no range specified but targeted
             range_min, range_max = 0, 5
 
-        # Special handling for bow
-        if move.name == "Shoot Bow" and self.player.eq_weapon:
-            range_max = self.player.eq_weapon.range_base + (
-                100 / self.player.eq_weapon.range_decay
-            )
+        # Moves that compute their range dynamically (e.g. ranged weapons
+        # whose effective range extends past their melee wpnrange via
+        # range_base/range_decay) override get_effective_range_max() —
+        # see Move.get_effective_range_max in src/moves/_base.py.
+        effective_max = move.get_effective_range_max(self.player)
+        if effective_max is not None:
+            range_max = effective_max
 
         # Iterate over combat_list instead of combat_proximity to ensure we use the correct enemy instances
         for enemy in self.player.combat_list:

@@ -43,16 +43,6 @@ describe('endpoints', () => {
       expect(apiClient.get).toHaveBeenCalledWith('/full-state');
     });
 
-    it('calls getInventory endpoint', () => {
-      endpoints.player.getInventory();
-      expect(apiClient.get).toHaveBeenCalledWith('/inventory');
-    });
-
-    it('calls getEquipment endpoint', () => {
-      endpoints.player.getEquipment();
-      expect(apiClient.get).toHaveBeenCalledWith('/equipment');
-    });
-
     it('calls getStats endpoint', () => {
       endpoints.player.getStats();
       expect(apiClient.get).toHaveBeenCalledWith('/stats');
@@ -83,11 +73,6 @@ describe('endpoints', () => {
     it('calls move endpoint', () => {
       endpoints.world.move('north');
       expect(apiClient.post).toHaveBeenCalledWith('/world/move', { direction: 'north' });
-    });
-
-    it('calls getExits endpoint', () => {
-      endpoints.world.getExits();
-      expect(apiClient.get).toHaveBeenCalledWith('/world/exits');
     });
 
     it('calls getTile endpoint', () => {

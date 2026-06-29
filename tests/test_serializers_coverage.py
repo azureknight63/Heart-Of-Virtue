@@ -990,6 +990,18 @@ class TestInventorySerializer:
         item.str_mod = 1
         item.fin_mod = 0
         item.protection = 0
+        item.add_str = 0
+        item.add_fin = 0
+        item.add_maxhp = 0
+        item.add_maxfatigue = 0
+        item.add_speed = 0
+        item.add_endurance = 0
+        item.add_charisma = 0
+        item.add_intelligence = 0
+        item.add_faith = 0
+        item.add_weight_tolerance = 0
+        item.add_resistance = {}
+        item.add_status_resistance = {}
         return item
 
     def test_serialize_weapon_item(self):
@@ -1042,6 +1054,148 @@ class TestInventorySerializer:
         item.interactions = ["use", "drop"]
         result = self.InventoryItemSerializer.serialize(item, 0)
         assert result["effects"] == []
+
+    def test_serialize_weapon_damage_type(self):
+        item = self._make_item()
+        item.subtype = "Sword"
+        result = self.InventoryItemSerializer.serialize(item, 0)
+        assert result["damage_type"] == "slashing"
+
+    def test_serialize_weapon_damage_type_enchanted_override(self):
+        item = self._make_item()
+        item.subtype = "Sword"
+        item.base_damage_type = "fire"
+        result = self.InventoryItemSerializer.serialize(item, 0)
+        assert result["damage_type"] == "fire"
+
+    def test_serialize_item_with_stat_bonuses(self):
+        item = self._make_item()
+        item.add_str = 2
+        item.add_speed = 3
+        result = self.InventoryItemSerializer.serialize(item, 0)
+        assert result["bonuses"] == {"strength": 2, "speed": 3}
+
+    def test_serialize_item_without_bonuses_omits_key(self):
+        item = self._make_item()
+        result = self.InventoryItemSerializer.serialize(item, 0)
+        assert "bonuses" not in result
+
+    def test_serialize_item_with_resistances(self):
+        item = self._make_item()
+        item.add_resistance = {"fire": 0.2}
+        item.add_status_resistance = {"poison": 0.5}
+        result = self.InventoryItemSerializer.serialize(item, 0)
+        assert result["resistances"] == {"fire": 0.2}
+        assert result["status_resistances"] == {"poison": 0.5}
+
+    def test_serialize_item_without_resistances_omits_keys(self):
+        item = self._make_item()
+        result = self.InventoryItemSerializer.serialize(item, 0)
+        assert "resistances" not in result
+        assert "status_resistances" not in result
+
+    def test_serialize_item_comparison_with_real_counterpart(self):
+        equipped = self._make_item()
+        equipped.isequipped = True
+        equipped.damage = 10.0
+        equipped.add_str = 1
+
+        candidate = self._make_item()
+        candidate.isequipped = False
+        candidate.damage = 18.0
+        candidate.add_str = 3
+
+        player = MagicMock()
+        player.inventory_list = [equipped, candidate]
+
+        result = self.InventoryItemSerializer.serialize(candidate, 1, player)
+        comparison = result["comparison"]
+        assert comparison["comparison_type"] == "item_to_item"
+        assert comparison["differences"]["damage_diff"] == 8.0
+        assert comparison["differences"]["bonus_diffs"] == {"strength": 2}
+
+    def test_serialize_item_comparison_empty_slot(self):
+        candidate = self._make_item()
+        candidate.isequipped = False
+
+        player = MagicMock()
+        player.inventory_list = [candidate]
+
+        result = self.InventoryItemSerializer.serialize(candidate, 0, player)
+        assert result["comparison"]["comparison_type"] == "empty_to_item"
+
+    def test_serialize_item_no_maintype_skips_comparison(self):
+        candidate = self._make_item(maintype=None)
+        candidate.isequipped = False
+
+        player = MagicMock()
+        player.inventory_list = [candidate]
+
+        result = self.InventoryItemSerializer.serialize(candidate, 0, player)
+        assert "comparison" not in result
+
+    def test_serialize_item_multi_equip_accessory_skips_comparison(self):
+        candidate = self._make_item(item_type="Accessory", maintype="Accessory")
+        candidate.subtype = "Ring"
+        candidate.isequipped = False
+
+        player = MagicMock()
+        player.inventory_list = [candidate]
+
+        result = self.InventoryItemSerializer.serialize(candidate, 0, player)
+        assert "comparison" not in result
+
+    def test_serialize_item_equipped_skips_comparison(self):
+        item = self._make_item()
+        item.isequipped = True
+
+        player = MagicMock()
+        player.inventory_list = [item]
+
+        result = self.InventoryItemSerializer.serialize(item, 0, player)
+        assert "comparison" not in result
+
+    def test_get_equip_slot_status_skips_other_maintypes(self):
+        from src.api.serializers.inventory import _get_equip_slot_status
+
+        unrelated = self._make_item(item_type="Helm", maintype="Helm")
+        unrelated.isequipped = True
+        candidate = self._make_item()  # maintype="Weapon"
+
+        player = MagicMock()
+        player.inventory_list = [unrelated, candidate]
+
+        comparable, counterpart = _get_equip_slot_status(player, candidate)
+        assert comparable is True
+        assert counterpart is None
+
+    def test_get_equip_slot_status_skips_mismatched_accessory_subtype(self):
+        from src.api.serializers.inventory import _get_equip_slot_status
+
+        equipped_necklace = self._make_item(item_type="Accessory", maintype="Accessory")
+        equipped_necklace.subtype = "Necklace"
+        equipped_necklace.isequipped = True
+
+        candidate = self._make_item(item_type="Accessory", maintype="Accessory")
+        candidate.subtype = "Circlet"
+
+        player = MagicMock()
+        player.inventory_list = [equipped_necklace, candidate]
+
+        comparable, counterpart = _get_equip_slot_status(player, candidate)
+        assert comparable is True
+        assert counterpart is None
+
+    def test_diff_resistance_dicts_with_real_deltas(self):
+        from src.api.serializers.inventory import _diff_resistance_dicts
+
+        current = self._make_item()
+        current.add_resistance = {"fire": 0.1, "ice": 0.3}
+        candidate = self._make_item()
+        candidate.add_resistance = {"fire": 0.4, "earth": 0.2}
+
+        diffs = _diff_resistance_dicts(current, candidate, "add_resistance")
+        assert diffs == {"fire": pytest.approx(0.3), "ice": -0.3, "earth": 0.2}
 
     def test_inventory_serializer_with_inventory_list(self):
         player = MagicMock()
@@ -1169,6 +1323,7 @@ class TestInventorySerializer:
         item.weight = 1.5
         item.value = 250
         item.armor = 0.0
+        item.protection = 0.0
         item.damage = 20.0
         item.magic_attack = 0
         item.magic_defense = 0
@@ -1195,6 +1350,7 @@ class TestInventorySerializer:
         candidate.weight = 2.0
         candidate.value = 100
         candidate.armor = 0.0
+        candidate.protection = 0.0
         candidate.damage = 12.0
         candidate.magic_attack = 0
         candidate.magic_defense = 0
@@ -1218,6 +1374,7 @@ class TestInventorySerializer:
         current.weight = 2.0
         current.value = 50
         current.armor = 0.0
+        current.protection = 0.0
         current.damage = 8.0
         current.magic_attack = 0
         current.magic_defense = 0
@@ -1237,6 +1394,7 @@ class TestInventorySerializer:
         candidate.weight = 2.0
         candidate.value = 150
         candidate.armor = 0.0
+        candidate.protection = 0.0
         candidate.damage = 20.0
         candidate.magic_attack = 0
         candidate.magic_defense = 0
@@ -1260,6 +1418,7 @@ class TestInventorySerializer:
         current.weight = 2.0
         current.value = 300
         current.armor = 10.0
+        current.protection = 10.0
         current.damage = 25.0
         current.magic_attack = 0
         current.magic_defense = 0
@@ -1279,6 +1438,7 @@ class TestInventorySerializer:
         candidate.weight = 1.0
         candidate.value = 30
         candidate.armor = 0.0
+        candidate.protection = 0.0
         candidate.damage = 5.0
         candidate.magic_attack = 0
         candidate.magic_defense = 0
@@ -1301,6 +1461,7 @@ class TestInventorySerializer:
         current.weight = 2.0
         current.value = 100
         current.armor = 5.0
+        current.protection = 5.0
         current.damage = 15.0
         current.magic_attack = 0
         current.magic_defense = 0
@@ -1320,6 +1481,7 @@ class TestInventorySerializer:
         candidate.weight = 2.0
         candidate.value = 100
         candidate.armor = 8.0
+        candidate.protection = 8.0
         candidate.damage = 10.0
         candidate.magic_attack = 0
         candidate.magic_defense = 0

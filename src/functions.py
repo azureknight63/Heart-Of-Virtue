@@ -23,6 +23,19 @@ from os.path import isfile, join
 This module contains general functions to use throughout the game
 """
 
+# Primary stats whose *_base counterpart drives reset_stats() and which must
+# never go negative after bonus summation in refresh_stat_bonuses(). Pools
+# (maxhp, maxfatigue) are intentionally excluded -- they aren't floor-clamped.
+PRIMARY_STAT_FIELDS = (
+    "strength",
+    "finesse",
+    "speed",
+    "endurance",
+    "charisma",
+    "intelligence",
+    "faith",
+)
+
 
 def print_slow(text, speed="slow"):
     """Emit narrative text as a single message.
@@ -248,7 +261,7 @@ def refresh_stat_bonuses(
          one recognized bonus attribute are collected.
       3. Supported bonus attributes:
            add_str, add_fin, add_maxhp, add_maxfatigue, add_speed, add_endurance,
-           add_charisma, add_intelligence, add_faith, add_weight_tolerance,
+           add_charisma, add_intelligence, add_faith, add_weight_tolerance, add_protection,
            add_resistance (dict), add_status_resistance (dict)
       4. Resistance & status resistance bonuses merge only for keys present in the target's
          base dictionaries. Status resistance cannot drop below 0.
@@ -277,6 +290,7 @@ def refresh_stat_bonuses(
         "add_intelligence": "intelligence",
         "add_faith": "faith",
         "add_weight_tolerance": "weight_tolerance",
+        "add_protection": "protection",
         "add_resistance": "_resistance_dict",  # sentinel: dict merge
         "add_status_resistance": "_status_resistance_dict",  # sentinel: dict merge
     }
@@ -306,10 +320,14 @@ def refresh_stat_bonuses(
                 adder_group.append(state)
                 break
 
-    # Apply bonuses
+    # Apply bonuses. add_protection is deferred to its own pass below: Player's
+    # refresh_protection_rating() (called after this loop) recomputes protection
+    # from strength/finesse via equipped str_mod/fin_mod, so it must run only
+    # after those stats have been fully bonused -- otherwise it would read their
+    # pre-bonus values.
     for adder in adder_group:
         # Precompute which bonus attributes this adder actually supplies
-        present = [b for b in bonuses_map if hasattr(adder, b)]
+        present = [b for b in bonuses_map if b != "add_protection" and hasattr(adder, b)]
         for bonus_attr in present:
             target_field = bonuses_map[bonus_attr]
             bonus_value = get_attr(adder, bonus_attr)
@@ -345,6 +363,13 @@ def refresh_stat_bonuses(
     for k, v in list(target.status_resistance.items()):
         if v < 0:
             target.status_resistance[k] = 0
+
+    # Clamp negative primary stats to 0 (stacked debuffs should never invert sign,
+    # which would otherwise inflate downstream calculations like hit_chance)
+    for stat_field in PRIMARY_STAT_FIELDS:
+        stat_value = get_attr(target, stat_field, None)
+        if isinstance(stat_value, (int, float)) and stat_value < 0:
+            setattr(target, stat_field, 0)
 
     # Attribute-derived stat bumps (applied after item/state bonuses, before weight adjustments)
     # Strength adds a small amount of max HP: +2 per point above base 10
@@ -404,12 +429,24 @@ def refresh_stat_bonuses(
             except Exception:
                 pass
 
-    # Refresh protection rating if applicable
+    # Recompute Player's gear-based protection now that strength/finesse/endurance
+    # bonuses above are fully applied (str_mod/fin_mod on equipped armor read the
+    # current, post-bonus values). NPCs already had protection reset to
+    # protection_base in reset_stats and need no further recompute here.
     if hasattr(target, "refresh_protection_rating"):
         try:
             target.refresh_protection_rating()
         except Exception:
             pass
+
+    # Sum declarative add_protection bonuses (states/items) on top of the
+    # freshly-established base.
+    for adder in adder_group:
+        if hasattr(adder, "add_protection"):
+            try:
+                target.protection = target.protection + get_attr(adder, "add_protection")
+            except Exception:
+                continue
 
     # Ensure all fatigue values are rounded up to the nearest integer and clamped
     if hasattr(target, "fatigue") and hasattr(target, "maxfatigue"):
@@ -486,16 +523,9 @@ def is_input_integer(
 
 def reset_stats(target):  # resets all stats to base level
     # Map target attrs to their corresponding base attrs to avoid repetitive code
-    stat_pairs = (
-        ("strength", "strength_base"),
-        ("finesse", "finesse_base"),
+    stat_pairs = tuple((f, f"{f}_base") for f in PRIMARY_STAT_FIELDS) + (
         ("maxhp", "maxhp_base"),
         ("maxfatigue", "maxfatigue_base"),
-        ("speed", "speed_base"),
-        ("endurance", "endurance_base"),
-        ("charisma", "charisma_base"),
-        ("intelligence", "intelligence_base"),
-        ("faith", "faith_base"),
     )
 
     for attr, base_attr in stat_pairs:
@@ -531,6 +561,18 @@ def reset_stats(target):  # resets all stats to base level
     if hasattr(target, "weight_tolerance") and hasattr(target, "weight_tolerance_base"):
         try:
             target.weight_tolerance = getattr(target, "weight_tolerance_base")
+        except Exception:
+            pass
+
+    # Reset protection to its true base before add_protection bonuses (from states/
+    # items) are summed on top. NPCs fall back to the fixed value captured at
+    # construction. Player's protection is recomputed dynamically from gear via
+    # refresh_protection_rating(), but that depends on strength/finesse, which
+    # haven't been re-bonused yet at this point -- so for Player that recompute
+    # happens later in refresh_stat_bonuses, after those bonuses are summed.
+    if hasattr(target, "protection_base"):
+        try:
+            target.protection = target.protection_base
         except Exception:
             pass
 

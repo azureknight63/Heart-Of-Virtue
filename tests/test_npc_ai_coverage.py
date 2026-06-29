@@ -11,7 +11,6 @@ from src.api.serializers.npc_ai import (
     DialogueStateSerializer,
     NPCAIStateSerializer,
     NPCBehaviorProfileSerializer,
-    QuestStateSerializer,
 )
 
 # ---------------------------------------------------------------------------
@@ -74,13 +73,6 @@ def _npc(**kwargs):
     for attr, val in kwargs.items():
         setattr(n, attr, val)
     return n
-
-
-def _player(**kwargs):
-    p = MagicMock()
-    p.active_quests = kwargs.get("active_quests", [])
-    p.completed_quests = kwargs.get("completed_quests", [])
-    return p
 
 
 # ===========================================================================
@@ -272,121 +264,6 @@ class TestDialogueStateSerializer:
         tree = {"nodes": {}}
         opts = DialogueStateSerializer._get_dialogue_options(tree, "start")
         assert opts == []
-
-
-# ===========================================================================
-# QuestStateSerializer
-# ===========================================================================
-
-
-class TestQuestStateSerializer:
-    def _quest(self, **kwargs):
-        base = {
-            "id": "q1",
-            "title": "Find the Sword",
-            "description": "Search the dungeon",
-            "status": "active",
-            "progress": 0,
-            "objectives": [],
-            "rewards": {"gold": 100},
-            "started_at": None,
-            "completed_at": None,
-            "deadline": None,
-            "giver": "Old Man",
-            "tags": ["main"],
-            "can_abandon": True,
-        }
-        base.update(kwargs)
-        return base
-
-    def test_serialize_basic_quest(self):
-        quest = self._quest()
-        result = QuestStateSerializer.serialize_quest(quest)
-        assert result["quest_id"] == "q1"
-        assert result["title"] == "Find the Sword"
-        assert result["status"] == "active"
-        assert result["objectives"] == []
-
-    def test_serialize_quest_with_objectives(self):
-        objectives = [
-            {
-                "id": "o1",
-                "text": "Enter dungeon",
-                "completed": True,
-                "progress": 1,
-                "type": "explore",
-            },
-            {
-                "id": "o2",
-                "text": "Find sword",
-                "completed": False,
-                "progress": 0,
-                "type": "collect",
-            },
-        ]
-        quest = self._quest(objectives=objectives)
-        result = QuestStateSerializer.serialize_quest(quest)
-        assert len(result["objectives"]) == 2
-        assert result["objectives"][0]["completed"] is True
-
-    def test_serialize_active_quests_empty(self):
-        player = _player()
-        result = QuestStateSerializer.serialize_active_quests(player)
-        assert result == []
-
-    def test_serialize_active_quests_populated(self):
-        quests = [self._quest(id="q1"), self._quest(id="q2", title="Another Quest")]
-        player = _player(active_quests=quests)
-        result = QuestStateSerializer.serialize_active_quests(player)
-        assert len(result) == 2
-
-    def test_serialize_completed_quests(self):
-        # Lines 370-371
-        quests = [self._quest(id="done_1", status="completed")]
-        player = _player(completed_quests=quests)
-        result = QuestStateSerializer.serialize_completed_quests(player)
-        assert len(result) == 1
-        assert result[0]["status"] == "completed"
-
-    def test_serialize_completed_quests_empty(self):
-        player = _player(completed_quests=[])
-        result = QuestStateSerializer.serialize_completed_quests(player)
-        assert result == []
-
-    def test_serialize_quest_progress(self):
-        objectives = [
-            {"completed": True},
-            {"completed": False},
-            {"completed": True},
-        ]
-        quest = self._quest(
-            objectives=objectives,
-            progress=66,
-            current_step="Search room",
-            next_step="Fight boss",
-        )
-        result = QuestStateSerializer.serialize_quest_progress(quest)
-        assert result["objectives_completed"] == 2
-        assert result["objectives_total"] == 3
-        assert result["progress"] == 66
-
-    def test_serialize_quest_progress_no_started_at(self):
-        quest = self._quest(started_at=None)
-        result = QuestStateSerializer.serialize_quest_progress(quest)
-        assert result["time_elapsed"] is None
-
-    def test_serialize_quest_progress_with_started_at(self):
-        quest = self._quest(started_at="2026-01-01T12:00:00")
-        result = QuestStateSerializer.serialize_quest_progress(quest)
-        assert result["time_elapsed"] == 0.0
-
-    def test_serialize_objectives_defaults(self):
-        objectives = [{}]  # Empty dict — all defaults
-        result = QuestStateSerializer._serialize_objectives(objectives)
-        assert result[0]["id"] == "obj_0"
-        assert result[0]["text"] == "Unknown"
-        assert result[0]["completed"] is False
-        assert result[0]["type"] == "task"
 
 
 # ===========================================================================

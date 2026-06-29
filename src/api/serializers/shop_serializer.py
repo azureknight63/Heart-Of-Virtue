@@ -63,6 +63,38 @@ class ShopSerializer:
     """Serialize merchant shop state for the web API."""
 
     @staticmethod
+    def get_effective_buy_modifier(merchant: Any, player: Any) -> float:
+        """Merchant's buy_modifier adjusted by the player's reputation with them.
+
+        Friendly merchants charge less; hostile merchants charge more. Shared
+        by serialize_state and GameService.shop_buy so displayed and charged
+        prices always match.
+        """
+        from src.api.serializers.reputation import NPCRelationshipSerializer
+
+        base = getattr(merchant, "buy_modifier", 1.0)
+        reputation = getattr(player, "reputation", {}).get(
+            getattr(merchant, "name", ""), 0
+        )
+        return base * (1 - NPCRelationshipSerializer.get_price_modifier(reputation))
+
+    @staticmethod
+    def get_effective_sell_modifier(merchant: Any, player: Any) -> float:
+        """Merchant's sell_modifier adjusted by the player's reputation with them.
+
+        Friendly merchants pay more; hostile merchants pay less. Shared by
+        serialize_state and GameService.shop_sell so displayed and paid
+        prices always match.
+        """
+        from src.api.serializers.reputation import NPCRelationshipSerializer
+
+        base = getattr(merchant, "sell_modifier", 0.5)
+        reputation = getattr(player, "reputation", {}).get(
+            getattr(merchant, "name", ""), 0
+        )
+        return base * (1 + NPCRelationshipSerializer.get_price_modifier(reputation))
+
+    @staticmethod
     def flush_stale_buyback(merchant: Any, current_game_tick: int) -> None:
         """Remove buyback ledger entries that were acquired before the current game tick.
 
@@ -94,8 +126,8 @@ class ShopSerializer:
         Returns:
             JSON-safe dict with stock, buyback_items, player state, merchant gold.
         """
-        buy_mod = getattr(merchant, "buy_modifier", 1.0)
-        sell_mod = getattr(merchant, "sell_modifier", 0.5)
+        buy_mod = ShopSerializer.get_effective_buy_modifier(merchant, player)
+        sell_mod = ShopSerializer.get_effective_sell_modifier(merchant, player)
         shop_name = getattr(merchant, "shop_name", None) or f"{merchant.name}'s Shop"
 
         # Serialize regular stock (exclude Gold items and non-merchandise items;

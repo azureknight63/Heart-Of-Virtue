@@ -10,7 +10,9 @@ import positions  # noqa: F401
 from animations import animate_to_main_screen as animate  # noqa: F401
 from ._base import (
     Move,
+    PassiveMove,
     _ensure_weapon_exp,
+    _apply_work_the_gap,
 )  # noqa: F401
 
 
@@ -126,8 +128,10 @@ class ChipAway(Move):
             else:
                 cprint(f"Strike {i + 1} missed!", "yellow")
 
-            if not self.target.is_alive:
+            if not self.target.is_alive():
                 break
+
+        _apply_work_the_gap(user, self.target, total_hits)
 
         if hasattr(user, "eq_weapon") and user.eq_weapon:
             _ensure_weapon_exp(user)
@@ -244,14 +248,18 @@ class ExploitWeakness(Move):
                 self.parry()
             else:
                 self.hit(damage, glance)
-                if self.target and self.target.is_alive:
+                _apply_work_the_gap(player, self.target, 1)
+                if self.target and self.target.is_alive():
                     already = any(
                         isinstance(s, states.Disoriented) for s in self.target.states
                     )
                     if not already:
                         try:
-                            self.target.states.append(states.Disoriented(self.target))
-                            cprint(f"{self.target.name} is disoriented!", "red")
+                            # inflict() emits the disoriented message via
+                            # Disoriented.on_application when the state lands.
+                            functions.inflict(
+                                states.Disoriented(self.target), self.target
+                            )
                         except Exception:
                             pass
         else:
@@ -371,7 +379,8 @@ class Stupefy(Move):
                 self.parry()
             else:
                 self.hit(damage, glance)
-                if self.target and self.target.is_alive:
+                _apply_work_the_gap(player, self.target, 1)
+                if self.target and self.target.is_alive():
                     # Remove existing Disoriented, apply fresh one
                     self.target.states = [
                         s
@@ -391,7 +400,7 @@ class Stupefy(Move):
             self.user.fatigue = 0
 
 
-class WorkTheGap(Move):
+class WorkTheGap(PassiveMove):
     """Passive: Sustained assault gradually strips enemy protection (future hook)."""
 
     def __init__(self, user):
@@ -399,21 +408,4 @@ class WorkTheGap(Move):
             "Every strike finds a new crack. "
             "Sustained assault with a pick progressively reduces the target's protection."
         )
-        super().__init__(
-            name="Work the Gap",
-            description=description,
-            xp_gain=0,
-            current_stage=0,
-            stage_beat=[0, 0, 0, 0],
-            targeted=False,
-            stage_announce=["", "", "", ""],
-            fatigue_cost=0,
-            beats_left=0,
-            target=user,
-            user=user,
-            category="Passive",
-            passive=True,
-        )
-
-    def viable(self):
-        return False
+        super().__init__(user, "Work the Gap", description)

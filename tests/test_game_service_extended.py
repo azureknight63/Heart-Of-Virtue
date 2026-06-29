@@ -4,9 +4,9 @@ Tests for high-impact, previously untested methods:
 - Shop system: shop_buy, shop_sell, shop_buyback, get_shop_state
 - Skills/abilities: learn_skill, get_player_skills, get_available_moves
 - Awards: award_gold, award_experience, award_item, award_reputation
-- Combat: defend, flee_combat, use_item_in_combat, end_combat, get_combat_status
+- Combat: flee_combat, get_combat_status
 - Quests: update_quest_progress, get_quest_status, get_active_quests, complete_quest
-- NPC systems: get_npc_state, get_npc_relationship, update_reputation, set_relationship_flag
+- NPC systems: get_npc_state
 - World: collect_combat_loot, get_player_progression, get_npcs_at_location
 
 Target: Increase game_service.py coverage from 27% → 60%+ with 35-40 tests.
@@ -532,143 +532,75 @@ class TestGetPlayerSkills:
         assert "known_moves" in result
         assert "skill_tree" in result
 
+    def test_get_player_skills_hides_unmet_mastery_skill(
+        self, game_service, extended_mock_player
+    ):
+        """A stat-gated mastery skill whose learnable_when() is False and that
+        isn't known yet should be omitted entirely, not listed as disabled."""
+        mastery_skill = MagicMock()
+        mastery_skill.name = "Lightning Assault"
+        mastery_skill.learnable_when.return_value = False
+        extended_mock_player.skilltree.subtypes["Basic"][mastery_skill] = 2500
+        extended_mock_player.skill_exp["Basic"] = 3300
+        extended_mock_player.known_moves = []
 
-# ============================================================================
-# AWARD SYSTEM TESTS
-# ============================================================================
+        result = game_service.get_player_skills(extended_mock_player)
+        names = [s["name"] for s in result["skill_tree"]["Basic"]]
+        assert "Lightning Assault" not in names
 
+    def test_get_player_skills_shows_mastery_skill_when_dominant(
+        self, game_service, extended_mock_player
+    ):
+        """Once learnable_when() is True, the mastery skill appears and is
+        flagged can_learn given sufficient exp and not already known."""
+        mastery_skill = MagicMock()
+        mastery_skill.name = "Lightning Assault"
+        mastery_skill.learnable_when.return_value = True
+        extended_mock_player.skilltree.subtypes["Basic"][mastery_skill] = 2500
+        extended_mock_player.skill_exp["Basic"] = 3300
+        extended_mock_player.known_moves = []
 
-class TestAwardGold:
-    """Tests for award_gold() - give gold to player."""
+        result = game_service.get_player_skills(extended_mock_player)
+        entries = [s for s in result["skill_tree"]["Basic"] if s["name"] == "Lightning Assault"]
+        assert len(entries) == 1
+        assert entries[0]["can_learn"] is True
+        assert entries[0]["is_known"] is False
 
-    def test_award_gold_returns_dict(self, game_service, extended_mock_player):
-        """Test that award_gold returns a dictionary."""
-        with patch("src.api.serializers.quest_rewards.RewardDistributionSerializer.serialize_gold_gain", return_value={"gold": 50}):
-            result = game_service.award_gold(extended_mock_player, 50)
-            assert isinstance(result, dict)
+    def test_get_player_skills_keeps_known_mastery_skill_even_if_unmet(
+        self, game_service, extended_mock_player
+    ):
+        """A mastery skill the player already knows must stay listed (as
+        known) even if the dominant-stat condition no longer holds — only
+        not-yet-learned skills are hidden by the gate."""
+        mastery_skill = MagicMock()
+        mastery_skill.name = "Lightning Assault"
+        mastery_skill.learnable_when.return_value = False
+        extended_mock_player.skilltree.subtypes["Basic"][mastery_skill] = 2500
 
-    def test_award_gold_success_flag(self, game_service, extended_mock_player):
-        """Test that award_gold sets success flag."""
-        with patch("src.api.serializers.quest_rewards.RewardDistributionSerializer.serialize_gold_gain", return_value={"gold": 50}):
-            result = game_service.award_gold(extended_mock_player, 50)
-            assert result["success"] is True
+        known_move = MagicMock()
+        known_move.name = "Lightning Assault"
+        extended_mock_player.known_moves = [known_move]
 
-    def test_award_gold_includes_gold_update(self, game_service, extended_mock_player):
-        """Test that award_gold includes gold_update in response."""
-        with patch("src.api.serializers.quest_rewards.RewardDistributionSerializer.serialize_gold_gain", return_value={"gold": 50}):
-            result = game_service.award_gold(extended_mock_player, 50)
-            assert "gold_update" in result
+        result = game_service.get_player_skills(extended_mock_player)
+        entries = [s for s in result["skill_tree"]["Basic"] if s["name"] == "Lightning Assault"]
+        assert len(entries) == 1
+        assert entries[0]["is_known"] is True
+        assert entries[0]["can_learn"] is False
 
+    def test_get_player_skills_non_gated_skill_unaffected(
+        self, game_service, extended_mock_player
+    ):
+        """A skill without learnable_when (or one that always returns True)
+        is never hidden by the new gate, regardless of exp."""
+        plain_skill = MagicMock(spec=["name"])
+        plain_skill.name = "Dodge"
+        extended_mock_player.skilltree.subtypes["Basic"][plain_skill] = 100
+        extended_mock_player.skill_exp["Basic"] = 0
+        extended_mock_player.known_moves = []
 
-class TestAwardExperience:
-    """Tests for award_experience() - give XP to player."""
-
-    def test_award_experience_returns_dict(self, game_service, extended_mock_player):
-        """Test that award_experience returns a dictionary."""
-        extended_mock_player.gain_exp = MagicMock(return_value=[])
-        result = game_service.award_experience(extended_mock_player, 50)
-        assert isinstance(result, dict)
-
-    def test_award_experience_success_flag(self, game_service, extended_mock_player):
-        """Test that award_experience sets success flag."""
-        extended_mock_player.gain_exp = MagicMock(return_value=[])
-        result = game_service.award_experience(extended_mock_player, 50)
-        assert result["success"] is True
-
-    def test_award_experience_includes_xp_gained(self, game_service, extended_mock_player):
-        """Test that award_experience includes xp_gained in response."""
-        extended_mock_player.gain_exp = MagicMock(return_value=[])
-        result = game_service.award_experience(extended_mock_player, 50)
-        assert "experience_update" in result
-
-    def test_award_experience_with_level_up(self, game_service, extended_mock_player):
-        """Test award_experience when player levels up."""
-        extended_mock_player.gain_exp = MagicMock(return_value=["level_up_event"])
-        extended_mock_player.level = 6
-        result = game_service.award_experience(extended_mock_player, 500)
-        assert result["success"] is True
-        assert result["experience_update"]["level_up"] is True
-
-    def test_award_experience_custom_exp_type(self, game_service, extended_mock_player):
-        """Test award_experience with custom experience type."""
-        extended_mock_player.gain_exp = MagicMock(return_value=[])
-        game_service.award_experience(extended_mock_player, 50, exp_type="Dagger")
-        extended_mock_player.gain_exp.assert_called_once()
-        call_kwargs = extended_mock_player.gain_exp.call_args[1]
-        assert call_kwargs.get("exp_type") == "Dagger"
-
-
-class TestAwardItem:
-    """Tests for award_item() - give item to player."""
-
-    def test_award_item_returns_dict(self, game_service, extended_mock_player):
-        """Test that award_item returns a dictionary."""
-        with patch("src.api.serializers.quest_rewards.RewardDistributionSerializer.serialize_item_reward", return_value={"item": "Gold"}):
-            result = game_service.award_item(extended_mock_player, "Gold", "Gold", 50)
-            assert isinstance(result, dict)
-
-    def test_award_item_success_flag(self, game_service, extended_mock_player):
-        """Test that award_item sets success flag."""
-        with patch("src.api.serializers.quest_rewards.RewardDistributionSerializer.serialize_item_reward", return_value={"item": "Gold"}):
-            result = game_service.award_item(extended_mock_player, "Gold", "Gold", 50)
-            assert result["success"] is True
-
-    def test_award_item_includes_item_award(self, game_service, extended_mock_player):
-        """Test that award_item includes item_award in response."""
-        with patch("src.api.serializers.quest_rewards.RewardDistributionSerializer.serialize_item_reward", return_value={"item": "Gold"}):
-            result = game_service.award_item(extended_mock_player, "Gold", "Gold", 50)
-            assert "item_award" in result
-
-    def test_award_item_weight_check(self, game_service, extended_mock_player):
-        """Test award_item checks weight."""
-        extended_mock_player.weight_current = 90
-        extended_mock_player.weight_tolerance = 100
-        extended_mock_player.refresh_weight = MagicMock()
-        extended_mock_player.stack_gold = MagicMock()
-        extended_mock_player.stack_inv_items = MagicMock()
-
-        with patch("src.api.serializers.quest_rewards.RewardDistributionSerializer.serialize_item_reward", return_value={}):
-            with patch("src.items.Gold", return_value=MagicMock(weight=5)):
-                result = game_service.award_item(extended_mock_player, "Gold", "Gold", 1)
-                assert isinstance(result, dict)
-
-
-class TestAwardReputation:
-    """Tests for award_reputation() - increase NPC reputation."""
-
-    def test_award_reputation_returns_dict(self, game_service, extended_mock_player):
-        """Test that award_reputation returns a dictionary."""
-        with patch("src.api.serializers.quest_rewards.RewardDistributionSerializer.serialize_reputation_gain", return_value={"rep": 10}):
-            result = game_service.award_reputation(extended_mock_player, "merchant_1", "Merchant", 10)
-            assert isinstance(result, dict)
-
-    def test_award_reputation_success_flag(self, game_service, extended_mock_player):
-        """Test that award_reputation sets success flag."""
-        with patch("src.api.serializers.quest_rewards.RewardDistributionSerializer.serialize_reputation_gain", return_value={"rep": 10}):
-            result = game_service.award_reputation(extended_mock_player, "merchant_1", "Merchant", 10)
-            assert result["success"] is True
-
-    def test_award_reputation_includes_reputation_update(self, game_service, extended_mock_player):
-        """Test that award_reputation includes reputation_update in response."""
-        with patch("src.api.serializers.quest_rewards.RewardDistributionSerializer.serialize_reputation_gain", return_value={"rep": 10}):
-            result = game_service.award_reputation(extended_mock_player, "merchant_1", "Merchant", 10)
-            assert "reputation_update" in result
-
-    def test_award_reputation_initializes_reputation(self, game_service, extended_mock_player):
-        """Test that award_reputation initializes reputation dict if missing."""
-        extended_mock_player.reputation = {}
-        with patch("src.api.serializers.quest_rewards.RewardDistributionSerializer.serialize_reputation_gain", return_value={"rep": 10}):
-            result = game_service.award_reputation(extended_mock_player, "merchant_1", "Merchant", 10)
-            assert result["success"] is True
-            # After award_reputation, reputation should have the NPC
-            assert "merchant_1" in extended_mock_player.reputation
-
-    def test_award_reputation_stacks(self, game_service, extended_mock_player):
-        """Test that reputation gains stack."""
-        extended_mock_player.reputation = {"merchant_1": 10}
-        with patch("src.api.serializers.quest_rewards.RewardDistributionSerializer.serialize_reputation_gain", return_value={"rep": 20}):
-            game_service.award_reputation(extended_mock_player, "merchant_1", "Merchant", 10)
-            assert extended_mock_player.reputation["merchant_1"] == 20
+        result = game_service.get_player_skills(extended_mock_player)
+        names = [s["name"] for s in result["skill_tree"]["Basic"]]
+        assert "Dodge" in names
 
 
 # ============================================================================
@@ -729,182 +661,9 @@ class TestCollectCombatLoot:
             assert any(s["name"] == "Heavy Item" for s in result["skipped"])
 
 
-class TestGetPlayerProgression:
-    """Tests for get_player_progression() - retrieve progression stats."""
-
-    def test_get_player_progression_returns_dict(self, game_service, extended_mock_player):
-        """Test that get_player_progression returns a dictionary."""
-        with patch("src.api.serializers.quest_rewards.LevelingProgressSerializer.serialize_progression", return_value={}):
-            result = game_service.get_player_progression(extended_mock_player)
-            assert isinstance(result, dict)
-
-    def test_get_player_progression_success_flag(self, game_service, extended_mock_player):
-        """Test that get_player_progression sets success flag."""
-        with patch("src.api.serializers.quest_rewards.LevelingProgressSerializer.serialize_progression", return_value={}):
-            result = game_service.get_player_progression(extended_mock_player)
-            assert result["success"] is True
-
-    def test_get_player_progression_includes_progression(self, game_service, extended_mock_player):
-        """Test that get_player_progression includes progression key."""
-        with patch("src.api.serializers.quest_rewards.LevelingProgressSerializer.serialize_progression", return_value={"level": 5}):
-            result = game_service.get_player_progression(extended_mock_player)
-            assert "progression" in result
-
-
-# ============================================================================
-# REPUTATION SYSTEM TESTS
-# ============================================================================
-
-
-class TestGetPlayerReputation:
-    """Tests for get_player_reputation() - retrieve reputation state."""
-
-    def test_get_player_reputation_returns_dict(self, game_service, extended_mock_player):
-        """Test that get_player_reputation returns a dictionary."""
-        result = game_service.get_player_reputation(extended_mock_player)
-        assert isinstance(result, dict)
-
-    def test_get_player_reputation_has_npcs(self, game_service, extended_mock_player):
-        """Test that get_player_reputation returns reputation data."""
-        result = game_service.get_player_reputation(extended_mock_player)
-        assert "reputation" in result or "npcs" in result
-
-    def test_get_player_reputation_no_reputation(self, game_service, extended_mock_player):
-        """Test get_player_reputation handles missing reputation."""
-        extended_mock_player.reputation = {}
-        result = game_service.get_player_reputation(extended_mock_player)
-        assert isinstance(result, dict)
-        assert result.get("success") is True
-
-
-class TestUpdateReputation:
-    """Tests for update_reputation() - modify NPC reputation."""
-
-    def test_update_reputation_returns_dict(self, game_service, extended_mock_player):
-        """Test that update_reputation returns a dictionary."""
-        result = game_service.update_reputation(extended_mock_player, "merchant_1", 10)
-        assert isinstance(result, dict)
-
-    def test_update_reputation_success_flag(self, game_service, extended_mock_player):
-        """Test that update_reputation sets success flag."""
-        result = game_service.update_reputation(extended_mock_player, "merchant_1", 10)
-        assert result["success"] is True
-
-    def test_update_reputation_modifies_value(self, game_service, extended_mock_player):
-        """Test that update_reputation modifies the reputation value."""
-        initial_rep = extended_mock_player.reputation.get("merchant_1", 0)
-        game_service.update_reputation(extended_mock_player, "merchant_1", 10)
-        new_rep = extended_mock_player.reputation.get("merchant_1", 0)
-        assert new_rep > initial_rep
-
-    def test_update_reputation_initializes_if_missing(self, game_service, extended_mock_player):
-        """Test that update_reputation works with existing reputation."""
-        extended_mock_player.reputation = {}
-        result = game_service.update_reputation(extended_mock_player, "new_npc", 5)
-        assert result["success"] is True
-        assert "new_npc" in extended_mock_player.reputation
-
-
-class TestSetRelationshipFlag:
-    """Tests for set_relationship_flag() - set NPC relationship flags."""
-
-    def test_set_relationship_flag_returns_dict(self, game_service, extended_mock_player):
-        """Test that set_relationship_flag returns a dictionary."""
-        result = game_service.set_relationship_flag(extended_mock_player, "merchant_1", "flag_name", True)
-        assert isinstance(result, dict)
-
-    def test_set_relationship_flag_success_flag(self, game_service, extended_mock_player):
-        """Test that set_relationship_flag returns proper response."""
-        result = game_service.set_relationship_flag(extended_mock_player, "merchant_1", "flag_name", True)
-        assert isinstance(result, dict)
-        # May have success flag or other keys
-        assert len(result) > 0
-
-
-class TestGetNpcRelationship:
-    """Tests for get_npc_relationship() - retrieve NPC relationship state."""
-
-    def test_get_npc_relationship_returns_dict(self, game_service, extended_mock_player):
-        """Test that get_npc_relationship returns a dictionary."""
-        result = game_service.get_npc_relationship(extended_mock_player, "merchant_1")
-        assert isinstance(result, dict)
-
-    def test_get_npc_relationship_includes_reputation(self, game_service, extended_mock_player):
-        """Test that get_npc_relationship includes relationship data."""
-        result = game_service.get_npc_relationship(extended_mock_player, "merchant_1")
-        assert "relationship" in result or "reputation" in result
-
-
-# ============================================================================
-# QUEST SYSTEM TESTS
-# ============================================================================
-
-
-class TestUpdateQuestProgress:
-    """Tests for update_quest_progress() - update quest state."""
-
-    def test_update_quest_progress_returns_dict(self, game_service, extended_mock_player):
-        """Test that update_quest_progress returns a dictionary."""
-        result = game_service.update_quest_progress(extended_mock_player, "main_story_1", {"stage": 2})
-        assert isinstance(result, dict)
-
-    def test_update_quest_progress_success_flag(self, game_service, extended_mock_player):
-        """Test that update_quest_progress returns response."""
-        result = game_service.update_quest_progress(extended_mock_player, "main_story_1", {"stage": 2})
-        assert isinstance(result, dict)
-        # Response should have success flag or result data
-        assert "success" in result or "progress" in result
-
-
-class TestGetQuestStatus:
-    """Tests for get_quest_status() - retrieve quest state."""
-
-    def test_get_quest_status_returns_dict(self, game_service, extended_mock_player):
-        """Test that get_quest_status returns a dictionary."""
-        result = game_service.get_quest_status(extended_mock_player, "main_story_1")
-        assert isinstance(result, dict)
-
-    def test_get_quest_status_includes_progress(self, game_service, extended_mock_player):
-        """Test that get_quest_status returns quest data or error."""
-        result = game_service.get_quest_status(extended_mock_player, "main_story_1")
-        assert isinstance(result, dict)
-        # Should have progress, quest, status, or error keys
-        assert any(k in result for k in ["progress", "quest", "status", "error"])
-
-
-class TestGetActiveQuests:
-    """Tests for get_active_quests() - list active quests."""
-
-    def test_get_active_quests_returns_dict(self, game_service, extended_mock_player):
-        """Test that get_active_quests returns a dictionary."""
-        result = game_service.get_active_quests(extended_mock_player)
-        assert isinstance(result, dict)
-
-    def test_get_active_quests_includes_quests_list(self, game_service, extended_mock_player):
-        """Test that get_active_quests includes quests list."""
-        result = game_service.get_active_quests(extended_mock_player)
-        assert "quests" in result
-
-
 # ============================================================================
 # COMBAT UTILITY TESTS
 # ============================================================================
-
-
-class TestDefend:
-    """Tests for defend() - defend action during combat."""
-
-    def test_defend_returns_dict(self, game_service, extended_mock_player):
-        """Test that defend returns a dictionary."""
-        extended_mock_player.in_combat = True
-        result = game_service.defend(extended_mock_player)
-        assert isinstance(result, dict)
-
-    def test_defend_success_flag(self, game_service, extended_mock_player):
-        """Test that defend sets success flag."""
-        extended_mock_player.in_combat = True
-        result = game_service.defend(extended_mock_player)
-        assert result["success"] is True
 
 
 class TestFleeCombat:
@@ -921,28 +680,6 @@ class TestFleeCombat:
         extended_mock_player.in_combat = False
         result = game_service.flee_combat(extended_mock_player)
         assert result.get("success") is False or "error" in result
-
-
-class TestEndCombat:
-    """Tests for end_combat() - end the current combat."""
-
-    def test_end_combat_returns_dict(self, game_service, extended_mock_player):
-        """Test that end_combat returns a dictionary."""
-        extended_mock_player.in_combat = True
-        extended_mock_player.combat_list = []
-        with patch("src.api.serializers.combat.CombatStateSerializer.serialize_battle_summary", return_value={}):
-            result = game_service.end_combat(extended_mock_player, victory=True)
-            assert isinstance(result, dict)
-
-    def test_end_combat_clears_combat(self, game_service, extended_mock_player):
-        """Test that end_combat clears combat state."""
-        extended_mock_player.in_combat = True
-        extended_mock_player.combat_list = [MagicMock()]
-        with patch("src.api.serializers.combat.CombatStateSerializer.serialize_battle_summary", return_value={}):
-            result = game_service.end_combat(extended_mock_player, victory=True)
-            assert isinstance(result, dict)
-            assert extended_mock_player.in_combat is False
-            assert extended_mock_player.combat_list == []
 
 
 # ============================================================================

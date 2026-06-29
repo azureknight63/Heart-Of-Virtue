@@ -97,7 +97,7 @@ def _make_user(subtype="Spear", name="Jean", equip=True):
     user.combat_list = []
     user.combat_list_allies = []
     user.combat_position = None
-    user.is_alive = True
+    user.is_alive = lambda: True
     user.resistance = dict(RESISTANCE)
     if equip:
         user.eq_weapon = _make_weapon(subtype=subtype)
@@ -114,10 +114,11 @@ def _make_target(name="Enemy", hp=100, finesse=5, protection=0):
     tgt.finesse = finesse
     tgt.protection = protection
     tgt.states = []
-    tgt.is_alive = True
+    tgt.is_alive = lambda: True
     tgt.combat_position = None
     tgt.combat_proximity = {}
     tgt.resistance = dict(RESISTANCE)
+    tgt.status_resistance = {}
     tgt.friend = False
     return tgt
 
@@ -279,7 +280,7 @@ class TestLunge:
         move.target = tgt
         move.power = 35
         move.base_damage_type = "piercing"
-        tgt.is_alive = True
+        tgt.is_alive = lambda: True
 
         monkeypatch.setattr(random, "randint", lambda a, b: 0)
         monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
@@ -295,7 +296,7 @@ class TestLunge:
         """Execute should decrease proximity when no combat_position."""
         user = _make_user("Spear")
         tgt = _make_target(finesse=0, protection=0)
-        tgt.is_alive = True
+        tgt.is_alive = lambda: True
         user.combat_position = None
         tgt.combat_position = None
         user.combat_proximity = {tgt: 10}
@@ -465,7 +466,7 @@ class TestReap:
     def test_viable_false_no_living_enemies(self):
         user = _make_user("Scythe")
         tgt = _make_target()
-        tgt.is_alive = False
+        tgt.is_alive = lambda: False
         user.combat_proximity = {tgt: 5}
         move = Reap(user)
         assert move.viable() is False
@@ -516,7 +517,7 @@ class TestReap:
         user = _make_user("Scythe")
         user.eq_weapon.wpnrange = (0, 10)
         dead_tgt = _make_target(hp=0)
-        dead_tgt.is_alive = False
+        dead_tgt.is_alive = lambda: False
         user.combat_proximity = {dead_tgt: 5}
         move = Reap(user)
         move.power = 20
@@ -570,7 +571,7 @@ class TestReapersMark:
     def test_execute_sets_mark_on_target(self):
         user = _make_user("Scythe")
         tgt = _make_target()
-        tgt.is_alive = True
+        tgt.is_alive = lambda: True
         move = ReapersMark(user)
         move.target = tgt
         move.fatigue_cost = 10
@@ -586,7 +587,7 @@ class TestReapersMark:
 
         class SimpleTarget:
             name = "Ghost"
-            is_alive = False
+            is_alive = staticmethod(lambda: False)
             hp = 0
             maxhp = 100
             states = []
@@ -728,7 +729,7 @@ class TestChipAway:
         user.eq_weapon.subtype = "Pick"
         user.combat_exp["Pick"] = 0
         tgt = _make_target(finesse=0, protection=0)
-        tgt.is_alive = True
+        tgt.is_alive = lambda: True
         move = ChipAway(user)
         move.target = tgt
         move.power = 20
@@ -756,7 +757,7 @@ class TestChipAway:
         user.eq_weapon.subtype = "Pick"
         user.combat_exp["Pick"] = 0
         tgt = _make_target(hp=1, finesse=0, protection=0)
-        tgt.is_alive = True
+        tgt.is_alive = lambda: True
         move = ChipAway(user)
         move.target = tgt
         move.power = 50
@@ -764,7 +765,7 @@ class TestChipAway:
 
         def kill_on_hit(*a, **kw):
             tgt.hp = 0
-            tgt.is_alive = False
+            tgt.is_alive = lambda: False
 
         monkeypatch.setattr(random, "randint", lambda a, b: 0)
         monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
@@ -780,7 +781,7 @@ class TestChipAway:
         user.eq_weapon.subtype = "Pick"
         user.combat_exp["Pick"] = 0
         tgt = _make_target()
-        tgt.is_alive = True
+        tgt.is_alive = lambda: True
         user.combat_proximity = {tgt: 3}
         user.fatigue = 100
         move = ChipAway(user)
@@ -815,7 +816,7 @@ class TestExploitWeakness:
         user.eq_weapon.subtype = "Pick"
         user.combat_exp["Pick"] = 0
         tgt = _make_target(finesse=0, protection=0)
-        tgt.is_alive = True
+        tgt.is_alive = lambda: True
         tgt.states = []
         move = ExploitWeakness(user)
         move.target = tgt
@@ -839,7 +840,7 @@ class TestExploitWeakness:
         user.eq_weapon.subtype = "Pick"
         user.combat_exp["Pick"] = 0
         tgt = _make_target(finesse=0, protection=0)
-        tgt.is_alive = True
+        tgt.is_alive = lambda: True
         existing = states.Disoriented(tgt)
         tgt.states = [existing]
         move = ExploitWeakness(user)
@@ -876,7 +877,7 @@ class TestStupefy:
         user.eq_weapon.subtype = "Pick"
         user.combat_exp["Pick"] = 0
         tgt = _make_target(finesse=0, protection=0)
-        tgt.is_alive = True
+        tgt.is_alive = lambda: True
         tgt.states = []
         move = Stupefy(user)
         move.target = tgt
@@ -900,7 +901,7 @@ class TestStupefy:
         user.eq_weapon.subtype = "Pick"
         user.combat_exp["Pick"] = 0
         tgt = _make_target(finesse=0, protection=0)
-        tgt.is_alive = True
+        tgt.is_alive = lambda: True
         old_dis = states.Disoriented(tgt)
         tgt.states = [old_dis]
         move = Stupefy(user)

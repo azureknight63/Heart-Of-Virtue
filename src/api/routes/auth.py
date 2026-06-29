@@ -461,6 +461,18 @@ async def settings():
                 return jsonify({"success": False, "error": "Missing timezone"}), 400
 
             timezone = data["timezone"]
+
+            # Validate against the IANA tz database before persisting — the
+            # stored value later drives save-list time formatting.
+            from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+            if not isinstance(timezone, str):
+                return jsonify({"success": False, "error": "Invalid timezone"}), 400
+            try:
+                ZoneInfo(timezone)
+            except (ZoneInfoNotFoundError, ValueError):
+                return jsonify({"success": False, "error": "Invalid timezone"}), 400
+
             success = await auth_service.update_user_timezone(user_id, timezone)
 
             if success:

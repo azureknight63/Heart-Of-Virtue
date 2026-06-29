@@ -87,6 +87,7 @@ class State:  # master class for all states
                 self.steps_left -= 1
                 if self.steps_left <= 0:
                     target.states.remove(self)
+                    functions.refresh_stat_bonuses(target)
                     self.on_removal(target)
 
 
@@ -274,25 +275,18 @@ class Disoriented(State):
             persistent=False,
             description="Finesse -30%, Protection -25%. Defensive positioning is compromised.",
         )
-        self.sub_finesse = int(target.finesse * 0.3)  # Reduce finesse by 30%
-        self.sub_protection = int(target.protection * 0.25)  # Reduce protection by 25%
+        self.add_fin = -int(target.finesse * 0.3)  # Reduce finesse by 30%
+        self.add_protection = -int(target.protection * 0.25)  # Reduce protection by 25%
 
     def on_application(self, target):
         cprint(
             "{} is disoriented and struggling to maintain balance!".format(target.name),
             "yellow",
         )
-        # Apply stat reductions
-        target.finesse = max(0, target.finesse - self.sub_finesse)
-        target.protection = max(0, target.protection - self.sub_protection)
         functions.refresh_stat_bonuses(target)
 
     def on_removal(self, target):
         cprint("{} regains their bearings!".format(target.name), "green")
-        # Undo the reductions applied at on_application
-        target.finesse += self.sub_finesse
-        target.protection += self.sub_protection
-        functions.refresh_stat_bonuses(target)
 
 
 class Hawkeye(State):
@@ -320,22 +314,20 @@ class Slimed(State):
             compounding=True,
             combat=True,
             world=True,
-            statustype="poison",
+            statustype="slimed",
             persistent=True,
             description="Finesse -20%, Protection -15%. Deals periodic acid damage. Worsens if reapplied.",
         )
         self.tick = 0
         self.execute_on = 6
         self.add_fin = -int(target.finesse * 0.20)
-        self.sub_protection = int(target.protection * 0.15)
+        self.add_protection = -int(target.protection * 0.15)
 
     def on_application(self, target):
-        target.protection = max(0, target.protection - self.sub_protection)
         functions.refresh_stat_bonuses(target)
         cprint("{} is coated in corrosive slime!".format(target.name), "cyan")
 
     def on_removal(self, target):
-        target.protection += self.sub_protection
         cprint("The corrosive slime finally sloughs away from {}.".format(target.name), "white")
 
     def effect(self, target):
@@ -351,6 +343,7 @@ class Slimed(State):
     def compound(self, target):
         cprint("The slime coating on {} thickens!".format(target.name), "cyan")
         self.add_fin -= int(target.finesse * 0.05)
+        self.add_protection -= int(target.protection * 0.05)
         self.beats_max = int(self.beats_max * 1.1)
         self.beats_left = min(self.beats_max, self.beats_left + int(self.beats_max / 4))
         self.steps_max = int(self.steps_max * 1.1)
@@ -434,10 +427,9 @@ class Petrified(State):
         self.execute_on = 6
         self.add_fin = -int(target.finesse * 0.20)
         self.add_speed = -int(target.speed * 0.35)
-        self.prot_bonus = int(target.protection * 0.25)
+        self.add_protection = int(target.protection * 0.25)
 
     def on_application(self, target):
-        target.protection += self.prot_bonus
         functions.refresh_stat_bonuses(target)
         cprint(
             "Mineral sediment from the pools settles into {}'s joints.".format(target.name),
@@ -445,7 +437,6 @@ class Petrified(State):
         )
 
     def on_removal(self, target):
-        target.protection = max(0, target.protection - self.prot_bonus)
         cprint(
             "The mineral crust cracks and falls away from {}.".format(target.name),
             "white",
@@ -471,6 +462,7 @@ class Petrified(State):
         )
         self.add_fin -= int(target.finesse * 0.10)
         self.add_speed -= int(target.speed * 0.10)
+        self.add_protection += int(target.protection * 0.10)
         self.beats_max = int(self.beats_max * 1.1)
         self.beats_left = min(self.beats_max, self.beats_left + int(self.beats_max / 4))
         self.steps_max = int(self.steps_max * 1.1)
@@ -636,7 +628,11 @@ class WarCryStunned(State):
         super().__init__(
             name="War Cry Stunned",
             target=target,
-            beats_max=1,
+            # beats_max=2 gives 1 effective skip of move selection: cycle_states()
+            # decrements and removes the state in the same call that runs just
+            # before _process_npc checks `_stunned` for this beat, so beats_max=1
+            # would expire before the check ever sees it.
+            beats_max=2,
             compounding=False,
             combat=True,
             world=False,
@@ -645,6 +641,28 @@ class WarCryStunned(State):
             description="Reeling from a war cry — unable to act for one beat.",
         )
         self._stunned = True
+
+
+class Staggered(State):
+    """Applied by Heavy Handed passive. Target's next moves have +5 prep beats."""
+
+    def __init__(self, target):
+        super().__init__(
+            name="Staggered",
+            target=target,
+            beats_max=3,
+            compounding=False,
+            combat=True,
+            world=False,
+            statustype="stun",
+            persistent=False,
+            description="Reeling from a heavy blow — next moves are slower.",
+        )
+        self.prep_penalty = 5
+        self.penalty_consumed = False
+
+    def on_application(self, target):
+        cprint(f"{target.name} reels from the heavy blow!", "yellow")
 
 
 class SecretPlansState(State):

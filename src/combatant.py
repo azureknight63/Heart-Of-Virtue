@@ -34,6 +34,7 @@ _DEFAULT_STATUS_RESISTANCE = {
     "generic": 1.0,  # Default status type for all states
     "stun": 1.0,  # Unable to move; typically short duration
     "poison": 1.0,  # Drains HP every combat turn/game tick; persists
+    "slimed": 1.0,  # Corrosive slime coating; drains HP and lowers finesse/protection; persists
     "enflamed": 1.0,  # Fire damage over time (matches State.statustype="enflamed")
     "sloth": 1.0,  # Drains Fatigue every combat turn
     "apathy": 1.0,  # Drains HEAT every combat turn
@@ -72,11 +73,28 @@ class Combatant:
     def is_alive(self):
         return self.hp > 0
 
+    def check_revive(self):
+        """Consult revive-capable states (e.g. PhoenixRevive) before death is
+        finalized. Returns True if a state revived this combatant, in which
+        case the caller must not proceed with death handling."""
+        for state in self.states[:]:
+            try_revive = getattr(state, "try_revive", None)
+            if try_revive and try_revive(self):
+                return True
+        return False
+
     def cycle_states(self):
         """Process all active states.  Iterates over a snapshot so states that
         remove themselves during process() do not cause skipped entries."""
         for state in self.states[:]:
             state.process(self)
+
+    def is_stunned(self):
+        """True if any active state blocks move selection for this beat
+        (e.g. WarCryStunned). Checked by combat orchestration, not by
+        select_move() itself, so it applies even to NPC subclasses that
+        override select_move() entirely."""
+        return any(getattr(state, "_stunned", False) for state in self.states)
 
     def get_equipped_items(self):
         """Return all items in inventory that are currently equipped."""

@@ -114,13 +114,4 @@ class InventoryActionsScenario(Scenario):
         if bug:
             bugs.append(bug)
 
-        # POST /api/equipment/unequip — bad slot (equipment blueprint) ----
-        body = {"slot": _BAD_SLOT}
-        resp = client.post("/api/equipment/unequip", json=body)
-        bug = self._check_no_crash(resp, "/api/equipment/unequip", "POST",
-                                   f"Unequip (equipment route) unknown slot '{_BAD_SLOT}'",
-                                   request_body=body)
-        if bug:
-            bugs.append(bug)
-
         return bugs

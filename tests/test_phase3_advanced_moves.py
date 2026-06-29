@@ -41,7 +41,7 @@ class TestTurnMove:
         p.fatigue = 100
         p.combat_position = CombatPosition(x=10, y=10, facing=Direction.N)
         p.combat_proximity = {}
-        p.is_alive = True
+        p.is_alive = lambda: True
         return p
 
     @pytest.fixture
@@ -135,7 +135,7 @@ class TestWhirlAttackMove:
         p.strength = 10
         p.finesse = 5
         p.combat_proximity = {}
-        p.is_alive = True
+        p.is_alive = lambda: True
         return p
 
     @pytest.fixture
@@ -256,7 +256,7 @@ class TestFeintAndPivotMove:
         p.strength = 12
         p.finesse = 4
         p.combat_proximity = {}
-        p.is_alive = True
+        p.is_alive = lambda: True
         return p
 
     @pytest.fixture
@@ -310,7 +310,7 @@ class TestFeintAndPivotMove:
 
     def test_feint_not_viable_with_dead_target(self, player, target_enemy):
         """Test FeintAndPivot not viable if target is dead"""
-        target_enemy.is_alive = False
+        target_enemy.is_alive = lambda: False
         feint = FeintAndPivot(player)
         feint.target = target_enemy
         assert not feint.viable()
@@ -375,7 +375,7 @@ class TestVertigoSpinMove:
         p.strength = 14
         p.finesse = 3
         p.combat_proximity = {}
-        p.is_alive = True
+        p.is_alive = lambda: True
         return p
 
     @pytest.fixture
@@ -496,7 +496,7 @@ class TestPhase3MovesIntegration:
         player.protection = 3
         player.speed = 8
         player.combat_proximity = {}
-        player.is_alive = True
+        player.is_alive = lambda: True
         player.states = []
 
         enemies = []

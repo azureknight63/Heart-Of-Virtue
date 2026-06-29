@@ -16,10 +16,6 @@ class VerdetteRoom(MapTile):  # room Jean is dumped in after the encounter with 
         )
         self.symbol = "#"
 
-    def modify_player(self, the_player):
-        # Room has no action on player
-        pass
-
 
 class VerdetteRoom2(MapTile):  # room Jean is dumped in after the encounter with Gorran
     def __init__(self, universe, current_map, x, y):
@@ -35,10 +31,6 @@ class VerdetteRoom2(MapTile):  # room Jean is dumped in after the encounter with
         """,
         )
         self.symbol = "#"
-
-    def modify_player(self, the_player):
-        # Room has no action on player
-        pass
 
 
 class VerdetteRoom3(MapTile):  # room Jean is dumped in after the encounter with Gorran
@@ -57,10 +49,6 @@ class VerdetteRoom3(MapTile):  # room Jean is dumped in after the encounter with
         )
         self.symbol = "#"
 
-    def modify_player(self, the_player):
-        # Room has no action on player
-        pass
-
 
 class VerdetteRoom4(MapTile):  # room Jean is dumped in after the encounter with Gorran
     def __init__(self, universe, current_map, x, y):
@@ -78,10 +66,6 @@ class VerdetteRoom4(MapTile):  # room Jean is dumped in after the encounter with
         )
         self.symbol = "#"
 
-    def modify_player(self, the_player):
-        # Room has no action on player
-        pass
-
 
 class VerdetteRoom5(MapTile):  # room Jean is dumped in after the encounter with Gorran
     def __init__(self, universe, current_map, x, y):
@@ -98,10 +82,6 @@ class VerdetteRoom5(MapTile):  # room Jean is dumped in after the encounter with
         )
         self.symbol = "#"
 
-    def modify_player(self, the_player):
-        # Room has no action on player
-        pass
-
 
 class VerdetteSpring(MapTile):  # room Jean is dumped in after the encounter with Gorran
     def __init__(self, universe, current_map, x, y):
@@ -117,7 +97,3 @@ class VerdetteSpring(MapTile):  # room Jean is dumped in after the encounter wit
         """,
         )
         self.symbol = "~"
-
-    def modify_player(self, the_player):
-        # Room has no action on player
-        pass

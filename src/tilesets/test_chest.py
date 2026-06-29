@@ -26,7 +26,3 @@ class ChestRoom(MapTile):
         """,
         )
         self.symbol = "#"
-
-    def modify_player(self, the_player):
-        # Room has no action on player
-        pass

@@ -4,47 +4,11 @@ import logging
 
 from flask import Blueprint, request, jsonify
 
+from src.api.middleware.auth import get_session_and_player
+from src.api.services.validators import validate_direction
+
 world_bp = Blueprint("world", __name__)
 _log = logging.getLogger(__name__)
-
-
-def get_session_and_player(request):
-    """Extract session and player from request.
-
-    Returns:
-        Tuple of (session_manager, session, player, None) on success
-        or (None, None, None, (jsonify_response, status_code)) on error
-    """
-    from flask import current_app
-
-    # Extract session ID from Authorization header
-    auth_header = request.headers.get("Authorization", "")
-    if not auth_header.startswith("Bearer "):
-        return (
-            None,
-            None,
-            None,
-            (jsonify({"error": "Missing authorization"}), 401),
-        )
-
-    session_id = auth_header[7:]
-    session_manager = current_app.session_manager
-
-    # Get session and player
-    session = session_manager.get_session(session_id)
-    if not session:
-        return (
-            None,
-            None,
-            None,
-            (jsonify({"error": "Invalid or expired session"}), 401),
-        )
-
-    player = session_manager.get_player(session_id)
-    if not player:
-        return None, None, None, (jsonify({"error": "Player not found"}), 404)
-
-    return session_manager, session, player, None
 
 
 @world_bp.route("/world", methods=["GET"])
@@ -70,7 +34,7 @@ def get_current_room():
         }
     """
     try:
-        session_manager, session, player, error = get_session_and_player(request)
+        session_manager, session, player, error = get_session_and_player()
         if error:
             return error[0], error[1]
 
@@ -132,7 +96,7 @@ def move_player():
         }
     """
     try:
-        session_manager, session, player, error = get_session_and_player(request)
+        session_manager, session, player, error = get_session_and_player()
         if error:
             return error[0], error[1]
 
@@ -149,6 +113,10 @@ def move_player():
             )
 
         direction = data["direction"].lower()
+
+        is_valid, direction_error = validate_direction(direction)
+        if not is_valid:
+            return jsonify({"success": False, "error": direction_error}), 400
 
         from flask import current_app
 
@@ -208,7 +176,7 @@ def submit_event_input():
         }
     """
     try:
-        session_manager, session, player, error = get_session_and_player(request)
+        session_manager, session, player, error = get_session_and_player()
         if error:
             return error[0], error[1]
 
@@ -264,7 +232,7 @@ def submit_event_input():
             return jsonify(result), 400
 
         # Detect player death caused by event processing
-        if getattr(player, "hp", 1) <= 0:
+        if game_service.is_player_dead(player):
             result["is_game_over"] = True
             result["is_death_scene"] = True
 
@@ -308,7 +276,7 @@ def get_tile():
         }
     """
     try:
-        session_manager, session, player, error = get_session_and_player(request)
+        session_manager, session, player, error = get_session_and_player()
         if error:
             return error[0], error[1]
 
@@ -396,7 +364,7 @@ def get_explored_tiles():
         }
     """
     try:
-        session_manager, session, player, error = get_session_and_player(request)
+        session_manager, session, player, error = get_session_and_player()
         if error:
             return error[0], error[1]
 
@@ -454,7 +422,7 @@ def get_tiles_batch():
         }
     """
     try:
-        session_manager, session, player, error = get_session_and_player(request)
+        session_manager, session, player, error = get_session_and_player()
         if error:
             return error[0], error[1]
 
@@ -560,7 +528,7 @@ def get_available_commands():
         }
     """
     try:
-        session_manager, session, player, error = get_session_and_player(request)
+        session_manager, session, player, error = get_session_and_player()
         if error:
             return error[0], error[1]
 
@@ -619,7 +587,7 @@ def interact_with_target():
         }
     """
     try:
-        session_manager, session, player, error = get_session_and_player(request)
+        session_manager, session, player, error = get_session_and_player()
         if error:
             return error[0], error[1]
 
@@ -696,7 +664,7 @@ def trigger_room_events():
         }
     """
     try:
-        session_manager, session, player, error = get_session_and_player(request)
+        session_manager, session, player, error = get_session_and_player()
         if error:
             return error[0], error[1]
 
@@ -716,7 +684,7 @@ def trigger_room_events():
             )
 
         # Get current tile
-        tile = player.universe.get_tile(player.location_x, player.location_y)
+        tile = game_service.get_current_tile_object(player)
         if not tile:
             return (
                 jsonify({"success": False, "error": "Current tile not found"}),
@@ -764,7 +732,7 @@ def get_pending_events():
         }
     """
     try:
-        session_manager, session, player, error = get_session_and_player(request)
+        session_manager, session, player, error = get_session_and_player()
         if error:
             return error[0], error[1]
 
@@ -797,7 +765,7 @@ def search_room():
         }
     """
     try:
-        session_manager, session, player, error = get_session_and_player(request)
+        session_manager, session, player, error = get_session_and_player()
         if error:
             return error[0], error[1]
 

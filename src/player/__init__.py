@@ -117,7 +117,7 @@ class Player(
         # Default status_resistance_base is 1.0 (immune) for all types.
         # Jean is a mortal crusader — he is vulnerable to these status effects.
         # Each value of 0.0 means fully vulnerable; items/levels can raise it.
-        for _stype in ("poison", "stun", "stone", "apathy", "enraged", "disoriented"):
+        for _stype in ("poison", "slimed", "stun", "stone", "apathy", "enraged", "disoriented"):
             self.status_resistance_base[_stype] = 0.0
             self.status_resistance[_stype] = 0.0
         self.weight_tolerance = 20.00
@@ -164,6 +164,8 @@ class Player(
             moves.Advance(self),
             moves.Withdraw(self),
             moves.Attack(self),
+            moves.ShootBow(self),
+            moves.ShootCrossbow(self),
             moves.Dodge(self),
             moves.CrusaderOath(self),
         ]
@@ -324,6 +326,39 @@ maintenant et à l'heure de notre mort. Amen.""",
                 break
         if not player_has_state:
             self.states.append(state)
+
+    def apply_equip_states(self, item):
+        """Merge an item's equip_states onto this player, skipping any state
+        whose name is already present. Used by on-equip and by the recharge
+        path (victory/session-load) so a still-charged state (e.g. PhoenixRevive
+        that hasn't triggered yet) is never duplicated."""
+        equip_states = getattr(item, "equip_states", None) or []
+        existing_names = {s.name for s in self.states}
+        for state in equip_states:
+            if state.name in existing_names:
+                continue
+            if hasattr(state, "target"):
+                state.target = self
+            self.states.append(state)
+            existing_names.add(state.name)
+
+    def remove_equip_states(self, item):
+        """Remove states granted by this item's equip_states, then reapply any
+        of those same states still granted by other currently-equipped items."""
+        names_to_remove = {s.name for s in getattr(item, "equip_states", None) or []}
+        if not names_to_remove:
+            return
+        self.states = [s for s in self.states if s.name not in names_to_remove]
+        for other in self.get_equipped_items():
+            if other is not item:
+                self.apply_equip_states(other)
+
+    def recharge_equip_states(self):
+        """Reapply equip_states from all currently-equipped items (e.g. after
+        combat victory or on session load) so single-use effects like
+        PhoenixRevive are restored. States already present are left untouched."""
+        for item in self.get_equipped_items():
+            self.apply_equip_states(item)
 
     def __getstate__(self):
         """Return picklable state, stripping API-layer attributes that are not serializable.

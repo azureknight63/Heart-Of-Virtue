@@ -16,44 +16,9 @@ URL prefix: /api/shop  (registered in app.py)
 from flask import Blueprint, current_app, jsonify, request
 
 from src.api.services.validators import validate_required_fields
+from src.api.middleware.auth import get_session_and_player
 
 shop_bp = Blueprint("shop", __name__)
-
-
-def get_session_and_player():
-    """Extract and validate session from Authorization header.
-
-    Returns:
-        (session, player, error_response, status_code)
-        On failure, session and player are None; error_response and status_code
-        are set. On success, error_response and status_code are None.
-    """
-    auth_header = request.headers.get("Authorization", "")
-    if not auth_header.startswith("Bearer "):
-        return (
-            None,
-            None,
-            jsonify({"success": False, "error": "Missing authorization"}),
-            401,
-        )
-
-    session_id = auth_header[7:]
-    session_manager = current_app.session_manager
-    session = session_manager.get_session(session_id)
-
-    if not session:
-        return (
-            None,
-            None,
-            jsonify({"success": False, "error": "Invalid or expired session"}),
-            401,
-        )
-
-    player = session_manager.get_player(session_id)
-    if not player:
-        return None, None, jsonify({"success": False, "error": "Player not found"}), 404
-
-    return session, player, None, None
 
 
 @shop_bp.route("/state", methods=["GET"])
@@ -77,9 +42,9 @@ def get_shop_state():
             "sell_inventory": [...]
         }
     """
-    session, player, error, status = get_session_and_player()
+    _, session, player, error = get_session_and_player()
     if error:
-        return error, status
+        return error
 
     npc_id = request.args.get("npc_id", "")
     if not npc_id:
@@ -112,9 +77,9 @@ def buy_item():
             "sell_inventory": [...]
         }
     """
-    session, player, error, status = get_session_and_player()
+    _, session, player, error = get_session_and_player()
     if error:
-        return error, status
+        return error
 
     try:
         data = request.get_json() or {}
@@ -160,9 +125,9 @@ def sell_item():
             "sell_inventory": [...]
         }
     """
-    session, player, error, status = get_session_and_player()
+    _, session, player, error = get_session_and_player()
     if error:
-        return error, status
+        return error
 
     try:
         data = request.get_json() or {}
@@ -210,9 +175,9 @@ def buyback_item():
             "sell_inventory": [...]
         }
     """
-    session, player, error, status = get_session_and_player()
+    _, session, player, error = get_session_and_player()
     if error:
-        return error, status
+        return error
 
     try:
         data = request.get_json() or {}

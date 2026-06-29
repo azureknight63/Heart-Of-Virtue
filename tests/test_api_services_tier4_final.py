@@ -185,64 +185,9 @@ class TestValidators:
         result = validate_direction("invalid_dir")
         assert isinstance(result, tuple)
 
-    def test_validate_coordinates(self):
-        """Test validate_coordinates"""
-        result = validate_coordinates(5, 5)
-        assert isinstance(result, tuple)
-
-    def test_validate_coordinates_negative(self):
-        """Test validate_coordinates with negative values"""
-        result = validate_coordinates(-1, -1)
-        assert isinstance(result, tuple)
-
-    def test_validate_item_slot(self):
-        """Test validate_item_slot"""
-        result = validate_item_slot("right_hand")
-        assert isinstance(result, tuple)
-
-    def test_validate_combat_action(self):
-        """Test validate_combat_action"""
-        result = validate_combat_action("attack")
-        assert isinstance(result, tuple)
-
-    def test_validate_save_name(self):
-        """Test validate_save_name"""
-        result = validate_save_name("my_save_1")
-        assert isinstance(result, tuple)
-
-    def test_validate_string_field(self):
-        """Test validate_string_field"""
-        result = validate_string_field("test_string", "test", min_length=1, max_length=100)
-        assert isinstance(result, tuple)
-
-    def test_validate_positive_integer(self):
-        """Test validate_positive_integer"""
-        result = validate_positive_integer(42, "count")
-        assert isinstance(result, tuple)
-
-    def test_validate_range(self):
-        """Test validate_range"""
-        result = validate_range(50, 0, 100, "value")
-        assert isinstance(result, tuple)
-
     def test_validate_item_index(self):
         """Test validate_item_index"""
         result = validate_item_index(0, 5)
-        assert isinstance(result, tuple)
-
-    def test_validate_equipment_slot(self):
-        """Test validate_equipment_slot"""
-        result = validate_equipment_slot("head")
-        assert isinstance(result, tuple)
-
-    def test_validate_weight_limit(self):
-        """Test validate_weight_limit"""
-        result = validate_weight_limit(50, 10, 100)
-        assert isinstance(result, tuple)
-
-    def test_validate_currency_amount(self):
-        """Test validate_currency_amount"""
-        result = validate_currency_amount(100, 500)
         assert isinstance(result, tuple)
 
     def test_validate_npc_id(self):
@@ -259,49 +204,9 @@ class TestValidatorsEdgeCases:
         result = validate_direction("north@#$")
         assert isinstance(result, tuple)
 
-    def test_validate_coordinates_with_strings(self):
-        """Test coordinates with non-numeric input"""
-        result = validate_coordinates("abc", "def")
-        assert isinstance(result, tuple)
-
-    def test_validate_empty_string_fields(self):
-        """Test string validators with empty strings"""
-        result = validate_string_field("", "field")
-        assert isinstance(result, tuple)
-
-    def test_validate_negative_integers(self):
-        """Test positive integer validator with negative"""
-        result = validate_positive_integer(-5, "count")
-        assert isinstance(result, tuple)
-
-    def test_validate_range_boundary_min(self):
-        """Test range validator at minimum boundary"""
-        result = validate_range(0, 0, 100, "value")
-        assert isinstance(result, tuple)
-
-    def test_validate_range_boundary_max(self):
-        """Test range validator at maximum boundary"""
-        result = validate_range(100, 0, 100, "value")
-        assert isinstance(result, tuple)
-
-    def test_validate_range_exceeds_max(self):
-        """Test range validator exceeding maximum"""
-        result = validate_range(150, 0, 100, "value")
-        assert isinstance(result, tuple)
-
     def test_validate_item_index_out_of_bounds(self):
         """Test item index exceeding max"""
         result = validate_item_index(10, 5)
-        assert isinstance(result, tuple)
-
-    def test_validate_zero_weight(self):
-        """Test weight limit with zero"""
-        result = validate_weight_limit(0, 10, 100)
-        assert isinstance(result, tuple)
-
-    def test_validate_negative_currency(self):
-        """Test currency with negative amount"""
-        result = validate_currency_amount(-10, 100)
         assert isinstance(result, tuple)
 
     def test_validate_required_fields_missing(self):
@@ -344,12 +249,6 @@ class TestServiceIntegration:
         is_valid, error_msg = result
         if not is_valid:
             assert error_msg is not None
-
-    def test_coordinates_validation_integration(self):
-        """Test coordinates used in position checking"""
-        result = validate_coordinates(10, 20)
-        assert isinstance(result, tuple)
-        is_valid, error_msg = result
 
 
 if __name__ == "__main__":

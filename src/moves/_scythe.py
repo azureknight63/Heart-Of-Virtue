@@ -58,7 +58,7 @@ class Reap(Move):
             return False
         if not hasattr(self.user, "combat_proximity"):
             return False
-        return any(e.is_alive for e in self.user.combat_proximity)
+        return any(e.is_alive() for e in self.user.combat_proximity)
 
     def evaluate(self):
         try:
@@ -81,7 +81,7 @@ class Reap(Move):
         arc_range = wpn_range[1]
 
         for enemy in list(self.user.combat_proximity.keys()):
-            if not enemy.is_alive:
+            if not enemy.is_alive():
                 continue
 
             # Frontal arc check when coordinates available
@@ -113,12 +113,27 @@ class Reap(Move):
                     continue
 
             base_dmg = max(1, int(self.power - enemy.protection))
+            # GrimPersistence passive: +25% damage vs targets below 35% HP
+            if (
+                any(
+                    getattr(m, "name", "") == "Grim Persistence"
+                    for m in getattr(user, "known_moves", [])
+                )
+                and enemy.hp < (enemy.maxhp * 0.35)
+            ):
+                base_dmg = int(base_dmg * 1.25)
+            # ReapersMark: marked target takes +25% damage; consumed on a landed hit
+            marked = getattr(enemy, "_reapers_mark", False) is True
+            if marked:
+                base_dmg = int(base_dmg * 1.25)
             hit_chance = max(5, int(85 - enemy.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3)))
             if random.randint(0, 100) <= hit_chance:
                 if functions.check_parry(enemy):
                     cprint(f"{enemy.name} parried the sweep!", "yellow")
                 else:
                     enemy.hp = max(0, enemy.hp - base_dmg)
+                    if marked:
+                        enemy._reapers_mark = False
                     cprint(
                         f"{enemy.name} takes {base_dmg} damage from the sweep!", "red"
                     )
@@ -172,13 +187,13 @@ class ReapersMark(Move):
             return False
         if not hasattr(self.user, "combat_proximity"):
             return False
-        return any(e.is_alive for e in self.user.combat_proximity)
+        return any(e.is_alive() for e in self.user.combat_proximity)
 
     def evaluate(self):
         pass
 
     def execute(self, user):
-        if self.target and self.target.is_alive:
+        if self.target and self.target.is_alive():
             self.target._reapers_mark = True
             cprint(
                 f"{user.name} marks {self.target.name} — death follows close behind.",
@@ -286,6 +301,22 @@ class DeathsHarvest(Move):
         if hit_chance >= roll and hit_chance - roll < 10:
             damage /= 2
             glance = True
+
+        # GrimPersistence passive: +25% damage vs targets below 35% HP
+        if (
+            any(
+                getattr(m, "name", "") == "Grim Persistence"
+                for m in getattr(player, "known_moves", [])
+            )
+            and self.target.hp < (self.target.maxhp * 0.35)
+        ):
+            damage *= 1.25
+
+        # ReapersMark: marked target takes +25% damage; consumed on a landed hit
+        marked = getattr(self.target, "_reapers_mark", False) is True
+        if marked:
+            damage *= 1.25
+
         damage = int(damage)
 
         if hasattr(player, "eq_weapon") and player.eq_weapon:
@@ -298,6 +329,8 @@ class DeathsHarvest(Move):
                 self.parry()
             else:
                 self.hit(damage, glance)
+                if marked:
+                    self.target._reapers_mark = False
                 heal = max(1, int(damage * 0.30)) if damage > 0 else 0
                 if heal > 0:
                     player.hp = min(player.maxhp, player.hp + heal)

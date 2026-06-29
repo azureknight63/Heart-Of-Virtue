@@ -99,6 +99,11 @@ def _make_crossbow_user(endurance=10, strength=5, finesse=10, intelligence=5):
     wpn.str_mod = 0.3
     wpn.fin_mod = 0.5
     wpn.wpnrange = (6, 40)
+    # Mirrors the real Crossbow item (src/items.py) — ShootCrossbow,
+    # BroadheadBolt, AimedShot, and PinningBolt compute their long range
+    # from these, not wpnrange.
+    wpn.range_base = 15
+    wpn.range_decay = 0.06
     user.eq_weapon = wpn
     user.combat_proximity = {}
     return user
@@ -110,7 +115,7 @@ def _make_enemy(finesse=8, protection=2, resistance=None):
     enemy.finesse = finesse
     enemy.protection = protection
     enemy.states = []
-    enemy.is_alive = True
+    enemy.is_alive = lambda: True
     if resistance is None:
         enemy.resistance = {"piercing": 1.0, "blunt": 1.0, "slashing": 1.0}
     else:
@@ -689,11 +694,20 @@ class TestShootCrossbowEvaluate:
         assert move.power == 0
         assert move.fatigue_cost == 10
 
-    def test_evaluate_uses_weapon_range(self):
+    def test_evaluate_does_not_use_wpnrange(self):
+        """mvrange stays static (melee wpnrange is Attack's territory); the
+        long range comes from range_base/range_decay via
+        get_effective_range_max."""
         user = _make_crossbow_user()
         user.eq_weapon.wpnrange = (8, 60)
         move = ShootCrossbow(user)
-        assert move.mvrange == (8, 60)
+        assert move.mvrange == (6, 40)
+
+    def test_get_effective_range_max_uses_range_base_and_decay(self):
+        user = _make_crossbow_user()  # range_base=15, range_decay=0.06
+        move = ShootCrossbow(user)
+        expected = 15 + (100 / 0.06)
+        assert move.get_effective_range_max(user) == pytest.approx(expected)
 
 
 class TestShootCrossbowExecute:
@@ -845,14 +859,21 @@ class TestBroadheadBolt:
         assert move.viable() is True
 
     def test_execute_calls_standard_execute(self):
+        """BroadheadBolt executes with distance decay applied (no longer delegates to standard_execute_attack)."""
         user = _make_crossbow_user()
         enemy = _make_enemy()
         user.combat_proximity = {enemy: 15}
         move = BroadheadBolt(user)
         move.target = enemy
-        with patch.object(move, "standard_execute_attack") as mock_exec:
+        with (
+            patch.object(move, "viable", return_value=True),
+            patch.object(move, "hit") as mock_hit,
+            patch("moves._ranged.functions.check_parry", return_value=False),
+            patch("moves._ranged.random.randint", return_value=50),
+            patch("moves._ranged.random.uniform", return_value=1.0),
+        ):
             move.execute(user)
-        mock_exec.assert_called_once_with(user, move.power, "piercing")
+        mock_hit.assert_called_once()
 
 
 # ---------------------------------------------------------------------------

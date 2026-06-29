@@ -12,7 +12,6 @@ Target: 50-70 error scenario tests covering all exception paths.
 
 import pytest
 from unittest.mock import MagicMock, Mock, patch
-import logging
 from src.api.services.game_service import GameService
 
 
@@ -76,237 +75,77 @@ def mock_tile():
     return tile
 
 
-class TestEquipItemErrors:
-    """Test error handling in equip_item method."""
-
-    def test_equip_item_invalid_index_type(self, game_service, mock_player):
-        """Test equip_item with non-integer index."""
-        result = game_service.equip_item(mock_player, "not_an_int")
-        assert result["success"] is False
-        assert "Invalid item index" in result["error"]
-
-    def test_equip_item_negative_index(self, game_service, mock_player):
-        """Test equip_item with negative index."""
-        result = game_service.equip_item(mock_player, -1)
-        assert result["success"] is False
-        assert "Invalid item index" in result["error"]
-
-    def test_equip_item_out_of_bounds(self, game_service, mock_player):
-        """Test equip_item with index beyond inventory."""
-        mock_player.inventory = []
-        result = game_service.equip_item(mock_player, 5)
-        assert result["success"] is False
-        assert "Invalid item index" in result["error"]
-
-    def test_equip_item_non_equipable(self, game_service, mock_player):
-        """Test equip_item with item that has no isequipped attribute."""
-        item = MagicMock()
-        item.name = "NonEquipable"
-        del item.isequipped  # Remove the attribute
-        mock_player.inventory = [item]
-
-        result = game_service.equip_item(mock_player, 0)
-        assert result["success"] is False
-        assert "cannot be equipped" in result["error"]
-
-    def test_equip_item_weapon_success(self, game_service, mock_player):
-        """Test successful weapon equipping."""
-        item = MagicMock()
-        item.name = "Sword"
-        item.isequipped = False
-        item.maintype = "Weapon"
-        mock_player.inventory = [item]
-
-        with patch('src.functions.refresh_stat_bonuses'):
-            result = game_service.equip_item(mock_player, 0)
-
-        assert result["success"] is True
-        assert item.isequipped is True
-
-    def test_equip_item_exception_handling(self, game_service, mock_player):
-        """Test exception handling during equip operation."""
-        item = MagicMock()
-        item.name = "Broken"
-        item.isequipped = False
-        item.maintype = "Weapon"
-        mock_player.inventory = [item]
-
-        # Force an exception during refresh_stat_bonuses
-        with patch('src.functions.refresh_stat_bonuses', side_effect=Exception("Stat refresh failed")):
-            result = game_service.equip_item(mock_player, 0)
-
-        assert result["success"] is False
-        assert "error" in result
-
-
-class TestUnequipItemErrors:
-    """Test error handling in unequip_item method."""
-
-    def test_unequip_invalid_slot(self, game_service, mock_player):
-        """Test unequip_item with invalid slot name."""
-        result = game_service.unequip_item(mock_player, "nonexistent_slot")
-        assert result["success"] is False
-        assert "error" in result
-
-    def test_unequip_already_unequipped(self, game_service, mock_player):
-        """Test unequip_item when slot is already empty."""
-        mock_player.eq_weapon = None
-        result = game_service.unequip_item(mock_player, "weapon")
-        assert result["success"] is False
-
-    def test_unequip_armor_success(self, game_service, mock_player):
-        """Test successful armor unequipping."""
-        item = MagicMock()
-        item.name = "Plate Armor"
-        item.isequipped = True
-        mock_player.body = item
-
-        with patch('src.functions.refresh_stat_bonuses'):
-            result = game_service.unequip_item(mock_player, "armor")
-
-        # Should either succeed or return unequip result
-        assert result is not None
-
-
-class TestUseItemErrors:
-    """Test error handling in use_item method."""
-
-    def test_use_item_inventory_not_list(self, game_service, mock_player):
-        """Test use_item when inventory is not a list."""
-        mock_player.inventory = None
-        result = game_service.use_item(mock_player, 0)
-        assert result["error"] == "Inventory not accessible"
-
-    def test_use_item_negative_index(self, game_service, mock_player):
-        """Test use_item with negative index."""
-        mock_player.inventory = []
-        result = game_service.use_item(mock_player, -1)
-        assert result["error"] == "Invalid item index"
-
-    def test_use_item_index_out_of_bounds(self, game_service, mock_player):
-        """Test use_item with index beyond inventory length."""
-        mock_player.inventory = []
-        result = game_service.use_item(mock_player, 5)
-        assert result["error"] == "Invalid item index"
-
-    def test_use_item_no_use_method(self, game_service, mock_player):
-        """Test use_item on item without use method."""
-        item = MagicMock(spec=[])  # No 'use' attribute
-        item.name = "Unusable"
-        mock_player.inventory = [item]
-
-        result = game_service.use_item(mock_player, 0)
-        assert result["success"] is False
-        assert "cannot be used" in result["error"]
-
-    def test_use_item_exception_in_use_method(self, game_service, mock_player):
-        """Test exception handling when item.use() fails."""
-        item = MagicMock()
-        item.name = "Broken Potion"
-        item.use = MagicMock(side_effect=Exception("Use failed"))
-        mock_player.inventory = [item]
-
-        result = game_service.use_item(mock_player, 0)
-        assert result["success"] is False
-        assert "error" in result
-
-    def test_use_item_success(self, game_service, mock_player):
-        """Test successful item use."""
-        item = MagicMock()
-        item.name = "Potion"
-        item.use = MagicMock(return_value={"healed": 20})
-        mock_player.inventory = [item]
-
-        result = game_service.use_item(mock_player, 0)
-        assert result["success"] is True
-        assert "Used" in result["message"]
-
-
 class TestDropItemErrors:
-    """Test error handling in drop_item method."""
-
-    def test_drop_item_inventory_not_list(self, game_service, mock_player):
-        """Test drop_item when inventory is not a list."""
-        mock_player.inventory = None
-        result = game_service.drop_item(mock_player, 0)
-        assert result["error"] == "Inventory not accessible"
-
-    def test_drop_item_negative_index(self, game_service, mock_player):
-        """Test drop_item with negative index."""
-        mock_player.inventory = []
-        result = game_service.drop_item(mock_player, -1)
-        assert result["error"] == "Invalid item index"
-
-    def test_drop_item_index_out_of_bounds(self, game_service, mock_player):
-        """Test drop_item with index beyond inventory."""
-        mock_player.inventory = []
-        result = game_service.drop_item(mock_player, 5)
-        assert result["error"] == "Invalid item index"
+    """Test error handling in the object-based drop_item method."""
 
     def test_drop_item_no_universe(self, game_service, mock_player):
-        """Test drop_item when universe is None - now returns error gracefully."""
+        """Test drop_item when universe is None - returns error gracefully."""
         item = MagicMock()
         item.name = "Item"
+        item.isequipped = False
         mock_player.inventory = [item]
         mock_player.universe = None
 
-        # FIX 1: Now returns error instead of raising AttributeError
-        result = game_service.drop_item(mock_player, 0)
+        result = game_service.drop_item(mock_player, item)
         assert "error" in result
-        assert "universe" in result["error"].lower()
+        assert "location" in result["error"].lower()
+        # Item not removed from inventory
+        assert item in mock_player.inventory
 
     def test_drop_item_no_tile_found(self, game_service, mock_player, mock_tile):
-        """Test drop_item when get_tile returns None - now returns error gracefully."""
+        """Test drop_item when get_tile returns None - returns error gracefully."""
         item = MagicMock()
         item.name = "Item"
+        item.isequipped = False
         mock_player.inventory = [item]
         mock_player.universe.get_tile = MagicMock(return_value=None)
 
-        # FIX 1: Now returns error to prevent item loss
-        result = game_service.drop_item(mock_player, 0)
+        result = game_service.drop_item(mock_player, item)
         assert "error" in result
         assert "location" in result["error"].lower()
         # Verify item was not removed from inventory
         assert item in mock_player.inventory
 
+    def test_drop_item_not_in_inventory(self, game_service, mock_player, mock_tile):
+        """Test drop_item when the item isn't in the inventory."""
+        item = MagicMock()
+        item.name = "Ghost"
+        item.isequipped = False
+        mock_player.inventory = []
+        mock_tile.items_here = []
+        mock_player.universe.get_tile = MagicMock(return_value=mock_tile)
+
+        result = game_service.drop_item(mock_player, item)
+        assert "error" in result
+        assert "not found" in result["error"].lower()
+
     def test_drop_item_success(self, game_service, mock_player, mock_tile):
-        """Test successful item drop."""
+        """Test successful item drop by object."""
         item = MagicMock()
         item.name = "Item"
+        item.isequipped = False
         mock_player.inventory = [item]
         mock_tile.items_here = []
         mock_player.universe.get_tile = MagicMock(return_value=mock_tile)
 
-        result = game_service.drop_item(mock_player, 0)
+        result = game_service.drop_item(mock_player, item)
         assert result["success"] is True
         assert item in mock_tile.items_here
+        assert item not in mock_player.inventory
 
+    def test_drop_item_unequips_equipped(self, game_service, mock_player, mock_tile):
+        """Test drop_item unequips an equipped item first."""
+        item = MagicMock()
+        item.name = "Sword"
+        item.isequipped = True
+        mock_player.inventory = [item]
+        mock_tile.items_here = []
+        mock_player.universe.get_tile = MagicMock(return_value=mock_tile)
 
-class TestRestErrors:
-    """Test error handling in rest method."""
-
-    def test_rest_no_universe(self, game_service, mock_player):
-        """Test rest when player has no universe."""
-        mock_player.universe = None
-        result = game_service.rest(mock_player)
-        assert "error" in result or "success" in result
-
-    def test_rest_already_in_combat(self, game_service, mock_player):
-        """Test rest when player is in combat."""
-        mock_player.in_combat = True
-        # Game allows resting even in combat - it's a mechanism to wait
-        result = game_service.rest(mock_player)
-        assert result is not None
-
-    def test_rest_success(self, game_service, mock_player):
-        """Test successful rest."""
-        mock_player.in_combat = False
-        mock_player.hp = 50
-        mock_player.fatigue = 0
-
-        with patch.object(mock_player, 'rest'):
-            result = game_service.rest(mock_player)
-        assert result is not None
+        result = game_service.drop_item(mock_player, item)
+        assert result["success"] is True
+        mock_player.unequip_item.assert_called_once_with(item_object=item)
+        assert item in mock_tile.items_here
 
 
 class TestExecuteMoveErrors:
@@ -691,89 +530,24 @@ class TestStateRecovery:
         """Test that drop_item maintains inventory consistency after error."""
         item = MagicMock()
         item.name = "Item"
+        item.isequipped = False
         mock_player.inventory = [item]
 
         # Try to drop with no universe
         mock_player.universe = None
         initial_count = len(mock_player.inventory)
 
-        # FIX 1: Now checks universe BEFORE popping item
-        result = game_service.drop_item(mock_player, 0)
+        # Universe missing -> no tile -> error before removing the item
+        result = game_service.drop_item(mock_player, item)
         assert "error" in result
 
-        # After error, item is still in inventory (GOOD - fixed)
-        # FIX 1 ensures item is not lost if universe is missing
+        # After error, item is still in inventory (not lost)
         assert len(mock_player.inventory) == initial_count
         assert item in mock_player.inventory
-
-    def test_equipment_consistency_after_equip_error(self, game_service, mock_player):
-        """Test that equipment remains consistent after equip error."""
-        item = MagicMock()
-        item.name = "Bad Item"
-        del item.isequipped
-        mock_player.inventory = [item]
-
-        result = game_service.equip_item(mock_player, 0)
-        # Should not corrupt equipment state
-        assert result["success"] is False
-        assert item not in [mock_player.eq_weapon, mock_player.body, mock_player.head]
-
-
-class TestErrorLogging:
-    """Test that errors are properly logged."""
-
-    def test_equip_item_error_logged(self, game_service, mock_player, caplog):
-        """Test that equip_item exceptions are logged."""
-        item = MagicMock()
-        item.name = "Broken"
-        item.isequipped = False
-        item.maintype = "Weapon"
-        mock_player.inventory = [item]
-
-        with patch('src.functions.refresh_stat_bonuses', side_effect=Exception("Test error")):
-            with caplog.at_level(logging.DEBUG):
-                result = game_service.equip_item(mock_player, 0)
-
-        assert result["success"] is False
-
-    def test_use_item_error_logged(self, game_service, mock_player, caplog):
-        """Test that use_item exceptions are logged."""
-        item = MagicMock()
-        item.name = "Broken"
-        item.use = MagicMock(side_effect=Exception("Test error"))
-        mock_player.inventory = [item]
-
-        with caplog.at_level(logging.DEBUG):
-            result = game_service.use_item(mock_player, 0)
-
-        assert result["success"] is False
 
 
 class TestBoundaryConditions:
     """Test boundary conditions and edge cases."""
-
-    def test_equip_item_index_zero(self, game_service, mock_player):
-        """Test equip_item with index 0 (first item)."""
-        item = MagicMock()
-        item.name = "First Item"
-        item.isequipped = False
-        item.maintype = "Weapon"
-        mock_player.inventory = [item]
-
-        with patch('src.functions.refresh_stat_bonuses'):
-            result = game_service.equip_item(mock_player, 0)
-
-        assert result["success"] is True
-
-    def test_use_item_index_zero(self, game_service, mock_player):
-        """Test use_item with index 0 (first item)."""
-        item = MagicMock()
-        item.name = "Potion"
-        item.use = MagicMock(return_value={})
-        mock_player.inventory = [item]
-
-        result = game_service.use_item(mock_player, 0)
-        assert result["success"] is True
 
     def test_shop_buy_quantity_one(self, game_service, mock_player, mock_tile):
         """Test shop_buy with quantity = 1 (minimum)."""
@@ -812,34 +586,18 @@ class TestBoundaryConditions:
         """Test drop_item when dropping last item from inventory."""
         item = MagicMock()
         item.name = "Last Item"
+        item.isequipped = False
         mock_player.inventory = [item]
         mock_tile.items_here = []
         mock_player.universe.get_tile = MagicMock(return_value=mock_tile)
 
-        result = game_service.drop_item(mock_player, 0)
+        result = game_service.drop_item(mock_player, item)
         assert result["success"] is True
         assert len(mock_player.inventory) == 0
 
 
 class TestTypeValidation:
     """Test type validation across methods."""
-
-    def test_equip_item_float_index(self, game_service, mock_player):
-        """Test equip_item with float instead of int."""
-        result = game_service.equip_item(mock_player, 1.5)
-        assert result["success"] is False
-
-    def test_use_item_string_index(self, game_service, mock_player):
-        """Test use_item with string index - raises TypeError."""
-        # String comparison with int raises TypeError
-        with pytest.raises(TypeError):
-            result = game_service.use_item(mock_player, "0")
-
-    def test_drop_item_dict_index(self, game_service, mock_player):
-        """Test drop_item with dict instead of int - raises TypeError."""
-        # Dict comparison with int raises TypeError
-        with pytest.raises(TypeError):
-            result = game_service.drop_item(mock_player, {})
 
     def test_shop_buy_invalid_quantity_type(self, game_service, mock_player, mock_tile):
         """Test shop_buy with invalid quantity type."""
@@ -853,64 +611,18 @@ class TestTypeValidation:
         # Result depends on implementation
 
 
-class TestConcurrentStateModification:
-    """Test behavior when state is modified concurrently."""
-
-    def test_equip_item_inventory_modified(self, game_service, mock_player):
-        """Test equip_item when inventory is modified between validation and execution."""
-        item = MagicMock()
-        item.name = "Item"
-        item.isequipped = False
-        item.maintype = "Weapon"
-        mock_player.inventory = [item]
-
-        # Simulate inventory being cleared between validation and execution
-        def clear_inventory(*args, **kwargs):
-            mock_player.inventory = []
-
-        with patch('src.functions.refresh_stat_bonuses', side_effect=clear_inventory):
-            result = game_service.equip_item(mock_player, 0)
-
-        # Should handle gracefully
-        assert result is not None
-
-
 class TestNullableAttributes:
     """Test handling of None/missing attributes."""
-
-    def test_equip_item_null_maintype(self, game_service, mock_player):
-        """Test equip_item with None maintype."""
-        item = MagicMock()
-        item.name = "Item"
-        item.isequipped = False
-        item.maintype = None
-        mock_player.inventory = [item]
-
-        with patch('src.functions.refresh_stat_bonuses'):
-            result = game_service.equip_item(mock_player, 0)
-
-        # Should handle None maintype
-        assert result is not None
-
-    def test_use_item_null_name(self, game_service, mock_player):
-        """Test use_item with None item name."""
-        item = MagicMock()
-        item.name = None
-        item.use = MagicMock(return_value={})
-        mock_player.inventory = [item]
-
-        result = game_service.use_item(mock_player, 0)
-        # Should handle None name
-        assert result is not None
 
     def test_drop_item_null_name(self, game_service, mock_player, mock_tile):
         """Test drop_item with None item name."""
         item = MagicMock()
         item.name = None
+        item.isequipped = False
         mock_player.inventory = [item]
         mock_tile.items_here = []
         mock_player.universe.get_tile = MagicMock(return_value=mock_tile)
 
-        result = game_service.drop_item(mock_player, 0)
+        result = game_service.drop_item(mock_player, item)
         # Should handle None name
         assert result is not None

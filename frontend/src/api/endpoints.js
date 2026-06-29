@@ -11,8 +11,6 @@ export const auth = {
 export const player = {
   getStatus: () => apiClient.get('/status'),
   getFullState: () => apiClient.get('/full-state'),
-  getInventory: () => apiClient.get('/inventory'),
-  getEquipment: () => apiClient.get('/equipment'),
   getStats: () => apiClient.get('/stats'),
   getSkills: () => apiClient.get('/skills'),
   learnSkill: (skillName, category) => apiClient.post('/skills/learn', { skill_name: skillName, category }),
@@ -23,7 +21,6 @@ export const player = {
 export const world = {
   getCurrentLocation: () => apiClient.get('/world'),
   move: (direction) => apiClient.post('/world/move', { direction }),
-  getExits: () => apiClient.get('/world/exits'),
   getTile: (x, y) => apiClient.get(`/world/tile?x=${x}&y=${y}`),
   getTilesBatch: (coordinates) => apiClient.post('/world/tiles/batch', { coordinates }),
   interact: (targetId, action, quantity) => apiClient.post('/world/interact', { target_id: targetId, action, quantity }),

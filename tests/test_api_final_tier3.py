@@ -216,22 +216,6 @@ class TestValidatorsMethods:
             # Expected to raise
             pass
 
-    def test_validate_player_stats_valid(self):
-        """Test validate_coordinates with valid coordinates."""
-        from src.api.services.validators import validate_coordinates
-
-        is_valid, error = validate_coordinates(5, 10)
-        # Should be valid
-        assert is_valid or error is None
-
-    def test_validate_player_stats_negative(self):
-        """Test validate_coordinates with negative values."""
-        from src.api.services.validators import validate_coordinates
-
-        is_valid, error = validate_coordinates(-1, 10)
-        # May or may not reject negative coords
-        pass
-
     def test_validate_inventory_item_valid(self):
         """Test validate_required_fields with item data."""
         from src.api.services.validators import validate_required_fields
@@ -569,11 +553,6 @@ class TestWorldRoutes:
 class TestNPCRoutes:
     """Test NPC interaction routes."""
 
-    def test_npc_route_exists(self):
-        """Test NPC blueprint exists."""
-        from src.api.routes.npc import npc_bp
-        assert npc_bp is not None
-
     def test_talk_to_npc_unauthorized(self):
         """Test talk to NPC requires auth."""
         from src.api.app import create_app
@@ -618,46 +597,6 @@ class TestShopRoutes:
 
         response = client.post('/api/shop/buy', json={"item": "test"})
         assert response.status_code in [401, 403]
-
-
-class TestEquipmentRoutes:
-    """Test equipment routes."""
-
-    def test_equipment_route_exists(self):
-        """Test equipment blueprint exists."""
-        from src.api.routes.equipment import equipment_bp
-        assert equipment_bp is not None
-
-    def test_equip_item_unauthorized(self):
-        """Test equip item requires auth."""
-        from src.api.app import create_app
-        result = create_app()
-        app = result[0] if isinstance(result, tuple) else result
-        app.config['TESTING'] = True
-        client = app.test_client()
-
-        response = client.post('/api/equipment/equip', json={"item": "test"})
-        assert response.status_code in [401, 403]
-
-
-class TestReputationRoutes:
-    """Test reputation routes."""
-
-    def test_reputation_route_exists(self):
-        """Test reputation blueprint exists."""
-        from src.api.routes.reputation import reputation_bp
-        assert reputation_bp is not None
-
-    def test_get_reputation_unauthorized(self):
-        """Test get reputation requires auth."""
-        from src.api.app import create_app
-        result = create_app()
-        app = result[0] if isinstance(result, tuple) else result
-        app.config['TESTING'] = True
-        client = app.test_client()
-
-        response = client.get('/api/reputation')
-        assert response.status_code in [401, 403, 404]
 
 
 class TestSaveGameRoutes:
@@ -881,13 +820,10 @@ class TestBlueprintRegistration:
         blueprint_modules = [
             'src.api.routes.auth',
             'src.api.routes.combat',
-            'src.api.routes.equipment',
             'src.api.routes.inventory',
-            'src.api.routes.npc',
             'src.api.routes.player',
             'src.api.routes.quest_chains',
             'src.api.routes.quest_rewards',
-            'src.api.routes.reputation',
             'src.api.routes.saves',
             'src.api.routes.shop',
             'src.api.routes.world',
@@ -910,13 +846,10 @@ class TestBlueprintRegistration:
         from src.api.routes import (
             auth_bp,
             combat_bp,
-            equipment_bp,
             inventory_bp,
-            npc_bp,
             player_bp,
             quest_chains_bp,
             quest_rewards_bp,
-            reputation_bp,
             saves_bp,
             shop_bp,
             world_bp,
@@ -1044,7 +977,7 @@ class TestValidatorIntegration:
         validation_functions = [
             'validate_required_fields',
             'validate_direction',
-            'validate_coordinates',
+            'validate_item_index',
         ]
 
         for func_name in validation_functions:

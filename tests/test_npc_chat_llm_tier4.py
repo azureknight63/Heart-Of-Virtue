@@ -1374,6 +1374,7 @@ class TestChatRespond:
         player.universe.game_tick = 10
         player.universe.story = {}
         player.npc_chat_histories = {}
+        player.reputation = {}
 
         result = npc.chat_respond(player, "What's your story?", "direct")
         assert result["success"] is True
@@ -1789,6 +1790,7 @@ class TestIntegrationChatFlow:
         player.universe.game_tick = 10
         player.universe.story = {}
         player.npc_chat_histories = {}
+        player.reputation = {}
 
         # With loquacity below threshold, conversation should end after drain
         result = npc.chat_respond(player, "Hello", "direct")
@@ -2148,12 +2150,119 @@ class TestChatRespondWithLLM:
         player.universe.game_tick = 10
         player.universe.story = {}
         player.npc_chat_histories = {}
+        player.reputation = {}
 
         result = npc.chat_respond(player, "Tell me about yourself", "direct")
         assert result["success"] is True
         assert result["llm_available"] is True
         # Positive quality drains 3 loquacity
         assert result["loquacity_current"] == 47
+
+    def test_chat_respond_applies_reputation_delta(self):
+        """The NPC's in-character reaction to Jean's words shifts reputation."""
+        class MockAdapter:
+            enabled = True
+
+            def generate_npc_turn(
+                self, system, history, is_opening=False, jean_text=None
+            ):
+                return {
+                    "npc_text": "I won't forget that kindness.",
+                    "conversation_quality": "positive",
+                    "reputation_delta": 5,
+                }
+
+            def generate_jean_options(self, name, voice, response, history, turn):
+                return [
+                    {"text": "Tell me more.", "tone": "open"},
+                    {"text": "I understand.", "tone": "guarded"},
+                    {"text": "What else?", "tone": "direct"},
+                ]
+
+        class TestNPC(HumanNPCLLMMixin):
+            def __init__(self):
+                self.name = "TestNPC"
+                self.charisma = 10
+                self.wisdom = 10
+                self.keywords = []
+                self._chat_config_path = None
+                self._chat_char_config = None
+                self._chat_world_facts = {}
+                self._chat_personality = {"given_name": "Ren"}
+                self._chat_history = [{"npc": "Hello", "jean": ""}]
+                self._chat_npc_key = None
+                self._chat_adapter = MockAdapter()
+                self._chat_fallback_idx = 0
+                self._prohibited_patterns = []
+                self.loquacity_current = 50
+                self.loquacity_max = 100
+                self.loquacity_threshold = 20
+                self.loquacity_recovery = 2
+
+        npc = TestNPC()
+        player = MagicMock()
+        player.universe.game_tick = 10
+        player.universe.story = {}
+        player.npc_chat_histories = {}
+        player.reputation = {"TestNPC": 10}
+
+        result = npc.chat_respond(player, "Here, take this gift.", "open")
+
+        assert result["success"] is True
+        assert result["reputation_delta"] == 5
+        assert result["reputation"] == 15
+        assert player.reputation["TestNPC"] == 15
+
+    def test_chat_respond_clamps_reputation_to_bounds(self):
+        """Reputation never exceeds +/-100 even with repeated extreme deltas."""
+        class MockAdapter:
+            enabled = True
+
+            def generate_npc_turn(
+                self, system, history, is_opening=False, jean_text=None
+            ):
+                return {
+                    "npc_text": "How could you say something so cruel to me after everything.",
+                    "conversation_quality": "offensive",
+                    "reputation_delta": -5,
+                }
+
+            def generate_jean_options(self, name, voice, response, history, turn):
+                return [
+                    {"text": "Tell me more.", "tone": "open"},
+                ]
+
+        class TestNPC(HumanNPCLLMMixin):
+            def __init__(self):
+                self.name = "TestNPC"
+                self.charisma = 10
+                self.wisdom = 10
+                self.keywords = []
+                self._chat_config_path = None
+                self._chat_char_config = None
+                self._chat_world_facts = {}
+                self._chat_personality = {"given_name": "Ren"}
+                self._chat_history = [{"npc": "Hello", "jean": ""}]
+                self._chat_npc_key = None
+                self._chat_adapter = MockAdapter()
+                self._chat_fallback_idx = 0
+                self._prohibited_patterns = []
+                self.loquacity_current = 50
+                self.loquacity_max = 100
+                self.loquacity_threshold = 20
+                self.loquacity_recovery = 2
+
+        npc = TestNPC()
+        player = MagicMock()
+        player.universe.game_tick = 10
+        player.universe.story = {}
+        player.npc_chat_histories = {}
+        player.reputation = {"TestNPC": -98}
+
+        result = npc.chat_respond(player, "Insulting remark.", "guarded")
+
+        assert result["reputation"] == -100
+        assert player.reputation["TestNPC"] == -100
 
 
 class TestAdapterLoadingPaths:

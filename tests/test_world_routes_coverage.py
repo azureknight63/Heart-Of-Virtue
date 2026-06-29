@@ -89,6 +89,7 @@ def _make_game_service():
         "success": True,
         "output_text": "Event processed.",
     }
+    gs.is_player_dead.return_value = False
     return gs
 
 
@@ -341,6 +342,7 @@ class TestSubmitEventInput:
 
     def test_player_death_sets_game_over(self, app):
         app._test_player.hp = 0
+        app._test_gs.is_player_dead.return_value = True
         with patch(
             self._SANITIZER_PATH,
             return_value=("ok", None),
@@ -689,7 +691,7 @@ class TestTriggerRoomEvents:
         tile.x = 0
         tile.y = 0
         tile.block_exit = []
-        app._test_player.universe.get_tile.return_value = tile
+        app._test_gs.get_current_tile_object.return_value = tile
         with app.test_client() as c:
             rv = c.post("/world/events", headers=AUTH)
         assert rv.status_code == 200
@@ -697,7 +699,7 @@ class TestTriggerRoomEvents:
         assert data["success"] is True
 
     def test_tile_not_found(self, app):
-        app._test_player.universe.get_tile.return_value = None
+        app._test_gs.get_current_tile_object.return_value = None
         with app.test_client() as c:
             rv = c.post("/world/events", headers=AUTH)
         assert rv.status_code == 404
@@ -707,7 +709,7 @@ class TestTriggerRoomEvents:
         assert rv.status_code == 401
 
     def test_exception_returns_500(self, app):
-        app._test_player.universe.get_tile.side_effect = RuntimeError("crash")
+        app._test_gs.get_current_tile_object.side_effect = RuntimeError("crash")
         with app.test_client() as c:
             rv = c.post("/world/events", headers=AUTH)
         assert rv.status_code == 500

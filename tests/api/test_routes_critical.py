@@ -169,14 +169,6 @@ class TestCombatRoutes:
                              headers={'Authorization': f'Bearer {session_id}'})
         assert response.status_code in [200, 400, 404]
 
-    def test_get_combat_log(self, client, authenticated_session):
-        """Test getting combat log."""
-        session_id, player, session_manager = authenticated_session
-
-        response = client.get('/api/combat/log',
-                            headers={'Authorization': f'Bearer {session_id}'})
-        assert response.status_code in [200, 404]
-
 
 class TestInventoryRoutes:
     """Test inventory and item management routes."""
@@ -207,24 +199,6 @@ class TestInventoryRoutes:
         data = response.get_json()
         assert data['success'] is True
         assert 'equipment' in data
-
-    def test_equip_item(self, client, authenticated_session):
-        """Test equipping an item."""
-        session_id, player, session_manager = authenticated_session
-
-        response = client.post('/api/equipment/equip',
-                             json={'item_id': 'nonexistent'},
-                             headers={'Authorization': f'Bearer {session_id}'})
-        assert response.status_code in [400, 404]
-
-    def test_unequip_item(self, client, authenticated_session):
-        """Test unequipping an item."""
-        session_id, player, session_manager = authenticated_session
-
-        response = client.post('/api/equipment/unequip',
-                             json={'slot': 'main_hand'},
-                             headers={'Authorization': f'Bearer {session_id}'})
-        assert response.status_code in [200, 400]
 
     def test_use_item_success(self, client, authenticated_session):
         """Test using a consumable item."""
@@ -403,26 +377,6 @@ class TestQuestRoutes:
                              json={'quest_id': 'nonexistent'},
                              headers={'Authorization': f'Bearer {session_id}'})
         assert response.status_code in [400, 404]
-
-
-class TestReputationRoutes:
-    """Test reputation routes."""
-
-    def test_get_reputation(self, client, authenticated_session):
-        """Test getting reputation with NPCs."""
-        session_id, player, session_manager = authenticated_session
-
-        response = client.get('/api/reputation',
-                            headers={'Authorization': f'Bearer {session_id}'})
-        assert response.status_code in [200, 404]
-
-    def test_get_npc_reputation(self, client, authenticated_session):
-        """Test getting reputation with specific NPC."""
-        session_id, player, session_manager = authenticated_session
-
-        response = client.get('/api/reputation/npc?npc_id=nonexistent',
-                            headers={'Authorization': f'Bearer {session_id}'})
-        assert response.status_code in [200, 400, 404]
 
 
 class TestDialogueRoutes:

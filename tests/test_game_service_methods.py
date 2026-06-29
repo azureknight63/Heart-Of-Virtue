@@ -162,54 +162,6 @@ class TestGameServiceGetEquipment:
         assert isinstance(result, dict)
 
 
-class TestGameServiceEquipItem:
-    """Tests for equip_item() - equipment management."""
-
-    def test_equip_item_returns_dict(self, game_service, realistic_mock_player):
-        """Test that equip_item returns a dict."""
-        mock_weapon = MagicMock()
-        mock_weapon.name = "Sword"
-        mock_weapon.maintype = "Weapon"
-        realistic_mock_player.inventory = [mock_weapon]
-
-        result = game_service.equip_item(realistic_mock_player, 0)
-        assert isinstance(result, dict), "equip_item should return a dict"
-
-    def test_equip_item_invalid_index(self, game_service, realistic_mock_player):
-        """Test equipping with invalid inventory index."""
-        realistic_mock_player.inventory = []
-
-        result = game_service.equip_item(realistic_mock_player, 99)
-        assert isinstance(result, dict)
-
-
-class TestGameServiceUnequipItem:
-    """Tests for unequip_item() - unequipping equipment."""
-
-    def test_unequip_weapon(self, game_service, realistic_mock_player):
-        """Test unequipping a weapon."""
-        mock_weapon = MagicMock()
-        realistic_mock_player.eq_weapon = mock_weapon
-
-        result = game_service.unequip_item(realistic_mock_player, "weapon")
-        assert isinstance(result, dict), "unequip_item should return a dict"
-
-    def test_unequip_armor(self, game_service, realistic_mock_player):
-        """Test unequipping armor."""
-        mock_armor = MagicMock()
-        realistic_mock_player.eq_armor = mock_armor
-
-        result = game_service.unequip_item(realistic_mock_player, "armor")
-        assert isinstance(result, dict)
-
-    def test_unequip_empty_slot(self, game_service, realistic_mock_player):
-        """Test unequipping from an empty slot."""
-        realistic_mock_player.eq_weapon = None
-
-        result = game_service.unequip_item(realistic_mock_player, "weapon")
-        assert isinstance(result, dict)
-
-
 class TestGameServiceHelperMethods:
     """Tests for internal helper methods that support main operations."""
 
@@ -335,22 +287,6 @@ class TestGameServiceSearch:
 
 class TestGameServiceIntegration:
     """Integration tests combining multiple methods."""
-
-    def test_equip_then_get_equipment(self, game_service, realistic_mock_player):
-        """Test equipping an item then retrieving equipment."""
-        mock_weapon = MagicMock()
-        mock_weapon.name = "Sword"
-        mock_weapon.maintype = "Weapon"
-        realistic_mock_player.inventory = [mock_weapon]
-        realistic_mock_player.eq_weapon = None
-
-        # Equip the item
-        equip_result = game_service.equip_item(realistic_mock_player, 0)
-        assert isinstance(equip_result, dict)
-
-        # Get equipment state
-        equipment_result = game_service.get_equipment(realistic_mock_player)
-        assert isinstance(equipment_result, dict)
 
     def test_inventory_and_equipment_workflow(self, game_service, realistic_mock_player):
         """Test complete inventory → equipment workflow."""

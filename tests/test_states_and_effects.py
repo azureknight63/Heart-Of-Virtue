@@ -64,45 +64,51 @@ def realistic_target():
 
 @patch('src.states.functions.refresh_stat_bonuses')
 def test_disoriented_stat_reduction_on_application(mock_refresh, realistic_target):
-    """Test that Disoriented properly reduces finesse and protection on application"""
-    initial_finesse = realistic_target.finesse
+    """Test that Disoriented defines both finesse and protection penalties
+    declaratively (summed by refresh_stat_bonuses) rather than mutating the
+    target directly -- on_application's only job is to trigger the refresh."""
     initial_protection = realistic_target.protection
 
     state = Disoriented(realistic_target)
+
+    # Both penalties are declarative: refresh_stat_bonuses sums add_fin/add_protection
+    # across active states; on_application never mutates the target directly.
+    assert hasattr(state, 'add_fin')
+    assert state.add_fin < 0
+    assert hasattr(state, 'add_protection')
+    assert state.add_protection < 0
+    assert state.add_protection == -int(initial_protection * 0.25)
+
     state.on_application(realistic_target)
 
-    # Should reduce both stats
-    assert realistic_target.finesse < initial_finesse
-    assert realistic_target.protection < initial_protection
-    # Verify reduction percentages
-    assert realistic_target.finesse == initial_finesse - state.sub_finesse
-    assert realistic_target.protection == initial_protection - state.sub_protection
+    # on_application defers all stat mutation to refresh_stat_bonuses (mocked here).
+    assert realistic_target.protection == initial_protection
     assert mock_refresh.called
 
 
 @patch('src.states.functions.refresh_stat_bonuses')
 def test_multiple_stat_modifying_effects_stack(mock_refresh, realistic_target):
-    """Test that multiple stat-modifying effects stack properly"""
-    initial_finesse = realistic_target.finesse
+    """Test that multiple stacked Disoriented instances each contribute an
+    independent finesse and protection penalty (summed later by refresh_stat_bonuses,
+    not applied directly by on_application)"""
     initial_protection = realistic_target.protection
 
-    # Apply first disoriented effect
     disoriented1 = Disoriented(realistic_target)
     disoriented1.on_application(realistic_target)
 
-    finesse_after_first = realistic_target.finesse
-    protection_after_first = realistic_target.protection
-
-    # Apply second disoriented effect (different instance)
     disoriented2 = Disoriented(realistic_target)
     disoriented2.on_application(realistic_target)
 
-    # Both effects should stack
-    assert realistic_target.finesse < finesse_after_first
-    assert realistic_target.protection < protection_after_first
-    # Total reduction should be from initial
-    assert realistic_target.finesse < initial_finesse
-    assert realistic_target.protection < initial_protection
+    # on_application never mutates protection directly -- it stays untouched here
+    # because refresh_stat_bonuses (the actual stacking mechanism) is mocked.
+    assert realistic_target.protection == initial_protection
+    # Each instance independently carries negative finesse/protection penalties; in
+    # real play refresh_stat_bonuses sums add_fin/add_protection across both states.
+    assert disoriented1.add_fin < 0
+    assert disoriented2.add_fin < 0
+    assert disoriented1.add_protection < 0
+    assert disoriented2.add_protection < 0
+    assert mock_refresh.called
 
 
 @patch('src.states.functions.refresh_stat_bonuses')
@@ -137,9 +143,9 @@ def test_slimed_stat_modifications_persist_during_effect(mock_cprint, mock_refre
 
     state = Slimed(realistic_target)
 
-    # Verify state has the protection penalty defined
-    assert hasattr(state, 'sub_protection')
-    assert state.sub_protection > 0
+    # Verify state has the protection penalty defined (declarative, negative)
+    assert hasattr(state, 'add_protection')
+    assert state.add_protection < 0
 
     # Verify state applies stat penalties on application
     state.on_application(realistic_target)
@@ -181,12 +187,12 @@ def test_petrified_mixed_stat_modifications(mock_cprint, mock_refresh, realistic
     # Verify state defines the mixed modifications
     assert hasattr(state, 'add_fin')
     assert hasattr(state, 'add_speed')
-    assert hasattr(state, 'prot_bonus')
+    assert hasattr(state, 'add_protection')
 
     # Negative values mean penalties
     assert state.add_fin < 0  # Reduced finesse
     assert state.add_speed < 0  # Reduced speed
-    assert state.prot_bonus > 0  # Increased protection
+    assert state.add_protection > 0  # Increased protection
 
     # Application should trigger stat refresh
     state.on_application(realistic_target)
@@ -199,47 +205,49 @@ def test_petrified_mixed_stat_modifications(mock_cprint, mock_refresh, realistic
 
 @patch('src.states.functions.refresh_stat_bonuses')
 def test_disoriented_stat_restoration_on_removal(mock_refresh, realistic_target):
-    """Test that Disoriented restores stats when removed"""
-    original_finesse = realistic_target.finesse
+    """Test that Disoriented's protection penalty is purely declarative: neither
+    on_application nor on_removal mutate target.protection directly. Restoration
+    on removal happens because refresh_stat_bonuses (called by process(), not by
+    on_removal) stops summing this state's add_protection once it's gone."""
     original_protection = realistic_target.protection
 
     state = Disoriented(realistic_target)
     realistic_target.states.append(state)
 
-    # Apply effect
+    # Apply effect -- defers to refresh_stat_bonuses (mocked), no direct mutation
     state.on_application(realistic_target)
-    assert realistic_target.finesse < original_finesse
-    assert realistic_target.protection < original_protection
+    assert realistic_target.protection == original_protection
+    mock_refresh.reset_mock()
 
     # Remove effect
     state.on_removal(realistic_target)
 
-    # Stats should be restored
-    assert realistic_target.finesse == original_finesse
+    # on_removal does not mutate protection directly, and does not trigger a
+    # refresh itself -- that's process()'s job (called before on_removal runs)
     assert realistic_target.protection == original_protection
-    assert mock_refresh.called
+    assert not mock_refresh.called
 
 
 @patch('src.states.cprint')
 @patch('src.states.functions.refresh_stat_bonuses')
 def test_petrified_protection_bonus_cleanup_on_removal(mock_refresh, mock_cprint, realistic_target):
-    """Test that Petrified removes its protection bonus when effect expires"""
+    """Test that Petrified's protection bonus is purely declarative: neither
+    on_application nor on_removal mutate target.protection directly -- the bonus
+    is summed/dropped by refresh_stat_bonuses based on whether the state is active."""
     initial_protection = realistic_target.protection
 
     state = Petrified(realistic_target)
     state.on_application(realistic_target)
-    boosted_protection = realistic_target.protection
 
-    # Verify protection was increased
-    assert boosted_protection > initial_protection
+    # on_application defers all stat mutation to refresh_stat_bonuses (mocked here)
+    assert realistic_target.protection == initial_protection
+    assert state.add_protection > 0
 
     # Remove the effect
     state.on_removal(realistic_target)
-    final_protection = realistic_target.protection
 
-    # Protection bonus should be removed
-    assert final_protection == initial_protection
-    assert final_protection < boosted_protection
+    # on_removal does not mutate protection directly either
+    assert realistic_target.protection == initial_protection
 
 
 # ─────────────────────────────────────────────────────────────────────────────

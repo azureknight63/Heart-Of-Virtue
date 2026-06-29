@@ -218,7 +218,33 @@ class PlayerInventoryMixin:
                                 else:
                                     self.skill_exp[target_item.subtype] = 9999
                     functions.refresh_stat_bonuses(self)
-                    self.refresh_protection_rating()
+
+    def unequip_item(self, item_object):
+        """Unequip a currently-equipped item.
+
+        Canonical counterpart to ``equip_item``: mirrors the unequip half of the
+        equip swap logic so the engine remains the single source of truth for
+        equip/unequip mechanics. No-op if the item isn't equippable or isn't
+        currently equipped. Narration flows through the narration sink.
+        """
+        if item_object is None or not hasattr(item_object, "isequipped"):
+            return
+        if not item_object.isequipped:
+            return
+        item_object.isequipped = False
+        cprint("Jean put {} back into his bag.".format(item_object.name), "cyan")
+        item_object.on_unequip(self)
+        if hasattr(item_object, "interactions"):
+            if "unequip" in item_object.interactions:
+                item_object.interactions.remove("unequip")
+            if "equip" not in item_object.interactions:
+                item_object.interactions.append("equip")
+        if (
+            hasattr(item_object, "maintype")
+            and item_object.maintype == "Weapon"
+        ):
+            self.eq_weapon = getattr(self, "fists", None)
+        functions.refresh_stat_bonuses(self)
 
     def use_item(self, phrase="", target=None):
         """Use a consumable or special item by phrase match.

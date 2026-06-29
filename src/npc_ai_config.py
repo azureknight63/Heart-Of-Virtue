@@ -213,7 +213,7 @@ class NPCAIConfig:
             if move_name.lower() in [
                 "advance",
                 "npc_attack",
-                "tactical_positioning",
+                "tactical positioning",
             ]:
                 # Check if currently in flank range
                 if (

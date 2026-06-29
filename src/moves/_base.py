@@ -27,6 +27,41 @@ def _apply_carry_fatigue(user, fatigue_cost):
     return fatigue_cost
 
 
+def _apply_work_the_gap(user, target, landed_hits=1):
+    """WorkTheGap passive: each landed pick strike shaves the target's
+    protection (a progressive armour strip), floored at 0.
+
+    No-op unless the user knows the "Work the Gap" passive and at least one
+    hit landed. The reduction is applied to ``protection_base`` (not just
+    ``protection``) so it survives ``refresh_stat_bonuses()``, which resets
+    ``protection -> protection_base`` every beat under the declarative
+    protection model — see functions.reset_stats. This makes the strip
+    persist for the rest of the fight.
+    """
+    if landed_hits <= 0:
+        return
+    if not any(
+        getattr(m, "name", "") == "Work the Gap"
+        for m in getattr(user, "known_moves", [])
+    ):
+        return
+    cur = getattr(target, "protection", None)
+    if not isinstance(cur, (int, float)) or cur <= 0:
+        return
+    before = int(cur)
+    amount = 2 * landed_hits
+    base = getattr(target, "protection_base", None)
+    if isinstance(base, (int, float)):
+        target.protection_base = max(0, int(base) - amount)
+    target.protection = max(0, before - amount)
+    if target.protection < before:
+        cprint(
+            f"{getattr(target, 'name', 'The target')}'s guard is pried open "
+            f"(protection {before} -> {int(target.protection)}).",
+            "cyan",
+        )
+
+
 # Helper to ensure weapon subtype EXP pools exist (referenced in parry/hit/standard_execute_attack)
 
 
@@ -46,6 +81,22 @@ def _ensure_weapon_exp(user):
     except Exception:
         # Silent fail to avoid disrupting combat flow if something unexpected occurs
         pass
+
+
+def select_weighted_target(candidates):
+    """Pick a random combat target, weighting down targets with Shadow Step.
+
+    Targets with Shadow Step in known_moves get weight 0.5; others get weight 1.0.
+    """
+    if not candidates:
+        return None
+    weights = []
+    for c in candidates:
+        w = 1.0
+        if any(getattr(m, "name", "") == "Shadow Step" for m in getattr(c, "known_moves", [])):
+            w = 0.5
+        weights.append(w)
+    return random.choices(candidates, weights=weights, k=1)[0]
 
 
 default_animations = {
@@ -165,7 +216,41 @@ class Move:  # master class for all moves
             narrate(
                 self.stage_announce[0]
             )  # Print the prep announce message for the move
-        self.beats_left = self.stage_beat[0]
+
+        # CleaveInstinct passive: next move after a kill gets prep=1 (skip zero-beat moves)
+        prep = self.stage_beat[0]
+        if (
+            prep > 0
+            and getattr(self.user, "_cleave_instinct_pending", False)
+            and any(
+                getattr(m, "name", "") == "Cleave Instinct"
+                for m in getattr(self.user, "known_moves", [])
+            )
+        ):
+            prep = 1
+            self.user._cleave_instinct_pending = False
+
+        # Staggered state: add +5 prep beats to caster's next move (consumed after first use)
+        if prep > 0 and isinstance(getattr(self.user, "states", None), list):
+            for state in self.user.states:
+                if getattr(state, "name", "") == "Staggered" and not getattr(state, "penalty_consumed", False):
+                    prep += getattr(state, "prep_penalty", 5)
+                    state.penalty_consumed = True
+                    break
+
+        # QuickReload passive: faster crossbow reload — shave ~20% of prep beats
+        # (floored at 1) while wielding a crossbow.
+        if (
+            prep > 1
+            and getattr(getattr(self.user, "eq_weapon", None), "subtype", None) == "Crossbow"
+            and any(
+                getattr(m, "name", "") == "Quick Reload"
+                for m in getattr(self.user, "known_moves", [])
+            )
+        ):
+            prep = max(1, int(round(prep * 0.8)))
+
+        self.beats_left = prep
 
     def advance(self, user):
         self.user = user  # Ensure user is always current
@@ -174,8 +259,6 @@ class Move:  # master class for all moves
             user.current_move == self or self.current_stage > 0
         ):  # only advance the move if it's the player's
             # current move or if it's already been used (past prep stage)
-            # print("###DEBUG: " + user.name + " " + self.name + " STAGE: " + str(self.current_stage) +
-            #      " BEATS LEFT: " + str(self.beats_left))
             if self.beats_left > 0:
                 self.beats_left -= 1
                 self.beat_update(user)
@@ -207,21 +290,17 @@ class Move:  # master class for all moves
         self, user
     ):  # what happens during these stages. Each move will overwrite prep/execute/recoil/cooldown
         # depending on whether something is supposed to happen at that stage
-        # print("######{}: I'm in the prep stage now".format(self.name)) #debug message
         pass
 
     def execute(self, user):
-        # print("######{}: I'm in the execute stage now".format(self.name)) #debug message
         if self.stage_announce[1] != "":
             narrate(self.stage_announce[1])
 
     def recoil(self):
-        # print("######{}: I'm in the recoil stage now".format(self.name)) #debug message
         if self.stage_announce[2] != "":
             narrate(self.stage_announce[2])
 
     def cooldown(self, user):
-        # print("######{}: I'm in the cooldown stage now".format(self.name)) #debug message
         pass
 
     def evaluate(
@@ -441,6 +520,16 @@ class Move:  # master class for all moves
         fatigue_cost = max(floor_fatigue, int(fatigue_cost))
         fatigue_cost = _apply_carry_fatigue(self.user, fatigue_cost)
 
+        # BladeMastery passive: sword attacks cost less fatigue
+        if (
+            getattr(self.user.eq_weapon, "subtype", None) == "Sword"
+            and any(
+                getattr(m, "name", "") == "Blade Mastery"
+                for m in getattr(self.user, "known_moves", [])
+            )
+        ):
+            fatigue_cost = max(floor_fatigue, int(fatigue_cost * 0.85))
+
         # Range calculation
         mvrange = (
             self.user.eq_weapon.wpnrange[0] + int(mod_range_min),
@@ -483,6 +572,19 @@ class Move:  # master class for all moves
             hit_chance = (
                 -1
             )  # if attacking is no longer viable (enemy is out of range), then auto miss
+
+        # HauntingPresence passive: defender's unsettling aura rattles close-range attackers
+        if (
+            hit_chance > 0
+            and any(
+                getattr(m, "name", "") == "Haunting Presence"
+                for m in getattr(self.target, "known_moves", [])
+            )
+            and hasattr(self.target, "combat_proximity")
+            and self.target.combat_proximity.get(self.user, 9999) <= 3
+        ):
+            hit_chance = int(hit_chance * 0.85)
+
         roll = random.randint(0, 100)
         damage = (
             (

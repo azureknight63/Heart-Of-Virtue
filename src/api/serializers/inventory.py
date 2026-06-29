@@ -41,18 +41,103 @@ _CONSUMABLE_EFFECTS = {
     ],
 }
 
+# Scalar stat-bonus attributes an item/enchantment may add, mapped to their
+# player-stat label. Mirrors functions.py:refresh_stat_bonuses' bonuses_map —
+# keep these in sync since that function is the authoritative source.
+_BONUS_ATTRS = {
+    "add_str": "strength",
+    "add_fin": "finesse",
+    "add_maxhp": "maxhp",
+    "add_maxfatigue": "maxfatigue",
+    "add_speed": "speed",
+    "add_endurance": "endurance",
+    "add_charisma": "charisma",
+    "add_intelligence": "intelligence",
+    "add_faith": "faith",
+    "add_weight_tolerance": "weight_tolerance",
+}
+
+# Accessory subtypes that don't auto-replace on equip (see inventory.py
+# equip_item) — a player can have multiple equipped at once, so there's no
+# single "slot counterpart" to compare against.
+_MULTI_EQUIP_ACCESSORY_SUBTYPES = ["Ring", "Bracelet", "Earring"]
+
+
+def _collect_item_bonuses(item) -> Dict:
+    """Collect non-zero scalar stat bonuses an item grants, keyed by stat label."""
+    return {
+        label: getattr(item, attr)
+        for attr, label in _BONUS_ATTRS.items()
+        if getattr(item, attr, 0)
+    }
+
+
+def _get_equip_slot_status(player, item):
+    """
+    Determine whether `item` has a single comparable equip-slot counterpart.
+
+    Returns (comparable, counterpart):
+        comparable: False for multi-equip accessory subtypes (Ring/Bracelet/
+            Earring), which have no single slot counterpart to compare against.
+        counterpart: the currently-equipped item occupying that slot, or None
+            if the slot is empty.
+    """
+    maintype = getattr(item, "maintype", None)
+    if not maintype:
+        return False, None
+    subtype = getattr(item, "subtype", None)
+    if maintype == "Accessory" and subtype in _MULTI_EQUIP_ACCESSORY_SUBTYPES:
+        return False, None
+
+    inventory_list = getattr(player, "inventory_list", None) or getattr(
+        player, "inventory", []
+    )
+    for other_item in inventory_list:
+        if other_item is item or not getattr(other_item, "isequipped", False):
+            continue
+        if getattr(other_item, "maintype", None) != maintype:
+            continue
+        if maintype == "Accessory" and getattr(other_item, "subtype", None) != subtype:
+            continue
+        return True, other_item
+    return True, None
+
+
+def _diff_bonuses(current_item, candidate_item) -> Dict[str, float]:
+    """Compute the per-stat delta of scalar bonuses between two items."""
+    diffs = {}
+    for attr, label in _BONUS_ATTRS.items():
+        delta = getattr(candidate_item, attr, 0) - getattr(current_item, attr, 0)
+        if delta:
+            diffs[label] = delta
+    return diffs
+
+
+def _diff_resistance_dicts(current_item, candidate_item, attr_name: str) -> Dict[str, float]:
+    """Compute the per-key delta of a resistance-style dict attribute between two items."""
+    current = getattr(current_item, attr_name, None) or {}
+    candidate = getattr(candidate_item, attr_name, None) or {}
+    diffs = {}
+    for key in set(current) | set(candidate):
+        delta = candidate.get(key, 0) - current.get(key, 0)
+        if delta:
+            diffs[key] = delta
+    return diffs
+
 
 class InventoryItemSerializer:
     """Serialize a single item in player inventory."""
 
     @staticmethod
-    def serialize(item, index: int) -> Dict:
+    def serialize(item, index: int, player=None) -> Dict:
         """
         Serialize an item for inventory listing.
 
         Args:
             item: The item object to serialize
             index: The position in inventory
+            player: The owning Player, used to compute an equipped-item
+                comparison block. Omit to skip the comparison.
 
         Returns:
             Dictionary with item data suitable for JSON
@@ -90,6 +175,9 @@ class InventoryItemSerializer:
             item_data["damage"] = round(getattr(item, "damage", 0))
             item_data["str_mod"] = getattr(item, "str_mod", 0)
             item_data["fin_mod"] = getattr(item, "fin_mod", 0)
+            from items import get_base_damage_type  # local import: see game_service.py precedent
+
+            item_data["damage_type"] = get_base_damage_type(item)
 
         # Add armor-specific stats (Armor, Boots, Helm, Gloves, Accessory)
         if item_type in [
@@ -100,10 +188,33 @@ class InventoryItemSerializer:
             "Accessory",
         ] or maintype in ["Armor", "Boots", "Helm", "Gloves", "Accessory"]:
             item_data["protection"] = round(getattr(item, "protection", 0))
+            item_data["str_mod"] = getattr(item, "str_mod", 0)
+            if hasattr(item, "fin_mod"):
+                item_data["fin_mod"] = getattr(item, "fin_mod", 0)
 
         # Add composable effects array for usable (consumable) items
         if item_data["can_use"]:
             item_data["effects"] = _CONSUMABLE_EFFECTS.get(item_type, [])
+
+        # Add stat bonuses and resistances granted by this item (enchantments)
+        if item_data["can_equip"]:
+            bonuses = _collect_item_bonuses(item)
+            if bonuses:
+                item_data["bonuses"] = bonuses
+            resistances = getattr(item, "add_resistance", None)
+            if resistances:
+                item_data["resistances"] = dict(resistances)
+            status_resistances = getattr(item, "add_status_resistance", None)
+            if status_resistances:
+                item_data["status_resistances"] = dict(status_resistances)
+
+        # Add a comparison against the currently-equipped counterpart, if any
+        if player is not None and item_data["can_equip"] and not item_data["is_equipped"]:
+            comparable, counterpart = _get_equip_slot_status(player, item)
+            if comparable:
+                item_data["comparison"] = ItemComparisonSerializer.serialize(
+                    counterpart, item
+                )
 
         return item_data
 
@@ -130,7 +241,7 @@ class InventorySerializer:
             player, "inventory", []
         )
         for idx, item in enumerate(inventory_list):
-            items.append(InventoryItemSerializer.serialize(item, idx))
+            items.append(InventoryItemSerializer.serialize(item, idx, player))
             total_weight += getattr(item, "weight", 0.0)
 
         return {
@@ -308,7 +419,7 @@ class ItemDetailSerializer:
             "can_use": hasattr(item, "use"),
             "can_drop": True,  # Most items can be dropped
             "stats": {
-                "armor": round(getattr(item, "armor", 0)),
+                "protection": round(getattr(item, "protection", 0)),
                 "damage": round(getattr(item, "damage", 0)),
                 "magic_attack": getattr(item, "magic_attack", 0),
                 "magic_defense": getattr(item, "magic_defense", 0),
@@ -359,8 +470,8 @@ class ItemComparisonSerializer:
         damage_diff = getattr(candidate_item, "damage", 0) - getattr(
             current_item, "damage", 0
         )
-        armor_diff = getattr(candidate_item, "armor", 0) - getattr(
-            current_item, "armor", 0
+        protection_diff = getattr(candidate_item, "protection", 0) - getattr(
+            current_item, "protection", 0
         )
         weight_diff = getattr(candidate_item, "weight", 0) - getattr(
             current_item, "weight", 0
@@ -368,16 +479,32 @@ class ItemComparisonSerializer:
         value_diff = getattr(candidate_item, "value", 0) - getattr(
             current_item, "value", 0
         )
+        bonus_diffs = _diff_bonuses(current_item, candidate_item)
+        resistance_diffs = _diff_resistance_dicts(
+            current_item, candidate_item, "add_resistance"
+        )
+        status_resistance_diffs = _diff_resistance_dicts(
+            current_item, candidate_item, "add_status_resistance"
+        )
 
         # Determine recommendation
-        if damage_diff > 0 and armor_diff >= 0:
+        if damage_diff > 0 and protection_diff >= 0:
             recommendation = "upgrade"
-        elif damage_diff >= 0 and armor_diff > 0:
+        elif damage_diff >= 0 and protection_diff > 0:
             recommendation = "upgrade"
-        elif damage_diff < 0 and armor_diff < 0:
+        elif damage_diff < 0 and protection_diff < 0:
             recommendation = "downgrade"
         else:
             recommendation = "sidegrade"
+
+        reason_parts = []
+        if damage_diff:
+            reason_parts.append(f"Damage {'+' if damage_diff > 0 else ''}{damage_diff}")
+        if protection_diff:
+            reason_parts.append(
+                f"Protection {'+' if protection_diff > 0 else ''}{protection_diff}"
+            )
+        reason_parts.append(f"Weight {'+' if weight_diff > 0 else ''}{weight_diff}")
 
         return {
             "comparison_type": "item_to_item",
@@ -385,12 +512,13 @@ class ItemComparisonSerializer:
             "candidate": candidate_data,
             "differences": {
                 "damage_diff": damage_diff,
-                "armor_diff": armor_diff,
+                "protection_diff": protection_diff,
                 "weight_diff": weight_diff,
                 "value_diff": value_diff,
+                "bonus_diffs": bonus_diffs,
+                "resistance_diffs": resistance_diffs,
+                "status_resistance_diffs": status_resistance_diffs,
             },
             "recommendation": recommendation,
-            "reason": f"Damage {'+' if damage_diff > 0 else ''}{damage_diff}, "
-            f"Armor {'+' if armor_diff > 0 else ''}{armor_diff}, "
-            f"Weight {'+' if weight_diff > 0 else ''}{weight_diff}",
+            "reason": ", ".join(reason_parts),
         }

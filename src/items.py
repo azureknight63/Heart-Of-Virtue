@@ -195,19 +195,17 @@ class Item:
                 if "equip" not in self.interactions:
                     self.interactions.append("equip")
                 functions.refresh_stat_bonuses(player)
-                player.refresh_protection_rating()
             except Exception:
                 # If anything goes wrong here, fail gracefully without breaking the equip flow
                 pass
             return
         # Normal equip behavior: apply any equip states
         if len(self.equip_states) > 0:
-            for state in self.equip_states:
-                player.apply_state(state)
+            player.apply_equip_states(self)
         return
 
     def on_unequip(self, player: "Player") -> None:
-        pass
+        player.remove_equip_states(self)
 
     def drop(self, player: "Player", quantity: Optional[int] = None) -> None:
         if hasattr(self, "count"):
@@ -265,7 +263,6 @@ class Item:
                     if issubclass(self.__class__, Weapon):
                         player.eq_weapon = player.fists
         functions.refresh_stat_bonuses(player)
-        player.refresh_protection_rating()
 
     def take(self, player: "Player", quantity: Optional[int] = None) -> None:
         """Take the item from the ground."""
@@ -409,7 +406,6 @@ class Item:
             self.interactions.remove("unequip")
             self.interactions.append("equip")
             functions.refresh_stat_bonuses(player)
-            player.refresh_protection_rating()
 
 
 class Gold(Item):
@@ -2279,14 +2275,14 @@ class JeanWeddingBand(Accessory):
 
     def on_equip(self, player: "Player") -> None:
         if len(self.equip_states) > 0:
-            for state in self.equip_states:
-                player.apply_state(state)
+            player.apply_equip_states(self)
         narrate(
             "As he slides on the band, Jean's face appears placid. "
             "His heart, however, is filled with sadness, and a coldness grips his stomach."
         )
 
     def on_unequip(self, player: "Player") -> None:
+        player.remove_equip_states(self)
         narrate(
             "Jean's frown twitches slightly as his finger is released from the weight of the band. "
             "He glances briefly at the faded inscription on the ring's inner wall "
@@ -2670,6 +2666,7 @@ class Antidote(Consumable):
             for poison in poisons:
                 poison.on_removal(poison.target)
                 player.states.remove(poison)
+            functions.refresh_stat_bonuses(player)
             self.count -= 1
             self.stack_grammar()
             if self.count <= 0:

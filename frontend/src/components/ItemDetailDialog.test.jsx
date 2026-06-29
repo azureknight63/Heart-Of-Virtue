@@ -88,6 +88,34 @@ describe('ItemDetailDialog', () => {
     expect(mockOnBack).toHaveBeenCalled();
   });
 
+  it('renders engine flavor narration from the equip response', async () => {
+    apiClient.post.mockResolvedValue({
+      data: {
+        success: true,
+        messages: ['Jean put the Rusty Dagger back into his bag.'],
+      },
+    });
+
+    render(
+      <ItemDetailDialog
+        item={mockItem}
+        player={mockPlayer}
+        onClose={mockOnClose}
+        onBack={mockOnBack}
+        onItemUpdated={mockOnItemUpdated}
+        onRefetch={mockOnRefetch}
+      />
+    );
+
+    fireEvent.click(screen.getByText(/Equip/i));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/back into his bag/i)
+      ).toBeDefined();
+    });
+  });
+
   it('handles use action successfully', async () => {
     const consumableItem = {
       ...mockItem,
@@ -443,6 +471,81 @@ describe('ItemDetailDialog', () => {
     });
   });
 
+  it('closes entire inventory dialog when item is used in combat mode', async () => {
+    const consumableItem = {
+      ...mockItem,
+      can_equip: false,
+      can_use: true,
+      maintype: 'Consumable',
+      name: 'Health Potion',
+    };
+
+    apiClient.post.mockResolvedValue({ data: { success: true, message: 'You feel better.' } });
+
+    render(
+      <ItemDetailDialog
+        item={consumableItem}
+        player={mockPlayer}
+        onClose={mockOnClose}
+        onBack={mockOnBack}
+        onItemRemoved={mockOnItemRemoved}
+        onRefetch={mockOnRefetch}
+        combatMode={true}
+      />
+    );
+
+    fireEvent.click(screen.getByText(/Use/i));
+
+    await waitFor(() => {
+      expect(apiClient.post).toHaveBeenCalledWith('/inventory/use', { item_id: 1 });
+      expect(screen.getByText(/You feel better./i)).toBeDefined();
+    });
+
+    // Click Ok on success dialog
+    fireEvent.click(screen.getByText(/Ok/i));
+
+    // Should call onClose instead of onBack
+    expect(mockOnClose).toHaveBeenCalled();
+    expect(mockOnBack).not.toHaveBeenCalled();
+  });
+
+  it('calls onBack (not onClose) when item is used outside combat', async () => {
+    const consumableItem = {
+      ...mockItem,
+      can_equip: false,
+      can_use: true,
+      maintype: 'Consumable',
+      name: 'Health Potion',
+    };
+
+    apiClient.post.mockResolvedValue({ data: { success: true, message: 'You feel better.' } });
+
+    render(
+      <ItemDetailDialog
+        item={consumableItem}
+        player={mockPlayer}
+        onClose={mockOnClose}
+        onBack={mockOnBack}
+        onItemRemoved={mockOnItemRemoved}
+        onRefetch={mockOnRefetch}
+        combatMode={false}
+      />
+    );
+
+    fireEvent.click(screen.getByText(/Use/i));
+
+    await waitFor(() => {
+      expect(screen.getByText(/You feel better./i)).toBeDefined();
+    });
+
+    // Click Ok on success dialog
+    fireEvent.click(screen.getByText(/Ok/i));
+
+    // Should call onBack, not onClose
+    expect(mockOnBack).toHaveBeenCalled();
+    expect(mockOnClose).not.toHaveBeenCalled();
+  });
+
   // ---------------------------------------------------------------------------
   // Book reading (handleRead)
   // ---------------------------------------------------------------------------
@@ -646,5 +749,132 @@ describe('ItemDetailDialog', () => {
     const dropButton = screen.getByText(/Drop/i);
     fireEvent.mouseEnter(dropButton);
     fireEvent.mouseLeave(dropButton);
+  });
+
+  // ---------------------------------------------------------------------------
+  // Stat details: damage/protection, bonuses, resistances, effects, comparison
+  // ---------------------------------------------------------------------------
+  describe('stat details', () => {
+    it('shows damage and damage type for weapons', () => {
+      const weapon = { ...mockItem, damage: 25, damage_type: 'slashing' };
+      render(<ItemDetailDialog item={weapon} player={mockPlayer} onBack={mockOnBack} />);
+
+      expect(screen.getByText(/25.*\(Slashing\)/)).toBeDefined();
+    });
+
+    it('shows protection for armor', () => {
+      const armor = { ...mockItem, damage: undefined, protection: 12, maintype: 'Armor', subtype: 'Armor' };
+      render(<ItemDetailDialog item={armor} player={mockPlayer} onBack={mockOnBack} />);
+
+      expect(screen.getByText('Protection')).toBeDefined();
+      expect(screen.getByText(/🛡️ 12/)).toBeDefined();
+    });
+
+    it('does not show a Protection cell when item.protection is absent', () => {
+      render(<ItemDetailDialog item={mockItem} player={mockPlayer} onBack={mockOnBack} />);
+      expect(screen.queryByText('Protection')).toBeNull();
+    });
+
+    it('renders stat bonus chips', () => {
+      const enchanted = { ...mockItem, bonuses: { strength: 3, finesse: -1 } };
+      render(<ItemDetailDialog item={enchanted} player={mockPlayer} onBack={mockOnBack} />);
+
+      expect(screen.getByText('Bonuses')).toBeDefined();
+      expect(screen.getByText(/STR \+3/)).toBeDefined();
+      expect(screen.getByText(/FIN -1/)).toBeDefined();
+    });
+
+    it('does not render a Bonuses section when item.bonuses is absent', () => {
+      render(<ItemDetailDialog item={mockItem} player={mockPlayer} onBack={mockOnBack} />);
+      expect(screen.queryByText('Bonuses')).toBeNull();
+    });
+
+    it('renders resistance and status resistance chips', () => {
+      const resistant = {
+        ...mockItem,
+        resistances: { fire: 0.3 },
+        status_resistances: { poison: -0.1 },
+      };
+      render(<ItemDetailDialog item={resistant} player={mockPlayer} onBack={mockOnBack} />);
+
+      expect(screen.getByText('Resistances')).toBeDefined();
+      expect(screen.getByText(/FIRE Res \+30%/)).toBeDefined();
+      expect(screen.getByText(/Poison Resist -10%/)).toBeDefined();
+    });
+
+    it('renders consumable effect descriptions in the main panel', () => {
+      const potion = {
+        ...mockItem,
+        can_use: true,
+        maintype: 'Consumable',
+        effects: [
+          { type: 'heal', stat: 'hp', power: 60, range: [48, 72] },
+          { type: 'status_remove', status_name: 'Poisoned' },
+        ],
+      };
+      render(<ItemDetailDialog item={potion} player={mockPlayer} onBack={mockOnBack} />);
+
+      expect(screen.getByText('Effects')).toBeDefined();
+      expect(screen.getByText(/Restores 48-72 HP/)).toBeDefined();
+      expect(screen.getByText(/Cures Poisoned/)).toBeDefined();
+    });
+
+    it('does not render an Effects section when item.effects is absent', () => {
+      render(<ItemDetailDialog item={mockItem} player={mockPlayer} onBack={mockOnBack} />);
+      expect(screen.queryByText('Effects')).toBeNull();
+    });
+
+    it('renders an empty_to_item comparison as an upgrade with no equipped item', () => {
+      const candidate = {
+        ...mockItem,
+        comparison: {
+          comparison_type: 'empty_to_item',
+          current: null,
+          candidate: { name: 'Iron Sword' },
+          recommendation: 'upgrade',
+          reason: 'No item currently equipped',
+        },
+      };
+      render(<ItemDetailDialog item={candidate} player={mockPlayer} onBack={mockOnBack} />);
+
+      expect(screen.getByText(/vs\. Equipped/)).toBeDefined();
+      expect(screen.getByText(/UPGRADE/)).toBeDefined();
+      expect(screen.getByText('No item currently equipped')).toBeDefined();
+    });
+
+    it('renders an item_to_item comparison with diff chips and the equipped item name', () => {
+      const candidate = {
+        ...mockItem,
+        comparison: {
+          comparison_type: 'item_to_item',
+          current: { name: 'Rusty Sword' },
+          candidate: { name: 'Iron Sword' },
+          differences: {
+            damage_diff: 5,
+            protection_diff: 0,
+            weight_diff: -1,
+            value_diff: 20,
+            bonus_diffs: {},
+            resistance_diffs: {},
+            status_resistance_diffs: {},
+          },
+          recommendation: 'upgrade',
+          reason: 'Damage +5, Weight -1',
+        },
+      };
+      render(<ItemDetailDialog item={candidate} player={mockPlayer} onBack={mockOnBack} />);
+
+      expect(screen.getByText(/vs\. Equipped: Rusty Sword/)).toBeDefined();
+      expect(screen.getByText(/DMG \+5/)).toBeDefined();
+      expect(screen.getByText(/WT -1/)).toBeDefined();
+      expect(screen.getByText(/VAL \+20g/)).toBeDefined();
+      // protection_diff of 0 should not render a DEF chip
+      expect(screen.queryByText(/DEF/)).toBeNull();
+    });
+
+    it('does not render a comparison block when item.comparison is absent', () => {
+      render(<ItemDetailDialog item={mockItem} player={mockPlayer} onBack={mockOnBack} />);
+      expect(screen.queryByText(/vs\. Equipped/)).toBeNull();
+    });
   });
 });

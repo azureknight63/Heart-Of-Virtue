@@ -282,31 +282,6 @@ class TestOpenAPIEquipmentPaths:
         path_item = schema["paths"]["/equipment/"]
         assert "get" in path_item
 
-    def test_equipment_equip_path_exists(self):
-        """Test that /equipment/equip path is documented."""
-        schema = generate_openapi_schema()
-        paths = schema["paths"]
-        assert "/equipment/equip" in paths
-
-    def test_equipment_equip_is_post(self):
-        """Test that /equipment/equip is a POST endpoint."""
-        schema = generate_openapi_schema()
-        path_item = schema["paths"]["/equipment/equip"]
-        assert "post" in path_item
-
-    def test_equipment_unequip_path_exists(self):
-        """Test that /equipment/unequip path is documented."""
-        schema = generate_openapi_schema()
-        paths = schema["paths"]
-        assert "/equipment/unequip" in paths
-
-    def test_equipment_unequip_is_post(self):
-        """Test that /equipment/unequip is a POST endpoint."""
-        schema = generate_openapi_schema()
-        path_item = schema["paths"]["/equipment/unequip"]
-        assert "post" in path_item
-
-
 class TestOpenAPICombatPaths:
     """Test combat endpoints in OpenAPI schema."""
 

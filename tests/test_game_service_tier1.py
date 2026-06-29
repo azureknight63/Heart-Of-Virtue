@@ -530,25 +530,6 @@ class TestComplexGameStateTransitions:
 
         assert isinstance(result, dict)
 
-    def test_equip_item_basic(self, game_service, mock_player):
-        """Test basic item equipping."""
-        mock_item = MagicMock()
-        mock_item.id = "test_sword"
-        mock_item.name = "Iron Sword"
-        mock_item.equipment_slot = "weapon"
-        mock_item.type = "weapon"
-
-        mock_player.inventory = [mock_item]
-
-        # equip_item should handle the call
-        try:
-            result = game_service.equip_item(mock_player, "test_sword", "weapon")
-            # Should return something without crashing
-            assert result is not None
-        except (KeyError, AttributeError, TypeError):
-            # Method may fail if inventory is mocked, that's ok
-            assert True
-
     def test_start_combat_with_multiple_enemies(self, game_service, mock_player):
         """Test starting combat with enemy."""
         mock_enemy = MagicMock()

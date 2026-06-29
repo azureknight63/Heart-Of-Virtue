@@ -119,24 +119,6 @@ class TestGameServiceGetInventory:
         assert isinstance(result, dict)
 
 
-class TestGameServiceEquipItem:
-    """Tests for equip_item() method - equipment management."""
-    
-    def test_equip_item_returns_dict(self, game_service, mock_player):
-        """Verify equip_item returns a dictionary."""
-        mock_weapon = MagicMock()
-        mock_weapon.maintype = "Weapon"
-        mock_player.inventory = [mock_weapon]
-        
-        result = game_service.equip_item(mock_player, 0)
-        assert isinstance(result, dict)
-    
-    def test_unequip_item_returns_dict(self, game_service, mock_player):
-        """Verify unequip_item returns a dictionary."""
-        result = game_service.unequip_item(mock_player, "weapon")
-        assert isinstance(result, dict)
-
-
 class TestGameServiceInteraction:
     """Tests for interact_with_target() method - object/NPC interaction."""
 
@@ -182,18 +164,5 @@ class TestGameServiceIntegration:
         result = game_service.get_inventory(mock_player)
         assert isinstance(result, dict)
     
-    def test_equip_item_and_check_status(self, game_service, mock_player):
-        """Test equipping item and checking status."""
-        mock_weapon = MagicMock()
-        mock_weapon.maintype = "Weapon"
-        mock_player.inventory = [mock_weapon]
-        
-        equip_result = game_service.equip_item(mock_player, 0)
-        assert isinstance(equip_result, dict)
-        
-        inventory_result = game_service.get_inventory(mock_player)
-        assert isinstance(inventory_result, dict)
-
-
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

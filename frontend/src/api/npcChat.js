@@ -5,13 +5,15 @@ import apiClient from './client'
  * Uses apiClient which automatically handles auth tokens via localStorage.authToken
  */
 
-const BASE = '/api/npc/chat'
+// apiClient already prefixes baseURL ('/api'), so paths here must be relative to it.
+const BASE = '/npc/chat'
 
 const npcChat = {
   /**
    * Open a conversation with an NPC
    * @param {string} npcId - NPC class name (e.g., 'Mynx', 'Gorran')
-   * @returns {Promise} Response with { npc_key, display_name, loquacity, current_options, messages }
+   * @returns {Promise} Response with { npc_key, npc_name, npc_opening, jean_options,
+   *   loquacity_current, loquacity_max, conversation_ended, reputation, relationship }
    */
   open: (npcId) => apiClient.post(`${BASE}/open`, { npc_id: npcId }),
 
@@ -20,7 +22,8 @@ const npcChat = {
    * @param {string} npcKey - Session key returned from /open
    * @param {string} jeanText - Jean's dialogue text
    * @param {string} jeanTone - 'direct', 'guarded', or 'open'
-   * @returns {Promise} Response with updated NPC response and options
+   * @returns {Promise} Response with { npc_response, jean_options, loquacity_current,
+   *   loquacity_max, conversation_ended, reputation, reputation_delta, relationship }
    */
   respond: (npcKey, jeanText, jeanTone = 'direct') =>
     apiClient.post(`${BASE}/respond`, {

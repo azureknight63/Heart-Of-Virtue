@@ -510,6 +510,11 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
 
         self.game_tick += 1
 
+        # Decay world-persistent states (Poisoned, Slimed, Petrified, Hollowed, Clean, ...)
+        # while not in combat; combat beats drain states via the combat loop instead.
+        if self.player is not None and not getattr(self.player, "in_combat", False):
+            self.player.cycle_states()
+
         if self.game_tick == 1:
             # Single evaluation pass (includes repeat events once) after first tick
             self._evaluate_map_entry_spawners(process_repeats=True)

@@ -3,48 +3,11 @@
 import logging
 from flask import Blueprint, request, jsonify
 
+from src.api.middleware.auth import get_session_and_player
+
 logger = logging.getLogger(__name__)
 
 combat_bp = Blueprint("combat", __name__)
-
-
-def get_session_and_player(request):
-    """Extract session and player from request."""
-    from flask import current_app
-
-    auth_header = request.headers.get("Authorization", "")
-    if not auth_header.startswith("Bearer "):
-        return (
-            None,
-            None,
-            None,
-            (jsonify({"error": "Missing authorization"}), 401),
-        )
-
-    session_id = auth_header[7:]
-    if not session_id:
-        return (
-            None,
-            None,
-            None,
-            (jsonify({"error": "Missing authorization"}), 401),
-        )
-    session_manager = current_app.session_manager
-    session = session_manager.get_session(session_id)
-
-    if not session:
-        return (
-            None,
-            None,
-            None,
-            (jsonify({"error": "Invalid or expired session"}), 401),
-        )
-
-    player = session_manager.get_player(session_id)
-    if not player:
-        return None, None, None, (jsonify({"error": "Player not found"}), 404)
-
-    return session_manager, session, player, None
 
 
 @combat_bp.route("/start", methods=["POST"])
@@ -69,7 +32,7 @@ def start_combat():
         }
     """
     try:
-        session_manager, session, player, error = get_session_and_player(request)
+        session_manager, session, player, error = get_session_and_player()
         if error:
             return error
 
@@ -135,7 +98,7 @@ def execute_move():
         }
     """
     try:
-        session_manager, session, player, error = get_session_and_player(request)
+        session_manager, session, player, error = get_session_and_player()
         if error:
             return error
 
@@ -205,7 +168,7 @@ def get_combat_status():
         }
     """
     try:
-        session_manager, session, player, error = get_session_and_player(request)
+        session_manager, session, player, error = get_session_and_player()
         if error:
             return error
 
@@ -231,51 +194,20 @@ def get_combat_status():
 def toggle_suggestions_pause():
     """Pause or resume Tactical Advisor suggestion generation for this session."""
     try:
-        session_manager, session, player, error = get_session_and_player(request)
+        session_manager, session, player, error = get_session_and_player()
         if error:
             return error
 
+        from flask import current_app
+
         data = request.get_json() or {}
         paused = bool(data.get("paused", False))
-        player.suggestions_paused = paused
-        if not paused:
-            # Clear stale data so the next status poll triggers a fresh fetch
-            player.suggested_moves = []
-            player.suggestions_loading = False
+        current_app.game_service.set_suggestions_paused(player, paused)
         return jsonify({"success": True, "paused": paused}), 200
 
     except Exception:
         logger.exception("Unhandled error in toggle_suggestions_pause")
         return jsonify({"success": False, "error": "An internal error occurred"}), 500
-
-
-@combat_bp.route("/log", methods=["GET"])
-def get_combat_log():
-    """Get full combat log.
-
-    Headers:
-        Authorization: Bearer <session_id>
-
-    Returns:
-        {
-            "success": bool,
-            "log": [...]
-        }
-    """
-    try:
-        session_manager, session, player, error = get_session_and_player(request)
-        if error:
-            return error
-
-        log = getattr(player, "combat_log", [])
-        return jsonify({"success": True, "log": log}), 200
-
-    except Exception:
-        logger.exception("Unhandled error in get_combat_log")
-        return (
-            jsonify({"success": False, "error": "An internal error occurred"}),
-            500,
-        )
 
 
 @combat_bp.route("/collect-loot", methods=["POST"])
@@ -298,7 +230,7 @@ def collect_loot():
         }
     """
     try:
-        session_manager, session, player, error = get_session_and_player(request)
+        session_manager, session, player, error = get_session_and_player()
         if error:
             return error
 

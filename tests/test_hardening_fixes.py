@@ -12,7 +12,7 @@ from src import player as player_module
 
 
 class TestDropItemHardening:
-    """Test FIX 1 & 2: drop_item() defensive checks and type validation."""
+    """Test drop_item() defensive checks on the object-based signature."""
 
     def test_drop_item_success_basic(self):
         """Test successful drop_item with valid state."""
@@ -21,6 +21,7 @@ class TestDropItemHardening:
         # Create a mock player with valid state
         item = Mock()
         item.name = "Test Item"
+        item.isequipped = False
         player = Mock()
         player.inventory = [item]
         player.universe = Mock()
@@ -28,7 +29,7 @@ class TestDropItemHardening:
         tile.items_here = []
         player.universe.get_tile = Mock(return_value=tile)
 
-        result = game_service.drop_item(player, 0)
+        result = game_service.drop_item(player, item)
 
         assert result["success"] is True
         assert result["item_name"] == "Test Item"
@@ -36,49 +37,52 @@ class TestDropItemHardening:
         assert item not in player.inventory
 
     def test_drop_item_universe_none(self):
-        """FIX 1: Test that drop_item returns error when universe is None."""
+        """Test that drop_item returns error when universe is None."""
         game_service = GameService()
 
         item = Mock()
         item.name = "Test Item"
+        item.isequipped = False
         player = Mock()
         player.inventory = [item]
         player.universe = None
 
-        result = game_service.drop_item(player, 0)
+        result = game_service.drop_item(player, item)
 
         assert "error" in result
-        assert "universe" in result["error"].lower()
+        assert "location" in result["error"].lower()
         # Verify item was not removed from inventory
         assert item in player.inventory
 
     def test_drop_item_no_universe_attr(self):
-        """FIX 1: Test that drop_item returns error when universe attribute missing."""
+        """Test that drop_item returns error when universe attribute missing."""
         game_service = GameService()
 
         item = Mock()
         item.name = "Test Item"
-        player = Mock(spec=[])  # No universe attribute
+        item.isequipped = False
+        player = Mock(spec=["inventory"])  # No universe attribute
         player.inventory = [item]
 
-        result = game_service.drop_item(player, 0)
+        result = game_service.drop_item(player, item)
 
         assert "error" in result
-        assert "universe" in result["error"].lower()
+        assert "location" in result["error"].lower()
         assert item in player.inventory
 
     def test_drop_item_tile_none(self):
-        """FIX 1: Test that drop_item returns error when tile is None."""
+        """Test that drop_item returns error when tile is None."""
         game_service = GameService()
 
         item = Mock()
         item.name = "Test Item"
+        item.isequipped = False
         player = Mock()
         player.inventory = [item]
         player.universe = Mock()
         player.universe.get_tile = Mock(return_value=None)
 
-        result = game_service.drop_item(player, 0)
+        result = game_service.drop_item(player, item)
 
         assert "error" in result
         assert "location" in result["error"].lower()
@@ -86,29 +90,51 @@ class TestDropItemHardening:
         assert item in player.inventory
 
     def test_drop_item_tile_missing_items_here(self):
-        """FIX 1: Test that drop_item returns error when tile lacks items_here."""
+        """Test that drop_item returns error when tile lacks items_here."""
         game_service = GameService()
 
         item = Mock()
         item.name = "Test Item"
+        item.isequipped = False
         player = Mock()
         player.inventory = [item]
         player.universe = Mock()
         tile = Mock(spec=[])  # No items_here attribute
         player.universe.get_tile = Mock(return_value=tile)
 
-        result = game_service.drop_item(player, 0)
+        result = game_service.drop_item(player, item)
 
         assert "error" in result
         assert "location" in result["error"].lower()
         # Verify item was not removed from inventory
         assert item in player.inventory
 
-    def test_drop_item_corrupted_inventory_item_no_name(self):
-        """FIX 2: Test that drop_item rejects items without name attribute."""
+    def test_drop_item_not_in_inventory(self):
+        """Test that drop_item errors when the item isn't in inventory."""
         game_service = GameService()
 
-        item = Mock(spec=[])  # No name attribute
+        item = Mock()
+        item.name = "Ghost"
+        item.isequipped = False
+        player = Mock()
+        player.inventory = []
+        player.universe = Mock()
+        tile = Mock()
+        tile.items_here = []
+        player.universe.get_tile = Mock(return_value=tile)
+
+        result = game_service.drop_item(player, item)
+
+        assert "error" in result
+        assert "not found" in result["error"].lower()
+
+    def test_drop_item_unequips_equipped(self):
+        """Test that drop_item unequips an equipped item before dropping it."""
+        game_service = GameService()
+
+        item = Mock()
+        item.name = "Sword"
+        item.isequipped = True
         player = Mock()
         player.inventory = [item]
         player.universe = Mock()
@@ -116,118 +142,11 @@ class TestDropItemHardening:
         tile.items_here = []
         player.universe.get_tile = Mock(return_value=tile)
 
-        result = game_service.drop_item(player, 0)
-
-        assert "error" in result
-        assert "corrupted" in result["error"].lower()
-        assert item in player.inventory  # Not removed
-
-    def test_drop_item_invalid_index(self):
-        """Test that drop_item rejects invalid index."""
-        game_service = GameService()
-
-        player = Mock()
-        player.inventory = []
-
-        result = game_service.drop_item(player, 0)
-
-        assert "error" in result
-        assert "index" in result["error"].lower()
-
-    def test_drop_item_negative_index(self):
-        """Test that drop_item rejects negative index."""
-        game_service = GameService()
-
-        player = Mock()
-        player.inventory = [Mock(name="Item")]
-
-        result = game_service.drop_item(player, -1)
-
-        assert "error" in result
-        assert "index" in result["error"].lower()
-
-
-class TestUseItemHardening:
-    """Test FIX 2: use_item() type validation."""
-
-    def test_use_item_success_basic(self):
-        """Test successful use_item with valid item."""
-        game_service = GameService()
-
-        item = Mock()
-        item.name = "Test Potion"
-        item.use = Mock(return_value={"success": True})
-        player = Mock()
-        player.inventory = [item]
-
-        result = game_service.use_item(player, 0)
+        result = game_service.drop_item(player, item)
 
         assert result["success"] is True
-        assert "Used" in result["message"]
-
-    def test_use_item_string_in_inventory(self):
-        """FIX 2: Test that use_item rejects string in inventory."""
-        game_service = GameService()
-
-        player = Mock()
-        player.inventory = ["not_an_item"]
-
-        result = game_service.use_item(player, 0)
-
-        assert "error" in result
-        assert "corrupted" in result["error"].lower()
-
-    def test_use_item_dict_in_inventory(self):
-        """FIX 2: Test that use_item rejects dict in inventory."""
-        game_service = GameService()
-
-        player = Mock()
-        player.inventory = [{"name": "Item"}]
-
-        result = game_service.use_item(player, 0)
-
-        assert "error" in result
-        assert "corrupted" in result["error"].lower()
-
-    def test_use_item_int_in_inventory(self):
-        """FIX 2: Test that use_item rejects int in inventory."""
-        game_service = GameService()
-
-        player = Mock()
-        player.inventory = [42]
-
-        result = game_service.use_item(player, 0)
-
-        assert "error" in result
-        assert "corrupted" in result["error"].lower()
-
-    def test_use_item_missing_name_attribute(self):
-        """FIX 2: Test that use_item rejects item missing name."""
-        game_service = GameService()
-
-        item = Mock(spec=[])  # No name attribute
-        player = Mock()
-        player.inventory = [item]
-
-        result = game_service.use_item(player, 0)
-
-        assert "error" in result
-        assert "name" in result["error"].lower()
-
-    def test_use_item_no_use_method(self):
-        """Test that use_item rejects item without use method."""
-        game_service = GameService()
-
-        item = Mock()
-        item.name = "Decoration"
-        item.use = None  # Not callable
-        player = Mock()
-        player.inventory = [item]
-
-        result = game_service.use_item(player, 0)
-
-        assert result["success"] is False
-        assert "cannot be used" in result["error"]
+        player.unequip_item.assert_called_once_with(item_object=item)
+        assert item in tile.items_here
 
 
 class TestCollectCombatLootHardening:
@@ -763,10 +682,12 @@ class TestRegressionScenarios:
         sword = Mock()
         sword.name = "Iron Sword"
         sword.weight = 5.0
+        sword.isequipped = False
 
         potion = Mock()
         potion.name = "Health Potion"
         potion.use = Mock(return_value={"healed": 10})
+        potion.isequipped = False
 
         player = Mock()
         player.inventory = [sword, potion]
@@ -776,13 +697,10 @@ class TestRegressionScenarios:
         player.universe.get_tile = Mock(return_value=tile)
 
         # Test drop
-        result = game_service.drop_item(player, 0)
+        result = game_service.drop_item(player, sword)
         assert result["success"] is True
         assert len(player.inventory) == 1
-
-        # Test use
-        result = game_service.use_item(player, 0)
-        assert result["success"] is True
+        assert sword in tile.items_here
 
     def test_loot_collection_flow(self):
         """Ensure normal loot collection still works."""

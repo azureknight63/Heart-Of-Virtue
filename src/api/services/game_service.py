@@ -23,27 +23,6 @@ from src.api.serializers.inventory import (
 from src.api.serializers.combat import (
     CombatStateSerializer,
 )
-from src.api.serializers.npc_ai import (
-    NPCAIStateSerializer,
-    DialogueStateSerializer,
-    QuestStateSerializer,
-    NPCBehaviorProfileSerializer,
-)
-from src.api.serializers.npc_availability import (
-    NPCAvailabilitySerializer,
-    LocationNPCSerializer,
-    NPCTimelineSerializer,
-    NPCStatusSerializer,
-)
-from src.api.serializers.dialogue_context import (
-    DialogueNodeSerializer,
-    DialogueChoiceSerializer,
-    ConversationHistorySerializer,
-    DialogueContextSerializer,
-    DialogueNode,
-    ConversationHistory,
-    DialogueContext,
-)
 
 _log = logging.getLogger(__name__)
 
@@ -97,6 +76,19 @@ class GameService:
         """Get the current game tick from player's universe, or 0."""
         u = getattr(player, "universe", None)
         return getattr(u, "game_tick", 0) if u else 0
+
+    @staticmethod
+    def _serialize_active_states(combatant: Any) -> List[Dict[str, Any]]:
+        """Serialize a combatant's non-hidden active status effects."""
+        return [
+            {
+                "name": s.name,
+                "status_type": getattr(s, "statustype", "generic"),
+                "beats_left": getattr(s, "beats_left", 0),
+            }
+            for s in getattr(combatant, "states", [])
+            if not getattr(s, "hidden", False)
+        ]
 
     def _get_event_target_modules(
         self, event, include_animations: bool = True
@@ -1737,155 +1729,6 @@ class GameService:
         """
         return EquipmentSerializer.serialize(player)
 
-    def equip_item(
-        self, player: "player_module.Player", item_index: int
-    ) -> Dict[str, Any]:
-        """Equip an item from inventory by index.
-
-        Args:
-            player: The Player instance
-            item_index: Index of item in inventory to equip
-
-        Returns:
-            Result of action with equipment changes
-        """
-        inventory = getattr(player, "inventory", [])
-
-        # Validate index
-        if (
-            not isinstance(item_index, int)
-            or item_index < 0
-            or item_index >= len(inventory)
-        ):
-            return {
-                "success": False,
-                "error": f"Invalid item index: {item_index}",
-            }
-
-        item = inventory[item_index]
-
-        # Check if item can be equipped
-        if not hasattr(item, "isequipped"):
-            return {
-                "success": False,
-                "error": f"Item '{getattr(item, 'name', 'Unknown')}' cannot be equipped",
-            }
-
-        try:
-            # Mark as equipped
-            item.isequipped = True
-
-            # Update player's equipment based on item type
-            maintype = getattr(item, "maintype", None)
-
-            if maintype == "Weapon":
-                player.eq_weapon = item
-            elif maintype == "Shield":
-                player.shield = item
-            elif maintype in ["Armor", "Helm", "Boots", "Gloves"]:
-                # Map maintype to common player slot names
-                slot_map = {
-                    "Armor": "body",
-                    "Helm": "head",
-                    "Boots": "feet",
-                    "Gloves": "hands",
-                }
-                slot_name = slot_map.get(maintype)
-
-                # Check for item-defined slot name as well
-                if hasattr(item, "type_s"):
-                    slot_name = item.type_s.lower()
-                elif hasattr(item, "subtype") and not slot_name:
-                    slot_name = item.subtype.lower()
-
-                if slot_name and hasattr(player, slot_name):
-                    setattr(player, slot_name, item)
-                elif slot_name == "armor" and hasattr(player, "body"):
-                    player.body = item
-
-            # Refresh stat bonuses after equipment change
-            from src import functions
-
-            functions.refresh_stat_bonuses(player)
-
-            # Extract item type for response (use maintype, type_s, or subtype in order of preference)
-            item_type = (
-                maintype
-                or getattr(item, "type_s", None)
-                or getattr(item, "subtype", "Unknown")
-            )
-
-            return {
-                "success": True,
-                "item_name": getattr(item, "name", "Unknown"),
-                "item_type": item_type,
-                "equipment": EquipmentSerializer.serialize(player),
-            }
-        except Exception as e:
-            return {"success": False, "error": str(e)}
-
-    def unequip_item(self, player: "player_module.Player", slot: str) -> Dict[str, Any]:
-        """Unequip item from slot.
-
-        Args:
-            player: The Player instance
-            slot: Equipment slot name (weapon, shield, head, body, etc.)
-
-        Returns:
-            Result of action
-        """
-        # Map slot names to player attributes
-        slot_mapping = {
-            "weapon": "eq_weapon",
-            "shield": "shield",
-            "head": "head",
-            "body": "body",
-            "legs": "legs",
-            "feet": "feet",
-            "hands": "hands",
-            "accessory_1": "accessory_1",
-            "accessory_2": "accessory_2",
-        }
-
-        if slot not in slot_mapping:
-            return {"success": False, "error": f"Unknown slot: {slot}"}
-
-        attr_name = slot_mapping[slot]
-        item = getattr(player, attr_name, None)
-
-        if not item:
-            return {
-                "success": False,
-                "error": f"No item equipped in slot: {slot}",
-            }
-
-        try:
-            # Mark as unequipped
-            if hasattr(item, "isequipped"):
-                item.isequipped = False
-
-            # Clear the slot
-            if slot == "weapon":
-                # Equip fists if no weapon
-                if hasattr(player, "fists"):
-                    player.eq_weapon = player.fists
-            else:
-                setattr(player, attr_name, None)
-
-            # Refresh stat bonuses after equipment change
-            from src import functions
-
-            functions.refresh_stat_bonuses(player)
-
-            return {
-                "success": True,
-                "item_name": getattr(item, "name", "Unknown"),
-                "slot": slot,
-                "equipment": EquipmentSerializer.serialize(player),
-            }
-        except Exception as e:
-            return {"success": False, "error": str(e)}
-
     # ========================
     # Combat Methods
     # ========================
@@ -2332,9 +2175,6 @@ class GameService:
             }
             return adapter.process_command(command)
 
-        elif move_type == "flee":
-            return self.flee_combat(player)
-
         else:
             return {"error": f"Unknown move type: {move_type}"}
 
@@ -2545,6 +2385,8 @@ class GameService:
         max_weight = getattr(player, "weight_tolerance", 20.0)
         weight_pct = (weight / max_weight * 100) if max_weight > 0 else 0
 
+        player_states = self._serialize_active_states(player)
+
         return {
             "name": getattr(player, "name", "Unknown"),
             "level": getattr(player, "level", 1),
@@ -2569,7 +2411,8 @@ class GameService:
             "weight": weight,
             "max_weight": max_weight,
             "weight_pct": weight_pct,
-            "state": "normal",  # TODO: Get actual status effects
+            "state": player_states[0]["name"] if player_states else "normal",
+            "states": player_states,
             "party_members": [
                 {
                     "id": f"ally_{id(a)}",
@@ -2586,15 +2429,7 @@ class GameService:
                         if getattr(player, "in_combat", False)
                         else True
                     ),
-                    "states": [
-                        {
-                            "name": s.name,
-                            "status_type": getattr(s, "statustype", "generic"),
-                            "beats_left": getattr(s, "beats_left", 0),
-                        }
-                        for s in getattr(a, "states", [])
-                        if not getattr(s, "hidden", False)
-                    ],
+                    "states": self._serialize_active_states(a),
                 }
                 for a in getattr(player, "combat_list_allies", [])[1:]
             ],
@@ -2706,9 +2541,17 @@ class GameService:
                     # Check if already known
                     is_known = any(km["name"] == skill.name for km in known_moves)
 
-                    stat_ok = not hasattr(
-                        skill, "learnable_when"
-                    ) or skill.learnable_when(player)
+                    stat_ok = (
+                        not hasattr(skill, "learnable_when")
+                        or skill.learnable_when(player)
+                    )
+
+                    # Stat-gated mastery skills stay hidden entirely until their
+                    # linked stat is dominant — don't show them as a disabled
+                    # option the player can never act on.
+                    if not stat_ok and not is_known:
+                        continue
+
                     category_skills.append(
                         {
                             "name": skill.name,
@@ -2798,6 +2641,107 @@ class GameService:
             "message": f"Learned {skill_name}!",
             "remaining_exp": player.skill_exp[category],
             "skills": self.get_player_skills(player),
+        }
+
+    def allocate_level_up_points(
+        self, player: "player_module.Player", attribute: Optional[str], amount: Any
+    ) -> Dict[str, Any]:
+        """Allocate pending attribute points to a stat, or randomize distribution.
+
+        Args:
+            player: The Player instance
+            attribute: One of the allowed attribute keys, or "randomize"
+            amount: Points to allocate (ignored when attribute == "randomize")
+
+        Returns:
+            Dictionary with result. On success: {"success": True,
+            "remaining_points": int, "stats": {...}}.
+        """
+        allowed = {
+            "strength_base",
+            "finesse_base",
+            "speed_base",
+            "endurance_base",
+            "charisma_base",
+            "intelligence_base",
+            "faith_base",
+            "randomize",
+        }
+
+        if attribute not in allowed:
+            return {"success": False, "error": "Invalid attribute"}
+
+        remaining = int(getattr(player, "pending_attribute_points", 0) or 0)
+
+        if attribute == "randomize":
+            if remaining <= 0:
+                return {"success": False, "error": "No pending points to randomize"}
+
+            import random
+
+            attributes_list = [
+                "strength_base",
+                "finesse_base",
+                "speed_base",
+                "endurance_base",
+                "charisma_base",
+                "intelligence_base",
+                "faith_base",
+            ]
+            weights = [random.random() for _ in attributes_list]
+            remaining_points = remaining
+            for idx, attr in enumerate(attributes_list):
+                if idx == len(attributes_list) - 1:
+                    share = remaining_points
+                else:
+                    sum_remaining_weights = sum(weights[idx:])
+                    if sum_remaining_weights == 0:
+                        share = 0
+                    else:
+                        share = round(
+                            weights[idx] / sum_remaining_weights * remaining_points
+                        )
+                remaining_points -= share
+                setattr(player, attr, int(getattr(player, attr, 0) or 0) + share)
+
+            player.pending_attribute_points = 0
+        else:
+            try:
+                amount_int = int(amount)
+            except Exception:
+                return {"success": False, "error": "Invalid amount"}
+
+            if amount_int <= 0:
+                return {"success": False, "error": "Amount must be positive"}
+
+            if amount_int > remaining:
+                return {"success": False, "error": "Not enough points"}
+
+            setattr(
+                player,
+                attribute,
+                int(getattr(player, attribute, 0) or 0) + amount_int,
+            )
+            player.pending_attribute_points = remaining - amount_int
+
+        # Clear stale level-up events once all points are spent so they don't
+        # accumulate across sessions and re-trigger SFX on future status polls.
+        if player.pending_attribute_points == 0 and hasattr(
+            player, "pending_level_ups"
+        ):
+            player.pending_level_ups = []
+
+        try:
+            from src import functions
+
+            functions.refresh_stat_bonuses(player)
+        except Exception:
+            pass
+
+        return {
+            "success": True,
+            "remaining_points": int(player.pending_attribute_points),
+            "stats": self.get_player_stats(player),
         }
 
     def get_available_commands(self, player: "player_module.Player") -> Dict[str, Any]:
@@ -3053,6 +2997,10 @@ class GameService:
                     for s in getattr(player, "states", [])
                     if getattr(s, "persistent", True)
                 ]
+                # Recharge equip-states (e.g. PhoenixRevive) consumed mid-battle —
+                # combat state is wiped above, so this load is effectively a fresh
+                # start that should restore any equipped item's granted states.
+                player.recharge_equip_states()
                 if hasattr(player, "_combat_adapter"):
                     del player._combat_adapter
                 if hasattr(player, "combat_adapter_state"):
@@ -3205,157 +3153,6 @@ class GameService:
         # and return the initial combat state
         return player._combat_adapter.initialize_combat(enemies, reinit=is_reinit)
 
-    # [Legacy methods removed]
-
-    def _execute_attack(
-        self,
-        player: "player_module.Player",
-        enemies: List[Any],
-        target_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        """Execute a basic attack.
-
-        Args:
-            player: Player object
-            enemies: List of enemy NPCs
-            target_id: ID of target (defaults to first)
-
-        Returns:
-            Dictionary with attack result
-        """
-        target = (
-            enemies[0]
-            if not target_id
-            else next(
-                (e for e in enemies if str(getattr(e, "id", "")) == target_id),
-                enemies[0],
-            )
-        )
-
-        # Simple damage calculation
-        damage = getattr(player, "damage", 10) + 5
-        target.health = max(0, getattr(target, "health", 1) - damage)
-
-        return {
-            "success": True,
-            "action": "attack",
-            "damage_dealt": damage,
-            "target": getattr(target, "name", "Enemy"),
-            "target_health": getattr(target, "health", 0),
-            "target_defeated": getattr(target, "health", 1) <= 0,
-            "battle_state": CombatStateSerializer.serialize_combat_state(
-                player, enemies
-            ),
-        }
-
-    def _execute_spell(
-        self,
-        player: "player_module.Player",
-        enemies: List[Any],
-        spell_name: str,
-        target_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        """Execute a spell/ability.
-
-        Args:
-            player: Player object
-            enemies: List of enemy NPCs
-            spell_name: Name of spell
-            target_id: ID of target
-
-        Returns:
-            Dictionary with spell result
-        """
-        # TODO: Implement actual spell lookup and effects
-        target = (
-            enemies[0]
-            if not target_id
-            else next(
-                (e for e in enemies if str(getattr(e, "id", "")) == target_id),
-                enemies[0],
-            )
-        )
-
-        damage = 20  # Spell default damage
-        target.health = max(0, getattr(target, "health", 1) - damage)
-
-        return {
-            "success": True,
-            "action": "cast",
-            "spell": spell_name,
-            "damage_dealt": damage,
-            "target": getattr(target, "name", "Enemy"),
-            "target_health": getattr(target, "health", 0),
-            "target_defeated": getattr(target, "health", 1) <= 0,
-            "battle_state": CombatStateSerializer.serialize_combat_state(
-                player, enemies
-            ),
-        }
-
-    def defend(self, player: "player_module.Player") -> Dict[str, Any]:
-        """Take a defensive stance in combat.
-
-        Args:
-            player: Player object
-
-        Returns:
-            Dictionary with action result
-        """
-        if not getattr(player, "in_combat", False):
-            return {"error": "Not in combat"}
-
-        # Increase defense temporarily (stub)
-        player.armor = getattr(player, "armor", 0) + 5
-
-        enemies = getattr(player, "combat_list", [])
-        return {
-            "success": True,
-            "action": "defend",
-            "message": "Player takes a defensive stance",
-            "battle_state": CombatStateSerializer.serialize_combat_state(
-                player, enemies
-            ),
-        }
-
-    def use_item_in_combat(
-        self,
-        player: "player_module.Player",
-        item_index: int,
-        target_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        """Use an item in combat.
-
-        Args:
-            player: Player object
-            item_index: Index of item in inventory
-            target_id: ID of target (default: self)
-
-        Returns:
-            Dictionary with action result
-        """
-        if not getattr(player, "in_combat", False):
-            return {"error": "Not in combat"}
-
-        if not hasattr(player, "inventory") or not getattr(player, "inventory"):
-            return {"error": "No items in inventory"}
-
-        inventory = getattr(player, "inventory", [])
-        if item_index < 0 or item_index >= len(inventory):
-            return {"error": "Invalid item index"}
-
-        item = inventory[item_index]
-        item_name = getattr(item, "name", "Unknown Item")
-
-        # TODO: Apply item effects
-        # For now, remove item and return stub
-        return {
-            "success": True,
-            "action": "use_item",
-            "item": item_name,
-            "effect": "Item used",
-            "items_remaining": len(inventory) - 1,
-        }
-
     def flee_combat(self, player: "player_module.Player") -> Dict[str, Any]:
         """Attempt to flee from combat.
 
@@ -3417,1434 +3214,9 @@ class GameService:
             "message": "Fled from combat successfully",
         }
 
-    def _get_turn_order(
-        self, player: "player_module.Player", enemies: List[Any]
-    ) -> List[str]:
-        """Calculate turn order based on speed stats.
-
-        Args:
-            player: Player object
-            enemies: List of enemy NPCs
-
-        Returns:
-            List of combatant identifiers in turn order
-        """
-        combatants = [("player", getattr(player, "speed", 10))] + [
-            (f"enemy_{i}", getattr(e, "speed", 5)) for i, e in enumerate(enemies)
-        ]
-        # Sort by speed (descending) - higher speed goes first
-        combatants.sort(key=lambda x: x[1], reverse=True)
-        return [c[0] for c in combatants]
-
-    def _advance_turn(self, player: "player_module.Player", enemies: List[Any]) -> None:
-        """Advance to the next combatant's turn.
-
-        Args:
-            player: Player object
-            enemies: List of enemy NPCs
-        """
-        turn_order = self._get_turn_order(player, enemies)
-        player.combat_turn_index = (player.combat_turn_index + 1) % len(turn_order)
-
-        # If we wrapped around, increment round
-        if player.combat_turn_index == 0:
-            player.combat_round += 1
-            player.combat_log.append(
-                {
-                    "round": player.combat_round,
-                    "message": f"--- Round {player.combat_round} ---",
-                    "type": "system",
-                }
-            )
-
-    def _process_npc_turns(
-        self,
-        player: "player_module.Player",
-        enemies: List[Any],
-        turn_order: List[str],
-    ) -> None:
-        """Process NPC turns until it's the player's turn again.
-
-        Args:
-            player: Player object
-            enemies: List of enemy NPCs
-            turn_order: Ordered list of combatant identifiers
-        """
-        import random
-
-        while player.combat_turn_index < len(turn_order):
-            current_combatant = turn_order[player.combat_turn_index]
-
-            # If it's player's turn, stop processing
-            if current_combatant == "player":
-                break
-
-            # Process NPC turn
-            if current_combatant.startswith("enemy_"):
-                enemy_index = int(current_combatant.split("_")[1])
-                if enemy_index < len(enemies):
-                    enemy = enemies[enemy_index]
-
-                    # Simple AI: attack the player
-                    damage = random.randint(5, 15)
-                    player.hp = max(0, player.hp - damage)
-
-                    player.combat_log.append(
-                        {
-                            "round": player.combat_round,
-                            "message": f"{enemy.name} attacks for {damage} damage! (Player HP: {player.hp}/{player.maxhp})",
-                            "type": "enemy_action",
-                            "actor": enemy.name,
-                            "damage": damage,
-                        }
-                    )
-
-                    # Check if player is defeated
-                    if player.hp <= 0:
-                        player.combat_log.append(
-                            {
-                                "round": player.combat_round,
-                                "message": "You have been defeated!",
-                                "type": "system",
-                            }
-                        )
-                        player.in_combat = False
-                        return
-
-            # Advance to next turn
-            self._advance_turn(player, enemies)
-
-    def end_combat(
-        self, player: "player_module.Player", victory: bool
-    ) -> Dict[str, Any]:
-        """End combat and return results.
-
-        Args:
-            player: Player object
-            victory: Whether player won
-
-        Returns:
-            Dictionary with combat results
-        """
-        enemies = getattr(player, "combat_list", [])
-        player.in_combat = False
-
-        result = CombatStateSerializer.serialize_battle_summary(
-            player, enemies, victory
-        )
-
-        # Reset combat lists
-        player.combat_list = []
-        player.combat_list_allies = []
-
-        return result
-
     # =====================
     # NPC Methods (Phase 5)
     # =====================
-
-    def get_npc_state(
-        self, player: "player_module.Player", npc_id: str
-    ) -> Dict[str, Any]:
-        """Get current state of an NPC.
-
-        Args:
-            player: Player object
-            npc_id: NPC identifier
-
-        Returns:
-            Dictionary with NPC state
-        """
-        # Find NPC in current tile
-        current_tile = player.universe.get_tile(player.location_x, player.location_y)
-        if not current_tile:
-            return {"success": False, "error": "Not on a valid tile"}
-
-        for npc in getattr(current_tile, "npcs_here", []):
-            if getattr(npc, "name", "") == npc_id:
-                return {
-                    "success": True,
-                    "npc": NPCAIStateSerializer.serialize_npc_ai_state(npc),
-                }
-
-        return {"success": False, "error": f"NPC '{npc_id}' not found"}
-
-    def get_npc_dialogue(
-        self, player: "player_module.Player", npc_id: str
-    ) -> Dict[str, Any]:
-        """Get dialogue options from an NPC.
-
-        Args:
-            player: Player object
-            npc_id: NPC identifier
-
-        Returns:
-            Dictionary with dialogue state
-        """
-        # Find NPC in current tile
-        current_tile = player.universe.get_tile(player.location_x, player.location_y)
-        if not current_tile:
-            return {"success": False, "error": "Not on a valid tile"}
-
-        for npc in getattr(current_tile, "npcs_here", []):
-            if getattr(npc, "name", "") == npc_id:
-                dialogue_state = DialogueStateSerializer.serialize_dialogue_state(
-                    npc, current_node="start"
-                )
-                return {"success": True, "dialogue": dialogue_state}
-
-        return {"success": False, "error": f"NPC '{npc_id}' not found"}
-
-    def select_dialogue_option(
-        self, player: "player_module.Player", npc_id: str, option_id: int
-    ) -> Dict[str, Any]:
-        """Select a dialogue option from an NPC.
-
-        Args:
-            player: Player object
-            npc_id: NPC identifier
-            option_id: Selected option index
-
-        Returns:
-            Dictionary with next dialogue state
-        """
-        # Find NPC in current tile
-        current_tile = player.universe.get_tile(player.location_x, player.location_y)
-        if not current_tile:
-            return {"success": False, "error": "Not on a valid tile"}
-
-        for npc in getattr(current_tile, "npcs_here", []):
-            if getattr(npc, "name", "") == npc_id:
-                # Update conversation history
-                if not hasattr(npc, "conversation_history"):
-                    npc.conversation_history = []
-
-                # Mark dialogue interaction
-                npc.last_interaction_time = str(
-                    __import__("datetime").datetime.now(
-                        __import__("datetime").timezone.utc
-                    )
-                )
-
-                # Return next dialogue node (stub implementation)
-                dialogue_state = DialogueStateSerializer.serialize_dialogue_state(
-                    npc, current_node="option_response"
-                )
-                return {"success": True, "dialogue": dialogue_state}
-
-        return {"success": False, "error": f"NPC '{npc_id}' not found"}
-
-    def get_npc_behavior_profile(
-        self, player: "player_module.Player", npc_id: str
-    ) -> Dict[str, Any]:
-        """Get NPC behavior profile.
-
-        Args:
-            player: Player object
-            npc_id: NPC identifier
-
-        Returns:
-            Dictionary with NPC behavior profile
-        """
-        # Find NPC in current tile
-        current_tile = player.universe.get_tile(player.location_x, player.location_y)
-        if not current_tile:
-            return {"success": False, "error": "Not on a valid tile"}
-
-        for npc in getattr(current_tile, "npcs_here", []):
-            if getattr(npc, "name", "") == npc_id:
-                profile = NPCBehaviorProfileSerializer.serialize_behavior_profile(npc)
-                return {"success": True, "profile": profile}
-
-        return {"success": False, "error": f"NPC '{npc_id}' not found"}
-
-    def get_active_quests(self, player: "player_module.Player") -> Dict[str, Any]:
-        """Get list of active quests.
-
-        Args:
-            player: Player object
-
-        Returns:
-            Dictionary with active quests
-        """
-        quests = QuestStateSerializer.serialize_active_quests(player)
-        return {
-            "success": True,
-            "quests": quests,
-            "count": len(quests),
-        }
-
-    def start_quest(
-        self, player: "player_module.Player", quest_id: str
-    ) -> Dict[str, Any]:
-        """Start a quest.
-
-        Args:
-            player: Player object
-            quest_id: Quest identifier
-
-        Returns:
-            Dictionary with quest details
-        """
-        # Find quest in player's available quests
-        available_quests = getattr(player, "available_quests", [])
-
-        for quest in available_quests:
-            if quest.get("id") == quest_id:
-                # Move to active quests
-                if not hasattr(player, "active_quests"):
-                    player.active_quests = []
-
-                player.active_quests.append(quest)
-                available_quests.remove(quest)
-
-                return {
-                    "success": True,
-                    "message": f"Started quest: {quest.get('title', quest_id)}",
-                    "quest": QuestStateSerializer.serialize_quest(quest),
-                }
-
-        return {"success": False, "error": f"Quest '{quest_id}' not found"}
-
-    def update_quest_progress(
-        self,
-        player: "player_module.Player",
-        quest_id: str,
-        objective_id: str,
-    ) -> Dict[str, Any]:
-        """Update progress on a quest objective.
-
-        Args:
-            player: Player object
-            quest_id: Quest identifier
-            objective_id: Objective identifier
-
-        Returns:
-            Dictionary with updated quest progress
-        """
-        # Find active quest
-        active_quests = getattr(player, "active_quests", [])
-
-        for quest in active_quests:
-            if quest.get("id") == quest_id:
-                # Mark objective complete
-                for objective in quest.get("objectives", []):
-                    if objective.get("id") == objective_id:
-                        objective["completed"] = True
-
-                # Update progress
-                completed = sum(
-                    1
-                    for obj in quest.get("objectives", [])
-                    if obj.get("completed", False)
-                )
-                total = len(quest.get("objectives", []))
-                quest["progress"] = int((completed / total * 100)) if total > 0 else 0
-
-                return {
-                    "success": True,
-                    "message": "Objective completed",
-                    "quest": QuestStateSerializer.serialize_quest_progress(quest),
-                }
-
-        return {
-            "success": False,
-            "error": f"Quest '{quest_id}' not found or not active",
-        }
-
-    def get_quest_status(
-        self, player: "player_module.Player", quest_id: str
-    ) -> Dict[str, Any]:
-        """Get status of a specific quest.
-
-        Args:
-            player: Player object
-            quest_id: Quest identifier
-
-        Returns:
-            Dictionary with quest status
-        """
-        # Check active quests
-        active_quests = getattr(player, "active_quests", [])
-        for quest in active_quests:
-            if quest.get("id") == quest_id:
-                return {
-                    "success": True,
-                    "status": "active",
-                    "quest": QuestStateSerializer.serialize_quest_progress(quest),
-                }
-
-        # Check completed quests
-        completed_quests = getattr(player, "completed_quests", [])
-        for quest in completed_quests:
-            if quest.get("id") == quest_id:
-                return {
-                    "success": True,
-                    "status": "completed",
-                    "quest": QuestStateSerializer.serialize_quest(quest),
-                }
-
-        return {"success": False, "error": f"Quest '{quest_id}' not found"}
-
-    # ========================
-    # Quest Reward Methods (Phase 3)
-    # ========================
-
-    def get_quest_rewards(
-        self, player: "player_module.Player", quest_id: str
-    ) -> Dict[str, Any]:
-        """Get rewards for a specific quest.
-
-        Args:
-            player: Player object
-            quest_id: Quest identifier
-
-        Returns:
-            Dictionary with quest reward details
-        """
-        from src.api.serializers.quest_rewards import QuestRewardSerializer
-
-        # Find quest in completed or available quests
-        quest = None
-
-        # Check active quests first
-        active_quests = getattr(player, "active_quests", [])
-        for q in active_quests:
-            if q.get("id") == quest_id:
-                quest = q
-                break
-
-        # Check completed quests
-        if not quest:
-            completed_quests = getattr(player, "completed_quests", [])
-            for q in completed_quests:
-                if q.get("id") == quest_id:
-                    quest = q
-                    break
-
-        if not quest:
-            return {"success": False, "error": f"Quest '{quest_id}' not found"}
-
-        rewards_data = QuestRewardSerializer.serialize_quest_rewards(quest)
-
-        return {"success": True, "rewards": rewards_data}
-
-    def complete_quest(
-        self,
-        player: "player_module.Player",
-        quest_id: str,
-        difficulty: str = "normal",
-        no_deaths: bool = True,
-        bonus_objectives_completed: bool = False,
-    ) -> Dict[str, Any]:
-        """Complete a quest and distribute rewards.
-
-        Args:
-            player: Player object
-            quest_id: Quest to complete
-            difficulty: Quest difficulty (easy, normal, hard, nightmare)
-            no_deaths: Whether quest was completed without deaths
-            bonus_objectives_completed: Whether all bonus objectives completed
-
-        Returns:
-            Dictionary with completion details and rewards distributed
-        """
-        from src.api.serializers.quest_rewards import (
-            RewardConditionValidator,
-            RewardDistributionSerializer,
-        )
-
-        # Find and remove quest from active quests
-        active_quests = getattr(player, "active_quests", [])
-        quest = None
-
-        for i, q in enumerate(active_quests):
-            if q.get("id") == quest_id:
-                quest = active_quests.pop(i)
-                break
-
-        if not quest:
-            return {
-                "success": False,
-                "error": f"Quest '{quest_id}' not active",
-            }
-
-        # Apply conditions to calculate final rewards
-        base_rewards, conditions_met = RewardConditionValidator.check_reward_conditions(
-            player, quest
-        )
-
-        # Add condition modifiers
-        reward_modifier = 1.0
-
-        # Difficulty multiplier
-        difficulty_multipliers = {
-            "easy": 0.5,
-            "normal": 1.0,
-            "hard": 1.5,
-            "nightmare": 2.0,
-        }
-        reward_modifier *= difficulty_multipliers.get(difficulty, 1.0)
-
-        # No-deaths bonus
-        if no_deaths:
-            reward_modifier *= 1.2
-
-        # Bonus objectives bonus
-        if bonus_objectives_completed:
-            reward_modifier *= 1.25
-
-        # Calculate final rewards
-        final_rewards = {
-            "gold": int(base_rewards.get("gold", 0) * reward_modifier),
-            "experience": int(base_rewards.get("experience", 0) * reward_modifier),
-            "items": base_rewards.get("items", []),
-            "reputation": base_rewards.get("reputation", {}),
-        }
-
-        # Distribute rewards to player
-        old_level = getattr(player, "level", 1)
-        old_gold = getattr(player, "gold", 0)
-
-        # Award gold
-        player.gold = old_gold + final_rewards["gold"]
-
-        # Award experience via the unified leveling system
-        level_up_events = player.gain_exp(
-            final_rewards["experience"], exp_type="Basic", api_mode=True
-        )
-        level_up = bool(level_up_events)
-        new_level = getattr(player, "level", 1)
-
-        if level_up_events:
-            if not hasattr(player, "pending_level_ups"):
-                player.pending_level_ups = []
-            player.pending_level_ups.extend(level_up_events)
-
-        # Award items (simplified - just add to inventory if space)
-        inventory = getattr(player, "inventory", [])
-        for item in final_rewards["items"]:
-            if len(inventory) < getattr(player, "max_inventory", 20):
-                inventory.append(item)
-        if final_rewards["items"] and hasattr(player, "stack_inv_items"):
-            player.stack_inv_items()
-
-        # Award reputation (simplified - just track)
-        if not hasattr(player, "reputation"):
-            player.reputation = {}
-
-        for npc_id, rep_change in final_rewards["reputation"].items():
-            if npc_id not in player.reputation:
-                player.reputation[npc_id] = 0
-            player.reputation[npc_id] += rep_change
-
-        # Move quest to completed
-        completed_quests = getattr(player, "completed_quests", [])
-        if not completed_quests:
-            player.completed_quests = []
-        player.completed_quests.append(quest)
-
-        # Serialize results
-        distribution_result = (
-            RewardDistributionSerializer.serialize_distributed_rewards(
-                player, quest_id, final_rewards
-            )
-        )
-
-        # Add level up info if applicable
-        if level_up:
-            distribution_result["level_up"] = {
-                "level_up": True,
-                "old_level": old_level,
-                "new_level": new_level,
-                "xp_gained": final_rewards["experience"],
-                "level_up_events": level_up_events,
-                "pending_attribute_points": int(
-                    getattr(player, "pending_attribute_points", 0) or 0
-                ),
-            }
-
-        # Add conditions info
-        distribution_result["conditions_applied"] = conditions_met
-
-        return {"success": True, "quest_completion": distribution_result}
-
-    def award_gold(self, player: "player_module.Player", amount: int) -> Dict[str, Any]:
-        """Award gold to player.
-
-        Args:
-            player: Player object
-            amount: Gold amount to award
-
-        Returns:
-            Dictionary with gold update info
-        """
-        from src.api.serializers.quest_rewards import (
-            RewardDistributionSerializer,
-        )
-        import src.items as items
-
-        # Create a gold item and add it to inventory
-        gold_item = items.Gold(amount)
-        player.inventory.append(gold_item)
-
-        # Consolidate gold and refresh weight
-        if hasattr(player, "stack_gold"):
-            player.stack_gold()
-        if hasattr(player, "refresh_weight"):
-            player.refresh_weight()
-
-        result = RewardDistributionSerializer.serialize_gold_gain(player, amount)
-
-        return {"success": True, "gold_update": result}
-
-    def award_experience(
-        self, player: "player_module.Player", amount: int, exp_type: str = "Basic"
-    ) -> Dict[str, Any]:
-        """Award experience to player via the unified leveling system.
-
-        Args:
-            player: Player object
-            amount: Experience amount to award
-            exp_type: Skill tree track to credit (default "Basic")
-
-        Returns:
-            Dictionary with experience update and level up info if applicable
-        """
-        old_level = getattr(player, "level", 1)
-
-        level_up_events = player.gain_exp(amount, exp_type=exp_type, api_mode=True)
-        level_up = bool(level_up_events)
-        new_level = getattr(player, "level", 1)
-
-        if level_up_events:
-            if not hasattr(player, "pending_level_ups"):
-                player.pending_level_ups = []
-            player.pending_level_ups.extend(level_up_events)
-
-        result = {
-            "xp_gained": amount,
-            "exp_type": exp_type,
-            "total_exp": int(getattr(player, "exp", 0) or 0),
-            "exp_to_level": int(getattr(player, "exp_to_level", 0) or 0),
-            "old_level": old_level,
-            "new_level": new_level,
-            "level_up": level_up,
-            "level_up_events": level_up_events or [],
-            "pending_attribute_points": int(
-                getattr(player, "pending_attribute_points", 0) or 0
-            ),
-        }
-
-        return {"success": True, "experience_update": result}
-
-    def award_item(
-        self,
-        player: "player_module.Player",
-        item_id: str,
-        item_name: str,
-        quantity: int = 1,
-    ) -> Dict[str, Any]:
-        """Award item to player inventory.
-
-        Args:
-            player: Player object
-            item_id: Item identifier
-            item_name: Item name
-            quantity: Quantity to award
-
-        Returns:
-            Dictionary with item award info
-        """
-        from src.api.serializers.quest_rewards import (
-            RewardDistributionSerializer,
-        )
-        import src.items as items
-
-        # Simplified item award (tries to find class in src.items)
-        # In a real game, you'd have a factory or registry
-        item_class = getattr(items, item_id, None)
-        if item_class:
-            item = item_class()
-            if hasattr(item, "count"):
-                item.count = quantity
-            if hasattr(item, "amt") and item.name == "Gold":
-                item.amt = quantity
-        else:
-            # Fallback to generic item dictionary ONLY if class not found
-            # (Warning: engine may not support this everywhere)
-            item = {
-                "id": item_id,
-                "name": item_name,
-                "quantity": quantity,
-                "maintype": "Special",
-            }
-
-        # Check weight limit if it's an object with weight
-        if not isinstance(item, dict) and hasattr(item, "weight"):
-            item_weight = item.weight * getattr(item, "count", 1)
-            capacity = getattr(player, "weight_tolerance", 20.0)
-            if player.weight_current + item_weight > capacity:
-                return {
-                    "success": False,
-                    "error": "Too heavy to carry",
-                    "item_id": item_id,
-                }
-
-        player.inventory.append(item)
-
-        # Consolidate inventory if it's a real item
-        if not isinstance(item, dict) and hasattr(player, "stack_inv_items"):
-            player.stack_inv_items()
-            if hasattr(item, "name") and item.name == "Gold":
-                player.stack_gold()
-
-        if hasattr(player, "refresh_weight"):
-            player.refresh_weight()
-
-        result = RewardDistributionSerializer.serialize_item_reward(
-            item_id, item_name, quantity
-        )
-
-        return {"success": True, "item_award": result}
-
-    def award_reputation(
-        self,
-        player: "player_module.Player",
-        npc_id: str,
-        npc_name: str,
-        amount: int,
-    ) -> Dict[str, Any]:
-        """Award reputation with an NPC.
-
-        Args:
-            player: Player object
-            npc_id: NPC identifier
-            npc_name: NPC name
-            amount: Reputation change amount
-
-        Returns:
-            Dictionary with reputation update info
-        """
-        from src.api.serializers.quest_rewards import (
-            RewardDistributionSerializer,
-        )
-
-        if not hasattr(player, "reputation"):
-            player.reputation = {}
-
-        old_rep = player.reputation.get(npc_id, 0)
-        player.reputation[npc_id] = old_rep + amount
-
-        result = RewardDistributionSerializer.serialize_reputation_gain(
-            npc_id, npc_name, amount
-        )
-
-        return {"success": True, "reputation_update": result}
-
-    def get_player_progression(self, player: "player_module.Player") -> Dict[str, Any]:
-        """Get player progression stats.
-
-        Args:
-            player: Player object
-
-        Returns:
-            Dictionary with progression data
-        """
-        from src.api.serializers.quest_rewards import (
-            LevelingProgressSerializer,
-        )
-
-        quests_completed = len(getattr(player, "completed_quests", []))
-
-        result = LevelingProgressSerializer.serialize_progression(
-            player, quests_completed
-        )
-
-        return {"success": True, "progression": result}
-
-    # ========================
-    # Reputation Methods (Stage 2)
-    # ========================
-
-    def get_player_reputation(self, player: "player_module.Player") -> Dict[str, Any]:
-        """Get player's complete reputation state.
-
-        Args:
-            player: Player object
-
-        Returns:
-            All reputation data for all NPCs
-        """
-        from src.api.serializers.reputation import PlayerReputationSerializer
-
-        result = PlayerReputationSerializer.serialize_all_reputation(player)
-        return {"success": True, "reputation": result}
-
-    def get_npc_relationship(
-        self, player: "player_module.Player", npc_id: str
-    ) -> Dict[str, Any]:
-        """Get relationship with a specific NPC.
-
-        Args:
-            player: Player object
-            npc_id: NPC identifier
-
-        Returns:
-            Relationship data for the NPC
-        """
-        from src.api.serializers.reputation import (
-            NPCRelationshipSerializer,
-            RelationshipFlagSerializer,
-        )
-
-        reputation = getattr(player, "reputation", {}).get(npc_id, 0)
-        npc_name = NPCRelationshipSerializer._get_npc_name(npc_id)
-
-        relationship = NPCRelationshipSerializer.serialize_relationship(
-            npc_id, npc_name, reputation
-        )
-
-        flags = RelationshipFlagSerializer.get_flags(player, npc_id)
-
-        return {
-            "success": True,
-            "relationship": relationship,
-            "flags": flags,
-        }
-
-    def update_reputation(
-        self,
-        player: "player_module.Player",
-        npc_id: str,
-        amount: int,
-        reason: str = "unknown",
-    ) -> Dict[str, Any]:
-        """Update player's reputation with an NPC.
-
-        Args:
-            player: Player object
-            npc_id: NPC identifier
-            amount: Reputation change amount (-100 to +100)
-            reason: Reason for reputation change
-
-        Returns:
-            Reputation change result
-        """
-        from src.api.serializers.reputation import (
-            NPCRelationshipSerializer,
-            PlayerReputationSerializer,
-        )
-
-        if not hasattr(player, "reputation"):
-            player.reputation = {}
-
-        npc_name = NPCRelationshipSerializer._get_npc_name(npc_id)
-        old_rep = player.reputation.get(npc_id, 0)
-
-        # Clamp reputation to -100 to +100
-        new_rep = max(-100, min(100, old_rep + amount))
-
-        player.reputation[npc_id] = new_rep
-
-        result = PlayerReputationSerializer.serialize_reputation_change(
-            npc_id, npc_name, old_rep, new_rep, reason
-        )
-
-        return {"success": True, "reputation_change": result}
-
-    def set_relationship_flag(
-        self,
-        player: "player_module.Player",
-        npc_id: str,
-        flag_name: str,
-        value: bool,
-    ) -> Dict[str, Any]:
-        """Set a relationship flag for an NPC.
-
-        Args:
-            player: Player object
-            npc_id: NPC identifier
-            flag_name: Flag name (romance, betrayed, alliance, etc.)
-            value: Flag value
-
-        Returns:
-            Flag update result
-        """
-        from src.api.serializers.reputation import RelationshipFlagSerializer
-
-        result = RelationshipFlagSerializer.set_flag(player, npc_id, flag_name, value)
-
-        return {"success": result.get("success", True), "flag_update": result}
-
-    def check_dialogue_available(
-        self, player: "player_module.Player", npc_id: str, dialogue_node: str
-    ) -> Dict[str, Any]:
-        """Check if a dialogue node is available based on reputation.
-
-        Args:
-            player: Player object
-            npc_id: NPC identifier
-            dialogue_node: Dialogue node identifier
-
-        Returns:
-            Availability status and reason if locked
-        """
-        from src.api.serializers.reputation import ReputationThresholdValidator
-
-        available, reason = ReputationThresholdValidator.check_dialogue_available(
-            player, npc_id, dialogue_node
-        )
-
-        return {
-            "success": True,
-            "dialogue_node": dialogue_node,
-            "available": available,
-            "locked_reason": reason,
-        }
-
-    def check_quest_available(
-        self, player: "player_module.Player", npc_id: str, quest_type: str
-    ) -> Dict[str, Any]:
-        """Check if a quest is available based on reputation.
-
-        Args:
-            player: Player object
-            npc_id: NPC identifier
-            quest_type: Type of quest
-
-        Returns:
-            Availability status and reason if locked
-        """
-        from src.api.serializers.reputation import ReputationThresholdValidator
-
-        available, reason = ReputationThresholdValidator.check_quest_available(
-            player, npc_id, quest_type
-        )
-
-        return {
-            "success": True,
-            "quest_type": quest_type,
-            "available": available,
-            "locked_reason": reason,
-        }
-
-    # ========================
-    # Quest Chain Methods (Stage 3)
-    # ========================
-
-    def get_chain_progress(
-        self, player: "player_module.Player", chain_id: str
-    ) -> Dict[str, Any]:
-        """Get player's progress in a quest chain.
-
-        Args:
-            player: Player object
-            chain_id: Chain identifier
-
-        Returns:
-            Chain progress data
-        """
-        from src.api.serializers.quest_chains import ChainProgressionSerializer
-
-        result = ChainProgressionSerializer.get_chain_progress(player, chain_id)
-
-        return {"success": True, "progress": result}
-
-    def advance_chain_stage(
-        self,
-        player: "player_module.Player",
-        chain_id: str,
-        current_stage: int,
-        next_stage: int,
-    ) -> Dict[str, Any]:
-        """Advance player to next stage in a chain.
-
-        Args:
-            player: Player object
-            chain_id: Chain identifier
-            current_stage: Current stage index
-            next_stage: Next stage index
-
-        Returns:
-            Updated progression
-        """
-        from src.api.serializers.quest_chains import ChainProgressionSerializer
-
-        result = ChainProgressionSerializer.advance_to_next_stage(
-            player, chain_id, current_stage, next_stage
-        )
-
-        return {"success": result.get("success", True), "advancement": result}
-
-    def complete_chain(
-        self, player: "player_module.Player", chain_id: str
-    ) -> Dict[str, Any]:
-        """Mark a chain as completed.
-
-        Args:
-            player: Player object
-            chain_id: Chain identifier
-
-        Returns:
-            Completion result
-        """
-        from src.api.serializers.quest_chains import ChainProgressionSerializer
-
-        result = ChainProgressionSerializer.complete_chain(player, chain_id)
-
-        return {"success": result.get("success", True), "completion": result}
-
-    def get_all_chains_progress(self, player: "player_module.Player") -> Dict[str, Any]:
-        """Get player's progress across all chains.
-
-        Args:
-            player: Player object
-
-        Returns:
-            All chains progress
-        """
-        from src.api.serializers.quest_chains import ChainProgressionSerializer
-
-        result = ChainProgressionSerializer.serialize_all_chains_progress(player)
-
-        return {"success": True, "all_chains": result}
-
-    def check_chain_prerequisites(
-        self,
-        player: "player_module.Player",
-        chain_id: str,
-        prerequisites: List[str],
-    ) -> Dict[str, Any]:
-        """Check if a chain's prerequisites are met.
-
-        Args:
-            player: Player object
-            chain_id: Chain identifier
-            prerequisites: List of required completed chains
-
-        Returns:
-            Prerequisite check result
-        """
-        from src.api.serializers.quest_chains import ChainDependencySerializer
-
-        if not hasattr(player, "completed_chains"):
-            player.completed_chains = {}
-
-        is_valid, error = ChainDependencySerializer.validate_chain_dependencies(
-            chain_id, prerequisites, player.completed_chains
-        )
-
-        return {
-            "success": True,
-            "chain_id": chain_id,
-            "prerequisites_met": is_valid,
-            "error_reason": error,
-        }
-
-    # ========================
-    # NPC Availability Methods
-    # ========================
-
-    def get_npc_status(self, player: Any, npc_id: str) -> Dict[str, Any]:
-        """
-        Get current status and availability of an NPC.
-
-        Args:
-            player: The player object
-            npc_id: ID of the NPC to check
-
-        Returns:
-            Dict with NPC status including availability and location
-        """
-        # Get NPC data - for now, mock structure
-        # In full implementation, would load from NPC database/config
-        npc_data = {
-            "npc_id": npc_id,
-            "name": f"NPC_{npc_id}",
-            "description": "An NPC",
-            "availability_conditions": {
-                "story_gates": [],
-                "min_ticks_after_gate": 0,
-            },
-            "locations": [],
-            "triggers": [],
-        }
-
-        status = NPCStatusSerializer.serialize(
-            npc_data,
-            self._game_tick(player),
-            self._story(player),
-        )
-
-        return {
-            "success": True,
-            "data": status,
-        }
-
-    def get_npcs_at_location(self, player: Any, location_id: str) -> Dict[str, Any]:
-        """
-        Get all NPCs currently at a specific location.
-
-        Args:
-            player: The player object
-            location_id: ID of the location to check
-
-        Returns:
-            Dict with list of NPCs at that location
-        """
-        # For now, mock empty list
-        # In full implementation, would load all NPCs and check their locations
-        all_npcs = []
-
-        location_npcs = LocationNPCSerializer.serialize(
-            location_id,
-            location_id,  # location_name
-            all_npcs,
-            self._game_tick(player),
-            self._story(player),
-        )
-
-        return {
-            "success": True,
-            "data": location_npcs,
-        }
-
-    def check_npc_availability(
-        self, player: Any, npc_id: str, reason: Optional[str] = None
-    ) -> Dict[str, Any]:
-        """
-        Check if an NPC is available for interaction.
-
-        Args:
-            player: The player object
-            npc_id: ID of the NPC to check
-            reason: Optional reason for availability check (for logging)
-
-        Returns:
-            Dict with availability status and reasons if unavailable
-        """
-        # Get NPC data
-        npc_data = {
-            "npc_id": npc_id,
-            "name": f"NPC_{npc_id}",
-            "description": "An NPC",
-            "availability_conditions": {
-                "story_gates": [],
-                "min_ticks_after_gate": 0,
-            },
-            "locations": [],
-            "triggers": [],
-        }
-
-        is_available, availability_reason = NPCAvailabilitySerializer.is_available(
-            npc_data,
-            self._game_tick(player),
-            self._story(player),
-        )
-
-        availability_info = NPCAvailabilitySerializer.serialize(
-            npc_data,
-            self._game_tick(player),
-            self._story(player),
-        )
-
-        return {
-            "success": True,
-            "data": {
-                "npc_id": npc_id,
-                "available": is_available,
-                "reason": availability_reason.value,
-                "details": availability_info,
-            },
-        }
-
-    def update_npc_location(
-        self, player: Any, npc_id: str, new_location_id: str
-    ) -> Dict[str, Any]:
-        """
-        Update an NPC's location (used for quest events/progression).
-
-        Args:
-            player: The player object
-            npc_id: ID of the NPC to move
-            new_location_id: ID of the new location
-
-        Returns:
-            Dict with update status
-        """
-        # For now, simple mock response
-        # In full implementation, would validate and update NPC location data
-        return {
-            "success": True,
-            "data": {
-                "npc_id": npc_id,
-                "moved_to": new_location_id,
-                "game_tick": self._game_tick(player),
-            },
-        }
-
-    def get_npc_timeline(self, player: Any, npc_id: str) -> Dict[str, Any]:
-        """
-        Get the location progression timeline for an NPC.
-
-        Shows where NPCs appear as the story progresses.
-
-        Args:
-            player: The player object
-            npc_id: ID of the NPC
-
-        Returns:
-            Dict with NPC's location timeline
-        """
-        # Get NPC data
-        npc_data = {
-            "npc_id": npc_id,
-            "name": f"NPC_{npc_id}",
-            "description": "An NPC",
-            "locations": [],
-            "triggers": [],
-        }
-
-        timeline = NPCTimelineSerializer.serialize(npc_data)
-
-        return {
-            "success": True,
-            "data": timeline,
-        }
-
-    # ========================
-    # Dialogue Context Methods
-    # ========================
-
-    def start_dialogue(
-        self, player: "player_module.Player", npc_id: str, dialogue_id: str
-    ) -> Dict[str, Any]:
-        """Start a new dialogue with an NPC.
-
-        Creates a conversation and loads initial dialogue node.
-        Validates NPC availability before starting.
-
-        Args:
-            player: The player instance
-            npc_id: ID of NPC to dialogue with
-            dialogue_id: ID of dialogue tree to load
-
-        Returns:
-            Dict with success status and dialogue context
-        """
-        import uuid
-        from datetime import datetime
-
-        # TODO: Check NPC availability (uses Stage 4 system)
-        # For now, assume NPC is available
-
-        # Create conversation record
-        conversation_id = str(uuid.uuid4())
-        history = ConversationHistory(
-            conversation_id=conversation_id,
-            npc_id=npc_id,
-            player_id=getattr(player, "name", "Jean"),
-            dialogue_id=dialogue_id,
-            started_at=datetime.now().isoformat(),
-            status="ongoing",
-        )
-
-        # TODO: Load dialogue tree from universe.dialogues[dialogue_id]
-        # For now, create a minimal starting node
-        initial_node = DialogueNode(
-            node_id="start",
-            text="[Dialogue would start here]",
-            speaker=npc_id,
-            npc_tone="neutral",
-        )
-
-        # Record initial node visit
-        ConversationHistorySerializer.add_node_visit(history, initial_node.node_id)
-
-        # Get available choices for initial node
-        available_choices = DialogueNodeSerializer.get_available_choices(
-            initial_node,
-            player_story=self._story(player),
-            player_reputation=getattr(player, "reputation", {}),
-            player_level=getattr(player, "level", 1),
-            player_completed_dialogues=getattr(player, "completed_dialogues", []),
-        )
-
-        # Create dialogue context
-        context = DialogueContext(
-            conversation_id=conversation_id,
-            current_node=initial_node,
-            available_choices=available_choices,
-            conversation_history=history,
-            is_complete=False,
-        )
-
-        # TODO: Store context in player session for later retrieval
-        if not hasattr(player, "dialogue_contexts"):
-            player.dialogue_contexts = {}
-        player.dialogue_contexts[conversation_id] = context
-
-        return {
-            "success": True,
-            "data": DialogueContextSerializer.serialize(context),
-        }
-
-    def get_dialogue_node(
-        self, player: "player_module.Player", node_id: str
-    ) -> Dict[str, Any]:
-        """Get a specific dialogue node.
-
-        Loads node from dialogue tree and filters choices by player conditions.
-
-        Args:
-            player: The player instance
-            node_id: ID of dialogue node to retrieve
-
-        Returns:
-            Dict with success status and node data
-        """
-        # TODO: Load node from universe.dialogue_nodes[node_id]
-        # For now, return a sample node
-        node = DialogueNode(
-            node_id=node_id,
-            text="[Sample dialogue node]",
-            speaker="npc_1",
-            npc_tone="friendly",
-        )
-
-        available_choices = DialogueNodeSerializer.get_available_choices(
-            node,
-            player_story=self._story(player),
-            player_reputation=getattr(player, "reputation", {}),
-            player_level=getattr(player, "level", 1),
-            player_completed_dialogues=getattr(player, "completed_dialogues", []),
-        )
-
-        return {
-            "success": True,
-            "data": {
-                "node": DialogueNodeSerializer.serialize(node),
-                "available_choices": [
-                    DialogueChoiceSerializer.serialize(c) for c in available_choices
-                ],
-            },
-        }
-
-    def select_dialogue_choice(
-        self,
-        player: "player_module.Player",
-        conversation_id: str,
-        choice_id: str,
-    ) -> Dict[str, Any]:
-        """Process a dialogue choice selection.
-
-        Applies choice effects (story gates, reputation, items) and
-        transitions to next node.
-
-        Args:
-            player: The player instance
-            conversation_id: ID of current conversation
-            choice_id: ID of choice selected
-
-        Returns:
-            Dict with success status and updated context
-        """
-        # TODO: Load conversation context from player.dialogue_contexts
-        # For now, create a minimal response
-        next_node = DialogueNode(
-            node_id="next_node",
-            text="[Next dialogue node]",
-            speaker="npc_1",
-            npc_tone="neutral",
-        )
-
-        available_choices = DialogueNodeSerializer.get_available_choices(
-            next_node,
-            player_story=self._story(player),
-            player_reputation=getattr(player, "reputation", {}),
-            player_level=getattr(player, "level", 1),
-            player_completed_dialogues=getattr(player, "completed_dialogues", []),
-        )
-
-        # Create updated context
-        history = ConversationHistory(
-            conversation_id=conversation_id,
-            npc_id="npc_1",
-            player_id=getattr(player, "name", "Jean"),
-            dialogue_id="dial_1",
-            started_at="2025-11-10T10:00:00Z",
-        )
-
-        context = DialogueContext(
-            conversation_id=conversation_id,
-            current_node=next_node,
-            available_choices=available_choices,
-            conversation_history=history,
-            is_complete=False,
-        )
-
-        return {
-            "success": True,
-            "data": DialogueContextSerializer.serialize(context),
-        }
-
-    def get_conversation_history(
-        self, player: "player_module.Player", npc_id: str
-    ) -> Dict[str, Any]:
-        """Get all past conversations with an NPC.
-
-        Returns list of all dialogues ever had with this NPC.
-
-        Args:
-            player: The player instance
-            npc_id: ID of NPC to get history for
-
-        Returns:
-            Dict with success status and conversation list
-        """
-        # TODO: Load from player.conversation_history[npc_id]
-        # For now, return empty list
-        conversations = []
-
-        return {
-            "success": True,
-            "data": {
-                "npc_id": npc_id,
-                "total_conversations": len(conversations),
-                "conversations": [
-                    ConversationHistorySerializer.serialize(c) for c in conversations
-                ],
-            },
-        }
-
-    def get_available_dialogues(
-        self, player: "player_module.Player", npc_id: str
-    ) -> Dict[str, Any]:
-        """Get all available dialogue options with an NPC.
-
-        Filters dialogues by player's story state and conditions.
-
-        Args:
-            player: The player instance
-            npc_id: ID of NPC to get dialogues for
-
-        Returns:
-            Dict with success status and available dialogue list
-        """
-        # TODO: Load NPC's dialogues from universe.npc_dialogues[npc_id]
-        # Filter by player conditions
-        # For now, return empty list
-        available = []
-
-        return {
-            "success": True,
-            "data": {
-                "npc_id": npc_id,
-                "total_available": len(available),
-                "dialogues": available,
-            },
-        }
 
     def _find_chat_npc(self, player: "player_module.Player", npc_key: str):
         """Find an NPC on the current tile matching the given npc_key.
@@ -4920,7 +3292,7 @@ class GameService:
         # Call NPC's chat_open method
         try:
             result = npc.chat_open(player)
-            return result
+            return self._enrich_chat_result_with_relationship(result, npc)
         except Exception as e:
             return {"success": False, "error": f"Failed to open chat: {str(e)}"}
 
@@ -4954,9 +3326,36 @@ class GameService:
         # Call NPC's chat_respond method
         try:
             result = npc.chat_respond(player, jean_text, jean_tone)
-            return result
+            return self._enrich_chat_result_with_relationship(result, npc)
         except Exception as e:
             return {"success": False, "error": f"Failed to respond: {str(e)}"}
+
+    def _enrich_chat_result_with_relationship(
+        self, result: Dict[str, Any], npc
+    ) -> Dict[str, Any]:
+        """Attach a relationship badge (attitude/trust/emoji) to a chat result.
+
+        The chat mixin (`src/npc/_chat_llm.py`) is engine code and cannot import
+        API serializers, so it only returns the raw `reputation` int. This builds
+        the frontend-facing badge from that value.
+
+        Args:
+            result: Dict returned by `npc.chat_open`/`npc.chat_respond`
+            npc: The NPC instance being chatted with
+
+        Returns:
+            The same result dict, with a `relationship` key added if applicable
+        """
+        if not result.get("success") or "reputation" not in result:
+            return result
+
+        from src.api.serializers.reputation import NPCRelationshipSerializer
+
+        npc_name = getattr(npc, "name", "")
+        result["relationship"] = NPCRelationshipSerializer.serialize_relationship(
+            npc_name, npc_name, result["reputation"]
+        )
+        return result
 
     def npc_chat_end(
         self, player: "player_module.Player", npc_key: str
@@ -5247,7 +3646,7 @@ class GameService:
         if validation_error:
             return {"success": False, **validation_error}
 
-        buy_mod = getattr(merchant, "buy_modifier", 1.0)
+        buy_mod = ShopSerializer.get_effective_buy_modifier(merchant, player)
 
         # Locate item in merchant inventory
         target_item = None
@@ -5327,7 +3726,7 @@ class GameService:
         if validation_error:
             return {"success": False, **validation_error}
 
-        sell_mod = getattr(merchant, "sell_modifier", 0.5)
+        sell_mod = ShopSerializer.get_effective_sell_modifier(merchant, player)
 
         # Locate item in player inventory
         target_item = None
@@ -5587,112 +3986,137 @@ class GameService:
             ),
         }
 
-    def use_item(
-        self, player: "player_module.Player", item_index: int
-    ) -> Dict[str, Any]:
-        """Use an item from the player's inventory.
+    def get_current_tile_object(self, player: "player_module.Player"):
+        """Return the raw tile object the player currently stands on, or None.
 
-        Args:
-            player: The Player instance
-            item_index: Index of the item to use
-
-        Returns:
-            Dictionary with use result
+        Distinct from ``get_tile``, which returns serialized tile data. Routes
+        that need the live tile (to mutate it or pass it to another engine call)
+        should use this instead of reaching into ``player.universe`` directly.
         """
-        if not isinstance(player.inventory, list):
-            return {"error": "Inventory not accessible"}
-
-        if item_index < 0 or item_index >= len(player.inventory):
-            return {"error": "Invalid item index"}
-
-        item = player.inventory[item_index]
-
-        # FIX 2: Add type validation to ensure item is an object with expected attributes
-        if isinstance(item, (str, dict, int, float)):
-            return {
-                "error": f"Invalid inventory item: corrupted data type {type(item).__name__}"
-            }
-
-        if not hasattr(item, "name"):
-            return {"error": "Invalid inventory item: missing name attribute"}
-
-        # Try to use the item if it has a use method
-        if hasattr(item, "use") and callable(item.use):
-            try:
-                item.use(player)
-                return {"success": True, "message": f"Used {item.name}"}
-            except Exception as e:
-                return {"success": False, "error": str(e)}
-
-        return {"success": False, "error": f"{item.name} cannot be used"}
-
-    def drop_item(
-        self, player: "player_module.Player", item_index: int
-    ) -> Dict[str, Any]:
-        """Drop an item from the player's inventory.
-
-        Args:
-            player: The Player instance
-            item_index: Index of the item to drop
-
-        Returns:
-            Dictionary with drop result
-        """
-        if not isinstance(player.inventory, list):
-            return {"error": "Inventory not accessible"}
-
-        if item_index < 0 or item_index >= len(player.inventory):
-            return {"error": "Invalid item index"}
-
-        # FIX 1: Add defensive checks for universe and tile BEFORE modifying inventory
         if not hasattr(player, "universe") or player.universe is None:
-            return {"error": "Cannot drop item: player universe not accessible"}
+            return None
+        return player.universe.get_tile(player.location_x, player.location_y)
 
-        # Get the tile and validate it exists before popping from inventory
-        tile = player.universe.get_tile(player.location_x, player.location_y)
+    def is_player_dead(self, player: "player_module.Player") -> bool:
+        """Return True if the player's HP has dropped to zero or below.
+
+        Centralises the death-state derivation so routes don't compute it from
+        ``player.hp`` inline.
+        """
+        return getattr(player, "hp", 1) <= 0
+
+    def set_suggestions_paused(
+        self, player: "player_module.Player", paused: bool
+    ) -> None:
+        """Pause or resume Tactical Advisor suggestion generation.
+
+        When resuming, clears stale suggestion data so the next status poll
+        triggers a fresh fetch.
+        """
+        player.suggestions_paused = paused
+        if not paused:
+            player.suggested_moves = []
+            player.suggestions_loading = False
+
+    @staticmethod
+    def _narration_texts(messages) -> List[str]:
+        """Extract the non-empty ``text`` fields from captured narration entries."""
+        return [m.get("text", "") for m in messages if m.get("text")]
+
+    def equip_item(self, player: "player_module.Player", item) -> Dict[str, Any]:
+        """Equip an inventory item, delegating core mechanics to the engine.
+
+        Acts as a toggle to match the web client, which uses this single path
+        for both equip and unequip: if the item is already equipped it is
+        unequipped. Otherwise merchandise is rejected and the engine's
+        ``Player.equip_item`` performs the equip (slot-swap rules, weapon
+        reference, exp-category setup, stat refresh).
+
+        Args:
+            player: The Player instance
+            item: The inventory item object to equip/unequip
+
+        Returns:
+            Dictionary with ``success``/``message`` or ``error``
+        """
+        if not hasattr(item, "isequipped"):
+            return {"error": f"{getattr(item, 'name', 'Item')} cannot be equipped"}
+
+        if item.isequipped:
+            return self.unequip_item(player, item)
+
+        if getattr(item, "merchandise", False):
+            return {"error": f"You must purchase {item.name} before equipping it"}
+
+        with capture_narration() as _msgs:
+            player.equip_item(item_object=item)
+        return {
+            "success": True,
+            "message": f"{item.name} equipped",
+            "messages": self._narration_texts(_msgs),
+        }
+
+    def unequip_item(self, player: "player_module.Player", item) -> Dict[str, Any]:
+        """Unequip a currently-equipped inventory item via the engine.
+
+        Args:
+            player: The Player instance
+            item: The inventory item object to unequip
+
+        Returns:
+            Dictionary with ``success``/``message`` or ``error``
+        """
+        if not hasattr(item, "isequipped"):
+            return {"error": f"{getattr(item, 'name', 'Item')} cannot be unequipped"}
+        if not item.isequipped:
+            return {"error": f"{item.name} is not equipped"}
+
+        with capture_narration() as _msgs:
+            player.unequip_item(item_object=item)
+        return {
+            "success": True,
+            "message": f"{item.name} unequipped",
+            "messages": self._narration_texts(_msgs),
+        }
+
+    def drop_item(self, player: "player_module.Player", item) -> Dict[str, Any]:
+        """Drop an inventory item onto the player's current tile.
+
+        Unequips the item first if it is equipped, then moves it from the
+        inventory to the tile.
+
+        Args:
+            player: The Player instance
+            item: The inventory item object to drop
+
+        Returns:
+            Dictionary with drop result or ``error``
+        """
+        tile = self.get_current_tile_object(player)
         if not tile or not hasattr(tile, "items_here"):
             return {"error": "Cannot drop item: invalid current location"}
 
-        # FIX 2: Add type validation for inventory items
-        item = player.inventory[item_index]
-        if not hasattr(item, "name"):
-            return {"error": "Cannot drop item: corrupted inventory item"}
+        with capture_narration() as _msgs:
+            if getattr(item, "isequipped", False):
+                player.unequip_item(item_object=item)
 
-        # Now it's safe to remove from inventory
-        player.inventory.pop(item_index)
+            try:
+                player.inventory.remove(item)
+            except (ValueError, AttributeError):
+                return {"error": "Item not found in inventory"}
 
-        # Add item to the current tile
-        tile.items_here.append(item)
-
-        return {
-            "success": True,
-            "message": f"Dropped {item.name}",
-            "item_name": item.name,
-        }
-
-    def rest(self, player: "player_module.Player") -> Dict[str, Any]:
-        """Rest to restore HP and fatigue.
-
-        Args:
-            player: The Player instance
-
-        Returns:
-            Dictionary with rest result
-        """
-        old_hp = player.hp
-        old_fatigue = player.fatigue
-
-        # Restore HP and fatigue
-        player.hp = player.maxhp
-        player.fatigue = player.maxfatigue
+            tile.items_here.append(item)
+            if hasattr(item, "stack_grammar"):
+                item.stack_grammar()
+            # Narrate the drop so `messages` is the single source of truth for
+            # the dialog (the engine has no drop verb; mirrors the take action).
+            narrate(f"{getattr(player, 'name', 'Jean')} drops {getattr(item, 'name', 'the item')}.")
 
         return {
             "success": True,
-            "message": "You rest and recover",
-            "hp_restored": player.hp - old_hp,
-            "fatigue_restored": player.fatigue - old_fatigue,
-            "current_hp": player.hp,
-            "current_fatigue": player.fatigue,
+            "message": f"Dropped {getattr(item, 'name', 'item')}",
+            "messages": self._narration_texts(_msgs),
+            "item_name": getattr(item, "name", None),
         }
 
     def get_combat_state(self, player: "player_module.Player") -> Dict[str, Any]:

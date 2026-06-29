@@ -70,7 +70,6 @@ class InventoryScenario(Scenario):
 
         # GET /api/status — player status (hp, name, level, ...) ------------
         # /api/status (player_bp) is the correct endpoint.
-        # /api/reputation/player is the reputation summary — fixed in b16c05a.
         resp = client.get("/api/status")
         bug = self._check_status(resp, 200, "/api/status", "GET", "Get player status")
         if bug:
@@ -97,8 +96,8 @@ class InventoryScenario(Scenario):
 
         # Equip non-existent item — should 400/404, not 500 -----------------
         body = {"item_id": "harness_nonexistent_item", "slot": "weapon"}
-        resp = client.post("/api/equipment/equip", json=body)
-        bug = self._check_no_crash(resp, "/api/equipment/equip", "POST",
+        resp = client.post("/api/inventory/equip", json=body)
+        bug = self._check_no_crash(resp, "/api/inventory/equip", "POST",
                                    "Equip unknown item_id", request_body=body)
         if bug:
             bugs.append(bug)

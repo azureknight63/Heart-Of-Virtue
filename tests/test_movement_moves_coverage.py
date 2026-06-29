@@ -56,7 +56,7 @@ def _make_enemy(name="Goblin", hp=50, alive=True):
     e.name = name
     e.hp = hp
     e.maxhp = 100
-    e.is_alive = alive
+    e.is_alive = lambda: alive
     e.speed = 5
     e.combat_proximity = {}
     e.friend = False

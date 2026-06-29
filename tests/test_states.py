@@ -3,7 +3,7 @@ Unit tests for states module
 """
 import pytest
 from unittest.mock import Mock, patch
-from src.states import State, Dodging, Parrying, Poisoned, Enflamed, Clean, Hawkeye, PhoenixRevive
+from src.states import State, Dodging, Parrying, Poisoned, Enflamed, Clean, Hawkeye, PhoenixRevive, Slimed
 
 
 @pytest.fixture
@@ -322,6 +322,19 @@ def test_clean_on_removal(mock_cprint, mock_target):
     state.on_removal(mock_target)
 
     assert mock_cprint.called
+
+
+def test_slimed_statustype_is_distinct():
+    """Slimed must use its own 'slimed' statustype, not 'poison', so immunity
+    granted against one doesn't silently grant immunity against the other."""
+    target = Mock()
+    target.finesse = 30
+    target.protection = 20
+    state = Slimed(target)
+
+    assert state.statustype == "slimed"
+    assert state.combat is True
+    assert state.world is True
 
 
 def test_hawkeye_initialization(mock_target):

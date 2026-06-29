@@ -99,6 +99,37 @@ def test_set_attributes_updates_known_and_ignores_unknown():
     assert result["updated"] == {"strength": 15}
 
 
+def test_set_attributes_accepts_base_suffixed_names():
+    """Regression: passing 'speed_base' previously silently no-op'd —
+    set_attributes only matched bare names, so the value was dropped while
+    the call still reported success with an empty 'updated' dict."""
+    adj = TheAdjutant()
+    player = MockPlayer()
+    result = adj.set_attributes(player, {"speed_base": 50})
+    assert player.speed == 50 and player.speed_base == 50
+    assert result["updated"] == {"speed": 50}
+
+
+def test_set_attributes_base_suffix_normalizes_to_bare_key():
+    adj = TheAdjutant()
+    player = MockPlayer()
+    result = adj.set_attributes(
+        player, {"strength_base": 20, "finesse": 25, "bogus_base": 1}
+    )
+    assert player.strength == 20 and player.strength_base == 20
+    assert player.finesse == 25 and player.finesse_base == 25
+    assert result["updated"] == {"strength": 20, "finesse": 25}
+
+
+def test_set_attributes_bare_suffix_only_is_ignored():
+    """An attr that is exactly '_base' (all suffix, no stat name) normalizes
+    to the empty string, which isn't in PLAYER_ATTRS, so it's safely skipped."""
+    adj = TheAdjutant()
+    player = MockPlayer()
+    result = adj.set_attributes(player, {"_base": 99})
+    assert result["updated"] == {}
+
+
 def test_set_heat_clamps():
     adj = TheAdjutant()
     player = MockPlayer()

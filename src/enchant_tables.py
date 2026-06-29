@@ -64,7 +64,7 @@ class Sharp(Enchantment):
 
     def modify(self):
         mod = random.uniform(1.05, 1.15)
-        amount = self.item.damage * mod
+        amount = self.item.damage * (mod - 1)
         if amount < 1:
             amount = 1
         self.item.damage += amount
@@ -115,7 +115,7 @@ class Balanced(Enchantment):
 
     def modify(self):
         mod = random.uniform(1.05, 1.15)
-        amount = self.item.damage * mod
+        amount = self.item.damage * (mod - 1)
         if amount < 1:
             amount = 1
         self.item.damage += amount
@@ -325,7 +325,7 @@ class Flaming(Enchantment):
     def modify(self):
         # modest elemental damage boost
         mod = random.uniform(1.12, 1.28)
-        amount = self.item.damage * mod
+        amount = self.item.damage * (mod - 1)
         if amount < 1:
             amount = 1
         self.item.damage += amount
@@ -350,7 +350,7 @@ class Icy(Enchantment):
 
     def modify(self):
         mod = random.uniform(1.12, 1.28)
-        amount = self.item.damage * mod
+        amount = self.item.damage * (mod - 1)
         if amount < 1:
             amount = 1
         self.item.damage += amount
@@ -373,7 +373,7 @@ class Shocking(Enchantment):
 
     def modify(self):
         mod = random.uniform(1.10, 1.25)
-        amount = self.item.damage * mod
+        amount = self.item.damage * (mod - 1)
         if amount < 1:
             amount = 1
         self.item.damage += amount
@@ -398,7 +398,7 @@ class Earthen(Enchantment):
 
     def modify(self):
         mod = random.uniform(1.08, 1.22)
-        amount = self.item.damage * mod
+        amount = self.item.damage * (mod - 1)
         if amount < 1:
             amount = 1
         self.item.damage += amount
@@ -425,7 +425,7 @@ class Radiant(Enchantment):
 
     def modify(self):
         mod = random.uniform(1.15, 1.30)
-        amount = self.item.damage * mod
+        amount = self.item.damage * (mod - 1)
         if amount < 1:
             amount = 1
         self.item.damage += amount
@@ -450,7 +450,7 @@ class Umbral(Enchantment):
 
     def modify(self):
         mod = random.uniform(1.15, 1.30)
-        amount = self.item.damage * mod
+        amount = self.item.damage * (mod - 1)
         if amount < 1:
             amount = 1
         self.item.damage += amount
@@ -475,7 +475,7 @@ class Spiritual(Enchantment):
 
     def modify(self):
         mod = random.uniform(1.10, 1.25)
-        amount = self.item.damage * mod
+        amount = self.item.damage * (mod - 1)
         if amount < 1:
             amount = 1
         self.item.damage += amount
@@ -503,7 +503,7 @@ class Pure(Enchantment):
     def modify(self):
         # 'Pure' enchanment makes attacks ignore some resistances by converting to pure damage
         mod = random.uniform(1.15, 1.30)
-        amount = self.item.damage * mod
+        amount = self.item.damage * (mod - 1)
         if amount < 1:
             amount = 1
         self.item.damage += amount
