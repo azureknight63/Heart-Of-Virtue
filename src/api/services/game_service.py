@@ -3814,81 +3814,137 @@ class GameService:
             "objects": ObjectSerializer.serialize_list(getattr(tile, "objects_here", [])),
         }
 
-    def use_item(self, player: "player_module.Player", item_index: int) -> Dict[str, Any]:
-        """Use an item from the player's inventory.
+    def get_current_tile_object(self, player: "player_module.Player"):
+        """Return the raw tile object the player currently stands on, or None.
 
-        Args:
-            player: The Player instance
-            item_index: Index of the item to use
-
-        Returns:
-            Dictionary with use result
+        Distinct from ``get_tile``, which returns serialized tile data. Routes
+        that need the live tile (to mutate it or pass it to another engine call)
+        should use this instead of reaching into ``player.universe`` directly.
         """
-        if not isinstance(player.inventory, list):
-            return {"error": "Inventory not accessible"}
-
-        if item_index < 0 or item_index >= len(player.inventory):
-            return {"error": "Invalid item index"}
-
-        item = player.inventory[item_index]
-
-        # FIX 2: Add type validation to ensure item is an object with expected attributes
-        if isinstance(item, (str, dict, int, float)):
-            return {"error": f"Invalid inventory item: corrupted data type {type(item).__name__}"}
-
-        if not hasattr(item, "name"):
-            return {"error": "Invalid inventory item: missing name attribute"}
-
-        # Try to use the item if it has a use method
-        if hasattr(item, "use") and callable(item.use):
-            try:
-                item.use(player)
-                return {"success": True, "message": f"Used {item.name}"}
-            except Exception as e:
-                return {"success": False, "error": str(e)}
-
-        return {"success": False, "error": f"{item.name} cannot be used"}
-
-    def drop_item(self, player: "player_module.Player", item_index: int) -> Dict[str, Any]:
-        """Drop an item from the player's inventory.
-
-        Args:
-            player: The Player instance
-            item_index: Index of the item to drop
-
-        Returns:
-            Dictionary with drop result
-        """
-        if not isinstance(player.inventory, list):
-            return {"error": "Inventory not accessible"}
-
-        if item_index < 0 or item_index >= len(player.inventory):
-            return {"error": "Invalid item index"}
-
-        # FIX 1: Add defensive checks for universe and tile BEFORE modifying inventory
         if not hasattr(player, "universe") or player.universe is None:
-            return {"error": "Cannot drop item: player universe not accessible"}
+            return None
+        return player.universe.get_tile(player.location_x, player.location_y)
 
-        # Get the tile and validate it exists before popping from inventory
-        tile = player.universe.get_tile(player.location_x, player.location_y)
+    def is_player_dead(self, player: "player_module.Player") -> bool:
+        """Return True if the player's HP has dropped to zero or below.
+
+        Centralises the death-state derivation so routes don't compute it from
+        ``player.hp`` inline.
+        """
+        return getattr(player, "hp", 1) <= 0
+
+    def set_suggestions_paused(
+        self, player: "player_module.Player", paused: bool
+    ) -> None:
+        """Pause or resume Tactical Advisor suggestion generation.
+
+        When resuming, clears stale suggestion data so the next status poll
+        triggers a fresh fetch.
+        """
+        player.suggestions_paused = paused
+        if not paused:
+            player.suggested_moves = []
+            player.suggestions_loading = False
+
+    @staticmethod
+    def _narration_texts(messages) -> List[str]:
+        """Extract the non-empty ``text`` fields from captured narration entries."""
+        return [m.get("text", "") for m in messages if m.get("text")]
+
+    def equip_item(self, player: "player_module.Player", item) -> Dict[str, Any]:
+        """Equip an inventory item, delegating core mechanics to the engine.
+
+        Acts as a toggle to match the web client, which uses this single path
+        for both equip and unequip: if the item is already equipped it is
+        unequipped. Otherwise merchandise is rejected and the engine's
+        ``Player.equip_item`` performs the equip (slot-swap rules, weapon
+        reference, exp-category setup, stat refresh).
+
+        Args:
+            player: The Player instance
+            item: The inventory item object to equip/unequip
+
+        Returns:
+            Dictionary with ``success``/``message`` or ``error``
+        """
+        if not hasattr(item, "isequipped"):
+            return {"error": f"{getattr(item, 'name', 'Item')} cannot be equipped"}
+
+        if item.isequipped:
+            return self.unequip_item(player, item)
+
+        if getattr(item, "merchandise", False):
+            return {"error": f"You must purchase {item.name} before equipping it"}
+
+        with capture_narration() as _msgs:
+            player.equip_item(item_object=item)
+        return {
+            "success": True,
+            "message": f"{item.name} equipped",
+            "messages": self._narration_texts(_msgs),
+        }
+
+    def unequip_item(self, player: "player_module.Player", item) -> Dict[str, Any]:
+        """Unequip a currently-equipped inventory item via the engine.
+
+        Args:
+            player: The Player instance
+            item: The inventory item object to unequip
+
+        Returns:
+            Dictionary with ``success``/``message`` or ``error``
+        """
+        if not hasattr(item, "isequipped"):
+            return {"error": f"{getattr(item, 'name', 'Item')} cannot be unequipped"}
+        if not item.isequipped:
+            return {"error": f"{item.name} is not equipped"}
+
+        with capture_narration() as _msgs:
+            player.unequip_item(item_object=item)
+        return {
+            "success": True,
+            "message": f"{item.name} unequipped",
+            "messages": self._narration_texts(_msgs),
+        }
+
+    def drop_item(self, player: "player_module.Player", item) -> Dict[str, Any]:
+        """Drop an inventory item onto the player's current tile.
+
+        Unequips the item first if it is equipped, then moves it from the
+        inventory to the tile.
+
+        Args:
+            player: The Player instance
+            item: The inventory item object to drop
+
+        Returns:
+            Dictionary with drop result or ``error``
+        """
+        tile = self.get_current_tile_object(player)
         if not tile or not hasattr(tile, "items_here"):
             return {"error": "Cannot drop item: invalid current location"}
 
-        # FIX 2: Add type validation for inventory items
-        item = player.inventory[item_index]
-        if not hasattr(item, "name"):
-            return {"error": "Cannot drop item: corrupted inventory item"}
+        with capture_narration() as _msgs:
+            if getattr(item, "isequipped", False):
+                player.unequip_item(item_object=item)
 
-        # Now it's safe to remove from inventory
-        player.inventory.pop(item_index)
+            try:
+                player.inventory.remove(item)
+            except (ValueError, AttributeError):
+                return {"error": "Item not found in inventory"}
 
-        # Add item to the current tile
-        tile.items_here.append(item)
+            tile.items_here.append(item)
+            if hasattr(item, "stack_grammar"):
+                item.stack_grammar()
+            # Narrate the drop so `messages` is the single source of truth for
+            # the dialog (the engine has no drop verb; mirrors the take action).
+            narrate(f"{getattr(player, 'name', 'Jean')} drops {getattr(item, 'name', 'the item')}.")
 
         return {
             "success": True,
-            "message": f"Dropped {item.name}",
-            "item_name": item.name,
+            "message": f"Dropped {getattr(item, 'name', 'item')}",
+            "messages": self._narration_texts(_msgs),
+            "item_name": getattr(item, "name", None),
         }
 
     def get_combat_state(self, player: "player_module.Player") -> Dict[str, Any]:

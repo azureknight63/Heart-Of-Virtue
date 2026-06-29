@@ -26,6 +26,24 @@ const capitalize = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s)
 const formatSigned = (value) => `${value >= 0 ? '+' : ''}${value}`
 const formatSignedPercent = (value) => `${value >= 0 ? '+' : ''}${Math.round(value * 100)}%`
 
+// Render engine flavor narration (the backend `messages` array) below an action
+// result. Returns null when there is nothing to show.
+const renderNarration = (messages) => {
+  if (!Array.isArray(messages) || messages.length === 0) return null
+  return (
+    <div style={{
+      whiteSpace: 'pre-wrap',
+      color: '#00ffff',
+      fontSize: '13px',
+      fontFamily: 'monospace',
+      marginTop: '12px',
+      textAlign: 'left',
+    }}>
+      {messages.join('\n')}
+    </div>
+  )
+}
+
 // Describes a single consumable effect descriptor (see inventory.py's
 // _CONSUMABLE_EFFECTS) without per-target context, for the main item panel.
 function describeEffect(effect) {
@@ -123,11 +141,15 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
         const isNowEquipped = !item.is_equipped
         setActionMessage(isNowEquipped ? '✓ Item equipped!' : '✗ Item unequipped!')
 
-        // Show success dialog
+        // Prefer the engine's flavor narration (slot swaps, on-equip effects)
+        // as the single source of truth; fall back to a hardcoded line only
+        // when the backend returned no narration.
         setActionResult({
-          message: isNowEquipped
-            ? <><strong>{player?.name || 'Player'}</strong> equipped <br /><span style={{ color: '#ffff00', fontSize: '18px' }}>{item.name}</span>.</>
-            : <><strong>{player?.name || 'Player'}</strong> unequipped <br /><span style={{ color: '#ffff00', fontSize: '18px' }}>{item.name}</span>.</>
+          message: renderNarration(data.messages) || (
+            isNowEquipped
+              ? <><strong>{player?.name || 'Player'}</strong> equipped <br /><span style={{ color: '#ffff00', fontSize: '18px' }}>{item.name}</span>.</>
+              : <><strong>{player?.name || 'Player'}</strong> unequipped <br /><span style={{ color: '#ffff00', fontSize: '18px' }}>{item.name}</span>.</>
+          )
         })
 
         // Update item's equipped state locally
@@ -227,9 +249,13 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
       const data = response.data || response
       if (data.success) {
         setActionMessage('✓ Item dropped!')
-        // Show success dialog
+        // Prefer the engine's drop narration (incl. any unequip-before-drop)
+        // as the single source of truth; fall back to a hardcoded line only
+        // when the backend returned no narration.
         setActionResult({
-          message: <><strong>{player?.name || 'Player'}</strong> dropped <br /><span style={{ color: '#ffff00', fontSize: '18px' }}>{item.name}</span>.</>
+          message: renderNarration(data.messages) || (
+            <><strong>{player?.name || 'Player'}</strong> dropped <br /><span style={{ color: '#ffff00', fontSize: '18px' }}>{item.name}</span>.</>
+          )
         })
 
         // Call onItemRemoved to update inventory client-side

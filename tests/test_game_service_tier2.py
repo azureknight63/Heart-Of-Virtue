@@ -152,37 +152,22 @@ class TestInventoryManagement:
         """Test dropping an item from inventory."""
         item = MagicMock()
         item.name = "Sword"
+        item.isequipped = False
         mock_player.inventory = [item]
 
-        result = game_service.drop_item(mock_player, 0)
+        result = game_service.drop_item(mock_player, item)
         assert result["success"] is True
         assert len(mock_player.inventory) == 0
 
-    def test_drop_item_invalid_index(self, game_service, mock_player):
-        """Test dropping item with invalid index."""
-        mock_player.inventory = []
-
-        result = game_service.drop_item(mock_player, 5)
-        assert result is not None  # Method handles gracefully
-
-    def test_use_item_success(self, game_service, mock_player):
-        """Test using an item from inventory."""
+    def test_drop_item_not_in_inventory(self, game_service, mock_player):
+        """Test dropping an item that isn't in the inventory."""
         item = MagicMock()
-        item.name = "Health Potion"
-        item.use = MagicMock()
-        mock_player.inventory = [item]
-        mock_player.hp = 50
-        mock_player.maxhp = 100
-
-        result = game_service.use_item(mock_player, 0)
-        assert result is not None
-
-    def test_use_item_invalid_index(self, game_service, mock_player):
-        """Test using item with invalid index."""
+        item.name = "Ghost"
+        item.isequipped = False
         mock_player.inventory = []
 
-        result = game_service.use_item(mock_player, 5)
-        assert result is not None  # Method handles gracefully
+        result = game_service.drop_item(mock_player, item)
+        assert "error" in result  # Method handles gracefully
 
     def test_collect_combat_loot(self, game_service, mock_player):
         """Test collecting loot from combat."""
