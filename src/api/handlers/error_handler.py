@@ -111,12 +111,16 @@ def register_error_handlers(app):
     @app.errorhandler(500)
     def internal_error(error):
         """Handle 500 Internal Server Error."""
+        # Log the detail server-side; never leak str(error) to clients.
+        import traceback
+
+        traceback.print_exc()
         return (
             jsonify(
                 {
                     "success": False,
                     "error": "Internal server error",
-                    "message": str(error),
+                    "message": "An unexpected error occurred",
                 }
             ),
             500,

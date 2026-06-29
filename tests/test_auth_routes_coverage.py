@@ -430,7 +430,7 @@ class TestSettings:
             with app.test_client() as c:
                 rv = c.put(
                     "/auth/settings",
-                    json={"timezone": "Bad/Zone"},
+                    json={"timezone": "UTC"},
                     headers=AUTH,
                 )
         assert rv.status_code == 500

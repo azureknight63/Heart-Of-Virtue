@@ -25,7 +25,6 @@ from src.universe import Universe  # type: ignore
 from src.npc import NPC  # type: ignore
 from src.moves import Advance  # type: ignore
 from src.config_manager import GameConfig, ConfigManager  # type: ignore
-from src.display_config import CombatDisplayConfig  # type: ignore
 from src.game_logger import GameLogger  # type: ignore
 from src.debug_manager import DebugManager  # type: ignore
 from src.coordinate_config import CoordinateSystemConfig  # type: ignore
@@ -53,12 +52,6 @@ class TestCombatIntegration:
         p.universe.build(p)
         return p
 
-    def test_display_config_initializes(self, player):
-        """Test CombatDisplayConfig initializes with player."""
-        display_config = CombatDisplayConfig(player)
-        assert display_config.player == player
-        assert display_config.should_show_distance() == True
-        assert display_config.should_show_positions() == True
 
     def test_game_logger_initializes(self, player):
         """Test GameLogger initializes with player."""
@@ -122,48 +115,20 @@ class TestCombatIntegration:
     def test_all_configs_accessible_from_combat(self, player):
         """Test all config systems accessible during simulated combat."""
         # Simulate combat setup
-        player.combat_display_config = CombatDisplayConfig(player)
         player.combat_game_logger = GameLogger(player)
         player.combat_debug_manager = DebugManager(player)
         player.combat_coordinate_config = CoordinateSystemConfig(player)
 
         # Verify all accessible
-        assert hasattr(player, 'combat_display_config')
         assert hasattr(player, 'combat_game_logger')
         assert hasattr(player, 'combat_debug_manager')
         assert hasattr(player, 'combat_coordinate_config')
 
-        assert isinstance(player.combat_display_config, CombatDisplayConfig)
         assert isinstance(player.combat_game_logger, GameLogger)
         assert isinstance(player.combat_debug_manager, DebugManager)
         assert isinstance(player.combat_coordinate_config, CoordinateSystemConfig)
 
 
-class TestDisplayConfigIntegration:
-    """Test display config respects flags."""
-
-    def test_display_config_respects_show_distance_flag(self):
-        """Test display config respects show_combat_distance flag."""
-        p = Player()
-        p.game_config = GameConfig(show_combat_distance=True)
-
-        display_config = CombatDisplayConfig(p)
-        assert display_config.should_show_distance() == True
-
-        # Test with flag off
-        p.game_config.show_combat_distance = False
-        assert display_config.should_show_distance() == False
-
-    def test_display_config_respects_show_positions_flag(self):
-        """Test display config respects show_unit_positions flag."""
-        p = Player()
-        p.game_config = GameConfig(show_unit_positions=True)
-
-        display_config = CombatDisplayConfig(p)
-        assert display_config.should_show_positions() == True
-
-        p.game_config.show_unit_positions = False
-        assert display_config.should_show_positions() == False
 
 
 class TestLoggingIntegration:
@@ -311,7 +276,6 @@ class TestFullIntegration:
         p.game_config = config
 
         # Initialize all systems
-        display = CombatDisplayConfig(p)
         logger = GameLogger(p)
         debug = DebugManager(p)
         coords = CoordinateSystemConfig(p)
@@ -319,7 +283,6 @@ class TestFullIntegration:
         scenarios = ScenarioConfig(p)
 
         # Verify all initialized
-        assert display.should_show_distance() == True
         assert debug.is_debug_mode_enabled() == True
         assert logger.player == p
         assert coords.get_grid_size() == (50, 50)

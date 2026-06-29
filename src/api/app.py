@@ -238,7 +238,6 @@ def create_app(config_class=None):
         combat_bp,
         player_bp,
         saves_bp,
-        npc_bp,
         logs_bp,
         feedback_bp,
         shop_bp,
@@ -251,7 +250,6 @@ def create_app(config_class=None):
     app.register_blueprint(combat_bp, url_prefix="/api/combat")
     app.register_blueprint(player_bp, url_prefix="/api")
     app.register_blueprint(saves_bp, url_prefix="/api")
-    app.register_blueprint(npc_bp, url_prefix="/api/npc")
     app.register_blueprint(npc_chat_bp, url_prefix="/api/npc/chat")
     app.register_blueprint(logs_bp, url_prefix="/api/logs")
     app.register_blueprint(feedback_bp, url_prefix="/api/feedback")
@@ -275,16 +273,20 @@ def create_app(config_class=None):
 
         if request.method == "OPTIONS":
             response = make_response()
-            response.headers["Access-Control-Allow-Origin"] = request.headers.get(
-                "Origin", "http://localhost:3000"
-            )
-            response.headers["Access-Control-Allow-Methods"] = (
-                "GET, POST, PUT, DELETE, OPTIONS, PATCH"
-            )
-            response.headers["Access-Control-Allow-Headers"] = (
-                "Content-Type, Authorization"
-            )
-            response.headers["Access-Control-Max-Age"] = "3600"
+            # Only echo the Origin if it's in the configured allowlist —
+            # otherwise the preflight would undermine the CORS restriction
+            # (esp. ProductionConfig, which locks origins to nexusfidei.dev).
+            allowed = app.config.get("CORS_ORIGINS", [])
+            origin = request.headers.get("Origin")
+            if origin and origin in allowed:
+                response.headers["Access-Control-Allow-Origin"] = origin
+                response.headers["Access-Control-Allow-Methods"] = (
+                    "GET, POST, PUT, DELETE, OPTIONS, PATCH"
+                )
+                response.headers["Access-Control-Allow-Headers"] = (
+                    "Content-Type, Authorization"
+                )
+                response.headers["Access-Control-Max-Age"] = "3600"
             return response, 200
 
     # Health check endpoint
@@ -367,10 +369,13 @@ def create_app(config_class=None):
 
         return generate_swagger_ui_html()
 
-    # Debug: List all routes
+    # Debug: List all routes (test-only — avoids leaking the URL map in prod)
     @app.route("/api/debug/routes", methods=["GET"])
     def list_routes():
         from flask import jsonify
+
+        if not app.config.get("TESTING"):
+            return jsonify({"success": False, "error": "Not found"}), 404
 
         routes = []
         for rule in app.url_map.iter_rules():

@@ -569,11 +569,6 @@ class TestWorldRoutes:
 class TestNPCRoutes:
     """Test NPC interaction routes."""
 
-    def test_npc_route_exists(self):
-        """Test NPC blueprint exists."""
-        from src.api.routes.npc import npc_bp
-        assert npc_bp is not None
-
     def test_talk_to_npc_unauthorized(self):
         """Test talk to NPC requires auth."""
         from src.api.app import create_app
@@ -842,7 +837,6 @@ class TestBlueprintRegistration:
             'src.api.routes.auth',
             'src.api.routes.combat',
             'src.api.routes.inventory',
-            'src.api.routes.npc',
             'src.api.routes.player',
             'src.api.routes.quest_chains',
             'src.api.routes.quest_rewards',
@@ -869,7 +863,6 @@ class TestBlueprintRegistration:
             auth_bp,
             combat_bp,
             inventory_bp,
-            npc_bp,
             player_bp,
             quest_chains_bp,
             quest_rewards_bp,

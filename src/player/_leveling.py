@@ -67,7 +67,10 @@ class PlayerLevelingMixin:
         # Level up bookkeeping (match terminal behavior)
         self.level += 1
         self.exp -= self.exp_to_level
-        self.exp_to_level = self.level * (165 - self.intelligence)
+        # Floor the per-level requirement at 1 per level so very high
+        # intelligence (>=165) can't drive exp_to_level <= 0 and spin the
+        # `while exp >= exp_to_level` loop in gain_exp() forever.
+        self.exp_to_level = self.level * max(1, (165 - self.intelligence))
 
         # Apply random bonus increases to base stats
         bonuses = {}

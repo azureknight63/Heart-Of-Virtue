@@ -369,48 +369,6 @@ class TestDeleteSave:
 
 
 # ========================= NPC Methods Tests =========================
-class TestGetNpcDialogue:
-    """Tests for get_npc_dialogue() method."""
-
-    def test_get_npc_dialogue_returns_dict(self, game_service, expanded_mock_player):
-        """Test that get_npc_dialogue returns a dictionary."""
-        result = game_service.get_npc_dialogue(expanded_mock_player, "npc_id")
-        assert isinstance(result, dict)
-
-    def test_get_npc_dialogue_invalid_npc(self, game_service, expanded_mock_player):
-        """Test get_npc_dialogue when NPC not found."""
-        result = game_service.get_npc_dialogue(expanded_mock_player, "invalid_id")
-        assert isinstance(result, dict)
-
-
-class TestSelectDialogueOption:
-    """Tests for select_dialogue_option() method."""
-
-    def test_select_dialogue_option_returns_dict(self, game_service, expanded_mock_player):
-        """Test that select_dialogue_option returns a dictionary."""
-        result = game_service.select_dialogue_option(
-            expanded_mock_player,
-            "npc_id",
-            0
-        )
-        assert isinstance(result, dict)
-
-    def test_select_dialogue_option_invalid_npc(self, game_service, expanded_mock_player):
-        """Test select_dialogue_option with invalid NPC."""
-        result = game_service.select_dialogue_option(
-            expanded_mock_player,
-            "invalid_id",
-            0
-        )
-        assert isinstance(result, dict)
 
 
 # ========================= Advanced NPC Tests =========================
-class TestGetNpcBehaviorProfile:
-    """Tests for get_npc_behavior_profile() method."""
-
-    def test_get_npc_behavior_profile_returns_dict(self, game_service, expanded_mock_player):
-        """Test that get_npc_behavior_profile returns a dictionary."""
-        result = game_service.get_npc_behavior_profile(expanded_mock_player, "npc_id")
-        assert isinstance(result, dict)
-

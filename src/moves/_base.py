@@ -27,6 +27,41 @@ def _apply_carry_fatigue(user, fatigue_cost):
     return fatigue_cost
 
 
+def _apply_work_the_gap(user, target, landed_hits=1):
+    """WorkTheGap passive: each landed pick strike shaves the target's
+    protection (a progressive armour strip), floored at 0.
+
+    No-op unless the user knows the "Work the Gap" passive and at least one
+    hit landed. The reduction is applied to ``protection_base`` (not just
+    ``protection``) so it survives ``refresh_stat_bonuses()``, which resets
+    ``protection -> protection_base`` every beat under the declarative
+    protection model — see functions.reset_stats. This makes the strip
+    persist for the rest of the fight.
+    """
+    if landed_hits <= 0:
+        return
+    if not any(
+        getattr(m, "name", "") == "Work the Gap"
+        for m in getattr(user, "known_moves", [])
+    ):
+        return
+    cur = getattr(target, "protection", None)
+    if not isinstance(cur, (int, float)) or cur <= 0:
+        return
+    before = int(cur)
+    amount = 2 * landed_hits
+    base = getattr(target, "protection_base", None)
+    if isinstance(base, (int, float)):
+        target.protection_base = max(0, int(base) - amount)
+    target.protection = max(0, before - amount)
+    if target.protection < before:
+        cprint(
+            f"{getattr(target, 'name', 'The target')}'s guard is pried open "
+            f"(protection {before} -> {int(target.protection)}).",
+            "cyan",
+        )
+
+
 # Helper to ensure weapon subtype EXP pools exist (referenced in parry/hit/standard_execute_attack)
 
 
@@ -202,6 +237,18 @@ class Move:  # master class for all moves
                     prep += getattr(state, "prep_penalty", 5)
                     state.penalty_consumed = True
                     break
+
+        # QuickReload passive: faster crossbow reload — shave ~20% of prep beats
+        # (floored at 1) while wielding a crossbow.
+        if (
+            prep > 1
+            and getattr(getattr(self.user, "eq_weapon", None), "subtype", None) == "Crossbow"
+            and any(
+                getattr(m, "name", "") == "Quick Reload"
+                for m in getattr(self.user, "known_moves", [])
+            )
+        ):
+            prep = max(1, int(round(prep * 0.8)))
 
         self.beats_left = prep
 

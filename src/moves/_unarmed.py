@@ -215,7 +215,7 @@ class Jab(Move):
         self.evaluate()
 
     def viable(self):
-        return self.standard_viability_attack("Unarmed")
+        return self.standard_viability_attack(("Unarmed",))
 
     def evaluate(
         self,
