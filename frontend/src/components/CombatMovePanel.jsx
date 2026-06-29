@@ -30,6 +30,9 @@ const CombatMovePanel = ({ moves, category, onMoveClick, onClose, onTargetHover 
                 zIndex: 100,
                 minWidth: '320px',
                 maxWidth: '450px',
+                maxHeight: '80vh',
+                display: 'flex',
+                flexDirection: 'column',
                 backgroundColor: colors.bg.panelDeep,
             }}
         >
@@ -40,6 +43,7 @@ const CombatMovePanel = ({ moves, category, onMoveClick, onClose, onTargetHover 
                 marginBottom: spacing.md,
                 borderBottom: `1px solid ${colors.border.light}`,
                 paddingBottom: spacing.sm,
+                flexShrink: 0,
             }}>
                 <GameText variant="secondary" weight="bold" style={{ textTransform: 'uppercase' }}>
                     {category} MOVES
@@ -59,7 +63,7 @@ const CombatMovePanel = ({ moves, category, onMoveClick, onClose, onTargetHover 
                 </button>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: spacing.sm }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: spacing.sm, overflowY: 'auto', flex: 1, minHeight: 0 /* Critical: flex children need minHeight:0 to shrink below content size and enable scrolling */, paddingRight: spacing.sm, marginRight: -spacing.sm }}>
                 {filteredMoves.length === 0 ? (
                     <GameText variant="muted" align="center" style={{ fontStyle: 'italic', padding: spacing.md }}>
                         No moves available in this category.
