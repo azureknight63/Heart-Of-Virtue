@@ -44,29 +44,41 @@ def mock_tile():
 
 
 class TestMemoryBorder:
-    def test_top_calls_animation_and_prints(self, capsys):
+    @staticmethod
+    def _chrome_calls(mock_narrate):
+        """Border lines are emitted as narrate(..., mtype='memory_chrome')."""
+        return [
+            c
+            for c in mock_narrate.call_args_list
+            if c.kwargs.get("mtype") == "memory_chrome"
+        ]
+
+    def test_top_calls_animation_and_prints(self):
         with (
-            patch("src.story.effects.animations.animate_to_main_screen"),
-            patch("src.story.effects.cprint"),
+            patch("src.story.effects.animations.animate_to_main_screen") as mock_anim,
+            patch("src.story.effects.narrate") as mock_narrate,
         ):
             from src.story.effects import memory_border
 
             memory_border("top")
+        mock_anim.assert_called_once()
+        # Two borders + the "A MEMORY STIRS" banner, all as memory_chrome.
+        assert len(self._chrome_calls(mock_narrate)) == 3
 
     def test_bottom_prints_without_animation(self):
-        with patch("src.story.effects.cprint") as mock_cprint:
+        with patch("src.story.effects.narrate") as mock_narrate:
             from src.story.effects import memory_border
 
             memory_border("bottom")
-        # cprint should be called at least twice (border + text)
-        assert mock_cprint.call_count >= 2
+        # Two borders + the "THE MEMORY FADES" banner, all as memory_chrome.
+        assert len(self._chrome_calls(mock_narrate)) == 3
 
     def test_unknown_style_prints_plain_border(self):
-        with patch("src.story.effects.cprint") as mock_cprint:
+        with patch("src.story.effects.narrate") as mock_narrate:
             from src.story.effects import memory_border
 
             memory_border("middle")
-        assert mock_cprint.call_count == 1
+        assert len(self._chrome_calls(mock_narrate)) == 1
 
 
 # ---------------------------------------------------------------------------
@@ -703,7 +715,6 @@ class TestTheAdjutantGetArenaTile:
         player = MagicMock(spec=[])  # no attributes at all
         result = adj._get_arena_tile(player, (0, 0))
         assert result is None
-
 
 
 class TestTheAdjutantClearRoom:
