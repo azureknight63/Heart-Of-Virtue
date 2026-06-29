@@ -8,7 +8,7 @@ from unittest.mock import patch
 from src.api.constants import ITEM_USE_RANGE
 from src.functions import check_for_combat
 from inventory_utils import get_gold
-from narration import capture_narration, narrate
+from src.narration import capture_narration, narrate
 
 if TYPE_CHECKING:
     from src import player as player_module
