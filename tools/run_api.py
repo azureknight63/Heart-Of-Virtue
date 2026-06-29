@@ -47,6 +47,11 @@ if "tkinter" not in sys.modules:
         sys.modules["tkinter"] = _tk_stub
         sys.modules["tkinter.font"] = _tk_stub.font
 
+# Collapse bare-vs-src module duplication (root and src/ are both on sys.path)
+# BEFORE the app imports any engine module, so `x` and `src.x` stay one object.
+from src.import_sync import install as _install_module_sync
+_install_module_sync()
+
 from src.api.app import create_app
 from src.api.config import DevelopmentConfig, TestingConfig, ProductionConfig
 

@@ -4,7 +4,7 @@ Effects are small, one-time-only events typically fired during combat or in resp
 
 from typing import List, Optional
 
-from src.narration import cprint, narrate
+from src.narration import cprint, narrate, say, begin_conversation
 import random
 import time
 
@@ -16,23 +16,39 @@ import animations
 
 
 def memory_border(style="top"):
-    """Print decorative borders for memory flashes."""
+    """Emit decorative borders for memory flashes (terminal flair).
+
+    Border lines are tagged ``mtype="memory_chrome"`` so the web API drops them
+    from event segments/output_text — the React client renders its own Memory
+    Flash flair (a violet dream frame + banner) instead — while the terminal
+    client still echoes the ASCII borders exactly as before.
+    """
     border = "═" * 79
     if style == "top":
-        # Play the memory flash animation
+        # Play the memory flash animation (no-op in API mode; patched out)
         animations.animate_to_main_screen("memory_flash")
         narrate()  # Blank line after animation
-        cprint(border, "magenta")
-        cprint("✧ A MEMORY STIRS ✧".center(79), "magenta", attrs=["bold"])
-        cprint(border, "magenta")
+        narrate(border, color="magenta", mtype="memory_chrome")
+        narrate(
+            "✧ A MEMORY STIRS ✧".center(79),
+            color="magenta",
+            attrs=["bold"],
+            mtype="memory_chrome",
+        )
+        narrate(border, color="magenta", mtype="memory_chrome")
         narrate()  # Blank line for readability
     elif style == "bottom":
         narrate()  # Blank line before bottom border
-        cprint(border, "magenta")
-        cprint("✧ THE MEMORY FADES ✧".center(79), "magenta", attrs=["bold"])
-        cprint(border, "magenta")
+        narrate(border, color="magenta", mtype="memory_chrome")
+        narrate(
+            "✧ THE MEMORY FADES ✧".center(79),
+            color="magenta",
+            attrs=["bold"],
+            mtype="memory_chrome",
+        )
+        narrate(border, color="magenta", mtype="memory_chrome")
     else:
-        cprint(border, "magenta")
+        narrate(border, color="magenta", mtype="memory_chrome")
 
 
 class MemoryFlash(Event):
@@ -49,8 +65,17 @@ class MemoryFlash(Event):
     Args:
         player: The player object
         tile: The tile where this event triggers
-        memory_lines: List of tuples (text, pause_duration) for each line of the memory
-        aftermath_text: Optional text shown after the memory fades
+        memory_lines: List of lines for the memory. Each line is either a plain
+            ``(text, pause_duration)`` tuple (rendered as narration, as before) or
+            a ``(text, pause_duration, meta)`` tuple where ``meta`` is a dict that
+            may carry ``speaker``, ``emotion``, ``reactions``, ``enter``/``exit``
+            stage ops to drive the staged conversation portraits.
+        aftermath_text: Optional text shown after the memory fades. Each entry is
+            a plain string, or a ``(text, meta)`` tuple for staged metadata.
+        cast: Optional staged-conversation roster. When provided, a conversation
+            stage is opened (portraits flank the prose). Each member is an
+            ``(id, side, emotion)`` tuple or a dict (see
+            :func:`narration.begin_conversation`).
         repeat: Whether this memory can trigger again (usually False)
         name: Event name for tracking
     """
@@ -61,6 +86,7 @@ class MemoryFlash(Event):
         tile,
         memory_lines,
         aftermath_text=None,
+        cast=None,
         repeat=False,
         name="MemoryFlash",
     ):
@@ -69,6 +95,54 @@ class MemoryFlash(Event):
         )
         self.memory_lines = memory_lines
         self.aftermath_text = aftermath_text
+        self.cast = cast
+        # Signals the web client to wrap this event in Memory Flash flair.
+        self.presentation = "memory_flash"
+
+    @staticmethod
+    def _split_line(line):
+        """Split a memory/aftermath line into ``(text, meta)``.
+
+        Accepts a plain string, ``(text, pause)``, ``(text, pause, meta)``, or
+        ``(text, meta)``. ``meta`` is always a dict (empty when none supplied).
+        """
+        if isinstance(line, str):
+            return line, {}
+        if isinstance(line, (tuple, list)) and line:
+            text = line[0]
+            meta = {}
+            for item in line[1:]:
+                if isinstance(item, dict):
+                    meta = item
+            return text, meta
+        return str(line), {}
+
+    def _emit_line(self, line, default_color=None):
+        """Emit one memory/aftermath line, routing through staged helpers if tagged."""
+        text, meta = self._split_line(line)
+        if not isinstance(text, str):
+            text = str(text)
+        speaker = meta.get("speaker")
+        color = meta.get("color", default_color)
+        if speaker:
+            say(
+                text,
+                speaker,
+                meta.get("emotion", "neutral"),
+                reactions=meta.get("reactions"),
+                enter=meta.get("enter"),
+                leave=meta.get("exit"),
+                color=color,
+            )
+        else:
+            # Narration beat. Pass through any stage/reaction metadata so the cast
+            # can still react (or enter/exit) on a line nobody speaks.
+            passthrough = {
+                k: meta[k]
+                for k in ("reactions", "enter", "exit")
+                if meta.get(k) is not None
+            }
+            narrate(text, color=color, **passthrough)
 
     def check_conditions(self):
         # Memory flashes trigger automatically when conditions are met
@@ -89,9 +163,15 @@ class MemoryFlash(Event):
             # Top border with animation
             memory_border("top")
 
-            # Display each memory line with individual timing
-            for line, pause in self.memory_lines:
-                cprint(line, "magenta")
+            # Open the staged conversation (portraits flank the prose) when a
+            # cast roster was supplied. Untagged memories skip this entirely.
+            if self.cast:
+                begin_conversation(self.cast)
+
+            # Display each memory line. Tagged lines route through the staged
+            # helpers; plain (text, pause) tuples render as magenta narration.
+            for line in self.memory_lines:
+                self._emit_line(line, default_color="magenta")
                 # Removed long sleeps to prevent API timeouts, frontend handles pacing
 
             # Bottom border
@@ -101,14 +181,14 @@ class MemoryFlash(Event):
             # Aftermath - Jean's reaction to the memory
             if self.aftermath_text:
                 for line in self.aftermath_text:
-                    cprint(line, "cyan")
+                    self._emit_line(line, default_color="cyan")
 
             # Build description for API clients from the narrative text
             parts = ["For a moment, there is only silence...", ""]
-            parts.extend(line for line, _pause in self.memory_lines)
+            parts.extend(self._split_line(line)[0] for line in self.memory_lines)
             if self.aftermath_text:
                 parts.append("")
-                parts.extend(self.aftermath_text)
+                parts.extend(self._split_line(line)[0] for line in self.aftermath_text)
             self.description = "\n".join(parts)
 
             # Signal requirement for input
@@ -120,7 +200,7 @@ class MemoryFlash(Event):
 
         # Second pass: user has clicked continue
         narrate()
-        cprint("═" * 79, "cyan")
+        narrate("═" * 79, color="cyan", mtype="memory_chrome")
         narrate()
         self.needs_input = False
         self.completed = True
@@ -392,7 +472,9 @@ class StMichael(Shrine):
         if user_input is None:
             # Terminal path: print prose + choices and collect input directly
             narrate("This, particularly, is a shrine to Saint Michael the Archangel.")
-            narrate("There is a small statue depicting St Michael spearing a vicious dragon.")
+            narrate(
+                "There is a small statue depicting St Michael spearing a vicious dragon."
+            )
             narrate("""An inscription on the shrine reads,
 
         Sáncte Míchael Archángele, defénde nos in proélio, cóntra nequítiam et insídias diáboli ésto præsídium.

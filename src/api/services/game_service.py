@@ -8,7 +8,7 @@ from unittest.mock import patch
 from src.api.constants import ITEM_USE_RANGE
 from src.functions import check_for_combat
 from inventory_utils import get_gold
-from narration import capture_narration, narrate
+from src.narration import capture_narration, narrate
 
 if TYPE_CHECKING:
     from src import player as player_module
@@ -175,6 +175,138 @@ class GameService:
             and not any(line.lstrip().startswith(p) for p in _LLM_NOISE_PREFIXES)
         ]
         return ansi_escape.sub("", "\n".join(filtered_lines)).strip()
+
+    def _resolve_conversation_side(self, char_id, player) -> str:
+        """Resolve a portrait's stage side, defaulting by the party rule.
+
+        Jean and current party members default to the left; everyone else to the
+        right. An explicit ``side`` always wins (handled by the caller before this
+        is reached).
+        """
+        if not char_id:
+            return "right"
+        name = str(char_id).strip().lower()
+        pname = str(getattr(player, "name", "") or "").strip().lower()
+        if name == "jean" or (pname and name == pname):
+            return "left"
+        try:
+            for ally in getattr(player, "combat_list_allies", []) or []:
+                if str(getattr(ally, "name", "")).strip().lower() == name:
+                    return "left"
+        except Exception:
+            pass
+        return "right"
+
+    def _norm_enter_op(self, op: Dict[str, Any], player) -> Dict[str, Any]:
+        """Normalize an enter/cast op, resolving its side when not explicit."""
+        cid = op.get("id") or op.get("speaker")
+        side = op.get("side") or self._resolve_conversation_side(cid, player)
+        return {
+            "id": cid,
+            "name": op.get("name") or cid,
+            "side": side,
+            "emotion": op.get("emotion", "neutral"),
+            "transition": op.get("transition", "fade"),
+        }
+
+    def _capture_conversation(self, msgs, player=None):
+        """Turn captured narration entries into (output_text, segments, conversation).
+
+        ``segments`` preserves each beat's text plus any speaker/emotion/reactions
+        and enter/exit stage ops for the staged conversation UI. ``conversation``
+        carries the initial cast roster (or ``None`` when no conversation was
+        opened). ``output_text`` is the flattened plain text kept for the legacy
+        renderer, event history, and as a fallback for clients that ignore
+        segments. Events that never call the staged helpers yield an empty
+        ``segments`` list and ``None`` conversation, so they render exactly as
+        before.
+        """
+        segments: List[Dict[str, Any]] = []
+        conversation: Optional[Dict[str, Any]] = None
+        conv_active = False
+        # Whether the event used ANY staged feature. When it didn't, we return no
+        # segments so the event renders through the legacy typewriter path exactly
+        # as before — only genuinely staged events opt into the conversation UI.
+        staged_used = False
+        pending_enter: List[Dict[str, Any]] = []
+        pending_exit: List[Dict[str, Any]] = []
+
+        for m in msgs:
+            mtype = m.get("type")
+            if mtype == "memory_chrome":
+                # Terminal-only decorative borders for memory flashes; the web
+                # client renders its own flair, so drop these from segments.
+                continue
+            if mtype == "conversation_begin":
+                cast = [
+                    self._norm_enter_op(member, player) for member in m.get("cast", [])
+                ]
+                conversation = {"cast": cast}
+                conv_active = True
+                staged_used = True
+                continue
+            if mtype == "conversation_end":
+                if segments:
+                    segments[-1]["conversation_end"] = True
+                conv_active = False
+                staged_used = True
+                continue
+            if mtype == "stage_enter":
+                pending_enter.append(self._norm_enter_op(m, player))
+                conv_active = True
+                staged_used = True
+                continue
+            if mtype == "stage_exit":
+                op = {"id": m.get("id"), "transition": m.get("transition", "fade")}
+                if m.get("span") is not None:
+                    op["span"] = m.get("span")
+                pending_exit.append(op)
+                staged_used = True
+                continue
+
+            # Text beat (narration / dialogue / combat / ...).
+            clean = self._clean_event_output(m.get("text", ""))
+            entry_enter = [
+                self._norm_enter_op(o, player) for o in (m.get("enter") or [])
+            ]
+            entry_exit = list(m.get("exit") or [])
+            enter_ops = pending_enter + entry_enter
+            exit_ops = pending_exit + entry_exit
+            pending_enter, pending_exit = [], []
+            if m.get("speaker") or m.get("reactions") or enter_ops or exit_ops:
+                staged_used = True
+            if not clean and not enter_ops and not exit_ops:
+                continue
+            seg: Dict[str, Any] = {"text": clean, "type": mtype or "narration"}
+            if m.get("speaker"):
+                seg["speaker"] = m.get("speaker")
+                seg["emotion"] = m.get("emotion", "neutral")
+            if m.get("reactions"):
+                seg["reactions"] = m.get("reactions")
+            if enter_ops:
+                seg["enter"] = enter_ops
+            if exit_ops:
+                seg["exit"] = exit_ops
+            seg["in_conversation"] = conv_active
+            segments.append(seg)
+
+        # Trailing stage ops with no following beat attach to the last segment.
+        if (pending_enter or pending_exit) and segments:
+            if pending_enter:
+                segments[-1].setdefault("enter", []).extend(pending_enter)
+            if pending_exit:
+                segments[-1].setdefault("exit", []).extend(pending_exit)
+
+        output_text = self._clean_event_output(
+            "\n".join(
+                m.get("text", "")
+                for m in msgs
+                if m.get("text") and m.get("type") != "memory_chrome"
+            )
+        )
+        if not staged_used:
+            return output_text, [], None
+        return output_text, segments, conversation
 
     def _store_pending_event(
         self,
@@ -755,12 +887,16 @@ class GameService:
                         getattr(event, "name", type(event).__name__),
                     )
 
-                # Capture and clean output
-                clean_output = self._clean_event_output(
-                    "\n".join(m.get("text", "") for m in _msgs)
+                # Capture output + staged conversation segments
+                clean_output, segments, conversation = self._capture_conversation(
+                    _msgs, player
                 )
                 if clean_output:
                     event_data["output_text"] = clean_output
+                if segments:
+                    event_data["segments"] = segments
+                if conversation:
+                    event_data["conversation"] = conversation
 
             events_triggered.append(event_data)
 
@@ -868,12 +1004,14 @@ class GameService:
             result["error"] = str(e)
             _log.exception("Event input processing failed for event_id=%s", event_id)
 
-        # Capture and clean output
-        clean_output = self._clean_event_output(
-            "\n".join(m.get("text", "") for m in _msgs)
-        )
+        # Capture output + staged conversation segments
+        clean_output, segments, conversation = self._capture_conversation(_msgs, player)
         if clean_output:
             result["output_text"] = clean_output
+        if segments:
+            result["segments"] = segments
+        if conversation:
+            result["conversation"] = conversation
 
         # Check if event still needs input (persistent events)
         updated_event_data = EventSerializer.serialize_with_input(event)
@@ -1369,9 +1507,7 @@ class GameService:
                         loot_event = LootEvent(
                             f"Looting {target.name}", player, tile, target
                         )
-                        event_data = EventSerializer.serialize_with_input(
-                            loot_event
-                        )
+                        event_data = EventSerializer.serialize_with_input(loot_event)
 
                         if session_data is not None:
                             event_id = str(uuid.uuid4())
@@ -1446,7 +1582,11 @@ class GameService:
         # If a teleport occurred, strip the destination tile's description from the
         # interaction output — the frontend fetches the new room via /world/current-room.
         _post_map_name = player.map.get("name") if player.map else None
-        if _post_map_name != _pre_map_name or player.location_x != _pre_x or player.location_y != _pre_y:
+        if (
+            _post_map_name != _pre_map_name
+            or player.location_x != _pre_x
+            or player.location_y != _pre_y
+        ):
             dest_tile = player.universe.get_tile(player.location_x, player.location_y)
             if dest_tile and hasattr(dest_tile, "description"):
                 dest_desc = ansi_escape.sub("", dest_tile.description).strip()
@@ -1537,7 +1677,11 @@ class GameService:
                 )
 
         # Detect if player teleported
-        teleported = _post_map_name != _pre_map_name or player.location_x != _pre_x or player.location_y != _pre_y
+        teleported = (
+            _post_map_name != _pre_map_name
+            or player.location_x != _pre_x
+            or player.location_y != _pre_y
+        )
 
         return {
             "success": True,
@@ -1700,14 +1844,18 @@ class GameService:
                 except Exception as e:
                     event_data["error"] = str(e)
 
-                # Capture and clean output
-                clean_output = self._clean_event_output(
-                    "\n".join(m.get("text", "") for m in _msgs)
+                # Capture output + staged conversation segments
+                clean_output, segments, conversation = self._capture_conversation(
+                    _msgs, player
                 )
                 triggered = False
                 if clean_output:
                     event_data["output_text"] = clean_output
                     triggered = True
+                if segments:
+                    event_data["segments"] = segments
+                if conversation:
+                    event_data["conversation"] = conversation
 
                 # Mark as triggered if input required
                 if getattr(event, "needs_input", False):
@@ -1776,7 +1924,8 @@ class GameService:
         # This mirrors what move_player() achieves in practice and prevents the
         # "one enemy enters, rest stay" bug that left combat stuck after the first kill.
         all_enemies = [
-            npc for npc in getattr(tile, "npcs_here", [])
+            npc
+            for npc in getattr(tile, "npcs_here", [])
             if not getattr(npc, "friend", False)
             and getattr(npc, "aggro", False)
             and npc is not enemy  # enemy already forced-aggro above; prepend it below
@@ -2244,9 +2393,15 @@ class GameService:
             "exp": getattr(player, "exp", 0),
             "max_exp": getattr(player, "exp_to_level", 100),
             "exp_to_next_level": int(
-                max(0, (getattr(player, "exp_to_level", 0) or 0) - (getattr(player, "exp", 0) or 0))
+                max(
+                    0,
+                    (getattr(player, "exp_to_level", 0) or 0)
+                    - (getattr(player, "exp", 0) or 0),
+                )
             ),
-            "pending_attribute_points": int(getattr(player, "pending_attribute_points", 0) or 0),
+            "pending_attribute_points": int(
+                getattr(player, "pending_attribute_points", 0) or 0
+            ),
             "pending_level_ups": list(getattr(player, "pending_level_ups", None) or []),
             "hp": getattr(player, "hp", 0),
             "max_hp": getattr(player, "maxhp", 0),
@@ -2469,7 +2624,9 @@ class GameService:
             }
 
         # Check stat requirements (mastery skills)
-        if hasattr(skill_obj, "learnable_when") and not skill_obj.learnable_when(player):
+        if hasattr(skill_obj, "learnable_when") and not skill_obj.learnable_when(
+            player
+        ):
             return {
                 "success": False,
                 "error": "Stat requirements not met. This skill requires its linked stat to exceed 30 and be your highest.",
@@ -2825,7 +2982,8 @@ class GameService:
                 # Preserve only living allies — dead allies must not be re-injected into
                 # rooms via recall_friends or re-enrolled in the next combat.
                 existing_allies = [
-                    a for a in getattr(player, "combat_list_allies", [])
+                    a
+                    for a in getattr(player, "combat_list_allies", [])
                     if a is not player and a.is_alive()
                 ]
                 for ally in existing_allies:
@@ -2835,7 +2993,8 @@ class GameService:
                 # Strip non-persistent status effects that should have been cleared at
                 # combat end (mirrors combat.py line 624 which the API adapter never runs).
                 player.states = [
-                    s for s in getattr(player, "states", [])
+                    s
+                    for s in getattr(player, "states", [])
                     if getattr(s, "persistent", True)
                 ]
                 # Recharge equip-states (e.g. PhoenixRevive) consumed mid-battle —
@@ -2961,7 +3120,8 @@ class GameService:
         player.combat_list = enemies
         # Preserve existing living party members — dead allies must not be re-enrolled.
         existing_allies = [
-            a for a in getattr(player, "combat_list_allies", [])
+            a
+            for a in getattr(player, "combat_list_allies", [])
             if a is not player and a.is_alive()
         ]
         player.combat_list_allies = [player] + existing_allies
@@ -3036,8 +3196,7 @@ class GameService:
 
         # Strip non-persistent status effects (mirrors end-of-combat cleanup)
         player.states = [
-            s for s in getattr(player, "states", [])
-            if getattr(s, "persistent", True)
+            s for s in getattr(player, "states", []) if getattr(s, "persistent", True)
         ]
 
         if hasattr(player, "_combat_adapter"):
@@ -3413,7 +3572,8 @@ class GameService:
         # triggered by game_tick events (every 1000 ticks) but the API skips
         # the terminal game loop entirely.
         non_gold = [
-            item for item in getattr(merchant, "inventory", [])
+            item
+            for item in getattr(merchant, "inventory", [])
             if getattr(item, "name", None) != "Gold"
         ]
         if not non_gold and hasattr(merchant, "update_goods"):
@@ -3424,7 +3584,9 @@ class GameService:
         # generated flavor phrases so the frontend can display them as a dialog.
         collected_messages: list = []
         if hasattr(merchant, "_collect_player_merchandise"):
-            collected_messages = merchant._collect_player_merchandise(player, silent=True)
+            collected_messages = merchant._collect_player_merchandise(
+                player, silent=True
+            )
         else:
             # Fallback for test environments with fake merchants
             merchant_name = getattr(merchant, "name", "Merchant")
@@ -3618,27 +3780,32 @@ class GameService:
             buyback_item_id = item_id
         else:
             buyback_item_id = next(
-                (str(id(i)) for i in getattr(merchant, "inventory", [])
-                 if getattr(i, "name", None) == item_name),
+                (
+                    str(id(i))
+                    for i in getattr(merchant, "inventory", [])
+                    if getattr(i, "name", None) == item_name
+                ),
                 item_id,
             )
 
         if not hasattr(merchant, "_buyback_ledger"):
             merchant._buyback_ledger = []
 
-        merchant._buyback_ledger.append({
-            "item_id": buyback_item_id,
-            "item_name": item_name,
-            "buyback_price": unit_offer,
-            "weight": item_weight,
-            "count": quantity,
-            "type": item_type,
-            "subtype": item_subtype,
-            "description": item_description,
-            "value": base_value,
-            "power": item_power,
-            "beat_acquired": self._game_tick(player),
-        })
+        merchant._buyback_ledger.append(
+            {
+                "item_id": buyback_item_id,
+                "item_name": item_name,
+                "buyback_price": unit_offer,
+                "weight": item_weight,
+                "count": quantity,
+                "type": item_type,
+                "subtype": item_subtype,
+                "description": item_description,
+                "value": base_value,
+                "power": item_power,
+                "beat_acquired": self._game_tick(player),
+            }
+        )
 
         current_tick = self._game_tick(player)
         ShopSerializer.flush_stale_buyback(merchant, current_tick)
@@ -3655,9 +3822,7 @@ class GameService:
             "sell_inventory": sell_inventory,
         }
 
-    def shop_buyback(
-        self, player: Any, npc_id: str, item_id: str
-    ) -> Dict[str, Any]:
+    def shop_buyback(self, player: Any, npc_id: str, item_id: str) -> Dict[str, Any]:
         """Repurchase a recently sold item from the merchant's buyback ledger.
 
         The buyback price equals what the merchant paid — no markup. The ledger
@@ -3731,7 +3896,10 @@ class GameService:
 
         if target_item is None:
             merchant._buyback_ledger.remove(entry)
-            return {"success": False, "error": "Buyback item no longer in merchant stock"}
+            return {
+                "success": False,
+                "error": "Buyback item no longer in merchant stock",
+            }
 
         # Execute transfer
         transfer_gold(player.inventory, merchant.inventory, total_price)
@@ -3790,7 +3958,9 @@ class GameService:
         """
         return self.get_current_room(player)
 
-    def interact_with_tile(self, player: "player_module.Player", action: str) -> Dict[str, Any]:
+    def interact_with_tile(
+        self, player: "player_module.Player", action: str
+    ) -> Dict[str, Any]:
         """Interact with the current tile (look, examine, search, etc).
 
         Args:
@@ -3811,7 +3981,9 @@ class GameService:
             "description": getattr(tile, "description", ""),
             "items": ItemSerializer.serialize_list(getattr(tile, "items_here", [])),
             "npcs": NPCSerializer.serialize_list(getattr(tile, "npcs_here", [])),
-            "objects": ObjectSerializer.serialize_list(getattr(tile, "objects_here", [])),
+            "objects": ObjectSerializer.serialize_list(
+                getattr(tile, "objects_here", [])
+            ),
         }
 
     def get_current_tile_object(self, player: "player_module.Player"):

@@ -243,7 +243,9 @@ class SessionManager:
         self.start_x, self.start_y = 1, 1  # defaults
         self.starting_map_name = "dark-grotto"
         self.starting_item_types = []  # List of item class names to spawn (ground)
-        self.starting_equipment = []  # List of "ClassName:enchant_level" specs for Jean's inventory
+        self.starting_equipment = (
+            []
+        )  # List of "ClassName:enchant_level" specs for Jean's inventory
         self.starting_gold = 0
         self.game_config = None  # Full GameConfig object
         self._load_starting_position_from_config()
@@ -367,7 +369,9 @@ class SessionManager:
                         items_str = parser.get("game", "starting_items")
                         # Parse comma-separated list of item types
                         self.starting_item_types = [
-                            item.strip() for item in items_str.split(",") if item.strip()
+                            item.strip()
+                            for item in items_str.split(",")
+                            if item.strip()
                         ]
                         print(
                             f"[SessionManager] [OK] Loaded starting items from config: {self.starting_item_types}",
@@ -646,13 +650,16 @@ class SessionManager:
                         )
                         continue
                     new_maintype = getattr(item, "maintype", None)
-                    if hasattr(player, "inventory") and isinstance(player.inventory, list):
+                    if hasattr(player, "inventory") and isinstance(
+                        player.inventory, list
+                    ):
                         # Unequip any existing item of the same maintype (slot conflict resolution)
                         if new_maintype and new_maintype != "Accessory":
                             for existing in player.inventory:
-                                if (
-                                    getattr(existing, "maintype", None) == new_maintype
-                                    and getattr(existing, "isequipped", False)
+                                if getattr(
+                                    existing, "maintype", None
+                                ) == new_maintype and getattr(
+                                    existing, "isequipped", False
                                 ):
                                     existing.isequipped = False
                                     if hasattr(existing, "interactions"):
@@ -663,9 +670,15 @@ class SessionManager:
                         player.inventory.append(item)
                     if hasattr(item, "isequipped"):
                         item.isequipped = True
-                        if hasattr(item, "interactions") and "unequip" not in item.interactions:
+                        if (
+                            hasattr(item, "interactions")
+                            and "unequip" not in item.interactions
+                        ):
                             item.interactions.append("unequip")
-                        if hasattr(item, "interactions") and "equip" in item.interactions:
+                        if (
+                            hasattr(item, "interactions")
+                            and "equip" in item.interactions
+                        ):
                             item.interactions.remove("equip")
                     if new_maintype == "Weapon" and hasattr(player, "eq_weapon"):
                         player.eq_weapon = item
@@ -815,7 +828,10 @@ class SessionManager:
                 player.game_config = self.game_config
                 if getattr(self.game_config, "skipdialog", False):
                     player.skip_dialog = True
-                    print("[SessionManager] [OK] skip_dialog=True (skipdialog in config)", flush=True)
+                    print(
+                        "[SessionManager] [OK] skip_dialog=True (skipdialog in config)",
+                        flush=True,
+                    )
                 if self.game_config.starting_exp > 0:
                     player.apply_starting_experience(self.game_config.starting_exp)
                     print(
@@ -825,6 +841,7 @@ class SessionManager:
                 if self.game_config.learn_all_skills:
                     try:
                         from src.functions import learn_all_skills_from_skilltree
+
                         learn_all_skills_from_skilltree(player)
                         print(
                             "[SessionManager] [OK] Learned all skills (learn_all_skills=True)",
@@ -835,6 +852,15 @@ class SessionManager:
                             f"[SessionManager] [ERROR] learn_all_skills failed: {e}",
                             flush=True,
                         )
+                # god_mode (dev/testing): pump Jean's stats so combat is trivial.
+                if getattr(self.game_config, "god_mode", False) and hasattr(
+                    player, "supersaiyan"
+                ):
+                    player.supersaiyan()
+                    print(
+                        "[SessionManager] [OK] god_mode=True — applied supersaiyan stats",
+                        flush=True,
+                    )
 
             # Apply starting gold
             if self.starting_gold > 0:
@@ -843,7 +869,9 @@ class SessionManager:
                         import items as items_module
                     except ImportError:
                         from src import items as items_module
-                    if hasattr(player, "inventory") and isinstance(player.inventory, list):
+                    if hasattr(player, "inventory") and isinstance(
+                        player.inventory, list
+                    ):
                         player.inventory.append(items_module.Gold(self.starting_gold))
                         print(
                             f"[SessionManager] [OK] Applied starting_gold: {self.starting_gold}",
@@ -915,7 +943,9 @@ class SessionManager:
                         import items as items_module
                     except ImportError:
                         from src import items as items_module
-                    if hasattr(player, "inventory") and isinstance(player.inventory, list):
+                    if hasattr(player, "inventory") and isinstance(
+                        player.inventory, list
+                    ):
                         player.inventory.append(items_module.Gold(self.starting_gold))
                 except Exception:
                     pass

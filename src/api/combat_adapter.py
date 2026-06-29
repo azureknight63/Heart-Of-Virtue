@@ -2093,7 +2093,7 @@ class ApiCombatAdapter:
         object the instant it is emitted — preserving per-entity animation
         attribution via ``output_capture.active_entity``.
         """
-        from narration import capture_narration
+        from src.narration import capture_narration
 
         with capture_narration(
             listener=lambda entry: self.output_capture.write(entry.get("text", ""))

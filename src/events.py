@@ -182,7 +182,7 @@ class LootEvent(Event):
             self.needs_input = False
             return {"success": True, "message": "Interaction ended."}
 
-        from narration import cprint
+        from src.narration import cprint
 
         try:
             from inventory_utils import transfer_item

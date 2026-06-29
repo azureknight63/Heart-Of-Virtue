@@ -94,6 +94,147 @@ def emit(text="", color=None, **meta):
     narrate(text, color=color, **meta)
 
 
+# --- Staged conversation authoring ------------------------------------------
+# The event-dialog "conversation mode" renders character portraits next to prose.
+# Authors tag spoken beats with a speaker + emotion and stage characters in/out;
+# the API layer (game_service) reads these structured entries to build a
+# ``segments`` array and a ``conversation`` roster for the frontend. None of this
+# affects plain ``narrate``/``cprint`` output, so untagged events render as before.
+
+#: The fixed portrait emotion vocabulary. Unknown values normalize to "neutral".
+EMOTIONS = ("neutral", "happy", "sad", "angry", "surprised", "skeptical")
+
+
+def _norm_emotion(emotion):
+    """Coerce an emotion to one of :data:`EMOTIONS`, defaulting to ``"neutral"``."""
+    e = (emotion or "neutral").strip().lower()
+    return e if e in EMOTIONS else "neutral"
+
+
+def _emit_control(entry):
+    """Append a pre-built structured entry directly to the active capture buffer.
+
+    Unlike :func:`narrate`, this does not require display ``text``, so it suits
+    stage/control messages (conversation begin/end, character enter/exit). It
+    never echoes to stdout.
+    """
+    buf = _buffer.get()
+    if buf is not None:
+        buf.append(entry)
+    for cb in _listeners.get():
+        try:
+            cb(entry)
+        except Exception:
+            pass
+
+
+def say(
+    text,
+    speaker,
+    emotion="neutral",
+    *,
+    reactions=None,
+    enter=None,
+    leave=None,
+    color=None,
+    attrs=None,
+    **meta,
+):
+    """Emit a spoken dialogue beat attributed to ``speaker`` with an ``emotion``.
+
+    :param reactions: optional ``{char_id: emotion}`` applied to listening
+        characters on this beat (their faces persist until changed again).
+    :param enter: optional stage-enter op(s) attached to this beat — a dict (or
+        list of dicts) shaped like :func:`enter_character`'s entry.
+    :param leave: optional stage-exit op(s) attached to this beat; maps to the
+        wire field ``exit`` (a dict or list of dicts like :func:`exit_character`).
+    """
+    extra = {"speaker": speaker, "emotion": _norm_emotion(emotion)}
+    if reactions:
+        extra["reactions"] = {k: _norm_emotion(v) for k, v in reactions.items()}
+    if enter:
+        extra["enter"] = enter if isinstance(enter, list) else [enter]
+    if leave:
+        extra["exit"] = leave if isinstance(leave, list) else [leave]
+    extra.update(meta)
+    narrate(text, color=color, attrs=attrs, mtype="dialogue", **extra)
+
+
+def begin_conversation(cast):
+    """Open a staged conversation with an initial cast roster.
+
+    :param cast: iterable of members, each either an ``(id, side, emotion)``
+        tuple or a dict with keys ``id``/``speaker``, ``side``, ``emotion``,
+        ``name``. ``side`` may be ``"left"``/``"right"`` or ``None`` to defer to
+        the party-rule default (party → left, non-party → right) resolved by the
+        API layer.
+    """
+    roster = []
+    for member in cast:
+        if isinstance(member, dict):
+            cid = member.get("id") or member.get("speaker")
+            roster.append(
+                {
+                    "id": cid,
+                    "name": member.get("name") or cid,
+                    "side": member.get("side"),
+                    "emotion": _norm_emotion(member.get("emotion")),
+                }
+            )
+        else:
+            cid = member[0]
+            side = member[1] if len(member) > 1 else None
+            emotion = member[2] if len(member) > 2 else "neutral"
+            roster.append(
+                {
+                    "id": cid,
+                    "name": cid,
+                    "side": side,
+                    "emotion": _norm_emotion(emotion),
+                }
+            )
+    _emit_control({"type": "conversation_begin", "cast": roster})
+
+
+def enter_character(
+    speaker, side=None, emotion="neutral", transition="fade", name=None
+):
+    """Bring a character onto the conversation stage mid-scene.
+
+    :param side: ``"left"``/``"right"`` or ``None`` to defer to the party-rule
+        default resolved by the API layer.
+    :param transition: ``"fade"`` (default) or ``"instant"``.
+    """
+    _emit_control(
+        {
+            "type": "stage_enter",
+            "id": speaker,
+            "name": name or speaker,
+            "side": side,
+            "emotion": _norm_emotion(emotion),
+            "transition": transition,
+        }
+    )
+
+
+def exit_character(speaker, transition="fade", span=None):
+    """Remove a character from the conversation stage mid-scene.
+
+    :param transition: ``"fade"`` (default) or ``"instant"``.
+    :param span: optional number of subsequent advances over which a ``fade``
+        steps out; omit for a fixed-duration fade.
+    """
+    entry = {"type": "stage_exit", "id": speaker, "transition": transition}
+    if span is not None:
+        entry["span"] = span
+    _emit_control(entry)
+
+
+def end_conversation():
+    """Close the staged conversation; subsequent beats render without the stage."""
+    _emit_control({"type": "conversation_end"})
+
+
 class capture_narration:
     """Context manager that collects narration into a fresh buffer.
 

@@ -4,6 +4,7 @@ import GameButton from './GameButton'
 import GameText from './GameText'
 import GameInput from './GameInput'
 import TypewriterOutput from './TypewriterOutput'
+import ConversationStage from './ConversationStage'
 import ScrollFadeIndicator from './ScrollFadeIndicator'
 import useScrollIndicators from '../hooks/useScrollIndicators'
 import { colors, spacing, commonStyles, fonts } from '../styles/theme'
@@ -56,6 +57,17 @@ function EventDialog({ event, history = [], onClose, onSubmitInput }) {
     const inputOptions = event?.input_options || []
     const eventId = event?.event_id
     const isDeathScene = event?.is_death_scene || false
+    // Staged conversation mode: when the engine emits structured beats, render
+    // the visual-novel cast stage instead of the plain typewriter block.
+    const segments = Array.isArray(event?.segments) ? event.segments : null
+    const hasSegments = !isDeathScene && segments && segments.length > 0
+
+    // Revealed once the staged conversation finishes its final beat.
+    const handleStageComplete = useCallback(() => {
+        setIsComplete(true)
+        if (needsInput) setShowInput(true)
+        checkScroll()
+    }, [needsInput, checkScroll])
 
     useEffect(() => {
         // Death scenes show all text at once — mark complete immediately so the
@@ -207,12 +219,18 @@ function EventDialog({ event, history = [], onClose, onSubmitInput }) {
         }
     }
 
-    const dialogTitle = `✨ ${(!event?.name || event.name === event.type || /^[A-Z][a-z]+([A-Z][a-z]+)+$/.test(event.name) || event.name.includes('_')) ? 'Event' : event.name}`
-
     // Use wider dialog for memory events due to pre-formatted text
     const isMemoryEvent = /memory|flash/i.test(event?.type || '') ||
         /memory|flash/i.test(event?.name || '') ||
         /MEMORY STIRS/i.test(eventText)
+    // Memory flashes get dedicated dream flair (violet frame + banner) in place
+    // of the old inline ASCII borders.
+    const isMemoryFlash = event?.presentation === 'memory_flash' || isMemoryEvent
+
+    const dialogTitle = isMemoryFlash
+        ? '✧ A Memory Stirs ✧'
+        : `✨ ${(!event?.name || event.name === event.type || /^[A-Z][a-z]+([A-Z][a-z]+)+$/.test(event.name) || event.name.includes('_')) ? 'Event' : event.name}`
+
     const dialogMaxWidth = isDeathScene ? '1100px' : isMemoryEvent ? '900px' : '800px'
     const dialogWidth = isDeathScene ? '98%' : isMemoryEvent ? '95%' : '90%'
 
@@ -228,7 +246,7 @@ function EventDialog({ event, history = [], onClose, onSubmitInput }) {
         >
             <div
                 ref={dialogRef}
-                className="event-dialog-body"
+                className={`event-dialog-body${isMemoryFlash ? ' memory-flash-frame' : ''}`}
                 tabIndex={-1}
                 onClick={handleGlobalInteraction}
                 style={{
@@ -238,6 +256,13 @@ function EventDialog({ event, history = [], onClose, onSubmitInput }) {
                     outline: 'none',
                 }}
             >
+                {/* Memory Flash flair — dream banner replacing the old ASCII border */}
+                {isMemoryFlash && !showHistory && (
+                    <div className="memory-flash-banner" style={{ fontSize: '14px' }}>
+                        ✦&nbsp;&nbsp;✧ A Memory Stirs ✧&nbsp;&nbsp;✦
+                    </div>
+                )}
+
                 {/* Event History Toggle (only if multiple messages) */}
                 {history.length > 1 && (
                     <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: `-${spacing.sm}` }}>
@@ -331,6 +356,13 @@ function EventDialog({ event, history = [], onClose, onSubmitInput }) {
                             {eventText}
                         </pre>
                     </div>
+                ) : hasSegments ? (
+                    <ConversationStage
+                        segments={segments}
+                        conversation={event?.conversation || null}
+                        onComplete={handleStageComplete}
+                        speed={25}
+                    />
                 ) : (
                     <div style={{ position: 'relative', flex: 1 }}>
                         <div ref={scrollRef} style={{ maxHeight: '450px', overflowY: 'auto' }}>
@@ -354,6 +386,13 @@ function EventDialog({ event, history = [], onClose, onSubmitInput }) {
                         </div>
                         {showTop && <ScrollFadeIndicator position="top" color={colors.secondary} bgColor="rgb(5, 10, 5)" />}
                         {showBottom && <ScrollFadeIndicator position="bottom" color={colors.secondary} bgColor="rgb(5, 10, 5)" />}
+                    </div>
+                )}
+
+                {/* Memory Flash outro — appears once the recollection completes */}
+                {isMemoryFlash && isComplete && !showHistory && (
+                    <div className="memory-flash-fade" style={{ fontSize: '13px' }}>
+                        ✧ The Memory Fades ✧
                     </div>
                 )}
 

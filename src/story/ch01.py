@@ -48,7 +48,16 @@ class Ch01_Memory_Amelia(MemoryFlash):
         repeat=False,
         name="Ch01_Memory_Amelia",
     ):
-        # Define the memory fragments with timing
+        # Staged conversation cast: Jean (party) on the left, Amelia (a memory,
+        # non-party) on the right. Amelia fades out as the memory breaks apart.
+        cast = [
+            ("Jean", "left", "neutral"),
+            ("Amelia", "right", "happy"),
+        ]
+
+        # Define the memory fragments with timing. Tagged lines carry a speaker
+        # + emotion (and optional reactions / stage ops) to drive the portraits;
+        # untagged lines render as narration with the cast persisting, dimmed.
         memory_lines = [
             ("The smell of old parchment and candle wax.", 2),
             ("", 1),  # Blank line for pacing
@@ -57,7 +66,15 @@ class Ch01_Memory_Amelia(MemoryFlash):
                 2.5,
             ),
             ("", 1),
-            ('"Jean, you always were too stubborn for your own good."', 2),
+            (
+                '"Jean, you always were too stubborn for your own good."',
+                2,
+                {
+                    "speaker": "Amelia",
+                    "emotion": "happy",
+                    "reactions": {"Jean": "happy"},
+                },
+            ),
             ("", 0.5),
             (
                 "Laughter— her laughter— bright and sudden, like pressure releasing through a clean line.",
@@ -67,29 +84,58 @@ class Ch01_Memory_Amelia(MemoryFlash):
             ("A hand reaching out, fingers intertwining with his own.", 2),
             ("The weight of a gold ring, cool against his skin.", 2),
             ("", 1),
-            ('"Promise me it\'ll be fine. Promise me."', 2),
-            ('"You worry too much, dear."', 2.5),
+            (
+                '"Promise me it\'ll be fine. Promise me."',
+                2,
+                {"speaker": "Amelia", "emotion": "sad"},
+            ),
+            (
+                '"You worry too much, dear."',
+                2.5,
+                {"speaker": "Jean", "emotion": "happy"},
+            ),
             ("", 1.5),
             ("The warmth of a forehead pressed against his own.", 2),
-            ("The small weight of a hand in his, and the ring that moved against his fingers.", 1.5),
+            (
+                "The small weight of a hand in his, and the ring that moved against his fingers.",
+                1.5,
+            ),
             ("", 1),
-            ("...but some...", 1.5),
-            ("...some promises...", 1.5),
-            ("...promises...", 2),
+            (
+                "...but some...",
+                1.5,
+                {
+                    "speaker": "Jean",
+                    "emotion": "sad",
+                    "exit": [{"id": "Amelia", "transition": "fade", "span": 3}],
+                },
+            ),
+            ("...some promises...", 1.5, {"speaker": "Jean", "emotion": "sad"}),
+            ("...promises...", 2, {"speaker": "Jean", "emotion": "sad"}),
         ]
 
-        # Jean's reaction after the memory
+        # Jean's reaction after the memory — present-day grotto, Amelia gone, so
+        # Jean alone holds the stage while the narration drives his reactions.
         aftermath = [
-            "Jean gasps, stumbling backward. His chest feels tight,",
+            (
+                "Jean gasps, stumbling backward. His chest feels tight,",
+                {"reactions": {"Jean": "surprised"}},
+            ),
             "his breath coming in short, sharp bursts.",
             "",
-            "Someone's voice. A ring. The weight of something he cannot name.",
+            (
+                "Someone's voice. A ring. The weight of something he cannot name.",
+                {"reactions": {"Jean": "sad"}},
+            ),
             "",
-            "He forces himself to breathe. Slow. Steady.",
+            (
+                "He forces himself to breathe. Slow. Steady.",
+                {"reactions": {"Jean": "neutral"}},
+            ),
             "There's a draft here — coming from the east, faint but constant.",
             "Something about tracing it to its source steadies him.",
             "",
-            "Not now. Keep moving.",
+            ("Not now. Keep moving.", {"speaker": "Jean", "emotion": "neutral"}),
         ]
 
         super().__init__(
@@ -97,6 +143,7 @@ class Ch01_Memory_Amelia(MemoryFlash):
             tile=tile,
             memory_lines=memory_lines,
             aftermath_text=aftermath,
+            cast=cast,
             repeat=repeat,
             name=name,
         )
@@ -554,7 +601,10 @@ class Ch01PostRumbler2(Event):
         if self.player.combat_list:
             enemy = self.player.combat_list[0]
             enemy.hp = 0  # instagib one of the rock creatures
-            narrate(colored(enemy.name, color="magenta") + " exploded into fragments of light!")
+            narrate(
+                colored(enemy.name, color="magenta")
+                + " exploded into fragments of light!"
+            )
             if enemy in target_tile.npcs_here:
                 target_tile.npcs_here.remove(enemy)
             if enemy in self.player.combat_list:
