@@ -3966,6 +3966,11 @@ class GameService:
             player.suggested_moves = []
             player.suggestions_loading = False
 
+    @staticmethod
+    def _narration_texts(messages) -> List[str]:
+        """Extract the non-empty ``text`` fields from captured narration entries."""
+        return [m.get("text", "") for m in messages if m.get("text")]
+
     def equip_item(self, player: "player_module.Player", item) -> Dict[str, Any]:
         """Equip an inventory item, delegating core mechanics to the engine.
 
@@ -3996,7 +4001,7 @@ class GameService:
         return {
             "success": True,
             "message": f"{item.name} equipped",
-            "messages": [m.get("text", "") for m in _msgs if m.get("text")],
+            "messages": self._narration_texts(_msgs),
         }
 
     def unequip_item(self, player: "player_module.Player", item) -> Dict[str, Any]:
@@ -4019,7 +4024,7 @@ class GameService:
         return {
             "success": True,
             "message": f"{item.name} unequipped",
-            "messages": [m.get("text", "") for m in _msgs if m.get("text")],
+            "messages": self._narration_texts(_msgs),
         }
 
     def drop_item(self, player: "player_module.Player", item) -> Dict[str, Any]:
@@ -4058,7 +4063,7 @@ class GameService:
         return {
             "success": True,
             "message": f"Dropped {getattr(item, 'name', 'item')}",
-            "messages": [m.get("text", "") for m in _msgs if m.get("text")],
+            "messages": self._narration_texts(_msgs),
             "item_name": getattr(item, "name", None),
         }
 
