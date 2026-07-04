@@ -126,6 +126,19 @@ def _make_enemy(name="Goblin", hp=50, maxhp=50, alive=True, speed=5, friend=Fals
     e.select_move = MagicMock()
     e.maxfatigue = 100
     e.fatigue = 100
+    # See _make_player: CombatantSerializer needs real ints here, not an
+    # unconfigured MagicMock's implicit __int__ default.
+    e.strength = 8
+    e.finesse = 6
+    e.endurance = 7
+    e.charisma = 4
+    e.intelligence = 4
+    e.damage = 0
+    e.armor = 0
+    e.accuracy = 80
+    e.evasion = 0
+    e.defense = 0
+    e.attack_power = 0
     return e
 
 
@@ -168,6 +181,21 @@ def _make_player(name="Jean", hp=100, maxhp=100, in_combat=True):
     p.charisma_base = 6
     p.intelligence_base = 5
     p.base_suggested_move_count = 1
+    # CombatantSerializer reads these plain (non-_base) attributes via
+    # int(getattr(combatant, "strength", 0)) etc. An unconfigured MagicMock's
+    # __int__ usually defaults to 1, but that's an implementation detail we
+    # shouldn't depend on — set real ints so serialization is deterministic.
+    p.strength = 10
+    p.finesse = 8
+    p.endurance = 9
+    p.charisma = 6
+    p.intelligence = 5
+    p.damage = 0
+    p.armor = 0
+    p.accuracy = 80
+    p.evasion = 0
+    p.defense = 0
+    p.attack_power = 0
     p.current_room = MagicMock()
     p.current_room.npcs_here = []
     p.current_room.items_here = []
