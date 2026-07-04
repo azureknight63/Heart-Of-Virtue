@@ -531,7 +531,13 @@ class TestShootBowExecute:
         mock_parry.assert_called_once()
 
     def test_execute_glancing_blow(self):
-        """hit_chance >= roll but hit_chance - roll < 10: glancing blow."""
+        """hit_chance >= roll but hit_chance - roll < 10: glancing blow.
+
+        move.power starts at 0 (evaluate() doesn't derive it from the arrow;
+        that only happens in prep(), which this setup bypasses), then execute()
+        adds user.finesse(10) * fin_mod(0.5) = 5. damage = ((5*1.0) - protection(2))
+        * heat(1.0) * uniform(1.0) = 3, halved by the glancing blow to 1.
+        """
         move, user, enemy, arrow = self._setup_execute()
         with (
             patch.object(move, "calculate_hit_chance", return_value=55),
@@ -541,10 +547,7 @@ class TestShootBowExecute:
             patch("moves._ranged.random.uniform", return_value=1.0),
         ):
             move.execute(user)
-        # hit called with glance=True
-        mock_hit.assert_called_once()
-        _, glance_arg = mock_hit.call_args[0]
-        assert glance_arg is True
+        mock_hit.assert_called_once_with(1, True)
 
     def test_execute_arrow_effect_on_hit(self):
         """execute-triggered arrow effect is processed on hit."""
@@ -722,6 +725,10 @@ class TestShootCrossbowExecute:
         return move, user, enemy
 
     def test_execute_viable_hit_path(self):
+        """hit_chance = max(5, int(98-8+10*0.7+5*0.3)) = 98; distance(15) == base_range(15)
+        so no decay applies. roll=50 -> hit, diff=48 not < 10 so not glancing.
+        damage = ((power=25 * resistance 1.0) - protection 2) * heat 1.0 * uniform 1.0 = 23.
+        """
         move, user, enemy = self._setup()
         with (
             patch.object(move, "viable", return_value=True),
@@ -731,8 +738,7 @@ class TestShootCrossbowExecute:
             patch("moves._ranged.random.uniform", return_value=1.0),
         ):
             move.execute(user)
-        # pass if no exception
-        assert True
+        mock_hit.assert_called_once_with(23, False)
 
     def test_execute_not_viable_hit_chance_minus1(self):
         move, user, enemy = self._setup()
@@ -746,31 +752,36 @@ class TestShootCrossbowExecute:
         mock_miss.assert_called_once()
 
     def test_execute_close_range_penalty_applied(self):
+        """With no penalty, hit_chance=98 would beat a roll of 60 (a hit). The
+        penalty halves it to 49, which flips the same roll into a miss --
+        proving the multiplier is actually applied rather than a no-op."""
         move, user, enemy = self._setup()
         with (
             patch.object(move, "viable", return_value=True),
             patch("moves._ranged._crossbow_close_range_penalty", return_value=True),
             patch.object(move, "miss") as mock_miss,
-            patch("moves._ranged.random.randint", return_value=100),
+            patch.object(move, "hit") as mock_hit,
+            patch("moves._ranged.random.randint", return_value=60),
             patch("moves._ranged.random.uniform", return_value=1.0),
         ):
             move.execute(user)
         mock_miss.assert_called_once()
+        mock_hit.assert_not_called()
 
     def test_execute_glancing_blow(self):
+        """hit_chance = max(5, int(98-8+10*0.7+5*0.3)) = 98; roll=90 -> diff=8 < 10
+        (glancing). damage = ((25*1.0) - 2) * 1.0 * 1.0 = 23, halved to 11.
+        """
         move, user, enemy = self._setup()
         with (
             patch.object(move, "viable", return_value=True),
             patch.object(move, "hit") as mock_hit,
             patch("moves._ranged.functions.check_parry", return_value=False),
-            patch("moves._ranged.random.randint", return_value=50),
+            patch("moves._ranged.random.randint", return_value=90),
             patch("moves._ranged.random.uniform", return_value=1.0),
         ):
-            # hit_chance = max(5, 98 - 8 + 10*0.7 + 5*0.3) = 98-8+7+1.5 = 98.5 => 98
-            # to get hit_chance - roll < 10: need roll around 89+
-            # hard to control precisely, just verify execute doesn't crash
             move.execute(user)
-        assert True
+        mock_hit.assert_called_once_with(11, True)
 
     def test_execute_fatigue_decremented(self):
         move, user, enemy = self._setup()
@@ -859,7 +870,13 @@ class TestBroadheadBolt:
         assert move.viable() is True
 
     def test_execute_calls_standard_execute(self):
-        """BroadheadBolt executes with distance decay applied (no longer delegates to standard_execute_attack)."""
+        """BroadheadBolt executes with distance decay applied (no longer delegates to standard_execute_attack).
+
+        power = max(1, damage(20) + 25 + int(5*0.3) + int(10*0.5)) = 51.
+        hit_chance = max(5, int(98-8+7+1.5)) = 98; distance(15) == base_range(15)
+        so no decay. roll=50 -> hit, diff=48 not < 10 so not glancing.
+        damage = ((51*1.0) - 2) * 1.0 * 1.0 = 49.
+        """
         user = _make_crossbow_user()
         enemy = _make_enemy()
         user.combat_proximity = {enemy: 15}
@@ -873,7 +890,7 @@ class TestBroadheadBolt:
             patch("moves._ranged.random.uniform", return_value=1.0),
         ):
             move.execute(user)
-        mock_hit.assert_called_once()
+        mock_hit.assert_called_once_with(49, False)
 
 
 # ---------------------------------------------------------------------------
@@ -916,6 +933,11 @@ class TestAimedShot:
         assert move.viable() is True
 
     def test_execute_viable_path(self):
+        """hit_chance = min(100, max(5, int(98-8+7+1.5)) + 15) = min(100, 113) = 100.
+        distance(15) == base_range(15) so no decay. roll=50 -> hit, diff=50 not < 10
+        so not glancing. power = max(1, int((20+15+1+5) * 1.5)) = 61.
+        damage = ((61*1.0) - 2) * 1.0 * 1.0 = 59.
+        """
         user = _make_crossbow_user(finesse=10, intelligence=5)
         enemy = _make_enemy()
         user.combat_proximity = {enemy: 15}
@@ -924,13 +946,13 @@ class TestAimedShot:
         move.mvrange = (6, 40)
         with (
             patch.object(move, "viable", return_value=True),
-            patch.object(move, "hit"),
+            patch.object(move, "hit") as mock_hit,
             patch("moves._ranged.functions.check_parry", return_value=False),
             patch("moves._ranged.random.randint", return_value=50),
             patch("moves._ranged.random.uniform", return_value=1.0),
         ):
             move.execute(user)
-        assert True
+        mock_hit.assert_called_once_with(59, False)
 
     def test_execute_not_viable_miss(self):
         user = _make_crossbow_user(finesse=10, intelligence=5)
@@ -1118,16 +1140,22 @@ class TestShootBowExecuteEdgeCases:
         return move, user, enemy, arrow
 
     def test_execute_damage_floored_at_zero(self):
-        """Line 269: damage <= 0 floors to 0 when protection swamps power."""
+        """Line 269: damage <= 0 floors to 0 when protection swamps power.
+
+        power = 0 (finesse*fin_mod = 5) - 99999 protection is deeply negative,
+        so the floor clamps it to exactly 0 regardless of the hit roll.
+        """
         move, user, enemy, arrow = self._setup_execute()
         enemy.protection = 99999
         with (
             patch.object(move, "calculate_hit_chance", return_value=100),
+            patch.object(move, "hit") as mock_hit,
             patch("moves._ranged.functions.check_parry", return_value=False),
             patch("moves._ranged.random.randint", return_value=50),
             patch("moves._ranged.random.uniform", return_value=1.0),
         ):
             move.execute(user)
+        mock_hit.assert_called_once_with(0, False)
 
 
 class TestShootCrossbowGetEffectiveRangeMaxEdge:
@@ -1153,7 +1181,12 @@ class TestShootCrossbowMarksmanEyePassive:
 class TestShootCrossbowExecuteRealPath:
     def test_execute_applies_distance_decay_and_floors_at_2(self):
         """Lines 436-439: distance decay computed via real (non-mocked) viable(),
-        exaggerated to drive hit_chance below the floor of 2."""
+        exaggerated to drive hit_chance below the floor of 2.
+
+        decay=50 applied over (35-15)=20 distance beyond base_range makes the
+        accuracy penalty enormous, so hit_chance floors at 2 -- well below any
+        roll -- and the shot must miss.
+        """
         user = _make_crossbow_user(finesse=10, intelligence=5)
         enemy = _make_enemy(finesse=8)
         user.combat_proximity = {enemy: 35}  # beyond base_range(15), within mvrange(6,40)
@@ -1161,27 +1194,37 @@ class TestShootCrossbowExecuteRealPath:
         move.target = enemy
         move.decay = 50  # exaggerate to force the floor branch
         with (
+            patch.object(move, "hit") as mock_hit,
+            patch.object(move, "miss") as mock_miss,
             patch("moves._ranged.functions.check_parry", return_value=False),
             patch("moves._ranged.random.randint", return_value=50),
             patch("moves._ranged.random.uniform", return_value=1.0),
         ):
             move.execute(user)
+        mock_miss.assert_called_once()
+        mock_hit.assert_not_called()
 
     def test_execute_glancing_blow_deterministic(self):
-        """Lines 451-452: glancing blow via real (non-mocked) viable()."""
+        """Lines 451-452: glancing blow via real (non-mocked) viable().
+
+        hit_chance = max(5, int(98-8+10*0.7+5*0.3)) = 98; distance == base_range, no decay.
+        roll=90 -> diff=8 < 10 (glancing). power = max(1, 20+15+int(5*0.3)+int(10*0.5)) = 41.
+        damage = ((41*1.0) - 2) * 1.0 * 1.0 = 39, halved to 19.
+        """
         user = _make_crossbow_user(finesse=10, intelligence=5)
         enemy = _make_enemy(finesse=8)
         user.combat_proximity = {enemy: 15}
         move = ShootCrossbow(user)
         move.target = enemy
         move.mvrange = (6, 40)
-        # hit_chance = max(5, int(98-8+10*0.7+5*0.3)) = 98; distance == base_range, no decay
         with (
+            patch.object(move, "hit") as mock_hit,
             patch("moves._ranged.functions.check_parry", return_value=False),
             patch("moves._ranged.random.randint", return_value=90),
             patch("moves._ranged.random.uniform", return_value=1.0),
         ):
             move.execute(user)
+        mock_hit.assert_called_once_with(19, True)
 
     def test_execute_parry_path(self):
         """Line 462: functions.check_parry True routes to self.parry()."""
@@ -1226,7 +1269,11 @@ class TestBroadheadBoltEdgeCases:
 
 class TestBroadheadBoltExecuteRealPath:
     def test_execute_viable_true_distance_decay_floors_hit_chance(self):
-        """Lines 578-581: distance decay applied and floored at 2 (real viable path)."""
+        """Lines 578-581: distance decay applied and floored at 2 (real viable path).
+
+        decay=50 over 20 excess distance drives hit_chance far below any roll,
+        so the shot must miss.
+        """
         user = _make_crossbow_user(finesse=10, intelligence=5)
         enemy = _make_enemy(finesse=8)
         user.combat_proximity = {enemy: 35}
@@ -1234,14 +1281,19 @@ class TestBroadheadBoltExecuteRealPath:
         move.target = enemy
         move.decay = 50  # exaggerate to force the floor
         with (
+            patch.object(move, "hit") as mock_hit,
+            patch.object(move, "miss") as mock_miss,
             patch("moves._ranged.functions.check_parry", return_value=False),
             patch("moves._ranged.random.randint", return_value=50),
             patch("moves._ranged.random.uniform", return_value=1.0),
         ):
             move.execute(user)
+        mock_miss.assert_called_once()
+        mock_hit.assert_not_called()
 
     def test_execute_not_viable_sets_hit_chance_negative(self):
-        """Line 583: viable False (real path) sets hit_chance = -1."""
+        """Line 583: viable False (real path) sets hit_chance = -1, which is
+        always below the roll, so miss() is called and hit() never is."""
         user = _make_crossbow_user()
         user.eq_weapon.subtype = "Bow"  # makes viable() False
         enemy = _make_enemy()
@@ -1249,24 +1301,35 @@ class TestBroadheadBoltExecuteRealPath:
         move = BroadheadBolt(user)
         move.target = enemy
         with (
+            patch.object(move, "hit") as mock_hit,
+            patch.object(move, "miss") as mock_miss,
             patch("moves._ranged.random.randint", return_value=50),
             patch("moves._ranged.random.uniform", return_value=1.0),
         ):
             move.execute(user)
+        mock_miss.assert_called_once()
+        mock_hit.assert_not_called()
 
     def test_execute_glancing_blow_deterministic(self):
-        """Lines 595-596: glancing blow via real (non-mocked) viable()."""
+        """Lines 595-596: glancing blow via real (non-mocked) viable().
+
+        power = max(1, 20+25+int(5*0.3)+int(10*0.5)) = 51. hit_chance = max(5,
+        int(98-8+7+1.5)) = 98; distance == base_range, no decay. roll=90 ->
+        diff=8 < 10 (glancing). damage = ((51*1.0) - 2) * 1.0 * 1.0 = 49, halved to 24.
+        """
         user = _make_crossbow_user(finesse=10, intelligence=5)
         enemy = _make_enemy(finesse=8)
         user.combat_proximity = {enemy: 15}
         move = BroadheadBolt(user)
         move.target = enemy
         with (
+            patch.object(move, "hit") as mock_hit,
             patch("moves._ranged.functions.check_parry", return_value=False),
             patch("moves._ranged.random.randint", return_value=90),
             patch("moves._ranged.random.uniform", return_value=1.0),
         ):
             move.execute(user)
+        mock_hit.assert_called_once_with(24, True)
 
     def test_execute_parry_path(self):
         """Line 606: functions.check_parry True routes to self.parry()."""
@@ -1333,7 +1396,15 @@ class TestAimedShotEdgeCases:
 
 class TestAimedShotExecuteRealPath:
     def test_execute_close_range_penalty_real_path(self):
-        """Line 728: close-range penalty halves hit_chance (real, non-mocked path)."""
+        """Line 728: close-range penalty halves hit_chance (real, non-mocked path).
+
+        Without the penalty, hit_chance = min(100, max(5, int(98-8+7+1.5))+15) = 100,
+        which would beat a roll of 50 (a hit). The distractor within min range (6)
+        halves it to 50, which just barely still beats the roll of 50 -- but the
+        halving means diff=0 < 10, so this is a glancing hit rather than a clean one.
+        power = max(1, int((20+15+1+5)*1.5)) = 61.
+        damage = ((61*1.0) - 2) * 1.0 * 1.0 = 59, halved by the glance to 29.
+        """
         user = _make_crossbow_user(finesse=10, intelligence=5)
         enemy = _make_enemy(finesse=8)
         distractor = MagicMock()
@@ -1341,14 +1412,20 @@ class TestAimedShotExecuteRealPath:
         move = AimedShot(user)
         move.target = enemy
         with (
+            patch.object(move, "hit") as mock_hit,
             patch("moves._ranged.functions.check_parry", return_value=False),
             patch("moves._ranged.random.randint", return_value=50),
             patch("moves._ranged.random.uniform", return_value=1.0),
         ):
             move.execute(user)
+        mock_hit.assert_called_once_with(29, True)
 
     def test_execute_distance_decay_floors_real_path(self):
-        """Lines 733-736: distance decay applied and floored (real viable path)."""
+        """Lines 733-736: distance decay applied and floored (real viable path).
+
+        decay=50 over 20 excess distance floors hit_chance well below any roll,
+        so the shot must miss.
+        """
         user = _make_crossbow_user(finesse=10, intelligence=5)
         enemy = _make_enemy(finesse=8)
         user.combat_proximity = {enemy: 35}
@@ -1356,26 +1433,36 @@ class TestAimedShotExecuteRealPath:
         move.target = enemy
         move.decay = 50
         with (
+            patch.object(move, "hit") as mock_hit,
+            patch.object(move, "miss") as mock_miss,
             patch("moves._ranged.functions.check_parry", return_value=False),
             patch("moves._ranged.random.randint", return_value=50),
             patch("moves._ranged.random.uniform", return_value=1.0),
         ):
             move.execute(user)
+        mock_miss.assert_called_once()
+        mock_hit.assert_not_called()
 
     def test_execute_glancing_blow_deterministic(self):
-        """Lines 748-749: glancing blow via real (non-mocked) viable()."""
+        """Lines 748-749: glancing blow via real (non-mocked) viable().
+
+        hit_chance = min(100, max(5, int(98-8+7+1.5))+15) = min(100, 113) = 100.
+        roll=95 -> diff=5 < 10 (glancing). power = max(1, int((20+15+1+5)*1.5)) = 61.
+        damage = ((61*1.0) - 2) * 1.0 * 1.0 = 59, halved to 29.
+        """
         user = _make_crossbow_user(finesse=10, intelligence=5)
         enemy = _make_enemy(finesse=8)
         user.combat_proximity = {enemy: 15}
         move = AimedShot(user)
         move.target = enemy
-        # hit_chance = min(100, max(5, int(98-8+7+1.5))+15) = min(100, 113) = 100
         with (
+            patch.object(move, "hit") as mock_hit,
             patch("moves._ranged.functions.check_parry", return_value=False),
             patch("moves._ranged.random.randint", return_value=95),
             patch("moves._ranged.random.uniform", return_value=1.0),
         ):
             move.execute(user)
+        mock_hit.assert_called_once_with(29, True)
 
     def test_execute_parry_path(self):
         """Line 759: functions.check_parry True routes to self.parry()."""
@@ -1434,7 +1521,13 @@ class TestPinningBoltEdgeCases:
 
 class TestPinningBoltExecuteRealPath:
     def test_execute_close_range_penalty_real_path(self):
-        """Line 875: close-range penalty halves hit_chance (real, non-mocked path)."""
+        """Line 875: close-range penalty halves hit_chance (real, non-mocked path).
+
+        Without the penalty, hit_chance = max(5, int(98-8+7+1.5)) = 98, which
+        would beat a roll of 50 cleanly. The distractor within min range (6)
+        halves it to 49, which now falls just short of the roll -> a miss.
+        This flip from hit to miss proves the halving actually happened.
+        """
         user = _make_crossbow_user(finesse=10, intelligence=5)
         enemy = _make_enemy(finesse=8)
         enemy.states = []
@@ -1443,14 +1536,22 @@ class TestPinningBoltExecuteRealPath:
         move = PinningBolt(user)
         move.target = enemy
         with (
+            patch.object(move, "hit") as mock_hit,
+            patch.object(move, "miss") as mock_miss,
             patch("moves._ranged.functions.check_parry", return_value=False),
             patch("moves._ranged.random.randint", return_value=50),
             patch("moves._ranged.random.uniform", return_value=1.0),
         ):
             move.execute(user)
+        mock_miss.assert_called_once()
+        mock_hit.assert_not_called()
 
     def test_execute_distance_decay_floors_real_path(self):
-        """Lines 880-883: distance decay applied and floored (real viable path)."""
+        """Lines 880-883: distance decay applied and floored (real viable path).
+
+        decay=50 over 20 excess distance floors hit_chance well below any roll,
+        so the shot must miss.
+        """
         user = _make_crossbow_user(finesse=10, intelligence=5)
         enemy = _make_enemy(finesse=8)
         enemy.states = []
@@ -1459,14 +1560,25 @@ class TestPinningBoltExecuteRealPath:
         move.target = enemy
         move.decay = 50
         with (
+            patch.object(move, "hit") as mock_hit,
+            patch.object(move, "miss") as mock_miss,
             patch("moves._ranged.functions.check_parry", return_value=False),
             patch("moves._ranged.random.randint", return_value=50),
             patch("moves._ranged.random.uniform", return_value=1.0),
         ):
             move.execute(user)
+        mock_miss.assert_called_once()
+        mock_hit.assert_not_called()
 
     def test_execute_glancing_blow_deterministic(self):
-        """Lines 895-896: glancing blow via real (non-mocked) viable()."""
+        """Lines 895-896: glancing blow via real (non-mocked) viable().
+
+        power = max(1, 20+10+int(5*0.3)+int(10*0.5)) = 36. hit_chance = max(5,
+        int(98-8+7+1.5)) = 98; distance == base_range, no decay. roll=90 ->
+        diff=8 < 10 (glancing). damage = ((36*1.0) - 2) * 1.0 * 1.0 = 34, halved to 17.
+        A hit on a live target also applies Disoriented via the real (unmocked)
+        states.Disoriented constructor.
+        """
         user = _make_crossbow_user(finesse=10, intelligence=5)
         enemy = _make_enemy(finesse=8)
         enemy.states = []
@@ -1474,11 +1586,15 @@ class TestPinningBoltExecuteRealPath:
         move = PinningBolt(user)
         move.target = enemy
         with (
+            patch.object(move, "hit") as mock_hit,
             patch("moves._ranged.functions.check_parry", return_value=False),
             patch("moves._ranged.random.randint", return_value=90),
             patch("moves._ranged.random.uniform", return_value=1.0),
         ):
             move.execute(user)
+        mock_hit.assert_called_once_with(17, True)
+        assert len(enemy.states) == 1
+        assert type(enemy.states[0]).__name__ == "Disoriented"
 
     def test_execute_parry_path(self):
         """Line 906: functions.check_parry True routes to self.parry()."""
@@ -1498,12 +1614,24 @@ class TestPinningBoltExecuteRealPath:
         mock_parry.assert_called_once()
 
     def test_execute_disoriented_append_exception_swallowed(self):
-        """Lines 919-920: exception raised while applying Disoriented is swallowed."""
+        """Lines 919-920: exception raised while applying Disoriented is swallowed.
+
+        RaisingList tracks append attempts so we can confirm the code actually
+        reached and attempted the append (not just that no exception propagated
+        because the branch was skipped), and that cprint's "pinned and
+        disoriented" narration -- which runs only after a successful append --
+        never fires.
+        """
         user = _make_crossbow_user(finesse=10, intelligence=5)
         enemy = _make_enemy(finesse=8)
 
         class RaisingList(list):
+            def __init__(self):
+                super().__init__()
+                self.append_attempts = 0
+
             def append(self, item):
+                self.append_attempts += 1
                 raise RuntimeError("boom")
 
         enemy.states = RaisingList()
@@ -1512,8 +1640,13 @@ class TestPinningBoltExecuteRealPath:
         move = PinningBolt(user)
         move.target = enemy
         with (
+            patch.object(move, "hit") as mock_hit,
+            patch("moves._ranged.cprint") as mock_cprint,
             patch("moves._ranged.functions.check_parry", return_value=False),
             patch("moves._ranged.random.randint", return_value=0),
             patch("moves._ranged.random.uniform", return_value=1.0),
         ):
             move.execute(user)  # should not raise despite append() failing
+        mock_hit.assert_called_once()
+        assert enemy.states.append_attempts == 1
+        mock_cprint.assert_not_called()
