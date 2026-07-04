@@ -799,3 +799,677 @@ class TestQuickSwap:
         with patch("builtins.print"), patch("moves._movement.cprint"):
             qs.prep(p)
         # No crash = success
+
+
+# ---------------------------------------------------------------------------
+# _apply_sentinels_vigil
+# ---------------------------------------------------------------------------
+
+
+class TestApplySentinelsVigil:
+    """Lines 16-33: SentinelsVigil retaliation helper."""
+
+    def _spear_defender(self):
+        defender = MagicMock()
+        defender.name = "Spearman"
+        vigil = MagicMock()
+        vigil.name = "Sentinel's Vigil"
+        defender.known_moves = [vigil]
+        weapon = MagicMock()
+        weapon.subtype = "Spear"
+        weapon.damage = 20
+        defender.eq_weapon = weapon
+        defender.strength = 10
+        return defender
+
+    def test_noop_without_passive(self):
+        from moves._movement import _apply_sentinels_vigil
+
+        defender = MagicMock()
+        defender.known_moves = []
+        advancer = MagicMock()
+        advancer.hp = 100
+        _apply_sentinels_vigil(advancer, defender)
+        assert advancer.hp == 100
+
+    def test_noop_when_advancer_dead(self):
+        from moves._movement import _apply_sentinels_vigil
+
+        defender = self._spear_defender()
+        advancer = MagicMock()
+        advancer.is_alive = MagicMock(return_value=False)
+        advancer.hp = 50
+        _apply_sentinels_vigil(advancer, defender)
+        assert advancer.hp == 50
+
+    def test_noop_when_damage_non_positive(self):
+        from moves._movement import _apply_sentinels_vigil
+
+        defender = self._spear_defender()
+        defender.strength = 0
+        defender.eq_weapon.damage = 0
+        advancer = MagicMock()
+        advancer.is_alive = MagicMock(return_value=True)
+        advancer.protection = 1000  # damage - protection <= 0
+        advancer.hp = 50
+        with patch("moves._movement.cprint"):
+            _apply_sentinels_vigil(advancer, defender)
+        assert advancer.hp == 50
+
+    def test_applies_damage_when_all_conditions_met(self):
+        from moves._movement import _apply_sentinels_vigil
+
+        defender = self._spear_defender()
+        advancer = MagicMock()
+        advancer.is_alive = MagicMock(return_value=True)
+        advancer.protection = 0
+        advancer.hp = 50
+        with patch("moves._movement.cprint"):
+            _apply_sentinels_vigil(advancer, defender)
+        assert advancer.hp < 50
+
+
+# ---------------------------------------------------------------------------
+# Parry — fatigue floor
+# ---------------------------------------------------------------------------
+
+
+class TestParryFatigueFloor:
+    """Line 130-131: fatigue_cost floors at 10."""
+
+    def test_fatigue_floors_at_ten(self):
+        import moves
+
+        p = _player()
+        p.endurance = 100
+        p.finesse = 100
+        parry = moves.Parry(p)
+        assert parry.fatigue_cost == 10
+
+
+# ---------------------------------------------------------------------------
+# Advance — remaining gaps
+# ---------------------------------------------------------------------------
+
+
+class TestAdvanceRemainingGaps:
+    def test_advance_prep_is_noop(self):
+        """Line 206: prep() is a no-op."""
+        import moves
+
+        p = _player()
+        advance = moves.Advance(p)
+        assert advance.prep(p) is None
+
+    def test_beat_update_returns_when_no_enemies_left(self):
+        """Line 227-228: no living enemies -> early return."""
+        import moves
+
+        p = _player()
+        dead_enemy = _make_enemy(alive=False)
+        p.combat_proximity[dead_enemy] = 5
+        advance = moves.Advance(p)
+        advance.target = dead_enemy
+        advance.current_stage = 1
+        with patch.object(advance, "can_use_coordinates", return_value=False), \
+             patch.object(advance, "_beat_legacy") as mock_legacy:
+            advance.beat_update(p)
+        mock_legacy.assert_not_called()
+
+    def test_beat_coordinate_based_returns_when_already_close(self):
+        """Line 250-251: current_distance <= 3 -> no movement."""
+        import moves
+
+        p = _player()
+        p.combat_position = _make_combat_position(x=5, y=5)
+        enemy = _make_enemy()
+        enemy.combat_position = _make_combat_position(x=6, y=5)  # distance ~1
+        p.combat_proximity[enemy] = 1
+        advance = moves.Advance(p)
+        advance.target = enemy
+        original_pos = p.combat_position
+        advance._beat_coordinate_based(p)
+        assert p.combat_position is original_pos
+
+    def test_beat_coordinate_based_collects_occupied_positions_and_moves(self):
+        """Lines 253-285: occupied-position collection + sentinel's vigil trigger."""
+        import moves
+
+        p = _player()
+        p.combat_position = _make_combat_position(x=0, y=0)
+        p.speed = 20
+        enemy = _make_enemy()
+        enemy.combat_position = _make_combat_position(x=10, y=0)
+        enemy.speed = 1
+        p.combat_proximity[enemy] = 10
+        enemy.combat_proximity[p] = 10
+
+        blocker = MagicMock()
+        blocker.combat_position = _make_combat_position(x=5, y=0)
+        ally = MagicMock()
+        ally.combat_position = _make_combat_position(x=3, y=0)
+        p.combat_list = [blocker]
+        p.combat_list_allies = [p, ally]
+
+        advance = moves.Advance(p)
+        advance.target = enemy
+        with patch("moves._movement.random.randint", return_value=30), \
+             patch("moves._movement.cprint"):
+            advance._beat_coordinate_based(p)
+        # Position should have moved from the origin
+        assert (p.combat_position.x, p.combat_position.y) != (0, 0)
+
+    def test_beat_legacy_returns_when_already_close(self):
+        """Line 289-290: distance <= 3 -> no movement."""
+        import moves
+
+        p = _player()
+        enemy = _make_enemy()
+        p.combat_proximity[enemy] = 2
+        advance = moves.Advance(p)
+        advance.target = enemy
+        advance._beat_legacy(p)
+        assert p.combat_proximity[enemy] == 2
+
+
+# ---------------------------------------------------------------------------
+# Withdraw — remaining gaps
+# ---------------------------------------------------------------------------
+
+
+class TestWithdrawRemainingGaps:
+    def test_viable_false_beyond_max_flee_distance(self):
+        """Lines 356-361: NPC stops withdrawing once fled past max flee distance."""
+        import moves
+
+        p = _player()
+        p.name = "Goblin"
+        p.hp = 5
+        p.maxhp = 100
+        enemy = _make_enemy()
+        p.combat_proximity[enemy] = 25  # beyond _MAX_FLEE_DISTANCE (20)
+        withdraw = moves.Withdraw(p)
+        assert withdraw.viable() is False
+
+    def test_prep_is_noop(self):
+        """Line 368: prep() is a no-op."""
+        import moves
+
+        p = _player()
+        withdraw = moves.Withdraw(p)
+        assert withdraw.prep(p) is None
+
+    def test_beat_update_dispatches_legacy_without_coordinates(self):
+        """Line 372-375: beat_update calls _beat_legacy when coordinates unavailable."""
+        import moves
+
+        p = _player()
+        withdraw = moves.Withdraw(p)
+        withdraw.current_stage = 1
+        with patch.object(withdraw, "can_use_coordinates", return_value=False), \
+             patch.object(withdraw, "_beat_legacy") as mock_legacy:
+            withdraw.beat_update(p)
+        mock_legacy.assert_called_once_with(p)
+
+    def test_beat_coordinate_based_returns_when_no_threat(self):
+        """Line 393-394: no combat_position enemies -> early return."""
+        import moves
+
+        p = _player()
+        p.combat_position = _make_combat_position()
+        enemy = _make_enemy()
+        enemy.combat_position = None
+        p.combat_proximity[enemy] = 10
+        withdraw = moves.Withdraw(p)
+        original_pos = p.combat_position
+        withdraw._beat_coordinate_based(p)
+        assert p.combat_position is original_pos
+
+
+# ---------------------------------------------------------------------------
+# BullCharge — remaining gaps
+# ---------------------------------------------------------------------------
+
+
+class TestBullChargeRemainingGaps:
+    def test_viable_false_without_combat_proximity(self):
+        """Line 463-464: no combat_proximity -> False."""
+        import moves
+
+        p = _player()
+        del p.combat_proximity
+        bc = moves.BullCharge(p)
+        assert bc.viable() is False
+
+    def test_beat_update_returns_when_target_dead(self):
+        """Line 479-480: dead target -> early return."""
+        import moves
+
+        p = _player()
+        dead_enemy = _make_enemy(alive=False)
+        p.combat_proximity[dead_enemy] = 10
+        bc = moves.BullCharge(p)
+        bc.target = dead_enemy
+        bc.current_stage = 1
+        with patch.object(bc, "can_use_coordinates", return_value=False), \
+             patch.object(bc, "_beat_legacy") as mock_legacy:
+            bc.beat_update(p)
+        mock_legacy.assert_not_called()
+
+    def test_beat_update_dispatches_legacy_without_coordinates(self):
+        """Line 484-485: beat_update calls _beat_legacy when coordinates unavailable."""
+        import moves
+
+        p = _player()
+        enemy = _make_enemy()
+        p.combat_proximity[enemy] = 10
+        bc = moves.BullCharge(p)
+        bc.target = enemy
+        bc.current_stage = 1
+        with patch.object(bc, "can_use_coordinates", return_value=False), \
+             patch.object(bc, "_beat_legacy") as mock_legacy:
+            bc.beat_update(p)
+        mock_legacy.assert_called_once_with(p)
+
+    def test_beat_coordinate_based_collects_occupied_positions(self):
+        """Lines 492-500: occupied-position collection from combat_list/allies."""
+        import moves
+
+        p = _player()
+        p.combat_position = _make_combat_position(x=0, y=0)
+        enemy = _make_enemy()
+        enemy.combat_position = _make_combat_position(x=10, y=0)
+        p.combat_proximity[enemy] = 10
+        enemy.combat_proximity[p] = 10
+
+        blocker = MagicMock()
+        blocker.combat_position = _make_combat_position(x=5, y=0)
+        ally = MagicMock()
+        ally.combat_position = _make_combat_position(x=3, y=0)
+        p.combat_list = [blocker]
+        p.combat_list_allies = [p, ally]
+
+        bc = moves.BullCharge(p)
+        bc.target = enemy
+        with patch("moves._movement.random.randint", return_value=2):
+            bc._beat_coordinate_based(p)
+        assert (p.combat_position.x, p.combat_position.y) != (0, 0)
+
+    def test_beat_legacy_floors_distance_at_three(self):
+        """Line 523-524: distance floors at 3."""
+        import moves
+
+        p = _player()
+        enemy = _make_enemy()
+        p.combat_proximity[enemy] = 4
+        enemy.combat_proximity[p] = 4
+        bc = moves.BullCharge(p)
+        bc.target = enemy
+        with patch("moves._movement.random.randint", return_value=6):
+            bc._beat_legacy(p)
+        assert p.combat_proximity[enemy] == 3
+
+
+# ---------------------------------------------------------------------------
+# TacticalRetreat — remaining gaps
+# ---------------------------------------------------------------------------
+
+
+class TestTacticalRetreatRemainingGaps:
+    def test_beat_update_dispatches_legacy_without_coordinates(self):
+        """Line 578-579: beat_update calls _beat_legacy when coordinates unavailable."""
+        import moves
+
+        p = _player()
+        enemy = _make_enemy()
+        p.combat_proximity[enemy] = 10
+        tr = moves.TacticalRetreat(p)
+        tr.current_stage = 1
+        with patch.object(tr, "can_use_coordinates", return_value=False), \
+             patch.object(tr, "_beat_legacy") as mock_legacy:
+            tr.beat_update(p)
+        mock_legacy.assert_called_once_with(p)
+
+    def test_beat_coordinate_based_returns_when_no_threat(self):
+        """Line 596-597: no combat_position enemies -> early return."""
+        import moves
+
+        p = _player()
+        p.combat_position = _make_combat_position()
+        enemy = _make_enemy()
+        enemy.combat_position = None
+        p.combat_proximity[enemy] = 10
+        tr = moves.TacticalRetreat(p)
+        original_pos = p.combat_position
+        tr._beat_coordinate_based(p)
+        assert p.combat_position is original_pos
+
+
+# ---------------------------------------------------------------------------
+# FlankingManeuver — remaining gaps
+# ---------------------------------------------------------------------------
+
+
+class TestFlankingManeuverRemainingGaps:
+    def test_viable_false_without_combat_proximity(self):
+        """Line 651-652: no combat_proximity -> False."""
+        import moves
+
+        p = _player()
+        del p.combat_proximity
+        fm = moves.FlankingManeuver(p)
+        assert fm.viable() is False
+
+    def test_beat_update_returns_when_target_dead(self):
+        """Line 667-668: dead target -> early return."""
+        import moves
+
+        p = _player()
+        dead_enemy = _make_enemy(alive=False)
+        p.combat_proximity[dead_enemy] = 10
+        fm = moves.FlankingManeuver(p)
+        fm.target = dead_enemy
+        fm.current_stage = 1
+        with patch.object(fm, "can_use_coordinates", return_value=False):
+            fm.beat_update(p)
+        # No crash = success (early return before any movement)
+
+    def test_execute_flank_bonus_branch(self, capsys):
+        """Lines 696-707: execute reports flank bonus (45 < angle_diff <= 135).
+
+        Asserts on real stdout (via capsys) rather than patching
+        moves._movement.cprint: under the full suite, the bare `moves`
+        package and `src.moves` can resolve to distinct module objects
+        depending on import order, so patching one copy's `cprint` can
+        silently miss the call actually made through the other. cprint
+        falls back to real stdout when no narration capture is active
+        (see src/narration.py), so capsys is import-path agnostic.
+        """
+        import moves
+
+        p = _player()
+        p.name = "Jean"
+        p.combat_position = positions.CombatPosition(x=0, y=0, facing=positions.Direction.N)
+        enemy = _make_enemy()
+        enemy.combat_position = positions.CombatPosition(x=10, y=0, facing=positions.Direction.S)
+        p.combat_proximity[enemy] = 8
+
+        fm = moves.FlankingManeuver(p)
+        fm.target = enemy
+        fm.execute(p)
+        assert "flank" in capsys.readouterr().out.lower()
+
+    def test_execute_side_move_branch(self, capsys):
+        """Lines 708-712: execute reports generic side-move (front/rear angle)."""
+        import moves
+
+        p = _player()
+        p.name = "Jean"
+        p.combat_position = positions.CombatPosition(x=0, y=0, facing=positions.Direction.N)
+        enemy = _make_enemy()
+        enemy.combat_position = positions.CombatPosition(x=10, y=0, facing=positions.Direction.E)
+        p.combat_proximity[enemy] = 8
+
+        fm = moves.FlankingManeuver(p)
+        fm.target = enemy
+        fm.execute(p)
+        assert "moved to the side" in capsys.readouterr().out.lower()
+
+
+# ---------------------------------------------------------------------------
+# TacticalPositioning — remaining gaps
+# ---------------------------------------------------------------------------
+
+
+class TestTacticalPositioningRemainingGaps:
+    def test_prep_defaults_distance_to_max_range(self):
+        """Line 796-797: distance defaults to mvrange[1] when unset."""
+        import moves
+
+        p = _player()
+        tp = moves.TacticalPositioning(p)
+        tp.distance = 0  # falsy -> should default
+        tp.prep(p)
+        assert tp.distance == tp.mvrange[1]
+
+    def test_beat_update_returns_when_target_dead(self):
+        """Lines 801-803: dead target -> early return."""
+        import moves
+
+        p = _player()
+        dead_enemy = _make_enemy(alive=False)
+        p.combat_proximity[dead_enemy] = 10
+        tp = moves.TacticalPositioning(p)
+        tp.target = dead_enemy
+        tp.current_stage = 1
+        tp.beat_update(p)  # no crash = success
+
+    def test_beat_update_initializes_target_dist_final_and_dispatches_legacy(self):
+        """Lines 805-824: variance calc + legacy dispatch."""
+        import moves
+
+        p = _player()
+        enemy = _make_enemy()
+        enemy.speed = 5
+        p.speed = 10
+        p.combat_proximity[enemy] = 15
+        enemy.combat_proximity[p] = 15
+        tp = moves.TacticalPositioning(p)
+        tp.target = enemy
+        tp.distance = 5
+        tp.current_stage = 1
+        with patch.object(tp, "can_use_coordinates", return_value=False):
+            tp.beat_update(p)
+        assert tp.target_dist_final is not None
+
+    def test_beat_coordinate_based_moves_closer(self):
+        """Lines 826-862: coordinate-based movement toward target distance."""
+        import moves
+
+        p = _player()
+        p.combat_position = _make_combat_position(x=0, y=0)
+        enemy = _make_enemy()
+        enemy.combat_position = _make_combat_position(x=20, y=0)
+        p.combat_proximity[enemy] = 20
+        enemy.combat_proximity[p] = 20
+
+        tp = moves.TacticalPositioning(p)
+        tp.target = enemy
+        tp.target_dist_final = 5  # want to be much closer
+        tp._beat_coordinate_based(p)
+        assert (p.combat_position.x, p.combat_position.y) != (0, 0)
+
+    def test_beat_coordinate_based_moves_further(self):
+        """Lines 839-849: 'move further away' branch."""
+        import moves
+
+        p = _player()
+        p.combat_position = _make_combat_position(x=10, y=0)
+        enemy = _make_enemy()
+        enemy.combat_position = _make_combat_position(x=11, y=0)
+        p.combat_proximity[enemy] = 1
+        enemy.combat_proximity[p] = 1
+
+        tp = moves.TacticalPositioning(p)
+        tp.target = enemy
+        tp.target_dist_final = 20  # want to be much further away
+        tp._beat_coordinate_based(p)
+        assert (p.combat_position.x, p.combat_position.y) != (10, 0)
+
+    def test_beat_coordinate_based_noop_when_close_enough(self):
+        """Line 833-834: abs(diff) < 1 -> no movement."""
+        import moves
+
+        p = _player()
+        p.combat_position = _make_combat_position(x=0, y=0)
+        enemy = _make_enemy()
+        enemy.combat_position = _make_combat_position(x=5, y=0)
+        p.combat_proximity[enemy] = 5
+        enemy.combat_proximity[p] = 5
+
+        tp = moves.TacticalPositioning(p)
+        tp.target = enemy
+        tp.target_dist_final = 5  # already there
+        original_pos = p.combat_position
+        tp._beat_coordinate_based(p)
+        assert p.combat_position is original_pos
+
+    def test_beat_legacy_noop_when_close_enough(self):
+        """Line 868-869: abs(diff) < 1 -> no movement."""
+        import moves
+
+        p = _player()
+        enemy = _make_enemy()
+        p.combat_proximity[enemy] = 5
+        enemy.combat_proximity[p] = 5
+        tp = moves.TacticalPositioning(p)
+        tp.target = enemy
+        tp.target_dist_final = 5
+        tp._beat_legacy(p)
+        assert p.combat_proximity[enemy] == 5
+
+    def test_beat_legacy_moves_further_away(self):
+        """Line 874-875: 'move further away' branch in legacy system."""
+        import moves
+
+        p = _player()
+        enemy = _make_enemy()
+        p.combat_proximity[enemy] = 3
+        enemy.combat_proximity[p] = 3
+        tp = moves.TacticalPositioning(p)
+        tp.target = enemy
+        tp.target_dist_final = 20
+        tp._beat_legacy(p)
+        assert p.combat_proximity[enemy] > 3
+
+
+# ---------------------------------------------------------------------------
+# Turn — remaining gaps
+# ---------------------------------------------------------------------------
+
+
+class TestTurnRemainingGaps:
+    def test_prep_defaults_direction_to_north(self):
+        """Line 952-953: target_direction defaults to North when unset."""
+        import moves
+
+        p = _player()
+        p.combat_position = _make_combat_position()
+        turn = moves.Turn(p)
+        turn.target_direction = None
+        with patch("moves._movement.cprint"):
+            turn.prep(p)
+        # Compare by name rather than enum identity: under the full suite,
+        # src.positions and the bare `positions` module used internally by
+        # _movement.py can end up as distinct (but structurally identical)
+        # module objects depending on import order, so `==` against this
+        # test's own positions.Direction.N can spuriously fail.
+        assert turn.target_direction.name == positions.Direction.N.name
+
+
+# ---------------------------------------------------------------------------
+# QuickSwap — remaining gaps
+# ---------------------------------------------------------------------------
+
+
+class TestQuickSwapRemainingGaps:
+    def test_prep_shows_distance_fallback_without_coordinates(self):
+        """Line 1073-1074: legacy distance fallback in prep's ally list."""
+        import moves
+
+        p = _player()
+        p.name = "Jean"
+        if hasattr(p, "combat_position"):
+            del p.combat_position
+        ally = MagicMock()
+        ally.name = "Buddy"
+        ally.is_alive = MagicMock(return_value=True)
+        del ally.combat_position
+        p.combat_list_allies = [p, ally]
+        p.combat_proximity[ally] = 2
+        qs = moves.QuickSwap(p)
+        with patch("builtins.print"), patch("moves._movement.cprint"):
+            qs.prep(p)
+        # No crash = success
+
+    def test_execute_raises_when_selected_target_no_longer_nearby(self):
+        """Lines 1084-1088: explicit target no longer within range -> ValueError."""
+        import moves
+
+        p = _player()
+        p.name = "Jean"
+        far_ally = MagicMock()
+        far_ally.name = "FarAway"
+        far_ally.is_alive = MagicMock(return_value=True)
+        far_ally.combat_position = None
+        p.combat_position = None
+        p.combat_list_allies = [p, far_ally]
+        p.combat_proximity[far_ally] = 999  # outside 1-4 range
+
+        qs = moves.QuickSwap(p)
+        qs.target = far_ally
+        with patch("moves._movement.cprint"):
+            with pytest.raises(ValueError):
+                qs.execute(p)
+
+    def test_execute_uses_explicit_target_when_nearby(self):
+        """Line 1088: explicit target used directly when still within range."""
+        import moves
+
+        p = _player()
+        p.name = "Jean"
+        ally = MagicMock()
+        ally.name = "Buddy"
+        ally.is_alive = MagicMock(return_value=True)
+        ally.combat_position = None
+        ally.combat_proximity = {}
+        p.combat_position = None
+        p.combat_list_allies = [p, ally]
+        p.combat_proximity[ally] = 2
+
+        qs = moves.QuickSwap(p)
+        qs.target = ally
+        with patch("moves._movement.cprint"):
+            qs.execute(p)
+        # No crash = success (legacy execute path dispatched)
+
+    def test_execute_dispatches_legacy_swap(self):
+        """Line 1105-1106: legacy execute branch dispatched when no coordinates."""
+        import moves
+
+        p = _player()
+        p.name = "Jean"
+        ally = MagicMock()
+        ally.name = "Buddy"
+        ally.is_alive = MagicMock(return_value=True)
+        ally.combat_position = None
+        ally.combat_proximity = {}
+        p.combat_position = None
+        p.combat_list_allies = [p, ally]
+        p.combat_proximity[ally] = 2
+
+        qs = moves.QuickSwap(p)
+        with patch.object(qs, "_execute_legacy") as mock_legacy, \
+             patch("moves._movement.cprint"):
+            qs.execute(p)
+        mock_legacy.assert_called_once()
+
+    def test_execute_handles_exception_gracefully(self, capsys):
+        """Line 1107-1108: exceptions during swap are caught and reported."""
+        import moves
+
+        p = _player()
+        p.name = "Jean"
+        ally = MagicMock()
+        ally.name = "Buddy"
+        ally.is_alive = MagicMock(return_value=True)
+        ally.combat_position = None
+        ally.combat_proximity = {}
+        p.combat_position = None
+        p.combat_list_allies = [p, ally]
+        p.combat_proximity[ally] = 2
+
+        qs = moves.QuickSwap(p)
+        with patch.object(qs, "_execute_legacy", side_effect=RuntimeError("boom")):
+            qs.execute(p)
+        assert "Error during swap" in capsys.readouterr().out
