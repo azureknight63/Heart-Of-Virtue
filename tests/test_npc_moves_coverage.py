@@ -879,3 +879,737 @@ class TestWailStrike:
         ws.target = p
         ws.refresh_announcements(npc)
         assert "WailWraith" in str(ws.stage_announce[0])
+
+
+# ---------------------------------------------------------------------------
+# Additional edge-case coverage (full-suite missing lines):
+# NpcAttack, TelegraphedSurge base, SlimeVolley/TidalSurge .hit(), GorranClub,
+# VenomClaw, SpiderBite, BatBite, MineralSpit, SoulDrain, WailStrike
+# ---------------------------------------------------------------------------
+
+
+class TestNpcAttackEdgeCases:
+    """Lines 95, 99, 102, 155, 157-158, 162."""
+
+    def test_evaluate_stat_floor_branches(self):
+        """Lines 95, 99, 102: prep/recoil/cooldown floor branches with extreme stats."""
+        import moves
+
+        p = _player()
+        npc = _make_npc(speed=-10, endurance=100)
+        npc.target = p
+        attack = moves.NpcAttack(npc)
+        assert attack.stage_beat[0] == 1
+        assert attack.stage_beat[2] == 0
+        assert attack.stage_beat[3] == 0
+
+    def test_execute_damage_floored_at_zero(self):
+        """Line 155: damage <= 0 floors to 0 when protection swamps power."""
+        import moves
+
+        p = _make_player_target()
+        p.protection = 99999
+        npc = _make_npc(damage=1)
+        npc.target = p
+        npc.combat_proximity[p] = 2
+        attack = moves.NpcAttack(npc)
+        attack.target = p
+        with patch("builtins.print"), patch("random.randint", return_value=100):
+            attack.execute(npc)
+
+    def test_execute_glancing_blow_deterministic(self):
+        """Lines 157-158: glancing blow when hit_chance - roll < 10."""
+        import moves
+
+        p = _make_player_target()
+        p.finesse = 50
+        npc = _make_npc(finesse=10, intelligence=5, damage=20)
+        npc.target = p
+        npc.combat_proximity[p] = 2
+        attack = moves.NpcAttack(npc)
+        attack.target = p
+        # hit_chance = int(95 - 50 + 10*0.7 + 5*0.3) = 53
+        with patch("builtins.print"), patch("random.randint", return_value=48):
+            attack.execute(npc)
+
+    def test_execute_parry_path(self):
+        """Line 162: functions.check_parry True routes to self.parry()."""
+        import moves
+
+        p = _make_player_target()
+        p.finesse = 10
+        npc = _make_npc(finesse=10, intelligence=5, damage=20)
+        npc.target = p
+        npc.combat_proximity[p] = 2
+        attack = moves.NpcAttack(npc)
+        attack.target = p
+        with (
+            patch("builtins.print"),
+            patch("random.randint", return_value=0),
+            patch("functions.check_parry", return_value=True),
+        ):
+            attack.execute(npc)
+
+
+class TestTelegraphedSurgeAdvanced:
+    """Lines 262, 265, 268 (base default texts), 343, 349 (TidalSurge texts),
+    316-319 (SlimeVolley.hit), 352-355 (TidalSurge.hit)."""
+
+    def test_telegraphed_surge_base_default_texts(self):
+        """Lines 262, 265, 268: base TelegraphedSurge default text methods."""
+        import moves
+
+        npc = _make_npc(name="Wisp")
+        target = _make_player_target()
+        target.name = "Jean"
+        npc.target = target
+        ts = moves.TelegraphedSurge(npc)
+        ts.target = target
+        ts.refresh_announcements(npc)
+        assert "Wisp" in ts.stage_announce[0]
+        assert "Wisp" in str(ts.stage_announce[1])
+        assert "Wisp" in ts.stage_announce[2]
+
+    def test_slime_volley_hit_inflicts_slimed_on_full_hit(self):
+        """Lines 316-319: SlimeVolley.hit applies Slimed status on non-glancing hit."""
+        import moves
+
+        npc = _make_npc(name="SlimeMonster", damage=20)
+        target = _make_player_target()
+        target.name = "Jean"
+        npc.target = target
+        sv = moves.SlimeVolley(npc)
+        sv.target = target
+        with patch("builtins.print"):
+            sv.hit(15, False)
+
+    def test_tidal_surge_refresh_announcements_hit_and_recoil_text(self):
+        """Lines 343, 349: TidalSurge._hit_text/_recoil_text via refresh_announcements."""
+        import moves
+
+        npc = _make_npc(name="KingSlime")
+        target = _make_player_target()
+        target.name = "Jean"
+        npc.target = target
+        ts = moves.TidalSurge(npc)
+        ts.target = target
+        ts.refresh_announcements(npc)
+        assert "KingSlime" in ts.stage_announce[1]
+        assert "KingSlime" in ts.stage_announce[2]
+
+    def test_tidal_surge_hit_inflicts_slimed(self):
+        """Lines 352-355: TidalSurge.hit applies Slimed status."""
+        import moves
+
+        npc = _make_npc(name="KingSlime", damage=20)
+        target = _make_player_target()
+        target.name = "Jean"
+        npc.target = target
+        ts = moves.TidalSurge(npc)
+        ts.target = target
+        with patch("builtins.print"):
+            ts.hit(15, False)
+
+
+class TestGorranClubEdgeCases:
+    """Lines 422, 426, 430, 434, 477, 483, 485-486, 490."""
+
+    def test_evaluate_stat_floor_branches(self):
+        """Lines 422, 426, 430, 434: prep/recoil/cooldown/fatigue floor branches."""
+        import moves
+
+        p = _player()
+        npc = _make_npc(speed=-10, endurance=100)
+        npc.target = p
+        gc = moves.GorranClub(npc)
+        assert gc.stage_beat[0] == 1
+        assert gc.stage_beat[2] == 5  # recoil floored to 0, then +5
+        assert gc.stage_beat[3] == 3  # cooldown floored to 0, then +3
+        assert gc.fatigue_cost == 25
+
+    def test_execute_hit_chance_floor_when_viable(self):
+        """Line 477: hit_chance <= 0 floors to 1 (viable True)."""
+        import moves
+
+        p = _make_player_target()
+        p.finesse = 500
+        npc = _make_npc(finesse=10, intelligence=5, damage=20)
+        npc.target = p
+        npc.combat_proximity[p] = 2
+        gc = moves.GorranClub(npc)
+        gc.target = p
+        with patch("builtins.print"), patch("random.randint", return_value=100):
+            gc.execute(npc)
+
+    def test_execute_damage_floored_at_zero(self):
+        """Line 483: damage <= 0 floors to 0 when protection swamps power."""
+        import moves
+
+        p = _make_player_target()
+        p.protection = 99999
+        npc = _make_npc(damage=1)
+        npc.target = p
+        npc.combat_proximity[p] = 2
+        gc = moves.GorranClub(npc)
+        gc.target = p
+        with patch("builtins.print"), patch("random.randint", return_value=100):
+            gc.execute(npc)
+
+    def test_execute_glancing_blow_deterministic(self):
+        """Lines 485-486: glancing blow branch."""
+        import moves
+
+        p = _make_player_target()
+        p.finesse = 50
+        npc = _make_npc(finesse=10, intelligence=5, damage=20)
+        npc.target = p
+        npc.combat_proximity[p] = 2
+        gc = moves.GorranClub(npc)
+        gc.target = p
+        # hit_chance = int(105 - 50 + 10*0.7 + 5*0.3) = 63
+        with patch("builtins.print"), patch("random.randint", return_value=58):
+            gc.execute(npc)
+
+    def test_execute_parry_path(self):
+        """Line 490: functions.check_parry True routes to self.parry()."""
+        import moves
+
+        p = _make_player_target()
+        p.finesse = 10
+        npc = _make_npc(finesse=10, intelligence=5, damage=20)
+        npc.target = p
+        npc.combat_proximity[p] = 2
+        gc = moves.GorranClub(npc)
+        gc.target = p
+        with (
+            patch("builtins.print"),
+            patch("random.randint", return_value=0),
+            patch("functions.check_parry", return_value=True),
+        ):
+            gc.execute(npc)
+
+
+class TestVenomClawEdgeCases:
+    """Lines 557, 561, 564, 611-613, 617, 619-620, 624, 630."""
+
+    def test_evaluate_stat_floor_branches(self):
+        """Lines 557, 561, 564: prep/recoil/cooldown floor branches."""
+        import moves
+
+        p = _player()
+        npc = _make_npc(speed=-10, endurance=100)
+        npc.target = p
+        vc = moves.VenomClaw(npc)
+        assert vc.stage_beat[0] == 1
+        assert vc.stage_beat[2] == 0
+        assert vc.stage_beat[3] == 0
+
+    def test_execute_hit_chance_floor_when_viable(self):
+        """Line 611: hit_chance <= 0 floors to 1 (viable True)."""
+        import moves
+
+        p = _make_player_target()
+        p.finesse = 500
+        npc = _make_npc(finesse=10, intelligence=5, damage=20)
+        npc.target = p
+        npc.combat_proximity[p] = 2
+        vc = moves.VenomClaw(npc)
+        vc.target = p
+        with patch("builtins.print"), patch("random.randint", return_value=100):
+            vc.execute(npc)
+
+    def test_execute_not_viable_hit_chance_negative(self):
+        """Lines 612-613: viable False sets hit_chance = -1."""
+        import moves
+
+        p = _make_player_target()
+        npc = _make_npc(damage=20)
+        npc.target = p
+        npc.combat_proximity[p] = 999  # out of range -> not viable
+        vc = moves.VenomClaw(npc)
+        vc.target = p
+        with patch("builtins.print"):
+            vc.execute(npc)
+
+    def test_execute_damage_floored_at_zero(self):
+        """Line 617: damage <= 0 floors to 0."""
+        import moves
+
+        p = _make_player_target()
+        p.protection = 99999
+        npc = _make_npc(damage=1)
+        npc.target = p
+        npc.combat_proximity[p] = 2
+        vc = moves.VenomClaw(npc)
+        vc.target = p
+        with patch("builtins.print"), patch("random.randint", return_value=100):
+            vc.execute(npc)
+
+    def test_execute_glancing_blow_deterministic(self):
+        """Lines 619-620: glancing blow branch."""
+        import moves
+
+        p = _make_player_target()
+        p.finesse = 50
+        npc = _make_npc(finesse=10, intelligence=5, damage=20)
+        npc.target = p
+        npc.combat_proximity[p] = 2
+        vc = moves.VenomClaw(npc)
+        vc.target = p
+        with patch("builtins.print"), patch("random.randint", return_value=48):
+            vc.execute(npc)
+
+    def test_execute_parry_path(self):
+        """Line 624: functions.check_parry True routes to self.parry()."""
+        import moves
+
+        p = _make_player_target()
+        p.finesse = 10
+        npc = _make_npc(finesse=10, intelligence=5, damage=20)
+        npc.target = p
+        npc.combat_proximity[p] = 2
+        vc = moves.VenomClaw(npc)
+        vc.target = p
+        with (
+            patch("builtins.print"),
+            patch("random.randint", return_value=0),
+            patch("functions.check_parry", return_value=True),
+        ):
+            vc.execute(npc)
+
+    def test_execute_miss_path(self):
+        """Line 630: miss() called when hit_chance < roll."""
+        import moves
+
+        p = _make_player_target()
+        p.finesse = 999
+        npc = _make_npc(finesse=10, intelligence=5, damage=20)
+        npc.target = p
+        npc.combat_proximity[p] = 2
+        vc = moves.VenomClaw(npc)
+        vc.target = p
+        with patch("builtins.print"), patch("random.randint", return_value=100):
+            vc.execute(npc)
+
+
+class TestSpiderBiteEdgeCases:
+    """Lines 681, 696, 700, 703, 706, 747, 753, 755-756, 760."""
+
+    def test_viable_no_combat_proximity_returns_false(self):
+        """Line 681: viable False without combat_proximity."""
+        import moves
+
+        p = _player()
+        npc = _make_npc()
+        npc.target = p
+        del npc.combat_proximity
+        sb = moves.SpiderBite(npc)
+        assert sb.viable() is False
+
+    def test_evaluate_stat_floor_branches(self):
+        """Lines 696, 700, 703, 706: prep/recoil/cooldown/fatigue floor branches."""
+        import moves
+
+        p = _player()
+        npc = _make_npc(speed=-10, endurance=100)
+        npc.target = p
+        sb = moves.SpiderBite(npc)
+        assert sb.stage_beat[0] == 1
+        assert sb.stage_beat[2] == 0
+        assert sb.stage_beat[3] == 0
+        assert sb.fatigue_cost == 20
+
+    def test_execute_hit_chance_floor_when_viable(self):
+        """Line 747: hit_chance <= 0 floors to 1 (viable True)."""
+        import moves
+
+        p = _make_player_target()
+        p.finesse = 500
+        npc = _make_npc(finesse=10, intelligence=5, damage=20)
+        npc.target = p
+        npc.combat_proximity[p] = 2
+        sb = moves.SpiderBite(npc)
+        sb.target = p
+        with patch("builtins.print"), patch("random.randint", return_value=100):
+            sb.execute(npc)
+
+    def test_execute_damage_floored_at_zero(self):
+        """Line 753: damage <= 0 floors to 0."""
+        import moves
+
+        p = _make_player_target()
+        p.protection = 99999
+        npc = _make_npc(damage=1)
+        npc.target = p
+        npc.combat_proximity[p] = 2
+        sb = moves.SpiderBite(npc)
+        sb.target = p
+        with patch("builtins.print"), patch("random.randint", return_value=100):
+            sb.execute(npc)
+
+    def test_execute_glancing_blow_deterministic(self):
+        """Lines 755-756: glancing blow branch."""
+        import moves
+
+        p = _make_player_target()
+        p.finesse = 50
+        npc = _make_npc(finesse=10, intelligence=5, damage=20)
+        npc.target = p
+        npc.combat_proximity[p] = 2
+        sb = moves.SpiderBite(npc)
+        sb.target = p
+        with patch("builtins.print"), patch("random.randint", return_value=48):
+            sb.execute(npc)
+
+    def test_execute_parry_path(self):
+        """Line 760: functions.check_parry True routes to self.parry()."""
+        import moves
+
+        p = _make_player_target()
+        p.finesse = 10
+        npc = _make_npc(finesse=10, intelligence=5, damage=20)
+        npc.target = p
+        npc.combat_proximity[p] = 2
+        sb = moves.SpiderBite(npc)
+        sb.target = p
+        with (
+            patch("builtins.print"),
+            patch("random.randint", return_value=0),
+            patch("functions.check_parry", return_value=True),
+        ):
+            sb.execute(npc)
+
+
+class TestBatBiteEdgeCases:
+    """Lines 833, 837, 840, 843, 883-885, 889, 896."""
+
+    def test_evaluate_stat_floor_branches(self):
+        """Lines 833, 837, 840, 843: prep/recoil/cooldown/fatigue floor branches."""
+        import moves
+
+        p = _player()
+        npc = _make_npc(speed=-10, endurance=100)
+        npc.target = p
+        bb = moves.BatBite(npc)
+        assert bb.stage_beat[0] == 1
+        assert bb.stage_beat[2] == 0
+        assert bb.stage_beat[3] == 0
+        assert bb.fatigue_cost == 20
+
+    def test_execute_hit_chance_floor_when_viable(self):
+        """Line 883: hit_chance <= 0 floors to 1 (viable True)."""
+        import moves
+
+        p = _make_player_target()
+        p.finesse = 500
+        npc = _make_npc(finesse=10, intelligence=5, damage=20)
+        npc.hp = 30
+        npc.maxhp = 50
+        npc.target = p
+        npc.combat_proximity[p] = 2
+        bb = moves.BatBite(npc)
+        bb.target = p
+        with patch("builtins.print"), patch("random.randint", return_value=100):
+            bb.execute(npc)
+
+    def test_execute_not_viable_hit_chance_negative(self):
+        """Lines 884-885: viable False sets hit_chance = -1."""
+        import moves
+
+        p = _make_player_target()
+        npc = _make_npc(damage=20)
+        npc.hp = 30
+        npc.maxhp = 50
+        npc.target = p
+        npc.combat_proximity[p] = 999
+        bb = moves.BatBite(npc)
+        bb.target = p
+        with patch("builtins.print"):
+            bb.execute(npc)
+
+    def test_execute_damage_floored_at_zero(self):
+        """Line 889: damage <= 0 floors to 0."""
+        import moves
+
+        p = _make_player_target()
+        p.protection = 99999
+        npc = _make_npc(damage=1)
+        npc.hp = 30
+        npc.maxhp = 50
+        npc.target = p
+        npc.combat_proximity[p] = 2
+        bb = moves.BatBite(npc)
+        bb.target = p
+        with patch("builtins.print"), patch("random.randint", return_value=100):
+            bb.execute(npc)
+
+    def test_execute_parry_path(self):
+        """Line 896: functions.check_parry True routes to self.parry()."""
+        import moves
+
+        p = _make_player_target()
+        p.finesse = 10
+        npc = _make_npc(finesse=10, intelligence=5, damage=20)
+        npc.hp = 30
+        npc.maxhp = 50
+        npc.target = p
+        npc.combat_proximity[p] = 2
+        bb = moves.BatBite(npc)
+        bb.target = p
+        with (
+            patch("builtins.print"),
+            patch("random.randint", return_value=0),
+            patch("functions.check_parry", return_value=True),
+        ):
+            bb.execute(npc)
+
+
+class TestMineralSpitEdgeCases:
+    """Lines 920, 923, 944-946, 950-951, 955, 961-965."""
+
+    def test_prep_and_hit_text_direct(self):
+        """Lines 920, 923: _prep_text/_hit_text overrides (dead unless called directly;
+        MineralSpit.refresh_announcements builds its own strings instead of using them)."""
+        import moves
+
+        npc = _make_npc(name="StoneCreature")
+        p = _make_player_target()
+        npc.target = p
+        ms = moves.MineralSpit(npc)
+        assert "StoneCreature" in ms._prep_text(npc)
+        assert "Target" in ms._hit_text(npc, "Target")
+
+    def test_execute_hit_chance_floor_when_viable(self):
+        """Line 944: hit_chance <= 0 floors to 1 (viable True)."""
+        import moves
+
+        p = _make_player_target()
+        p.finesse = 500
+        npc = _make_npc(finesse=10, intelligence=5, damage=20)
+        npc.target = p
+        npc.combat_proximity[p] = 2
+        ms = moves.MineralSpit(npc)
+        ms.target = p
+        with (
+            patch("builtins.print"),
+            patch("random.randint", return_value=100),
+            patch("random.random", return_value=0.9),
+        ):
+            ms.execute(npc)
+
+    def test_execute_not_viable_hit_chance_negative(self):
+        """Lines 945-946: viable False sets hit_chance = -1."""
+        import moves
+
+        p = _make_player_target()
+        npc = _make_npc(damage=20)
+        npc.target = p
+        npc.combat_proximity[p] = 999
+        ms = moves.MineralSpit(npc)
+        ms.target = p
+        with patch("builtins.print"), patch("random.random", return_value=0.9):
+            ms.execute(npc)
+
+    def test_execute_glancing_blow_deterministic(self):
+        """Lines 950-951: glancing blow branch."""
+        import moves
+
+        p = _make_player_target()
+        p.finesse = 50
+        npc = _make_npc(finesse=10, intelligence=5, damage=20)
+        npc.target = p
+        npc.combat_proximity[p] = 2
+        ms = moves.MineralSpit(npc)
+        ms.target = p
+        with patch("builtins.print"), patch("random.randint", return_value=48):
+            ms.execute(npc)
+
+    def test_execute_parry_path(self):
+        """Line 955: functions.check_parry True routes to self.parry()."""
+        import moves
+
+        p = _make_player_target()
+        p.finesse = 10
+        npc = _make_npc(finesse=10, intelligence=5, damage=20)
+        npc.target = p
+        npc.combat_proximity[p] = 2
+        ms = moves.MineralSpit(npc)
+        ms.target = p
+        with (
+            patch("builtins.print"),
+            patch("random.randint", return_value=0),
+            patch("functions.check_parry", return_value=True),
+        ):
+            ms.execute(npc)
+
+    def test_execute_miss_and_residue_chance(self):
+        """Lines 961-965: miss branch plus near-miss residue application."""
+        import moves
+
+        p = _make_player_target()
+        p.finesse = 10
+        npc = _make_npc(finesse=10, intelligence=5, damage=20)
+        npc.target = p
+        npc.combat_proximity[p] = 2
+        ms = moves.MineralSpit(npc)
+        ms.target = p
+        with (
+            patch("builtins.print"),
+            patch("random.randint", return_value=100),
+            patch("random.random", return_value=0.01),
+        ):
+            ms.execute(npc)
+
+
+class TestSoulDrainEdgeCases:
+    """Lines 1003-1005, 1009-1010, 1014, 1022."""
+
+    def test_execute_hit_chance_floor_when_viable(self):
+        """Line 1003: hit_chance <= 0 floors to 1 (viable True)."""
+        import moves
+
+        p = _make_player_target()
+        p.finesse = 500
+        npc = _make_npc(finesse=10, intelligence=5, damage=20)
+        npc.target = p
+        npc.combat_proximity[p] = 2
+        sd = moves.SoulDrain(npc)
+        sd.target = p
+        with patch("builtins.print"), patch("random.randint", return_value=100):
+            sd.execute(npc)
+
+    def test_execute_not_viable_hit_chance_negative(self):
+        """Lines 1004-1005: viable False sets hit_chance = -1."""
+        import moves
+
+        p = _make_player_target()
+        npc = _make_npc(damage=20)
+        npc.target = p
+        npc.combat_proximity[p] = 999
+        sd = moves.SoulDrain(npc)
+        sd.target = p
+        with patch("builtins.print"):
+            sd.execute(npc)
+
+    def test_execute_glancing_blow_deterministic(self):
+        """Lines 1009-1010: glancing blow branch."""
+        import moves
+
+        p = _make_player_target()
+        p.finesse = 50
+        npc = _make_npc(finesse=10, intelligence=5, damage=20)
+        npc.target = p
+        npc.combat_proximity[p] = 2
+        sd = moves.SoulDrain(npc)
+        sd.target = p
+        with patch("builtins.print"), patch("random.randint", return_value=48):
+            sd.execute(npc)
+
+    def test_execute_parry_path(self):
+        """Line 1014: functions.check_parry True routes to self.parry()."""
+        import moves
+
+        p = _make_player_target()
+        p.finesse = 10
+        npc = _make_npc(finesse=10, intelligence=5, damage=20)
+        npc.target = p
+        npc.combat_proximity[p] = 2
+        sd = moves.SoulDrain(npc)
+        sd.target = p
+        with (
+            patch("builtins.print"),
+            patch("random.randint", return_value=0),
+            patch("functions.check_parry", return_value=True),
+        ):
+            sd.execute(npc)
+
+    def test_execute_miss_path(self):
+        """Line 1022: miss() called when hit_chance < roll."""
+        import moves
+
+        p = _make_player_target()
+        p.finesse = 10
+        npc = _make_npc(finesse=10, intelligence=5, damage=20)
+        npc.target = p
+        npc.combat_proximity[p] = 2
+        sd = moves.SoulDrain(npc)
+        sd.target = p
+        with patch("builtins.print"), patch("random.randint", return_value=100):
+            sd.execute(npc)
+
+
+class TestWailStrikeEdgeCases:
+    """Lines 1061-1063, 1067-1068, 1072, 1078."""
+
+    def test_execute_hit_chance_floor_when_viable(self):
+        """Line 1061: hit_chance <= 0 floors to 1 (viable True)."""
+        import moves
+
+        p = _make_player_target()
+        p.finesse = 500
+        npc = _make_npc(finesse=10, intelligence=5, damage=20)
+        npc.target = p
+        npc.combat_proximity[p] = 2
+        ws = moves.WailStrike(npc)
+        ws.target = p
+        with patch("builtins.print"), patch("random.randint", return_value=100):
+            ws.execute(npc)
+
+    def test_execute_not_viable_hit_chance_negative(self):
+        """Lines 1062-1063: viable False sets hit_chance = -1."""
+        import moves
+
+        p = _make_player_target()
+        npc = _make_npc(damage=20)
+        npc.target = p
+        npc.combat_proximity[p] = 999
+        ws = moves.WailStrike(npc)
+        ws.target = p
+        with patch("builtins.print"):
+            ws.execute(npc)
+
+    def test_execute_glancing_blow_deterministic(self):
+        """Lines 1067-1068: glancing blow branch."""
+        import moves
+
+        p = _make_player_target()
+        p.finesse = 50
+        npc = _make_npc(finesse=10, intelligence=5, damage=20)
+        npc.target = p
+        npc.combat_proximity[p] = 2
+        ws = moves.WailStrike(npc)
+        ws.target = p
+        with patch("builtins.print"), patch("random.randint", return_value=48):
+            ws.execute(npc)
+
+    def test_execute_parry_path(self):
+        """Line 1072: functions.check_parry True routes to self.parry()."""
+        import moves
+
+        p = _make_player_target()
+        p.finesse = 10
+        npc = _make_npc(finesse=10, intelligence=5, damage=20)
+        npc.target = p
+        npc.combat_proximity[p] = 2
+        ws = moves.WailStrike(npc)
+        ws.target = p
+        with (
+            patch("builtins.print"),
+            patch("random.randint", return_value=0),
+            patch("functions.check_parry", return_value=True),
+        ):
+            ws.execute(npc)
+
+    def test_execute_miss_path(self):
+        """Line 1078: miss() called when hit_chance < roll."""
+        import moves
+
+        p = _make_player_target()
+        p.finesse = 10
+        npc = _make_npc(finesse=10, intelligence=5, damage=20)
+        npc.target = p
+        npc.combat_proximity[p] = 2
+        ws = moves.WailStrike(npc)
+        ws.target = p
+        with patch("builtins.print"), patch("random.randint", return_value=100):
+            ws.execute(npc)

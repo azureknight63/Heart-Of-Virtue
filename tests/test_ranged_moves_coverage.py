@@ -1065,3 +1065,455 @@ class TestQuickReload:
         user = _make_crossbow_user()
         move = QuickReload(user)
         assert move.viable() is False
+
+
+# ---------------------------------------------------------------------------
+# Additional edge-case coverage (full-suite missing lines):
+# ShootBow, ShootCrossbow, BroadheadBolt, AimedShot, PinningBolt
+# ---------------------------------------------------------------------------
+
+
+class TestShootBowCalculateHitChanceFloor:
+    def test_hit_chance_floors_at_2_with_extreme_enemy_finesse(self):
+        """Line 117: hit_chance < 2 floors to 2."""
+        user, arrow = _make_bow_user(finesse=10, intelligence=5)
+        move = ShootBow(user)
+        move.mvrange = (6, 50)
+        enemy = _make_enemy(finesse=999)
+        user.combat_proximity = {enemy: 15}
+        user.eq_weapon.range_base = 20
+        result = move.calculate_hit_chance(enemy)
+        assert result == 2
+
+
+class TestShootBowEvaluateFloors:
+    def test_evaluate_prep_floor(self):
+        """Line 206: prep < 1 floors to 1 with extreme speed/strength."""
+        user, arrow = _make_bow_user(speed=10000, strength=10000)
+        move = ShootBow(user)
+        assert move.stage_beat[0] == 1
+
+    def test_evaluate_cooldown_floor(self):
+        """Line 211: cooldown < 0 floors to 0 with high endurance."""
+        user, arrow = _make_bow_user(endurance=100)
+        move = ShootBow(user)
+        assert move.stage_beat[3] == 0
+
+
+class TestShootBowExecuteEdgeCases:
+    def _setup_execute(self):
+        user, arrow = _make_bow_user()
+        enemy = _make_enemy()
+        user.eq_weapon.range_base = 20
+        user.eq_weapon.range_decay = 5.0
+        user.eq_weapon.fin_mod = 0.5
+        user.combat_proximity = {enemy: 15}
+        move = ShootBow(user)
+        move.target = enemy
+        move.arrow = arrow
+        arrow.power = 15
+        arrow.effects = []
+        arrow.count = 3
+        arrow.sturdiness = 0.5
+        return move, user, enemy, arrow
+
+    def test_execute_damage_floored_at_zero(self):
+        """Line 269: damage <= 0 floors to 0 when protection swamps power."""
+        move, user, enemy, arrow = self._setup_execute()
+        enemy.protection = 99999
+        with (
+            patch.object(move, "calculate_hit_chance", return_value=100),
+            patch("moves._ranged.functions.check_parry", return_value=False),
+            patch("moves._ranged.random.randint", return_value=50),
+            patch("moves._ranged.random.uniform", return_value=1.0),
+        ):
+            move.execute(user)
+
+
+class TestShootCrossbowGetEffectiveRangeMaxEdge:
+    def test_no_decay_returns_none(self):
+        """Line 379: decay <= 0 returns None."""
+        user = _make_crossbow_user()
+        move = ShootCrossbow(user)
+        move.decay = 0
+        assert move.get_effective_range_max(user) is None
+
+
+class TestShootCrossbowMarksmanEyePassive:
+    def test_evaluate_marksmans_eye_reduces_decay(self):
+        """Line 408: MarksmanEye known move reduces decay by 0.7x."""
+        user = _make_crossbow_user()
+        marksman = MagicMock()
+        marksman.name = "Marksman's Eye"
+        user.known_moves = [marksman]
+        move = ShootCrossbow(user)
+        assert move.decay == pytest.approx(0.06 * 0.7)
+
+
+class TestShootCrossbowExecuteRealPath:
+    def test_execute_applies_distance_decay_and_floors_at_2(self):
+        """Lines 436-439: distance decay computed via real (non-mocked) viable(),
+        exaggerated to drive hit_chance below the floor of 2."""
+        user = _make_crossbow_user(finesse=10, intelligence=5)
+        enemy = _make_enemy(finesse=8)
+        user.combat_proximity = {enemy: 35}  # beyond base_range(15), within mvrange(6,40)
+        move = ShootCrossbow(user)
+        move.target = enemy
+        move.decay = 50  # exaggerate to force the floor branch
+        with (
+            patch("moves._ranged.functions.check_parry", return_value=False),
+            patch("moves._ranged.random.randint", return_value=50),
+            patch("moves._ranged.random.uniform", return_value=1.0),
+        ):
+            move.execute(user)
+
+    def test_execute_glancing_blow_deterministic(self):
+        """Lines 451-452: glancing blow via real (non-mocked) viable()."""
+        user = _make_crossbow_user(finesse=10, intelligence=5)
+        enemy = _make_enemy(finesse=8)
+        user.combat_proximity = {enemy: 15}
+        move = ShootCrossbow(user)
+        move.target = enemy
+        move.mvrange = (6, 40)
+        # hit_chance = max(5, int(98-8+10*0.7+5*0.3)) = 98; distance == base_range, no decay
+        with (
+            patch("moves._ranged.functions.check_parry", return_value=False),
+            patch("moves._ranged.random.randint", return_value=90),
+            patch("moves._ranged.random.uniform", return_value=1.0),
+        ):
+            move.execute(user)
+
+    def test_execute_parry_path(self):
+        """Line 462: functions.check_parry True routes to self.parry()."""
+        user = _make_crossbow_user(finesse=10, intelligence=5)
+        enemy = _make_enemy(finesse=8)
+        user.combat_proximity = {enemy: 15}
+        move = ShootCrossbow(user)
+        move.target = enemy
+        with (
+            patch("moves._ranged.functions.check_parry", return_value=True),
+            patch.object(move, "parry") as mock_parry,
+            patch("moves._ranged.random.randint", return_value=0),
+            patch("moves._ranged.random.uniform", return_value=1.0),
+        ):
+            move.execute(user)
+        mock_parry.assert_called_once()
+
+
+class TestBroadheadBoltEdgeCases:
+    def test_viable_no_combat_proximity_false(self):
+        """Line 518: viable False without combat_proximity."""
+        user = _make_crossbow_user()
+        del user.combat_proximity
+        move = BroadheadBolt(user)
+        assert move.viable() is False
+
+    def test_get_effective_range_max_with_decay(self):
+        """Lines 524-526: get_effective_range_max is never called by execute();
+        exercise it directly."""
+        user = _make_crossbow_user()
+        move = BroadheadBolt(user)
+        expected = move.base_range + (100 / move.decay)
+        assert move.get_effective_range_max(user) == pytest.approx(expected)
+
+    def test_get_effective_range_max_no_decay_returns_none(self):
+        """Lines 524-526: no-decay branch returns None."""
+        user = _make_crossbow_user()
+        move = BroadheadBolt(user)
+        move.decay = 0
+        assert move.get_effective_range_max(user) is None
+
+
+class TestBroadheadBoltExecuteRealPath:
+    def test_execute_viable_true_distance_decay_floors_hit_chance(self):
+        """Lines 578-581: distance decay applied and floored at 2 (real viable path)."""
+        user = _make_crossbow_user(finesse=10, intelligence=5)
+        enemy = _make_enemy(finesse=8)
+        user.combat_proximity = {enemy: 35}
+        move = BroadheadBolt(user)
+        move.target = enemy
+        move.decay = 50  # exaggerate to force the floor
+        with (
+            patch("moves._ranged.functions.check_parry", return_value=False),
+            patch("moves._ranged.random.randint", return_value=50),
+            patch("moves._ranged.random.uniform", return_value=1.0),
+        ):
+            move.execute(user)
+
+    def test_execute_not_viable_sets_hit_chance_negative(self):
+        """Line 583: viable False (real path) sets hit_chance = -1."""
+        user = _make_crossbow_user()
+        user.eq_weapon.subtype = "Bow"  # makes viable() False
+        enemy = _make_enemy()
+        user.combat_proximity = {enemy: 15}
+        move = BroadheadBolt(user)
+        move.target = enemy
+        with (
+            patch("moves._ranged.random.randint", return_value=50),
+            patch("moves._ranged.random.uniform", return_value=1.0),
+        ):
+            move.execute(user)
+
+    def test_execute_glancing_blow_deterministic(self):
+        """Lines 595-596: glancing blow via real (non-mocked) viable()."""
+        user = _make_crossbow_user(finesse=10, intelligence=5)
+        enemy = _make_enemy(finesse=8)
+        user.combat_proximity = {enemy: 15}
+        move = BroadheadBolt(user)
+        move.target = enemy
+        with (
+            patch("moves._ranged.functions.check_parry", return_value=False),
+            patch("moves._ranged.random.randint", return_value=90),
+            patch("moves._ranged.random.uniform", return_value=1.0),
+        ):
+            move.execute(user)
+
+    def test_execute_parry_path(self):
+        """Line 606: functions.check_parry True routes to self.parry()."""
+        user = _make_crossbow_user(finesse=10, intelligence=5)
+        enemy = _make_enemy(finesse=8)
+        user.combat_proximity = {enemy: 15}
+        move = BroadheadBolt(user)
+        move.target = enemy
+        with (
+            patch("moves._ranged.functions.check_parry", return_value=True),
+            patch.object(move, "parry") as mock_parry,
+            patch("moves._ranged.random.randint", return_value=0),
+            patch("moves._ranged.random.uniform", return_value=1.0),
+        ):
+            move.execute(user)
+        mock_parry.assert_called_once()
+
+    def test_execute_miss_path(self):
+        """Line 610: miss() called when hit_chance < roll."""
+        user = _make_crossbow_user(finesse=10, intelligence=5)
+        enemy = _make_enemy(finesse=999)
+        user.combat_proximity = {enemy: 15}
+        move = BroadheadBolt(user)
+        move.target = enemy
+        with (
+            patch.object(move, "miss") as mock_miss,
+            patch("moves._ranged.random.randint", return_value=50),
+            patch("moves._ranged.random.uniform", return_value=1.0),
+        ):
+            move.execute(user)
+        mock_miss.assert_called_once()
+
+
+class TestAimedShotEdgeCases:
+    def test_viable_wrong_subtype_false(self):
+        """Line 664: viable False for non-Crossbow weapon."""
+        user = _make_crossbow_user()
+        user.eq_weapon.subtype = "Bow"
+        move = AimedShot(user)
+        assert move.viable() is False
+
+    def test_viable_no_combat_proximity_false(self):
+        """Line 666: viable False without combat_proximity."""
+        user = _make_crossbow_user()
+        del user.combat_proximity
+        move = AimedShot(user)
+        assert move.viable() is False
+
+    def test_get_effective_range_max_with_decay(self):
+        """Lines 672-674: get_effective_range_max is never called by execute();
+        exercise it directly."""
+        user = _make_crossbow_user()
+        move = AimedShot(user)
+        expected = move.base_range + (100 / move.decay)
+        assert move.get_effective_range_max(user) == pytest.approx(expected)
+
+    def test_get_effective_range_max_no_decay_returns_none(self):
+        """Lines 672-674: no-decay branch returns None."""
+        user = _make_crossbow_user()
+        move = AimedShot(user)
+        move.decay = 0
+        assert move.get_effective_range_max(user) is None
+
+
+class TestAimedShotExecuteRealPath:
+    def test_execute_close_range_penalty_real_path(self):
+        """Line 728: close-range penalty halves hit_chance (real, non-mocked path)."""
+        user = _make_crossbow_user(finesse=10, intelligence=5)
+        enemy = _make_enemy(finesse=8)
+        distractor = MagicMock()
+        user.combat_proximity = {enemy: 15, distractor: 3}  # distractor within min range (6)
+        move = AimedShot(user)
+        move.target = enemy
+        with (
+            patch("moves._ranged.functions.check_parry", return_value=False),
+            patch("moves._ranged.random.randint", return_value=50),
+            patch("moves._ranged.random.uniform", return_value=1.0),
+        ):
+            move.execute(user)
+
+    def test_execute_distance_decay_floors_real_path(self):
+        """Lines 733-736: distance decay applied and floored (real viable path)."""
+        user = _make_crossbow_user(finesse=10, intelligence=5)
+        enemy = _make_enemy(finesse=8)
+        user.combat_proximity = {enemy: 35}
+        move = AimedShot(user)
+        move.target = enemy
+        move.decay = 50
+        with (
+            patch("moves._ranged.functions.check_parry", return_value=False),
+            patch("moves._ranged.random.randint", return_value=50),
+            patch("moves._ranged.random.uniform", return_value=1.0),
+        ):
+            move.execute(user)
+
+    def test_execute_glancing_blow_deterministic(self):
+        """Lines 748-749: glancing blow via real (non-mocked) viable()."""
+        user = _make_crossbow_user(finesse=10, intelligence=5)
+        enemy = _make_enemy(finesse=8)
+        user.combat_proximity = {enemy: 15}
+        move = AimedShot(user)
+        move.target = enemy
+        # hit_chance = min(100, max(5, int(98-8+7+1.5))+15) = min(100, 113) = 100
+        with (
+            patch("moves._ranged.functions.check_parry", return_value=False),
+            patch("moves._ranged.random.randint", return_value=95),
+            patch("moves._ranged.random.uniform", return_value=1.0),
+        ):
+            move.execute(user)
+
+    def test_execute_parry_path(self):
+        """Line 759: functions.check_parry True routes to self.parry()."""
+        user = _make_crossbow_user(finesse=10, intelligence=5)
+        enemy = _make_enemy(finesse=8)
+        user.combat_proximity = {enemy: 15}
+        move = AimedShot(user)
+        move.target = enemy
+        with (
+            patch("moves._ranged.functions.check_parry", return_value=True),
+            patch.object(move, "parry") as mock_parry,
+            patch("moves._ranged.random.randint", return_value=0),
+            patch("moves._ranged.random.uniform", return_value=1.0),
+        ):
+            move.execute(user)
+        mock_parry.assert_called_once()
+
+
+class TestPinningBoltEdgeCases:
+    def test_viable_no_weapon_false(self):
+        """Line 811: viable False without eq_weapon."""
+        user = _make_crossbow_user()
+        user.eq_weapon = None
+        move = PinningBolt(user)
+        assert move.viable() is False
+
+    def test_viable_wrong_subtype_false(self):
+        """Line 813: viable False for non-Crossbow weapon."""
+        user = _make_crossbow_user()
+        user.eq_weapon.subtype = "Bow"
+        move = PinningBolt(user)
+        assert move.viable() is False
+
+    def test_viable_no_combat_proximity_false(self):
+        """Line 815: viable False without combat_proximity."""
+        user = _make_crossbow_user()
+        del user.combat_proximity
+        move = PinningBolt(user)
+        assert move.viable() is False
+
+    def test_get_effective_range_max_with_decay(self):
+        """Lines 821-823: get_effective_range_max is never called by execute();
+        exercise it directly."""
+        user = _make_crossbow_user()
+        move = PinningBolt(user)
+        expected = move.base_range + (100 / move.decay)
+        assert move.get_effective_range_max(user) == pytest.approx(expected)
+
+    def test_get_effective_range_max_no_decay_returns_none(self):
+        """Lines 821-823: no-decay branch returns None."""
+        user = _make_crossbow_user()
+        move = PinningBolt(user)
+        move.decay = 0
+        assert move.get_effective_range_max(user) is None
+
+
+class TestPinningBoltExecuteRealPath:
+    def test_execute_close_range_penalty_real_path(self):
+        """Line 875: close-range penalty halves hit_chance (real, non-mocked path)."""
+        user = _make_crossbow_user(finesse=10, intelligence=5)
+        enemy = _make_enemy(finesse=8)
+        enemy.states = []
+        distractor = MagicMock()
+        user.combat_proximity = {enemy: 15, distractor: 3}
+        move = PinningBolt(user)
+        move.target = enemy
+        with (
+            patch("moves._ranged.functions.check_parry", return_value=False),
+            patch("moves._ranged.random.randint", return_value=50),
+            patch("moves._ranged.random.uniform", return_value=1.0),
+        ):
+            move.execute(user)
+
+    def test_execute_distance_decay_floors_real_path(self):
+        """Lines 880-883: distance decay applied and floored (real viable path)."""
+        user = _make_crossbow_user(finesse=10, intelligence=5)
+        enemy = _make_enemy(finesse=8)
+        enemy.states = []
+        user.combat_proximity = {enemy: 35}
+        move = PinningBolt(user)
+        move.target = enemy
+        move.decay = 50
+        with (
+            patch("moves._ranged.functions.check_parry", return_value=False),
+            patch("moves._ranged.random.randint", return_value=50),
+            patch("moves._ranged.random.uniform", return_value=1.0),
+        ):
+            move.execute(user)
+
+    def test_execute_glancing_blow_deterministic(self):
+        """Lines 895-896: glancing blow via real (non-mocked) viable()."""
+        user = _make_crossbow_user(finesse=10, intelligence=5)
+        enemy = _make_enemy(finesse=8)
+        enemy.states = []
+        user.combat_proximity = {enemy: 15}
+        move = PinningBolt(user)
+        move.target = enemy
+        with (
+            patch("moves._ranged.functions.check_parry", return_value=False),
+            patch("moves._ranged.random.randint", return_value=90),
+            patch("moves._ranged.random.uniform", return_value=1.0),
+        ):
+            move.execute(user)
+
+    def test_execute_parry_path(self):
+        """Line 906: functions.check_parry True routes to self.parry()."""
+        user = _make_crossbow_user(finesse=10, intelligence=5)
+        enemy = _make_enemy(finesse=8)
+        enemy.states = []
+        user.combat_proximity = {enemy: 15}
+        move = PinningBolt(user)
+        move.target = enemy
+        with (
+            patch("moves._ranged.functions.check_parry", return_value=True),
+            patch.object(move, "parry") as mock_parry,
+            patch("moves._ranged.random.randint", return_value=0),
+            patch("moves._ranged.random.uniform", return_value=1.0),
+        ):
+            move.execute(user)
+        mock_parry.assert_called_once()
+
+    def test_execute_disoriented_append_exception_swallowed(self):
+        """Lines 919-920: exception raised while applying Disoriented is swallowed."""
+        user = _make_crossbow_user(finesse=10, intelligence=5)
+        enemy = _make_enemy(finesse=8)
+
+        class RaisingList(list):
+            def append(self, item):
+                raise RuntimeError("boom")
+
+        enemy.states = RaisingList()
+        enemy.is_alive = lambda: True
+        user.combat_proximity = {enemy: 15}
+        move = PinningBolt(user)
+        move.target = enemy
+        with (
+            patch("moves._ranged.functions.check_parry", return_value=False),
+            patch("moves._ranged.random.randint", return_value=0),
+            patch("moves._ranged.random.uniform", return_value=1.0),
+        ):
+            move.execute(user)  # should not raise despite append() failing
