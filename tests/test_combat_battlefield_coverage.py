@@ -1,9 +1,10 @@
 """
 Coverage tests for src/combat_battlefield.py (CombatBattlefieldWindow).
 
-This module is tkinter-based, but tkinter is NOT installed in the CI/dev
-environment used for this suite (see `_TKINTER_AVAILABLE` guard at the top of
-the module). To exercise the tkinter-dependent code paths (create_window,
+This module is tkinter-based, but tkinter may not be installed (and even
+where it is, there's no $DISPLAY) in the CI/dev environments used for this
+suite (see `_TKINTER_AVAILABLE` guard at the top of the module). To exercise
+the tkinter-dependent code paths (create_window,
 on_close, _render_initial_grid, update_display, _apply_grid_tags,
 _apply_color_tags) without a real display, these tests monkeypatch the
 module-level `tk` reference with a lightweight fake that mimics the small
@@ -102,9 +103,17 @@ def fake_tk_env():
 
 class TestCreateWindow:
     def test_returns_early_when_tkinter_unavailable(self):
-        """Real environment: tkinter isn't installed, so create_window is a no-op."""
-        window = CombatBattlefieldWindow()
-        window.create_window()
+        """When tkinter isn't importable, create_window is a no-op.
+
+        Forces the module's _TKINTER_AVAILABLE flag to False rather than
+        relying on the ambient environment actually lacking tkinter — CI
+        runners have tkinter installed (just no $DISPLAY), which would
+        otherwise let this test fall through to a real tk.Tk() call and
+        fail with TclError instead of exercising the guard clause.
+        """
+        with patch.object(battlefield_module, "_TKINTER_AVAILABLE", False):
+            window = CombatBattlefieldWindow()
+            window.create_window()
         assert window.window is None
         assert window.is_open is False
 

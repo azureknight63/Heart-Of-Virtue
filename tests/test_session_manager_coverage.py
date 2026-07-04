@@ -44,7 +44,7 @@ def _bare_manager(monkeypatch) -> SessionManager:
 
 
 @pytest.fixture
-def repo_root_ini(monkeypatch):
+def repo_root_ini(monkeypatch, worker_id):
     """Write a transient config file at the *real* repo root and point
     CONFIG_FILE at it via a relative filename.
 
@@ -57,8 +57,13 @@ def repo_root_ini(monkeypatch):
     actively edit for combat testing — asserting on its exact values would
     make this test break for reasons unrelated to session_manager), this
     fixture creates and tears down its own scratch file.
+
+    The filename embeds the xdist worker id: two tests in this module use
+    this fixture, and under `-n auto` they can land on different worker
+    processes and run concurrently. A shared filename would let one test's
+    write/unlink race the other's read, causing rare cross-worker failures.
     """
-    path = ROOT / "_pytest_session_manager_scratch.ini"
+    path = ROOT / f"_pytest_session_manager_scratch_{worker_id}.ini"
 
     def _write(content: str) -> Path:
         path.write_text(content)
