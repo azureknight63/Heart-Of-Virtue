@@ -18,6 +18,7 @@ from items import Item  # type: ignore
 
 from ._combat import NPCCombatMixin
 from ._loot import NPCLootMixin, loot
+from ._progression import AllyProgressionMixin
 from src.narration import narrate
 
 
@@ -126,7 +127,7 @@ class NPC(NPCCombatMixin, NPCLootMixin, Combatant):
         self.ai_config = None  # Initialized during combat
 
 
-class Friend(NPC):
+class Friend(AllyProgressionMixin, NPC):
     def __init__(
         self,
         name,
@@ -184,6 +185,10 @@ class Friend(NPC):
             friend=friend,
         )
         self.knocked_out = False  # True while sitting out a fight after being KO'd
+        # Ally progression (see _progression.py). Static growth; only classes
+        # that declare a growth_profile ever gain exp or level.
+        self.level = 1
+        self.exp = 0
 
     def wounded_flavor(self):
         """Return a one-line flavor string shown periodically when this ally is

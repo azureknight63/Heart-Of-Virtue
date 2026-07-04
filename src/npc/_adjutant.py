@@ -215,6 +215,70 @@ class TheAdjutant(Friend):
         ]
 
     # ------------------------------------------------------------------
+    # Party ally progression (see npc/_progression.py)
+    # ------------------------------------------------------------------
+
+    def _find_party_ally(self, player, name):
+        """Return the party ally matching an instance name or class name."""
+        for ally in getattr(player, "combat_list_allies", [])[1:]:
+            if getattr(ally, "name", None) == name or type(ally).__name__ == name:
+                return ally
+        return None
+
+    def ally_state(self, player):
+        """Return progression state for every party ally (excludes Jean)."""
+        allies = []
+        for ally in getattr(player, "combat_list_allies", [])[1:]:
+            allies.append(
+                {
+                    "name": getattr(ally, "name", "?"),
+                    "class": type(ally).__name__,
+                    "progression_enabled": bool(getattr(ally, "growth_profile", None)),
+                    "level": int(getattr(ally, "level", 1) or 1),
+                    "exp": int(getattr(ally, "exp", 0) or 0),
+                    "exp_to_level": int(getattr(ally, "exp_to_level", 0) or 0),
+                    "hp": int(getattr(ally, "hp", 0) or 0),
+                    "maxhp": int(getattr(ally, "maxhp", 0) or 0),
+                    "damage": int(getattr(ally, "damage", 0) or 0),
+                    "protection": int(getattr(ally, "protection", 0) or 0),
+                    "known_moves": [
+                        {
+                            "name": getattr(m, "name", "?"),
+                            "weight": int(getattr(m, "weight", 1) or 1),
+                        }
+                        for m in getattr(ally, "known_moves", [])
+                    ],
+                }
+            )
+        return {"success": True, "allies": allies}
+
+    def set_ally_progression(self, player, name, level=None, exp=None):
+        """Set a party ally's level and/or banked exp.
+
+        Level moves upward only (via sync_level — deterministic growth can't
+        be unwound; respawn the ally to reset).  Exp is set verbatim, which
+        lets tests prime an ally just below a level threshold.
+        """
+        ally = self._find_party_ally(player, name)
+        if ally is None:
+            return {"success": False, "error": f"No party ally named '{name}'."}
+        if level is not None:
+            if not hasattr(ally, "sync_level"):
+                return {
+                    "success": False,
+                    "error": f"'{name}' does not support progression.",
+                }
+            ally.sync_level(int(level))
+        if exp is not None:
+            ally.exp = max(0, int(exp))
+        return {
+            "success": True,
+            "name": getattr(ally, "name", "?"),
+            "level": int(getattr(ally, "level", 1) or 1),
+            "exp": int(getattr(ally, "exp", 0) or 0),
+        }
+
+    # ------------------------------------------------------------------
     # Arena combatant management
     # ------------------------------------------------------------------
 

@@ -24,6 +24,22 @@ import moves  # type: ignore
 class NPCCombatMixin:
     """Combat AI and engagement behaviour for NPC."""
 
+    def refresh_moves(self):
+        """Sync targeted moves to this NPC's current target, then filter by viability.
+
+        Move instances are long-lived on known_moves and many viable()
+        implementations read move.target — but the combat adapter only assigns
+        move.target *after* selection.  Without this sync, target-dependent
+        moves (Bull Charge, Flanking Maneuver) are never viable on first
+        selection and go stale between fights.
+        """
+        target = getattr(self, "target", None)
+        if target is not None and target is not self:
+            for move in self.known_moves:
+                if getattr(move, "targeted", False):
+                    move.target = target
+        return super().refresh_moves()
+
     def select_move(self):
         available_moves = self.refresh_moves()
 

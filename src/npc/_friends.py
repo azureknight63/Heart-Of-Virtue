@@ -122,6 +122,27 @@ class Mynx(MynxLLMMixin, Friend):
 
 
 class Gorran(Friend):  # The "rock-man" that helps Jean at the beginning of the game.
+    # Static per-level growth (see npc/_progression.py). Tank/bruiser: heavy
+    # HP and damage scaling, slowly hardening armor, forever slow on his feet.
+    growth_profile = {
+        "maxhp": 14,
+        "damage": 3,
+        "protection": 0.5,
+        "speed": 0.25,
+        "finesse": 0.5,
+        "maxfatigue": 5,
+    }
+    # Deterministic skill acquisition. Early levels deepen what he already
+    # does; Bull Charge is Jean-learnable and fits a charging rock-man.
+    # TODO(signature): design 2-3 signature moves with the user, e.g.
+    #   L9  "Seismic Slam"  — AoE ground slam, long recoil
+    #   L12 "Stone Bulwark" — brief party-wide protection buff
+    skill_schedule = {
+        3: [("WeightUp", "Parry", 3)],
+        5: [("NewMove", moves.BullCharge, 2)],
+        7: [("WeightUp", moves.GorranClub, 4)],
+    }
+
     def __init__(self):
         description = """
 A massive creature that somewhat resembles a man,
@@ -601,6 +622,27 @@ class Mara(HumanNPCLLMMixin, Friend):
     positioning, and tactical awareness. Fights with the same observant efficiency as
     she moves through the world.
     """
+
+    # Static per-level growth (see npc/_progression.py). Skirmisher: modest
+    # HP, sharp gains in speed and finesse — she survives by not being hit.
+    growth_profile = {
+        "maxhp": 6,
+        "damage": 2.5,
+        "protection": 0.5,
+        "speed": 0.75,
+        "finesse": 1,
+        "maxfatigue": 6,
+    }
+    # Early levels sharpen evasion and kiting; Tactical Retreat is
+    # Jean-learnable (Bow tree) and anchors her bow-mode range control.
+    # TODO(signature): design 2-3 signature moves with the user, e.g.
+    #   L9  "Marked Quarry" — she studies a target; party hits on it gain accuracy
+    #   L12 "Twin Fangs"    — instant bow shot + dagger slash on an adjacent foe
+    skill_schedule = {
+        3: [("WeightUp", "Dodge", 4)],
+        5: [("NewMove", moves.TacticalRetreat, 2)],
+        7: [("WeightUp", "Flanking Maneuver", 3)],
+    }
 
     def __init__(self):
         description = (

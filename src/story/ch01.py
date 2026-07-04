@@ -731,6 +731,7 @@ class Ch01PostRumbler3(Event):
         if gorran is None:
             gorran = self.tile.spawn_npc("Gorran", delay=0)
             self.player.combat_list_allies.append(gorran)
+        gorran.sync_level(getattr(self.player, "level", 1))
         gorran.in_combat = True
         gorran.reset_combat_moves()
 
@@ -857,6 +858,7 @@ class AfterGorranIntro(Event):
             if gorran.name == "Gorran":
                 self.player.combat_list_allies.append(gorran)
                 gorran.friend = True
+                gorran.sync_level(getattr(self.player, "level", 1))
                 # Reset moves if joining mid-combat
                 if self.player.in_combat:
                     gorran.reset_combat_moves()

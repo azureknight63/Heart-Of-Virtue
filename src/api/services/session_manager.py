@@ -751,6 +751,8 @@ class SessionManager:
                 )
                 continue
             ally.friend = True
+            if hasattr(ally, "sync_level"):
+                ally.sync_level(getattr(player, "level", 1))
             if ally not in player.combat_list_allies:
                 player.combat_list_allies.append(ally)
             if npc_type == "Gorran":
@@ -911,11 +913,12 @@ class SessionManager:
             # Apply starting equipment (equipped gear) from config
             self._apply_starting_equipment(player)
 
+            # Apply player stats from config BEFORE party members: allies
+            # level-sync to Jean on join, so his configured level must be set first.
+            self._apply_player_stats_from_config(player)
+
             # Apply starting party members (e.g. Gorran) from config
             self._apply_starting_party_members(player)
-
-            # Apply player stats from config if available
-            self._apply_player_stats_from_config(player)
 
             return player
         except Exception as e:
@@ -953,11 +956,12 @@ class SessionManager:
             # Apply starting equipment (equipped gear) from config
             self._apply_starting_equipment(player)
 
+            # Apply player stats from config BEFORE party members: allies
+            # level-sync to Jean on join, so his configured level must be set first.
+            self._apply_player_stats_from_config(player)
+
             # Apply starting party members (e.g. Gorran) from config
             self._apply_starting_party_members(player)
-
-            # Apply player stats from config if available
-            self._apply_player_stats_from_config(player)
 
             return player
 

@@ -1804,11 +1804,44 @@ class ApiCombatAdapter:
                     level_ups.extend(maybe_events)
                 self.player.combat_exp[subtype] = 0
 
+        # Ally progression: party members mirror the total exp Jean banked this
+        # fight (static, player-uncontrolled growth — see npc/_progression.py).
+        # KO'd allies keep their full share by design.
+        ally_progression: List[Dict[str, Any]] = []
+        total_gained = sum(exp_gained.values())
+        if total_gained > 0:
+            for ally in self.player.combat_list_allies[1:]:
+                try:
+                    if not getattr(ally, "growth_profile", None):
+                        continue
+                    ally_progression.extend(
+                        ally.gain_exp(total_gained, player_level=self.player.level)
+                    )
+                except Exception as e:
+                    logger.warning(
+                        "Ally progression failed for %s: %s",
+                        getattr(ally, "name", "?"),
+                        e,
+                    )
+
         victory_msg = "Victory! "
         if exp_summary:
             victory_msg += "Gained exp: " + ", ".join(exp_summary)
 
         self._add_log_entry(self.output_capture.current_round, victory_msg, "system")
+
+        for event in ally_progression:
+            self._add_log_entry(
+                self.output_capture.current_round,
+                f"{event['name']} reached level {event['new_level']}!",
+                "system",
+            )
+            for skill_name in event.get("skills_learned", []):
+                self._add_log_entry(
+                    self.output_capture.current_round,
+                    f"{event['name']} has learned {skill_name}!",
+                    "system",
+                )
 
         # Aggregate combat drops collected during the encounter (API mode)
         drops_raw = getattr(self.player, "combat_drops", []) or []
@@ -1856,6 +1889,7 @@ class ApiCombatAdapter:
             "exp_gained": exp_gained,
             "items_dropped": items_dropped,
             "level_ups": level_ups,
+            "ally_progression": ally_progression,
             "attribute_points_available": int(
                 getattr(self.player, "pending_attribute_points", 0) or 0
             ),

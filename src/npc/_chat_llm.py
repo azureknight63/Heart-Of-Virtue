@@ -412,12 +412,53 @@ class HumanNPCLLMMixin:
                 "Keep responses to 1-3 sentences."
             )
 
+        # Combat self-knowledge block (progressing allies only) — the chat is
+        # the sole surface for ally growth (no UI elements by design), so the
+        # NPC must be able to speak about its own techniques and experience.
+        combat_block = self._build_combat_knowledge_block()
+        if combat_block:
+            blocks.append(combat_block)
+
         # Jean instruction block
         blocks.append(
             "Jean is he/him. Do not write Jean's dialogue. Do not describe Jean's internal state."
         )
 
         return "\n\n".join(blocks)
+
+    def _build_combat_knowledge_block(self) -> str:
+        """Describe this ally's combat experience and techniques for the system prompt.
+
+        Empty string for NPCs without ally progression (no growth_profile) —
+        generic nomads and non-combat NPCs get no combat block.
+        """
+        if not getattr(self, "growth_profile", None):
+            return ""
+        level = int(getattr(self, "level", 1) or 1)
+        if level < 3:
+            tier = "a capable fighter, still early in the journey"
+        elif level < 7:
+            tier = "a seasoned fighter, noticeably hardened by recent battles"
+        elif level < 13:
+            tier = "a veteran of many battles at Jean's side"
+        else:
+            tier = "a master combatant, honed by long campaigning with Jean"
+        techniques = []
+        for m in getattr(self, "known_moves", []):
+            name = getattr(m, "name", "")
+            if name in ("NPC_Attack", "Idle", "Rest"):
+                continue  # internal/basic actions, not nameable techniques
+            desc = getattr(m, "description", "")
+            techniques.append(f"{name} ({desc})" if desc else name)
+        technique_text = "; ".join(techniques) if techniques else "none beyond basic fighting"
+        return (
+            f"COMBAT SELF-KNOWLEDGE: You fight alongside Jean and you are {tier}. "
+            f"Techniques you have mastered: {technique_text}. "
+            "If Jean asks about your combat abilities, how you have grown, or your "
+            "techniques, answer naturally from this list in your own voice. Never "
+            "use game terms like 'level', 'experience points', or 'stats' — speak "
+            "of your craft the way a fighter would."
+        )
 
     def _ensure_personality(self, player):
         """For generics: generate personality on first talk, or use fallback."""

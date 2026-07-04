@@ -1,7 +1,29 @@
 # Ally NPC Progression — Design Document
 
-**Status:** Proposed (not yet implemented)
+**Status:** Implemented (signature moves pending collaborative design)
 **Branch:** `claude/ally-npc-progression-eooks1`
+
+> Implementation notes (deltas from the original proposal below):
+> - **No UI surface.** Per user decision, ally growth is surfaced through the
+>   LLM ally chat instead of exp bars/level badges: progressing allies get a
+>   `COMBAT SELF-KNOWLEDGE` block in their chat system prompt
+>   (`HumanNPCLLMMixin._build_combat_knowledge_block`) so the player can ask
+>   them about their techniques in character. Combat-log lines
+>   ("Gorran reached level 5!", "Gorran has learned X!") still appear.
+> - **KO policy confirmed:** KO'd allies keep their full exp share.
+> - `NPCCombatMixin.refresh_moves()` now syncs targeted moves to the NPC's
+>   current target before viability filtering — fixes a latent bug where
+>   target-dependent moves (Bull Charge, Flanking Maneuver) were never viable
+>   at selection time and went stale between fights.
+> - Session setup ordering fix: `_apply_player_stats_from_config` now runs
+>   *before* `_apply_starting_party_members` so allies level-sync against
+>   Jean's configured level (found by the harness scenario).
+> - Signature moves are stubbed as `TODO(signature)` in the Gorran/Mara
+>   schedules — to be designed move-by-move with the user.
+> - Test surface: `tests/test_ally_progression.py` (unit),
+>   `tests/acceptance/ally-progression/` (config + run.sh), and the
+>   `ally_progression` bug-hunt scenario (debug endpoints
+>   `GET /api/debug/allies`, `POST /api/debug/allies/progression`).
 
 ## Goals
 
