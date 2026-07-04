@@ -75,7 +75,7 @@ class PowerStrike(Move):
         power_base = 25  # this is the default for determining the attack's power
         if hasattr(self.user, "damage"):
             power_base = self.user.damage
-        elif hasattr(self.user, "eq_weapon"):
+        elif getattr(self.user, "eq_weapon", None) is not None:
             self.weapon = self.user.eq_weapon
             if hasattr(self.user.eq_weapon, "damage"):
                 power_base = self.user.eq_weapon.damage
