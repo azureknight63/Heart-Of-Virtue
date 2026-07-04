@@ -1,6 +1,7 @@
 # Ensure src.functions is imported under its canonical package path so coverage hooks it.
 import sys, os, pathlib
 import builtins
+import time
 
 # Disable LLM and reduce delays for tests
 os.environ["MYNX_LLM_ENABLED"] = "0"
@@ -136,6 +137,11 @@ def pytest_configure(config):
     config.addinivalue_line(
         "markers", "integration: mark test as an integration test"
     )
+    config.addinivalue_line(
+        "markers",
+        "real_sleep: opt out of the autouse time.sleep no-op patch for tests "
+        "that genuinely need real timing",
+    )
 
     # Final consistency pass: ensure all src.* imports resolve to the same module as bare imports
     for key in list(sys.modules.keys()):
@@ -152,6 +158,32 @@ def pytest_configure(config):
 
 
 import pytest
+
+
+@pytest.fixture(autouse=True)
+def _no_real_sleep(request, monkeypatch):
+    """Globally no-op time.sleep for the duration of every test.
+
+    Many engine code paths (story narration pacing in src/story/*.py in
+    particular — ~145 time.sleep() calls across src/) use real sleeps for
+    dramatic timing during actual play. Only one narrow code path
+    (GameService._build_event_patches) patches time.sleep for tests that go
+    through it; tests that construct/call Event or move classes directly
+    bypass that harness and pay the real delay (previously several seconds
+    per test in some story/event test files). This fixture closes that gap
+    suite-wide instead of requiring every such test to remember to patch it.
+
+    Tests that genuinely need real timing can opt out with
+    @pytest.mark.real_sleep. A test's own `with patch("time.sleep")` (or
+    similar) still works normally — it just wraps this no-op for the
+    duration of its own `with` block, same as patching the real function.
+    """
+    if request.node.get_closest_marker("real_sleep"):
+        yield
+        return
+    monkeypatch.setattr(time, "sleep", lambda *args, **kwargs: None)
+    yield
+
 
 def isinstance_by_class_name(obj, *class_names):
     """

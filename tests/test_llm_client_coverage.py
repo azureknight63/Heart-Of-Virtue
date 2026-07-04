@@ -429,12 +429,22 @@ class TestDiscoverOpenrouterModel:
         assert GenericLLMClient._discovery_done is True
 
     def test_in_flight_lock_waits_and_returns(self, monkeypatch):
+        """Covers the "discovery already in-flight" branch: when
+        _discovery_event isn't set, the caller waits on it (timeout=20) and
+        returns rather than launching a duplicate discovery. Patches the
+        real threading.Event.wait so the test doesn't actually block for the
+        full 20s timeout (it previously did, making this the single slowest
+        test in the suite by a wide margin)."""
         monkeypatch.setenv("MYNX_LLM_ENABLED", "0")
         client = GenericLLMClient()
         client._openrouter_api_key = "key"
         GenericLLMClient._discovery_event.clear()
         try:
-            client._discover_openrouter_model()
+            with patch.object(
+                GenericLLMClient._discovery_event, "wait", return_value=True
+            ) as mock_wait:
+                client._discover_openrouter_model()
+            mock_wait.assert_called_once_with(timeout=20)
         finally:
             GenericLLMClient._discovery_event.set()
 
