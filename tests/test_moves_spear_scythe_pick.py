@@ -19,6 +19,7 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 import src.states as states
+import positions
 from src.moves._spear import (
     KeepAway,
     Lunge,
@@ -239,6 +240,109 @@ class TestKeepAway:
         # distance should have increased from 5
         assert user.combat_proximity[tgt] > 5
 
+    def test_execute_updates_facing_with_coordinates(self, monkeypatch):
+        """Coordinate-based facing update should point the user toward the target."""
+        user = _make_user("Spear")
+        tgt = _make_target(finesse=0, protection=0)
+        move = KeepAway(user)
+        move.target = tgt
+        move.power = 20
+        move.base_damage_type = "piercing"
+        user.combat_position = positions.CombatPosition(x=5, y=5, facing=positions.Direction.N)
+        tgt.combat_position = positions.CombatPosition(x=8, y=5, facing=positions.Direction.W)
+        user.combat_proximity = {tgt: 3}
+
+        monkeypatch.setattr(random, "randint", lambda a, b: 0)
+        monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
+        with patch("src.moves._spear.functions.check_parry", return_value=False), \
+             patch.object(move, "hit"), \
+             patch.object(move, "_push_target"), \
+             patch.object(move, "viable", return_value=True), \
+             patch("src.moves._spear.cprint"), \
+             patch("src.moves._spear.colored", side_effect=lambda t, *a, **k: t):
+            move.execute(user)
+
+        assert user.combat_position.facing.name == "E"
+
+    def test_execute_glancing_blow(self, monkeypatch):
+        user = _make_user("Spear")
+        tgt = _make_target(finesse=0, protection=0)
+        move = KeepAway(user)
+        move.target = tgt
+        move.power = 40
+        move.base_damage_type = "piercing"
+
+        monkeypatch.setattr(random, "randint", lambda a, b: 100)
+        monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
+        with patch("src.moves._spear.functions.check_parry", return_value=False), \
+             patch.object(move, "hit") as mock_hit, \
+             patch.object(move, "_push_target"), \
+             patch.object(move, "viable", return_value=True), \
+             patch("src.moves._spear.cprint"), \
+             patch("src.moves._spear.colored", side_effect=lambda t, *a, **k: t):
+            move.execute(user)
+
+        args, _ = mock_hit.call_args
+        assert args[1] is True  # glance flag set
+
+    def test_execute_fatigue_floor_at_zero(self, monkeypatch):
+        user = _make_user("Spear")
+        tgt = _make_target()
+        move = KeepAway(user)
+        move.target = tgt
+        move.power = 5
+        move.base_damage_type = "piercing"
+        move.fatigue_cost = 999
+        user.fatigue = 10
+
+        monkeypatch.setattr(random, "randint", lambda a, b: 100)
+        monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
+        with patch("src.moves._spear.functions.check_parry", return_value=False), \
+             patch.object(move, "miss"), \
+             patch.object(move, "viable", return_value=False), \
+             patch("src.moves._spear.cprint"), \
+             patch("src.moves._spear.colored", side_effect=lambda t, *a, **k: t):
+            move.execute(user)
+
+        assert user.fatigue == 0
+
+    def test_push_target_coordinate_path(self):
+        """_push_target should relocate the target and refresh both proximity dicts
+        when coordinate positions are available."""
+        user = _make_user("Spear")
+        tgt = _make_target()
+        move = KeepAway(user)
+        move.target = tgt
+        user.combat_position = positions.CombatPosition(x=5, y=5, facing=positions.Direction.N)
+        tgt.combat_position = positions.CombatPosition(x=5, y=8, facing=positions.Direction.S)
+        user.combat_list = [user, tgt]
+        user.combat_list_allies = []
+        user.combat_proximity = {tgt: 3}
+        tgt.combat_proximity = {user: 3}
+
+        with patch("src.moves._spear.cprint"):
+            move._push_target(user)
+
+        # Target should have moved away from its original position
+        assert (tgt.combat_position.x, tgt.combat_position.y) != (5, 8)
+        assert user.combat_proximity[tgt] == tgt.combat_proximity[user]
+
+    def test_push_target_exception_is_silently_caught(self):
+        """Any exception raised while pushing the target should not propagate."""
+        user = _make_user("Spear")
+        tgt = _make_target()
+        move = KeepAway(user)
+        move.target = tgt
+        user.combat_position = positions.CombatPosition(x=5, y=5, facing=positions.Direction.N)
+        tgt.combat_position = positions.CombatPosition(x=5, y=8, facing=positions.Direction.S)
+        user.combat_proximity = {tgt: 3}
+
+        with patch(
+            "src.moves._spear.positions.move_away_constrained",
+            side_effect=Exception("boom"),
+        ), patch("src.moves._spear.cprint"):
+            move._push_target(user)  # should not raise
+
 
 class TestLunge:
     def test_init_name(self):
@@ -316,6 +420,129 @@ class TestLunge:
         # proximity should have decreased (lunge moves user toward target)
         assert user.combat_proximity[tgt] < 10
 
+    def test_viable_false_no_weapon_with_proximity(self):
+        """combat_proximity present but no equipped weapon."""
+        user = _make_user("Spear", equip=False)
+        tgt = _make_target()
+        user.combat_proximity = {tgt: 8}
+        move = Lunge(user)
+        assert move.viable() is False
+
+    def test_evaluate_no_weapon_sets_fallback(self):
+        user = _make_user("Spear", equip=False)
+        move = Lunge(user)
+        assert move.power == 0
+        assert move.fatigue_cost == 10
+        assert move.stage_beat == [1, 2, 2, 4]
+
+    def test_execute_coordinate_step_toward_target(self, monkeypatch):
+        user = _make_user("Spear")
+        tgt = _make_target(finesse=0, protection=0)
+        move = Lunge(user)
+        move.target = tgt
+        move.power = 30
+        move.base_damage_type = "piercing"
+        user.combat_position = positions.CombatPosition(x=0, y=0, facing=positions.Direction.N)
+        tgt.combat_position = positions.CombatPosition(x=10, y=0, facing=positions.Direction.S)
+        user.combat_list = [user, tgt]
+        user.combat_list_allies = []
+        user.combat_proximity = {tgt: 10}
+
+        monkeypatch.setattr(random, "randint", lambda a, b: 0)
+        monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
+        with patch("src.moves._spear.functions.check_parry", return_value=False), \
+             patch.object(move, "hit") as mock_hit, \
+             patch.object(move, "viable", return_value=True), \
+             patch("src.moves._spear.cprint"), \
+             patch("src.moves._spear.colored", side_effect=lambda t, *a, **k: t):
+            move.execute(user)
+
+        # Moved 3 units toward the target (x: 0 -> 3)
+        assert user.combat_position.x == 3
+        mock_hit.assert_called_once()
+
+    def test_execute_movement_exception_is_caught(self, monkeypatch):
+        user = _make_user("Spear")
+        tgt = _make_target(finesse=0, protection=0)
+        move = Lunge(user)
+        move.target = tgt
+        move.power = 30
+        move.base_damage_type = "piercing"
+        user.combat_position = positions.CombatPosition(x=0, y=0)
+        tgt.combat_position = positions.CombatPosition(x=10, y=0)
+        user.combat_proximity = {tgt: 10}
+
+        monkeypatch.setattr(random, "randint", lambda a, b: 100)
+        monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
+        with patch(
+            "src.moves._spear.positions.move_toward_constrained",
+            side_effect=Exception("boom"),
+        ), patch("src.moves._spear.functions.check_parry", return_value=False), \
+             patch.object(move, "miss"), \
+             patch.object(move, "viable", return_value=False), \
+             patch("src.moves._spear.cprint"), \
+             patch("src.moves._spear.colored", side_effect=lambda t, *a, **k: t):
+            move.execute(user)  # should not raise
+
+    def test_execute_glancing_blow(self, monkeypatch):
+        user = _make_user("Spear")
+        tgt = _make_target(finesse=0, protection=0)
+        move = Lunge(user)
+        move.target = tgt
+        move.power = 40
+        move.base_damage_type = "piercing"
+
+        monkeypatch.setattr(random, "randint", lambda a, b: 100)
+        monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
+        with patch("src.moves._spear.functions.check_parry", return_value=False), \
+             patch.object(move, "hit") as mock_hit, \
+             patch.object(move, "viable", return_value=True), \
+             patch("src.moves._spear.cprint"), \
+             patch("src.moves._spear.colored", side_effect=lambda t, *a, **k: t):
+            move.execute(user)
+
+        args, _ = mock_hit.call_args
+        assert args[1] is True
+
+    def test_execute_parry(self, monkeypatch):
+        user = _make_user("Spear")
+        tgt = _make_target(finesse=0, protection=0)
+        move = Lunge(user)
+        move.target = tgt
+        move.power = 40
+        move.base_damage_type = "piercing"
+
+        monkeypatch.setattr(random, "randint", lambda a, b: 0)
+        monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
+        with patch("src.moves._spear.functions.check_parry", return_value=True), \
+             patch.object(move, "parry") as mock_parry, \
+             patch.object(move, "viable", return_value=True), \
+             patch("src.moves._spear.cprint"), \
+             patch("src.moves._spear.colored", side_effect=lambda t, *a, **k: t):
+            move.execute(user)
+        mock_parry.assert_called_once()
+
+    def test_execute_fatigue_floor_at_zero(self, monkeypatch):
+        user = _make_user("Spear")
+        tgt = _make_target()
+        move = Lunge(user)
+        move.target = tgt
+        move.power = 5
+        move.base_damage_type = "piercing"
+        move.fatigue_cost = 999
+        user.fatigue = 10
+
+        monkeypatch.setattr(random, "randint", lambda a, b: 100)
+        monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
+        with patch("src.moves._spear.functions.check_parry", return_value=False), \
+             patch.object(move, "miss"), \
+             patch.object(move, "viable", return_value=False), \
+             patch("src.moves._spear.cprint"), \
+             patch("src.moves._spear.colored", side_effect=lambda t, *a, **k: t):
+            move.execute(user)
+
+        assert user.fatigue == 0
+
 
 class TestImpale:
     def test_init_name(self):
@@ -374,6 +601,106 @@ class TestImpale:
         assert len(hits) == 1
         assert hits[0] == 10
 
+    def test_execute_updates_facing_with_coordinates(self, monkeypatch):
+        user = _make_user("Spear")
+        tgt = _make_target(finesse=0, protection=0)
+        move = Impale(user)
+        move.target = tgt
+        move.power = 30
+        move.base_damage_type = "piercing"
+        user.combat_position = positions.CombatPosition(x=5, y=5, facing=positions.Direction.N)
+        tgt.combat_position = positions.CombatPosition(x=8, y=5, facing=positions.Direction.W)
+
+        monkeypatch.setattr(random, "randint", lambda a, b: 0)
+        monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
+        with patch("src.moves._spear.functions.check_parry", return_value=False), \
+             patch.object(move, "hit"), \
+             patch.object(move, "viable", return_value=True), \
+             patch("src.moves._spear.cprint"), \
+             patch("src.moves._spear.colored", side_effect=lambda t, *a, **k: t):
+            move.execute(user)
+
+        assert user.combat_position.facing.name == "E"
+
+    def test_execute_not_viable_causes_miss(self, monkeypatch):
+        user = _make_user("Spear")
+        tgt = _make_target(finesse=0, protection=0)
+        move = Impale(user)
+        move.target = tgt
+        move.power = 30
+        move.base_damage_type = "piercing"
+
+        monkeypatch.setattr(random, "randint", lambda a, b: 0)
+        monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
+        with patch("src.moves._spear.functions.check_parry", return_value=False), \
+             patch.object(move, "miss") as mock_miss, \
+             patch.object(move, "viable", return_value=False), \
+             patch("src.moves._spear.cprint"), \
+             patch("src.moves._spear.colored", side_effect=lambda t, *a, **k: t):
+            move.execute(user)
+
+        mock_miss.assert_called_once()
+
+    def test_execute_glancing_blow(self, monkeypatch):
+        user = _make_user("Spear")
+        tgt = _make_target(finesse=0, protection=0)
+        move = Impale(user)
+        move.target = tgt
+        move.power = 40
+        move.base_damage_type = "piercing"
+
+        monkeypatch.setattr(random, "randint", lambda a, b: 100)
+        monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
+        with patch("src.moves._spear.functions.check_parry", return_value=False), \
+             patch.object(move, "hit") as mock_hit, \
+             patch.object(move, "viable", return_value=True), \
+             patch("src.moves._spear.cprint"), \
+             patch("src.moves._spear.colored", side_effect=lambda t, *a, **k: t):
+            move.execute(user)
+
+        args, _ = mock_hit.call_args
+        assert args[1] is True
+
+    def test_execute_parry(self, monkeypatch):
+        user = _make_user("Spear")
+        tgt = _make_target(finesse=0, protection=0)
+        move = Impale(user)
+        move.target = tgt
+        move.power = 40
+        move.base_damage_type = "piercing"
+
+        monkeypatch.setattr(random, "randint", lambda a, b: 0)
+        monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
+        with patch("src.moves._spear.functions.check_parry", return_value=True), \
+             patch.object(move, "parry") as mock_parry, \
+             patch.object(move, "viable", return_value=True), \
+             patch("src.moves._spear.cprint"), \
+             patch("src.moves._spear.colored", side_effect=lambda t, *a, **k: t):
+            move.execute(user)
+
+        mock_parry.assert_called_once()
+
+    def test_execute_fatigue_floor_at_zero(self, monkeypatch):
+        user = _make_user("Spear")
+        tgt = _make_target()
+        move = Impale(user)
+        move.target = tgt
+        move.power = 5
+        move.base_damage_type = "piercing"
+        move.fatigue_cost = 999
+        user.fatigue = 10
+
+        monkeypatch.setattr(random, "randint", lambda a, b: 100)
+        monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
+        with patch("src.moves._spear.functions.check_parry", return_value=False), \
+             patch.object(move, "miss"), \
+             patch.object(move, "viable", return_value=False), \
+             patch("src.moves._spear.cprint"), \
+             patch("src.moves._spear.colored", side_effect=lambda t, *a, **k: t):
+            move.execute(user)
+
+        assert user.fatigue == 0
+
 
 class TestArmorPierce:
     def test_init_name(self):
@@ -425,6 +752,128 @@ class TestArmorPierce:
         # damage = power * resistance (no protection subtracted)
         assert len(hits) == 1
         assert hits[0] == 30
+
+    def test_viable_false_no_weapon(self):
+        user = _make_user("Pick", equip=False)
+        move = ArmorPierce(user)
+        assert move.viable() is False
+
+    def test_evaluate_no_weapon_sets_defaults(self):
+        user = _make_user("Pick", equip=False)
+        move = ArmorPierce(user)
+        assert move.power == 0
+        assert move.stage_beat == [1, 1, 2, 3]
+        assert move.fatigue_cost == 10
+
+    def test_execute_updates_facing_with_coordinates(self, monkeypatch):
+        user = _make_user("Pick")
+        user.eq_weapon.subtype = "Pick"
+        user.combat_exp["Pick"] = 0
+        tgt = _make_target(finesse=0, protection=0)
+        move = ArmorPierce(user)
+        move.target = tgt
+        move.power = 30
+        move.base_damage_type = "piercing"
+        user.combat_position = positions.CombatPosition(x=5, y=5, facing=positions.Direction.N)
+        tgt.combat_position = positions.CombatPosition(x=8, y=5, facing=positions.Direction.W)
+
+        monkeypatch.setattr(random, "randint", lambda a, b: 0)
+        monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
+        with patch("src.moves._spear.functions.check_parry", return_value=False), \
+             patch.object(move, "hit"), \
+             patch.object(move, "viable", return_value=True), \
+             patch("src.moves._spear.cprint"), \
+             patch("src.moves._spear.colored", side_effect=lambda t, *a, **k: t):
+            move.execute(user)
+
+        assert user.combat_position.facing.name == "E"
+
+    def test_execute_not_viable_causes_miss(self, monkeypatch):
+        user = _make_user("Pick")
+        user.eq_weapon.subtype = "Pick"
+        user.combat_exp["Pick"] = 0
+        tgt = _make_target(finesse=0, protection=0)
+        move = ArmorPierce(user)
+        move.target = tgt
+        move.power = 30
+        move.base_damage_type = "piercing"
+
+        monkeypatch.setattr(random, "randint", lambda a, b: 0)
+        monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
+        with patch("src.moves._spear.functions.check_parry", return_value=False), \
+             patch.object(move, "miss") as mock_miss, \
+             patch.object(move, "viable", return_value=False), \
+             patch("src.moves._spear.cprint"), \
+             patch("src.moves._spear.colored", side_effect=lambda t, *a, **k: t):
+            move.execute(user)
+
+        mock_miss.assert_called_once()
+
+    def test_execute_glancing_blow(self, monkeypatch):
+        user = _make_user("Pick")
+        user.eq_weapon.subtype = "Pick"
+        user.combat_exp["Pick"] = 0
+        tgt = _make_target(finesse=0, protection=0)
+        move = ArmorPierce(user)
+        move.target = tgt
+        move.power = 40
+        move.base_damage_type = "piercing"
+
+        monkeypatch.setattr(random, "randint", lambda a, b: 100)
+        monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
+        with patch("src.moves._spear.functions.check_parry", return_value=False), \
+             patch.object(move, "hit") as mock_hit, \
+             patch.object(move, "viable", return_value=True), \
+             patch("src.moves._spear.cprint"), \
+             patch("src.moves._spear.colored", side_effect=lambda t, *a, **k: t):
+            move.execute(user)
+
+        args, _ = mock_hit.call_args
+        assert args[1] is True
+
+    def test_execute_parry(self, monkeypatch):
+        user = _make_user("Pick")
+        user.eq_weapon.subtype = "Pick"
+        user.combat_exp["Pick"] = 0
+        tgt = _make_target(finesse=0, protection=0)
+        move = ArmorPierce(user)
+        move.target = tgt
+        move.power = 40
+        move.base_damage_type = "piercing"
+
+        monkeypatch.setattr(random, "randint", lambda a, b: 0)
+        monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
+        with patch("src.moves._spear.functions.check_parry", return_value=True), \
+             patch.object(move, "parry") as mock_parry, \
+             patch.object(move, "viable", return_value=True), \
+             patch("src.moves._spear.cprint"), \
+             patch("src.moves._spear.colored", side_effect=lambda t, *a, **k: t):
+            move.execute(user)
+
+        mock_parry.assert_called_once()
+
+    def test_execute_fatigue_floor_at_zero(self, monkeypatch):
+        user = _make_user("Pick")
+        user.eq_weapon.subtype = "Pick"
+        user.combat_exp["Pick"] = 0
+        tgt = _make_target()
+        move = ArmorPierce(user)
+        move.target = tgt
+        move.power = 5
+        move.base_damage_type = "piercing"
+        move.fatigue_cost = 999
+        user.fatigue = 10
+
+        monkeypatch.setattr(random, "randint", lambda a, b: 100)
+        monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
+        with patch("src.moves._spear.functions.check_parry", return_value=False), \
+             patch.object(move, "miss"), \
+             patch.object(move, "viable", return_value=False), \
+             patch("src.moves._spear.cprint"), \
+             patch("src.moves._spear.colored", side_effect=lambda t, *a, **k: t):
+            move.execute(user)
+
+        assert user.fatigue == 0
 
 
 class TestSentinelsVigil:
@@ -544,6 +993,178 @@ class TestReap:
 
         assert user.fatigue == 45
 
+    def test_viable_false_no_combat_proximity_attr(self):
+        user = _make_user("Scythe")
+        del user.combat_proximity
+        move = Reap(user)
+        assert move.viable() is False
+
+    def test_evaluate_exception_sets_power_to_one(self):
+        user = _make_user("Scythe")
+        move = Reap(user)
+        user.strength = "abc"  # triggers TypeError in the arithmetic
+        move.evaluate()
+        assert move.power == 1
+
+    def test_prep_prints_message(self):
+        user = _make_user("Scythe")
+        move = Reap(user)
+        with patch("src.moves._scythe.cprint") as mock_cprint:
+            move.prep(user)
+        mock_cprint.assert_called_once()
+
+    def test_execute_frontal_hit_with_coordinates(self, monkeypatch):
+        """Enemy directly ahead within the frontal hemisphere should be struck."""
+        user = _make_user("Scythe")
+        user.eq_weapon.wpnrange = (0, 10)
+        tgt = _make_target(hp=100, finesse=0, protection=0)
+        user.combat_position = positions.CombatPosition(x=5, y=5, facing=positions.Direction.E)
+        tgt.combat_position = positions.CombatPosition(x=8, y=5, facing=positions.Direction.W)
+        user.combat_proximity = {tgt: 3}
+        move = Reap(user)
+        move.power = 20
+
+        monkeypatch.setattr(random, "randint", lambda a, b: 0)
+        with patch("src.moves._scythe.functions.check_parry", return_value=False), \
+             patch("src.moves._scythe.cprint"):
+            move.execute(user)
+
+        assert tgt.hp < 100
+
+    def test_execute_skips_enemy_beyond_arc_range_with_coordinates(self, monkeypatch):
+        user = _make_user("Scythe")
+        user.eq_weapon.wpnrange = (0, 10)
+        tgt = _make_target(hp=100)
+        user.combat_position = positions.CombatPosition(x=0, y=0, facing=positions.Direction.E)
+        tgt.combat_position = positions.CombatPosition(x=45, y=45, facing=positions.Direction.W)
+        user.combat_proximity = {tgt: 5}
+        move = Reap(user)
+        move.power = 20
+
+        monkeypatch.setattr(random, "randint", lambda a, b: 0)
+        with patch("src.moves._scythe.functions.check_parry", return_value=False), \
+             patch("src.moves._scythe.cprint"):
+            move.execute(user)
+
+        assert tgt.hp == 100  # far outside arc range
+
+    def test_execute_skips_enemy_outside_frontal_hemisphere(self, monkeypatch):
+        """Enemy behind the user (outside the 90 degree frontal arc) is skipped."""
+        user = _make_user("Scythe")
+        user.eq_weapon.wpnrange = (0, 10)
+        tgt = _make_target(hp=100)
+        user.combat_position = positions.CombatPosition(x=5, y=5, facing=positions.Direction.E)
+        tgt.combat_position = positions.CombatPosition(x=2, y=5, facing=positions.Direction.E)
+        user.combat_proximity = {tgt: 3}
+        move = Reap(user)
+        move.power = 20
+
+        monkeypatch.setattr(random, "randint", lambda a, b: 0)
+        with patch("src.moves._scythe.functions.check_parry", return_value=False), \
+             patch("src.moves._scythe.cprint"):
+            move.execute(user)
+
+        assert tgt.hp == 100  # behind the user, outside frontal hemisphere
+
+    def test_execute_angle_calc_exception_falls_through_to_hit(self, monkeypatch):
+        """If the angle helpers raise, the code should swallow it and still resolve the hit."""
+        user = _make_user("Scythe")
+        user.eq_weapon.wpnrange = (0, 10)
+        tgt = _make_target(hp=100, finesse=0, protection=0)
+        user.combat_position = positions.CombatPosition(x=5, y=5, facing=positions.Direction.E)
+        tgt.combat_position = positions.CombatPosition(x=8, y=5, facing=positions.Direction.W)
+        user.combat_proximity = {tgt: 3}
+        move = Reap(user)
+        move.power = 20
+
+        monkeypatch.setattr(random, "randint", lambda a, b: 0)
+        with patch(
+            "src.moves._scythe.positions.angle_to_target", side_effect=Exception("boom")
+        ), patch("src.moves._scythe.functions.check_parry", return_value=False), \
+             patch("src.moves._scythe.cprint"):
+            move.execute(user)
+
+        assert tgt.hp < 100
+
+    def test_execute_skips_enemy_out_of_arc_range_legacy(self, monkeypatch):
+        """No coordinates: legacy proximity distance out of arc range is skipped."""
+        user = _make_user("Scythe")
+        user.eq_weapon.wpnrange = (0, 10)
+        tgt = _make_target(hp=100)
+        user.combat_proximity = {tgt: 50}
+        move = Reap(user)
+        move.power = 20
+
+        monkeypatch.setattr(random, "randint", lambda a, b: 0)
+        with patch("src.moves._scythe.functions.check_parry", return_value=False), \
+             patch("src.moves._scythe.cprint"):
+            move.execute(user)
+
+        assert tgt.hp == 100
+
+    def test_execute_grim_persistence_bonus_damage(self, monkeypatch):
+        user = _make_user("Scythe")
+        user.eq_weapon.wpnrange = (0, 10)
+        user.known_moves = [GrimPersistence(user)]
+        tgt = _make_target(hp=20, finesse=0, protection=0)
+        tgt.maxhp = 100
+        user.combat_proximity = {tgt: 5}
+        move = Reap(user)
+        move.power = 20
+
+        monkeypatch.setattr(random, "randint", lambda a, b: 0)
+        with patch("src.moves._scythe.functions.check_parry", return_value=False), \
+             patch("src.moves._scythe.cprint"):
+            move.execute(user)
+
+        assert tgt.hp < 20  # bonus damage vs low-hp target
+
+    def test_execute_reapers_mark_bonus_and_consumption(self, monkeypatch):
+        user = _make_user("Scythe")
+        user.eq_weapon.wpnrange = (0, 10)
+        tgt = _make_target(hp=100, finesse=0, protection=0)
+        tgt._reapers_mark = True
+        user.combat_proximity = {tgt: 5}
+        move = Reap(user)
+        move.power = 20
+
+        monkeypatch.setattr(random, "randint", lambda a, b: 0)
+        with patch("src.moves._scythe.functions.check_parry", return_value=False), \
+             patch("src.moves._scythe.cprint"):
+            move.execute(user)
+
+        assert tgt._reapers_mark is False
+        assert tgt.hp < 100
+
+    def test_execute_enemy_parries_sweep(self, monkeypatch):
+        user = _make_user("Scythe")
+        user.eq_weapon.wpnrange = (0, 10)
+        tgt = _make_target(hp=100, finesse=0, protection=0)
+        user.combat_proximity = {tgt: 5}
+        move = Reap(user)
+        move.power = 20
+
+        monkeypatch.setattr(random, "randint", lambda a, b: 0)
+        with patch("src.moves._scythe.functions.check_parry", return_value=True), \
+             patch("src.moves._scythe.cprint") as mock_cprint:
+            move.execute(user)
+
+        assert tgt.hp == 100  # parried, no damage
+        assert any("parried" in str(c.args[0]) for c in mock_cprint.call_args_list)
+
+    def test_execute_fatigue_floor_at_zero(self, monkeypatch):
+        user = _make_user("Scythe")
+        user.combat_proximity = {}
+        move = Reap(user)
+        move.fatigue_cost = 999
+        user.fatigue = 10
+
+        monkeypatch.setattr(random, "randint", lambda a, b: 100)
+        with patch("src.moves._scythe.cprint"):
+            move.execute(user)
+
+        assert user.fatigue == 0
+
 
 class TestReapersMark:
     def test_init_name(self):
@@ -601,6 +1222,24 @@ class TestReapersMark:
             move.execute(user)
 
         assert not getattr(tgt, "_reapers_mark", False)
+
+    def test_viable_false_no_combat_proximity_attr(self):
+        user = _make_user("Scythe")
+        del user.combat_proximity
+        move = ReapersMark(user)
+        assert move.viable() is False
+
+    def test_execute_fatigue_floor_at_zero(self):
+        user = _make_user("Scythe")
+        move = ReapersMark(user)
+        move.target = None
+        move.fatigue_cost = 999
+        user.fatigue = 10
+
+        with patch("src.moves._scythe.cprint"):
+            move.execute(user)
+
+        assert user.fatigue == 0
 
 
 class TestDeathsHarvest:
@@ -670,6 +1309,143 @@ class TestDeathsHarvest:
             move.execute(user)
 
         assert user.hp == 50  # no healing on miss
+
+    def test_viable_false_no_weapon(self):
+        user = _make_user("Scythe", equip=False)
+        move = DeathsHarvest(user)
+        assert move.viable() is False
+
+    def test_evaluate_no_weapon_sets_defaults(self):
+        user = _make_user("Scythe", equip=False)
+        move = DeathsHarvest(user)
+        assert move.power == 0
+        assert move.stage_beat == [2, 1, 3, 5]
+        assert move.fatigue_cost == 10
+
+    def test_execute_updates_facing_with_coordinates(self, monkeypatch):
+        user = _make_user("Scythe")
+        tgt = _make_target(finesse=0, protection=0)
+        move = DeathsHarvest(user)
+        move.target = tgt
+        move.power = 20
+        move.base_damage_type = "slashing"
+        user.combat_position = positions.CombatPosition(x=5, y=5, facing=positions.Direction.N)
+        tgt.combat_position = positions.CombatPosition(x=8, y=5, facing=positions.Direction.W)
+
+        monkeypatch.setattr(random, "randint", lambda a, b: 0)
+        monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
+        with patch("src.moves._scythe.functions.check_parry", return_value=False), \
+             patch.object(move, "hit"), \
+             patch.object(move, "viable", return_value=True), \
+             patch("src.moves._scythe.cprint"), \
+             patch("src.moves._scythe.colored", side_effect=lambda t, *a, **k: t):
+            move.execute(user)
+
+        assert user.combat_position.facing.name == "E"
+
+    def test_execute_glancing_blow(self, monkeypatch):
+        user = _make_user("Scythe")
+        tgt = _make_target(finesse=0, protection=0)
+        move = DeathsHarvest(user)
+        move.target = tgt
+        move.power = 40
+        move.base_damage_type = "slashing"
+
+        monkeypatch.setattr(random, "randint", lambda a, b: 100)
+        monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
+        with patch("src.moves._scythe.functions.check_parry", return_value=False), \
+             patch.object(move, "hit") as mock_hit, \
+             patch.object(move, "viable", return_value=True), \
+             patch("src.moves._scythe.cprint"), \
+             patch("src.moves._scythe.colored", side_effect=lambda t, *a, **k: t):
+            move.execute(user)
+
+        args, _ = mock_hit.call_args
+        assert args[1] is True
+
+    def test_execute_grim_persistence_bonus_damage(self, monkeypatch):
+        user = _make_user("Scythe")
+        user.known_moves = [GrimPersistence(user)]
+        tgt = _make_target(hp=20, finesse=0, protection=0)
+        tgt.maxhp = 100
+        user.hp = 50
+        user.maxhp = 100
+        move = DeathsHarvest(user)
+        move.target = tgt
+        move.power = 100
+        move.base_damage_type = "slashing"
+
+        monkeypatch.setattr(random, "randint", lambda a, b: 0)
+        monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
+        with patch("src.moves._scythe.functions.check_parry", return_value=False), \
+             patch.object(move, "hit"), \
+             patch.object(move, "viable", return_value=True), \
+             patch("src.moves._scythe.cprint"), \
+             patch("src.moves._scythe.colored", side_effect=lambda t, *a, **k: t):
+            move.execute(user)
+
+        # damage=100 -> *1.25 (Grim Persistence) = 125 -> heal 30% = 37
+        assert user.hp == 87
+
+    def test_execute_reapers_mark_bonus_damage_and_consumption(self, monkeypatch):
+        user = _make_user("Scythe")
+        tgt = _make_target(finesse=0, protection=0)
+        tgt._reapers_mark = True
+        move = DeathsHarvest(user)
+        move.target = tgt
+        move.power = 40
+        move.base_damage_type = "slashing"
+
+        monkeypatch.setattr(random, "randint", lambda a, b: 0)
+        monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
+        with patch("src.moves._scythe.functions.check_parry", return_value=False), \
+             patch.object(move, "hit"), \
+             patch.object(move, "viable", return_value=True), \
+             patch("src.moves._scythe.cprint"), \
+             patch("src.moves._scythe.colored", side_effect=lambda t, *a, **k: t):
+            move.execute(user)
+
+        assert tgt._reapers_mark is False
+
+    def test_execute_parry(self, monkeypatch):
+        user = _make_user("Scythe")
+        tgt = _make_target(finesse=0, protection=0)
+        move = DeathsHarvest(user)
+        move.target = tgt
+        move.power = 40
+        move.base_damage_type = "slashing"
+
+        monkeypatch.setattr(random, "randint", lambda a, b: 0)
+        monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
+        with patch("src.moves._scythe.functions.check_parry", return_value=True), \
+             patch.object(move, "parry") as mock_parry, \
+             patch.object(move, "viable", return_value=True), \
+             patch("src.moves._scythe.cprint"), \
+             patch("src.moves._scythe.colored", side_effect=lambda t, *a, **k: t):
+            move.execute(user)
+
+        mock_parry.assert_called_once()
+
+    def test_execute_fatigue_floor_at_zero(self, monkeypatch):
+        user = _make_user("Scythe")
+        tgt = _make_target()
+        move = DeathsHarvest(user)
+        move.target = tgt
+        move.power = 5
+        move.base_damage_type = "slashing"
+        move.fatigue_cost = 999
+        user.fatigue = 10
+
+        monkeypatch.setattr(random, "randint", lambda a, b: 100)
+        monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
+        with patch("src.moves._scythe.functions.check_parry", return_value=False), \
+             patch.object(move, "miss"), \
+             patch.object(move, "viable", return_value=False), \
+             patch("src.moves._scythe.cprint"), \
+             patch("src.moves._scythe.colored", side_effect=lambda t, *a, **k: t):
+            move.execute(user)
+
+        assert user.fatigue == 0
 
 
 class TestScythePassives:
@@ -799,6 +1575,77 @@ class TestChipAway:
 
         assert user.fatigue == 80
 
+    def test_prep_prints_message(self):
+        user = _make_user("Pick")
+        move = ChipAway(user)
+        with patch("src.moves._pick.cprint") as mock_cprint:
+            move.prep(user)
+        mock_cprint.assert_called_once()
+
+    def test_execute_updates_facing_with_coordinates(self, monkeypatch):
+        user = _make_user("Pick")
+        user.eq_weapon.subtype = "Pick"
+        user.combat_exp["Pick"] = 0
+        tgt = _make_target(finesse=0, protection=0)
+        tgt.is_alive = lambda: True
+        move = ChipAway(user)
+        move.target = tgt
+        move.power = 20
+        move.base_damage_type = "piercing"
+        user.combat_position = positions.CombatPosition(x=5, y=5, facing=positions.Direction.N)
+        tgt.combat_position = positions.CombatPosition(x=8, y=5, facing=positions.Direction.W)
+
+        monkeypatch.setattr(random, "randint", lambda a, b: 100)  # always miss
+        monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
+        with patch("src.moves._pick.functions.check_parry", return_value=False), \
+             patch.object(move, "viable", return_value=True), \
+             patch("src.moves._pick.cprint"):
+            move.execute(user)
+
+        assert user.combat_position.facing.name == "E"
+
+    def test_execute_strike_parried(self, monkeypatch):
+        user = _make_user("Pick")
+        user.eq_weapon.subtype = "Pick"
+        user.combat_exp["Pick"] = 0
+        tgt = _make_target(finesse=0, protection=0)
+        tgt.is_alive = lambda: True
+        move = ChipAway(user)
+        move.target = tgt
+        move.power = 20
+        move.base_damage_type = "piercing"
+
+        monkeypatch.setattr(random, "randint", lambda a, b: 0)
+        monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
+        with patch("src.moves._pick.functions.check_parry", return_value=True), \
+             patch.object(move, "viable", return_value=True), \
+             patch("src.moves._pick.cprint") as mock_cprint:
+            move.execute(user)
+
+        assert any("parried" in str(c.args[0]) for c in mock_cprint.call_args_list)
+
+    def test_execute_fatigue_floor_at_zero(self, monkeypatch):
+        user = _make_user("Pick")
+        user.eq_weapon.subtype = "Pick"
+        user.combat_exp["Pick"] = 0
+        tgt = _make_target()
+        tgt.is_alive = lambda: True
+        move = ChipAway(user)
+        move.target = tgt
+        move.power = 5
+        move.base_damage_type = "piercing"
+        move.fatigue_cost = 999
+        user.fatigue = 10
+
+        monkeypatch.setattr(random, "randint", lambda a, b: 100)
+        monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
+        with patch("src.moves._pick.functions.check_parry", return_value=False), \
+             patch.object(move, "viable", return_value=False), \
+             patch("src.moves._pick.cprint"):
+            move.execute(user)
+
+        assert user.fatigue == 0
+
 
 class TestExploitWeakness:
     def test_init_name(self):
@@ -859,6 +1706,154 @@ class TestExploitWeakness:
 
         count = sum(1 for s in tgt.states if isinstance(s, states.Disoriented))
         assert count == 1
+
+    def test_viable_false_no_weapon(self):
+        user = _make_user("Pick", equip=False)
+        move = ExploitWeakness(user)
+        assert move.viable() is False
+
+    def test_viable_true_with_pick(self):
+        user = _make_user("Pick")
+        user.eq_weapon.subtype = "Pick"
+        tgt = _make_target()
+        user.combat_proximity = {tgt: 3}
+        move = ExploitWeakness(user)
+        with patch.object(move, "standard_viability_attack", return_value=True):
+            assert move.viable() is True
+
+    def test_evaluate_no_weapon_sets_defaults(self):
+        user = _make_user("Pick", equip=False)
+        move = ExploitWeakness(user)
+        assert move.power == 0
+        assert move.stage_beat == [1, 1, 2, 3]
+        assert move.fatigue_cost == 10
+
+    def test_execute_updates_facing_with_coordinates(self, monkeypatch):
+        user = _make_user("Pick")
+        user.eq_weapon.subtype = "Pick"
+        tgt = _make_target(finesse=0, protection=0)
+        tgt.is_alive = lambda: True
+        move = ExploitWeakness(user)
+        move.target = tgt
+        move.power = 30
+        move.base_damage_type = "piercing"
+        user.combat_position = positions.CombatPosition(x=5, y=5, facing=positions.Direction.N)
+        tgt.combat_position = positions.CombatPosition(x=8, y=5, facing=positions.Direction.W)
+
+        monkeypatch.setattr(random, "randint", lambda a, b: 0)
+        monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
+        with patch("src.moves._pick.functions.check_parry", return_value=False), \
+             patch.object(move, "hit"), \
+             patch.object(move, "viable", return_value=True), \
+             patch("src.moves._pick.cprint"), \
+             patch("src.moves._pick.colored", side_effect=lambda t, *a, **k: t):
+            move.execute(user)
+
+        assert user.combat_position.facing.name == "E"
+
+    def test_execute_not_viable_causes_miss(self, monkeypatch):
+        user = _make_user("Pick")
+        user.eq_weapon.subtype = "Pick"
+        tgt = _make_target(finesse=0, protection=0)
+        move = ExploitWeakness(user)
+        move.target = tgt
+        move.power = 30
+        move.base_damage_type = "piercing"
+
+        monkeypatch.setattr(random, "randint", lambda a, b: 0)
+        monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
+        with patch("src.moves._pick.functions.check_parry", return_value=False), \
+             patch.object(move, "miss") as mock_miss, \
+             patch.object(move, "viable", return_value=False), \
+             patch("src.moves._pick.cprint"), \
+             patch("src.moves._pick.colored", side_effect=lambda t, *a, **k: t):
+            move.execute(user)
+
+        mock_miss.assert_called_once()
+
+    def test_execute_glancing_blow(self, monkeypatch):
+        user = _make_user("Pick")
+        user.eq_weapon.subtype = "Pick"
+        tgt = _make_target(finesse=0, protection=0)
+        move = ExploitWeakness(user)
+        move.target = tgt
+        move.power = 40
+        move.base_damage_type = "piercing"
+
+        monkeypatch.setattr(random, "randint", lambda a, b: 100)
+        monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
+        with patch("src.moves._pick.functions.check_parry", return_value=False), \
+             patch.object(move, "hit") as mock_hit, \
+             patch.object(move, "viable", return_value=True), \
+             patch("src.moves._pick.cprint"), \
+             patch("src.moves._pick.colored", side_effect=lambda t, *a, **k: t):
+            move.execute(user)
+
+        args, _ = mock_hit.call_args
+        assert args[1] is True
+
+    def test_execute_parry(self, monkeypatch):
+        user = _make_user("Pick")
+        user.eq_weapon.subtype = "Pick"
+        tgt = _make_target(finesse=0, protection=0)
+        move = ExploitWeakness(user)
+        move.target = tgt
+        move.power = 40
+        move.base_damage_type = "piercing"
+
+        monkeypatch.setattr(random, "randint", lambda a, b: 0)
+        monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
+        with patch("src.moves._pick.functions.check_parry", return_value=True), \
+             patch.object(move, "parry") as mock_parry, \
+             patch.object(move, "viable", return_value=True), \
+             patch("src.moves._pick.cprint"), \
+             patch("src.moves._pick.colored", side_effect=lambda t, *a, **k: t):
+            move.execute(user)
+
+        mock_parry.assert_called_once()
+
+    def test_execute_inflict_exception_swallowed(self, monkeypatch):
+        user = _make_user("Pick")
+        user.eq_weapon.subtype = "Pick"
+        tgt = _make_target(finesse=0, protection=0)
+        tgt.is_alive = lambda: True
+        tgt.states = []
+        move = ExploitWeakness(user)
+        move.target = tgt
+        move.power = 30
+        move.base_damage_type = "piercing"
+
+        monkeypatch.setattr(random, "randint", lambda a, b: 0)
+        monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
+        with patch("src.moves._pick.functions.check_parry", return_value=False), \
+             patch("src.moves._pick.functions.inflict", side_effect=Exception("boom")), \
+             patch.object(move, "hit"), \
+             patch.object(move, "viable", return_value=True), \
+             patch("src.moves._pick.cprint"), \
+             patch("src.moves._pick.colored", side_effect=lambda t, *a, **k: t):
+            move.execute(user)  # should not raise
+
+    def test_execute_fatigue_floor_at_zero(self, monkeypatch):
+        user = _make_user("Pick")
+        user.eq_weapon.subtype = "Pick"
+        tgt = _make_target()
+        move = ExploitWeakness(user)
+        move.target = tgt
+        move.power = 5
+        move.base_damage_type = "piercing"
+        move.fatigue_cost = 999
+        user.fatigue = 10
+
+        monkeypatch.setattr(random, "randint", lambda a, b: 100)
+        monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
+        with patch("src.moves._pick.functions.check_parry", return_value=False), \
+             patch.object(move, "miss"), \
+             patch.object(move, "viable", return_value=False), \
+             patch("src.moves._pick.cprint"), \
+             patch("src.moves._pick.colored", side_effect=lambda t, *a, **k: t):
+            move.execute(user)
+
+        assert user.fatigue == 0
 
 
 class TestStupefy:
@@ -921,6 +1916,155 @@ class TestStupefy:
         disoriented = [s for s in tgt.states if isinstance(s, states.Disoriented)]
         assert len(disoriented) == 1
         assert disoriented[0] is not old_dis
+
+    def test_viable_false_no_weapon(self):
+        user = _make_user("Pick", equip=False)
+        move = Stupefy(user)
+        assert move.viable() is False
+
+    def test_viable_true_with_pick(self):
+        user = _make_user("Pick")
+        user.eq_weapon.subtype = "Pick"
+        tgt = _make_target()
+        user.combat_proximity = {tgt: 3}
+        move = Stupefy(user)
+        with patch.object(move, "standard_viability_attack", return_value=True):
+            assert move.viable() is True
+
+    def test_evaluate_no_weapon_sets_defaults(self):
+        user = _make_user("Pick", equip=False)
+        move = Stupefy(user)
+        assert move.power == 0
+        assert move.stage_beat == [2, 1, 4, 6]
+        assert move.fatigue_cost == 25
+
+    def test_execute_updates_facing_with_coordinates(self, monkeypatch):
+        user = _make_user("Pick")
+        user.eq_weapon.subtype = "Pick"
+        tgt = _make_target(finesse=0, protection=0)
+        tgt.is_alive = lambda: True
+        tgt.states = []
+        move = Stupefy(user)
+        move.target = tgt
+        move.power = 30
+        move.base_damage_type = "crushing"
+        user.combat_position = positions.CombatPosition(x=5, y=5, facing=positions.Direction.N)
+        tgt.combat_position = positions.CombatPosition(x=8, y=5, facing=positions.Direction.W)
+
+        monkeypatch.setattr(random, "randint", lambda a, b: 0)
+        monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
+        with patch("src.moves._pick.functions.check_parry", return_value=False), \
+             patch.object(move, "hit"), \
+             patch.object(move, "viable", return_value=True), \
+             patch("src.moves._pick.cprint"), \
+             patch("src.moves._pick.colored", side_effect=lambda t, *a, **k: t):
+            move.execute(user)
+
+        assert user.combat_position.facing.name == "E"
+
+    def test_execute_not_viable_causes_miss(self, monkeypatch):
+        user = _make_user("Pick")
+        user.eq_weapon.subtype = "Pick"
+        tgt = _make_target(finesse=0, protection=0)
+        move = Stupefy(user)
+        move.target = tgt
+        move.power = 30
+        move.base_damage_type = "crushing"
+
+        monkeypatch.setattr(random, "randint", lambda a, b: 50)
+        monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
+        with patch("src.moves._pick.functions.check_parry", return_value=False), \
+             patch.object(move, "miss") as mock_miss, \
+             patch.object(move, "viable", return_value=False), \
+             patch("src.moves._pick.cprint"), \
+             patch("src.moves._pick.colored", side_effect=lambda t, *a, **k: t):
+            move.execute(user)
+
+        mock_miss.assert_called_once()
+
+    def test_execute_glancing_blow(self, monkeypatch):
+        user = _make_user("Pick")
+        user.eq_weapon.subtype = "Pick"
+        tgt = _make_target(finesse=0, protection=0)
+        move = Stupefy(user)
+        move.target = tgt
+        move.power = 40
+        move.base_damage_type = "crushing"
+
+        monkeypatch.setattr(random, "randint", lambda a, b: 100)
+        monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
+        with patch("src.moves._pick.functions.check_parry", return_value=False), \
+             patch.object(move, "hit") as mock_hit, \
+             patch.object(move, "viable", return_value=True), \
+             patch("src.moves._pick.cprint"), \
+             patch("src.moves._pick.colored", side_effect=lambda t, *a, **k: t):
+            move.execute(user)
+
+        args, _ = mock_hit.call_args
+        assert args[1] is True
+
+    def test_execute_parry(self, monkeypatch):
+        user = _make_user("Pick")
+        user.eq_weapon.subtype = "Pick"
+        tgt = _make_target(finesse=0, protection=0)
+        move = Stupefy(user)
+        move.target = tgt
+        move.power = 40
+        move.base_damage_type = "crushing"
+
+        monkeypatch.setattr(random, "randint", lambda a, b: 0)
+        monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
+        with patch("src.moves._pick.functions.check_parry", return_value=True), \
+             patch.object(move, "parry") as mock_parry, \
+             patch.object(move, "viable", return_value=True), \
+             patch("src.moves._pick.cprint"), \
+             patch("src.moves._pick.colored", side_effect=lambda t, *a, **k: t):
+            move.execute(user)
+
+        mock_parry.assert_called_once()
+
+    def test_execute_disoriented_append_exception_swallowed(self, monkeypatch):
+        user = _make_user("Pick")
+        user.eq_weapon.subtype = "Pick"
+        tgt = _make_target(finesse=0, protection=0)
+        tgt.is_alive = lambda: True
+        tgt.states = []
+        move = Stupefy(user)
+        move.target = tgt
+        move.power = 30
+        move.base_damage_type = "crushing"
+
+        monkeypatch.setattr(random, "randint", lambda a, b: 0)
+        monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
+        with patch("src.moves._pick.functions.check_parry", return_value=False), \
+             patch("src.moves._pick.states.Disoriented", side_effect=Exception("boom")), \
+             patch.object(move, "hit"), \
+             patch.object(move, "viable", return_value=True), \
+             patch("src.moves._pick.cprint"), \
+             patch("src.moves._pick.colored", side_effect=lambda t, *a, **k: t):
+            move.execute(user)  # should not raise
+
+    def test_execute_fatigue_floor_at_zero(self, monkeypatch):
+        user = _make_user("Pick")
+        user.eq_weapon.subtype = "Pick"
+        tgt = _make_target()
+        move = Stupefy(user)
+        move.target = tgt
+        move.power = 5
+        move.base_damage_type = "crushing"
+        move.fatigue_cost = 999
+        user.fatigue = 10
+
+        monkeypatch.setattr(random, "randint", lambda a, b: 100)
+        monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
+        with patch("src.moves._pick.functions.check_parry", return_value=False), \
+             patch.object(move, "miss"), \
+             patch.object(move, "viable", return_value=False), \
+             patch("src.moves._pick.cprint"), \
+             patch("src.moves._pick.colored", side_effect=lambda t, *a, **k: t):
+            move.execute(user)
+
+        assert user.fatigue == 0
 
 
 class TestWorkTheGap:

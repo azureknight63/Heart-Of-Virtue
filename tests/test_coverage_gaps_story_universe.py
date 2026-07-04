@@ -1492,6 +1492,15 @@ class TestGorranGestureEvent:
             mock_pass.assert_not_called()
         assert ev not in tile.events_here
 
+    def test_conditions_skip_when_no_previous_tile(self):
+        """No previous_tile at all (e.g. spawned directly on the tile) —
+        the event should not fire yet."""
+        ev, player, tile = self._make(coming_from_grondia=False)
+        assert player.previous_tile is None
+        with patch.object(ev, "pass_conditions_to_process") as mock_pass:
+            ev.check_conditions()
+            mock_pass.assert_not_called()
+
     def test_process_skip_dialog_is_noop(self):
         ev, player, tile = self._make(coming_from_grondia=True)
         player.skip_dialog = True
@@ -1508,6 +1517,234 @@ class TestGorranGestureEvent:
         ):
             ev.process()
         assert len(printed) > 0
+
+
+class TestNomadCampSmellEvent:
+    """NomadCampSmellEvent — fires once on first entry to CampEntry."""
+
+    def setup_method(self):
+        from story.ch03 import NomadCampSmellEvent
+
+        self.cls = NomadCampSmellEvent
+
+    def _make(self):
+        player = _make_player()
+        tile = _make_tile()
+        return self.cls(player=player, tile=tile), player, tile
+
+    def test_instantiate(self):
+        ev, *_ = self._make()
+        assert ev.name == "NomadCampSmell"
+        assert ev.repeat is False
+
+    def test_conditions_pass_when_gate_not_set(self):
+        ev, player, tile = self._make()
+        with patch.object(ev, "pass_conditions_to_process") as mock_pass:
+            ev.check_conditions()
+            mock_pass.assert_called_once()
+
+    def test_conditions_skip_when_gate_already_set(self):
+        ev, player, tile = self._make()
+        player.universe.story["nomad_camp_entered"] = "1"
+        tile.events_here = [ev]
+        with patch.object(ev, "pass_conditions_to_process") as mock_pass:
+            ev.check_conditions()
+            mock_pass.assert_not_called()
+        assert ev not in tile.events_here
+
+    def test_process_skip_dialog_still_sets_gate(self):
+        ev, player, tile = self._make()
+        player.skip_dialog = True
+        ev.process()
+        assert player.universe.story.get("nomad_camp_entered") == "1"
+
+    def test_process_full_outputs_text_and_sets_gate(self):
+        ev, player, tile = self._make()
+        player.skip_dialog = False
+        with (
+            patch("story.ch03.print_slow") as mock_print,
+            patch("story.ch03.time.sleep"),
+        ):
+            ev.process()
+        assert mock_print.called
+        assert player.universe.story.get("nomad_camp_entered") == "1"
+
+    def test_set_gate_with_no_universe(self):
+        ev, player, tile = self._make()
+        player.universe = None
+        ev._set_gate()  # should not raise
+
+
+class TestMaraFirstContactEvent:
+    """MaraFirstContactEvent — fires once on first entry to RiversEdge."""
+
+    def setup_method(self):
+        from story.ch03 import MaraFirstContactEvent
+
+        self.cls = MaraFirstContactEvent
+
+    def _make(self):
+        player = _make_player()
+        tile = _make_tile()
+        return self.cls(player=player, tile=tile), player, tile
+
+    def test_instantiate(self):
+        ev, *_ = self._make()
+        assert ev.name == "MaraFirstContact"
+        assert ev.repeat is False
+
+    def test_conditions_pass_when_gate_not_set(self):
+        ev, player, tile = self._make()
+        with patch.object(ev, "pass_conditions_to_process") as mock_pass:
+            ev.check_conditions()
+            mock_pass.assert_called_once()
+
+    def test_conditions_skip_when_gate_already_set(self):
+        ev, player, tile = self._make()
+        player.universe.story["mara_intro_done"] = "1"
+        tile.events_here = [ev]
+        with patch.object(ev, "pass_conditions_to_process") as mock_pass:
+            ev.check_conditions()
+            mock_pass.assert_not_called()
+        assert ev not in tile.events_here
+
+    def test_process_skip_dialog_still_sets_gate(self):
+        ev, player, tile = self._make()
+        player.skip_dialog = True
+        ev.process()
+        assert player.universe.story.get("mara_intro_done") == "1"
+
+    def test_process_full_outputs_dialogue_and_sets_gate(self):
+        ev, player, tile = self._make()
+        player.skip_dialog = False
+        with (
+            patch("story.ch03.print_slow") as mock_print,
+            patch("story.ch03.dialogue") as mock_dialogue,
+            patch("story.ch03.time.sleep"),
+        ):
+            ev.process()
+        assert mock_print.called
+        mock_dialogue.assert_called_once_with("Mara", "Crossing west?", "cyan")
+        assert player.universe.story.get("mara_intro_done") == "1"
+
+    def test_set_gate_with_no_universe(self):
+        ev, player, tile = self._make()
+        player.universe = None
+        ev._set_gate()  # should not raise
+
+
+class TestDevetIntroEvent:
+    """DevetIntroEvent — fires once on first entry to FireRing."""
+
+    def setup_method(self):
+        from story.ch03 import DevetIntroEvent
+
+        self.cls = DevetIntroEvent
+
+    def _make(self):
+        player = _make_player()
+        tile = _make_tile()
+        return self.cls(player=player, tile=tile), player, tile
+
+    def test_instantiate(self):
+        ev, *_ = self._make()
+        assert ev.name == "DevetIntro"
+        assert ev.repeat is False
+
+    def test_conditions_pass_when_gate_not_set(self):
+        ev, player, tile = self._make()
+        with patch.object(ev, "pass_conditions_to_process") as mock_pass:
+            ev.check_conditions()
+            mock_pass.assert_called_once()
+
+    def test_conditions_skip_when_gate_already_set(self):
+        ev, player, tile = self._make()
+        player.universe.story["devet_intro_done"] = "1"
+        tile.events_here = [ev]
+        with patch.object(ev, "pass_conditions_to_process") as mock_pass:
+            ev.check_conditions()
+            mock_pass.assert_not_called()
+        assert ev not in tile.events_here
+
+    def test_process_skip_dialog_still_sets_gate(self):
+        ev, player, tile = self._make()
+        player.skip_dialog = True
+        ev.process()
+        assert player.universe.story.get("devet_intro_done") == "1"
+
+    def test_process_full_outputs_text_and_sets_gate(self):
+        ev, player, tile = self._make()
+        player.skip_dialog = False
+        with (
+            patch("story.ch03.print_slow") as mock_print,
+            patch("story.ch03.time.sleep"),
+        ):
+            ev.process()
+        assert mock_print.called
+        assert player.universe.story.get("devet_intro_done") == "1"
+
+    def test_set_gate_with_no_universe(self):
+        ev, player, tile = self._make()
+        player.universe = None
+        ev._set_gate()  # should not raise
+
+
+class TestLissObservingEvent:
+    """LissObservingEvent — fires once on first entry to CampFarEdge."""
+
+    def setup_method(self):
+        from story.ch03 import LissObservingEvent
+
+        self.cls = LissObservingEvent
+
+    def _make(self):
+        player = _make_player()
+        tile = _make_tile()
+        return self.cls(player=player, tile=tile), player, tile
+
+    def test_instantiate(self):
+        ev, *_ = self._make()
+        assert ev.name == "LissObserving"
+        assert ev.repeat is False
+
+    def test_conditions_pass_when_gate_not_set(self):
+        ev, player, tile = self._make()
+        with patch.object(ev, "pass_conditions_to_process") as mock_pass:
+            ev.check_conditions()
+            mock_pass.assert_called_once()
+
+    def test_conditions_skip_when_gate_already_set(self):
+        ev, player, tile = self._make()
+        player.universe.story["liss_gorran_done"] = "1"
+        tile.events_here = [ev]
+        with patch.object(ev, "pass_conditions_to_process") as mock_pass:
+            ev.check_conditions()
+            mock_pass.assert_not_called()
+        assert ev not in tile.events_here
+
+    def test_process_skip_dialog_still_sets_gate(self):
+        ev, player, tile = self._make()
+        player.skip_dialog = True
+        ev.process()
+        assert player.universe.story.get("liss_gorran_done") == "1"
+
+    def test_process_full_outputs_dialogue_and_sets_gate(self):
+        ev, player, tile = self._make()
+        player.skip_dialog = False
+        with (
+            patch("story.ch03.print_slow") as mock_print,
+            patch("story.ch03.dialogue") as mock_dialogue,
+            patch("story.ch03.time.sleep"),
+        ):
+            ev.process()
+        assert mock_print.called
+        assert mock_dialogue.called
+        assert player.universe.story.get("liss_gorran_done") == "1"
+
+    def test_set_gate_with_no_universe(self):
+        ev, player, tile = self._make()
+        player.universe = None
+        ev._set_gate()  # should not raise
 
 
 class TestEasternRoadTurnbackEvent:
@@ -1609,6 +1846,15 @@ class TestMaraObservationEvent:
         ev.check_conditions()
         assert ev not in tile.events_here
 
+    def test_conditions_wait_until_all_three_beats_complete(self):
+        """Only two of the three character intro gates are set — the event
+        should not fire yet (covers the early `return` in check_conditions)."""
+        ev, player, tile = self._make(already_reached=False)
+        player.universe.story.pop("liss_gorran_done")
+        with patch.object(ev, "pass_conditions_to_process") as mock_pass:
+            ev.check_conditions()
+            mock_pass.assert_not_called()
+
     def test_process_skip_dialog_sets_gate(self):
         ev, player, tile = self._make()
         player.skip_dialog = True
@@ -1628,17 +1874,22 @@ class TestMaraObservationEvent:
         assert player.universe.story.get("nomad_camp_reached") == "1"
 
     def test_process_full_with_mace(self):
+        """has_mace=True branch — matched by `subtype == "Bludgeon"`, not by
+        class name, so any Weapon subclass sharing that subtype (RustedIronMace,
+        Mace, ...) qualifies."""
         ev, player, tile = self._make()
         player.skip_dialog = False
         mace = Mock()
         mace.__class__.__name__ = "Mace"
+        mace.subtype = "Bludgeon"
         player.inventory = [mace]
         with (
-            patch("story.ch03.print_slow"),
-            patch("story.ch03.dialogue"),
+            patch("story.ch03.print_slow") as mock_print,
+            patch("story.ch03.dialogue") as mock_dialogue,
             patch("story.ch03.time.sleep"),
         ):
             ev.process()
+        mock_dialogue.assert_any_call("Mara", "That's religious kit.", "cyan")
         assert player.universe.story.get("nomad_camp_reached") == "1"
 
     def test_set_gate_with_no_universe(self):
@@ -2282,25 +2533,6 @@ class TestGrondiaTiles:
     def test_grondia_antechamber_init(self):
         t = self._make("GrondiaAntechamber")
         assert "crystal" in t.description.lower()
-
-    def _test_all_classes(self):
-        """Exercise every class in grondia.py to get broad coverage."""
-        from tilesets import grondia as g
-        import inspect
-
-        for name, cls in inspect.getmembers(g, inspect.isclass):
-            if hasattr(cls, "modify_player"):
-                u = _make_universe_mock()
-                m = _make_map()
-                try:
-                    t = cls(u, m, 0, 0)
-                    t.modify_player(Mock())
-                except Exception:
-                    pass  # some tiles may need specific universe state
-
-    def test_exercise_all_grondia_classes(self):
-        self._test_all_classes()
-
 
 class TestGrondiaAllClasses:
     """Instantiate every tile class in grondia.py."""

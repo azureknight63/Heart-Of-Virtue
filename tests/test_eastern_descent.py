@@ -43,3 +43,18 @@ def test_nomad_trader_talk(mock_print):
     player = MagicMock()
     npc.talk(player)
     assert mock_print.called
+
+def test_nomad_camper_known_moves_exception_falls_back_to_empty_list():
+    with patch("npc._eastern_descent.moves.NpcIdle", side_effect=RuntimeError("boom")):
+        npc = NomadCamper()
+    assert npc.known_moves == []
+
+def test_nomad_scout_known_moves_exception_falls_back_to_empty_list():
+    with patch("npc._eastern_descent.moves.NpcIdle", side_effect=RuntimeError("boom")):
+        npc = NomadScout()
+    assert npc.known_moves == []
+
+def test_nomad_trader_known_moves_exception_falls_back_to_empty_list():
+    with patch("npc._eastern_descent.moves.NpcIdle", side_effect=RuntimeError("boom")):
+        npc = NomadTrader()
+    assert npc.known_moves == []

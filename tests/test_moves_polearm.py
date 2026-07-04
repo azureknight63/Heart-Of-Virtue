@@ -14,6 +14,7 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 import src.states as states
+import positions
 from src.moves._polearm import (
     OverheadSmash,
     Sweep,
@@ -192,6 +193,26 @@ class TestSweep:
         move = Sweep(user)
         assert move.viable() is True
 
+    def test_viable_false_no_combat_proximity_attr(self):
+        user = _make_user()
+        del user.combat_proximity
+        move = Sweep(user)
+        assert move.viable() is False
+
+    def test_evaluate_exception_sets_power_to_one(self):
+        user = _make_user()
+        move = Sweep(user)
+        user.strength = "abc"  # triggers TypeError in the arithmetic
+        move.evaluate()
+        assert move.power == 1
+
+    def test_prep_prints_message(self):
+        user = _make_user()
+        move = Sweep(user)
+        with patch("src.moves._polearm.cprint") as mock_cprint:
+            move.prep(user)
+        mock_cprint.assert_called_once()
+
     def test_evaluate_sets_power_from_weapon_damage(self):
         user = _make_user()
         user.eq_weapon.damage = 40
@@ -292,6 +313,91 @@ class TestSweep:
         # Parried — hp unchanged
         assert tgt.hp == 100
 
+    def test_execute_frontal_hit_with_coordinates(self, monkeypatch):
+        """Enemy directly ahead within the frontal hemisphere should be struck."""
+        user = _make_user()
+        tgt = _make_target(hp=100, finesse=0, protection=0)
+        user.combat_position = positions.CombatPosition(x=5, y=5, facing=positions.Direction.E)
+        tgt.combat_position = positions.CombatPosition(x=8, y=5, facing=positions.Direction.W)
+        user.combat_proximity = {tgt: 3}
+        move = Sweep(user)
+        move.power = 20
+        move.mvrange = (1, 10)
+
+        monkeypatch.setattr(random, "randint", lambda a, b: 0)
+        with patch("src.moves._polearm.functions.check_parry", return_value=False), \
+             patch("src.moves._polearm.cprint"):
+            move.execute(user)
+
+        assert tgt.hp < 100
+
+    def test_execute_skips_enemy_beyond_arc_range_with_coordinates(self, monkeypatch):
+        user = _make_user()
+        tgt = _make_target(hp=100)
+        user.combat_position = positions.CombatPosition(x=0, y=0, facing=positions.Direction.E)
+        tgt.combat_position = positions.CombatPosition(x=45, y=45, facing=positions.Direction.W)
+        user.combat_proximity = {tgt: 3}
+        move = Sweep(user)
+        move.power = 20
+        move.mvrange = (1, 10)
+
+        monkeypatch.setattr(random, "randint", lambda a, b: 0)
+        with patch("src.moves._polearm.functions.check_parry", return_value=False), \
+             patch("src.moves._polearm.cprint"):
+            move.execute(user)
+
+        assert tgt.hp == 100
+
+    def test_execute_skips_enemy_outside_frontal_hemisphere(self, monkeypatch):
+        user = _make_user()
+        tgt = _make_target(hp=100)
+        user.combat_position = positions.CombatPosition(x=5, y=5, facing=positions.Direction.E)
+        tgt.combat_position = positions.CombatPosition(x=2, y=5, facing=positions.Direction.E)
+        user.combat_proximity = {tgt: 3}
+        move = Sweep(user)
+        move.power = 20
+        move.mvrange = (1, 10)
+
+        monkeypatch.setattr(random, "randint", lambda a, b: 0)
+        with patch("src.moves._polearm.functions.check_parry", return_value=False), \
+             patch("src.moves._polearm.cprint"):
+            move.execute(user)
+
+        assert tgt.hp == 100
+
+    def test_execute_angle_calc_exception_falls_through_to_hit(self, monkeypatch):
+        user = _make_user()
+        tgt = _make_target(hp=100, finesse=0, protection=0)
+        user.combat_position = positions.CombatPosition(x=5, y=5, facing=positions.Direction.E)
+        tgt.combat_position = positions.CombatPosition(x=8, y=5, facing=positions.Direction.W)
+        user.combat_proximity = {tgt: 3}
+        move = Sweep(user)
+        move.power = 20
+        move.mvrange = (1, 10)
+
+        monkeypatch.setattr(random, "randint", lambda a, b: 0)
+        with patch(
+            "src.moves._polearm.positions.angle_to_target", side_effect=Exception("boom")
+        ), patch("src.moves._polearm.functions.check_parry", return_value=False), \
+             patch("src.moves._polearm.cprint"):
+            move.execute(user)
+
+        assert tgt.hp < 100
+
+    def test_execute_fatigue_floor_at_zero(self, monkeypatch):
+        user = _make_user()
+        user.combat_proximity = {}
+        move = Sweep(user)
+        move.fatigue_cost = 999
+        move.mvrange = (1, 5)
+        user.fatigue = 10
+
+        monkeypatch.setattr(random, "randint", lambda a, b: 100)
+        with patch("src.moves._polearm.cprint"):
+            move.execute(user)
+
+        assert user.fatigue == 0
+
 
 # ---------------------------------------------------------------------------
 # BracePosition
@@ -374,6 +480,18 @@ class TestBracePosition:
 
         assert user.fatigue == 30
 
+    def test_execute_fatigue_floor_at_zero(self):
+        user = _make_user()
+        user.states = []
+        user.fatigue = 10
+        move = BracePosition(user)
+        move.fatigue_cost = 999
+
+        with patch("src.moves._polearm.cprint"):
+            move.execute(user)
+
+        assert user.fatigue == 0
+
 
 # ---------------------------------------------------------------------------
 # HalberdSpin
@@ -437,6 +555,20 @@ class TestHalberdSpin:
         move.evaluate()
         expected = max(1, int(20 * 0.6))
         assert move.power == expected
+
+    def test_evaluate_exception_sets_power_to_one(self):
+        user = _make_user()
+        move = HalberdSpin(user)
+        user.strength = "abc"  # triggers TypeError in the arithmetic
+        move.evaluate()
+        assert move.power == 1
+
+    def test_prep_prints_message(self):
+        user = _make_user()
+        move = HalberdSpin(user)
+        with patch("src.moves._polearm.cprint") as mock_cprint:
+            move.prep(user)
+        mock_cprint.assert_called_once()
 
     def test_execute_hits_enemies_in_range(self, monkeypatch):
         user = _make_user()
@@ -516,6 +648,86 @@ class TestHalberdSpin:
             move.execute(user)
 
         assert tgt.hp == 100
+
+    def test_execute_skips_enemy_beyond_arc_range_with_coordinates(self, monkeypatch):
+        """Coordinate-based distance check should skip an enemy beyond arc range."""
+        user = _make_user()
+        tgt = _make_target(hp=100)
+        user.combat_position = positions.CombatPosition(x=0, y=0, facing=positions.Direction.E)
+        tgt.combat_position = positions.CombatPosition(x=45, y=45, facing=positions.Direction.W)
+        user.combat_proximity = {tgt: 3}
+        move = HalberdSpin(user)
+        move.power = 20
+        move.mvrange = (1, 10)
+
+        monkeypatch.setattr(random, "randint", lambda a, b: 0)
+        with patch("src.moves._polearm.functions.check_parry", return_value=False), \
+             patch("src.moves._polearm.cprint"):
+            move.execute(user)
+
+        assert tgt.hp == 100
+
+    def test_execute_hits_enemy_with_coordinates_in_range(self, monkeypatch):
+        user = _make_user()
+        tgt = _make_target(hp=100, finesse=0, protection=0)
+        user.combat_position = positions.CombatPosition(x=5, y=5, facing=positions.Direction.N)
+        tgt.combat_position = positions.CombatPosition(x=8, y=5, facing=positions.Direction.W)
+        user.combat_proximity = {tgt: 3}
+        move = HalberdSpin(user)
+        move.power = 20
+        move.mvrange = (1, 20)
+
+        monkeypatch.setattr(random, "randint", lambda a, b: 0)
+        with patch("src.moves._polearm.functions.check_parry", return_value=False), \
+             patch("src.moves._polearm.cprint"):
+            move.execute(user)
+
+        assert tgt.hp < 100
+
+    def test_execute_random_facing_after_spin(self, monkeypatch):
+        """When the user has a combat_position, facing should be randomized post-spin."""
+        user = _make_user()
+        user.combat_position = positions.CombatPosition(x=5, y=5, facing=positions.Direction.N)
+        user.combat_proximity = {}
+        move = HalberdSpin(user)
+        move.mvrange = (1, 20)
+
+        monkeypatch.setattr(random, "randint", lambda a, b: 100)
+        monkeypatch.setattr(random, "choice", lambda seq: positions.Direction.S)
+        with patch("src.moves._polearm.cprint"):
+            move.execute(user)
+
+        assert user.combat_position.facing.name == "S"
+
+    def test_execute_random_facing_exception_is_caught(self, monkeypatch):
+        """An exception while randomizing facing should be silently swallowed."""
+        user = _make_user()
+        user.combat_position = positions.CombatPosition(x=5, y=5, facing=positions.Direction.N)
+        user.combat_proximity = {}
+        move = HalberdSpin(user)
+        move.mvrange = (1, 20)
+
+        def raise_choice(seq):
+            raise Exception("boom")
+
+        monkeypatch.setattr(random, "randint", lambda a, b: 100)
+        monkeypatch.setattr(random, "choice", raise_choice)
+        with patch("src.moves._polearm.cprint"):
+            move.execute(user)  # should not raise
+
+    def test_execute_fatigue_floor_at_zero(self, monkeypatch):
+        user = _make_user()
+        user.combat_proximity = {}
+        move = HalberdSpin(user)
+        move.fatigue_cost = 999
+        move.mvrange = (1, 20)
+        user.fatigue = 10
+
+        monkeypatch.setattr(random, "randint", lambda a, b: 100)
+        with patch("src.moves._polearm.cprint"):
+            move.execute(user)
+
+        assert user.fatigue == 0
 
 
 # ---------------------------------------------------------------------------

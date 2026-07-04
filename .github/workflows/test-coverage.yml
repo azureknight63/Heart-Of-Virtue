@@ -14,50 +14,10 @@ on:
     branches: [master, web-api, develop, main]
 
 jobs:
-  # Backend tests run in parallel for faster feedback
-  # - backend-core-tests: Validates all tests pass
-  # - backend-coverage: Measures coverage and enforces minimums
+  # Backend and frontend coverage jobs run in parallel for faster feedback.
+  # - backend-coverage: Validates all tests pass and enforces coverage minimums
   # - frontend-coverage: Independent frontend test job
-  # All three must complete before coverage-report summarizes results
-
-  backend-core-tests:
-    name: Backend Tests (Core - Tier 1-2)
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    permissions:
-      contents: read
-      checks: write
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-          cache: pip
-
-      - name: Install dependencies
-        run: pip install -r requirements.txt -r requirements-dev.txt pytest-xdist
-
-      - name: Run core tests
-        run: |
-          python -m pytest \
-            --ignore=tests/test_api_remaining_tier4.py \
-            --ignore=tests/test_objects_positions_tier4.py \
-            --ignore=tests/test_game_service_tier4_complete.py \
-            --ignore=tests/test_remaining_modules_tier4.py \
-            --ignore=tests/test_story_chapters_tier4.py \
-            --ignore=tests/test_story_effects_flavor_tier4.py \
-            --ignore=tests/test_api_services_tier4_final.py \
-            --ignore=tests/test_npc_advanced_tier3.py \
-            --ignore=tests/test_utilities_tilesets_tier3.py \
-            -v --tb=short
-        env:
-          MYNX_LLM_ENABLED: "0"
-          MYNX_LLM_PROVIDER: "none"
-        timeout-minutes: 12
+  # Both must complete before coverage-report summarizes results
 
   backend-coverage:
     name: Backend Coverage (pytest)
@@ -85,21 +45,12 @@ jobs:
       - name: Run coverage tests
         run: |
           python -m pytest \
-            --ignore=tests/test_api_remaining_tier4.py \
-            --ignore=tests/test_objects_positions_tier4.py \
-            --ignore=tests/test_game_service_tier4_complete.py \
-            --ignore=tests/test_remaining_modules_tier4.py \
-            --ignore=tests/test_story_chapters_tier4.py \
-            --ignore=tests/test_story_effects_flavor_tier4.py \
-            --ignore=tests/test_api_services_tier4_final.py \
-            --ignore=tests/test_npc_advanced_tier3.py \
-            --ignore=tests/test_utilities_tilesets_tier3.py \
             --cov=src \
             --cov=ai \
             --cov-report=xml \
             --cov-report=term-missing \
             --cov-fail-under=55 \
-            -v
+            -n auto -v
         env:
           MYNX_LLM_ENABLED: "0"
           MYNX_LLM_PROVIDER: "none"
@@ -160,7 +111,7 @@ jobs:
   coverage-report:
     name: Coverage Report Summary
     runs-on: ubuntu-latest
-    needs: [backend-core-tests, backend-coverage, frontend-coverage]
+    needs: [backend-coverage, frontend-coverage]
     if: always()
     permissions:
       contents: read

@@ -3547,6 +3547,7 @@ class DriedCrystalSap(Consumable):
         self.interactions = ["use", "drop"]
         self.announce = "A small waxy lump rests here, faintly warm."
         self.count = 1
+        self.power = 25  # Modest HP restore ("dull minor wounds")
 
     def stack_grammar(self) -> None:
         if self.count == 1:

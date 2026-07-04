@@ -383,7 +383,7 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
                                     param[0] == "~"
                                 ):  # sets the given parameter for the tile object based on
                                     # what's in the map editor
-                                    parameter = param.split("=")
+                                    parameter = param[1:].split("=")
                                     if hasattr(
                                         tile_exists(this_map, x, y),
                                         parameter[0],

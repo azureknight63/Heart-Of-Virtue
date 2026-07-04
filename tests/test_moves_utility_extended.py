@@ -12,6 +12,7 @@ Coverage targets:
 import random
 import pathlib
 import sys
+import pytest
 from unittest.mock import MagicMock, patch
 
 _ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -27,6 +28,7 @@ from src.moves._utility import (
     CrusaderOath,
     StrategicInsight,
     MasterTactician,
+    Attack as UtilAttack,
 )
 
 
@@ -71,6 +73,7 @@ def _make_player():
     player.speed = 10
     player.charisma = 10
     player.faith = 10
+    player.intelligence = 5
     player.hp = 100
     player.maxhp = 100
     player.fatigue = 100
@@ -534,3 +537,441 @@ class TestCrusaderOath:
             move.execute(player)
 
         assert player.combat_exp["Basic"] == 2
+
+
+# ---------------------------------------------------------------------------
+# Check — coordinate-based display and API-data edge cases
+# ---------------------------------------------------------------------------
+
+
+class TestCheckCoordinateMode:
+    def _combat_position(self, x=0, y=0, facing=None):
+        import positions
+        return positions.CombatPosition(x=x, y=y, facing=facing or positions.Direction.N)
+
+    def test_prep_dispatches_to_coordinate_display(self):
+        import positions
+
+        player = _make_player()
+        del player._combat_adapter
+        player.combat_position = self._combat_position()
+        enemy = _make_target()
+        enemy.combat_position = self._combat_position(x=3, y=3, facing=positions.Direction.S)
+        player.combat_proximity = {enemy: 5}
+        player.combat_list_allies = []
+        move = Check(player)
+        with patch("src.moves._utility.cprint") as mock_cprint, \
+             patch("src.moves._utility.functions.await_input"):
+            move.prep(player)
+        assert mock_cprint.called
+
+    def test_display_coordinate_info_enemy_without_position_falls_back(self):
+        player = _make_player()
+        player.combat_position = self._combat_position()
+        enemy = _make_target()
+        enemy.combat_position = None
+        player.combat_proximity = {enemy: 9}
+        player.combat_list_allies = []
+        move = Check(player)
+        with patch("src.moves._utility.cprint") as mock_cprint:
+            move._display_coordinate_info(player)
+        assert mock_cprint.called
+
+    def test_display_coordinate_info_shows_ally_positioning_with_enemy_position(self):
+        import positions
+
+        player = _make_player()
+        player.combat_position = self._combat_position()
+        enemy = _make_target()
+        enemy.combat_position = self._combat_position(x=5, y=5, facing=positions.Direction.S)
+        player.combat_proximity = {enemy: 7}
+
+        ally = _make_target()
+        ally.name = "Gorran"
+        ally.combat_position = self._combat_position(x=2, y=2, facing=positions.Direction.N)
+        ally.combat_proximity = {enemy: 4}
+        player.combat_list_allies = [ally]
+
+        move = Check(player)
+        with patch("src.moves._utility.cprint") as mock_cprint:
+            move._display_coordinate_info(player)
+        assert mock_cprint.called
+
+    def test_display_coordinate_info_ally_without_enemy_position(self):
+        player = _make_player()
+        player.combat_position = self._combat_position()
+        enemy = _make_target()
+        enemy.combat_position = None  # enemy lacks position -> ally fallback branch
+        player.combat_proximity = {enemy: 7}
+
+        ally = _make_target()
+        ally.name = "Gorran"
+        ally.combat_position = self._combat_position(x=2, y=2)
+        ally.combat_proximity = {enemy: 4}
+        player.combat_list_allies = [ally]
+
+        move = Check(player)
+        with patch("src.moves._utility.cprint") as mock_cprint:
+            move._display_coordinate_info(player)
+        assert mock_cprint.called
+
+
+class TestCheckApiDataEdgeCases:
+    def test_generate_api_check_data_skips_dead_enemies(self):
+        player = _make_player()
+        player._combat_adapter = MagicMock()
+        player.combat_log = []
+        player.combat_beat = 1
+        dead_enemy = _make_target(is_alive_callable=True)
+        dead_enemy.is_alive = MagicMock(return_value=False)
+        player.combat_list = [dead_enemy]
+        player.combat_proximity = {}
+        player.combat_list_allies = []
+        player.combat_adapter_state = {}
+        move = Check(player)
+        move._generate_api_check_data(player)
+        assert player.combat_adapter_state["check_data"] == []
+
+    def test_generate_api_check_data_includes_allies_excluding_self(self):
+        player = _make_player()
+        player._combat_adapter = MagicMock()
+        player.combat_log = []
+        player.combat_beat = 1
+        ally = _make_target(is_alive_callable=True)
+        ally.name = "Gorran"
+        ally.current_move = None
+        player.combat_list = []
+        player.combat_proximity = {ally: 6}
+        player.combat_list_allies = [player, ally]  # player included, should be excluded
+        player.combat_adapter_state = {}
+        move = Check(player)
+        move._generate_api_check_data(player)
+        data = player.combat_adapter_state["check_data"]
+        assert len(data) == 1
+        assert data[0]["name"] == "Gorran"
+        assert data[0]["is_ally"] is True
+
+    def test_generate_api_check_data_facing_and_direction(self):
+        import positions
+
+        player = _make_player()
+        player._combat_adapter = MagicMock()
+        player.combat_log = []
+        player.combat_beat = 1
+        player.combat_position = positions.CombatPosition(x=0, y=0, facing=positions.Direction.N)
+        enemy = _make_target(is_alive_callable=True)
+        enemy.combat_position = positions.CombatPosition(x=5, y=0, facing=positions.Direction.S)
+        enemy.current_move = None
+        player.combat_list = [enemy]
+        player.combat_proximity = {enemy: 5}
+        player.combat_list_allies = []
+        player.combat_adapter_state = {}
+        move = Check(player)
+        move._generate_api_check_data(player)
+        data = player.combat_adapter_state["check_data"]
+        assert data[0]["facing"] == "S"
+        assert data[0]["direction_from_player"] is not None
+
+    def test_generate_api_check_data_active_move_reported(self):
+        player = _make_player()
+        player._combat_adapter = MagicMock()
+        player.combat_log = []
+        player.combat_beat = 1
+        enemy = _make_target(is_alive_callable=True)
+        active_move = MagicMock()
+        active_move.name = "Slash"
+        active_move.current_stage = 1
+        enemy.current_move = active_move
+        player.combat_list = [enemy]
+        player.combat_proximity = {enemy: 5}
+        player.combat_list_allies = []
+        player.combat_adapter_state = {}
+        move = Check(player)
+        move._generate_api_check_data(player)
+        data = player.combat_adapter_state["check_data"]
+        assert data[0]["current_move"] == "Slash"
+
+
+class TestCheckLegacyAllies:
+    def test_display_legacy_info_terminal_mode_with_allies(self):
+        player = _make_player()
+        del player._combat_adapter
+        enemy = _make_target()
+        player.combat_proximity = {enemy: 6}
+        ally = _make_target()
+        ally.name = "Gorran"
+        ally.combat_proximity = {enemy: 3}
+        player.combat_list_allies = [ally]
+        move = Check(player)
+        with patch("src.moves._utility.cprint") as mock_cprint:
+            move._display_legacy_info(player)
+        assert mock_cprint.called
+
+
+# ---------------------------------------------------------------------------
+# Attack (from src.moves._utility) — evaluate/viable/execute edge cases
+# ---------------------------------------------------------------------------
+
+
+class _FalsyWeapon:
+    """A weapon-like object whose truthiness is False but whose attributes work."""
+
+    damage = 5
+    str_mod = 0.1
+    fin_mod = 0.1
+    weight = 1
+    wpnrange = (0, 5)
+    name = "Fists"
+    subtype = "Unarmed"
+
+    def __bool__(self):
+        return False
+
+
+class TestUtilityAttack:
+    def test_init_name(self):
+        player = _make_player()
+        move = UtilAttack(player)
+        assert move.name == "Attack"
+
+    def test_init_prep_floors_at_one_for_high_speed(self):
+        player = _make_player()
+        player.speed = 1000  # int(50/1000) == 0 -> floored to 1
+        move = UtilAttack(player)
+        assert move.stage_beat[0] >= 1
+
+    def test_init_cooldown_floors_at_zero_for_high_endurance(self):
+        player = _make_player()
+        player.endurance = 100  # 3 - 10 = negative -> floored to 0
+        move = UtilAttack(player)
+        assert move.stage_beat[3] == 0
+
+    def test_init_base_damage_type_defaults_crushing_without_weapon(self):
+        player = _make_player()
+        player.eq_weapon = _FalsyWeapon()
+        move = UtilAttack(player)
+        assert move.base_damage_type == "crushing"
+
+    def test_viable_false_without_combat_proximity(self):
+        player = _make_player()
+        move = UtilAttack(player)
+        del player.combat_proximity
+        assert move.viable() is False
+
+    def test_viable_handles_evaluate_exception(self):
+        player = _make_player()
+        move = UtilAttack(player)
+        # Force evaluate() to blow up: eq_weapon becomes None afterwards
+        player.eq_weapon = None
+        enemy = _make_target()
+        player.combat_proximity = {enemy: 2}
+        # Should not raise — exception swallowed internally
+        assert move.viable() is False
+
+    def test_evaluate_prep_floors_at_one(self):
+        player = _make_player()
+        move = UtilAttack(player)
+        player.speed = 1000
+        move.evaluate()
+        assert move.stage_beat[0] >= 1
+
+    def test_evaluate_cooldown_floors_at_zero(self):
+        player = _make_player()
+        move = UtilAttack(player)
+        player.endurance = 100
+        move.evaluate()
+        assert move.stage_beat[3] == 0
+
+    def _viable_setup(self, target_finesse=200, protection=0):
+        player = _make_player()
+        move = UtilAttack(player)
+        enemy = _make_target()
+        enemy.finesse = target_finesse
+        enemy.protection = protection
+        mid = sum(player.eq_weapon.wpnrange) / 2
+        player.combat_proximity = {enemy: mid}
+        move.target = enemy
+        return player, enemy, move
+
+    def test_execute_hit_chance_floors_at_five(self):
+        player, enemy, move = self._viable_setup(target_finesse=500)
+        with patch("src.moves._utility.narrate"), \
+             patch("src.moves._utility.random.randint", return_value=0), \
+             patch("src.moves._utility.random.uniform", return_value=1.0), \
+             patch("src.moves._utility.functions.check_parry", return_value=False), \
+             patch("src.moves._utility.animate"):
+            move.execute(player)
+        assert enemy.hp < 100
+
+    def test_execute_damage_floors_at_zero(self):
+        player, enemy, move = self._viable_setup(protection=1_000_000)
+        with patch("src.moves._utility.narrate"), \
+             patch("src.moves._utility.random.randint", return_value=0), \
+             patch("src.moves._utility.random.uniform", return_value=1.0), \
+             patch("src.moves._utility.functions.check_parry", return_value=False), \
+             patch("src.moves._utility.animate"):
+            move.execute(player)
+        assert enemy.hp == 100
+
+    def test_execute_glancing_blow(self):
+        player, enemy, move = self._viable_setup(target_finesse=0)
+        with patch("src.moves._utility.narrate"), \
+             patch("src.moves._utility.random.randint", return_value=100), \
+             patch("src.moves._utility.random.uniform", return_value=1.0), \
+             patch("src.moves._utility.functions.check_parry", return_value=False), \
+             patch("src.moves._utility.animate"):
+            move.execute(player)
+        assert enemy.hp < 100
+
+    def test_execute_dispatches_parry(self):
+        player, enemy, move = self._viable_setup()
+        with patch("src.moves._utility.narrate"), \
+             patch("src.moves._utility.random.randint", return_value=0), \
+             patch("src.moves._utility.random.uniform", return_value=1.0), \
+             patch("src.moves._utility.functions.check_parry", return_value=True), \
+             patch("src.moves._utility.animate"), \
+             patch.object(move, "parry") as mock_parry:
+            move.execute(player)
+        mock_parry.assert_called_once()
+
+    def test_execute_fatigue_floors_at_zero(self):
+        player, enemy, move = self._viable_setup()
+        player.fatigue = 1
+        with patch("src.moves._utility.narrate"), \
+             patch("src.moves._utility.random.randint", return_value=0), \
+             patch("src.moves._utility.random.uniform", return_value=1.0), \
+             patch("src.moves._utility.functions.check_parry", return_value=False), \
+             patch("src.moves._utility.animate"):
+            move.execute(player)
+        assert player.fatigue == 0
+
+    def test_execute_updates_facing_when_positions_present(self):
+        import positions
+
+        player, enemy, move = self._viable_setup()
+        player.combat_position = positions.CombatPosition(x=0, y=0, facing=positions.Direction.N)
+        enemy.combat_position = positions.CombatPosition(x=5, y=5, facing=positions.Direction.S)
+        with patch("src.moves._utility.narrate"), \
+             patch("src.moves._utility.random.randint", return_value=0), \
+             patch("src.moves._utility.random.uniform", return_value=1.0), \
+             patch("src.moves._utility.functions.check_parry", return_value=False), \
+             patch("src.moves._utility.animate"):
+            move.execute(player)
+        assert player.combat_position.facing is not None
+
+    def test_execute_not_viable_forces_auto_miss(self):
+        player, enemy, move = self._viable_setup()
+        # Move target out of weapon range -> viable() False -> hit_chance = -1
+        player.combat_proximity = {enemy: 99999}
+        with patch("src.moves._utility.narrate"), \
+             patch("src.moves._utility.random.randint", return_value=0), \
+             patch("src.moves._utility.random.uniform", return_value=1.0), \
+             patch("src.moves._utility.functions.check_parry", return_value=False), \
+             patch("src.moves._utility.animate"):
+            move.execute(player)
+        assert enemy.hp == 100  # always misses when not viable
+
+    def test_execute_dispatches_miss_when_roll_exceeds_hit_chance(self):
+        player, enemy, move = self._viable_setup(target_finesse=500)
+        # hit_chance clamps to 5; force roll higher so hit_chance < roll -> miss()
+        with patch("src.moves._utility.narrate"), \
+             patch("src.moves._utility.random.randint", return_value=50), \
+             patch("src.moves._utility.random.uniform", return_value=1.0), \
+             patch("src.moves._utility.functions.check_parry", return_value=False), \
+             patch("src.moves._utility.animate"):
+            move.execute(player)
+        assert enemy.hp == 100
+
+
+class TestCheckDirectionCardinals:
+    """Covers all eight cardinal branches in _generate_api_check_data."""
+
+    @pytest.mark.parametrize(
+        "dx, dy, expected",
+        [
+            (0, 5, "North"),
+            (5, 5, "Northeast"),
+            (5, 0, "East"),
+            (5, -5, "Southeast"),
+            (0, -5, "South"),
+            (-5, -5, "Southwest"),
+            (-5, 0, "West"),
+            (-5, 5, "Northwest"),
+        ],
+    )
+    def test_direction_from_player(self, dx, dy, expected):
+        import positions
+
+        player = _make_player()
+        player._combat_adapter = MagicMock()
+        player.combat_log = []
+        player.combat_beat = 1
+        player.combat_position = positions.CombatPosition(x=25, y=25, facing=positions.Direction.N)
+        enemy = _make_target(is_alive_callable=True)
+        enemy.combat_position = positions.CombatPosition(
+            x=25 + dx, y=25 + dy, facing=positions.Direction.N
+        )
+        enemy.current_move = None
+        player.combat_list = [enemy]
+        player.combat_proximity = {enemy: 5}
+        player.combat_list_allies = []
+        player.combat_adapter_state = {}
+        move = Check(player)
+        move._generate_api_check_data(player)
+        data = player.combat_adapter_state["check_data"]
+        assert data[0]["direction_from_player"] == expected
+
+
+class TestCheckCoordinateAngleBrackets:
+    """Covers front/flank/rear branches in _display_coordinate_info (both
+    the primary enemy-facing calc and the ally-relative-to-enemy calc)."""
+
+    @pytest.mark.parametrize(
+        "enemy_facing, expected_called",
+        [
+            ("E", True),   # attack from East, enemy faces East -> diff=0 -> front
+            ("NE", True),  # diff=45 -> flank
+            ("W", True),   # diff=180 -> rear
+        ],
+    )
+    def test_display_coordinate_info_angle_brackets(self, enemy_facing, expected_called):
+        import positions
+
+        player = _make_player()
+        player.combat_position = positions.CombatPosition(x=0, y=0, facing=positions.Direction.N)
+        enemy = _make_target()
+        enemy.combat_position = positions.CombatPosition(
+            x=5, y=0, facing=getattr(positions.Direction, enemy_facing)
+        )
+        player.combat_proximity = {enemy: 5}
+        player.combat_list_allies = []
+        move = Check(player)
+        with patch("src.moves._utility.cprint") as mock_cprint:
+            move._display_coordinate_info(player)
+        assert mock_cprint.called == expected_called
+
+    @pytest.mark.parametrize(
+        "enemy_facing",
+        ["E", "NE", "W"],
+    )
+    def test_display_coordinate_info_ally_angle_brackets(self, enemy_facing):
+        import positions
+
+        player = _make_player()
+        player.combat_position = positions.CombatPosition(x=0, y=0, facing=positions.Direction.N)
+        enemy = _make_target()
+        enemy.combat_position = positions.CombatPosition(
+            x=5, y=0, facing=getattr(positions.Direction, enemy_facing)
+        )
+        player.combat_proximity = {enemy: 5}
+
+        ally = _make_target()
+        ally.name = "Gorran"
+        ally.combat_position = positions.CombatPosition(x=0, y=0, facing=positions.Direction.N)
+        ally.combat_proximity = {enemy: 5}
+        player.combat_list_allies = [ally]
+
+        move = Check(player)
+        with patch("src.moves._utility.cprint") as mock_cprint:
+            move._display_coordinate_info(player)
+        assert mock_cprint.called

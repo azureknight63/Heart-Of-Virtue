@@ -241,3 +241,54 @@ def test_set_combatant_stats():
     assert "bogus" not in result["updated"]
     # bad index
     assert adj.set_combatant_stats(player, "Fodder Pit", 9, {})["success"] is False
+
+
+# --- Additional coverage: _resolve_arena, known_moves exception, and the -----
+# --- "unknown arena" / "tile not loaded" branches of remove_combatant and ---
+# --- set_combatant_stats (previously only exercised for add_combatant/    ---
+# --- clear_room). --------------------------------------------------------
+
+def test_known_moves_exception_falls_back_to_empty_list():
+    with patch("npc._adjutant.moves.NpcIdle", side_effect=RuntimeError("boom")):
+        adj = TheAdjutant()
+    assert adj.known_moves == []
+
+
+def test_resolve_arena_accepts_coords_tuple():
+    adj = TheAdjutant()
+    assert adj._resolve_arena((2, 0)) == (2, 0)
+    assert adj._resolve_arena([2, 0]) == (2, 0)
+
+
+def test_remove_combatant_unknown_arena():
+    player, _ = _arena_player()
+    adj = TheAdjutant()
+    result = adj.remove_combatant(player, "Nowhere", 0)
+    assert result["success"] is False
+    assert "Unknown arena" in result["error"]
+
+
+def test_remove_combatant_tile_not_loaded():
+    player = MockPlayer()
+    player.map = {}
+    adj = TheAdjutant()
+    result = adj.remove_combatant(player, "Fodder Pit", 0)
+    assert result["success"] is False
+    assert "not loaded" in result["error"]
+
+
+def test_set_combatant_stats_unknown_arena():
+    player, _ = _arena_player(npcs=[Slime()])
+    adj = TheAdjutant()
+    result = adj.set_combatant_stats(player, "Nowhere", 0, {"hp": 10})
+    assert result["success"] is False
+    assert "Unknown arena" in result["error"]
+
+
+def test_set_combatant_stats_tile_not_loaded():
+    player = MockPlayer()
+    player.map = {}
+    adj = TheAdjutant()
+    result = adj.set_combatant_stats(player, "Fodder Pit", 0, {"hp": 10})
+    assert result["success"] is False
+    assert "not loaded" in result["error"]

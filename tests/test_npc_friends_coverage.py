@@ -411,3 +411,311 @@ class TestDevetAndLiss:
         liss = Liss()
         assert liss.pronouns["personal"] == "she"
         assert liss.pronouns["possessive"] == "her"
+
+
+# ---------------------------------------------------------------------------
+# Devet / Liss — known_moves exception branches, Liss.talk()
+# ---------------------------------------------------------------------------
+
+
+class TestDevetAndLissAdditional:
+    def test_devet_known_moves_exception_falls_back_to_empty_list(self):
+        from npc._friends import Devet
+
+        with patch("moves.NpcIdle", side_effect=RuntimeError("boom")):
+            d = Devet()
+        assert d.known_moves == []
+
+    def test_liss_known_moves_exception_falls_back_to_empty_list(self):
+        from npc._friends import Liss
+
+        with patch("moves.NpcIdle", side_effect=RuntimeError("boom")):
+            liss = Liss()
+        assert liss.known_moves == []
+
+    def test_liss_talk_prints_a_line(self, capsys):
+        from npc._friends import Liss
+
+        liss = Liss()
+        player = _make_player()
+        liss.talk(player)
+        out = capsys.readouterr().out
+        assert len(out) > 0
+
+    def test_liss_talk_produces_known_line(self):
+        from npc._friends import Liss
+
+        liss = Liss()
+        player = _make_player()
+        with patch("builtins.print") as mock_print:
+            liss.talk(player)
+            mock_print.assert_called_once()
+            text = mock_print.call_args[0][0]
+            assert isinstance(text, str)
+            assert len(text) > 0
+
+
+# ---------------------------------------------------------------------------
+# Mara.wounded_flavor() and Mara.talk()
+# ---------------------------------------------------------------------------
+
+
+class TestMaraWoundedFlavorAndTalk:
+    def test_wounded_flavor_returns_a_known_line(self):
+        from npc._friends import Mara
+
+        m = Mara()
+        result = m.wounded_flavor()
+        assert isinstance(result, str)
+        assert "Mara" in result
+
+    def test_talk_prints_a_line(self, capsys):
+        from npc._friends import Mara
+
+        m = Mara()
+        player = _make_player()
+        m.talk(player)
+        out = capsys.readouterr().out
+        assert len(out) > 0
+
+    def test_talk_produces_known_line(self):
+        from npc._friends import Mara
+
+        m = Mara()
+        player = _make_player()
+        with patch("builtins.print") as mock_print:
+            m.talk(player)
+            mock_print.assert_called_once()
+            text = mock_print.call_args[0][0]
+            assert isinstance(text, str)
+            assert len(text) > 0
+
+
+# ---------------------------------------------------------------------------
+# Mara.select_move() — remaining weight-bonus branches
+# ---------------------------------------------------------------------------
+
+
+class TestMaraSelectMoveWeightBranches:
+    """Exercises the per-move weight-bonus branches in select_move().
+
+    Note: production Move classes name themselves e.g. "NPC_Attack" (see
+    src/moves/_npc.py), so the `elif move.name == "NpcAttack":` checks in
+    select_move() never actually match in real play (the string is missing
+    the underscore) -- this looks like a pre-existing bug, flagged in the
+    coverage report rather than fixed here. These tests use synthetic move
+    objects with the literal names select_move() checks for, so the branch
+    bodies themselves are still exercised and validated in isolation.
+    """
+
+    def _make_mara(self):
+        from npc._friends import Mara
+
+        m = Mara()
+        m.current_move = None
+        m.fatigue = m.maxfatigue
+        m.hp = m.maxhp
+        m.ai_config = Mock()
+        m.ai_config.get_weighted_move_bonus = Mock(return_value=0)
+        return m
+
+    def _fake_move(self, name, weight=1, fatigue_cost=0, category="Offensive"):
+        mv = Mock()
+        mv.name = name
+        mv.weight = weight
+        mv.fatigue_cost = fatigue_cost
+        mv.category = category
+        mv.viable = Mock(return_value=True)
+        return mv
+
+    def _run_with_moves(self, mara, move_names, optimal_range):
+        fake_moves = [self._fake_move(n) for n in move_names]
+        with patch.object(type(mara), "refresh_moves", return_value=fake_moves):
+            with patch.object(
+                type(mara), "_get_optimal_range_to_target", return_value=optimal_range
+            ):
+                mara.select_move()
+
+    def test_flanking_maneuver_weight_bonus(self):
+        mara = self._make_mara()
+        self._run_with_moves(mara, ["Flanking Maneuver"], optimal_range=None)
+        assert mara.current_move is not None
+
+    def test_bow_mode_withdraw_weight_bonus(self):
+        mara = self._make_mara()
+        self._run_with_moves(mara, ["Withdraw"], optimal_range="bow")
+        assert mara.current_move is not None
+
+    def test_bow_mode_npc_attack_weight_bonus(self):
+        mara = self._make_mara()
+        self._run_with_moves(mara, ["NpcAttack"], optimal_range="bow")
+        assert mara.current_move is not None
+
+    def test_dagger_mode_advance_weight_bonus(self):
+        mara = self._make_mara()
+        self._run_with_moves(mara, ["Advance"], optimal_range="dagger")
+        assert mara.current_move is not None
+
+    def test_dagger_mode_withdraw_weight_bonus(self):
+        mara = self._make_mara()
+        self._run_with_moves(mara, ["Withdraw"], optimal_range="dagger")
+        assert mara.current_move is not None
+
+    def test_dagger_mode_npc_attack_weight_bonus(self):
+        mara = self._make_mara()
+        self._run_with_moves(mara, ["NpcAttack"], optimal_range="dagger")
+        assert mara.current_move is not None
+
+    def test_no_weighted_moves_returns_early(self):
+        mara = self._make_mara()
+        with patch.object(type(mara), "refresh_moves", return_value=[]):
+            result = mara.select_move()
+        assert result is None
+        assert mara.current_move is None
+
+    def test_ai_config_import_success_constructs_config(self):
+        """Player_ref is set, ai_config is None, and the real npc_ai_config
+        module import succeeds -- covers the happy path of the lazy-init
+        block (as opposed to the ImportError-swallowed test below)."""
+        mara = self._make_mara()
+        mara.ai_config = None
+        mara.player_ref = Mock()
+        mara.player_ref.game_config = None
+        mara.select_move()
+        from npc_ai_config import NPCAIConfig
+
+        assert isinstance(mara.ai_config, NPCAIConfig)
+        assert mara.current_move is not None
+
+    def test_ai_config_import_error_is_swallowed(self):
+        """When player_ref is set but `npc_ai_config` can't be imported, the
+        ImportError is swallowed and ai_config stays None."""
+        mara = self._make_mara()
+        mara.ai_config = None
+        mara.player_ref = Mock()
+
+        import builtins
+
+        real_import = builtins.__import__
+
+        def fake_import(name, *args, **kwargs):
+            if name == "npc_ai_config":
+                raise ImportError("simulated missing module")
+            return real_import(name, *args, **kwargs)
+
+        with patch("builtins.__import__", side_effect=fake_import):
+            mara.select_move()
+        assert mara.ai_config is None
+        assert mara.current_move is not None
+
+
+# ---------------------------------------------------------------------------
+# GronditePasserby
+# ---------------------------------------------------------------------------
+
+
+class TestGronditePasserby:
+    def test_instantiation(self):
+        from npc._friends import GronditePasserby
+
+        g = GronditePasserby()
+        assert g.name == "Grondite"
+        assert g.damage == 0
+        assert g.aggro is False
+        assert "talk" in g.keywords
+        assert g.pronouns["personal"] == "he"
+
+    def test_known_moves_populated(self):
+        from npc._friends import GronditePasserby
+
+        g = GronditePasserby()
+        assert len(g.known_moves) == 1
+
+    def test_known_moves_exception_falls_back_to_empty_list(self):
+        from npc._friends import GronditePasserby
+
+        with patch("moves.NpcIdle", side_effect=RuntimeError("boom")):
+            g = GronditePasserby()
+        assert g.known_moves == []
+
+    def test_talk_prints_a_line(self, capsys):
+        from npc._friends import GronditePasserby
+
+        g = GronditePasserby()
+        player = _make_player()
+        g.talk(player)
+        out = capsys.readouterr().out
+        assert len(out) > 0
+
+    def test_talk_produces_known_line(self):
+        from npc._friends import GronditePasserby
+
+        g = GronditePasserby()
+        player = _make_player()
+        with patch("builtins.print") as mock_print:
+            g.talk(player)
+            mock_print.assert_called_once()
+            text = mock_print.call_args[0][0]
+            assert isinstance(text, str)
+            assert len(text) > 0
+
+
+# ---------------------------------------------------------------------------
+# Grondite known_moves exception branches (GronditeWorker/Elder/ConclaveElder)
+# ---------------------------------------------------------------------------
+
+
+class TestGronditeKnownMovesExceptions:
+    def test_grondite_worker_known_moves_exception(self):
+        from npc._friends import GronditeWorker
+
+        with patch("moves.NpcIdle", side_effect=RuntimeError("boom")):
+            w = GronditeWorker()
+        assert w.known_moves == []
+
+    def test_grondite_elder_known_moves_exception(self):
+        from npc._friends import GronditeElder
+
+        with patch("moves.NpcIdle", side_effect=RuntimeError("boom")):
+            e = GronditeElder()
+        assert e.known_moves == []
+
+    def test_grondite_conclave_elder_known_moves_exception(self):
+        from npc._friends import GronditeConclaveElder
+
+        with patch("moves.NpcIdle", side_effect=RuntimeError("boom")):
+            elder = GronditeConclaveElder()
+        assert elder.known_moves == []
+
+
+# ---------------------------------------------------------------------------
+# Mynx (from _friends.py -- the LLM mixin itself is covered separately in
+# tests/test_npc_llm_coverage.py)
+# ---------------------------------------------------------------------------
+
+
+class TestMynxFriendsModule:
+    def test_default_name_generated_when_none(self):
+        from npc._friends import Mynx
+
+        m = Mynx()
+        assert m.name.startswith("Mynx ")
+
+    def test_known_moves_exception_falls_back_to_empty_list(self):
+        from npc._friends import Mynx
+
+        with patch("moves.NpcIdle", side_effect=RuntimeError("boom")):
+            m = Mynx(name="MynxTest")
+        assert m.known_moves == []
+
+    def test_talk_exception_is_caught_and_narrates_confusion(self, capsys):
+        from npc._friends import Mynx
+
+        m = Mynx(name="MynxTest")
+        with patch.object(
+            m, "interact_with_player", side_effect=RuntimeError("boom")
+        ):
+            result = m.talk(None, prompt="pet")
+        assert result is None
+        out = capsys.readouterr().out
+        assert "confused chitter" in out

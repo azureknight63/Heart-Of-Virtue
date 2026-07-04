@@ -633,6 +633,147 @@ class TestUseItem:
         assert resp.status_code == 200
 
 
+class TestUseItemAdditionalBranches:
+    def test_use_on_ally_target_in_range_success(self):
+        """Covers line 377: item_target = resolved (ally target within combat range)."""
+        item = _make_item()
+        item.merchandise = False
+        item.use = MagicMock()
+        ally = MagicMock()
+        ally.name = "Gorran"
+        ally_id = id(ally)
+        player = _make_player(items=[item])
+        player.in_combat = True
+        player.combat_list_allies = [player, ally]
+        player.combat_proximity = {ally: 3}
+        player._combat_adapter = MagicMock()
+        app, _, _, _ = _make_app(player=player)
+        mock_cs_cls = MagicMock()
+        mock_cs_cls.serialize_combat_state.return_value = {}
+        with (
+            patch.dict(
+                "sys.modules",
+                {
+                    "src.api.serializers.combat": MagicMock(
+                        CombatStateSerializer=mock_cs_cls
+                    )
+                },
+            ),
+            patch("src.api.routes.inventory.InventorySerializer") as mock_ser,
+        ):
+            mock_ser.serialize.return_value = {}
+            with app.test_client() as c:
+                resp = c.post(
+                    "/inventory/use",
+                    json={"item_index": 0, "target_id": f"ally_{ally_id}"},
+                    headers={"Authorization": AUTH},
+                )
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["target_name"] == "Gorran"
+        item.use.assert_called_once_with(ally, user=player)
+
+    def test_use_captures_legacy_neotermcolor_and_print_slow_output(self):
+        """Covers lines 383/386: legacy cprint/print_slow output capture paths."""
+        import neotermcolor
+        import functions as functions_mod
+
+        item = _make_item()
+        item.merchandise = False
+
+        def _use(target, user=None):
+            neotermcolor.cprint("Legacy cprint line", "green")
+            functions_mod.print_slow("Legacy print_slow line")
+
+        item.use = _use
+        player = _make_player(items=[item])
+        app, _, _, _ = _make_app(player=player)
+        with patch("src.api.routes.inventory.InventorySerializer") as mock_ser:
+            mock_ser.serialize.return_value = {}
+            with app.test_client() as c:
+                resp = c.post(
+                    "/inventory/use",
+                    json={"item_index": 0},
+                    headers={"Authorization": AUTH},
+                )
+        assert resp.status_code == 200
+        message = resp.get_json()["message"]
+        assert "Legacy cprint line" in message
+        assert "Legacy print_slow line" in message
+
+    def test_in_combat_fallback_creates_missing_combat_log(self):
+        """Covers line 418: player has no combat_log attribute at all yet."""
+        from types import SimpleNamespace
+
+        item = _make_item()
+        item.merchandise = False
+        item.use = MagicMock()
+
+        real_player = SimpleNamespace(
+            name="Jean",
+            hp=100,
+            maxhp=100,
+            gold=50,
+            platinum=5,
+            inventory_list=[item],
+            inventory=[item],
+            combat_list_allies=[],
+            in_combat=True,
+            combat_proximity={},
+            eq_weapon=None,
+            fists=MagicMock(),
+            equipped={},
+            location_x=0,
+            location_y=0,
+            universe=MagicMock(),
+            combat_beat=1,
+            combat_list=[],
+        )
+        real_player.universe.get_tile.return_value = MagicMock(items_here=[])
+        assert not hasattr(real_player, "combat_log")
+        assert not hasattr(real_player, "_combat_adapter")
+
+        app, _, _, sm = _make_app(player=real_player)
+        sm.get_player.return_value = real_player
+        mock_cs_cls = MagicMock()
+        mock_cs_cls.serialize_combat_state.return_value = {}
+        with (
+            patch.dict(
+                "sys.modules",
+                {
+                    "src.api.serializers.combat": MagicMock(
+                        CombatStateSerializer=mock_cs_cls
+                    )
+                },
+            ),
+            patch("src.api.routes.inventory.InventorySerializer") as mock_ser,
+        ):
+            mock_ser.serialize.return_value = {}
+            with app.test_client() as c:
+                resp = c.post(
+                    "/inventory/use",
+                    json={"item_index": 0},
+                    headers={"Authorization": AUTH},
+                )
+        assert resp.status_code == 200
+        assert hasattr(real_player, "combat_log")
+        assert len(real_player.combat_log) >= 1
+
+    def test_use_item_exception_returns_500(self):
+        item = _make_item()
+        item.merchandise = False
+        item.use = MagicMock(side_effect=RuntimeError("use blew up"))
+        player = _make_player(items=[item])
+        app, _, _, _ = _make_app(player=player)
+        with app.test_client() as c:
+            resp = c.post(
+                "/inventory/use",
+                json={"item_index": 0},
+                headers={"Authorization": AUTH},
+            )
+        assert resp.status_code == 500
+
+
 # ---------------------------------------------------------------------------
 # POST /inventory/unequip
 # ---------------------------------------------------------------------------
@@ -935,6 +1076,151 @@ class TestResolveAllyTarget:
         raw_id = str(id(ally))
         result = _resolve_ally_target(player, f"ally_{raw_id}")
         assert result is ally
+
+
+# ---------------------------------------------------------------------------
+# Per-route auth-guard ("if error: return error") coverage
+# ---------------------------------------------------------------------------
+
+
+class TestAuthGuardPerRoute:
+    """Each route repeats `if error: return error` after get_session_and_player().
+
+    These are separate statements per function, so a single missing-auth test
+    against one route doesn't cover the others.
+    """
+
+    @pytest.mark.parametrize(
+        "method,path,body",
+        [
+            ("get", "/inventory/examine?index=0", None),
+            ("post", "/inventory/drop", {}),
+            ("get", "/equipment", None),
+            ("post", "/inventory/equip", {}),
+            ("post", "/inventory/use", {}),
+            ("post", "/inventory/unequip", {}),
+            ("get", "/inventory/compare?candidate_index=0", None),
+            ("get", "/inventory/stats", None),
+            ("get", "/inventory/currency", None),
+        ],
+    )
+    def test_missing_auth_returns_401(self, method, path, body):
+        app, _, _, _ = _make_app()
+        with app.test_client() as c:
+            if method == "post":
+                resp = c.post(path, json=body)
+            else:
+                resp = c.get(path)
+        assert resp.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# Remaining per-route exception handlers ("except Exception: ... return 500")
+# ---------------------------------------------------------------------------
+
+
+class TestRemainingExceptionHandlers:
+    def test_examine_item_exception_returns_500(self):
+        item = _make_item()
+        app, _, _, _ = _make_app(player=_make_player(items=[item]))
+        with (
+            patch(
+                "src.api.routes.inventory.validate_item_index",
+                return_value=(True, None),
+            ),
+            patch("src.api.routes.inventory.ItemDetailSerializer") as mock_ser,
+        ):
+            mock_ser.serialize.side_effect = RuntimeError("boom")
+            with app.test_client() as c:
+                resp = c.get(
+                    "/inventory/examine?index=0", headers={"Authorization": AUTH}
+                )
+        assert resp.status_code == 500
+
+    def test_drop_item_exception_returns_500(self):
+        item = _make_item(isequipped=False)
+        player = _make_player(items=[item])
+        app, _, _, _ = _make_app(player=player)
+        app.game_service.drop_item.return_value = {"success": True, "message": "ok"}
+        with patch("src.api.routes.inventory.InventorySerializer") as mock_ser:
+            mock_ser.serialize.side_effect = RuntimeError("boom")
+            with app.test_client() as c:
+                resp = c.post(
+                    "/inventory/drop",
+                    json={"item_index": 0},
+                    headers={"Authorization": AUTH},
+                )
+        assert resp.status_code == 500
+
+    def test_equip_item_exception_returns_500(self):
+        item = _make_item(isequipped=False, maintype="Armor")
+        player = _make_player(items=[item])
+        app, _, _, _ = _make_app(player=player)
+        app.game_service.equip_item.return_value = {"success": True, "message": "ok"}
+        with patch("src.api.routes.inventory.EquipmentSerializer") as mock_ser:
+            mock_ser.serialize.side_effect = RuntimeError("boom")
+            with app.test_client() as c:
+                resp = c.post(
+                    "/inventory/equip",
+                    json={"item_index": 0},
+                    headers={"Authorization": AUTH},
+                )
+        assert resp.status_code == 500
+
+    def test_unequip_item_exception_returns_500(self):
+        item = _make_item("Helmet", isequipped=True, maintype="Armor")
+        player = _make_player(items=[item])
+        app, _, _, _ = _make_app(player=player)
+        app.game_service.unequip_item.return_value = {
+            "success": True,
+            "message": "ok",
+        }
+        with patch("src.api.routes.inventory.EquipmentSerializer") as mock_ser:
+            mock_ser.serialize.side_effect = RuntimeError("boom")
+            with app.test_client() as c:
+                resp = c.post(
+                    "/inventory/unequip",
+                    json={"item_index": 0},
+                    headers={"Authorization": AUTH},
+                )
+        assert resp.status_code == 500
+
+    def test_compare_items_exception_returns_500(self):
+        item = _make_item()
+        player = _make_player(items=[item])
+        app, _, _, _ = _make_app(player=player)
+        with (
+            patch(
+                "src.api.routes.inventory.validate_item_index",
+                return_value=(True, None),
+            ),
+            patch("src.api.routes.inventory.ItemComparisonSerializer") as mock_ser,
+        ):
+            mock_ser.serialize.side_effect = RuntimeError("boom")
+            with app.test_client() as c:
+                resp = c.get(
+                    "/inventory/compare?candidate_index=0",
+                    headers={"Authorization": AUTH},
+                )
+        assert resp.status_code == 500
+
+    def test_get_currency_exception_returns_500(self):
+        from flask import jsonify as real_jsonify
+
+        def _jsonify_side_effect(*args, **kwargs):
+            # Only blow up building the success payload; let the except
+            # handler's own jsonify(...) call for the 500 response through.
+            if args and isinstance(args[0], dict) and "currency" in args[0]:
+                raise RuntimeError("boom")
+            return real_jsonify(*args, **kwargs)
+
+        app, _, _, _ = _make_app()
+        with patch(
+            "src.api.routes.inventory.jsonify", side_effect=_jsonify_side_effect
+        ):
+            with app.test_client() as c:
+                resp = c.get("/inventory/currency", headers={"Authorization": AUTH})
+        assert resp.status_code == 500
 
 
 # ---------------------------------------------------------------------------
