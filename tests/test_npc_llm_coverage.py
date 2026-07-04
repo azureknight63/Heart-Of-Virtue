@@ -985,3 +985,560 @@ class TestInteractWithPlayerFallback:
             with patch("time.sleep"):
                 result = self.m.interact_with_player(player=MagicMock(), prompt="pet")
         assert isinstance(result, str)
+
+
+# ---------------------------------------------------------------------------
+# Additional coverage: exception / debug branches not hit above
+# ---------------------------------------------------------------------------
+
+
+class TestAppendLlmHistoryException:
+    def test_append_exception_returns_none(self):
+        m = _make_mynx()
+        m._llm_history = "not-a-list"  # .append will raise AttributeError
+        result = m._append_llm_history("pet", "purrs")
+        assert result is None
+        # unchanged since the exception was swallowed
+        assert m._llm_history == "not-a-list"
+
+
+class TestGetLlmAdapterDebugBranches:
+    def _fake_root(self, tmp_path):
+        def fake_path(arg):
+            mp = MagicMock()
+            mp.resolve.return_value.parent.parent.parent = tmp_path
+            return mp
+
+        return fake_path
+
+    def _setup_ai_file(self, tmp_path):
+        ai_dir = tmp_path / "ai"
+        ai_dir.mkdir(exist_ok=True)
+        dummy = ai_dir / "llm_client.py"
+        dummy.write_text("class MynxLLMAdapter: pass", encoding="utf-8")
+        return dummy
+
+    def test_file_not_found_with_debug_narrates(self, tmp_path):
+        m = _make_mynx()
+        with patch.dict(
+            os.environ, {"MYNX_LLM_ENABLED": "1", "MYNX_LLM_DEBUG": "1"}
+        ):
+            with patch("src.npc._llm.Path", side_effect=self._fake_root(tmp_path)):
+                result = m._get_llm_adapter()
+        assert result is None
+
+    def test_spec_none_with_debug_narrates(self, tmp_path):
+        m = _make_mynx()
+        self._setup_ai_file(tmp_path)
+        with patch.dict(
+            os.environ, {"MYNX_LLM_ENABLED": "1", "MYNX_LLM_DEBUG": "1"}
+        ):
+            with patch("src.npc._llm.Path", side_effect=self._fake_root(tmp_path)):
+                with patch(
+                    "importlib.util.spec_from_file_location", return_value=None
+                ):
+                    result = m._get_llm_adapter()
+        assert result is None
+
+    def test_adapter_class_missing_with_debug_narrates(self, tmp_path):
+        m = _make_mynx()
+        self._setup_ai_file(tmp_path)
+        with patch.dict(
+            os.environ, {"MYNX_LLM_ENABLED": "1", "MYNX_LLM_DEBUG": "1"}
+        ):
+            with patch("src.npc._llm.Path", side_effect=self._fake_root(tmp_path)):
+                with patch(
+                    "importlib.util.spec_from_file_location"
+                ) as mock_spec:
+                    spec = MagicMock()
+                    spec.loader = MagicMock()
+                    mock_spec.return_value = spec
+                    mod_mock = MagicMock(spec=[])
+                    with patch(
+                        "importlib.util.module_from_spec", return_value=mod_mock
+                    ):
+                        result = m._get_llm_adapter()
+        assert result is None
+
+    def test_available_check_exception_with_debug_narrates(self, tmp_path):
+        m = _make_mynx()
+        self._setup_ai_file(tmp_path)
+        fake_adapter_inst = MagicMock()
+        fake_adapter_inst.available.side_effect = RuntimeError("no api key")
+        with patch.dict(
+            os.environ, {"MYNX_LLM_ENABLED": "1", "MYNX_LLM_DEBUG": "1"}
+        ):
+            with patch("src.npc._llm.Path", side_effect=self._fake_root(tmp_path)):
+                with patch(
+                    "importlib.util.spec_from_file_location"
+                ) as mock_spec:
+                    spec = MagicMock()
+                    spec.loader = MagicMock()
+                    mock_spec.return_value = spec
+                    mod_mock = MagicMock()
+                    mod_mock.MynxLLMAdapter = MagicMock(
+                        return_value=fake_adapter_inst
+                    )
+                    with patch(
+                        "importlib.util.module_from_spec", return_value=mod_mock
+                    ):
+                        result = m._get_llm_adapter()
+        assert result is None
+
+    def test_available_true_with_debug_status_narrates(self, tmp_path):
+        m = _make_mynx()
+        self._setup_ai_file(tmp_path)
+        fake_adapter_inst = MagicMock()
+        fake_adapter_inst.available.return_value = True
+        fake_adapter_inst.debug_status.return_value = "ready"
+        with patch.dict(
+            os.environ, {"MYNX_LLM_ENABLED": "1", "MYNX_LLM_DEBUG": "1"}
+        ):
+            with patch("src.npc._llm.Path", side_effect=self._fake_root(tmp_path)):
+                with patch(
+                    "importlib.util.spec_from_file_location"
+                ) as mock_spec:
+                    spec = MagicMock()
+                    spec.loader = MagicMock()
+                    mock_spec.return_value = spec
+                    mod_mock = MagicMock()
+                    mod_mock.MynxLLMAdapter = MagicMock(
+                        return_value=fake_adapter_inst
+                    )
+                    with patch(
+                        "importlib.util.module_from_spec", return_value=mod_mock
+                    ):
+                        result = m._get_llm_adapter()
+        assert result is fake_adapter_inst
+
+    def test_unavailable_with_debug_status_narrates(self, tmp_path):
+        m = _make_mynx()
+        self._setup_ai_file(tmp_path)
+        fake_adapter_inst = MagicMock()
+        fake_adapter_inst.available.return_value = False
+        fake_adapter_inst.debug_status.return_value = "no key set"
+        with patch.dict(
+            os.environ, {"MYNX_LLM_ENABLED": "1", "MYNX_LLM_DEBUG": "1"}
+        ):
+            with patch("src.npc._llm.Path", side_effect=self._fake_root(tmp_path)):
+                with patch(
+                    "importlib.util.spec_from_file_location"
+                ) as mock_spec:
+                    spec = MagicMock()
+                    spec.loader = MagicMock()
+                    mock_spec.return_value = spec
+                    mod_mock = MagicMock()
+                    mod_mock.MynxLLMAdapter = MagicMock(
+                        return_value=fake_adapter_inst
+                    )
+                    with patch(
+                        "importlib.util.module_from_spec", return_value=mod_mock
+                    ):
+                        result = m._get_llm_adapter()
+        assert result is None
+
+    def test_unavailable_debug_status_raises_is_swallowed(self, tmp_path):
+        m = _make_mynx()
+        self._setup_ai_file(tmp_path)
+        fake_adapter_inst = MagicMock()
+        fake_adapter_inst.available.return_value = False
+        fake_adapter_inst.debug_status.side_effect = RuntimeError("boom")
+        with patch.dict(
+            os.environ, {"MYNX_LLM_ENABLED": "1", "MYNX_LLM_DEBUG": "1"}
+        ):
+            with patch("src.npc._llm.Path", side_effect=self._fake_root(tmp_path)):
+                with patch(
+                    "importlib.util.spec_from_file_location"
+                ) as mock_spec:
+                    spec = MagicMock()
+                    spec.loader = MagicMock()
+                    mock_spec.return_value = spec
+                    mod_mock = MagicMock()
+                    mod_mock.MynxLLMAdapter = MagicMock(
+                        return_value=fake_adapter_inst
+                    )
+                    with patch(
+                        "importlib.util.module_from_spec", return_value=mod_mock
+                    ):
+                        result = m._get_llm_adapter()
+        assert result is None
+
+    def test_outer_exception_with_debug_narrates(self):
+        m = _make_mynx()
+        with patch.dict(
+            os.environ, {"MYNX_LLM_ENABLED": "1", "MYNX_LLM_DEBUG": "1"}
+        ):
+            with patch("src.npc._llm.Path", side_effect=Exception("hard crash")):
+                result = m._get_llm_adapter()
+        assert result is None
+
+
+class TestSanitizeMynxLlmTextException:
+    def test_exception_path_returns_original_text(self):
+        m = _make_mynx()
+        m.pronouns = None  # .get on None raises AttributeError inside try
+        text = "Whisper watches Jean."
+        result = m._sanitize_mynx_llm_text(text, {"Jean"})
+        assert result == text
+
+
+class TestEnforcePronounsAdditional:
+    def test_jean_and_pronoun_in_same_sentence_uses_jean_subject(self):
+        m = _make_mynx()
+        m._jean_advisor = {
+            "pronouns": {
+                "subject": "she",
+                "object": "her",
+                "possessive_adjective": "her",
+            }
+        }
+        # Single sentence containing both "Jean" and a bare "he"/"she" token
+        text = "Jean said he would leave soon."
+        result = m._enforce_pronouns_and_names(text, set())
+        assert "she" in result.lower()
+
+    def test_text_without_trailing_terminator_included(self):
+        m = _make_mynx()
+        # No sentence-ending punctuation at all -- exercises the
+        # `if last_end < len(text): parts.append(text[last_end:])` branch.
+        text = "Whisper watches quietly"
+        result = m._enforce_pronouns_and_names(text, set())
+        assert "Whisper" in result
+
+
+class TestGatherEnvironmentListsAdditional:
+    def test_object_without_description_gets_placeholder(self):
+        m = _make_mynx()
+        room = MagicMock()
+        room.items_here = []
+        obj = MagicMock()
+        obj.name = "Old Crate"
+        obj.description = None
+        obj.summary = None
+        room.objects_here = [obj]
+        room.npcs_here = []
+        m.current_room = room
+        env, _ = m._gather_environment_lists()
+        assert "Old Crate" in env
+        assert "(no description)" in env
+
+    def test_npc_without_description_gets_placeholder(self):
+        m = _make_mynx()
+        room = MagicMock()
+        room.items_here = []
+        room.objects_here = []
+        npc = MagicMock()
+        npc.name = "Guard"
+        npc.description = None
+        npc.discovery_message = None
+        room.npcs_here = [npc]
+        m.current_room = room
+        env, _ = m._gather_environment_lists()
+        assert "Guard" in env
+        assert "(no description)" in env
+
+    def test_room_access_exception_returns_empty_string(self):
+        m = _make_mynx()
+
+        class _BadRoom:
+            @property
+            def items_here(self):
+                raise RuntimeError("boom")
+
+        m.current_room = _BadRoom()
+        env, empty = m._gather_environment_lists()
+        assert env == ""
+        assert empty == set()
+
+    def test_prep_exception_returns_empty(self):
+        m = _make_mynx()
+        room = MagicMock()
+        item = MagicMock()
+        item.name = "Rock"
+        item.description = None
+        item.short_description = None
+        room.items_here = [item]
+        room.objects_here = []
+        room.npcs_here = []
+        m.current_room = room
+        # Force each built entry to be an unhashable list rather than a str,
+        # so `dict.fromkeys(lst)` inside prep() raises TypeError and is caught.
+        m._normalize_ws = lambda s: []
+        env, _ = m._gather_environment_lists()
+        assert env == ""
+
+
+class TestBuildHistoryBlockException:
+    def test_exception_in_history_returns_empty(self):
+        m = _make_mynx()
+
+        class _BadHistory:
+            def __getitem__(self, key):
+                raise RuntimeError("boom")
+
+            def __bool__(self):
+                return True
+
+        m._llm_history = _BadHistory()
+        result = m._build_history_block()
+        assert result == ""
+
+
+class TestBuildLlmContextDebugException:
+    def test_debug_narrate_exception_is_swallowed(self):
+        m = _make_mynx()
+        with patch.dict(os.environ, {"MYNX_LLM_DEBUG": "1"}):
+            with patch("src.npc._llm.narrate", side_effect=RuntimeError("boom")):
+                result = m._build_llm_context(set(), "pet", "", "")
+        assert isinstance(result, str)
+
+
+class TestCheckAndCorrectMynxTextException:
+    def test_exception_returns_none(self):
+        m = _make_mynx()
+        m.pronouns = None  # .get on None inside try raises AttributeError
+        result = m._check_and_correct_mynx_text("Some valid text here.", "pet", [])
+        assert result is None
+
+
+class TestInteractWithPlayerRosterException:
+    def test_roster_building_exception_is_swallowed(self):
+        m = _make_mynx()
+
+        class _BadRoom:
+            @property
+            def npcs_here(self):
+                raise RuntimeError("boom")
+
+        m.current_room = _BadRoom()
+        with patch("time.sleep"):
+            result = m.interact_with_player(player=MagicMock(), prompt="pet")
+        assert isinstance(result, str)
+
+
+class TestInteractWithPlayerAdapterEnabled:
+    """Covers the LLM-adapter-enabled branch of interact_with_player (lines 608-679)."""
+
+    def setup_method(self):
+        self.m = _make_mynx()
+
+    def test_structured_valid_description_returned(self):
+        adapter = MagicMock()
+        adapter.generate_structured.return_value = {
+            "description": "Whisper tilts its head at Jean."
+        }
+        self.m._llm_adapter = adapter
+        with patch("time.sleep"):
+            result = self.m.interact_with_player(
+                player=MagicMock(), prompt="pet", structured=True
+            )
+        assert isinstance(result, dict)
+        assert "description" in result
+        assert self.m._llm_last_response is result
+
+    def test_structured_missing_description_key_falls_back(self):
+        adapter = MagicMock()
+        adapter.generate_structured.return_value = {"no_description": True}
+        self.m._llm_adapter = adapter
+        with patch("time.sleep"):
+            result = self.m.interact_with_player(
+                player=MagicMock(), prompt="pet", structured=True
+            )
+        # Falls through to the deterministic fallback dict
+        assert isinstance(result, dict)
+        assert result.get("action") == "groom"
+
+    def test_structured_check_rejects_output_falls_back(self):
+        adapter = MagicMock()
+        # Quoted speech is rejected by _check_and_correct_mynx_text -> None
+        adapter.generate_structured.return_value = {
+            "description": '"I am talking," Whisper says.'
+        }
+        self.m._llm_adapter = adapter
+        with patch("time.sleep"):
+            result = self.m.interact_with_player(
+                player=MagicMock(), prompt="pet", structured=True
+            )
+        assert isinstance(result, dict)
+        assert result.get("action") == "groom"
+
+    def test_structured_with_debug_narrates_raw_description(self):
+        adapter = MagicMock()
+        adapter.generate_structured.return_value = {
+            "description": "Whisper chirps happily."
+        }
+        self.m._llm_adapter = adapter
+        with patch.dict(os.environ, {"MYNX_LLM_DEBUG": "1"}):
+            with patch("time.sleep"):
+                result = self.m.interact_with_player(
+                    player=MagicMock(), prompt="pet", structured=True
+                )
+        assert isinstance(result, dict)
+
+    def test_plain_text_valid_response_narrated(self):
+        adapter = MagicMock()
+        adapter.generate_plain.return_value = "Whisper leans in close to Jean."
+        self.m._llm_adapter = adapter
+        with patch("time.sleep"):
+            result = self.m.interact_with_player(
+                player=MagicMock(), prompt="pet", structured=False
+            )
+        assert isinstance(result, str)
+        assert self.m._llm_last_response["action"] == "narrate"
+
+    def test_plain_text_with_debug_narrates_raw(self):
+        adapter = MagicMock()
+        adapter.generate_plain.return_value = "Whisper chitters."
+        self.m._llm_adapter = adapter
+        with patch.dict(os.environ, {"MYNX_LLM_DEBUG": "1"}):
+            with patch("time.sleep"):
+                result = self.m.interact_with_player(
+                    player=MagicMock(), prompt="pet", structured=False
+                )
+        assert isinstance(result, str)
+
+    def test_plain_text_non_string_falls_back(self):
+        adapter = MagicMock()
+        adapter.generate_plain.return_value = None
+        self.m._llm_adapter = adapter
+        with patch("time.sleep"):
+            result = self.m.interact_with_player(
+                player=MagicMock(), prompt="pet", structured=False
+            )
+        assert isinstance(result, str)
+
+    def test_plain_text_rejected_by_check_falls_back(self):
+        adapter = MagicMock()
+        adapter.generate_plain.return_value = "hi"  # too short (< 5 chars)
+        self.m._llm_adapter = adapter
+        with patch("time.sleep"):
+            result = self.m.interact_with_player(
+                player=MagicMock(), prompt="pet", structured=False
+            )
+        assert isinstance(result, str)
+
+    def test_generation_exception_falls_back(self):
+        adapter = MagicMock()
+        adapter.generate_plain.side_effect = RuntimeError("network down")
+        self.m._llm_adapter = adapter
+        with patch("time.sleep"):
+            result = self.m.interact_with_player(
+                player=MagicMock(), prompt="pet", structured=False
+            )
+        assert isinstance(result, str)
+
+    def test_generation_exception_with_debug_narrates(self):
+        adapter = MagicMock()
+        adapter.generate_plain.side_effect = RuntimeError("network down")
+        self.m._llm_adapter = adapter
+        with patch.dict(os.environ, {"MYNX_LLM_DEBUG": "1"}):
+            with patch("time.sleep"):
+                result = self.m.interact_with_player(
+                    player=MagicMock(), prompt="pet", structured=False
+                )
+        assert isinstance(result, str)
+
+
+class TestInteractWithPlayerAdapterEnabledInnerExceptions:
+    """Covers the inner try/except blocks around narrate() debug logging and
+    _append_llm_history() calls inside the adapter-enabled branch."""
+
+    def setup_method(self):
+        self.m = _make_mynx()
+
+    @staticmethod
+    def _raise_for(substr):
+        def _narrate(msg, *a, **kw):
+            if substr in msg:
+                raise RuntimeError("boom")
+            return None
+
+        return _narrate
+
+    def test_structured_debug_narrate_raw_description_exception_swallowed(self):
+        adapter = MagicMock()
+        adapter.generate_structured.return_value = {
+            "description": "Whisper chirps happily."
+        }
+        self.m._llm_adapter = adapter
+        with patch.dict(os.environ, {"MYNX_LLM_DEBUG": "1"}):
+            with patch(
+                "src.npc._llm.narrate",
+                side_effect=self._raise_for("Raw structured description"),
+            ):
+                with patch("time.sleep"):
+                    result = self.m.interact_with_player(
+                        player=MagicMock(), prompt="pet", structured=True
+                    )
+        assert isinstance(result, dict)
+
+    def test_structured_append_history_exception_swallowed(self):
+        adapter = MagicMock()
+        adapter.generate_structured.return_value = {
+            "description": "Whisper chirps happily."
+        }
+        self.m._llm_adapter = adapter
+        with patch.object(
+            self.m, "_append_llm_history", side_effect=RuntimeError("boom")
+        ):
+            with patch("time.sleep"):
+                result = self.m.interact_with_player(
+                    player=MagicMock(), prompt="pet", structured=True
+                )
+        assert isinstance(result, dict)
+        assert "description" in result
+
+    def test_plain_debug_narrate_raw_text_exception_swallowed(self):
+        adapter = MagicMock()
+        adapter.generate_plain.return_value = "Whisper chitters."
+        self.m._llm_adapter = adapter
+        with patch.dict(os.environ, {"MYNX_LLM_DEBUG": "1"}):
+            with patch(
+                "src.npc._llm.narrate",
+                side_effect=self._raise_for("Raw plain text"),
+            ):
+                with patch("time.sleep"):
+                    result = self.m.interact_with_player(
+                        player=MagicMock(), prompt="pet", structured=False
+                    )
+        assert isinstance(result, str)
+
+    def test_plain_append_history_exception_swallowed(self):
+        adapter = MagicMock()
+        adapter.generate_plain.return_value = "Whisper chitters happily today."
+        self.m._llm_adapter = adapter
+        with patch.object(
+            self.m, "_append_llm_history", side_effect=RuntimeError("boom")
+        ):
+            with patch("time.sleep"):
+                result = self.m.interact_with_player(
+                    player=MagicMock(), prompt="pet", structured=False
+                )
+        assert isinstance(result, str)
+
+
+class TestInteractWithPlayerHistoryAppendException:
+    def test_history_append_exception_in_fallback_is_swallowed(self):
+        """_append_llm_history itself swallows internal errors, so to exercise
+        the outer try/except in interact_with_player's fallback tail we must
+        make the method call itself raise (as if the method were broken),
+        not merely make the underlying list misbehave.
+        """
+        m = _make_mynx()
+        m._llm_adapter = None
+        with patch.object(
+            m, "_append_llm_history", side_effect=RuntimeError("boom")
+        ):
+            with patch("time.sleep"):
+                result = m.interact_with_player(player=MagicMock(), prompt="pet")
+        assert isinstance(result, str)
+
+
+class TestInteractWithPlayerSleepException:
+    def test_sleep_exception_is_swallowed(self):
+        m = _make_mynx()
+        m._llm_adapter = None
+        with patch("src.npc._llm.time.sleep", side_effect=RuntimeError("boom")):
+            with patch.dict(os.environ, {"MYNX_FALLBACK_DELAY": "1.5"}):
+                result = m.interact_with_player(player=MagicMock(), prompt="pet")
+        assert isinstance(result, str)
