@@ -203,18 +203,27 @@ class TestAdvance:
         advance.target = None
         assert advance.viable() is True
 
-    def test_advance_execute_announces(self):
-        """Lines 272-277: execute announces advancement."""
+    def test_advance_execute_announces(self, capsys):
+        """Lines 272-277: execute announces advancement.
+
+        Uses capsys rather than patching moves._movement.cprint: under the
+        full suite, the bare `moves` package and `src.moves` can resolve to
+        distinct module objects depending on import order, so patching one
+        copy's cprint can silently miss the call actually made through the
+        other. cprint falls back to real stdout when no narration capture
+        is active, so capsys is import-path agnostic.
+        """
         import moves
 
         p = _player()
+        p.name = "Jean"
         enemy = _make_enemy()
+        enemy.name = "Slime"
         p.combat_proximity[enemy] = 10
         advance = moves.Advance(p)
         advance.target = enemy
-        with patch("moves._movement.cprint"):
-            advance.execute(p)
-        pass  # code executed = success
+        advance.execute(p)
+        assert capsys.readouterr().out.strip() == "Jean finished advancing on Slime."
 
     def test_advance_beat_update_legacy(self):
         """Lines 257-270: _beat_legacy reduces proximity."""
@@ -317,16 +326,15 @@ class TestWithdraw:
         withdraw = moves.Withdraw(p)
         assert withdraw.viable() is True
 
-    def test_withdraw_execute_announces(self):
+    def test_withdraw_execute_announces(self, capsys):
         """Lines 394-398: execute announces retreat."""
         import moves
 
         p = _player()
         p.name = "Jean"
         withdraw = moves.Withdraw(p)
-        with patch("moves._movement.cprint"):
-            withdraw.execute(p)
-        pass  # code executed = success
+        withdraw.execute(p)
+        assert capsys.readouterr().out.strip() == "Jean successfully fell back."
 
     def test_withdraw_beat_legacy(self):
         """Lines 386-392: _beat_legacy increases all enemy distances."""
@@ -382,28 +390,32 @@ class TestBullCharge:
         bc.target = None
         assert bc.viable() is False
 
-    def test_bullcharge_prep_announces(self):
+    def test_bullcharge_prep_announces(self, capsys):
         """Lines 442-443: prep cprints charge message."""
         import moves
 
         p = _player()
+        p.name = "Jean"
         bc = moves.BullCharge(p)
-        with patch("moves._movement.cprint"):
-            bc.prep(p)
-        pass  # code executed = success
+        bc.prep(p)
+        assert capsys.readouterr().out.strip() == "Jean readies for a charge..."
 
-    def test_bullcharge_execute_announces(self):
+    def test_bullcharge_execute_announces(self, capsys):
         """Lines 495-500: execute announces charge."""
         import moves
 
         p = _player()
+        p.name = "Jean"
         enemy = _make_enemy(alive=True)
+        enemy.name = "Slime"
         p.combat_proximity[enemy] = 10
         bc = moves.BullCharge(p)
         bc.target = enemy
-        with patch("moves._movement.cprint"):
-            bc.execute(p)
-        pass  # code executed = success
+        bc.execute(p)
+        assert (
+            capsys.readouterr().out.strip()
+            == "Jean slammed into Slime during the charge!"
+        )
 
     def test_bullcharge_beat_legacy(self):
         """Lines 488-493: _beat_legacy decreases proximity."""
@@ -446,26 +458,27 @@ class TestTacticalRetreat:
         tr = moves.TacticalRetreat(p)
         assert tr.viable() is False
 
-    def test_tacticalretreat_prep_announces(self):
+    def test_tacticalretreat_prep_announces(self, capsys):
         """Lines 539-540: prep announces retreat preparation."""
         import moves
 
         p = _player()
+        p.name = "Jean"
         tr = moves.TacticalRetreat(p)
-        with patch("moves._movement.cprint"):
-            tr.prep(p)
-        pass  # code executed = success
+        tr.prep(p)
+        assert capsys.readouterr().out.strip() == "Jean prepares to retreat..."
 
-    def test_tacticalretreat_execute_announces(self):
+    def test_tacticalretreat_execute_announces(self, capsys):
         """Lines 583-587: execute announces finished retreat."""
         import moves
 
         p = _player()
         p.name = "Jean"
         tr = moves.TacticalRetreat(p)
-        with patch("moves._movement.cprint"):
-            tr.execute(p)
-        pass  # code executed = success
+        tr.execute(p)
+        assert (
+            capsys.readouterr().out.strip() == "Jean finished the tactical retreat."
+        )
 
     def test_tacticalretreat_beat_legacy(self):
         """Lines 578-581: _beat_legacy increases all enemy distances."""
@@ -499,46 +512,48 @@ class TestFlankingManeuver:
         fm.target = enemy
         assert fm.viable() is True
 
-    def test_flankingmaneuver_prep_announces(self):
+    def test_flankingmaneuver_prep_announces(self, capsys):
         """Lines 630-631: prep announces flanking."""
         import moves
 
         p = _player()
+        p.name = "Jean"
         fm = moves.FlankingManeuver(p)
-        with patch("moves._movement.cprint"):
-            fm.prep(p)
-        pass  # code executed = success
+        fm.prep(p)
+        assert capsys.readouterr().out.strip() == "Jean prepares to flank..."
 
-    def test_flankingmaneuver_execute_announces(self):
-        """Lines 656-682: execute announces flanking result."""
+    def test_flankingmaneuver_execute_announces(self, capsys):
+        """Lines 656-682: execute announces flanking result (generic 'finished
+        maneuvering' branch, since combat_position is unset -> the two
+        angle-based branches above it are skipped)."""
         import moves
 
         p = _player()
         p.name = "Jean"
         enemy = _make_enemy(alive=True)
+        enemy.name = "Slime"
         p.combat_proximity[enemy] = 8
         fm = moves.FlankingManeuver(p)
         fm.target = enemy
-        with patch("moves._movement.cprint"):
-            fm.execute(p)
-        pass  # code executed = success
+        fm.execute(p)
+        assert capsys.readouterr().out.strip() == "Jean finished maneuvering."
 
-    def test_flankingmaneuver_execute_no_combat_position(self):
+    def test_flankingmaneuver_execute_no_combat_position(self, capsys):
         """Lines 681-682: execute announces generic maneuver when no position."""
         import moves
 
         p = _player()
         p.name = "Jean"
         enemy = _make_enemy(alive=True)
+        enemy.name = "Slime"
         if hasattr(p, "combat_position"):
             if "combat_position" in p.__dict__:
                 del p.__dict__["combat_position"]
         p.combat_proximity[enemy] = 8
         fm = moves.FlankingManeuver(p)
         fm.target = enemy
-        with patch("moves._movement.cprint"):
-            fm.execute(p)
-        pass  # code executed = success
+        fm.execute(p)
+        assert capsys.readouterr().out.strip() == "Jean finished maneuvering."
 
 
 # ---------------------------------------------------------------------------
@@ -592,21 +607,27 @@ class TestTacticalPositioning:
         tp.prep(p)
         assert tp.distance == 5
 
-    def test_tacticalpos_execute_announces(self):
-        """Lines 862-870: execute announces position adjustment."""
+    def test_tacticalpos_execute_announces(self, capsys):
+        """Lines 862-870: execute announces position adjustment and awards
+        5 "Basic" combat exp."""
         import moves
 
         p = _player()
         p.name = "Jean"
         if not hasattr(p, "combat_exp"):
             p.combat_exp = {"Basic": 0}
+        starting_exp = p.combat_exp.get("Basic", 0)
         enemy = _make_enemy(alive=True)
+        enemy.name = "Slime"
         p.combat_proximity[enemy] = 10
         tp = moves.TacticalPositioning(p)
         tp.target = enemy
-        with patch("moves._movement.cprint"):
-            tp.execute(p)
-        pass  # code executed = success
+        tp.execute(p)
+        assert (
+            capsys.readouterr().out.strip()
+            == "Jean finished adjusting position relative to Slime."
+        )
+        assert p.combat_exp["Basic"] == starting_exp + 5
 
     def test_tacticalpos_beat_legacy(self):
         """Lines 847-860: _beat_legacy adjusts proximity toward target distance."""
@@ -713,30 +734,33 @@ class TestQuickSwap:
         qs = moves.QuickSwap(p)
         assert qs.viable() is False
 
-    def test_quickswap_prep_no_allies(self):
+    def test_quickswap_prep_no_allies(self, capsys):
         """Lines 1185-1187: prep warns when no allies."""
         import moves
 
         p = _player()
         p.combat_list_allies = []
         qs = moves.QuickSwap(p)
-        with patch("moves._movement.cprint"):
-            qs.prep(p)
-        pass  # code executed = success
+        qs.prep(p)
+        assert capsys.readouterr().out.strip() == "No nearby allies to swap with!"
 
-    def test_quickswap_execute_no_allies(self):
+    def test_quickswap_execute_no_allies(self, capsys):
         """Lines 1205-1207: execute warns when no nearby allies."""
         import moves
 
         p = _player()
+        p.name = "Jean"
         p.combat_list_allies = []
         qs = moves.QuickSwap(p)
-        with patch("moves._movement.cprint"):
-            qs.execute(p)
-        pass  # code executed = success
+        qs.execute(p)
+        assert (
+            capsys.readouterr().out.strip()
+            == "Jean couldn't find an ally to swap with!"
+        )
 
-    def test_quickswap_execute_legacy(self):
-        """Lines 1279-1295: _execute_legacy swaps proximity dicts."""
+    def test_quickswap_execute_legacy(self, capsys):
+        """Lines 1279-1295: _execute_legacy swaps proximity dicts wholesale
+        and keeps the enemy's mirrored distances in sync."""
         import moves
 
         p = _player()
@@ -753,12 +777,15 @@ class TestQuickSwap:
         enemy.combat_proximity[ally] = 5
 
         qs = moves.QuickSwap(p)
-        with patch("moves._movement.cprint"):
-            qs._execute_legacy(p, ally)
-        # After swap, p should have ally's proximity values
-        # and ally should have p's original values
-        # Just verify no crash
-        assert True
+        qs._execute_legacy(p, ally)
+
+        assert capsys.readouterr().out.strip() == "Jean and Ally swap positions!"
+        # Whole-dict swap: p now holds ally's old proximity map, and vice versa.
+        assert p.combat_proximity == {enemy: 5}
+        assert ally.combat_proximity == {enemy: 10}
+        # Bidirectional sync: the enemy's mirrored distances follow the swap.
+        assert enemy.combat_proximity[p] == 5
+        assert enemy.combat_proximity[ally] == 10
 
     def test_quickswap_get_nearby_allies_legacy(self):
         """Lines 1164-1173: legacy proximity used when no combat_position."""
@@ -780,7 +807,7 @@ class TestQuickSwap:
         nearby = qs._get_nearby_allies()
         assert ally in nearby
 
-    def test_quickswap_prep_shows_allies(self):
+    def test_quickswap_prep_shows_allies(self, capsys):
         """Lines 1183-1199: prep shows ally list when allies present."""
         import moves
 
@@ -796,9 +823,13 @@ class TestQuickSwap:
         p.combat_proximity[ally] = 2
 
         qs = moves.QuickSwap(p)
-        with patch("builtins.print"), patch("moves._movement.cprint"):
-            qs.prep(p)
-        # No crash = success
+        qs.prep(p)
+        # Header line, then one "  N. Name (distance ft away)" line per ally
+        # (distance computed from the coordinate positions, not the legacy
+        # combat_proximity dict, since both combatants have combat_position).
+        out = capsys.readouterr().out
+        assert "Available allies to swap with:" in out
+        assert "1. Buddy (2 ft away)" in out
 
 
 # ---------------------------------------------------------------------------
@@ -1412,7 +1443,7 @@ class TestQuickSwapRemainingGaps:
             with pytest.raises(ValueError):
                 qs.execute(p)
 
-    def test_execute_uses_explicit_target_when_nearby(self):
+    def test_execute_uses_explicit_target_when_nearby(self, capsys):
         """Line 1088: explicit target used directly when still within range."""
         import moves
 
@@ -1429,9 +1460,13 @@ class TestQuickSwapRemainingGaps:
 
         qs = moves.QuickSwap(p)
         qs.target = ally
-        with patch("moves._movement.cprint"):
-            qs.execute(p)
-        # No crash = success (legacy execute path dispatched)
+        qs.execute(p)
+        # No combat_position on either side -> dispatches to _execute_legacy,
+        # which whole-dict-swaps p<->ally proximity (confirming the explicit
+        # `qs.target` was used as the swap partner, not some other ally).
+        assert capsys.readouterr().out.strip() == "Jean and Buddy swap positions!"
+        assert p.combat_proximity == {}
+        assert ally.combat_proximity == {ally: 2}
 
     def test_execute_dispatches_legacy_swap(self):
         """Line 1105-1106: legacy execute branch dispatched when no coordinates."""

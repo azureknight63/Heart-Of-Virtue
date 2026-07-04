@@ -14,6 +14,8 @@ import pathlib
 import sys
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 _ROOT = pathlib.Path(__file__).resolve().parent.parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
@@ -203,17 +205,18 @@ class TestPowerStrike:
         move = PowerStrike(user)
         assert move.stage_beat[3] == 3
 
-    def test_evaluate_iron_fist_boosts_power(self):
+    def test_evaluate_iron_fist_boosts_power(self, monkeypatch):
+        monkeypatch.setattr(random, "uniform", lambda a, b: 2.0)
         user = _make_user()
         iron_fist_move = MagicMock()
         iron_fist_move.name = "Iron Fist"
         user.known_moves = [iron_fist_move]
         move = PowerStrike(user)
         move_no_boost = PowerStrike(_make_user())
-        # With the same random seed both should scale, but presence of the
-        # passive multiplies power by 1.25 relative to base -- just assert
-        # the passive branch executed without error and power is positive.
-        assert move.power > 0
+        # Same weapon damage (20) and same fixed random.uniform draw (2.0) on
+        # both users, so the only difference is the Iron Fist passive's
+        # +25% multiplier -- assert the actual ratio, not just "power > 0".
+        assert move.power == pytest.approx(move_no_boost.power * 1.25)
 
     def test_execute_hit_and_heavy_handed_staggers(self, monkeypatch):
         user = _make_user()
@@ -385,13 +388,15 @@ class TestJab:
         move = Jab(user)
         assert move.fatigue_cost == 5
 
-    def test_evaluate_iron_fist_boosts_power(self):
+    def test_evaluate_iron_fist_boosts_power(self, monkeypatch):
+        monkeypatch.setattr(random, "uniform", lambda a, b: 2.0)
         user = _make_user(subtype="Unarmed")
         iron_fist_move = MagicMock()
         iron_fist_move.name = "Iron Fist"
         user.known_moves = [iron_fist_move]
         move = Jab(user)
-        assert move.power > 0
+        move_no_boost = Jab(_make_user(subtype="Unarmed"))
+        assert move.power == pytest.approx(move_no_boost.power * 1.25)
 
     def test_execute_turns_facing_and_hits(self, monkeypatch):
         user = _make_user(subtype="Unarmed")

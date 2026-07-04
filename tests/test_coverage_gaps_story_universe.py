@@ -2534,25 +2534,6 @@ class TestGrondiaTiles:
         t = self._make("GrondiaAntechamber")
         assert "crystal" in t.description.lower()
 
-    def _test_all_classes(self):
-        """Exercise every class in grondia.py to get broad coverage."""
-        from tilesets import grondia as g
-        import inspect
-
-        for name, cls in inspect.getmembers(g, inspect.isclass):
-            if hasattr(cls, "modify_player"):
-                u = _make_universe_mock()
-                m = _make_map()
-                try:
-                    t = cls(u, m, 0, 0)
-                    t.modify_player(Mock())
-                except Exception:
-                    pass  # some tiles may need specific universe state
-
-    def test_exercise_all_grondia_classes(self):
-        self._test_all_classes()
-
-
 class TestGrondiaAllClasses:
     """Instantiate every tile class in grondia.py."""
 

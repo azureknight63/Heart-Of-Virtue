@@ -726,6 +726,17 @@ class TestExecuteMoveInnerAnimationAttackFallback:
             result = adapter._execute_move_inner(move)
 
         assert result is not None
+        # move.web_animation is None, targeted=True, category="Attack" ->
+        # _move_deals_damage() is True -> fallback resolves to "attack". The
+        # pending animation is consumed and flushed into combat_log (with a
+        # matching impact line never emitted here since move.cast() is a
+        # bare mock), so assert on the log entry rather than the transient
+        # (and by-then-deleted) player._pending_animation attribute.
+        animation_entries = [
+            entry for entry in player.combat_log if "animation" in entry
+        ]
+        assert len(animation_entries) == 1
+        assert animation_entries[0]["animation"]["type"] == "attack"
 
 
 # ---------------------------------------------------------------------------
@@ -815,6 +826,10 @@ class TestBeatLoopCurrentMoveNoneGuards:
             result = adapter._execute_move_inner(move)
 
         assert result is not None
+        # known_moves is empty -> the "no moves at all" guard fires on the
+        # very first beat, so exactly one beat_state should be recorded
+        # rather than looping up to max_beats=20.
+        assert len(result["beat_states"]) == 1
 
     def test_move_at_stage_zero_breaks_immediately(self):
         ready_move = _make_move("Slash", current_stage=0)
@@ -837,6 +852,9 @@ class TestBeatLoopCurrentMoveNoneGuards:
             result = adapter._execute_move_inner(cast_move)
 
         assert result is not None
+        # ready_move.current_stage == 0 -> "any move ready" guard fires on
+        # the very first beat, so exactly one beat_state should be recorded.
+        assert len(result["beat_states"]) == 1
 
     def test_all_moves_cooling_keeps_advancing_until_max_beats(self):
         cooling_move = _make_move("Slash", current_stage=1)
