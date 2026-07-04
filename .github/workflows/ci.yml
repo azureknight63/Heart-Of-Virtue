@@ -30,7 +30,7 @@ jobs:
         run: pip install -r requirements.txt -r requirements-dev.txt
 
       - name: Run tests
-        run: python -m pytest -q
+        run: python -m pytest -q -n auto
         env:
           MYNX_LLM_ENABLED: "0"
           MYNX_LLM_PROVIDER: "none"
