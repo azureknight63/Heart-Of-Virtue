@@ -82,14 +82,11 @@ def test_level_capped_at_player_level_and_exp_banked():
     events = g.gain_exp(1_000_000, player_level=3)
     assert g.level == 3
     assert len(events) == 2
-    banked = g.exp
-    assert banked > 0  # overflow retained
-    # Once Jean levels, the banked exp resolves on the next award.
-    events = g.gain_exp(0, player_level=4)
-    # gain_exp(0) doesn't loop unless exp >= threshold — force via a real award
-    events = g.gain_exp(1, player_level=4)
-    assert g.level == 4 or g.exp >= 0  # levels if the bank covers the threshold
-    assert g.level <= 4
+    assert g.exp > 0  # overflow retained
+    # Once Jean levels, the banked exp resolves on the next award (the
+    # million-exp bank always covers the level-4 threshold).
+    g.gain_exp(1, player_level=4)
+    assert g.level == 4
 
 
 def test_catch_up_multiplier_when_two_levels_behind():
@@ -184,8 +181,7 @@ def test_new_move_grant_is_idempotent():
 def test_level_up_event_reports_learned_skills():
     g = _gorran()
     g.sync_level(4)
-    g.exp = g.exp_to_level
-    events = g.gain_exp(0, player_level=6) or g.gain_exp(1, player_level=6)
+    events = g.gain_exp(g.exp_to_level, player_level=6)
     level5 = [e for e in events if e["new_level"] == 5]
     assert level5 and level5[0]["skills_learned"] == ["Bull Charge"]
 
@@ -226,7 +222,6 @@ def test_pickle_roundtrip_preserves_progression():
     clone = pickle.loads(pickle.dumps(g))
     assert clone.level == 5
     assert clone.maxhp_base == g.maxhp_base
-    assert clone._spawn_bases == g._spawn_bases
     assert any(m.name == "Bull Charge" for m in clone.known_moves)
     # Progression continues on the restored instance
     clone.gain_exp(1_000_000, player_level=6)

@@ -20,6 +20,23 @@ class Scenario(ABC):
     # Helpers
     # ------------------------------------------------------------------
 
+    def _find_enemy(self, client: "GameClient"):
+        """Return the first hostile NPC ID from the current room, or None."""
+        resp = client.get("/api/world")
+        if resp.status_code != 200:
+            return None
+        data = client.parse(resp)
+        room = data.get("room", {})
+        npcs = room.get("npcs", [])
+        for npc in npcs:
+            if isinstance(npc, dict):
+                # Skip friendly/ally NPCs
+                if npc.get("friend") or npc.get("is_ally"):
+                    continue
+                return npc.get("id") or npc.get("npc_id") or npc.get("name")
+            return str(npc)
+        return None
+
     def _bug(
         self,
         title: str,

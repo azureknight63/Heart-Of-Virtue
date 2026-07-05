@@ -6,10 +6,23 @@ Provides:
     a single canonical definition so the values never drift between classes.
   - is_alive(), cycle_states(), get_equipped_items(): methods whose logic is
     identical across Player and NPC.
+  - exp_needed_for_level(): the single leveling curve shared by the Player and
+    ally NPC progression.
 
 Usage (in each subclass __init__):
     self._init_resistances()
 """
+
+
+def exp_needed_for_level(level, intelligence):
+    """Exp required to advance from `level` to the next.
+
+    Single source of the leveling curve — used by Player._level_up_api and
+    AllyProgressionMixin.exp_to_level so ally pacing always matches Jean's.
+    The per-level requirement is floored at 1 so very high intelligence
+    (>= 165) can't zero it and spin exp-gain loops forever.
+    """
+    return int(level) * max(1, 165 - int(intelligence))
 
 # ── Canonical defaults ────────────────────────────────────────────────────────
 # 1.0 = no effect, 0.5 = half damage/chance, 2.0 = double.

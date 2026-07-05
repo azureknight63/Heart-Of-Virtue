@@ -446,10 +446,14 @@ class HumanNPCLLMMixin:
         techniques = []
         for m in getattr(self, "known_moves", []):
             name = getattr(m, "name", "")
-            if name in ("NPC_Attack", "Idle", "Rest"):
-                continue  # internal/basic actions, not nameable techniques
             desc = getattr(m, "description", "")
-            techniques.append(f"{name} ({desc})" if desc else name)
+            # Internal AI actions (NpcAttack/NpcRest/NpcIdle/GorranClub, ...)
+            # all ship empty descriptions — a described move is by contract a
+            # nameable technique, so new internal moves stay hidden without
+            # maintaining a name list here.
+            if not name or not desc:
+                continue
+            techniques.append(f"{name} ({desc})")
         technique_text = "; ".join(techniques) if techniques else "none beyond basic fighting"
         return (
             f"COMBAT SELF-KNOWLEDGE: You fight alongside Jean and you are {tier}. "

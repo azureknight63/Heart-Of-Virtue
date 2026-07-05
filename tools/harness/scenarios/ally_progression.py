@@ -33,29 +33,30 @@ class AllyProgressionScenario(Scenario):
 
         bugs = []
 
-        # This scenario needs its dedicated config (starting_party_members =
-        # Gorran on the arena map).  In a full-suite run without it, skip
-        # cleanly rather than reporting setup noise as bugs.
-        config_path = os.environ.get("CONFIG_FILE", "")
-        if "ally-progression" not in config_path:
-            print(
-                "[AllyProgressionScenario] Skipped — set "
-                "CONFIG_FILE=tests/acceptance/ally-progression/config.ini to run."
-            )
-            return bugs
-
         # 1. Party + sync-level checks -----------------------------------
+        # Capability probe: this scenario needs a Gorran party ally
+        # (starting_party_members in the dedicated config).  If he's absent,
+        # decide by intent: the ally config being active means broken setup
+        # (real bug); any other config means this scenario simply isn't
+        # provisioned in this run — skip cleanly.
         gorran = self._get_gorran(client)
         if gorran is None:
-            bugs.append(self._bug(
-                title="Gorran not in party — run with CONFIG_FILE=tests/acceptance/ally-progression/config.ini",
-                severity=BugSeverity.HIGH,
-                category=BugCategory.WRONG_RESPONSE,
-                endpoint="/api/debug/allies",
-                method="GET",
-                expected="Gorran present in combat_list_allies (starting_party_members)",
-                actual="No party ally of class Gorran",
-            ))
+            config_path = os.environ.get("CONFIG_FILE", "")
+            if "ally-progression" in config_path:
+                bugs.append(self._bug(
+                    title="Gorran not in party despite ally-progression config (starting_party_members broken)",
+                    severity=BugSeverity.HIGH,
+                    category=BugCategory.WRONG_RESPONSE,
+                    endpoint="/api/debug/allies",
+                    method="GET",
+                    expected="Gorran present in combat_list_allies (starting_party_members)",
+                    actual="No party ally of class Gorran",
+                ))
+            else:
+                print(
+                    "[AllyProgressionScenario] Skipped — no Gorran party ally; run with "
+                    "CONFIG_FILE=tests/acceptance/ally-progression/config.ini."
+                )
             return bugs
 
         if not gorran.get("progression_enabled"):
@@ -238,17 +239,7 @@ class AllyProgressionScenario(Scenario):
                 return bugs, True
         return bugs, False
 
-    def _find_enemy(self, client: GameClient) -> Optional[str]:
-        resp = client.get("/api/world")
-        if resp.status_code != 200:
-            return None
-        room = client.parse(resp).get("room", {})
-        for npc in room.get("npcs", []):
-            if isinstance(npc, dict):
-                if npc.get("friend") or npc.get("is_ally"):
-                    continue
-                return npc.get("id") or npc.get("npc_id") or npc.get("name")
-        return None
+    # _find_enemy is inherited from Scenario (base.py).
 
     def _execute_move(self, client: GameClient) -> bool:
         """Execute the best available move. Returns True when combat ended."""

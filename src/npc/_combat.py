@@ -32,6 +32,12 @@ class NPCCombatMixin:
         move.target *after* selection.  Without this sync, target-dependent
         moves (Bull Charge, Flanking Maneuver) are never viable on first
         selection and go stale between fights.
+
+        Contract note: this assumes the NPC single-target model the adapter
+        already enforces (it stamps npc.target onto the selected move in
+        _process_npc).  A future friendly-target move (heal/buff with
+        targeted=True) must pick its own target in cast()/beat_update()
+        rather than trust move.target, or be excluded here.
         """
         target = getattr(self, "target", None)
         if target is not None and target is not self:

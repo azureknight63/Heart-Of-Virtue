@@ -1812,10 +1812,13 @@ class ApiCombatAdapter:
         if total_gained > 0:
             for ally in self.player.combat_list_allies[1:]:
                 try:
-                    if not getattr(ally, "growth_profile", None):
+                    gain = getattr(ally, "gain_exp", None)
+                    if gain is None:
                         continue
+                    # The mixin owns the opt-in decision: non-progressing
+                    # Friends (no growth_profile) return [] from gain_exp.
                     ally_progression.extend(
-                        ally.gain_exp(total_gained, player_level=self.player.level)
+                        gain(total_gained, player_level=self.player.level)
                     )
                 except Exception as e:
                     logger.warning(

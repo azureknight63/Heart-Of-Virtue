@@ -2,6 +2,7 @@
 
 import random
 
+from combatant import exp_needed_for_level  # type: ignore
 from src.narration import cprint
 
 
@@ -67,10 +68,7 @@ class PlayerLevelingMixin:
         # Level up bookkeeping (match terminal behavior)
         self.level += 1
         self.exp -= self.exp_to_level
-        # Floor the per-level requirement at 1 per level so very high
-        # intelligence (>=165) can't drive exp_to_level <= 0 and spin the
-        # `while exp >= exp_to_level` loop in gain_exp() forever.
-        self.exp_to_level = self.level * max(1, (165 - self.intelligence))
+        self.exp_to_level = exp_needed_for_level(self.level, self.intelligence)
 
         # Apply random bonus increases to base stats
         bonuses = {}
