@@ -35,6 +35,13 @@ def set_api_mode(enabled: bool):
     _API_MODE = enabled
 
 
+def _terminal_available():
+    """True when stdout is a real terminal that curses can drive."""
+    import sys
+
+    return bool(getattr(sys.stdout, "isatty", lambda: False)())
+
+
 def count_gif_frames(gif_path):
     with Image.open(gif_path) as img:
         frame_count = 0
@@ -213,6 +220,14 @@ def animate_to_main_screen(animation, rawtext=""):
     """
     # Skip animations in API mode (web app)
     if _API_MODE:
+        return
+
+    # Terminal animations need a real terminal. Under pytest/CI/headless runs
+    # (no tty), asciimatics' curses.initscr() raises "setupterm: could not
+    # find terminal" — and whether _API_MODE has been flipped yet depends on
+    # which test in the process happened to build the Flask app first, so
+    # guard on the actual capability rather than the mode flag.
+    if not _terminal_available():
         return
 
     # Import here to avoid circular import: functions imports moves, and moves imports animations.

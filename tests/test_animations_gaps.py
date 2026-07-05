@@ -62,13 +62,26 @@ def test_animate_to_main_screen_api_mode_returns_early():
 # ---------------------------------------------------------------------------
 
 
+def test_animate_to_main_screen_no_terminal_returns_early():
+    """animate_to_main_screen skips when stdout is not a real terminal
+    (pytest/CI/headless) — curses would raise 'setupterm' otherwise."""
+    import src.animations as animations
+
+    animations.set_api_mode(False)
+    with patch.object(animations, "_terminal_available", return_value=False):
+        with patch.object(animations.Screen, "wrapper") as mock_wrapper:
+            animations.animate_to_main_screen("flash.gif", "rawtext")
+    mock_wrapper.assert_not_called()
+
+
 def test_animate_to_main_screen_gif_path_detail():
     """animate_to_main_screen with .gif uses play_gif as the func argument."""
     import src.animations as animations
 
     animations.set_api_mode(False)
-    with patch.object(animations.Screen, "wrapper") as mock_wrapper:
-        animations.animate_to_main_screen("flash.gif", "rawtext")
+    with patch.object(animations, "_terminal_available", return_value=True):
+        with patch.object(animations.Screen, "wrapper") as mock_wrapper:
+            animations.animate_to_main_screen("flash.gif", "rawtext")
 
     mock_wrapper.assert_called_once()
     _, kwargs = mock_wrapper.call_args
@@ -80,8 +93,9 @@ def test_animate_to_main_screen_gif_path_via_mock():
     import src.animations as animations
 
     animations.set_api_mode(False)
-    with patch.object(animations.Screen, "wrapper") as mock_wrapper:
-        animations.animate_to_main_screen("flash.gif", "")
+    with patch.object(animations, "_terminal_available", return_value=True):
+        with patch.object(animations.Screen, "wrapper") as mock_wrapper:
+            animations.animate_to_main_screen("flash.gif", "")
     mock_wrapper.assert_called_once()
 
 
@@ -96,8 +110,9 @@ def test_animate_to_main_screen_existing_function():
 
     animations.set_api_mode(False)
     # 'demo' is a known function in the module
-    with patch.object(animations.Screen, "wrapper") as mock_wrapper:
-        animations.animate_to_main_screen("demo", "")
+    with patch.object(animations, "_terminal_available", return_value=True):
+        with patch.object(animations.Screen, "wrapper") as mock_wrapper:
+            animations.animate_to_main_screen("demo", "")
     mock_wrapper.assert_called_once()
 
 
@@ -106,8 +121,9 @@ def test_animate_to_main_screen_function_with_text():
     import src.animations as animations
 
     animations.set_api_mode(False)
-    with patch.object(animations.Screen, "wrapper") as mock_wrapper:
-        animations.animate_to_main_screen("demo", "some text here")
+    with patch.object(animations, "_terminal_available", return_value=True):
+        with patch.object(animations.Screen, "wrapper") as mock_wrapper:
+            animations.animate_to_main_screen("demo", "some text here")
     mock_wrapper.assert_called_once()
     # Verify arguments were passed
     _, kwargs = mock_wrapper.call_args
@@ -119,7 +135,8 @@ def test_animate_to_main_screen_not_found(capsys):
     import src.animations as animations
 
     animations.set_api_mode(False)
-    animations.animate_to_main_screen("nonexistent_function_xyz", "")
+    with patch.object(animations, "_terminal_available", return_value=True):
+        animations.animate_to_main_screen("nonexistent_function_xyz", "")
     out = capsys.readouterr().out
     assert "Animation not found" in out
 

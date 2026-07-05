@@ -24,6 +24,7 @@ def exp_needed_for_level(level, intelligence):
     """
     return int(level) * max(1, 165 - int(intelligence))
 
+
 # ── Canonical defaults ────────────────────────────────────────────────────────
 # 1.0 = no effect, 0.5 = half damage/chance, 2.0 = double.
 # Negative damage-resistance values mean the damage heals instead.
