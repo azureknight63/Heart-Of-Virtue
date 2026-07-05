@@ -1082,3 +1082,370 @@ class WailStrike(NpcAttack):
 # ============================================================================
 # PHASE 3: ADVANCED POSITIONING MOVES
 # ============================================================================
+
+# ============================================================================
+# ALLY SIGNATURE MOVES (granted by skill_schedule — see npc/_progression.py)
+# ============================================================================
+
+
+def _hostile_to(user, entity):
+    """True when `entity` is on the opposite side of `user` in the current fight.
+
+    Written side-relative (not friend-only) so these moves also behave if an
+    enemy NPC ever learns them.  The player has no `friend` attribute, so he
+    is hostile exactly when the user is not a friend.
+    """
+    if entity is getattr(user, "player_ref", None):
+        return not getattr(user, "friend", False)
+    return bool(getattr(entity, "friend", False)) != bool(getattr(user, "friend", False))
+
+
+class SeismicSlam(Move):
+    """Gorran's level-9 signature: a telegraphed, radial ground slam.
+
+    Long prep (the whole battlefield sees it coming) and a long recoil, but
+    it strikes every enemy within 6 ft for crushing damage with a 25% chance
+    to Stagger each one (resisted by stun status resistance, like the
+    Heavy Handed passive).
+    """
+
+    _RADIUS = 6
+    _STAGGER_CHANCE = 0.25
+
+    def __init__(self, npc):
+        description = (
+            "Slam both fists into the ground, sending a shockwave through the "
+            "stone that batters every nearby enemy and may stagger them."
+        )
+        prep = 4
+        execute = 1
+        recoil = 6
+        cooldown = 8
+        self.power = 0
+        super().__init__(
+            name="Seismic Slam",
+            description=description,
+            xp_gain=1,
+            current_stage=0,
+            stage_beat=[prep, execute, recoil, cooldown],
+            targeted=False,
+            mvrange=(0, 6),
+            stage_announce=[
+                colored(
+                    "{} raises both fists high, stone grinding against stone!".format(
+                        npc.name
+                    ),
+                    "cyan",
+                ),
+                "",
+                "{} is rooted in the cracked earth, recovering from the slam.".format(
+                    npc.name
+                ),
+                "",
+            ],
+            fatigue_cost=40,
+            beats_left=prep,
+            target=npc,
+            user=npc,
+            category="Offensive",
+        )
+        self.evaluate()
+
+    def viable(self):
+        if not hasattr(self.user, "combat_proximity"):
+            return False
+        return any(
+            e.is_alive()
+            and _hostile_to(self.user, e)
+            and distance <= self._RADIUS
+            for e, distance in self.user.combat_proximity.items()
+        )
+
+    def evaluate(self):
+        if hasattr(self.user, "damage"):
+            self.power = self.user.damage * 0.7
+
+    def execute(self, user):
+        cprint(
+            f"{user.name} slams both fists into the ground — the stone itself ripples!",
+            "cyan",
+        )
+        for enemy, distance in list(self.user.combat_proximity.items()):
+            if not enemy.is_alive() or not _hostile_to(self.user, enemy):
+                continue
+            if distance > self._RADIUS:
+                continue
+            resist = 1.0
+            if hasattr(enemy, "resistance"):
+                resist = enemy.resistance.get("crushing", 1.0)
+            damage = max(0, int(self.power * resist) - enemy.protection)
+            hit_chance = max(
+                5, int(85 - enemy.finesse + (self.user.finesse * 0.7))
+            )
+            if random.randint(0, 100) <= hit_chance:
+                if functions.check_parry(enemy):
+                    cprint(f"{enemy.name} deflects the shockwave!", "yellow")
+                    continue
+                enemy.hp = max(0, enemy.hp - damage)
+                cprint(
+                    f"{enemy.name} is battered by the shockwave for {damage} damage!",
+                    "red",
+                )
+                functions.inflict(
+                    states.Staggered(enemy), enemy, chance=self._STAGGER_CHANCE
+                )
+        self.user.fatigue -= self.fatigue_cost
+        if self.user.fatigue < 0:
+            self.user.fatigue = 0
+
+
+class StoneBulwark(Move):
+    """Gorran's level-12 signature: a party-wide protection buff.
+
+    Self-cast (targeted=False — see NPCCombatMixin.refresh_moves' single-target
+    contract): applies StoneBulwarkState to every party member, granting bonus
+    protection that scales with Gorran's own. Long cooldown; won't recast
+    while any ally still carries the ward.
+    """
+
+    def __init__(self, npc):
+        description = (
+            "Draw the strength of the earth over the whole party, shielding "
+            "everyone with a skin of living stone."
+        )
+        prep = 3
+        execute = 1
+        recoil = 2
+        cooldown = 25
+        super().__init__(
+            name="Stone Bulwark",
+            description=description,
+            xp_gain=1,
+            current_stage=0,
+            stage_beat=[prep, execute, recoil, cooldown],
+            targeted=False,
+            mvrange=(0, 9999),
+            stage_announce=[
+                colored(
+                    "{} spreads both arms wide; dust rises from the ground around the party.".format(
+                        npc.name
+                    ),
+                    "cyan",
+                ),
+                "",
+                "",
+                "",
+            ],
+            fatigue_cost=35,
+            beats_left=prep,
+            target=npc,
+            user=npc,
+            category="Defensive",
+        )
+        self.evaluate()
+
+    def _party(self):
+        allies = getattr(self.user, "combat_list_allies", None)
+        return list(allies) if allies else [self.user]
+
+    def viable(self):
+        if not getattr(self.user, "in_combat", False):
+            return False
+        # Don't recast while the ward is still up on anyone.
+        for ally in self._party():
+            for s in getattr(ally, "states", []):
+                if isinstance(s, states.StoneBulwarkState):
+                    return False
+        return True
+
+    def evaluate(self):
+        pass
+
+    def execute(self, user):
+        amount = 6 + int(getattr(user, "protection", 0) * 0.5)
+        cprint(
+            f"{user.name} drives the party's shadows into the stone — rock flows "
+            "up and over them like a second skin!",
+            "cyan",
+        )
+        for ally in self._party():
+            if not ally.is_alive():
+                continue
+            ally.states = [
+                s
+                for s in getattr(ally, "states", [])
+                if not isinstance(s, states.StoneBulwarkState)
+            ]
+            functions.inflict(
+                states.StoneBulwarkState(ally, amount), ally, force=True
+            )
+        self.user.fatigue -= self.fatigue_cost
+        if self.user.fatigue < 0:
+            self.user.fatigue = 0
+
+
+class MarkedQuarry(Move):
+    """Mara's level-9 signature: she studies one target and calls out its
+    weak points, applying the Quarried state (-25% protection for 15 beats).
+
+    The whole party benefits automatically through the stat machinery.
+    Applied with force=True — a perception mark can't be resisted.
+    """
+
+    def __init__(self, npc):
+        description = (
+            "Study a target and call out the gaps in its defenses — everyone's "
+            "attacks against it bite deeper while the mark lasts."
+        )
+        prep = 2
+        execute = 1
+        recoil = 1
+        cooldown = 12
+        super().__init__(
+            name="Marked Quarry",
+            description=description,
+            xp_gain=1,
+            current_stage=0,
+            stage_beat=[prep, execute, recoil, cooldown],
+            targeted=True,
+            mvrange=(0, 25),
+            stage_announce=[
+                colored("{} goes still, reading her target.".format(npc.name), "cyan"),
+                "",
+                "",
+                "",
+            ],
+            fatigue_cost=15,
+            beats_left=prep,
+            target=npc.target,
+            user=npc,
+            category="Tactical",
+        )
+        self.evaluate()
+
+    def viable(self):
+        if not hasattr(self.user, "combat_proximity"):
+            return False
+        target = getattr(self.user, "target", None)
+        if target is not None and target in self.user.combat_proximity:
+            if not target.is_alive():
+                return False
+            # Don't re-mark a target that's already Quarried.
+            if any(isinstance(s, states.Quarried) for s in getattr(target, "states", [])):
+                return False
+            return self.user.combat_proximity[target] <= self.mvrange[1]
+        return False
+
+    def evaluate(self):
+        pass
+
+    def execute(self, user):
+        target = self.target
+        if target is None or not target.is_alive():
+            return
+        target.states = [
+            s for s in getattr(target, "states", []) if not isinstance(s, states.Quarried)
+        ]
+        functions.inflict(states.Quarried(target), target, force=True)
+        cprint(
+            f'{user.name} marks {target.name}: "There — where the hide is thin."',
+            "cyan",
+        )
+        self.user.fatigue -= self.fatigue_cost
+        if self.user.fatigue < 0:
+            self.user.fatigue = 0
+
+
+class TwinFangs(Move):
+    """Mara's level-12 signature: a fast close-range finisher — bow snap-shot
+    into dagger slash in one motion. Deals 1.2x damage, +50% more against a
+    Quarried target (her kit becomes a deliberate hunt: mark, then execute).
+    """
+
+    _QUARRY_BONUS = 1.5
+
+    def __init__(self, npc):
+        description = (
+            "A snap-shot at point blank flowing into a dagger slash — one fast, "
+            "brutal exchange. Far deadlier against a marked quarry."
+        )
+        prep = 1
+        execute = 1
+        recoil = 3
+        cooldown = 6
+        self.power = 0
+        super().__init__(
+            name="Twin Fangs",
+            description=description,
+            xp_gain=1,
+            current_stage=0,
+            stage_beat=[prep, execute, recoil, cooldown],
+            targeted=True,
+            mvrange=(0, 3),
+            stage_announce=[
+                colored("{} shifts her grip, bow and blade both ready.".format(npc.name), "cyan"),
+                "",
+                "{} resets her stance.".format(npc.name),
+                "",
+            ],
+            fatigue_cost=30,
+            beats_left=prep,
+            target=npc.target,
+            user=npc,
+            category="Offensive",
+        )
+        self.evaluate()
+
+    def viable(self):
+        if not hasattr(self.user, "combat_proximity"):
+            return False
+        target = getattr(self.user, "target", None)
+        if target is not None and target in self.user.combat_proximity:
+            return (
+                target.is_alive()
+                and self.mvrange[0]
+                <= self.user.combat_proximity[target]
+                <= self.mvrange[1]
+            )
+        return False
+
+    def evaluate(self):
+        if hasattr(self.user, "damage"):
+            self.power = self.user.damage * 1.2
+
+    def execute(self, user):
+        target = self.target
+        if target is None or not target.is_alive():
+            return
+        quarried = any(
+            isinstance(s, states.Quarried) for s in getattr(target, "states", [])
+        )
+        power = self.power * (self._QUARRY_BONUS if quarried else 1.0)
+        resist = 1.0
+        if hasattr(target, "resistance"):
+            resist = target.resistance.get("piercing", 1.0)
+        damage = max(0, int(power * resist) - target.protection)
+        hit_chance = max(
+            5, int(90 - target.finesse + (self.user.finesse * 0.8))
+        )
+        roll = random.randint(0, 100)
+        if hit_chance >= roll:
+            if functions.check_parry(target):
+                cprint(f"{target.name} turns aside the twin strike!", "yellow")
+            else:
+                if hit_chance - roll < 10:  # glancing
+                    damage //= 2
+                target.hp = max(0, target.hp - damage)
+                flavor = (
+                    " — straight through the marked gap!" if quarried else "!"
+                )
+                cprint(
+                    f"{user.name}'s arrow and blade land as one on {target.name} "
+                    f"for {damage} damage{flavor}",
+                    "red",
+                )
+        else:
+            cprint(f"{user.name}'s twin strike whistles past {target.name}.", "yellow")
+        self.user.fatigue -= self.fatigue_cost
+        if self.user.fatigue < 0:
+            self.user.fatigue = 0

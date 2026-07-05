@@ -134,13 +134,14 @@ class Gorran(Friend):  # The "rock-man" that helps Jean at the beginning of the 
     }
     # Deterministic skill acquisition. Early levels deepen what he already
     # does; Bull Charge is Jean-learnable and fits a charging rock-man.
-    # TODO(signature): design 2-3 signature moves with the user, e.g.
-    #   L9  "Seismic Slam"  — AoE ground slam, long recoil
-    #   L12 "Stone Bulwark" — brief party-wide protection buff
+    # Signatures: Seismic Slam (radial AoE + stagger chance, long recoil)
+    # and Stone Bulwark (party protection ward scaling with his own).
     skill_schedule = {
         3: [("WeightUp", "Parry", 3)],
         5: [("NewMove", moves.BullCharge, 2)],
         7: [("WeightUp", moves.GorranClub, 4)],
+        9: [("NewMove", moves.SeismicSlam, 2)],
+        12: [("NewMove", moves.StoneBulwark, 2)],
     }
 
     def __init__(self):
@@ -635,13 +636,15 @@ class Mara(HumanNPCLLMMixin, Friend):
     }
     # Early levels sharpen evasion and kiting; Tactical Retreat is
     # Jean-learnable (Bow tree) and anchors her bow-mode range control.
-    # TODO(signature): design 2-3 signature moves with the user, e.g.
-    #   L9  "Marked Quarry" — she studies a target; party hits on it gain accuracy
-    #   L12 "Twin Fangs"    — instant bow shot + dagger slash on an adjacent foe
+    # Signatures form a deliberate hunt: Marked Quarry (Quarried state,
+    # -25% target protection for the whole party) into Twin Fangs (fast
+    # close-range finisher, +50% against a Quarried target).
     skill_schedule = {
         3: [("WeightUp", "Dodge", 4)],
         5: [("NewMove", moves.TacticalRetreat, 2)],
         7: [("WeightUp", "Flanking Maneuver", 3)],
+        9: [("NewMove", moves.MarkedQuarry, 2)],
+        12: [("NewMove", moves.TwinFangs, 3)],
     }
 
     def __init__(self):

@@ -18,8 +18,26 @@
 > - Session setup ordering fix: `_apply_player_stats_from_config` now runs
 >   *before* `_apply_starting_party_members` so allies level-sync against
 >   Jean's configured level (found by the harness scenario).
-> - Signature moves are stubbed as `TODO(signature)` in the Gorran/Mara
->   schedules — to be designed move-by-move with the user.
+> - Signature moves implemented (src/moves/_npc.py, states in src/states.py):
+>   - **Gorran L9 — Seismic Slam**: telegraphed radial ground slam (prep 4 /
+>     recoil 6), ~0.7× damage (crushing) to every enemy within 6 ft, 25%
+>     Stagger chance per target rolled through `inflict()` (respects stun
+>     resistance, same profile as the Heavy Handed passive).
+>   - **Gorran L12 — Stone Bulwark**: self-cast (`targeted=False`, honoring
+>     the refresh_moves single-target contract) party ward — every ally gains
+>     `StoneBulwarkState` (+6 + 50% of Gorran's protection, 20 beats); won't
+>     recast while any ward is up; 25-beat cooldown.
+>   - **Mara L9 — Marked Quarry**: applies `Quarried` to one enemy (−25%
+>     protection, 15 beats) with `force=True` — a perception mark, not a
+>     resistible status. The whole party benefits via the stat machinery
+>     (chosen over the original party-accuracy sketch, which would have
+>     required touching the to-hit path of every attack move).
+>   - **Mara L12 — Twin Fangs**: fast close-range finisher (range 0–3,
+>     prep 1), 1.2× damage, ×1.5 more against a Quarried target — her kit
+>     is a deliberate hunt: mark, then execute.
+>   - Verified live in the arena: Gorran L12's AI selected and resolved
+>     Seismic Slam mid-fight through the full stage pipeline; a Crucible
+>     boss fight ran 47–87 rounds with the new moves in the pool, no errors.
 > - Test surface: `tests/test_ally_progression.py` (unit),
 >   `tests/acceptance/ally-progression/` (config + run.sh), and the
 >   `ally_progression` bug-hunt scenario (debug endpoints
