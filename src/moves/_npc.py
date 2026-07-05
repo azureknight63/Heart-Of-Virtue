@@ -1092,12 +1092,18 @@ def _hostile_to(user, entity):
     """True when `entity` is on the opposite side of `user` in the current fight.
 
     Written side-relative (not friend-only) so these moves also behave if an
-    enemy NPC ever learns them.  The player has no `friend` attribute, so he
-    is hostile exactly when the user is not a friend.
+    enemy NPC ever learns them.  The player is the one combatant without a
+    `friend` attribute — detect him by that absence (NOT via user.player_ref,
+    which is never assigned on ally NPCs) so an ally's AoE can never
+    friendly-fire Jean: coordinate-based proximity sync puts every combatant,
+    Jean included, into each ally's combat_proximity dict.
     """
-    if entity is getattr(user, "player_ref", None):
+    if entity is user:
+        return False
+    if not hasattr(entity, "friend"):
+        # The player: hostile exactly when the user fights against his side.
         return not getattr(user, "friend", False)
-    return bool(getattr(entity, "friend", False)) != bool(getattr(user, "friend", False))
+    return bool(entity.friend) != bool(getattr(user, "friend", False))
 
 
 class SeismicSlam(Move):

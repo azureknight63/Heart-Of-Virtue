@@ -161,6 +161,40 @@ def test_seismic_slam_not_viable_without_hostiles_in_radius():
     assert not move.viable()
 
 
+def test_seismic_slam_never_hits_the_player(monkeypatch, player):
+    """Regression: coordinate proximity sync puts Jean in every ally's
+    combat_proximity dict, and ally.player_ref is never assigned — the
+    side check must recognize the player by his missing `friend` attribute,
+    not via player_ref, or Gorran's slam friendly-fires Jean."""
+    monkeypatch.setattr("moves._npc.random.randint", lambda a, b: 0)  # always hit
+
+    g = _gorran(9)
+    assert g.player_ref is None  # the trap this test guards against
+    enemy = _dummy_enemy()
+    g.combat_proximity = {player: 1, enemy: 4}
+
+    move = next(mv for mv in g.known_moves if mv.name == "Seismic Slam")
+    move.evaluate()
+    move.execute(g)
+    assert player.hp == player.maxhp  # Jean untouched
+    assert enemy.hp < enemy.maxhp
+
+    # Jean alone in range must not make the slam viable either.
+    g.combat_proximity = {player: 1}
+    assert not move.viable()
+
+
+def test_hostile_to_side_classification(player):
+    from moves._npc import _hostile_to
+
+    ally = _gorran(1)  # friend=True
+    enemy = _dummy_enemy()  # friend=False
+    assert not _hostile_to(ally, player)  # ally never hostile to Jean
+    assert _hostile_to(enemy, player)  # enemy is hostile to Jean
+    assert _hostile_to(ally, enemy) and _hostile_to(enemy, ally)
+    assert not _hostile_to(enemy, _dummy_enemy())  # same side
+
+
 # --- Stone Bulwark -----------------------------------------------------------------
 
 
