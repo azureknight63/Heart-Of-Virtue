@@ -782,10 +782,10 @@ class AfterTheRumblerFight(Event):
 
     def process(self):
         time.sleep(5)
-        # Speaker id is "Gorran" throughout (rather than "Rock-Man" pre-reveal) so
-        # the portrait/asset key stays consistent with the character's canonical
-        # name used everywhere else in the game.
-        begin_conversation([("Jean", "left", "neutral"), ("Gorran", "right", "neutral")])
+        # Speaker id is "Rock-Man" (unnamed) until the naming beat below reveals
+        # "Gorran" — matches the in-fiction reveal instead of leaking the name
+        # onto the portrait early.
+        begin_conversation([("Jean", "left", "neutral"), ("Rock-Man", "right", "neutral")])
         narrate("The Rock-Man lowers his club to the ground and turns toward Jean.")
         time.sleep(3)
         say(
@@ -803,7 +803,18 @@ class AfterTheRumblerFight(Event):
             "best be described as an avalanche falling in love with an earthquake."
         )
         time.sleep(4)
-        say("Mmmmm... Go-rra-nnnnnn...", "Gorran", "neutral")
+        say(
+            "Mmmmm... Go-rra-nnnnnn...",
+            "Gorran",
+            "neutral",
+            enter={
+                "id": "Gorran",
+                "side": "right",
+                "emotion": "neutral",
+                "transition": "instant",
+            },
+            leave={"id": "Rock-Man", "transition": "instant"},
+        )
         say(
             "Go... rran? Well, thank you, Gorran. But what were those things? "
             "I've never seen their like in my life!",
@@ -856,6 +867,7 @@ class AfterGorranIntro(Event):
             "the opening widens with a loud rumble. Gorran walks through."
         )
         begin_conversation([("Jean", "left", "neutral")])
+        narrate("Jean pauses at the threshold.")
         say(
             "A faint current of air presses against his face — cooler than the chamber, carrying "
             "the mineral smell of deeper stone. He notes which way it's moving before he steps inside.",

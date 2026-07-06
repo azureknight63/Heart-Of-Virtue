@@ -7,6 +7,7 @@ from src.functions import print_slow, await_input
 import time
 from src import items
 from src.story.effects import MemoryFlash
+from src.narration import narrate, say, begin_conversation, end_conversation
 
 
 class AfterDefeatingLurker(Event):
@@ -179,6 +180,42 @@ class Ch02GuideToCitadel(
         if self._stage == 3:
             self.needs_input = True
             self.input_type = "choice"
+            begin_conversation([("Jean", "left", "neutral"), ("Gorran", None, "neutral")])
+            narrate(
+                "Gorran turned to Jean, his expression serious. He gestured toward the Citadel, "
+                "indicating that this was where they needed to go. Jean nodded, understanding "
+                "this was a place of great importance to the Grondites, and perhaps to his own "
+                "journey as well."
+            )
+            narrate(
+                "Gorran led Jean into the Citadel, where they were greeted by a group of "
+                "Grondites. They were dressed in simple, yet sturdy clothing, and they regarded "
+                "Jean with curiosity. Gorran addressed the Grondites in their peculiar language "
+                "of grunts and groans, apparently explaining that he was a friend and ally — or, "
+                "at the very least, not an enemy."
+            )
+            narrate(
+                "The Grondites nodded in understanding, and one of them stepped forward to "
+                "address Jean. He spoke in a deep, rumbling voice, gesturing toward the interior "
+                "of the Citadel. Gorran nodded his great head and set off into the depths of the "
+                "Citadel, motioning for Jean to follow."
+            )
+            narrate(
+                "As they walked through the Citadel, Jean was struck by the sheer scale of the "
+                "place. The halls were vast and echoed with the sound of their footsteps. The "
+                "walls were adorned with intricate carvings and murals, depicting scenes from "
+                "Grondia's history much like the ones on the walls outside."
+            )
+            say(
+                "Jean's first thought was not of the carvings. It was the air — steady, "
+                "slow-moving, cool at his feet and perceptibly warmer at his shoulders. "
+                "Convection, working the way it's supposed to, on a scale he had never "
+                "encountered. He wanted to find where it rose.",
+                "Jean",
+                "neutral",
+                thought=True,
+            )
+            narrate("Then Gorran made a sound and Jean remembered to look at the walls.")
             self.description = (
                 "Gorran turned to Jean, his expression serious. He gestured toward the Citadel, "
                 "indicating that this was where they needed to go. "
@@ -210,6 +247,86 @@ class Ch02GuideToCitadel(
         if self._stage == 4:
             self.needs_input = True
             self.input_type = "choice"
+            begin_conversation([("Jean", "left", "neutral"), ("Gorran", None, "neutral")])
+            narrate(
+                "Gorran led Jean to a large chamber at the heart of the Citadel where a group of "
+                "Grondite elders were gathered. They were seated on stone thrones, their faces "
+                "lined with age and wisdom. Gorran spoke to them in their language, and they "
+                "regarded Jean with a mixture of curiosity and respect."
+            )
+            narrate(
+                "One of the elders stood and approached Jean. Much to Jean's surprise, the elder "
+                "extended a burly, unyielding hand in greeting. Taking it, Jean had the sensation "
+                "of grasping a piece of the mountain itself. The elder's grip was firm, but not "
+                "painful, and Jean felt a sense of connection to this ancient being."
+            )
+            narrate(
+                "Even more astonishingly, the elder spoke in a deep, rumbling voice, which Jean "
+                "was able to understand."
+            )
+            # Speaker id is "Elder" (unnamed) until he introduces himself below —
+            # matches the reveal already preserved in the legacy description text
+            # ("Elder: ..." then "Votha Krr: ..."). The identity swaps to
+            # "Votha Krr" on his self-introduction beat.
+            say(
+                "You are a friend of Gorran. You are welcome here.",
+                "Elder",
+                "neutral",
+                enter={
+                    "id": "Elder",
+                    "side": "right",
+                    "emotion": "neutral",
+                    "transition": "fade",
+                },
+            )
+            narrate(
+                "Jean nodded, grateful for the warm welcome. He could feel the weight of the "
+                "elder's gaze upon him, and he knew he was in the presence of someone who had "
+                "seen much in their long life. The elder gestured for Jean to sit on a nearby "
+                "stool, also made from stone. Jean did so, feeling awkward and out of place on "
+                "the hard, cold seat."
+            )
+            narrate(
+                "Gorran came over and stood beside Jean, his massive frame casting a shadow over "
+                "the elder. The elder looked up at Gorran and spoke in a low, rumbling voice. "
+                "Gorran rumbled briefly in reply, then turned and strode out of the chamber.",
+                exit=[{"id": "Gorran", "transition": "fade", "span": 2}],
+            )
+            narrate("The elder turned back to Jean, his expression serious.")
+            narrate(
+                "Now having gotten a chance to look at the elder, Jean could see he was a bit "
+                "smaller in form than Gorran, though still quite large by human standards. "
+                "Rather than the craggy, harsh exterior of other Golemites, this elder had a "
+                "smooth, almost polished appearance. Many years of erosion had worn away the "
+                "rough edges of his form, much like stones in a riverbed. His eyes were deep-set "
+                "and wise, and they seemed to hold a depth of knowledge that spoke of centuries "
+                "of experience. He opened his mouth to speak."
+            )
+            say(
+                "Welcome, little one. I am Elder Votha Krr. Within this city, I serve on its "
+                "council of leaders — though some among us are more foolish than others in how "
+                "much weight they give that title.",
+                "Votha Krr",
+                "neutral",
+                enter={
+                    "id": "Votha Krr",
+                    "side": "right",
+                    "emotion": "neutral",
+                    "transition": "instant",
+                },
+                leave={"id": "Elder", "transition": "instant"},
+            )
+            narrate(
+                "With that, a rolling rumble of laughter erupted from the elder's mouth like the "
+                "aftershocks of an earthquake.",
+                reactions={"Votha Krr": "happy"},
+            )
+            say(
+                "Ah, but let's not waste time talking about me. Tell me who you are and, "
+                "especially, why you are here. Or, perhaps more especially, where you are going.",
+                "Votha Krr",
+                "neutral",
+            )
             self.description = (
                 "Gorran led Jean to a large chamber at the heart of the Citadel where a group of Grondite elders "
                 "were gathered. They were seated on stone thrones, their faces lined with age and wisdom. "
@@ -251,6 +368,52 @@ class Ch02GuideToCitadel(
         if self._stage == 5:
             self.needs_input = True
             self.input_type = "choice"
+            begin_conversation([("Jean", "left", "neutral"), ("Votha Krr", "right", "neutral")])
+            narrate(
+                "Jean paused. He wasn't sure how to answer — not any of those questions. He took "
+                "a deep breath, trying to gather his thoughts."
+            )
+            say("I am Jean. Jean Claire.", "Jean", "neutral")
+            narrate("He stopped there. Votha Krr waited, unhurried as erosion.")
+            say(
+                "As for the rest — I can fight. I'm good with my hands. I can figure out what's "
+                "broken and fix it. That's... that's what I do.",
+                "Jean",
+                "neutral",
+            )
+            narrate(
+                "Votha Krr did not nod. He regarded Jean with those deep-set eyes — patient, "
+                "unhurried, the way a canyon regards a river."
+            )
+            say(
+                "You know who you are in your hands. That is not a small thing. Many who arrive "
+                "in this world know far less.",
+                "Votha Krr",
+                "neutral",
+            )
+            narrate("He tilted his great head, just slightly.")
+            say("But I notice you did not answer where you are going.", "Votha Krr", "skeptical")
+            narrate("Jean opened his mouth. Closed it. The chamber was very quiet.")
+            say("No. I didn't.", "Jean", "neutral")
+            narrate(
+                "Something passed across Votha Krr's expression — not pity, not recognition. "
+                "Something older than both."
+            )
+            say("Then perhaps that is a question for the road.", "Votha Krr", "neutral")
+            narrate(
+                "He settled back in his throne, the stone of him indistinguishable from the "
+                "stone beneath him."
+            )
+            say(
+                "Since you are a man who knows what to do with his hands — and since you find "
+                "yourself without a direction — allow me to offer you one. Our sacred Grondelith "
+                "Mineral Pools to the southwest have been infested by slimes. They consume the "
+                "minerals our people depend on, and their corruption is lethal to our kind. We "
+                "cannot clear them ourselves.",
+                "Votha Krr",
+                "neutral",
+            )
+            narrate("He watched Jean's face. Jean wasn't showing much.")
             self.description = (
                 "Jean paused. He wasn't sure how to answer — not any of those questions. "
                 "He took a deep breath, trying to gather his thoughts.\n\n"
@@ -297,7 +460,53 @@ class Ch02GuideToCitadel(
             self.input_prompt = ""
             self.input_options = [{"value": "continue", "label": "Continue"}]
 
+            begin_conversation([("Jean", "left", "neutral"), ("Votha Krr", "right", "neutral")])
             if _choice == "a":
+                narrate(
+                    "Votha Krr was quiet a moment. When he spoke again, his voice was the same — "
+                    "unhurried, without urgency, as if what he described had already been decided."
+                )
+                say(
+                    "The Grondelith Pools to the southwest. Slimes have found them. They consume "
+                    "the minerals our people require. The corruption is lethal to our kind — we "
+                    "cannot clear them ourselves.",
+                    "Votha Krr",
+                    "neutral",
+                )
+                narrate("He watched Jean's face. Jean wasn't showing much.")
+                say("It would not kill you the same way.", "Votha Krr", "neutral")
+                say("Is it centralized? Or spread through the whole system?", "Jean", "neutral")
+                say(
+                    "There is a heart to it. One great slime at the center. Remove it, and the "
+                    "rest will follow.",
+                    "Votha Krr",
+                    "neutral",
+                )
+                say("Wait — 'your kind.' There are others here like me?", "Jean", "surprised")
+                say(
+                    "We have known your kind before. Traded with them. Fought alongside them.",
+                    "Votha Krr",
+                    "neutral",
+                )
+                narrate("He paused, searching for the word with the patience of stone finding water.")
+                say("Humans.", "Votha Krr", "neutral")
+                narrate("The word rumbled from him like a landslide, reverberating into Jean's chest.")
+                say(
+                    "Jean was quiet, but his mind was already moving — tracing the shape of the "
+                    "problem. An infestation with a center. Corrupted channels. A source. He'd had "
+                    "that kind of job before. Somewhere, in some life. He didn't ask himself why "
+                    "he was so sure of that.",
+                    "Jean",
+                    "neutral",
+                    thought=True,
+                )
+                say("Alright. I'll take a look at it.", "Jean", "neutral")
+                say(
+                    "Thank you, Jean. The pools are to the southwest. Take these supplies — the "
+                    "corruption will harm you if you are not careful.",
+                    "Votha Krr",
+                    "happy",
+                )
                 self.description = (
                     "Votha Krr was quiet a moment. When he spoke again, his voice was the same — "
                     "unhurried, without urgency, as if what he described had already been decided.\n\n"
@@ -323,6 +532,14 @@ class Ch02GuideToCitadel(
                     "Take these supplies — the corruption will harm you if you are not careful.\""
                 )
             else:
+                say("I'll take a look at it.", "Jean", "neutral")
+                say(
+                    "Thank you, Jean. The pools are southwest of the city. The corruption will "
+                    "not destroy your kind as it does ours, but it will hurt you if you are "
+                    "careless. Take these supplies.",
+                    "Votha Krr",
+                    "happy",
+                )
                 self.description = (
                     "Jean: \"I'll take a look at it.\"\n\n"
                     "Votha Krr: \"Thank you, Jean. The pools are southwest of the city. "
@@ -339,6 +556,28 @@ class Ch02GuideToCitadel(
 
             self.needs_input = True
             self.input_type = "choice"
+            begin_conversation([("Jean", "left", "neutral"), ("Votha Krr", "right", "neutral")])
+            narrate(
+                "Votha Krr waved a hand, and a Grondite attendant stepped forward, carrying a "
+                "small bundle of supplies. The attendant handed the bundle to Jean, who took it "
+                "gratefully."
+            )
+            narrate("[Received: 5 Antidotes, 2 Restoratives]")
+            narrate("With that, Votha Krr slowly got to his feet, his massive form towering over Jean.")
+            say(
+                "May the earth guide your steps, Jean. You are a guest of our city. The "
+                "merchants of the Eastern Gate will have what you need for the road. Return to "
+                "me when you have dealt with the slimes.",
+                "Votha Krr",
+                "neutral",
+            )
+            narrate("He paused. Those deep-set eyes held Jean's for a moment longer than necessary.")
+            say(
+                "And when you return — perhaps we will speak again of where you are going.",
+                "Votha Krr",
+                "neutral",
+            )
+            narrate("He said it the same way he'd said it the first time. Like a door left open.")
             self.description = (
                 "Votha Krr waved a hand, and a Grondite attendant stepped forward, "
                 "carrying a small bundle of supplies. The attendant handed the bundle to Jean, "
@@ -396,6 +635,7 @@ class AfterDefeatingKingSlime(Event):
         if self.player.universe.story.get("king_slime_defeated"):
             return
         time.sleep(1)
+        begin_conversation([("Jean", "left", "neutral")])
         print_slow("The churning stilled. A deep, resonant silence settled over the cavern.")
         time.sleep(1)
         print_slow(
@@ -419,7 +659,17 @@ class AfterDefeatingKingSlime(Event):
             "lapping at his boots. The fight was over. There was nothing left in the room that needed him."
         )
         time.sleep(1)
-        print_slow("He didn't know what to do with his hands when they weren't needed.")
+        say(
+            "He didn't know what to do with his hands when they weren't needed.",
+            "Jean",
+            "neutral",
+            thought=True,
+        )
+        # Close the stage here — the rest of this event (pool cleansing, Gorran's
+        # arrival) is unstaged narration; Gorran isn't cast/entered as a portrait,
+        # so leaving the conversation open would strand Jean's portrait on-screen
+        # through an unrelated passage.
+        end_conversation()
         time.sleep(2)
 
         # Update the arena tile description to reflect the cleansed state
@@ -856,10 +1106,18 @@ class Ch02KingSlimeMemoryFlash(MemoryFlash):
         repeat=False,
         name="Ch02KingSlimeMemoryFlash",
     ):
+        # No other character is present in this flashback — it's Jean's solo
+        # traumatic memory, so the cast is Jean alone. Key introspective beats
+        # are tagged as his internal thought (italic, no reactions to author —
+        # there's no one else on stage to react).
         memory_lines = [
             ("The edge catches Jean's finger.", 1.5),
             ("", 0.5),
-            ("Pain — sudden, immediate, real.", 1.5),
+            (
+                "Pain — sudden, immediate, real.",
+                1.5,
+                {"speaker": "Jean", "emotion": "surprised", "thought": True},
+            ),
             ("", 0.5),
             ("Then —", 1.0),
             ("", 0.3),
@@ -882,8 +1140,9 @@ class Ch02KingSlimeMemoryFlash(MemoryFlash):
             (
                 "And where something warm should have been, in Jean's arms —",
                 2.0,
+                {"speaker": "Jean", "emotion": "sad", "thought": True},
             ),
-            ("emptiness.", 3.0),
+            ("emptiness.", 3.0, {"speaker": "Jean", "emotion": "sad", "thought": True}),
         ]
         aftermath = [
             "Silence.",
@@ -891,13 +1150,17 @@ class Ch02KingSlimeMemoryFlash(MemoryFlash):
             "Jean stood on the stone island. The water around it was blue.",
             "The fragment was in his hand, still sharp, still bright.",
             "",
-            "The bleeding finger was real. Everything else was gone.",
+            (
+                "The bleeding finger was real. Everything else was gone.",
+                {"speaker": "Jean", "emotion": "sad", "thought": True},
+            ),
         ]
         super().__init__(
             player=player,
             tile=tile,
             memory_lines=memory_lines,
             aftermath_text=aftermath,
+            cast=[("Jean", "left", "neutral")],
             repeat=repeat,
             name=name,
         )
@@ -968,6 +1231,16 @@ class AfterKingSlimeReturn(Event):
         if self._stage == 1:
             self.needs_input = True
             self.input_type = "choice"
+            begin_conversation([("Jean", "left", "neutral"), ("Votha Krr", "right", "neutral")])
+            narrate(
+                "Votha Krr rose from his throne as Jean entered. His deep-set eyes took in the "
+                "bleeding finger, the fragment in Jean's hand, and Jean's expression — all at once."
+            )
+            say("The pools are clean, little one. You have done well.", "Votha Krr", "neutral")
+            narrate(
+                "Jean still held the mineral fragment. The cut on his finger had stopped "
+                "bleeding but hadn't stopped hurting."
+            )
             self.description = (
                 "Votha Krr rose from his throne as Jean entered. His deep-set eyes took in the "
                 "bleeding finger, the fragment in Jean's hand, and Jean's expression — all at once.\n\n"
@@ -992,9 +1265,20 @@ class AfterKingSlimeReturn(Event):
             if _frag_choice not in ("a", "b", "c"):
                 _frag_choice = "a"
 
+            begin_conversation([("Jean", "left", "neutral"), ("Votha Krr", "right", "neutral")])
             if _frag_choice == "a":
+                narrate("Jean held it out. Votha took it from his hand.")
                 self.description = "Jean held it out. Votha took it from his hand."
             elif _frag_choice == "b":
+                say("What is this thing, exactly?", "Jean", "neutral")
+                say(
+                    "A memory, made stone. The mineral pools do not merely hold water — they "
+                    "record what passes through them. Light, creature, time. This fragment "
+                    "carries something very old. It is right that it returns to stone.",
+                    "Votha Krr",
+                    "neutral",
+                )
+                narrate("He took the fragment from Jean's hand.")
                 self.description = (
                     "Jean: \"What is this thing, exactly?\"\n\n"
                     "Votha Krr: \"A memory, made stone. The mineral pools do not merely hold water — "
@@ -1004,6 +1288,11 @@ class AfterKingSlimeReturn(Event):
                     "He took the fragment from Jean's hand."
                 )
             else:  # c
+                narrate(
+                    "Jean sets the fragment on the armrest of the throne without looking at "
+                    "Votha. The Elder watches him do it. Waits. Then reaches out and picks it "
+                    "up, slowly, as though giving Jean time to reconsider."
+                )
                 self.description = (
                     "Jean sets the fragment on the armrest of the throne without looking at Votha. "
                     "The Elder watches him do it. Waits. "
@@ -1019,6 +1308,12 @@ class AfterKingSlimeReturn(Event):
 
         # Stage 3 — Votha consumes the fragment
         if self._stage == 3:
+            begin_conversation([("Jean", "left", "neutral"), ("Votha Krr", "right", "neutral")])
+            narrate("Votha regarded the fragment for a single moment — then placed it in his mouth.")
+            narrate(
+                "A soft, contented rumble escaped him. The fragment was gone.",
+                reactions={"Votha Krr": "happy"},
+            )
             self.description = (
                 "Votha regarded the fragment for a single moment — then placed it in his mouth.\n\n"
                 "A soft, contented rumble escaped him. The fragment was gone."
@@ -1032,6 +1327,18 @@ class AfterKingSlimeReturn(Event):
 
         # Stage 4 — Votha acknowledges Jean's completion and his return
         if self._stage == 4:
+            begin_conversation([("Jean", "left", "neutral"), ("Votha Krr", "right", "neutral")])
+            say(
+                "The pools are clean. You have done what we could not do alone, little one.",
+                "Votha Krr",
+                "neutral",
+            )
+            narrate(
+                "He studied Jean's face. Then — the bleeding finger. He regarded it for a "
+                "moment without comment."
+            )
+            say("You came back.", "Votha Krr", "neutral")
+            narrate("He said it simply. As an observation, not a compliment.")
             self.description = (
                 "Votha Krr: \"The pools are clean. You have done what we could not do alone, little one.\"\n\n"
                 "He studied Jean's face. Then — the bleeding finger. "
@@ -1048,6 +1355,15 @@ class AfterKingSlimeReturn(Event):
 
         # Stage 5 — Votha's philosophical directive
         if self._stage == 5:
+            begin_conversation([("Jean", "left", "neutral"), ("Votha Krr", "right", "neutral")])
+            say(
+                "To mend what is broken, one must first understand the cracks. Go now. Seek "
+                "the Echoing Caves to the west, beyond the river. There, the earth sings the "
+                "songs of lost things. Perhaps you will find a different kind of strength "
+                "there — or, at the very least, a clearer path.",
+                "Votha Krr",
+                "neutral",
+            )
             self.description = (
                 "Votha Krr: \"To mend what is broken, one must first understand the cracks. "
                 "Go now. Seek the Echoing Caves to the west, beyond the river. "
@@ -1064,6 +1380,12 @@ class AfterKingSlimeReturn(Event):
 
         # Stage 6 — Votha's farewell gesture
         if self._stage == 6:
+            begin_conversation([("Jean", "left", "neutral"), ("Votha Krr", "right", "neutral")])
+            narrate(
+                "He did not elaborate. When Jean opened his mouth, Votha Krr's only answer "
+                "was to press two fingers briefly to his own chest — over the place a human "
+                "would call the heart — and then withdraw."
+            )
             self.description = (
                 "He did not elaborate. When Jean opened his mouth, Votha Krr's only answer "
                 "was to press two fingers briefly to his own chest — over the place a human "

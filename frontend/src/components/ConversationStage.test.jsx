@@ -149,6 +149,41 @@ describe('ConversationStage rendering', () => {
         expect(screen.getByAltText(/Jean \(surprised\)/i)).toBeDefined()
     })
 
+    it('resets beatIndex and re-arms onComplete when a new segments array arrives mid-conversation', () => {
+        // Simulates a multi-stage event (e.g. Ch02GuideToCitadel) where the same
+        // mounted ConversationStage receives a fresh segments/conversation payload
+        // for the next stage without being remounted.
+        const stageOneSegments = [
+            { text: 'Stage one line.', speaker: 'Jean', emotion: 'neutral', in_conversation: true },
+        ]
+        const stageTwoSegments = [
+            { text: 'Stage two, beat one.', speaker: 'Jean', emotion: 'neutral', in_conversation: true },
+            { text: 'Stage two, beat two.', speaker: 'Jean', emotion: 'neutral', in_conversation: true },
+        ]
+        const onComplete = vi.fn()
+        const { rerender } = render(
+            <ConversationStage segments={stageOneSegments} conversation={{ cast: CAST }} onComplete={onComplete} />
+        )
+        const stage = screen.getByTestId('conversation-stage')
+
+        act(() => vi.advanceTimersByTime(3000))
+        act(() => fireEvent.click(stage)) // finishes stage one's only beat -> onComplete
+        expect(onComplete).toHaveBeenCalledTimes(1)
+
+        // New stage arrives: a fresh segments array, same component instance.
+        rerender(
+            <ConversationStage segments={stageTwoSegments} conversation={{ cast: CAST }} onComplete={onComplete} />
+        )
+        act(() => vi.advanceTimersByTime(3000))
+        expect(screen.getByText(/Stage two, beat one/i)).toBeDefined()
+
+        act(() => fireEvent.click(stage)) // beat one complete -> advance to beat two
+        expect(onComplete).toHaveBeenCalledTimes(1)
+        act(() => vi.advanceTimersByTime(3000))
+        act(() => fireEvent.click(stage)) // last beat of stage two complete -> onComplete fires again
+        expect(onComplete).toHaveBeenCalledTimes(2)
+    })
+
     it('advances beats on click and calls onComplete after the last beat', () => {
         const onComplete = vi.fn()
         render(

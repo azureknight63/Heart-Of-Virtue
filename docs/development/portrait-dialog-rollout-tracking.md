@@ -38,10 +38,10 @@ placeholder silhouette until art is commissioned. Not a blocker.
 
 ## Phase 2 — `src/story/ch02.py` (Pattern C: restructure `self.description` → `say()`/`narrate()`)
 
-- [ ] **Ch02GuideToCitadel stages 4–7** (ch02.py:210-359) 🗣💭 — Votha Krr introduction & quest offer. Cast: Jean, Votha Krr (Gorran present partway through stage 4, then exits). Multi-stage exchange. Internal-thought candidates: stage 3 "Jean's first thought was not of the carvings..." (199-201) and stage 5 "Jean was quiet, but his mind was already moving..." (317-320).
-- [ ] **Ch02KingSlimeMemoryFlash** (ch02.py:843-926) 💭 — Currently an untagged `MemoryFlash` (Pattern A infra already in place, but zero speaker tags). High-value internal-thought candidate: the entire flashback is Jean's traumatic sensory memory with no external speaker — convert key lines to Jean `thought` beats with shifting emotion (surprised → sad/fear).
-- [ ] **AfterDefeatingKingSlime** (ch02.py:369-507) 💭 optional/low-priority — Jean's reflection, "He didn't know what to do with his hands when they weren't needed." (422).
-- [ ] **AfterKingSlimeReturn stages 1–6** (ch02.py:929-1077) 🗣 — Votha Krr accepts the fragment and sends Jean to the Echoing Caves. Cast: Jean, Votha Krr. Jean's spoken lines are driven by his stage-2 choice (a/b/c).
+- [x] **Ch02GuideToCitadel stages 4–7** (ch02.py:210-359) 🗣💭 — Votha Krr introduction & quest offer. Cast: Jean, Votha Krr (Gorran present partway through stage 4, then exits). Multi-stage exchange. Internal-thought candidates: stage 3 "Jean's first thought was not of the carvings..." (199-201) and stage 5 "Jean was quiet, but his mind was already moving..." (317-320).
+- [x] **Ch02KingSlimeMemoryFlash** (ch02.py:843-926) 💭 — Currently an untagged `MemoryFlash` (Pattern A infra already in place, but zero speaker tags). High-value internal-thought candidate: the entire flashback is Jean's traumatic sensory memory with no external speaker — convert key lines to Jean `thought` beats with shifting emotion (surprised → sad/fear).
+- [x] **AfterDefeatingKingSlime** (ch02.py:369-507) 💭 optional/low-priority — Jean's reflection, "He didn't know what to do with his hands when they weren't needed." (422).
+- [x] **AfterKingSlimeReturn stages 1–6** (ch02.py:929-1077) 🗣 — Votha Krr accepts the fragment and sends Jean to the Echoing Caves. Cast: Jean, Votha Krr. Jean's spoken lines are driven by his stage-2 choice (a/b/c).
 
 ## Optional / lower priority (mystical, non-humanoid voices — revisit later)
 
