@@ -1186,7 +1186,10 @@ class NpcChatLLMAdapter(GenericLLMClient):
         )
 
         temp = float(os.getenv("NPC_CHAT_TEMP_TURN", "0.7"))
-        raw = self._call_llm(system_prompt, user, max_tokens=450, temperature=temp)
+        # The reply is 1-3 sentences plus three short options (~150-250 tokens in
+        # practice); a tight cap keeps typical latency low so the 6s ceiling only
+        # ever bites on a genuinely stuck call.
+        raw = self._call_llm(system_prompt, user, max_tokens=300, temperature=temp)
         if not raw:
             return None
         parsed = _JSONTools.try_parse_json(raw)
@@ -1315,16 +1318,17 @@ class NpcChatLLMAdapter(GenericLLMClient):
     def _round_timeout() -> float:
         """Per-call network timeout (seconds).
 
-        The feature promises each conversation round completes in under 5 seconds.
-        A single combined ``generate_turn`` call is one network round-trip, so the
-        timeout is kept below the budget and a slow model aborts into the
-        deterministic fallback pools rather than blowing past 5s. Tunable via
+        The feature targets a typical conversation round under 5 seconds. A single
+        combined ``generate_turn`` call is one network round-trip; a healthy free
+        model returns in ~2-4s, so this ceiling (default 6s) covers the "slow but
+        fine" tail while a genuinely stuck call aborts into the deterministic
+        fallback pools rather than leaving the player waiting. Tunable via
         ``NPC_CHAT_LLM_TIMEOUT``.
         """
         try:
-            return float(os.getenv("NPC_CHAT_LLM_TIMEOUT", "4.5"))
+            return float(os.getenv("NPC_CHAT_LLM_TIMEOUT", "6.0"))
         except (TypeError, ValueError):
-            return 4.5
+            return 6.0
 
     def _call_llm(
         self,
