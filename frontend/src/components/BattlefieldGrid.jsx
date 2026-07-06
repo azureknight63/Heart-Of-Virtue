@@ -3,7 +3,7 @@ import StatusEffectsIconPanel from './StatusEffectsIconPanel';
 import { colors, spacing, shadows, fonts } from '../styles/theme';
 import GameText from './GameText';
 import { useAudio } from '../context/AudioContext';
-import { ANIMATION_CONFIGS } from '../utils/animationConfigs';
+import { getAnimationConfig, impactSfxFor } from '../utils/animationConfigs';
 import { MOVE_CATEGORY_COLOR, MOVE_CATEGORY_GLOW } from '../utils/categories';
 
 // Fragment definitions for the death burst — module-level, never recreated
@@ -45,19 +45,9 @@ const computeSnapOrigin = (cam) => ({
 /** Returns the grid position of an entity, defaulting to origin if absent. */
 const getPos = (entity) => entity?.position || { x: 0, y: 0 };
 
-/** Map an attack's impact-phase outcome to the corresponding SFX cue name. */
-const impactSfxFor = (outcome) => {
-  switch (outcome) {
-    case 'miss': return 'attack_miss';
-    case 'parry':
-    case 'block':
-    case 'deflect':
-      return 'attack_parry';
-    case 'hit':
-    default:
-      return 'attack_hit';
-  }
-};
+/** Phase duration lookup on a config; falls back when the phase is unknown. */
+const phaseDurationOf = (config, phaseName, fallback = 200) =>
+  config?.phases?.find((p) => p.name === phaseName)?.duration ?? fallback;
 
 // ---------------------------------------------------------------------------
 // CombatantMarker — renders a single entity token on the grid
@@ -119,34 +109,66 @@ const CombatantMarker = React.memo(({
     ? 'absolute top-[-2px] left-1/2 -translate-x-1/2 w-0 h-0 border-l-[2px] border-r-[2px] border-b-[3px] border-l-transparent border-r-transparent filter drop-shadow-sm opacity-90'
     : 'absolute top-[-6px] left-1/2 -translate-x-1/2 w-0 h-0 border-l-[6px] border-r-[6px] border-b-[8px] border-l-transparent border-r-transparent filter drop-shadow opacity-90';
 
+  // Config-driven marker styling: source phases read scale/glow from the
+  // animation config; the target gets an outcome flash (or a fixed glow for
+  // buff/debuff-style effects) during the config's impact phase.
   const animationStyle = React.useMemo(() => {
     if (!animationState) return {};
-    if (animationState.isTarget && animationState.phase === 'impact') {
+    const cfg = animationState.config;
+
+    if (animationState.isTarget) {
+      if (animationState.phase !== 'impact') return {};
+      const treatment = cfg?.target;
+      if (treatment && treatment !== 'strike') {
+        // Fixed treatment (debuff hex, drain wither, ...)
+        return {
+          transform: treatment.scale ? `scale(${treatment.scale})` : undefined,
+          boxShadow: treatment.glow ? `0 0 18px 6px ${treatment.glow}` : undefined,
+          transition: 'all 0.2s ease-out',
+          zIndex: 60,
+        };
+      }
+      // Outcome-dependent strike flash
       switch (animationState.outcome) {
         case 'hit': return { backgroundColor: 'rgba(255, 0, 0, 0.7)', transition: 'background-color 0.1s', zIndex: 60 };
         case 'miss': return { opacity: 0.3, transition: 'opacity 0.2s', filter: 'blur(2px)' };
-        case 'parry': return { backgroundColor: 'rgba(255, 200, 0, 0.7)', transition: 'background-color 0.1s', zIndex: 60 };
+        case 'parry':
+        case 'block':
+        case 'deflect':
+          return { backgroundColor: 'rgba(255, 200, 0, 0.7)', transition: 'background-color 0.1s', zIndex: 60 };
         default: return {};
       }
     }
+
     if (animationState.isSource) {
-      if (animationState.phase === 'windup')
-        return { transform: 'scale(1.15)', transition: 'transform 0.1s ease-out', zIndex: 100 };
-      if (animationState.phase === 'strike')
-        return { transform: 'scale(1.1)', zIndex: 100 };
-      if (animationState.phase === 'expand')
-        return { transform: 'scale(1.25)', boxShadow: '0 0 25px rgba(255, 215, 0, 0.9)', transition: 'all 0.15s ease-out', zIndex: 100 };
-      if (animationState.phase === 'contract' || animationState.phase === 'return')
+      const phaseStyle = cfg?.source?.[animationState.phase];
+      if (phaseStyle) {
+        return {
+          transform: phaseStyle.scale ? `scale(${phaseStyle.scale})` : undefined,
+          boxShadow: phaseStyle.glow ? `0 0 22px 8px ${phaseStyle.glow}` : undefined,
+          transition: 'transform 0.18s ease-out, box-shadow 0.18s ease-out',
+          zIndex: 100,
+        };
+      }
+      if (animationState.phase === 'return' || animationState.phase === 'contract')
         return { transform: 'scale(1)', transition: 'all 0.2s ease-in' };
     }
     return {};
   }, [animationState]);
 
+  // Target shake — heavy hits and shockwaves rattle the target cell.
+  const targetShake = Boolean(
+    animationState?.isTarget
+    && animationState.config?.shake
+    && animationState.phase === 'impact'
+    && animationState.outcome !== 'miss'
+  );
+
   return (
     <div
       className={`relative w-[75%] h-[75%] rounded-full transition-all duration-300 transform-gpu border-[3px]${
         pendingGlowColor ? ' battlefield-pending-glow' : ''
-      }`}
+      }${targetShake ? ' battlefield-target-shake' : ''}`}
       style={{
         ...animationStyle,
         // Slightly lighter than panelDeep so the pulsing glow reads through the
@@ -395,27 +417,59 @@ const EntityLayer = React.memo(({
       let animState = null;
       if (activeAnimation && animationPhase) {
         if (activeAnimation.source_id === entityId) {
-          animState = { isSource: true, isTarget: false, phase: animationPhase, outcome: activeAnimation.outcome };
+          animState = { isSource: true, isTarget: false, phase: animationPhase, outcome: activeAnimation.outcome, config: activeAnimation.config };
         } else if (activeAnimation.target_id === entityId) {
-          animState = { isSource: false, isTarget: true, phase: animationPhase, outcome: activeAnimation.outcome };
+          animState = { isSource: false, isTarget: true, phase: animationPhase, outcome: activeAnimation.outcome, config: activeAnimation.config };
         }
       }
 
-      // Strike lunge: push attacker towards target during 'strike' phase
+      // Config-driven source motion: recoil away from the target on windup,
+      // travel toward it on the strike/rush phase, hold there through impact
+      // so the hit connects visually, then ease back on return. Spin motions
+      // rotate in place instead of travelling.
       let transformStyle = {};
-      if (animState?.isSource && animState.phase === 'strike' && activeAnimation?.target_id) {
-        const target = entitiesToRender.find((e) => e.entity.id === activeAnimation.target_id);
-        if (target) {
-          const sPos = getPos(item.entity);
-          const tPos = getPos(target.entity);
+      const motion = activeAnimation?.config?.motion;
+      if (animState?.isSource && motion) {
+        const cfg = activeAnimation.config;
+        const targetItem = activeAnimation.target_id
+          ? entitiesToRender.find((e) => e.entity.id === activeAnimation.target_id)
+          : null;
+        const sPos = getPos(item.entity);
+        const tPos = targetItem ? getPos(targetItem.entity) : null;
+        // Cell deltas in screen space (y axis inverted vs world coords)
+        const dx = tPos ? tPos.x - sPos.x : 0;
+        const dy = tPos ? sPos.y - tPos.y : 0;
+        const travel = motion.travel || 0;
+        const rotate = motion.spinDegrees ? ` rotate(${motion.spinDegrees}deg)` : '';
+
+        if (animState.phase === motion.windupPhase && motion.recoil) {
+          // Recoil directly away from the target; small upward coil when untargeted
+          const len = Math.hypot(dx, dy) || 1;
           transformStyle = {
-            transform: `translate(${(tPos.x - sPos.x) * 100}%, ${(sPos.y - tPos.y) * 100}%)`,
-            transition: 'transform 0.2s cubic-bezier(0.1, 0.7, 1.0, 0.1)',
-            zIndex: 100
+            transform: tPos
+              ? `translate(${(-dx / len) * motion.recoil * 100}%, ${(-dy / len) * motion.recoil * 100}%)`
+              : `translate(0, -${motion.recoil * 60}%)`,
+            transition: `transform ${phaseDurationOf(cfg, animState.phase)}ms ease-out`,
+            zIndex: 100,
+          };
+        } else if (animState.phase === motion.travelPhase) {
+          transformStyle = {
+            transform: `translate(${dx * travel * 100}%, ${dy * travel * 100}%)${rotate}`,
+            transition: `transform ${phaseDurationOf(cfg, animState.phase)}ms ${motion.easing || 'ease-in'}`,
+            zIndex: 100,
+          };
+        } else if (animState.phase === 'impact' && travel && tPos) {
+          // Hold at the target through impact — no snap-back mid-hit
+          transformStyle = {
+            transform: `translate(${dx * travel * 100}%, ${dy * travel * 100}%)${rotate}`,
+            zIndex: 100,
+          };
+        } else if (animState.phase === 'return') {
+          transformStyle = {
+            transform: 'translate(0, 0) rotate(0deg)',
+            transition: `transform ${phaseDurationOf(cfg, 'return')}ms ease-in-out`,
           };
         }
-      } else if (animState?.isSource && animState.phase === 'return') {
-        transformStyle = { transform: 'translate(0, 0)', transition: 'transform 0.2s ease-in-out' };
       }
 
       const isHighlighted = isEntityHovered || (entityId != null && selectedEntity?.id === entityId);
@@ -448,7 +502,7 @@ const EntityLayer = React.memo(({
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            zIndex: animState?.phase === 'strike' ? 100 : 1,
+            zIndex: 1,
             ...transformStyle
           }}>
             <CombatantMarker
@@ -560,6 +614,187 @@ const SelectedEntityPanel = React.memo(({ entity, onClose }) => {
           </div>
         </div>
       </div>
+    </div>
+  );
+});
+
+// ---------------------------------------------------------------------------
+// TravelDot — a glowing dot that streaks from one cell to another. Used for
+// projectiles (source → target) and drain streams (target → source, staggered).
+// ---------------------------------------------------------------------------
+const TravelDot = ({ fromStyle, toStyle, color, duration, delay = 0, size = 1 }) => {
+  const [launched, setLaunched] = useState(false);
+
+  useEffect(() => {
+    // Double-RAF so the browser paints the dot at its origin before the
+    // transition to the destination begins.
+    let raf2;
+    const raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => setLaunched(true));
+    });
+    return () => { cancelAnimationFrame(raf1); if (raf2) cancelAnimationFrame(raf2); };
+  }, []);
+
+  // Extract the cell translations; the dot interpolates between them.
+  const style = launched ? toStyle : fromStyle;
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        left: 0,
+        top: 0,
+        width: fromStyle.width,
+        height: fromStyle.height,
+        transform: style.transform,
+        transition: launched ? `transform ${duration}ms linear ${delay}ms` : 'none',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        pointerEvents: 'none',
+        opacity: launched ? 1 : 0,
+      }}
+    >
+      <div
+        style={{
+          width: `${18 * size}%`,
+          height: `${18 * size}%`,
+          borderRadius: '50%',
+          backgroundColor: color,
+          boxShadow: `0 0 8px 3px ${color}`,
+        }}
+      />
+    </div>
+  );
+};
+
+// ---------------------------------------------------------------------------
+// EffectsLayer — transient overlay visuals driven by the active animation's
+// config.effect: projectile streaks, expanding shockwave rings, rising buff
+// particles, and drain streams. Rendered only during the effect's phase.
+// ---------------------------------------------------------------------------
+const EffectsLayer = React.memo(({ activeAnimation, animationPhase, getEntityStyle, combat }) => {
+  const cfg = activeAnimation?.config;
+  const effect = cfg?.effect;
+
+  const findEntity = (id) => {
+    if (!id || !combat) return null;
+    if (id === 'player' || combat.player?.id === id) return combat.player;
+    return combat.enemies?.find((e) => e.id === id)
+      || combat.allies?.find((e) => e.id === id)
+      || null;
+  };
+
+  if (!effect || animationPhase !== effect.phase) return null;
+
+  const duration = phaseDurationOf(cfg, effect.phase, 300);
+  const source = findEntity(activeAnimation.source_id);
+  const target = findEntity(activeAnimation.target_id);
+  const sourceStyle = source ? getEntityStyle(getPos(source), 140) : null;
+  const targetStyle = target ? getEntityStyle(getPos(target), 140) : null;
+
+  let content = null;
+  switch (effect.kind) {
+    case 'projectile': {
+      if (!sourceStyle || !targetStyle) break;
+      content = (
+        <TravelDot
+          fromStyle={sourceStyle}
+          toStyle={targetStyle}
+          color={effect.color}
+          duration={duration}
+        />
+      );
+      break;
+    }
+    case 'drain': {
+      if (!sourceStyle || !targetStyle) break;
+      // Three staggered motes flowing target → source
+      content = [0, 1, 2].map((i) => (
+        <TravelDot
+          key={i}
+          fromStyle={targetStyle}
+          toStyle={sourceStyle}
+          color={effect.color}
+          duration={Math.max(120, duration - i * 120)}
+          delay={i * 120}
+          size={0.7}
+        />
+      ));
+      break;
+    }
+    case 'ring': {
+      // The effect config declares which cell the ring sits on: 'target' for
+      // impact rings, caster (default) for sweep arcs / defensive shells /
+      // shockwaves radiating outward.
+      const anchor = (effect.anchor === 'target' && targetStyle) ? targetStyle : sourceStyle;
+      if (!anchor) break;
+      content = (
+        <div
+          style={{
+            position: 'absolute',
+            ...anchor,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            pointerEvents: 'none',
+          }}
+        >
+          <div
+            className="battlefield-effect-ring"
+            style={{
+              width: '90%',
+              height: '90%',
+              border: `3px solid ${effect.color}`,
+              boxShadow: `0 0 12px 2px ${effect.color}`,
+              ['--bf-ring-scale']: (effect.size || 1) * 2.6,
+              animationDuration: `${duration}ms`,
+            }}
+          />
+        </div>
+      );
+      break;
+    }
+    case 'rise': {
+      if (!sourceStyle) break;
+      // Sparks climbing off the caster — offsets in % of the cell
+      content = (
+        <div
+          style={{
+            position: 'absolute',
+            ...sourceStyle,
+            pointerEvents: 'none',
+          }}
+        >
+          {[{ left: '25%', d: 0 }, { left: '50%', d: 120 }, { left: '70%', d: 60 }].map((p, i) => (
+            <div
+              key={i}
+              className="battlefield-effect-rise"
+              style={{
+                position: 'absolute',
+                left: p.left,
+                bottom: '20%',
+                width: '12%',
+                height: '12%',
+                borderRadius: '50%',
+                backgroundColor: effect.color,
+                boxShadow: `0 0 6px 2px ${effect.color}`,
+                animationDuration: `${Math.max(200, duration - p.d)}ms`,
+                animationDelay: `${p.d}ms`,
+              }}
+            />
+          ))}
+        </div>
+      );
+      break;
+    }
+    default:
+      break;
+  }
+
+  if (!content) return null;
+  return (
+    <div style={{ position: 'absolute', inset: 0, padding: spacing.sm, pointerEvents: 'none', zIndex: 140 }}>
+      {content}
     </div>
   );
 });
@@ -926,7 +1161,7 @@ function BattlefieldGrid({
 
   // Run one animation at a time from the queue
   const playAnimation = useCallback((animData) => {
-    const config = ANIMATION_CONFIGS[animData.type] || ANIMATION_CONFIGS.pulse;
+    const config = getAnimationConfig(animData.type);
     setActiveAnimation({ ...animData, config });
     setAnimationPhase(config.phases[0].name);
 
@@ -953,15 +1188,12 @@ function BattlefieldGrid({
       const phase = config.phases[currentPhaseIndex];
       setAnimationPhase(phase.name);
 
-      // Phase-aligned SFX cues for attacks — the log-derived animation events
-      // ship an `outcome` ('hit' | 'miss' | 'parry' | ...) which maps 1:1 to
-      // the pre-baked WAV cues in /assets/sounds/.
-      if (animData.type === 'attack') {
-        if (phase.name === 'strike') {
-          playSFX('attack_swipe');
-        } else if (phase.name === 'impact') {
-          playSFX(impactSfxFor(animData.outcome));
-        }
+      // Phase-aligned SFX cues, declared on the animation config. The special
+      // cue 'outcome' resolves through the animation's outcome
+      // ('hit' | 'miss' | 'parry' | ...) to the matching pre-baked WAV.
+      const cue = config.sfx?.[phase.name];
+      if (cue) {
+        playSFX(cue === 'outcome' ? impactSfxFor(animData.outcome) : cue);
       }
 
       const timeoutId = setTimeout(() => {
@@ -1286,6 +1518,13 @@ function BattlefieldGrid({
           onHoverEntity={setHoveredEntity}
           onClearHover={handleClearHover}
           onSelectEntity={setSelectedEntity}
+        />
+
+        <EffectsLayer
+          activeAnimation={activeAnimation}
+          animationPhase={animationPhase}
+          getEntityStyle={getEntityStyle}
+          combat={combat}
         />
 
         <DeathAnimationLayer dyingEntities={dyingEntities} getEntityStyle={getEntityStyle} />

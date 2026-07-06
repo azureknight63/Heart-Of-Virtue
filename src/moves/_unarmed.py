@@ -16,6 +16,8 @@ from ._base import (
 
 
 class PowerStrike(Move):
+    web_animation = "heavy_attack"
+
     def __init__(self, user):
         description = ""
         prep = 0
@@ -181,6 +183,8 @@ class PowerStrike(Move):
 
 
 class Jab(Move):
+    web_animation = "quick_attack"
+
     def __init__(self, user):
         description = ""
         prep = 0

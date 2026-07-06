@@ -22,6 +22,8 @@ class KeepAway(Move):
     hit and shoves the target back, restoring the engagement distance.
     """
 
+    web_animation = "pierce"
+
     def __init__(self, user):
         description = (
             "Strike the approaching enemy aside and force them back, "
@@ -180,6 +182,8 @@ class Lunge(Move):
     Moves the user 3 units toward the target then delivers a standard thrust.
     """
 
+    web_animation = "pierce"
+
     def __init__(self, user):
         description = (
             "Step sharply toward your target and drive your spear forward. "
@@ -330,6 +334,8 @@ class Impale(Move):
     heavily armoured foes.
     """
 
+    web_animation = "pierce"
+
     def __init__(self, user):
         description = (
             "Drive the spear tip through armour gaps, ignoring most protection. "
@@ -463,6 +469,8 @@ class ArmorPierce(Move):
     The pick's pointed tip finds the hairline gap. Protection is set to
     zero in the damage calculation — raw weapon power and resistance apply.
     """
+
+    web_animation = "pierce"
 
     def __init__(self, user):
         description = (

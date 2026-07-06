@@ -108,6 +108,13 @@ default_animations = {
 
 
 class Move:  # master class for all moves
+    # Animation type the web client plays for this move ("attack", "pulse",
+    # "pierce", "projectile", ...). Subclasses declare their type as a class
+    # attribute; None lets the combat adapter auto-determine a fallback
+    # (attack for targeted damaging moves, pulse otherwise). The full set of
+    # valid types lives in frontend/src/utils/animationConfigs.js.
+    web_animation = None
+
     def __init__(
         self,
         name,
@@ -127,7 +134,6 @@ class Move:  # master class for all moves
         verbose_targeting=False,
         category="Miscellaneous",
         passive=False,
-        web_animation=None,
     ):
         self.name = name
         self.description = description
@@ -155,8 +161,6 @@ class Move:  # master class for all moves
             1  # only used by NPCs to determine the chance that move is selected for use
         )
         self.passive = passive
-        self.web_animation = web_animation  # Animation type for web app ("attack", "pulse", "charge", etc.)
-        # None = auto-determine based on move properties
         self.fatigue_per_beat = 0
 
     def beat_update(self, user):

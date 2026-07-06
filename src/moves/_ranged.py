@@ -27,6 +27,8 @@ class ShootBow(
     Move
 ):  # ranged attack with a bow, player only. Requires having arrows in inventory;
     # this is checked when available skills are evaluated in combat.py
+    web_animation = "projectile"
+
     def __init__(self, player):
         description = (
             "Fire an arrow at a target enemy. You must have arrows in your inventory to use. "
@@ -326,6 +328,8 @@ class ShootCrossbow(Move):
     Accuracy is halved if any enemy is within minimum range (close-range penalty).
     """
 
+    web_animation = "projectile"
+
     def __init__(self, user):
         description = (
             "Fire a heavy bolt at a target. Slower to reload than a bow "
@@ -472,6 +476,8 @@ class ShootCrossbow(Move):
 
 class BroadheadBolt(Move):
     """Fire a heavy broadhead bolt — high damage, same reload as ShootCrossbow."""
+
+    web_animation = "projectile"
 
     def __init__(self, user):
         description = (
@@ -621,6 +627,8 @@ class AimedShot(Move):
     when one decisive shot is needed.
     """
 
+    web_animation = "projectile"
+
     def __init__(self, user):
         description = (
             "Take careful aim for an extended time before firing. "
@@ -769,6 +777,8 @@ class AimedShot(Move):
 
 class PinningBolt(Move):
     """Bolt aimed to pin the target — deals damage and applies Disoriented on hit."""
+
+    web_animation = "projectile"
 
     def __init__(self, user):
         description = (

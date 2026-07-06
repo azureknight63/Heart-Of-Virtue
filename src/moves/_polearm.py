@@ -21,6 +21,8 @@ class OverheadSmash(Move):
     weapon driving downward makes this one of the hardest hits in the polearm kit.
     """
 
+    web_animation = "heavy_attack"
+
     def __init__(self, user):
         description = (
             "Raise the polearm and drive it down in a punishing vertical blow. "
@@ -100,6 +102,8 @@ class Sweep(Move):
     Frontal arc (90° cone) when coordinates are available; full circle fallback.
     Lower per-target damage than Overhead Smash but covers multiple enemies.
     """
+
+    web_animation = "sweep"
 
     def __init__(self, user):
         description = (
@@ -223,6 +227,8 @@ class BracePosition(Move):
     The user plants the weapon and waits to intercept.
     """
 
+    web_animation = "defend"
+
     def __init__(self, user):
         description = (
             "Plant your polearm and brace for impact. "
@@ -289,6 +295,8 @@ class HalberdSpin(Move):
     More damaging per enemy than Sweep but costs more fatigue and has longer
     cooldown.
     """
+
+    web_animation = "sweep"
 
     def __init__(self, user):
         description = (

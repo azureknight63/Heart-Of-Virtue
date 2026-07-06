@@ -23,6 +23,8 @@ class Reap(Move):
     are unavailable (mirrors WhirlAttack fallback).
     """
 
+    web_animation = "sweep"
+
     def __init__(self, user):
         description = (
             "Sweep your scythe in a wide arc ahead of you, "
@@ -149,6 +151,8 @@ class ReapersMark(Move):
     Sets a '_reapers_mark' flag on the target that attack moves can check.
     """
 
+    web_animation = "debuff"
+
     def __init__(self, user):
         description = (
             "Fix your gaze on one enemy, marking them for death. "
@@ -210,6 +214,8 @@ class DeathsHarvest(Move):
     Slower and heavier than Reap; designed for the final exchange in a drawn-out
     fight where the user needs to recover while still pressing the assault.
     """
+
+    web_animation = "heavy_attack"
 
     def __init__(self, user):
         description = (

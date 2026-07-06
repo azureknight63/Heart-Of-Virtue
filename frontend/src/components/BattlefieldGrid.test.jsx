@@ -2,6 +2,7 @@ import React from 'react';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import BattlefieldGrid from './BattlefieldGrid';
+import { getAnimationDuration } from '../utils/animationConfigs';
 
 // Mock AudioContext so playSFX doesn't throw
 vi.mock('../context/AudioContext', () => ({
@@ -224,9 +225,72 @@ describe('BattlefieldGrid', () => {
 
             onAnimatingChange.mockClear();
 
-            // Attack animation: windup(100) + strike(300) + impact(200) + return(200) = 800ms
-            act(() => vi.advanceTimersByTime(900));
+            // Advance past the attack animation's full configured duration
+            act(() => vi.advanceTimersByTime(getAnimationDuration('attack') + 100));
 
+            expect(onAnimatingChange).toHaveBeenCalledWith(false);
+        });
+
+        it('plays new taxonomy types (projectile) through all phases without error', () => {
+            const onAnimatingChange = vi.fn();
+            const projectileCombat = {
+                ...mockCombat,
+                log: [
+                    {
+                        animation: {
+                            type: 'projectile',
+                            source_id: 'player',
+                            target_id: 'enemy_goblin',
+                            outcome: 'hit'
+                        }
+                    }
+                ]
+            };
+            render(
+                <BattlefieldGrid
+                    combat={projectileCombat}
+                    tab="overview"
+                    zoom={1}
+                    onAnimatingChange={onAnimatingChange}
+                    displayedLogCount={1}
+                />
+            );
+
+            expect(onAnimatingChange).toHaveBeenCalledWith(true);
+            onAnimatingChange.mockClear();
+
+            act(() => vi.advanceTimersByTime(getAnimationDuration('projectile') + 100));
+            expect(onAnimatingChange).toHaveBeenCalledWith(false);
+        });
+
+        it('falls back to the pulse config for unknown animation types', () => {
+            const onAnimatingChange = vi.fn();
+            const unknownCombat = {
+                ...mockCombat,
+                log: [
+                    {
+                        animation: {
+                            type: 'mystery_move',
+                            source_id: 'player'
+                        }
+                    }
+                ]
+            };
+            render(
+                <BattlefieldGrid
+                    combat={unknownCombat}
+                    tab="overview"
+                    zoom={1}
+                    onAnimatingChange={onAnimatingChange}
+                    displayedLogCount={1}
+                />
+            );
+
+            expect(onAnimatingChange).toHaveBeenCalledWith(true);
+            onAnimatingChange.mockClear();
+
+            // Unknown types play as pulse (400ms)
+            act(() => vi.advanceTimersByTime(getAnimationDuration('pulse') + 100));
             expect(onAnimatingChange).toHaveBeenCalledWith(false);
         });
 
