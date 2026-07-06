@@ -34,6 +34,8 @@ def _apply_sentinels_vigil(advancer, defender):
 
 
 class Dodge(Move):
+    web_animation = "defend"
+
     def __init__(self, user):
         description = "Prepare to dodge incoming attacks."
         prep = 1
@@ -80,6 +82,8 @@ class Dodge(Move):
 
 
 class Parry(Move):
+    web_animation = "defend"
+
     def __init__(self, user):
         description = "Attempt to parry the next incoming attack."
         prep = 1
@@ -147,6 +151,8 @@ class Parry(Move):
 
 
 class Advance(Move):
+    web_animation = "dash"
+
     def __init__(self, user):
         description = "Get closer to a target (enemy or ally)."
         prep = 0
@@ -310,6 +316,8 @@ class Advance(Move):
 
 
 class Withdraw(Move):
+    web_animation = "dash"
+
     def __init__(self, user):
         description = "Move away from all enemies."
         prep = 0
@@ -433,6 +441,8 @@ class Withdraw(Move):
 class BullCharge(Move):
     """Aggressive charge move - advance multiple squares toward target."""
 
+    web_animation = "charge"
+
     def __init__(self, user):
         description = "Charge at target with force, covering significant distance."
         prep = 1
@@ -535,6 +545,8 @@ class BullCharge(Move):
 class TacticalRetreat(Move):
     """Coordinated withdrawal - retreat while maintaining defense."""
 
+    web_animation = "dash"
+
     def __init__(self, user):
         description = "Strategically fall back while maintaining defensive posture."
         prep = 1
@@ -621,6 +633,8 @@ class TacticalRetreat(Move):
 
 class FlankingManeuver(Move):
     """Position to the side of target for combat advantage."""
+
+    web_animation = "dash"
 
     def __init__(self, user):
         description = "Maneuver to flank target, gaining positional advantage."
@@ -719,6 +733,8 @@ class QuietMovement(Move):
     This is a passive move; it cannot be selected while in combat.
     """
 
+    web_animation = "dash"
+
     def __init__(self, user):
         description = "Improves ability to move undetected."
         prep = 0
@@ -754,6 +770,8 @@ class QuietMovement(Move):
 
 
 class TacticalPositioning(Move):
+    web_animation = "dash"
+
     def __init__(self, user):
         description = "Fine-tune the distance between yourself and a target enemy."
         prep = 0
@@ -897,6 +915,8 @@ class Turn(Move):
         target_direction: The Direction to face (Direction enum value)
     """
 
+    web_animation = "dash"
+
     def __init__(self, user):
         description = "Rotate to face a selected direction."
         prep = 0
@@ -978,6 +998,8 @@ class QuickSwap(Move):
     Allows coordinated repositioning during combat by exchanging places with an ally.
     Useful for protecting vulnerable teammates or rearranging formation mid-combat.
     """
+
+    web_animation = "dash"
 
     def __init__(self, user):
         description = "Swap positions with a nearby ally for tactical advantage."

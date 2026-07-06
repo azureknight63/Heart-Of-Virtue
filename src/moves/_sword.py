@@ -21,6 +21,8 @@ class PommelStrike(Move):
     have a longer execute time on their normal or special attacks. It also has a small chance to stun the target.
     """
 
+    web_animation = "attack"
+
     def __init__(self, player):
         description = "Quick strike using the pommel of the weapon."
         prep = 1
@@ -92,6 +94,8 @@ class WhirlAttack(Move):
     ending with a random facing direction. High fatigue cost reflects the effort
     of rapid rotation and multiple strikes.
     """
+
+    web_animation = "sweep"
 
     def __init__(self, user):
         description = "Spin to attack all nearby enemies."
@@ -215,6 +219,8 @@ class VertigoSpin(Move):
     A powerful spinning attack that not only damages the target but also
     leaves them disoriented, affecting their facing and reducing defensive bonuses.
     """
+
+    web_animation = "sweep"
 
     def __init__(self, user):
         description = "Spin attack that disorients the target."
@@ -340,6 +346,8 @@ class Thrust(Move):
     reaches farther.
     """
 
+    web_animation = "pierce"
+
     def __init__(self, user):
         description = (
             "Drive the point of your weapon forward in a fast, direct thrust. "
@@ -411,6 +419,8 @@ class DisarmingSlash(Move):
     Trades raw damage for a persistent status debuff that reduces the
     target's defensive bonuses.
     """
+
+    web_animation = "attack"
 
     def __init__(self, user):
         description = (
@@ -539,6 +549,8 @@ class Riposte(Move):
     The heat boost from still being in guard amplifies the strike's damage.
     Near-instant prep (guard is already up); short recoil.
     """
+
+    web_animation = "quick_attack"
 
     def __init__(self, user):
         description = (

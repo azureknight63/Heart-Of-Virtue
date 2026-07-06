@@ -601,6 +601,50 @@ body.damage-flash-active::before {
   animation: battlefield-pending-pulse 1.4s ease-in-out infinite;
 }
 
+/* Battlefield — target-cell shake for heavy hits and shockwaves. Applied to
+   the combatant marker during the impact phase (skipped on a miss). */
+@keyframes battlefield-target-shake {
+  0%   { translate: 0 0; }
+  15%  { translate: -8% 3%; }
+  30%  { translate: 7% -4%; }
+  45%  { translate: -6% 2%; }
+  60%  { translate: 5% -2%; }
+  75%  { translate: -3% 1%; }
+  100% { translate: 0 0; }
+}
+
+.battlefield-target-shake {
+  animation: battlefield-target-shake 0.32s cubic-bezier(.36,.07,.19,.97) both;
+}
+
+/* Battlefield — expanding shockwave / sweep-arc ring. Scale target is set per
+   effect via --bf-ring-scale; duration comes from the animation phase. */
+@keyframes battlefield-effect-ring {
+  0%   { transform: scale(0.25); opacity: 0.95; }
+  70%  { opacity: 0.55; }
+  100% { transform: scale(var(--bf-ring-scale, 2.6)); opacity: 0; }
+}
+
+.battlefield-effect-ring {
+  border-radius: 9999px;
+  animation-name: battlefield-effect-ring;
+  animation-timing-function: cubic-bezier(0.2, 0.6, 0.4, 1);
+  animation-fill-mode: both;
+}
+
+/* Battlefield — buff/heal sparks rising off the caster. */
+@keyframes battlefield-effect-rise {
+  0%   { transform: translateY(30%) scale(0.6); opacity: 0; }
+  20%  { opacity: 1; }
+  100% { transform: translateY(-220%) scale(1.1); opacity: 0; }
+}
+
+.battlefield-effect-rise {
+  animation-name: battlefield-effect-rise;
+  animation-timing-function: ease-out;
+  animation-fill-mode: both;
+}
+
 /* Battlefield — spotlight ring around Jean in full-map mode so players can
    always locate her at a glance. */
 @keyframes battlefield-jean-spotlight {

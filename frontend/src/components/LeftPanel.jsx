@@ -178,7 +178,14 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
 
         const entry = currentPending[currentIndex]
 
+        // Entries that drive a battlefield animation: either adapter-fallback
+        // entries (type === 'animation') or normal combat lines with animation
+        // metadata attached (the common case — impact lines). Both enqueue an
+        // animation in BattlefieldGrid, so both must hold the reveal loop and
+        // both get their SFX from the battlefield's phase-aligned cues instead
+        // of the keyword matcher below (which would double-fire the sound).
         const isAnimationEntry = entry.type === 'animation'
+        const hasAnimation = isAnimationEntry || !!entry.animation
 
         const msg = entry.message.toLowerCase()
 
@@ -200,8 +207,9 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
           onLogProgress(beatIndex)
         }
 
-        // Play SFX (skip for animation-only entries, and skip all SFX during reload recovery)
-        if (!isAnimationEntry && !skipDelays) {
+        // Play SFX (skip for animation-carrying entries — the battlefield plays
+        // phase-aligned cues for those — and skip all SFX during reload recovery)
+        if (!hasAnimation && !skipDelays) {
           if (msg.includes('attacks')) playSFX('attack_swipe')
           else if (msg.includes('hit') || msg.includes('damage')) playSFX('attack_hit')
           else if (msg.includes('miss')) playSFX('attack_miss')
@@ -234,15 +242,15 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
             timeoutId = setTimeout(processNextLine, 0)
           }
         } else {
-          // For animation entries, hold the log reveal for the animation's
-          // duration so the next (outcome) line doesn't appear before the
-          // player sees the swing/impact. Fall back to 0 when we don't know
-          // the animation type.
-          const animDuration = isAnimationEntry
+          // For entries that drive a battlefield animation, hold the log
+          // reveal for the animation's duration so the next line doesn't
+          // appear before the player sees the swing/impact. Combat lines
+          // still get at least the per-line delay so pacing never speeds up.
+          const animDuration = hasAnimation
             ? getAnimationDuration(entry.animation?.type)
             : 0
-          const nextDelay = isAnimationEntry
-            ? animDuration
+          const nextDelay = hasAnimation
+            ? Math.max(animDuration, delayPerLine)
             : (msg.includes('victory') ? 2000 : delayPerLine)
           if (isMounted) {
             timeoutId = setTimeout(processNextLine, nextDelay)

@@ -12,6 +12,8 @@ from ._base import Move  # noqa: F401
 
 
 class NpcAttack(Move):  # basic attack function, NPCs only
+    web_animation = "attack"
+
     def __init__(self, npc):
         description = ""
         prep = 0
@@ -168,6 +170,8 @@ class NpcAttack(Move):  # basic attack function, NPCs only
 
 
 class NpcRest(Move):  # standard rest to restore fatigue for NPCs.
+    web_animation = "heal"
+
     def __init__(self, npc):
         description = "Rest for a moment to restore fatigue."
         prep = 0
@@ -213,6 +217,8 @@ class NpcRest(Move):  # standard rest to restore fatigue for NPCs.
 
 
 class NpcIdle(Move):  # NPC does nothing for a few beats.
+    web_animation = "pulse"
+
     def __init__(self, npc):
         description = "What?"
         prep = 0
@@ -255,6 +261,8 @@ class TelegraphedSurge(NpcAttack):
         _recoil_text(npc)   str    — plain line shown after surge
     """
 
+    web_animation = "shockwave"
+
     _DAMAGE_MULTIPLIER = 1.0
     _EXTRA_PREP_BEATS = 0
 
@@ -289,6 +297,8 @@ class SlimeVolley(TelegraphedSurge):
     the player time to Dodge; if unparried, deals significantly amplified damage.
     On a solid hit, the wave of corrosive slime can coat the target.
     """
+
+    web_animation = "projectile"
 
     _DAMAGE_MULTIPLIER = 2.2
     _EXTRA_PREP_BEATS = 4
@@ -326,6 +336,8 @@ class TidalSurge(TelegraphedSurge):
     The sheer volume of the surge makes coating the target almost certain.
     """
 
+    web_animation = "shockwave"
+
     _DAMAGE_MULTIPLIER = 2.5
     _EXTRA_PREP_BEATS = 5
 
@@ -356,6 +368,8 @@ class TidalSurge(TelegraphedSurge):
 
 
 class GorranClub(Move):  # Gorran's special club attack! Massive damage, long recoil
+    web_animation = "heavy_attack"
+
     def __init__(self, npc):
         description = ""
         prep = 0
@@ -496,6 +510,8 @@ class GorranClub(Move):  # Gorran's special club attack! Massive damage, long re
 
 
 class VenomClaw(Move):  # Poisonous attack
+    web_animation = "attack"
+
     def __init__(self, npc):
         description = ""
         prep = 0
@@ -632,6 +648,8 @@ class VenomClaw(Move):  # Poisonous attack
 
 
 class SpiderBite(Move):  # Poisonous attack
+    web_animation = "quick_attack"
+
     def __init__(self, npc):
         description = ""
         prep = 0
@@ -771,6 +789,8 @@ class SpiderBite(Move):  # Poisonous attack
 
 
 class BatBite(Move):  # Vampiric / life-draining bite for bat-type NPCs
+    web_animation = "quick_attack"
+
     def __init__(self, npc):
         description = "A quick bite that steals a little life from the target."
         prep = 0
@@ -911,6 +931,8 @@ class MineralSpit(NpcAttack):
     leaves residue that can begin the calcification process.
     """
 
+    web_animation = "projectile"
+
     def __init__(self, npc):
         super().__init__(npc)
         self.name = "Mineral Spit"
@@ -973,6 +995,8 @@ class SoulDrain(NpcAttack):
     a wound, it finds purchase. Where faith has lapsed, it reaches through.
     """
 
+    web_animation = "drain"
+
     def __init__(self, npc):
         super().__init__(npc)
         self.name = "Soul Drain"
@@ -1029,6 +1053,8 @@ class WailStrike(NpcAttack):
     The creature doesn't scream at you. It opens its chest cavity and lets the
     wail through. The sound arrives inside before it arrives outside.
     """
+
+    web_animation = "shockwave"
 
     def __init__(self, npc):
         super().__init__(npc)
@@ -1114,6 +1140,8 @@ class SeismicSlam(Move):
     to Stagger each one (resisted by stun status resistance, like the
     Heavy Handed passive).
     """
+
+    web_animation = "shockwave"
 
     _RADIUS = 6
     _STAGGER_CHANCE = 0.25
@@ -1214,6 +1242,8 @@ class StoneBulwark(Move):
     while any ally still carries the ward.
     """
 
+    web_animation = "defend"
+
     def __init__(self, npc):
         description = (
             "Draw the strength of the earth over the whole party, shielding "
@@ -1298,6 +1328,8 @@ class MarkedQuarry(Move):
     Applied with force=True — a perception mark can't be resisted.
     """
 
+    web_animation = "debuff"
+
     def __init__(self, npc):
         description = (
             "Study a target and call out the gaps in its defenses — everyone's "
@@ -1367,6 +1399,8 @@ class TwinFangs(Move):
     into dagger slash in one motion. Deals 1.2x damage, +50% more against a
     Quarried target (her kit becomes a deliberate hunt: mark, then execute).
     """
+
+    web_animation = "quick_attack"
 
     _QUARRY_BONUS = 1.5
 

@@ -20,6 +20,8 @@ def _is_highest(p, stat_val):
 class Pulverize(Move):
     """Strength mastery: devastating overhead blow that ignores all protection."""
 
+    web_animation = "heavy_attack"
+
     def __init__(self, player):
         super().__init__(
             name="Pulverize",
@@ -82,6 +84,8 @@ class Pulverize(Move):
 class KillingPrecision(Move):
     """Finesse mastery: surgically unerring strike that never misses."""
 
+    web_animation = "pierce"
+
     def __init__(self, player):
         super().__init__(
             name="Killing Precision",
@@ -140,6 +144,8 @@ class KillingPrecision(Move):
 
 class LightningAssault(Move):
     """Speed mastery: three rapid strikes; Disoriented if all land."""
+
+    web_animation = "quick_attack"
 
     def __init__(self, player):
         super().__init__(
@@ -211,6 +217,8 @@ class LightningAssault(Move):
 class Ironhide(Move):
     """Endurance mastery: purge ailments, recover HP and fatigue."""
 
+    web_animation = "defend"
+
     def __init__(self, player):
         super().__init__(
             name="Ironhide",
@@ -271,6 +279,8 @@ class Ironhide(Move):
 class WarCry(Move):
     """Charisma mastery: interrupts all winding enemy moves and stuns for 1 beat."""
 
+    web_animation = "buff"
+
     def __init__(self, player):
         super().__init__(
             name="War Cry",
@@ -326,6 +336,8 @@ class WarCry(Move):
 class SecretPlans(Move):
     """Intelligence mastery: +30% speed and damage for player and all allies; resets cooldowns."""
 
+    web_animation = "buff"
+
     def __init__(self, player):
         super().__init__(
             name="Secret Plans",
@@ -377,6 +389,8 @@ class SecretPlans(Move):
 
 class BloodOfMartyrs(Move):
     """Faith mastery: absorb all damage for 40 beats, then detonate for 2× absorbed."""
+
+    web_animation = "buff"
 
     def __init__(self, player):
         super().__init__(

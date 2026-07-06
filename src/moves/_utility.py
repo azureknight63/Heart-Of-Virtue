@@ -43,6 +43,8 @@ class MasterTactician(PassiveMove):
 
 
 class Check(Move):  # player checks the battlefield (shows enemies, allies, distances)
+    web_animation = "pulse"
+
     def __init__(self, player):
         description = "Check your surroundings."
         prep = 0
@@ -320,6 +322,8 @@ class Check(Move):  # player checks the battlefield (shows enemies, allies, dist
 
 
 class Wait(Move):  # player chooses how many beats he'd like to wait
+    web_animation = "pulse"
+
     def __init__(self, player):
         description = "Wait for the right opportunity to make your move."
         prep = 0
@@ -361,6 +365,8 @@ class Wait(Move):  # player chooses how many beats he'd like to wait
 
 
 class Attack(Move):  # basic attack function, always uses equipped weapon, player only
+    web_animation = "attack"
+
     def __init__(self, player):
         description = "Strike at your enemy with your equipped weapon."
         prep = int(50 / player.speed)  # starting prep of 5
@@ -535,6 +541,8 @@ class Attack(Move):  # basic attack function, always uses equipped weapon, playe
 
 
 class Rest(Move):  # standard rest to restore fatigue.
+    web_animation = "heal"
+
     def __init__(self, player):
         description = "Rest for a moment to restore fatigue."
         prep = 1
@@ -580,6 +588,8 @@ class Rest(Move):  # standard rest to restore fatigue.
 
 
 class UseItem(Move):
+    web_animation = "pulse"
+
     def __init__(self, player):
         description = "Use an item from your inventory."
         prep = 1
@@ -629,6 +639,8 @@ class CrusaderOath(Move):
     Cannot be used while Hollowed (the oath requires faith to swear on).
     Long cooldown prevents chaining.
     """
+
+    web_animation = "buff"
 
     def __init__(self, player):
         prep = 2

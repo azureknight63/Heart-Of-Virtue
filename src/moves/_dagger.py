@@ -19,6 +19,8 @@ from ._base import (
 class Slash(
     Move
 ):  # Slashing-type attack using the equipped weapon; available to Daggers, Swords, Stars, and Axes.
+    web_animation = "attack"
+
     def __init__(self, player):
         description = "Slash at your enemy with your equipped weapon. Slightly stronger than a standard attack."
         prep = 1
@@ -187,6 +189,8 @@ class FeintAndPivot(Move):
     - If already on flank (±45°): pivot to behind
     - If already behind (±45°): perfect positioning behind
     """
+
+    web_animation = "quick_attack"
 
     def __init__(self, user):
         description = "Attack then reposition strategically."
@@ -436,6 +440,8 @@ class Backstab(Move):
     get_damage_modifier) to scale power based on attack angle. Frontal attacks
     get a slight penalty; flanking and rear attacks deal up to +40% more.
     """
+
+    web_animation = "pierce"
 
     def __init__(self, user):
         description = (

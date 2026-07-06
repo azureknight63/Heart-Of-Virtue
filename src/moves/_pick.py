@@ -23,6 +23,8 @@ class ChipAway(Move):
     Favoured against targets with high evasion where one decisive blow would miss.
     """
 
+    web_animation = "quick_attack"
+
     def __init__(self, user):
         description = (
             "Deliver a rapid series of three light strikes in quick succession. "
@@ -145,6 +147,8 @@ class ChipAway(Move):
 
 class ExploitWeakness(Move):
     """Targeted strike aimed at an exposed spot — applies Disoriented on hit."""
+
+    web_animation = "pierce"
 
     def __init__(self, user):
         description = (
@@ -275,6 +279,8 @@ class Stupefy(Move):
 
     High recoil and cooldown — this is the closer, not an opener.
     """
+
+    web_animation = "heavy_attack"
 
     def __init__(self, user):
         description = (
