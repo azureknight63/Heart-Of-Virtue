@@ -136,6 +136,7 @@ def say(
     reactions=None,
     enter=None,
     leave=None,
+    thought=False,
     color=None,
     attrs=None,
     **meta,
@@ -143,11 +144,17 @@ def say(
     """Emit a spoken dialogue beat attributed to ``speaker`` with an ``emotion``.
 
     :param reactions: optional ``{char_id: emotion}`` applied to listening
-        characters on this beat (their faces persist until changed again).
+        characters on this beat (their faces persist until changed again). Works
+        the same whether the beat is spoken or a ``thought`` — pass it whenever a
+        strong-emotion thought should visibly land on another character's face;
+        omit it (the default) for a private thought no one reacts to.
     :param enter: optional stage-enter op(s) attached to this beat — a dict (or
         list of dicts) shaped like :func:`enter_character`'s entry.
     :param leave: optional stage-exit op(s) attached to this beat; maps to the
         wire field ``exit`` (a dict or list of dicts like :func:`exit_character`).
+    :param thought: when ``True``, marks this beat as ``speaker``'s internal
+        thought rather than spoken dialogue — the client renders it italicized
+        without quote marks while the speaker's portrait stays fully active.
     """
     extra = {"speaker": speaker, "emotion": _norm_emotion(emotion)}
     if reactions:
@@ -156,6 +163,8 @@ def say(
         extra["enter"] = enter if isinstance(enter, list) else [enter]
     if leave:
         extra["exit"] = leave if isinstance(leave, list) else [leave]
+    if thought:
+        extra["thought"] = True
     extra.update(meta)
     narrate(text, color=color, attrs=attrs, mtype="dialogue", **extra)
 

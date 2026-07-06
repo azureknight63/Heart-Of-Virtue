@@ -2,9 +2,9 @@
 Chapter 03 events
 """
 
-from src.events import Event, dialogue
+from src.events import Event
 from src.functions import print_slow
-from src.narration import colored, narrate
+from src.narration import narrate, say, begin_conversation
 import time
 
 
@@ -88,7 +88,8 @@ class EasternRoadTurnbackEvent(Event):
                 "it passed.\n"
             )
             time.sleep(1)
-            print_slow(colored("South. That's where this goes.", "cyan") + "\n")
+            begin_conversation([("Jean", "left", "neutral")])
+            say("South. That's where this goes.", "Jean", "neutral", thought=True)
             time.sleep(0.5)
 
         # Move player west to AddersShelf (5, 4) — tile immediately west of RoadEast
@@ -176,7 +177,8 @@ class MaraFirstContactEvent(Event):
             time.sleep(1)
             print_slow("She didn't look up.")
             time.sleep(0.5)
-            dialogue("Mara", "Crossing west?", "cyan")
+            begin_conversation([("Jean", "left", "neutral"), ("Mara", "right", "neutral")])
+            say("Crossing west?", "Mara", "neutral")
             time.sleep(0.5)
             print_slow(
                 "Not a greeting. A question with a purpose. When Jean said yes, she named a number. "
@@ -271,10 +273,19 @@ class LissObservingEvent(Event):
                 "watching him with the focused intensity of someone conducting serious research."
             )
             time.sleep(1)
-            dialogue(
-                "Liss",
+            # Gorran does not react to Liss (the prose is explicit: he gives no
+            # indication of having heard her) — no reaction is authored here.
+            begin_conversation(
+                [
+                    ("Jean", "left", "neutral"),
+                    ("Gorran", None, "neutral"),
+                    ("Liss", "right", "neutral"),
+                ]
+            )
+            say(
                 "Does the Golemite sleep? He doesn't look like he's sleeping. But I think he might be.",
-                "cyan",
+                "Liss",
+                "neutral",
             )
             time.sleep(0.5)
             print_slow(
@@ -343,23 +354,24 @@ class MaraObservationEvent(Event):
                 "was sorting."
             )
             time.sleep(1)
+            begin_conversation([("Jean", "left", "neutral"), ("Mara", "right", "neutral")])
             if has_mace:
                 print_slow(
                     "Her eyes tracked to Jean's mace for just a moment. Then back to her work."
                 )
                 time.sleep(0.5)
-                dialogue("Mara", "That's religious kit.", "cyan")
+                say("That's religious kit.", "Mara", "neutral")
             else:
                 print_slow(
                     "Her eyes moved across Jean — his posture, his hands, the way his weight "
                     "sat — and returned to her work."
                 )
                 time.sleep(0.5)
-                dialogue("Mara", "You were a man of the church.", "cyan")
+                say("You were a man of the church.", "Mara", "neutral")
             time.sleep(0.5)
             print_slow("Not a question.")
             time.sleep(1)
-            dialogue("Jean", "It was.", "cyan")
+            say("It was.", "Jean", "neutral")
             time.sleep(1)
             print_slow("She didn't follow up. She filed it. The sorting continued.")
             time.sleep(1)

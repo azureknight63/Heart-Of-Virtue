@@ -621,7 +621,6 @@ class TestAfterTheRumblerFight:
         with (
             patch("story.ch01.time.sleep"),
             patch("story.ch01.print"),
-            patch("story.ch01.dialogue"),
         ):
             ev.process()
         assert rock_man.name == "Gorran"
@@ -1619,12 +1618,12 @@ class TestMaraFirstContactEvent:
         player.skip_dialog = False
         with (
             patch("story.ch03.print_slow") as mock_print,
-            patch("story.ch03.dialogue") as mock_dialogue,
+            patch("story.ch03.say") as mock_say,
             patch("story.ch03.time.sleep"),
         ):
             ev.process()
         assert mock_print.called
-        mock_dialogue.assert_called_once_with("Mara", "Crossing west?", "cyan")
+        mock_say.assert_called_once_with("Crossing west?", "Mara", "neutral")
         assert player.universe.story.get("mara_intro_done") == "1"
 
     def test_set_gate_with_no_universe(self):
@@ -1733,12 +1732,12 @@ class TestLissObservingEvent:
         player.skip_dialog = False
         with (
             patch("story.ch03.print_slow") as mock_print,
-            patch("story.ch03.dialogue") as mock_dialogue,
+            patch("story.ch03.say") as mock_say,
             patch("story.ch03.time.sleep"),
         ):
             ev.process()
         assert mock_print.called
-        assert mock_dialogue.called
+        assert mock_say.called
         assert player.universe.story.get("liss_gorran_done") == "1"
 
     def test_set_gate_with_no_universe(self):
@@ -1778,7 +1777,6 @@ class TestEasternRoadTurnbackEvent:
         with (
             patch("story.ch03.print_slow"),
             patch("story.ch03.time.sleep"),
-            patch("story.ch03.colored", return_value=""),
         ):
             ev.process()
         assert player.current_room is west_tile
@@ -1867,7 +1865,7 @@ class TestMaraObservationEvent:
         # has_mace=False branch
         with (
             patch("story.ch03.print_slow"),
-            patch("story.ch03.dialogue"),
+            patch("story.ch03.say"),
             patch("story.ch03.time.sleep"),
         ):
             ev.process()
@@ -1885,11 +1883,11 @@ class TestMaraObservationEvent:
         player.inventory = [mace]
         with (
             patch("story.ch03.print_slow") as mock_print,
-            patch("story.ch03.dialogue") as mock_dialogue,
+            patch("story.ch03.say") as mock_say,
             patch("story.ch03.time.sleep"),
         ):
             ev.process()
-        mock_dialogue.assert_any_call("Mara", "That's religious kit.", "cyan")
+        mock_say.assert_any_call("That's religious kit.", "Mara", "neutral")
         assert player.universe.story.get("nomad_camp_reached") == "1"
 
     def test_set_gate_with_no_universe(self):

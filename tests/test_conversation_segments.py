@@ -65,6 +65,18 @@ def test_say_carries_reactions_and_exit_ops():
     assert entry["exit"] == [{"id": "Amelia", "transition": "fade", "span": 3}]
 
 
+def test_say_thought_flag_defaults_false_and_can_be_set():
+    from src.narration import capture_narration, say
+
+    with capture_narration() as msgs:
+        say("You worry too much, dear.", "Jean", "happy")
+        say("He'd expected a rumble. Not that.", "Jean", "surprised", thought=True)
+
+    spoken, thought = msgs
+    assert "thought" not in spoken
+    assert thought["thought"] is True
+
+
 def test_stage_control_helpers_emit_control_entries():
     from src.narration import (
         capture_narration,
@@ -178,6 +190,19 @@ def test_explicit_side_overrides_party_rule(game_service):
 
     _out, _segs, conversation = game_service._capture_conversation(msgs, FakePlayer())
     assert conversation["cast"][0]["side"] == "left"
+
+
+def test_capture_propagates_thought_flag_onto_segment(game_service):
+    from src.narration import capture_narration, say
+
+    with capture_narration() as msgs:
+        say("Not now. Keep moving.", "Jean", "neutral")
+        say("He'd expected a rumble. Not that.", "Jean", "surprised", thought=True)
+
+    _out, segments, _conv = game_service._capture_conversation(msgs, FakePlayer())
+    spoken, thought = segments
+    assert "thought" not in spoken
+    assert thought["thought"] is True
 
 
 def test_trailing_stage_op_attaches_to_last_segment(game_service):

@@ -132,6 +132,7 @@ class MemoryFlash(Event):
                 reactions=meta.get("reactions"),
                 enter=meta.get("enter"),
                 leave=meta.get("exit"),
+                thought=meta.get("thought", False),
                 color=color,
             )
         else:

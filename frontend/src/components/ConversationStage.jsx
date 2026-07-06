@@ -207,6 +207,7 @@ function ConversationStage({ segments = [], conversation = null, onComplete, spe
     )
 
     const isDialogue = Boolean(current.speaker)
+    const isThought = Boolean(current.thought)
 
     return (
         <div
@@ -263,7 +264,7 @@ function ConversationStage({ segments = [], conversation = null, onComplete, spe
                         lineHeight: 1.6,
                         whiteSpace: 'pre-wrap',
                         textAlign: isDialogue ? 'left' : 'center',
-                        fontStyle: isDialogue ? 'normal' : 'italic',
+                        fontStyle: isDialogue && !isThought ? 'normal' : 'italic',
                     }}
                 >
                     {displayedText}

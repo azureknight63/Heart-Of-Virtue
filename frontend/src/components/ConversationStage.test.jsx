@@ -125,6 +125,30 @@ describe('ConversationStage rendering', () => {
         expect(screen.getByAltText(/Jean \(neutral\)/i)).toBeDefined()
     })
 
+    it('renders a thought beat italicized while keeping the speaker portrait active', () => {
+        const thoughtSegments = [
+            {
+                text: 'He hadn\'t expected a rumble, a sound, the usual. Not that.',
+                speaker: 'Jean',
+                emotion: 'surprised',
+                thought: true,
+                in_conversation: true,
+            },
+        ]
+        render(
+            <ConversationStage
+                segments={thoughtSegments}
+                conversation={{ cast: CAST }}
+                onComplete={vi.fn()}
+            />
+        )
+        act(() => vi.advanceTimersByTime(3000))
+        const text = screen.getByText(/He hadn't expected a rumble/i)
+        expect(text.style.fontStyle).toBe('italic')
+        // The speaker's portrait stays fully active (emotion-aware alt text, no dimming).
+        expect(screen.getByAltText(/Jean \(surprised\)/i)).toBeDefined()
+    })
+
     it('advances beats on click and calls onComplete after the last beat', () => {
         const onComplete = vi.fn()
         render(

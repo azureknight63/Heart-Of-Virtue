@@ -2,11 +2,11 @@
 Chapter 01 events
 """
 
-from src.narration import cprint, colored, narrate
+from src.narration import cprint, colored, narrate, say, begin_conversation
 import time
 import random
 
-from events import Event, dialogue
+from events import Event
 import objects as objects
 from functions import await_input
 from story.effects import MemoryFlash
@@ -782,12 +782,16 @@ class AfterTheRumblerFight(Event):
 
     def process(self):
         time.sleep(5)
+        # Speaker id is "Gorran" throughout (rather than "Rock-Man" pre-reveal) so
+        # the portrait/asset key stays consistent with the character's canonical
+        # name used everywhere else in the game.
+        begin_conversation([("Jean", "left", "neutral"), ("Gorran", "right", "neutral")])
         narrate("The Rock-Man lowers his club to the ground and turns toward Jean.")
         time.sleep(3)
-        dialogue(
-            "Jean",
+        say(
             "I suppose I should thank you for saving my skin. What is your name?",
-            "cyan",
+            "Jean",
+            "neutral",
         )
         narrate(
             "The Rock-Man stands immobile for a long moment, then slowly gestures toward himself. "
@@ -799,12 +803,13 @@ class AfterTheRumblerFight(Event):
             "best be described as an avalanche falling in love with an earthquake."
         )
         time.sleep(4)
-        dialogue("Rock-Man", "Mmmmm... Go-rra-nnnnnn...", "green")
-        dialogue(
-            "Jean",
+        say("Mmmmm... Go-rra-nnnnnn...", "Gorran", "neutral")
+        say(
             "Go... rran? Well, thank you, Gorran. But what were those things? "
             "I've never seen their like in my life!",
-            "cyan",
+            "Jean",
+            "surprised",
+            reactions={"Gorran": "happy"},
         )
         narrate(
             "Gorran lets out a deep, low rumble, then gestures toward the wall from which he apparently came."
@@ -848,11 +853,17 @@ class AfterGorranIntro(Event):
         narrate(
             "Gorran gestures toward the opening in the wall. The two walk over. Jean can see that the opening is "
             "much too small for him to\npass through. Gorran waves an arm toward it and, miraculously, "
-            "the opening widens with a loud rumble. Gorran walks through.\n"
-            "Jean pauses at the threshold. A faint current of air presses against his face — cooler than the chamber,"
-            "\ncarrying the mineral smell of deeper stone. He notes which way it's moving before he steps inside."
-            "\nThen, with trepidation, he follows."
+            "the opening widens with a loud rumble. Gorran walks through."
         )
+        begin_conversation([("Jean", "left", "neutral")])
+        say(
+            "A faint current of air presses against his face — cooler than the chamber, carrying "
+            "the mineral smell of deeper stone. He notes which way it's moving before he steps inside.",
+            "Jean",
+            "neutral",
+            thought=True,
+        )
+        narrate("Then, with trepidation, he follows.")
         await_input()
         for gorran in self.tile.npcs_here:
             if gorran.name == "Gorran":
@@ -1010,6 +1021,7 @@ class Ch01GorranFirstWord(Event):
             return
 
         time.sleep(0.5)
+        begin_conversation([("Jean", "left", "neutral")])
         cprint(
             "The stone here has been moved with intention. Not a collapse — something large "
             "passed through repeatedly and the passage rearranged itself around that fact. "
@@ -1024,14 +1036,28 @@ class Ch01GorranFirstWord(Event):
         time.sleep(1.5)
 
         # The first word. Flat vowel. Consonants too hard. Unmistakably human.
-        cprint('"Stop."', "green")
+        # Gorran fades onto the stage on this beat — he's speaking from off-screen.
+        say(
+            "Stop.",
+            "Gorran",
+            "neutral",
+            enter={
+                "id": "Gorran",
+                "side": "right",
+                "emotion": "neutral",
+                "transition": "fade",
+            },
+        )
 
         time.sleep(2.5)
         cprint("Jean stops.", "cyan")
         time.sleep(1.5)
-        cprint(
+        # Internal thought — no reaction from Gorran; he's looking past Jean, not at him.
+        say(
             "He stands there for a moment. He'd expected a rumble, a sound, the usual. Not that.",
-            "cyan",
+            "Jean",
+            "surprised",
+            thought=True,
         )
         time.sleep(2)
         cprint(
