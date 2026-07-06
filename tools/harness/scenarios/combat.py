@@ -157,22 +157,7 @@ class CombatScenario(Scenario):
                 break  # stop on first nav failure
         return bugs
 
-    def _find_enemy(self, client: GameClient) -> Optional[str]:
-        """Return the first hostile NPC ID from the current room, or None."""
-        resp = client.get("/api/world")
-        if resp.status_code != 200:
-            return None
-        data = client.parse(resp)
-        room = data.get("room", {})
-        npcs = room.get("npcs", [])
-        for npc in npcs:
-            if isinstance(npc, dict):
-                # Skip friendly/ally NPCs
-                if npc.get("friend") or npc.get("is_ally"):
-                    continue
-                return npc.get("id") or npc.get("npc_id") or npc.get("name")
-            return str(npc)
-        return None
+    # _find_enemy is inherited from Scenario (base.py).
 
     def _check_invalid_start(self, client: GameClient) -> List[BugReport]:
         """Verify the API gracefully handles a non-existent enemy_id."""

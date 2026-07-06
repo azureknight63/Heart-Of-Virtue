@@ -14,6 +14,7 @@ from .inventory_actions import InventoryActionsScenario
 from .ch01_events import Ch01EventsScenario
 from .ch01_wrong_choice import Ch01WrongChoiceScenario
 from .grondia_happy_path import GroniaHappyPathScenario
+from .ally_progression import AllyProgressionScenario
 
 _ALL_SCENARIOS = [
     HealthScenario(),
@@ -30,6 +31,7 @@ _ALL_SCENARIOS = [
     Ch01EventsScenario(),
     Ch01WrongChoiceScenario(),
     GroniaHappyPathScenario(),
+    AllyProgressionScenario(),
 ]
 
 
