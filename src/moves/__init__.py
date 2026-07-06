@@ -95,6 +95,10 @@ from ._npc import (
     MineralSpit,
     SoulDrain,
     WailStrike,
+    SeismicSlam,
+    StoneBulwark,
+    MarkedQuarry,
+    TwinFangs,
 )
 
 __all__ = [
@@ -199,4 +203,8 @@ __all__ = [
     "MineralSpit",
     "SoulDrain",
     "WailStrike",
+    "SeismicSlam",
+    "StoneBulwark",
+    "MarkedQuarry",
+    "TwinFangs",
 ]

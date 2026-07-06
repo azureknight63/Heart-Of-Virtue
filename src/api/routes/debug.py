@@ -89,6 +89,22 @@ def list_skills():
     return _run(lambda adj, player, body: {"skills": adj.list_skills(player)})
 
 
+# --- Party ally progression ---------------------------------------------------
+
+@debug_bp.route("/allies", methods=["GET"])
+def ally_state():
+    return _run(lambda adj, player, body: adj.ally_state(player))
+
+
+@debug_bp.route("/allies/progression", methods=["POST"])
+def set_ally_progression():
+    return _run(
+        lambda adj, player, body: adj.set_ally_progression(
+            player, body["name"], body.get("level"), body.get("exp")
+        )
+    )
+
+
 # --- Arena combatant management ---------------------------------------------
 
 @debug_bp.route("/arena", methods=["GET"])

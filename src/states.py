@@ -716,3 +716,58 @@ class BloodOfMartyrsState(State):
 
     def on_removal(self, target):
         self._absorbing = False
+
+
+class Quarried(State):
+    """Applied by Marked Quarry (Mara's ally signature move). The target's
+    weak points are called out: protection reduced by 25% for 15 beats.
+
+    A perception mark rather than a mental/physical status — applied with
+    force=True, bypassing status resistance (there is no resisting being
+    seen clearly)."""
+
+    def __init__(self, target):
+        super().__init__(
+            name="Quarried",
+            target=target,
+            beats_max=15,
+            compounding=False,
+            combat=True,
+            world=False,
+            statustype="generic",
+            persistent=False,
+            description="Weak points exposed — protection reduced by 25%.",
+        )
+        self.add_protection = -int(target.protection * 0.25)
+
+    def on_application(self, target):
+        functions.refresh_stat_bonuses(target)
+
+    def on_removal(self, target):
+        functions.refresh_stat_bonuses(target)
+
+
+class StoneBulwarkState(State):
+    """Applied by Stone Bulwark (Gorran's ally signature move) to each party
+    member: bonus protection scaling with Gorran's own for 20 beats."""
+
+    def __init__(self, target, amount):
+        super().__init__(
+            name="Stone Bulwark",
+            target=target,
+            beats_max=20,
+            compounding=False,
+            combat=True,
+            world=False,
+            statustype="generic",
+            persistent=False,
+            description="Shielded by living stone — bonus protection.",
+        )
+        self.add_protection = int(amount)
+
+    def on_application(self, target):
+        functions.refresh_stat_bonuses(target)
+
+    def on_removal(self, target):
+        functions.refresh_stat_bonuses(target)
+        cprint(f"The stone shielding {target.name} crumbles away.", "cyan")
