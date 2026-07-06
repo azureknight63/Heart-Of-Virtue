@@ -30,7 +30,6 @@ describe('ANIMATION_CONFIGS', () => {
     if (cfg.effect) expect(phaseNames.has(cfg.effect.phase)).toBe(true);
     if (cfg.motion?.windupPhase) expect(phaseNames.has(cfg.motion.windupPhase)).toBe(true);
     if (cfg.motion?.travelPhase) expect(phaseNames.has(cfg.motion.travelPhase)).toBe(true);
-    if (cfg.impactPhase) expect(phaseNames.has(cfg.impactPhase)).toBe(true);
   });
 
   it('keeps combat pacing tight — no animation runs longer than 1.1s', () => {

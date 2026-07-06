@@ -68,7 +68,10 @@ def test_declared_animations_exist_in_frontend_configs():
     )
 
 
-def test_init_param_none_does_not_clobber_class_attribute():
+def test_instances_resolve_class_attribute():
+    """The adapter reads web_animation off instances via getattr — the class
+    attribute must be visible there without any __init__ plumbing."""
+
     class _Probe(Move):
         web_animation = "pierce"
 
@@ -85,23 +88,4 @@ def test_init_param_none_does_not_clobber_class_attribute():
         targeted=False,
     )
     assert probe.web_animation == "pierce"
-
-
-def test_init_param_overrides_class_attribute():
-    class _Probe(Move):
-        web_animation = "pierce"
-
-    probe = _Probe(
-        name="probe",
-        description="",
-        xp_gain=0,
-        current_stage=0,
-        beats_left=0,
-        stage_announce=["", "", "", ""],
-        target=None,
-        user=None,
-        stage_beat=[0, 0, 0, 0],
-        targeted=False,
-        web_animation="attack",
-    )
-    assert probe.web_animation == "attack"
+    assert getattr(Move, "web_animation", "missing") is None

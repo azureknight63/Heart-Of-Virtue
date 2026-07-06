@@ -134,7 +134,6 @@ class Move:  # master class for all moves
         verbose_targeting=False,
         category="Miscellaneous",
         passive=False,
-        web_animation=None,
     ):
         self.name = name
         self.description = description
@@ -162,10 +161,6 @@ class Move:  # master class for all moves
             1  # only used by NPCs to determine the chance that move is selected for use
         )
         self.passive = passive
-        if web_animation is not None:
-            # Explicit per-instance override; otherwise the class attribute
-            # (declared on each move class) is used.
-            self.web_animation = web_animation
         self.fatigue_per_beat = 0
 
     def beat_update(self, user):

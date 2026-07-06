@@ -178,14 +178,13 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
 
         const entry = currentPending[currentIndex]
 
-        // Entries that drive a battlefield animation: either adapter-fallback
-        // entries (type === 'animation') or normal combat lines with animation
-        // metadata attached (the common case — impact lines). Both enqueue an
-        // animation in BattlefieldGrid, so both must hold the reveal loop and
-        // both get their SFX from the battlefield's phase-aligned cues instead
-        // of the keyword matcher below (which would double-fire the sound).
-        const isAnimationEntry = entry.type === 'animation'
-        const hasAnimation = isAnimationEntry || !!entry.animation
+        // Entries that drive a battlefield animation: adapter-fallback entries
+        // (type === 'animation') or normal combat lines with animation metadata
+        // attached (the common case — impact lines). Both enqueue an animation
+        // in BattlefieldGrid, so both must hold the reveal loop and both get
+        // their SFX from the battlefield's phase-aligned cues instead of the
+        // keyword matcher below (which would double-fire the sound).
+        const hasAnimation = entry.type === 'animation' || !!entry.animation
 
         const msg = entry.message.toLowerCase()
 

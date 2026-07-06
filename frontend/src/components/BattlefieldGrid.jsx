@@ -49,9 +49,6 @@ const getPos = (entity) => entity?.position || { x: 0, y: 0 };
 const phaseDurationOf = (config, phaseName, fallback = 200) =>
   config?.phases?.find((p) => p.name === phaseName)?.duration ?? fallback;
 
-/** The phase treated as the hit moment for a config (default 'impact'). */
-const impactPhaseOf = (config) => config?.impactPhase || 'impact';
-
 // ---------------------------------------------------------------------------
 // CombatantMarker — renders a single entity token on the grid
 // ---------------------------------------------------------------------------
@@ -120,7 +117,7 @@ const CombatantMarker = React.memo(({
     const cfg = animationState.config;
 
     if (animationState.isTarget) {
-      if (animationState.phase !== impactPhaseOf(cfg)) return {};
+      if (animationState.phase !== 'impact') return {};
       const treatment = cfg?.target;
       if (treatment && treatment !== 'strike') {
         // Fixed treatment (debuff hex, drain wither, ...)
@@ -163,7 +160,7 @@ const CombatantMarker = React.memo(({
   const targetShake = Boolean(
     animationState?.isTarget
     && animationState.config?.shake
-    && animationState.phase === impactPhaseOf(animationState.config)
+    && animationState.phase === 'impact'
     && animationState.outcome !== 'miss'
   );
 
@@ -461,7 +458,7 @@ const EntityLayer = React.memo(({
             transition: `transform ${phaseDurationOf(cfg, animState.phase)}ms ${motion.easing || 'ease-in'}`,
             zIndex: 100,
           };
-        } else if (animState.phase === impactPhaseOf(cfg) && travel && tPos) {
+        } else if (animState.phase === 'impact' && travel && tPos) {
           // Hold at the target through impact — no snap-back mid-hit
           transformStyle = {
             transform: `translate(${dx * travel * 100}%, ${dy * travel * 100}%)${rotate}`,
@@ -473,8 +470,6 @@ const EntityLayer = React.memo(({
             transition: `transform ${phaseDurationOf(cfg, 'return')}ms ease-in-out`,
           };
         }
-      } else if (animState?.isSource && animState.phase === 'return') {
-        transformStyle = { transform: 'translate(0, 0)', transition: 'transform 0.2s ease-in-out' };
       }
 
       const isHighlighted = isEntityHovered || (entityId != null && selectedEntity?.id === entityId);
@@ -728,9 +723,10 @@ const EffectsLayer = React.memo(({ activeAnimation, animationPhase, getEntitySty
       break;
     }
     case 'ring': {
-      // Impact rings anchor on the target when the effect fires at the hit
-      // moment; ambient rings (sweep arcs, defensive shells) anchor on the caster.
-      const anchor = (animationPhase === impactPhaseOf(cfg) && targetStyle) ? targetStyle : sourceStyle;
+      // The effect config declares which cell the ring sits on: 'target' for
+      // impact rings, caster (default) for sweep arcs / defensive shells /
+      // shockwaves radiating outward.
+      const anchor = (effect.anchor === 'target' && targetStyle) ? targetStyle : sourceStyle;
       if (!anchor) break;
       content = (
         <div

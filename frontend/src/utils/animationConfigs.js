@@ -12,25 +12,24 @@
  *   duration      total ms — must equal the sum of phase durations
  *   phases        [{ name, duration }] — played strictly in sequence
  *   motion        how the SOURCE token travels during the animation:
- *     type          'lunge' | 'thrust' | 'rush' | 'spin' | 'hop'
  *     windupPhase   phase in which the token recoils away from the target
  *     recoil        fraction of one cell to pull back during windupPhase
  *     travelPhase   phase in which the token moves toward the target
  *     travel        fraction of source→target distance covered (1 = on top)
  *     easing        CSS timing function for the travel transition
- *     spinDegrees   full rotation applied during travelPhase ('spin' only)
+ *     spinDegrees   full rotation applied during travelPhase (spin attacks)
  *   source        per-phase marker styling for the acting entity:
  *     { [phaseName]: { scale, glow } }   glow = CSS color for a box-shadow halo
- *   target        treatment of the target marker during the impact phase:
+ *   target        treatment of the target marker during the 'impact' phase:
  *     'strike'      outcome-dependent flash (hit red / miss blur / parry gold)
  *     { glow, scale }  fixed styling (buff/debuff/drain style effects)
- *   impactPhase   phase treated as the hit moment (default 'impact')
  *   shake         true → target cell shakes during the impact phase
  *   effect        overlay drawn by the battlefield effects layer:
  *     kind          'projectile' | 'ring' | 'rise' | 'drain'
  *     phase         phase during which the overlay plays
  *     color         primary CSS color of the overlay
  *     size          ring end-radius / particle size multiplier (default 1)
+ *     anchor        'source' (default) | 'target' — which cell a ring sits on
  *   sfx           { [phaseName]: cue } — cue is an sfx_<name>.wav basename, or
  *                 the special value 'outcome' which resolves via the
  *                 animation's outcome (hit/miss/parry) at play time
@@ -63,7 +62,6 @@ export const ANIMATION_CONFIGS = {
       { name: 'return', duration: 220 },
     ],
     motion: {
-      type: 'lunge',
       windupPhase: 'windup',
       recoil: 0.18,
       travelPhase: 'strike',
@@ -88,7 +86,6 @@ export const ANIMATION_CONFIGS = {
       { name: 'return', duration: 140 },
     ],
     motion: {
-      type: 'lunge',
       windupPhase: 'windup',
       recoil: 0.1,
       travelPhase: 'strike',
@@ -114,7 +111,6 @@ export const ANIMATION_CONFIGS = {
       { name: 'return', duration: 240 },
     ],
     motion: {
-      type: 'lunge',
       windupPhase: 'windup',
       recoil: 0.25,
       travelPhase: 'strike',
@@ -127,7 +123,7 @@ export const ANIMATION_CONFIGS = {
     },
     target: 'strike',
     shake: true,
-    effect: { kind: 'ring', phase: 'impact', color: 'rgba(255, 136, 0, 0.8)', size: 1.2 },
+    effect: { kind: 'ring', phase: 'impact', color: 'rgba(255, 136, 0, 0.8)', size: 1.2, anchor: 'target' },
     sfx: { strike: 'attack_swipe', impact: 'outcome' },
   },
 
@@ -142,7 +138,6 @@ export const ANIMATION_CONFIGS = {
       { name: 'return', duration: 180 },
     ],
     motion: {
-      type: 'thrust',
       windupPhase: 'windup',
       recoil: 0.22,
       travelPhase: 'strike',
@@ -168,7 +163,6 @@ export const ANIMATION_CONFIGS = {
       { name: 'return', duration: 160 },
     ],
     motion: {
-      type: 'spin',
       windupPhase: 'windup',
       recoil: 0,
       travelPhase: 'spin',
@@ -196,7 +190,6 @@ export const ANIMATION_CONFIGS = {
       { name: 'return', duration: 220 },
     ],
     motion: {
-      type: 'rush',
       windupPhase: 'windup',
       recoil: 0.15,
       travelPhase: 'rush',
@@ -224,7 +217,6 @@ export const ANIMATION_CONFIGS = {
       { name: 'return', duration: 140 },
     ],
     motion: {
-      type: 'hop',
       windupPhase: 'launch',
       recoil: 0.08,
     },
@@ -247,11 +239,6 @@ export const ANIMATION_CONFIGS = {
       { name: 'impact', duration: 360 },
       { name: 'return', duration: 180 },
     ],
-    motion: {
-      type: 'hop',
-      windupPhase: 'windup',
-      recoil: 0,
-    },
     source: {
       windup: { scale: 1.3, glow: 'rgba(255, 200, 80, 0.7)' },
       slam: { scale: 0.85 },
@@ -281,8 +268,8 @@ export const ANIMATION_CONFIGS = {
   },
 
   // --- Stances & self-effects ---------------------------------------------
-  // Dodges, parries, braces, bulwarks: a steel-blue shield halo raised and
-  // held long enough to read as a defensive posture.
+  // Dodges, parries, braces, bulwarks: a cyan shield halo raised and held
+  // long enough to read as a defensive posture (retro terminal palette).
   defend: {
     duration: 760,
     phases: [
@@ -291,10 +278,10 @@ export const ANIMATION_CONFIGS = {
       { name: 'return', duration: 160 },
     ],
     source: {
-      windup: { scale: 1.1, glow: 'rgba(120, 180, 255, 0.7)' },
-      hold: { scale: 1.05, glow: 'rgba(120, 180, 255, 0.9)' },
+      windup: { scale: 1.1, glow: 'rgba(0, 255, 255, 0.55)' },
+      hold: { scale: 1.05, glow: 'rgba(0, 255, 255, 0.75)' },
     },
-    effect: { kind: 'ring', phase: 'hold', color: 'rgba(120, 180, 255, 0.7)', size: 0.9 },
+    effect: { kind: 'ring', phase: 'hold', color: 'rgba(0, 255, 255, 0.55)', size: 0.9 },
     sfx: { windup: 'attack_parry' },
   },
 
@@ -314,7 +301,8 @@ export const ANIMATION_CONFIGS = {
     sfx: { burst: 'level_up' },
   },
 
-  // Marks, hexes, stuns aimed at a target: violet flash sinks onto them.
+  // Marks, hexes, stuns aimed at a target: purple flash sinks onto them
+  // (theme.js colors.special #9944ff — the special/supernatural hue).
   debuff: {
     duration: 800,
     phases: [
@@ -322,11 +310,10 @@ export const ANIMATION_CONFIGS = {
       { name: 'impact', duration: 380 },
       { name: 'return', duration: 180 },
     ],
-    impactPhase: 'impact',
     source: {
-      windup: { scale: 1.06, glow: 'rgba(200, 80, 255, 0.7)' },
+      windup: { scale: 1.06, glow: 'rgba(153, 68, 255, 0.7)' },
     },
-    target: { glow: 'rgba(200, 80, 255, 0.9)', scale: 0.92 },
+    target: { glow: 'rgba(153, 68, 255, 0.9)', scale: 0.92 },
     sfx: { impact: 'status_hit' },
   },
 
@@ -342,7 +329,7 @@ export const ANIMATION_CONFIGS = {
     source: {
       impact: { scale: 1.12, glow: 'rgba(170, 255, 170, 0.8)' },
     },
-    target: { glow: 'rgba(200, 80, 255, 0.9)', scale: 0.88 },
+    target: { glow: 'rgba(153, 68, 255, 0.9)', scale: 0.88 },
     effect: { kind: 'drain', phase: 'impact', color: 'rgba(170, 255, 170, 0.9)' },
     sfx: { impact: 'status_hit' },
   },

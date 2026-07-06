@@ -214,6 +214,7 @@ See `docs/coverage/coverage-dashboard.md` for:
 - `CombatAdapter` is the bridge between terminal output and JSON — changes to combat serialization go there
 - `Combatant` base class owns shared resistance/status-effect logic for Player and NPC. Do not duplicate this in subclasses.
 - New passive moves (flag-only, never castable, `viable()→False`) must inherit `PassiveMove` from `src/moves/_base.py`, not `Move` directly. Subclasses only supply `name` and `description`.
+- **Combat animations**: every castable move declares a `web_animation` class attribute (e.g. `web_animation = "pierce"`). Valid types are the keys of `ANIMATION_CONFIGS` in `frontend/src/utils/animationConfigs.js` (attack, quick_attack, heavy_attack, pierce, sweep, charge, projectile, shockwave, dash, defend, buff, debuff, drain, heal, pulse, death) — contract-tested by `tests/test_move_web_animations.py`. When adding a move, pick an existing type; when adding a type, define its config (phases/motion/effect/sfx) in the frontend first. Unknown types fall back to `pulse` client-side; a missing declaration falls back to attack/pulse in the adapter.
 - `GameService` + `SessionManager` abstract the game loop for stateless API calls
 
 ### GameService patterns (critical gotchas)
