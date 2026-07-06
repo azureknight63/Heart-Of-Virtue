@@ -1123,6 +1123,118 @@ class NpcChatLLMAdapter(GenericLLMClient):
         return parsed
 
     # ------------------------------------------------------------------
+    # Combined turn — NPC reply + Jean's three options in a single call
+    # ------------------------------------------------------------------
+
+    def generate_turn(
+        self,
+        system_prompt: str,
+        history: List[Dict[str, str]],
+        is_opening: bool,
+        jean_text: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Generate the NPC turn *and* Jean's three options in one LLM call.
+
+        Combining both into a single request roughly halves per-round latency
+        and cost versus calling ``generate_npc_turn`` and ``generate_jean_options``
+        separately — the round-transit budget (< 5s) depends on this.
+
+        Returns dict:
+            {npc_text, conversation_quality, reputation_delta, loquacity_delta,
+             jean_options: [{tone, text} x3]}
+        The mixin still runs its own QC on ``npc_text`` and ``jean_options``.
+        Returns None if the LLM is unavailable or the response is unusable.
+        """
+        history_block = self._format_history(history)
+        if is_opening:
+            task = (
+                "Generate the NPC's opening line, then three options for how Jean "
+                "might reply. Vary the opening — do not repeat anything in the history "
+                "above, and do not begin with 'Hello' or 'Greetings'."
+            )
+        else:
+            task = (
+                f'Jean said: "{jean_text}". Generate the NPC\'s response, then three '
+                "options for how Jean might reply next."
+            )
+
+        user = (
+            f"{history_block}\n\n"
+            f"[TASK]\n{task}\n\n"
+            "Return ONLY this JSON (no code fences, no extra keys):\n"
+            '{"npc_text": "...", '
+            '"conversation_quality": "positive|neutral|negative|offensive", '
+            '"reputation_delta": 0, "loquacity_delta": -8, '
+            '"jean_options": [{"tone": "direct", "text": "..."}, '
+            '{"tone": "guarded", "text": "..."}, {"tone": "open", "text": "..."}]}\n\n'
+            "conversation_quality reflects how the NPC felt about this exchange: "
+            "positive=enjoyed/interested, neutral=tolerated, negative=annoyed/offended, "
+            "offensive=deeply offended.\n"
+            "reputation_delta is a small integer from -5 to +5 for how much this exchange "
+            "shifts the NPC's opinion of Jean, in character. 0 for an unremarkable exchange; "
+            "reserve the extremes for genuinely memorable moments.\n"
+            "loquacity_delta is a signed integer for how the NPC's willingness to keep "
+            "talking changed. Conversation costs energy, so it is USUALLY NEGATIVE "
+            "(-3 to -12). Use a small POSITIVE value (up to +8) ONLY when Jean raises "
+            "something this NPC genuinely finds interesting or cares about. Use -25 to -35 "
+            "if Jean is deeply offensive.\n"
+            "For the opening line set reputation_delta and loquacity_delta to 0.\n"
+            "The three jean_options are Jean's possible replies (he/him, a cautious, "
+            "measured traveler): direct=brief and to the point, guarded=deflects or keeps "
+            "distance, open=engages with warmth or curiosity. Each 8-20 words. Never have "
+            "Jean reveal information he would not know, and none may echo the history above."
+        )
+
+        temp = float(os.getenv("NPC_CHAT_TEMP_TURN", "0.7"))
+        # The reply is 1-3 sentences plus three short options (~150-250 tokens in
+        # practice); a tight cap keeps typical latency low so the 6s ceiling only
+        # ever bites on a genuinely stuck call.
+        raw = self._call_llm(system_prompt, user, max_tokens=300, temperature=temp)
+        if not raw:
+            return None
+        parsed = _JSONTools.try_parse_json(raw)
+        if not isinstance(parsed, dict):
+            return None
+        if "npc_text" not in parsed or not isinstance(parsed["npc_text"], str):
+            return None
+
+        valid_qualities = {"positive", "neutral", "negative", "offensive"}
+        quality = str(parsed.get("conversation_quality", "neutral")).lower()
+        if quality not in valid_qualities:
+            quality = "neutral"
+        parsed["conversation_quality"] = quality
+        parsed["npc_text"] = _JSONTools.sanitize_text(parsed["npc_text"])
+
+        try:
+            rep_delta = int(parsed.get("reputation_delta", 0))
+        except (TypeError, ValueError):
+            rep_delta = 0
+        parsed["reputation_delta"] = max(-5, min(5, rep_delta))
+
+        try:
+            loq_delta = int(parsed.get("loquacity_delta", -8))
+        except (TypeError, ValueError):
+            loq_delta = -8
+        parsed["loquacity_delta"] = max(-40, min(15, loq_delta))
+
+        options = parsed.get("jean_options")
+        if isinstance(options, list) and options:
+            cleaned: List[Dict[str, str]] = []
+            expected_tones = ["direct", "guarded", "open"]
+            for i, item in enumerate(options[:3]):
+                if not isinstance(item, dict) or "text" not in item:
+                    continue
+                tone = str(item.get("tone", expected_tones[i % 3])).lower()
+                if tone not in expected_tones:
+                    tone = expected_tones[i % 3]
+                cleaned.append({"tone": tone, "text": str(item["text"])[:200]})
+            parsed["jean_options"] = cleaned
+        else:
+            parsed["jean_options"] = []
+
+        return parsed
+
+    # ------------------------------------------------------------------
     # Call 3 — Jean's three response options (single call)
     # ------------------------------------------------------------------
 
@@ -1202,6 +1314,22 @@ class NpcChatLLMAdapter(GenericLLMClient):
     # Internal LLM call dispatcher
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _round_timeout() -> float:
+        """Per-call network timeout (seconds).
+
+        The feature targets a typical conversation round under 5 seconds. A single
+        combined ``generate_turn`` call is one network round-trip; a healthy free
+        model returns in ~2-4s, so this ceiling (default 6s) covers the "slow but
+        fine" tail while a genuinely stuck call aborts into the deterministic
+        fallback pools rather than leaving the player waiting. Tunable via
+        ``NPC_CHAT_LLM_TIMEOUT``.
+        """
+        try:
+            return float(os.getenv("NPC_CHAT_LLM_TIMEOUT", "6.0"))
+        except (TypeError, ValueError):
+            return 6.0
+
     def _call_llm(
         self,
         system_prompt: str,
@@ -1240,7 +1368,7 @@ class NpcChatLLMAdapter(GenericLLMClient):
             r = requests.post(
                 self.base_url + "/api/chat",
                 json=payload,
-                timeout=30,
+                timeout=self._round_timeout(),
             )
             r.raise_for_status()
             data = r.json()
@@ -1280,7 +1408,7 @@ class NpcChatLLMAdapter(GenericLLMClient):
                 "https://openrouter.ai/api/v1/chat/completions",
                 json=payload,
                 headers=headers,
-                timeout=45,
+                timeout=self._round_timeout(),
             )
             r.raise_for_status()
             data = r.json()

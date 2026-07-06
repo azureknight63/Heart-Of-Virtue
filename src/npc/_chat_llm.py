@@ -53,7 +53,25 @@ _JEAN_DIALOG_PATTERN = re.compile(
 # Capitalized token finder (for invented proper noun scan)
 _CAP_TOKEN_PATTERN = re.compile(r"\b([A-Z][A-Za-z\-]{2,})\b")
 
-# Drain amounts keyed by conversation_quality
+# Common capitalized words that are NOT invented proper nouns. Sentence-initial
+# words are skipped positionally; this set catches legitimate capitalized words
+# that can appear mid-sentence (pronouns, connectives, setting/religious terms)
+# so the invented-noun scrubber never mangles ordinary English.
+_COMMON_CAP_WORDS = frozenset(
+    w.lower()
+    for w in (
+        "The", "This", "That", "These", "Those", "There", "Then", "Here",
+        "What", "When", "Where", "Why", "Who", "How", "But", "And", "Not",
+        "Now", "Yes", "Well", "Come", "Look", "Listen", "Maybe", "Perhaps",
+        "Nothing", "Something", "Someone", "Anyone", "Everyone", "Nobody",
+        "He", "She", "His", "Her", "Him", "They", "Them", "Their", "You",
+        "Your", "We", "Our", "Its", "God", "Lord", "Heaven", "Hell", "Father",
+        "North", "South", "East", "West", "River", "Sun", "Moon", "Storm",
+    )
+)
+
+# Fallback drain amounts keyed by conversation_quality — used only when the LLM
+# does not supply an explicit signed loquacity_delta (legacy adapter / fallback).
 _LOQUACITY_DRAIN = {"positive": 3, "neutral": 8, "negative": 15, "offensive": 30}
 
 # Jean options fallback pool (rotated to avoid repetition)
@@ -346,6 +364,7 @@ class HumanNPCLLMMixin:
                 "personality": None,
                 "loquacity_current": self.loquacity_current,
                 "loquacity_max": self.loquacity_max,
+                "loquacity_recovery": getattr(self, "loquacity_recovery", 2),
                 "exchanges": [],
                 "last_talked_tick": 0,
                 "conversation_count": 0,
@@ -367,6 +386,7 @@ class HumanNPCLLMMixin:
 
         entry["loquacity_current"] = self.loquacity_current
         entry["loquacity_max"] = self.loquacity_max
+        entry["loquacity_recovery"] = getattr(self, "loquacity_recovery", 2)
         entry["last_talked_tick"] = game_tick
 
         # Only increment conversation count on full exchanges (with jean_text)
@@ -396,8 +416,26 @@ class HumanNPCLLMMixin:
 
         # Character block
         if self._chat_char_config:
-            # Story NPC: use system_prompt_snippet
-            blocks.append(self._chat_char_config.get("system_prompt_snippet", ""))
+            # Story NPC: system_prompt_snippet plus the richer config fields
+            # (role/knowledge/personality) that ground the model in-character.
+            cfg = self._chat_char_config
+            snippet = cfg.get("system_prompt_snippet", "")
+            extras = []
+            role = cfg.get("role")
+            if role:
+                extras.append(f"Role: {role}.")
+            knowledge = cfg.get("knowledge_scope") or []
+            if knowledge:
+                extras.append(
+                    "You can speak to: " + "; ".join(knowledge) + "."
+                )
+            notes = cfg.get("personality_notes") or []
+            if notes:
+                extras.append("About you: " + " ".join(notes))
+            char_block = snippet
+            if extras:
+                char_block = (snippet + "\n" + "\n".join(extras)).strip()
+            blocks.append(char_block)
         else:
             # Generic NPC: synthesize from personality
             pers = self._chat_personality or {}
@@ -419,9 +457,14 @@ class HumanNPCLLMMixin:
         if combat_block:
             blocks.append(combat_block)
 
-        # Jean instruction block
+        # Jean instruction block + spoiler guard
+        chapter = self._get_chapter(player)
         blocks.append(
-            "Jean is he/him. Do not write Jean's dialogue. Do not describe Jean's internal state."
+            "Jean is he/him. Do not write Jean's dialogue. Do not describe Jean's "
+            "internal state.\n"
+            f"It is currently chapter {chapter}. Only reference things your character "
+            "would plausibly know by now. Never reveal or hint at events, places, "
+            "people, or revelations from later in the story."
         )
 
         return "\n\n".join(blocks)
@@ -527,15 +570,31 @@ class HumanNPCLLMMixin:
         )
         world_nouns.update([self.name, "Jean", "Gorran"])
 
-        tokens = _CAP_TOKEN_PATTERN.findall(text)
-        for token in tokens:
-            if token not in world_nouns:
-                # Heuristic: if -ia, -on, -or endings, replace with "that place"
-                # Otherwise replace with "they"
-                if token.endswith(("ia", "on", "or")):
-                    text = re.sub(r"\b" + re.escape(token) + r"\b", "that place", text)
-                else:
-                    text = re.sub(r"\b" + re.escape(token) + r"\b", "they", text)
+        def _is_sentence_initial(match_start: int) -> bool:
+            """True if the token begins a sentence (start of text or after . ! ?)."""
+            j = match_start - 1
+            while j >= 0 and text[j].isspace():
+                j -= 1
+            return j < 0 or text[j] in ".!?\"'"
+
+        # Collect invented-noun replacements first so positions stay valid while
+        # scanning. Skip world-allowed nouns, common English words, and any token
+        # that merely starts a sentence (ordinary capitalization, not a proper noun).
+        replacements: Dict[str, str] = {}
+        for match in _CAP_TOKEN_PATTERN.finditer(text):
+            token = match.group(1)
+            if token in world_nouns or token in replacements:
+                continue
+            if token.lower() in _COMMON_CAP_WORDS:
+                continue
+            if _is_sentence_initial(match.start()):
+                continue
+            # Heuristic: -ia, -on, -or endings read as places; else a person/group.
+            replacements[token] = (
+                "that place" if token.endswith(("ia", "on", "or")) else "they"
+            )
+        for token, repl in replacements.items():
+            text = re.sub(r"\b" + re.escape(token) + r"\b", repl, text)
 
         # Step 5: Slang filter
         text = _SLANG_PATTERN.sub("", text).strip()
@@ -599,6 +658,101 @@ class HumanNPCLLMMixin:
 
         return validated
 
+    def _generate_turn(
+        self, adapter, system: str, is_opening: bool, jean_text: Optional[str]
+    ) -> Optional[Dict[str, Any]]:
+        """Dispatch one raw NPC turn to the adapter.
+
+        Prefers the combined ``generate_turn`` (NPC reply + Jean options in one
+        call — the round-latency budget depends on this), and falls back to the
+        legacy two-method adapter interface for backwards compatibility.
+
+        Returns a normalized dict with keys npc_text, conversation_quality,
+        reputation_delta, loquacity_delta (None if the adapter did not supply
+        one), and raw_options (the combined call's options list, or None when the
+        adapter produces options via a separate call). Returns None on failure.
+        """
+        if hasattr(adapter, "generate_turn"):
+            if is_opening:
+                res = adapter.generate_turn(system, self._chat_history, is_opening=True)
+            else:
+                res = adapter.generate_turn(
+                    system, self._chat_history, is_opening=False, jean_text=jean_text
+                )
+            if not res or not res.get("npc_text"):
+                return None
+            return {
+                "npc_text": res.get("npc_text"),
+                "conversation_quality": res.get("conversation_quality", "neutral"),
+                "reputation_delta": res.get("reputation_delta", 0),
+                "loquacity_delta": res.get("loquacity_delta"),
+                "raw_options": res.get("jean_options"),
+            }
+
+        # Legacy two-call adapter (kept for compatibility with older adapters).
+        if is_opening:
+            res = adapter.generate_npc_turn(system, self._chat_history, is_opening=True)
+        else:
+            res = adapter.generate_npc_turn(
+                system, self._chat_history, is_opening=False, jean_text=jean_text
+            )
+        if not res or not res.get("npc_text"):
+            return None
+        return {
+            "npc_text": res.get("npc_text"),
+            "conversation_quality": res.get("conversation_quality", "neutral"),
+            "reputation_delta": res.get("reputation_delta", 0),
+            "loquacity_delta": res.get("loquacity_delta"),
+            "raw_options": None,
+        }
+
+    def _run_npc_turn(
+        self, adapter, system: str, llm_available: bool, is_opening: bool, jean_text
+    ) -> Optional[Dict[str, Any]]:
+        """Produce a QC'd NPC turn, or None if the caller should fall back.
+
+        The combined single-call path uses one attempt to stay within the
+        per-round latency budget; the legacy path keeps the original two-attempt
+        QC retry.
+        """
+        if not llm_available or adapter is None:
+            return None
+        max_attempts = 1 if hasattr(adapter, "generate_turn") else 2
+        for _ in range(max_attempts):
+            turn = self._generate_turn(adapter, system, is_opening, jean_text)
+            if turn and turn.get("npc_text"):
+                cleaned = self._qc_npc_text(turn["npc_text"], self._chat_history)
+                if cleaned:
+                    turn["npc_text"] = cleaned
+                    return turn
+        return None
+
+    def _resolve_jean_options(
+        self, turn: Optional[Dict[str, Any]], adapter, npc_line: str, turn_number: int
+    ) -> List[Dict[str, str]]:
+        """Return three QC'd Jean options.
+
+        Uses options already returned by a combined turn; otherwise requests them
+        from a legacy adapter; otherwise falls back to the deterministic pool.
+        Never makes a second LLM call on the combined path (protects the budget).
+        """
+        combined = adapter is not None and hasattr(adapter, "generate_turn")
+        if turn is not None and combined:
+            options = self._qc_jean_options(turn.get("raw_options") or [])
+            return options or self._get_fallback_jean_options()
+        if turn is not None and adapter is not None:
+            voice = (self._chat_char_config or {}).get("voice_summary") or (
+                self._chat_personality or {}
+            ).get("voice", "")
+            raw = adapter.generate_jean_options(
+                self._display_name(), voice, npc_line, self._chat_history, turn_number
+            )
+            if raw:
+                options = self._qc_jean_options(raw)
+                if options:
+                    return options
+        return self._get_fallback_jean_options()
+
     def chat_open(self, player) -> Dict[str, Any]:
         """Start conversation. Returns opening line + 3 Jean options."""
         try:
@@ -628,41 +782,18 @@ class HumanNPCLLMMixin:
             adapter = self._get_adapter()
             llm_available = adapter is not None and adapter.enabled
 
-            # Generate NPC opening
-            npc_opening = None
-            if llm_available:
-                for attempt in range(2):
-                    result = adapter.generate_npc_turn(
-                        system, self._chat_history, is_opening=True
-                    )
-                    if result and result.get("npc_text"):
-                        cleaned = self._qc_npc_text(
-                            result["npc_text"], self._chat_history
-                        )
-                        if cleaned:
-                            npc_opening = cleaned
-                            break
-
-            if not npc_opening:
-                npc_opening = self._get_fallback_npc_line(
-                    is_opening=True, player=player
-                )
+            # Generate the NPC opening (and, on a combined adapter, Jean's options
+            # in the same call). Opening lines never drain loquacity.
+            turn = self._run_npc_turn(
+                adapter, system, llm_available, is_opening=True, jean_text=None
+            )
+            if turn is not None:
+                npc_opening = turn["npc_text"]
+            else:
+                npc_opening = self._get_fallback_npc_line(is_opening=True, player=player)
                 llm_available = False
 
-            # Generate Jean options
-            jean_options = None
-            if llm_available and adapter:
-                voice = (self._chat_char_config or {}).get("voice_summary") or (
-                    self._chat_personality or {}
-                ).get("voice", "")
-                raw_opts = adapter.generate_jean_options(
-                    self._display_name(), voice, npc_opening, self._chat_history, 0
-                )
-                if raw_opts:
-                    jean_options = self._qc_jean_options(raw_opts)
-
-            if not jean_options:
-                jean_options = self._get_fallback_jean_options()
+            jean_options = self._resolve_jean_options(turn, adapter, npc_opening, 0)
 
             game_tick = getattr(getattr(player, "universe", None), "game_tick", 0) or 0
             chapter = self._get_chapter(player)
@@ -716,40 +847,36 @@ class HumanNPCLLMMixin:
             adapter = self._get_adapter()
             llm_available = adapter is not None and adapter.enabled
 
-            # Generate NPC response
-            npc_response = None
+            # Generate NPC response (combined adapters also return Jean's options)
+            turn = self._run_npc_turn(
+                adapter, system, llm_available, is_opening=False, jean_text=jean_text
+            )
             conversation_quality = "neutral"
             reputation_delta = 0
+            loquacity_delta = None
 
-            if llm_available:
-                for attempt in range(2):
-                    result = adapter.generate_npc_turn(
-                        system,
-                        self._chat_history,
-                        is_opening=False,
-                        jean_text=jean_text,
-                    )
-                    if result and result.get("npc_text"):
-                        cleaned = self._qc_npc_text(
-                            result["npc_text"], self._chat_history
-                        )
-                        if cleaned:
-                            npc_response = cleaned
-                            conversation_quality = result.get(
-                                "conversation_quality", "neutral"
-                            )
-                            reputation_delta = result.get("reputation_delta", 0)
-                            break
-
-            if not npc_response:
+            if turn is not None:
+                npc_response = turn["npc_text"]
+                conversation_quality = turn["conversation_quality"]
+                reputation_delta = turn["reputation_delta"]
+                loquacity_delta = turn["loquacity_delta"]
+            else:
                 npc_response = self._get_fallback_npc_line(
                     is_opening=False, player=player
                 )
                 llm_available = False
 
-            # Drain loquacity
-            drain = _LOQUACITY_DRAIN.get(conversation_quality, 8)
-            self.loquacity_current = max(0, self.loquacity_current - drain)
+            # Apply loquacity change. The LLM may signal a signed delta (usually a
+            # drain, occasionally a GAIN when Jean raises a topic the NPC finds
+            # interesting). When no explicit delta is supplied (legacy adapter or
+            # deterministic fallback), fall back to the quality-based drain so
+            # conversations still wind down.
+            if loquacity_delta is None:
+                loquacity_delta = -_LOQUACITY_DRAIN.get(conversation_quality, 8)
+            loquacity_delta = max(-40, min(15, int(loquacity_delta)))
+            self.loquacity_current = max(
+                0, min(self.loquacity_max, self.loquacity_current + loquacity_delta)
+            )
 
             # Apply the NPC's in-character reaction to Jean's reputation
             if not hasattr(player, "reputation"):
@@ -774,26 +901,15 @@ class HumanNPCLLMMixin:
             # Check conversation end
             conversation_ended = self.loquacity_current < self.loquacity_threshold
 
-            # Generate Jean options or return closing
-            jean_options = []
+            # Jean's options for the next round. Once loquacity is spent the
+            # options are omitted so the NPC's own (lore- and context-aware) reply
+            # stands as the graceful closing line, with nothing left to say back.
+            jean_options: List[Dict[str, str]] = []
             if not conversation_ended:
-                if llm_available and adapter:
-                    voice = (self._chat_char_config or {}).get("voice_summary") or (
-                        self._chat_personality or {}
-                    ).get("voice", "")
-                    turn_number = len(self._chat_history)
-                    raw_opts = adapter.generate_jean_options(
-                        self._display_name(),
-                        voice,
-                        npc_response,
-                        self._chat_history,
-                        turn_number,
-                    )
-                    if raw_opts:
-                        jean_options = self._qc_jean_options(raw_opts) or []
-
-                if not jean_options:
-                    jean_options = self._get_fallback_jean_options()
+                turn_number = len(self._chat_history)
+                jean_options = self._resolve_jean_options(
+                    turn, adapter, npc_response, turn_number
+                )
 
             return {
                 "success": True,

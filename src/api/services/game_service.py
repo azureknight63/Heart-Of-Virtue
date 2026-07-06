@@ -728,6 +728,11 @@ class GameService:
 
             _logging.getLogger(__name__).warning("game_tick_events failed: %s", e)
 
+        # Recover NPC loquacity on world beats (mirrors the terminal loop's intent
+        # for HumanNPCLLMMixin.loquacity_tick, which had no caller). Guarded so it
+        # only ticks on genuine movement beats, never during an active conversation.
+        self._recover_npc_loquacity(player)
+
         # Store tile modifications after entry events have processed to capture state changes
         if session_data is not None:
             current_block_exit = (
@@ -3253,6 +3258,40 @@ class GameService:
 
         return None
 
+    def _recover_npc_loquacity(self, player: "player_module.Player") -> None:
+        """Recover persisted NPC loquacity by one beat.
+
+        ``HumanNPCLLMMixin.loquacity_tick`` operates on live NPC instances, but
+        between conversations those instances are transient — the source of truth
+        is ``player.npc_chat_histories``. This ticks the persisted values so an
+        NPC's willingness to talk regenerates over time, and ``chat_open`` picks
+        it back up via ``_load_history_from_persistence``.
+
+        Skipped while a conversation is active so talking to an NPC never also
+        refills them mid-chat.
+        """
+        try:
+            if player.__dict__.get("_active_chat_npc_id"):
+                return
+            hists = getattr(player, "npc_chat_histories", None)
+            if not isinstance(hists, dict):
+                return
+            for key, entry in hists.items():
+                if key == "__meta__" or not isinstance(entry, dict):
+                    continue
+                loq_max = entry.get("loquacity_max", 0)
+                loq_cur = entry.get("loquacity_current", 0)
+                if not loq_max or loq_cur >= loq_max:
+                    continue
+                recovery = entry.get("loquacity_recovery", 2) or 2
+                entry["loquacity_current"] = min(loq_max, loq_cur + recovery)
+        except Exception as e:
+            import logging as _logging
+
+            _logging.getLogger(__name__).debug(
+                "loquacity recovery skipped: %s", e
+            )
+
     def npc_chat_open(
         self, player: "player_module.Player", npc_id: str
     ) -> Dict[str, Any]:
@@ -3326,6 +3365,11 @@ class GameService:
         # Call NPC's chat_respond method
         try:
             result = npc.chat_respond(player, jean_text, jean_tone)
+            # When the conversation ends by exhaustion the client auto-closes
+            # without hitting /end, so clear the active-chat marker here — leaving
+            # it set would permanently suppress NPC loquacity recovery on moves.
+            if result.get("conversation_ended"):
+                player.__dict__.pop("_active_chat_npc_id", None)
             return self._enrich_chat_result_with_relationship(result, npc)
         except Exception as e:
             return {"success": False, "error": f"Failed to respond: {str(e)}"}
