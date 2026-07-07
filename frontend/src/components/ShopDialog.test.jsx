@@ -1,712 +1,324 @@
-import React from 'react'
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, act } from '@testing-library/react'
 import ShopDialog from './ShopDialog'
-
-// Mock dependencies
-vi.mock('./BaseDialog', () => ({
-  default: ({ children, title, onClose }) => (
-    <div data-testid="base-dialog" onClick={onClose}>
-      <h2>{title}</h2>
-      {children}
-    </div>
-  ),
-}))
+import { useShop } from '../hooks/useShop'
 
 vi.mock('../hooks/useShop', () => ({
   useShop: vi.fn(),
 }))
 
 vi.mock('../utils/itemUtils', () => ({
-  getItemIcon: vi.fn((category) => '⚔️'),
+  getItemIcon: vi.fn(() => '⚔️'),
 }))
 
-import { useShop } from '../hooks/useShop'
+function makeShopState(overrides = {}) {
+  return {
+    shopState: {
+      shop_name: "Jambo's Shop",
+      stock: [
+        { id: 'item-1', name: 'Iron Sword', price: 100, weight: 2.5, count: 1, is_stackable: false },
+      ],
+      buyback_items: [],
+      player_gold: 500,
+      player_weight_current: 10,
+      player_weight_max: 100,
+      merchant_gold: 1000,
+      ...overrides.shopState,
+    },
+    sellInventory: overrides.sellInventory ?? [],
+    isLoading: overrides.isLoading ?? false,
+    error: overrides.error ?? null,
+    txnMessage: overrides.txnMessage ?? null,
+    welcomeMessage: overrides.welcomeMessage ?? null,
+    buy: overrides.buy ?? vi.fn().mockResolvedValue({ success: true }),
+    sell: overrides.sell ?? vi.fn().mockResolvedValue({ success: true }),
+    buyback: overrides.buyback ?? vi.fn().mockResolvedValue({ success: true }),
+    refresh: overrides.refresh ?? vi.fn(),
+  }
+}
 
 describe('ShopDialog', () => {
-  const mockNpcName = 'Merchant'
-  const mockOnClose = vi.fn()
-
-  const mockShopState = {
-    tabs: ['buy', 'sell', 'buyback'],
-    activeTab: 'buy',
-    setActiveTab: vi.fn(),
-    items: {
-      buy: [
-        {
-          id: 'sword_1',
-          name: 'Iron Sword',
-          cost: 100,
-          weight: 2.5,
-          icon: '⚔️',
-          rarity: 'common',
-        },
-        {
-          id: 'shield_1',
-          name: 'Wooden Shield',
-          cost: 50,
-          weight: 1.5,
-          icon: '🛡️',
-          rarity: 'common',
-        },
-      ],
-      sell: [
-        {
-          id: 'junk_1',
-          name: 'Broken Item',
-          sellValue: 10,
-          weight: 0.5,
-          icon: '🔨',
-          rarity: 'trash',
-        },
-      ],
-      buyback: [],
-    },
-    selectedIndex: null,
-    setSelectedIndex: vi.fn(),
-    currentGold: 500,
-    playerWeight: 45,
-    playerMaxWeight: 50,
-    pendingWeight: 0,
-    buyItem: vi.fn(),
-    sellItem: vi.fn(),
-    loading: false,
-    error: null,
-  }
+  const onClose = vi.fn()
+  const onRefetch = vi.fn()
 
   beforeEach(() => {
     vi.clearAllMocks()
-    useShop.mockReturnValue(mockShopState)
+    useShop.mockReturnValue(makeShopState())
   })
 
-  describe('Rendering', () => {
-    it('renders shop dialog', () => {
-      render(<ShopDialog npcName={mockNpcName} onClose={mockOnClose} />)
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('displays merchant name in title', () => {
-      render(<ShopDialog npcName={mockNpcName} onClose={mockOnClose} />)
-      // Dialog should render with shop content
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('renders tab navigation', () => {
-      render(<ShopDialog npcName={mockNpcName} onClose={mockOnClose} />)
-      // Tabs should be rendered
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('displays items in buy tab', () => {
-      render(<ShopDialog npcName={mockNpcName} onClose={mockOnClose} />)
-      // Items should be displayed
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
+  it('renders the shop title, NPC strip, and buy stock by default', () => {
+    render(<ShopDialog npcId="1" npcName="Jambo" player={{}} onClose={onClose} />)
+    expect(screen.getByText(/JAMBO'S SHOP/)).toBeInTheDocument()
+    expect(screen.getByText('Jambo')).toBeInTheDocument()
+    expect(screen.getByText(/When you blue, Jambo Heals U!/)).toBeInTheDocument()
+    expect(screen.getByText('Iron Sword')).toBeInTheDocument()
   })
 
-  describe('Tab Switching', () => {
-    it('switches between tabs', () => {
-      render(<ShopDialog npcName={mockNpcName} onClose={mockOnClose} />)
-      // Tab switching logic is tested through component behavior
-      expect(useShop).toHaveBeenCalled()
-    })
-
-    it('shows buy tab items by default', () => {
-      render(<ShopDialog npcName={mockNpcName} onClose={mockOnClose} />)
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('shows sell tab items when switched', () => {
-      useShop.mockReturnValue({
-        ...mockShopState,
-        activeTab: 'sell',
-      })
-
-      render(<ShopDialog npcName={mockNpcName} onClose={mockOnClose} />)
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
+  it('shows a generic tagline for non-Jambo merchants', () => {
+    render(<ShopDialog npcId="2" npcName="Other Merchant" player={{}} onClose={onClose} />)
+    expect(screen.getByText(/Other Merchant — open for business/)).toBeInTheDocument()
   })
 
-  describe('Item Selection', () => {
-    it('allows item selection', () => {
-      render(<ShopDialog npcName={mockNpcName} onClose={mockOnClose} />)
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('displays selected item details', () => {
-      useShop.mockReturnValue({
-        ...mockShopState,
-        selectedIndex: 0,
-      })
-
-      render(<ShopDialog npcName={mockNpcName} onClose={mockOnClose} />)
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('shows item price in buy tab', () => {
-      render(<ShopDialog npcName={mockNpcName} onClose={mockOnClose} />)
-      // Price should be displayed for items
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('shows sell value in sell tab', () => {
-      useShop.mockReturnValue({
-        ...mockShopState,
-        activeTab: 'sell',
-      })
-
-      render(<ShopDialog npcName={mockNpcName} onClose={mockOnClose} />)
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
+  it('shows a loading indicator while the shop is loading', () => {
+    useShop.mockReturnValue(makeShopState({ isLoading: true }))
+    render(<ShopDialog npcId="1" npcName="Jambo" player={{}} onClose={onClose} />)
+    expect(screen.getByText(/Loading shop/)).toBeInTheDocument()
   })
 
-  describe('Weight System', () => {
-    it('displays weight bar', () => {
-      render(<ShopDialog npcName={mockNpcName} onClose={mockOnClose} />)
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('shows current weight vs max weight', () => {
-      render(<ShopDialog npcName={mockNpcName} onClose={mockOnClose} />)
-      // Weight information should be present
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('calculates pending weight correctly', () => {
-      useShop.mockReturnValue({
-        ...mockShopState,
-        pendingWeight: 2.5,
-      })
-
-      render(<ShopDialog npcName={mockNpcName} onClose={mockOnClose} />)
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('shows overweight warning when exceeding max', () => {
-      useShop.mockReturnValue({
-        ...mockShopState,
-        playerWeight: 48,
-        pendingWeight: 5,
-        playerMaxWeight: 50,
-      })
-
-      render(<ShopDialog npcName={mockNpcName} onClose={mockOnClose} />)
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
+  it('shows an error message when the shop fails to load', () => {
+    useShop.mockReturnValue(makeShopState({ error: 'Shop unavailable' }))
+    render(<ShopDialog npcId="1" npcName="Jambo" player={{}} onClose={onClose} />)
+    expect(screen.getByText(/Shop unavailable/)).toBeInTheDocument()
   })
 
-  describe('Transactions', () => {
-    it('can buy items with sufficient gold', () => {
-      render(<ShopDialog npcName={mockNpcName} onClose={mockOnClose} />)
-
-      // Would trigger buy action if item was selected and button clicked
-      expect(mockShopState.buyItem).toBeDefined()
-    })
-
-    it('prevents buying without sufficient gold', () => {
-      useShop.mockReturnValue({
-        ...mockShopState,
-        currentGold: 10,
-        selectedIndex: 0,
-      })
-
-      render(<ShopDialog npcName={mockNpcName} onClose={mockOnClose} />)
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('prevents buying when overweight', () => {
-      useShop.mockReturnValue({
-        ...mockShopState,
-        playerWeight: 48,
-        playerMaxWeight: 50,
-        pendingWeight: 3,
-        selectedIndex: 0,
-      })
-
-      render(<ShopDialog npcName={mockNpcName} onClose={mockOnClose} />)
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('can sell items', () => {
-      useShop.mockReturnValue({
-        ...mockShopState,
-        activeTab: 'sell',
-        items: mockShopState.items,
-        selectedIndex: 0,
-      })
-
-      render(<ShopDialog npcName={mockNpcName} onClose={mockOnClose} />)
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
+  it('shows the welcome/merchandise-transfer message when present', () => {
+    useShop.mockReturnValue(makeShopState({ welcomeMessage: 'Your goods were returned.' }))
+    render(<ShopDialog npcId="1" npcName="Jambo" player={{}} onClose={onClose} />)
+    expect(screen.getByText('Your goods were returned.')).toBeInTheDocument()
   })
 
-  describe('Empty States', () => {
-    it('handles empty buy list', () => {
-      useShop.mockReturnValue({
-        ...mockShopState,
-        items: { ...mockShopState.items, buy: [] },
-      })
-
-      render(<ShopDialog npcName={mockNpcName} onClose={mockOnClose} />)
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('handles empty sell list', () => {
-      useShop.mockReturnValue({
-        ...mockShopState,
-        activeTab: 'sell',
-        items: { ...mockShopState.items, sell: [] },
-      })
-
-      render(<ShopDialog npcName={mockNpcName} onClose={mockOnClose} />)
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('handles empty buyback list', () => {
-      useShop.mockReturnValue({
-        ...mockShopState,
-        activeTab: 'buyback',
-        items: { ...mockShopState.items, buyback: [] },
-      })
-
-      render(<ShopDialog npcName={mockNpcName} onClose={mockOnClose} />)
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
+  it('shows "Out of stock." when the buy tab has no items', () => {
+    useShop.mockReturnValue(makeShopState({ shopState: { stock: [] } }))
+    render(<ShopDialog npcId="1" npcName="Jambo" player={{}} onClose={onClose} />)
+    expect(screen.getByText('Out of stock.')).toBeInTheDocument()
   })
 
-  describe('Loading & Error States', () => {
-    it('shows loading state', () => {
-      useShop.mockReturnValue({
-        ...mockShopState,
-        loading: true,
-      })
-
-      render(<ShopDialog npcName={mockNpcName} onClose={mockOnClose} />)
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('displays error message when transaction fails', () => {
-      useShop.mockReturnValue({
-        ...mockShopState,
-        error: 'Transaction failed',
-      })
-
-      render(<ShopDialog npcName={mockNpcName} onClose={mockOnClose} />)
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
+  it('shows the buyback section header when buyback items exist', () => {
+    useShop.mockReturnValue(makeShopState({
+      shopState: {
+        buyback_items: [{ id: 'bb-1', name: 'Reclaimed Dagger', price: 40, weight: 1, count: 1, is_buyback: true }],
+      },
+    }))
+    render(<ShopDialog npcId="1" npcName="Jambo" player={{}} onClose={onClose} />)
+    expect(screen.getByText(/Buyback Available/)).toBeInTheDocument()
+    expect(screen.getByText('Reclaimed Dagger')).toBeInTheDocument()
+    expect(screen.getByText(/Jambo's Stock/)).toBeInTheDocument()
   })
 
-  describe('Closing', () => {
-    it('calls onClose when dialog is closed', () => {
-      render(<ShopDialog npcName={mockNpcName} onClose={mockOnClose} />)
-
-      const dialog = screen.getByTestId('base-dialog')
-      fireEvent.click(dialog)
-
-      expect(mockOnClose).toHaveBeenCalled()
-    })
+  it('switches to the sell tab and shows sell inventory', () => {
+    useShop.mockReturnValue(makeShopState({
+      sellInventory: [{ id: 'sell-1', name: 'Old Boots', offer: 5, weight: 1, count: 1 }],
+    }))
+    render(<ShopDialog npcId="1" npcName="Jambo" player={{}} onClose={onClose} />)
+    fireEvent.click(screen.getByText('⬆ Sell'))
+    expect(screen.getByText('Old Boots')).toBeInTheDocument()
+    expect(screen.getByText(/gold:/)).toBeInTheDocument()
   })
 
-  describe('Item Details', () => {
-    it('shows item rarity color', () => {
-      render(<ShopDialog npcName={mockNpcName} onClose={mockOnClose} />)
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('displays item weight', () => {
-      render(<ShopDialog npcName={mockNpcName} onClose={mockOnClose} />)
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('shows item icon', () => {
-      render(<ShopDialog npcName={mockNpcName} onClose={mockOnClose} />)
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
+  it('shows "Nothing to sell." when the sell inventory is empty', () => {
+    render(<ShopDialog npcId="1" npcName="Jambo" player={{}} onClose={onClose} />)
+    fireEvent.click(screen.getByText('⬆ Sell'))
+    expect(screen.getByText('Nothing to sell.')).toBeInTheDocument()
   })
 
-  describe('Transaction Preview', () => {
-    it('shows total cost for purchase', () => {
-      render(<ShopDialog npcName={mockNpcName} onClose={mockOnClose} />)
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('shows total value for sale', () => {
-      useShop.mockReturnValue({
-        ...mockShopState,
-        activeTab: 'sell',
-      })
-
-      render(<ShopDialog npcName={mockNpcName} onClose={mockOnClose} />)
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('calculates weight delta correctly', () => {
-      useShop.mockReturnValue({
-        ...mockShopState,
-        pendingWeight: 2.5,
-      })
-
-      render(<ShopDialog npcName={mockNpcName} onClose={mockOnClose} />)
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
+  it('selects a buy item and shows the action row with a Buy button', () => {
+    render(<ShopDialog npcId="1" npcName="Jambo" player={{}} onClose={onClose} />)
+    fireEvent.click(screen.getByText('Iron Sword'))
+    expect(screen.getByText(/Selected:/)).toBeInTheDocument()
+    expect(screen.getByText(/Buy · 100 💰/)).toBeInTheDocument()
   })
 
-  describe('Weight Limit Edge Cases', () => {
-    it('handles exactly at max weight', () => {
-      useShop.mockReturnValue({
-        ...mockShopState,
-        playerWeight: 50,
-        playerMaxWeight: 50,
-      })
-
-      render(<ShopDialog npcName={mockNpcName} onClose={mockOnClose} />)
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('handles zero weight items', () => {
-      useShop.mockReturnValue({
-        ...mockShopState,
-        items: {
-          ...mockShopState.items,
-          buy: [
-            {
-              id: 'light_1',
-              name: 'Feather',
-              cost: 1,
-              weight: 0,
-              icon: '🪶',
-              rarity: 'common',
-            },
-          ],
-        },
-      })
-
-      render(<ShopDialog npcName={mockNpcName} onClose={mockOnClose} />)
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('handles very large weight items', () => {
-      useShop.mockReturnValue({
-        ...mockShopState,
-        items: {
-          ...mockShopState.items,
-          buy: [
-            {
-              id: 'heavy_1',
-              name: 'Mountain',
-              cost: 10000,
-              weight: 999.9,
-              icon: '⛰️',
-              rarity: 'legendary',
-            },
-          ],
-        },
-      })
-
-      render(<ShopDialog npcName={mockNpcName} onClose={mockOnClose} />)
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('prevents purchase when adding item exceeds max weight', () => {
-      useShop.mockReturnValue({
-        ...mockShopState,
-        playerWeight: 48,
-        playerMaxWeight: 50,
-        items: {
-          ...mockShopState.items,
-          buy: [
-            {
-              id: 'heavy_2',
-              name: 'Heavy Item',
-              cost: 100,
-              weight: 3,
-              icon: '⚙️',
-              rarity: 'uncommon',
-            },
-          ],
-        },
-      })
-
-      render(<ShopDialog npcName={mockNpcName} onClose={mockOnClose} />)
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
+  it('deselects an item when clicked twice', () => {
+    render(<ShopDialog npcId="1" npcName="Jambo" player={{}} onClose={onClose} />)
+    fireEvent.click(screen.getByText('Iron Sword'))
+    fireEvent.click(screen.getByText('Iron Sword'))
+    expect(screen.queryByText(/Selected:/)).not.toBeInTheDocument()
   })
 
-  describe('Currency Edge Cases', () => {
-    it('handles zero gold', () => {
-      useShop.mockReturnValue({
-        ...mockShopState,
-        currentGold: 0,
-      })
-
-      render(<ShopDialog npcName={mockNpcName} onClose={mockOnClose} />)
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('handles very large gold amounts', () => {
-      useShop.mockReturnValue({
-        ...mockShopState,
-        currentGold: 999999,
-      })
-
-      render(<ShopDialog npcName={mockNpcName} onClose={mockOnClose} />)
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('allows purchase with exact gold amount', () => {
-      useShop.mockReturnValue({
-        ...mockShopState,
-        currentGold: 100,
-        items: {
-          ...mockShopState.items,
-          buy: [
-            {
-              id: 'exact_1',
-              name: 'Exact Price Item',
-              cost: 100,
-              weight: 1,
-              icon: '💰',
-              rarity: 'common',
-            },
-          ],
-        },
-      })
-
-      render(<ShopDialog npcName={mockNpcName} onClose={mockOnClose} />)
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('prevents purchase with insufficient gold', () => {
-      useShop.mockReturnValue({
-        ...mockShopState,
-        currentGold: 50,
-        items: {
-          ...mockShopState.items,
-          buy: [
-            {
-              id: 'expensive_1',
-              name: 'Expensive Item',
-              cost: 100,
-              weight: 1,
-              icon: '👑',
-              rarity: 'rare',
-            },
-          ],
-        },
-      })
-
-      render(<ShopDialog npcName={mockNpcName} onClose={mockOnClose} />)
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
+  it('resets selection and quantity when switching tabs', () => {
+    useShop.mockReturnValue(makeShopState({
+      sellInventory: [{ id: 'sell-1', name: 'Old Boots', offer: 5, weight: 1, count: 1 }],
+    }))
+    render(<ShopDialog npcId="1" npcName="Jambo" player={{}} onClose={onClose} />)
+    fireEvent.click(screen.getByText('Iron Sword'))
+    fireEvent.click(screen.getByText('⬆ Sell'))
+    expect(screen.queryByText(/Selected:/)).not.toBeInTheDocument()
   })
 
-  describe('Item Rarity Variations', () => {
-    it('handles all rarity levels', () => {
-      useShop.mockReturnValue({
-        ...mockShopState,
-        items: {
-          ...mockShopState.items,
-          buy: [
-            { id: 'trash_1', name: 'Trash Item', cost: 1, weight: 0.1, icon: '🗑️', rarity: 'trash' },
-            { id: 'common_1', name: 'Common Item', cost: 10, weight: 1, icon: '📦', rarity: 'common' },
-            { id: 'uncommon_1', name: 'Uncommon Item', cost: 50, weight: 2, icon: '📫', rarity: 'uncommon' },
-            { id: 'rare_1', name: 'Rare Item', cost: 100, weight: 2.5, icon: '🎁', rarity: 'rare' },
-            { id: 'epic_1', name: 'Epic Item', cost: 500, weight: 3, icon: '⭐', rarity: 'epic' },
-            { id: 'legendary_1', name: 'Legendary Item', cost: 1000, weight: 4, icon: '👑', rarity: 'legendary' },
-          ],
-        },
-      })
-
-      render(<ShopDialog npcName={mockNpcName} onClose={mockOnClose} />)
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('handles unknown rarity gracefully', () => {
-      useShop.mockReturnValue({
-        ...mockShopState,
-        items: {
-          ...mockShopState.items,
-          buy: [
-            { id: 'unknown_1', name: 'Unknown Rarity', cost: 50, weight: 1, icon: '❓', rarity: 'unknown' },
-          ],
-        },
-      })
-
-      expect(() => {
-        render(<ShopDialog npcName={mockNpcName} onClose={mockOnClose} />)
-      }).not.toThrow()
-    })
+  it('disables the Buy button and shows a reason when gold is insufficient', () => {
+    useShop.mockReturnValue(makeShopState({
+      shopState: { player_gold: 10 },
+    }))
+    render(<ShopDialog npcId="1" npcName="Jambo" player={{}} onClose={onClose} />)
+    fireEvent.click(screen.getByText('Iron Sword'))
+    expect(screen.getByText(/Not enough gold — need 90 more/)).toBeInTheDocument()
+    expect(screen.getByText(/Buy · 100 💰/).closest('button')).toBeDisabled()
   })
 
-  describe('Multi-Item Purchase Scenarios', () => {
-    it('handles multiple items in inventory', () => {
-      useShop.mockReturnValue({
-        ...mockShopState,
-        items: {
-          ...mockShopState.items,
-          sell: Array.from({ length: 20 }, (_, i) => ({
-            id: `item_${i}`,
-            name: `Item ${i}`,
-            sellValue: (i + 1) * 10,
-            weight: 0.5,
-            icon: '📦',
-            rarity: 'common',
-          })),
-        },
-      })
-
-      render(<ShopDialog npcName={mockNpcName} onClose={mockOnClose} />)
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('handles rapidly switching between tabs', () => {
-      const { rerender } = render(<ShopDialog npcName={mockNpcName} onClose={mockOnClose} />)
-
-      for (let i = 0; i < 5; i++) {
-        useShop.mockReturnValue({
-          ...mockShopState,
-          activeTab: i % 3 === 0 ? 'buy' : i % 3 === 1 ? 'sell' : 'buyback',
-        })
-        rerender(<ShopDialog npcName={mockNpcName} onClose={mockOnClose} />)
-      }
-
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
+  it('disables the Buy button and shows a reason when it would exceed carry weight', () => {
+    useShop.mockReturnValue(makeShopState({
+      shopState: { player_weight_current: 99, player_weight_max: 100 },
+    }))
+    render(<ShopDialog npcId="1" npcName="Jambo" player={{}} onClose={onClose} />)
+    fireEvent.click(screen.getByText('Iron Sword'))
+    expect(screen.getAllByText(/Exceeds carry limit/).length).toBeGreaterThan(0)
   })
 
-  describe('Loading and Error States', () => {
-    it('handles loading state during purchase', () => {
-      useShop.mockReturnValue({
-        ...mockShopState,
-        loading: true,
-      })
-
-      render(<ShopDialog npcName={mockNpcName} onClose={mockOnClose} />)
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
+  it('completes a buy transaction, clears selection, and calls onRefetch', async () => {
+    const buyFn = vi.fn().mockResolvedValue({ success: true })
+    useShop.mockReturnValue(makeShopState({ buy: buyFn }))
+    render(<ShopDialog npcId="1" npcName="Jambo" player={{}} onClose={onClose} onRefetch={onRefetch} />)
+    fireEvent.click(screen.getByText('Iron Sword'))
+    await act(async () => {
+      fireEvent.click(screen.getByText(/Buy · 100 💰/))
     })
-
-    it('handles error message display', () => {
-      useShop.mockReturnValue({
-        ...mockShopState,
-        error: 'Transaction failed: Not enough inventory space',
-      })
-
-      render(<ShopDialog npcName={mockNpcName} onClose={mockOnClose} />)
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('clears error after successful transaction', () => {
-      const { rerender } = render(<ShopDialog npcName={mockNpcName} onClose={mockOnClose} />)
-
-      useShop.mockReturnValue({
-        ...mockShopState,
-        error: 'Transaction failed',
-      })
-
-      rerender(<ShopDialog npcName={mockNpcName} onClose={mockOnClose} />)
-
-      useShop.mockReturnValue({
-        ...mockShopState,
-        error: null,
-        loading: false,
-      })
-
-      rerender(<ShopDialog npcName={mockNpcName} onClose={mockOnClose} />)
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
+    expect(buyFn).toHaveBeenCalledWith('item-1', 1)
+    expect(onRefetch).toHaveBeenCalled()
+    expect(screen.queryByText(/Selected:/)).not.toBeInTheDocument()
   })
 
-  describe('Item Selection Edge Cases', () => {
-    it('handles selecting and deselecting items', () => {
-      useShop.mockReturnValue({
-        ...mockShopState,
-        selectedIndex: 0,
-      })
-
-      const { rerender } = render(<ShopDialog npcName={mockNpcName} onClose={mockOnClose} />)
-
-      useShop.mockReturnValue({
-        ...mockShopState,
-        selectedIndex: null,
-      })
-
-      rerender(<ShopDialog npcName={mockNpcName} onClose={mockOnClose} />)
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
+  it('does not clear selection when a buy transaction fails', async () => {
+    const buyFn = vi.fn().mockResolvedValue({ success: false })
+    useShop.mockReturnValue(makeShopState({ buy: buyFn }))
+    render(<ShopDialog npcId="1" npcName="Jambo" player={{}} onClose={onClose} />)
+    fireEvent.click(screen.getByText('Iron Sword'))
+    await act(async () => {
+      fireEvent.click(screen.getByText(/Buy · 100 💰/))
     })
-
-    it('handles selecting different item indices', () => {
-      const { rerender } = render(<ShopDialog npcName={mockNpcName} onClose={mockOnClose} />)
-
-      for (let i = 0; i < mockShopState.items.buy.length; i++) {
-        useShop.mockReturnValue({
-          ...mockShopState,
-          selectedIndex: i,
-        })
-        rerender(<ShopDialog npcName={mockNpcName} onClose={mockOnClose} />)
-      }
-
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
+    expect(screen.getByText(/Selected:/)).toBeInTheDocument()
   })
 
-  describe('Buyback Tab Scenarios', () => {
-    it('handles empty buyback list', () => {
-      useShop.mockReturnValue({
-        ...mockShopState,
-        items: {
-          ...mockShopState.items,
-          buyback: [],
-        },
-      })
+  it('does not attempt a buy when disabled (insufficient gold)', async () => {
+    const buyFn = vi.fn()
+    useShop.mockReturnValue(makeShopState({ buy: buyFn, shopState: { player_gold: 10 } }))
+    render(<ShopDialog npcId="1" npcName="Jambo" player={{}} onClose={onClose} />)
+    fireEvent.click(screen.getByText('Iron Sword'))
+    fireEvent.click(screen.getByText(/Buy · 100 💰/))
+    expect(buyFn).not.toHaveBeenCalled()
+  })
 
-      render(<ShopDialog npcName={mockNpcName} onClose={mockOnClose} />)
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
+  it('completes a sell transaction and calls onRefetch', async () => {
+    const sellFn = vi.fn().mockResolvedValue({ success: true })
+    useShop.mockReturnValue(makeShopState({
+      sell: sellFn,
+      sellInventory: [{ id: 'sell-1', name: 'Old Boots', offer: 5, weight: 1, count: 1 }],
+    }))
+    render(<ShopDialog npcId="1" npcName="Jambo" player={{}} onClose={onClose} onRefetch={onRefetch} />)
+    fireEvent.click(screen.getByText('⬆ Sell'))
+    fireEvent.click(screen.getByText('Old Boots'))
+    await act(async () => {
+      fireEvent.click(screen.getByText(/Sell · \+5 💰/))
     })
+    expect(sellFn).toHaveBeenCalledWith('sell-1', 1)
+    expect(onRefetch).toHaveBeenCalled()
+  })
 
-    it('handles buyback items with original prices', () => {
-      useShop.mockReturnValue({
-        ...mockShopState,
-        items: {
-          ...mockShopState.items,
-          buyback: [
-            {
-              id: 'buyback_1',
-              name: 'Previously Sold Sword',
-              cost: 80,
-              weight: 2,
-              icon: '⚔️',
-              rarity: 'uncommon',
-            },
-          ],
-        },
-      })
+  it('disables Sell and shows a reason when the merchant cannot afford it', () => {
+    useShop.mockReturnValue(makeShopState({
+      shopState: { merchant_gold: 2 },
+      sellInventory: [{ id: 'sell-1', name: 'Old Boots', offer: 5, weight: 1, count: 1 }],
+    }))
+    render(<ShopDialog npcId="1" npcName="Jambo" player={{}} onClose={onClose} />)
+    fireEvent.click(screen.getByText('⬆ Sell'))
+    fireEvent.click(screen.getByText('Old Boots'))
+    expect(screen.getByText(/Merchant has insufficient funds/)).toBeInTheDocument()
+    expect(screen.getByText(/Sell · \+5 💰/).closest('button')).toBeDisabled()
+  })
 
-      render(<ShopDialog npcName={mockNpcName} onClose={mockOnClose} />)
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
+  it('completes a buyback transaction', async () => {
+    const buybackFn = vi.fn().mockResolvedValue({ success: true })
+    useShop.mockReturnValue(makeShopState({
+      buyback: buybackFn,
+      shopState: {
+        buyback_items: [{ id: 'bb-1', name: 'Reclaimed Dagger', price: 40, weight: 1, count: 1, is_buyback: true }],
+      },
+    }))
+    render(<ShopDialog npcId="1" npcName="Jambo" player={{}} onClose={onClose} onRefetch={onRefetch} />)
+    fireEvent.click(screen.getByText('Reclaimed Dagger'))
+    expect(screen.getByText(/Expires next game beat/)).toBeInTheDocument()
+    await act(async () => {
+      fireEvent.click(screen.getByText(/Buyback · 40 💰/))
     })
+    expect(buybackFn).toHaveBeenCalledWith('bb-1')
+    expect(onRefetch).toHaveBeenCalled()
+  })
 
-    it('allows repurchasing buyback items', () => {
-      const buyItemSpy = vi.fn()
-      useShop.mockReturnValue({
-        ...mockShopState,
-        items: {
-          ...mockShopState.items,
-          buyback: [
-            {
-              id: 'buyback_2',
-              name: 'Buyback Item',
-              cost: 100,
-              weight: 1,
-              icon: '🔄',
-              rarity: 'common',
-            },
-          ],
-        },
-        buyItem: buyItemSpy,
-      })
+  it('shows a quantity picker for stackable items and updates the total price', () => {
+    useShop.mockReturnValue(makeShopState({
+      shopState: {
+        stock: [{ id: 'stackable-1', name: 'Torch', price: 10, weight: 0.5, count: 5, is_stackable: true }],
+      },
+    }))
+    render(<ShopDialog npcId="1" npcName="Jambo" player={{}} onClose={onClose} />)
+    fireEvent.click(screen.getByText('Torch'))
+    fireEvent.click(screen.getByText('+'))
+    expect(screen.getByText(/Buy 2 · 20 💰/)).toBeInTheDocument()
+  })
 
-      render(<ShopDialog npcName={mockNpcName} onClose={mockOnClose} />)
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
+  it('decrements quantity but not below 1', () => {
+    useShop.mockReturnValue(makeShopState({
+      shopState: {
+        stock: [{ id: 'stackable-1', name: 'Torch', price: 10, weight: 0.5, count: 5, is_stackable: true }],
+      },
+    }))
+    render(<ShopDialog npcId="1" npcName="Jambo" player={{}} onClose={onClose} />)
+    fireEvent.click(screen.getByText('Torch'))
+    fireEvent.click(screen.getByText('−'))
+    expect(screen.getByText(/Buy · 10 💰/)).toBeInTheDocument()
+  })
+
+  it('updates quantity via direct input, clamped between 1 and max', () => {
+    useShop.mockReturnValue(makeShopState({
+      shopState: {
+        stock: [{ id: 'stackable-1', name: 'Torch', price: 10, weight: 0.5, count: 5, is_stackable: true }],
+      },
+    }))
+    render(<ShopDialog npcId="1" npcName="Jambo" player={{}} onClose={onClose} />)
+    fireEvent.click(screen.getByText('Torch'))
+    const input = screen.getByDisplayValue('1')
+    fireEvent.change(input, { target: { value: '3' } })
+    expect(screen.getByText(/Buy 3 · 30 💰/)).toBeInTheDocument()
+
+    fireEvent.change(input, { target: { value: '999' } })
+    expect(screen.getByText(/Buy 5 · 50 💰/)).toBeInTheDocument()
+
+    fireEvent.change(input, { target: { value: 'not a number' } })
+    expect(screen.getByText(/Buy · 10 💰/)).toBeInTheDocument()
+  })
+
+  it('shows the sell price breakdown with the shop sell modifier', () => {
+    useShop.mockReturnValue(makeShopState({
+      shopState: { sell_modifier: 0.6 },
+      sellInventory: [{ id: 'sell-1', name: 'Old Boots', offer: 6, value: 10, weight: 1, count: 1 }],
+    }))
+    render(<ShopDialog npcId="1" npcName="Jambo" player={{}} onClose={onClose} />)
+    fireEvent.click(screen.getByText('⬆ Sell'))
+    fireEvent.click(screen.getByText('Old Boots'))
+    expect(screen.getByText(/Value 10 💰 · Offer 60% = 6 💰/)).toBeInTheDocument()
+  })
+
+  it('falls back to player prop values when shopState is not yet loaded', () => {
+    useShop.mockReturnValue({ ...makeShopState(), shopState: null })
+    render(
+      <ShopDialog
+        npcId="1"
+        npcName="Jambo"
+        player={{ gold: 42, weight_current: 5, weight_tolerance: 80 }}
+        onClose={onClose}
+      />
+    )
+    expect(screen.getByText(/💰\s*42/)).toBeInTheDocument()
+  })
+
+  it('shows a transaction success message', () => {
+    useShop.mockReturnValue(makeShopState({
+      txnMessage: { type: 'success', text: 'Purchase complete!' },
+    }))
+    render(<ShopDialog npcId="1" npcName="Jambo" player={{}} onClose={onClose} />)
+    expect(screen.getByText(/Purchase complete!/)).toBeInTheDocument()
+  })
+
+  it('shows a transaction error message', () => {
+    useShop.mockReturnValue(makeShopState({
+      txnMessage: { type: 'error', text: 'Out of stock now.' },
+    }))
+    render(<ShopDialog npcId="1" npcName="Jambo" player={{}} onClose={onClose} />)
+    expect(screen.getByText(/Out of stock now\./)).toBeInTheDocument()
+  })
+
+  it('renders in mobile layout without crashing', () => {
+    render(<ShopDialog npcId="1" npcName="Jambo" player={{}} onClose={onClose} isMobile />)
+    fireEvent.click(screen.getByText('Iron Sword'))
+    expect(screen.getByText(/Buy · 100 💰/)).toBeInTheDocument()
   })
 })

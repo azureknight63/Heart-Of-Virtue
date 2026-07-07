@@ -1,9 +1,20 @@
-import { render, screen, fireEvent } from '@testing-library/react';
-import { describe, it, expect, vi } from 'vitest';
+import { render, screen, fireEvent, act } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import PartyPanel from './PartyPanel';
+import apiClient from '../api/client';
+
+vi.mock('../api/client', () => ({
+  default: {
+    post: vi.fn(),
+  },
+}));
 
 describe('PartyPanel', () => {
   const mockOnClose = vi.fn();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
 
   it('returns null if player is missing', () => {
     const { container } = render(<PartyPanel player={null} onClose={mockOnClose} />);
@@ -63,6 +74,188 @@ describe('PartyPanel', () => {
 
     fireEvent.mouseLeave(closeButton);
     expect(closeButton.style.color).toBe('rgb(136, 136, 136)');
+  });
+
+  it('calls onClose when DISMISS is clicked', () => {
+    render(<PartyPanel player={{ party_members: [] }} onClose={mockOnClose} />);
+    fireEvent.click(screen.getByText('DISMISS'));
+    expect(mockOnClose).toHaveBeenCalled();
+  });
+
+  it('does not show a USE ITEM button when there are no usable consumables', () => {
+    const player = {
+      party_members: [{ id: 1, name: 'Gorran' }],
+      inventory: [{ id: 'i1', name: 'Sword', can_use: false }],
+    };
+    render(<PartyPanel player={player} onClose={mockOnClose} />);
+    expect(screen.queryByText(/USE ITEM/)).not.toBeInTheDocument();
+  });
+
+  it('excludes merchandise items from usable consumables', () => {
+    const player = {
+      party_members: [{ id: 1, name: 'Gorran' }],
+      inventory: [{ id: 'i1', name: 'Potion', can_use: true, is_merchandise: true }],
+    };
+    render(<PartyPanel player={player} onClose={mockOnClose} />);
+    expect(screen.queryByText(/USE ITEM/)).not.toBeInTheDocument();
+  });
+
+  it('shows a description when the member has one', () => {
+    const player = {
+      party_members: [{ id: 1, name: 'Gorran', description: 'Stalwart golemite.' }],
+    };
+    render(<PartyPanel player={player} onClose={mockOnClose} />);
+    expect(screen.getByText('"Stalwart golemite."')).toBeInTheDocument();
+  });
+
+  it('opens the consumable picker and stacks duplicate items by name', () => {
+    const player = {
+      party_members: [{ id: 1, name: 'Gorran' }],
+      inventory: [
+        { id: 'i1', name: 'Potion', can_use: true, quantity: 1 },
+        { id: 'i2', name: 'Potion', can_use: true, quantity: 2 },
+        { id: 'i3', name: 'Elixir', can_use: true },
+      ],
+    };
+    render(<PartyPanel player={player} onClose={mockOnClose} />);
+    fireEvent.click(screen.getByText('💊 USE ITEM'));
+
+    expect(screen.getByText(/USE ON — Gorran/)).toBeInTheDocument();
+    expect(screen.getByText('×3')).toBeInTheDocument();
+    expect(screen.getByText('Elixir')).toBeInTheDocument();
+  });
+
+  it('closes the consumable picker via Cancel', () => {
+    const player = {
+      party_members: [{ id: 1, name: 'Gorran' }],
+      inventory: [{ id: 'i1', name: 'Potion', can_use: true }],
+    };
+    render(<PartyPanel player={player} onClose={mockOnClose} />);
+    fireEvent.click(screen.getByText('💊 USE ITEM'));
+    fireEvent.click(screen.getByText('Cancel'));
+    expect(screen.queryByText(/USE ON —/)).not.toBeInTheDocument();
+  });
+
+  it('uses an item successfully, shows the result, and calls onRefetch', async () => {
+    apiClient.post.mockResolvedValue({
+      data: { success: true, message: 'Gorran feels better.' },
+    });
+    const onRefetch = vi.fn().mockResolvedValue();
+
+    const player = {
+      name: 'Jean',
+      party_members: [{ id: 1, name: 'Gorran' }],
+      inventory: [{ id: 'i1', name: 'Potion', can_use: true }],
+    };
+    render(<PartyPanel player={player} onClose={mockOnClose} onRefetch={onRefetch} />);
+    fireEvent.click(screen.getByText('💊 USE ITEM'));
+    await act(async () => {
+      fireEvent.click(screen.getByText('Potion'));
+    });
+
+    expect(apiClient.post).toHaveBeenCalledWith('/inventory/use', {
+      item_id: 'i1',
+      target_id: 1,
+    });
+    expect(onRefetch).toHaveBeenCalled();
+    expect(screen.getByText(/Gorran feels better\./)).toBeInTheDocument();
+  });
+
+  it('shows an error result when the API reports failure', async () => {
+    apiClient.post.mockResolvedValue({
+      data: { success: false, error: 'Nothing happened.' },
+    });
+    const player = {
+      party_members: [{ id: 1, name: 'Gorran' }],
+      inventory: [{ id: 'i1', name: 'Potion', can_use: true }],
+    };
+    render(<PartyPanel player={player} onClose={mockOnClose} />);
+    fireEvent.click(screen.getByText('💊 USE ITEM'));
+    await act(async () => {
+      fireEvent.click(screen.getByText('Potion'));
+    });
+    expect(screen.getByText(/Nothing happened\./)).toBeInTheDocument();
+  });
+
+  it('shows a default error message when the API omits one on failure', async () => {
+    apiClient.post.mockResolvedValue({ data: { success: false } });
+    const player = {
+      party_members: [{ id: 1, name: 'Gorran' }],
+      inventory: [{ id: 'i1', name: 'Potion', can_use: true }],
+    };
+    render(<PartyPanel player={player} onClose={mockOnClose} />);
+    fireEvent.click(screen.getByText('💊 USE ITEM'));
+    await act(async () => {
+      fireEvent.click(screen.getByText('Potion'));
+    });
+    expect(screen.getByText(/Failed to use item/)).toBeInTheDocument();
+  });
+
+  it('shows a network error result when the request throws', async () => {
+    apiClient.post.mockRejectedValue(new Error('network down'));
+    const player = {
+      party_members: [{ id: 1, name: 'Gorran' }],
+      inventory: [{ id: 'i1', name: 'Potion', can_use: true }],
+    };
+    render(<PartyPanel player={player} onClose={mockOnClose} />);
+    fireEvent.click(screen.getByText('💊 USE ITEM'));
+    await act(async () => {
+      fireEvent.click(screen.getByText('Potion'));
+    });
+    expect(screen.getByText(/network down/)).toBeInTheDocument();
+  });
+
+  it('prefers err.response.data.error over err.message on a failed request', async () => {
+    apiClient.post.mockRejectedValue({
+      response: { data: { error: 'server rejected' } },
+    });
+    const player = {
+      party_members: [{ id: 1, name: 'Gorran' }],
+      inventory: [{ id: 'i1', name: 'Potion', can_use: true }],
+    };
+    render(<PartyPanel player={player} onClose={mockOnClose} />);
+    fireEvent.click(screen.getByText('💊 USE ITEM'));
+    await act(async () => {
+      fireEvent.click(screen.getByText('Potion'));
+    });
+    expect(screen.getByText(/server rejected/)).toBeInTheDocument();
+  });
+
+  it('dismisses the action result overlay via Ok', async () => {
+    apiClient.post.mockResolvedValue({ data: { success: true, message: '' } });
+    const player = {
+      party_members: [{ id: 1, name: 'Gorran' }],
+      inventory: [{ id: 'i1', name: 'Potion', can_use: true }],
+    };
+    render(<PartyPanel player={player} onClose={mockOnClose} />);
+    fireEvent.click(screen.getByText('💊 USE ITEM'));
+    await act(async () => {
+      fireEvent.click(screen.getByText('Potion'));
+    });
+    fireEvent.click(screen.getByText('Ok'));
+    expect(screen.queryByText(/used/)).not.toBeInTheDocument();
+  });
+
+  it('reads response.data directly when the axios wrapper is bypassed', async () => {
+    apiClient.post.mockResolvedValue({ success: true, message: 'Direct shape.' });
+    const player = {
+      party_members: [{ id: 1, name: 'Gorran' }],
+      inventory: [{ id: 'i1', name: 'Potion', can_use: true }],
+    };
+    render(<PartyPanel player={player} onClose={mockOnClose} />);
+    fireEvent.click(screen.getByText('💊 USE ITEM'));
+    await act(async () => {
+      fireEvent.click(screen.getByText('Potion'));
+    });
+    expect(screen.getByText(/Direct shape\./)).toBeInTheDocument();
+  });
+
+  it('shows the party count in the dialog title', () => {
+    const player = {
+      party_members: [{ id: 1, name: 'Gorran' }, { id: 2, name: 'Mara' }],
+    };
+    render(<PartyPanel player={player} onClose={mockOnClose} />);
+    expect(screen.getByText(/PARTY \(2\)/)).toBeInTheDocument();
   });
 
 });
