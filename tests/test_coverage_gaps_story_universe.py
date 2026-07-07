@@ -78,6 +78,19 @@ def _make_tile(**kwargs):
     return tile
 
 
+def _process_and_capture(evt, user_input=None):
+    """Run evt.process() and return its captured narration as flat text.
+
+    Use for events whose stages no longer mirror say()/narrate() beats onto
+    self.description.
+    """
+    from src.narration import capture_narration
+
+    with capture_narration() as msgs:
+        evt.process(user_input=user_input)
+    return "\n".join(m.get("text", "") for m in msgs)
+
+
 # ===========================================================================
 # CHAPTER 01 TESTS
 # ===========================================================================
@@ -621,7 +634,6 @@ class TestAfterTheRumblerFight:
         with (
             patch("story.ch01.time.sleep"),
             patch("story.ch01.print"),
-            patch("story.ch01.dialogue"),
         ):
             ev.process()
         assert rock_man.name == "Gorran"
@@ -908,16 +920,17 @@ class TestCh02GuideToCitadel:
         ev, player, tile = self._make(skip_dialog=False)
         ev.process()
         ev.process()
-        ev.process()
+        text = _process_and_capture(ev)
         assert ev._stage == 4
-        assert "convection" in ev.description.lower() or "air" in ev.description.lower()
+        assert "convection" in text.lower() or "air" in text.lower()
 
     def test_stage4_votha_intro(self):
         ev, player, tile = self._make(skip_dialog=False)
-        for _ in range(4):
+        for _ in range(3):
             ev.process()
+        text = _process_and_capture(ev)
         assert ev._stage == 5
-        assert "Votha Krr" in ev.description
+        assert "Votha Krr" in text
 
     def test_stage5_choice_options(self):
         ev, player, tile = self._make(skip_dialog=False)
@@ -932,31 +945,31 @@ class TestCh02GuideToCitadel:
         ev, player, tile = self._make(skip_dialog=False)
         for _ in range(5):
             ev.process()
-        ev.process(user_input="a")
-        assert "slimes" in ev.description.lower()
+        text = _process_and_capture(ev, user_input="a")
+        assert "slimes" in text.lower()
         assert ev._stage == 7
 
     def test_stage6_choice_b_brief(self):
         ev, player, tile = self._make(skip_dialog=False)
         for _ in range(5):
             ev.process()
-        ev.process(user_input="b")
-        assert "look at it" in ev.description.lower()
+        text = _process_and_capture(ev, user_input="b")
+        assert "look at it" in text.lower()
         assert ev._stage == 7
 
     def test_stage6_invalid_choice_defaults_to_a(self):
         ev, player, tile = self._make(skip_dialog=False)
         for _ in range(5):
             ev.process()
-        ev.process(user_input="zzz")
-        assert "slimes" in ev.description.lower()
+        text = _process_and_capture(ev, user_input="zzz")
+        assert "slimes" in text.lower()
 
     def test_stage6_numeric_choice_0_maps_to_a(self):
         ev, player, tile = self._make(skip_dialog=False)
         for _ in range(5):
             ev.process()
-        ev.process(user_input="0")
-        assert "slimes" in ev.description.lower()
+        text = _process_and_capture(ev, user_input="0")
+        assert "slimes" in text.lower()
 
     def test_stage7_gives_loot(self):
         ev, player, tile = self._make(skip_dialog=False)
@@ -1619,12 +1632,12 @@ class TestMaraFirstContactEvent:
         player.skip_dialog = False
         with (
             patch("story.ch03.print_slow") as mock_print,
-            patch("story.ch03.dialogue") as mock_dialogue,
+            patch("story.ch03.say") as mock_say,
             patch("story.ch03.time.sleep"),
         ):
             ev.process()
         assert mock_print.called
-        mock_dialogue.assert_called_once_with("Mara", "Crossing west?", "cyan")
+        mock_say.assert_called_once_with("Crossing west?", "Mara", "neutral")
         assert player.universe.story.get("mara_intro_done") == "1"
 
     def test_set_gate_with_no_universe(self):
@@ -1733,12 +1746,12 @@ class TestLissObservingEvent:
         player.skip_dialog = False
         with (
             patch("story.ch03.print_slow") as mock_print,
-            patch("story.ch03.dialogue") as mock_dialogue,
+            patch("story.ch03.say") as mock_say,
             patch("story.ch03.time.sleep"),
         ):
             ev.process()
         assert mock_print.called
-        assert mock_dialogue.called
+        assert mock_say.called
         assert player.universe.story.get("liss_gorran_done") == "1"
 
     def test_set_gate_with_no_universe(self):
@@ -1778,7 +1791,6 @@ class TestEasternRoadTurnbackEvent:
         with (
             patch("story.ch03.print_slow"),
             patch("story.ch03.time.sleep"),
-            patch("story.ch03.colored", return_value=""),
         ):
             ev.process()
         assert player.current_room is west_tile
@@ -1867,7 +1879,7 @@ class TestMaraObservationEvent:
         # has_mace=False branch
         with (
             patch("story.ch03.print_slow"),
-            patch("story.ch03.dialogue"),
+            patch("story.ch03.say"),
             patch("story.ch03.time.sleep"),
         ):
             ev.process()
@@ -1885,11 +1897,11 @@ class TestMaraObservationEvent:
         player.inventory = [mace]
         with (
             patch("story.ch03.print_slow") as mock_print,
-            patch("story.ch03.dialogue") as mock_dialogue,
+            patch("story.ch03.say") as mock_say,
             patch("story.ch03.time.sleep"),
         ):
             ev.process()
-        mock_dialogue.assert_any_call("Mara", "That's religious kit.", "cyan")
+        mock_say.assert_any_call("That's religious kit.", "Mara", "neutral")
         assert player.universe.story.get("nomad_camp_reached") == "1"
 
     def test_set_gate_with_no_universe(self):
