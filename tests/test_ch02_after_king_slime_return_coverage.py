@@ -70,6 +70,19 @@ def _make_tile(**kwargs):
     return tile
 
 
+def _process_and_capture(evt, user_input=None):
+    """Run evt.process() and return its captured narration as flat text.
+
+    AfterKingSlimeReturn no longer mirrors its say()/narrate() beats onto
+    self.description, so tests assert on the narration text directly.
+    """
+    from src.narration import capture_narration
+
+    with capture_narration() as msgs:
+        evt.process(user_input=user_input)
+    return "\n".join(m.get("text", "") for m in msgs)
+
+
 # ---------------------------------------------------------------------------
 # AfterKingSlimeReturn tests
 # ---------------------------------------------------------------------------
@@ -117,112 +130,112 @@ class TestAfterKingSlimeReturnConditions:
         self.player.inventory = [MineralFragment()]
         evt = self._make_event()
         evt._stage = 1
-        evt.process(user_input=None)
+        text = _process_and_capture(evt, user_input=None)
         assert evt._stage == 2
         assert evt.needs_input is True
-        assert "Votha Krr" in evt.description
+        assert "Votha Krr" in text
         assert len(evt.input_options) == 3
 
     def test_process_stage2_choice_a(self):
         self.player.inventory = [MineralFragment()]
         evt = self._make_event()
         evt._stage = 2
-        evt.process(user_input="a")
+        text = _process_and_capture(evt, user_input="a")
         assert evt._stage == 3
-        assert "held it out" in evt.description
+        assert "held it out" in text
 
     def test_process_stage2_choice_b(self):
         self.player.inventory = [MineralFragment()]
         evt = self._make_event()
         evt._stage = 2
-        evt.process(user_input="b")
+        text = _process_and_capture(evt, user_input="b")
         assert evt._stage == 3
-        assert "What is this thing" in evt.description
+        assert "What is this thing" in text
 
     def test_process_stage2_choice_c(self):
         self.player.inventory = [MineralFragment()]
         evt = self._make_event()
         evt._stage = 2
-        evt.process(user_input="c")
+        text = _process_and_capture(evt, user_input="c")
         assert evt._stage == 3
-        assert "sets the fragment" in evt.description or "armrest" in evt.description
+        assert "sets the fragment" in text or "armrest" in text
 
     def test_process_stage2_numeric_choice_0_maps_to_a(self):
         self.player.inventory = [MineralFragment()]
         evt = self._make_event()
         evt._stage = 2
-        evt.process(user_input="0")
+        text = _process_and_capture(evt, user_input="0")
         assert evt._stage == 3
-        assert "held it out" in evt.description
+        assert "held it out" in text
 
     def test_process_stage2_numeric_choice_1_maps_to_b(self):
         self.player.inventory = [MineralFragment()]
         evt = self._make_event()
         evt._stage = 2
-        evt.process(user_input="1")
+        text = _process_and_capture(evt, user_input="1")
         assert evt._stage == 3
-        assert "What is this thing" in evt.description
+        assert "What is this thing" in text
 
     def test_process_stage2_numeric_choice_2_maps_to_c(self):
         self.player.inventory = [MineralFragment()]
         evt = self._make_event()
         evt._stage = 2
-        evt.process(user_input="2")
+        text = _process_and_capture(evt, user_input="2")
         assert evt._stage == 3
-        assert "armrest" in evt.description
+        assert "armrest" in text
 
     def test_process_stage2_invalid_choice_defaults_to_a(self):
         self.player.inventory = [MineralFragment()]
         evt = self._make_event()
         evt._stage = 2
-        evt.process(user_input="xyz")
+        text = _process_and_capture(evt, user_input="xyz")
         assert evt._stage == 3
-        assert "held it out" in evt.description
+        assert "held it out" in text
 
     def test_process_stage2_none_input_defaults_to_a(self):
         self.player.inventory = [MineralFragment()]
         evt = self._make_event()
         evt._stage = 2
-        evt.process(user_input=None)
+        text = _process_and_capture(evt, user_input=None)
         assert evt._stage == 3
-        assert "held it out" in evt.description
+        assert "held it out" in text
 
     def test_process_stage3_votha_consumes_fragment(self):
         self.player.inventory = [MineralFragment()]
         evt = self._make_event()
         evt._stage = 3
-        evt.process(user_input="continue")
+        text = _process_and_capture(evt, user_input="continue")
         assert evt._stage == 4
         assert evt.needs_input is True
-        assert "fragment" in evt.description.lower()
-        assert "mouth" in evt.description.lower()
+        assert "fragment" in text.lower()
+        assert "mouth" in text.lower()
 
     def test_process_stage4_acknowledgment(self):
         self.player.inventory = [MineralFragment()]
         evt = self._make_event()
         evt._stage = 4
-        evt.process(user_input="continue")
+        text = _process_and_capture(evt, user_input="continue")
         assert evt._stage == 5
         assert evt.needs_input is True
-        assert "You came back" in evt.description
+        assert "You came back" in text
 
     def test_process_stage5_philosophical_directive(self):
         self.player.inventory = [MineralFragment()]
         evt = self._make_event()
         evt._stage = 5
-        evt.process(user_input="continue")
+        text = _process_and_capture(evt, user_input="continue")
         assert evt._stage == 6
         assert evt.needs_input is True
-        assert "Echoing Caves" in evt.description
+        assert "Echoing Caves" in text
 
     def test_process_stage6_farewell_gesture(self):
         self.player.inventory = [MineralFragment()]
         evt = self._make_event()
         evt._stage = 6
-        evt.process(user_input="continue")
+        text = _process_and_capture(evt, user_input="continue")
         assert evt._stage == 7
         assert evt.needs_input is True
-        assert "heart" in evt.description.lower()
+        assert "heart" in text.lower()
 
     def test_process_stage7_removes_fragment_and_completes(self):
         frag = MineralFragment()
@@ -295,8 +308,8 @@ class TestAfterKingSlimeReturnConditions:
         evt = self._make_event()
 
         evt.process(user_input=None)
-        evt.process(user_input="b")
-        assert "What is this thing" in evt.description
+        text = _process_and_capture(evt, user_input="b")
+        assert "What is this thing" in text
         evt.process(user_input="continue")
         evt.process(user_input="continue")
         evt.process(user_input="continue")
@@ -311,8 +324,8 @@ class TestAfterKingSlimeReturnConditions:
         evt = self._make_event()
 
         evt.process(user_input=None)
-        evt.process(user_input="c")
-        assert "armrest" in evt.description
+        text = _process_and_capture(evt, user_input="c")
+        assert "armrest" in text
         evt.process(user_input="continue")
         evt.process(user_input="continue")
         evt.process(user_input="continue")

@@ -346,9 +346,6 @@ def test_ch02_guide_to_citadel_stage4_produces_staged_conversation(game_service)
     gorran_exit = next(op for op in exits if op["id"] == "Gorran")
     assert gorran_exit.get("span", 1) > 1
 
-    # Legacy description text is preserved for the fallback renderer.
-    assert "Votha Krr" in event.description
-
 
 def test_ch02_king_slime_memory_flash_produces_thought_segments(game_service):
     """Canary: the King Slime flashback tags Jean's introspective beats as
@@ -411,7 +408,6 @@ def test_after_king_slime_return_stage1_produces_staged_conversation(game_servic
 
     by_speaker = [s for s in segments if s.get("speaker") == "Votha Krr"]
     assert any("done well" in s["text"].lower() for s in by_speaker)
-    assert "Votha Krr" in event.description
 
 
 def test_memory_chrome_entries_are_dropped(game_service):

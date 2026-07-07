@@ -78,6 +78,19 @@ def _make_tile(**kwargs):
     return tile
 
 
+def _process_and_capture(evt, user_input=None):
+    """Run evt.process() and return its captured narration as flat text.
+
+    Use for events whose stages no longer mirror say()/narrate() beats onto
+    self.description.
+    """
+    from src.narration import capture_narration
+
+    with capture_narration() as msgs:
+        evt.process(user_input=user_input)
+    return "\n".join(m.get("text", "") for m in msgs)
+
+
 # ===========================================================================
 # CHAPTER 01 TESTS
 # ===========================================================================
@@ -907,16 +920,17 @@ class TestCh02GuideToCitadel:
         ev, player, tile = self._make(skip_dialog=False)
         ev.process()
         ev.process()
-        ev.process()
+        text = _process_and_capture(ev)
         assert ev._stage == 4
-        assert "convection" in ev.description.lower() or "air" in ev.description.lower()
+        assert "convection" in text.lower() or "air" in text.lower()
 
     def test_stage4_votha_intro(self):
         ev, player, tile = self._make(skip_dialog=False)
-        for _ in range(4):
+        for _ in range(3):
             ev.process()
+        text = _process_and_capture(ev)
         assert ev._stage == 5
-        assert "Votha Krr" in ev.description
+        assert "Votha Krr" in text
 
     def test_stage5_choice_options(self):
         ev, player, tile = self._make(skip_dialog=False)
@@ -931,31 +945,31 @@ class TestCh02GuideToCitadel:
         ev, player, tile = self._make(skip_dialog=False)
         for _ in range(5):
             ev.process()
-        ev.process(user_input="a")
-        assert "slimes" in ev.description.lower()
+        text = _process_and_capture(ev, user_input="a")
+        assert "slimes" in text.lower()
         assert ev._stage == 7
 
     def test_stage6_choice_b_brief(self):
         ev, player, tile = self._make(skip_dialog=False)
         for _ in range(5):
             ev.process()
-        ev.process(user_input="b")
-        assert "look at it" in ev.description.lower()
+        text = _process_and_capture(ev, user_input="b")
+        assert "look at it" in text.lower()
         assert ev._stage == 7
 
     def test_stage6_invalid_choice_defaults_to_a(self):
         ev, player, tile = self._make(skip_dialog=False)
         for _ in range(5):
             ev.process()
-        ev.process(user_input="zzz")
-        assert "slimes" in ev.description.lower()
+        text = _process_and_capture(ev, user_input="zzz")
+        assert "slimes" in text.lower()
 
     def test_stage6_numeric_choice_0_maps_to_a(self):
         ev, player, tile = self._make(skip_dialog=False)
         for _ in range(5):
             ev.process()
-        ev.process(user_input="0")
-        assert "slimes" in ev.description.lower()
+        text = _process_and_capture(ev, user_input="0")
+        assert "slimes" in text.lower()
 
     def test_stage7_gives_loot(self):
         ev, player, tile = self._make(skip_dialog=False)
