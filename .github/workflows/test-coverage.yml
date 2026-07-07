@@ -1,8 +1,8 @@
 # Test Coverage Monitoring — runs on every PR and push
 # Enforces coverage minimums and generates reports
 # Fails if:
-# - Backend coverage drops below 55%
-# - Frontend coverage drops below 80%
+# - Backend coverage drops below 85%
+# - Frontend coverage drops below 95%
 # - Any tests fail
 
 name: Test Coverage
@@ -51,7 +51,7 @@ jobs:
             --cov=ai \
             --cov-report=xml \
             --cov-report=term-missing \
-            --cov-fail-under=55 \
+            --cov-fail-under=85 \
             -n auto -v
         env:
           MYNX_LLM_ENABLED: "0"
@@ -105,7 +105,6 @@ jobs:
       - name: Run tests with coverage
         run: |
           cd frontend && npm test -- --run --coverage
-        continue-on-error: true
         id: vitest
 
       - name: Extract frontend coverage percentage
@@ -118,12 +117,6 @@ jobs:
             PCT="N/A"
           fi
           echo "coverage=$PCT" >> "$GITHUB_OUTPUT"
-
-      - name: Validate coverage threshold
-        run: |
-          cd frontend && npm test -- --run --coverage 2>&1 | grep -E "% \|" || true
-          echo "Frontend tests completed. Manual coverage threshold check in PR comments."
-        if: always()
 
       - name: Upload coverage to Codecov (optional)
         uses: codecov/codecov-action@v3
@@ -155,8 +148,8 @@ jobs:
           FRONTEND_COVERAGE: ${{ needs.frontend-coverage.outputs.coverage }}
         with:
           script: |
-            const backendMin = 55;
-            const frontendMin = 80;
+            const backendMin = 85;
+            const frontendMin = 95;
 
             function currentCell(value) {
               const pct = parseFloat(value);
