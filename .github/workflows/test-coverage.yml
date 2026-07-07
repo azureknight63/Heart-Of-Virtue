@@ -28,6 +28,8 @@ jobs:
       contents: read
       checks: write
       pull-requests: write
+    outputs:
+      coverage: ${{ steps.backend_coverage.outputs.coverage }}
 
     steps:
       - name: Checkout
@@ -56,6 +58,17 @@ jobs:
           MYNX_LLM_PROVIDER: "none"
         timeout-minutes: 12
 
+      - name: Extract backend coverage percentage
+        id: backend_coverage
+        if: always()
+        run: |
+          if [ -f coverage.xml ]; then
+            PCT=$(python -c "import xml.etree.ElementTree as ET; print(round(float(ET.parse('coverage.xml').getroot().get('line-rate')) * 100, 1))")
+          else
+            PCT="N/A"
+          fi
+          echo "coverage=$PCT" >> "$GITHUB_OUTPUT"
+
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v3
         with:
@@ -72,6 +85,8 @@ jobs:
       contents: read
       checks: write
       pull-requests: write
+    outputs:
+      coverage: ${{ steps.frontend_coverage.outputs.coverage }}
 
     steps:
       - name: Checkout
@@ -92,6 +107,17 @@ jobs:
           cd frontend && npm test -- --run --coverage
         continue-on-error: true
         id: vitest
+
+      - name: Extract frontend coverage percentage
+        id: frontend_coverage
+        if: always()
+        run: |
+          if [ -f frontend/coverage/coverage-summary.json ]; then
+            PCT=$(node -e "console.log(require('./frontend/coverage/coverage-summary.json').total.lines.pct)")
+          else
+            PCT="N/A"
+          fi
+          echo "coverage=$PCT" >> "$GITHUB_OUTPUT"
 
       - name: Validate coverage threshold
         run: |
@@ -124,15 +150,39 @@ jobs:
       - name: Post coverage badge to PR
         uses: actions/github-script@v7
         if: github.event_name == 'pull_request'
+        env:
+          BACKEND_COVERAGE: ${{ needs.backend-coverage.outputs.coverage }}
+          FRONTEND_COVERAGE: ${{ needs.frontend-coverage.outputs.coverage }}
         with:
-          script: >
+          script: |
+            const backendMin = 55;
+            const frontendMin = 80;
+
+            function currentCell(value) {
+              const pct = parseFloat(value);
+              return Number.isNaN(pct) ? "N/A" : `${pct}%`;
+            }
+
+            function statusBadge(label, value, min) {
+              const pct = parseFloat(value);
+              if (Number.isNaN(pct)) {
+                return `![${label}](https://img.shields.io/badge/${label}-unknown-lightgrey)`;
+              }
+              const color = pct >= min ? "green" : "red";
+              return `![${label} Coverage](https://img.shields.io/badge/${label}-${pct}%25-${color})`;
+            }
+
+            const backendCov = process.env.BACKEND_COVERAGE;
+            const frontendCov = process.env.FRONTEND_COVERAGE;
+
             const coverage_badge = "## Coverage Status\n\n" +
-            "| Layer | Minimum | Status |\n" +
-            "|-------|---------|--------|\n" +
-            "| Backend | 55% | ![Backend Coverage](https://img.shields.io/badge/backend-55%25-green) |\n" +
-            "| Frontend | 80% | ![Frontend Coverage](https://img.shields.io/badge/frontend-80%25-green) |\n\n" +
-            "See README.md for badge details.\n" +
-            "View full reports: Backend htmlcov/index.html, Frontend frontend/coverage/index.html";
+              "| Layer | Minimum | Current | Status |\n" +
+              "|-------|---------|---------|--------|\n" +
+              `| Backend | ${backendMin}% | ${currentCell(backendCov)} | ${statusBadge('backend', backendCov, backendMin)} |\n` +
+              `| Frontend | ${frontendMin}% | ${currentCell(frontendCov)} | ${statusBadge('frontend', frontendCov, frontendMin)} |\n\n` +
+              "See README.md for badge details.\n" +
+              "View full reports: Backend htmlcov/index.html, Frontend frontend/coverage/index.html";
+
             github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
