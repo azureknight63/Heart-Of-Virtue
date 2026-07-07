@@ -1,12 +1,10 @@
-import React from 'react'
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, act, waitFor } from '@testing-library/react'
 import LootDialog from './LootDialog'
 
-// Mock dependencies
 vi.mock('./BaseDialog', () => ({
-  default: ({ children, title, maxWidth, padding, zIndex }) => (
-    <div data-testid="base-dialog" style={{ maxWidth, padding, zIndex }}>
+  default: ({ children, title }) => (
+    <div data-testid="base-dialog">
       <h2>{title}</h2>
       {children}
     </div>
@@ -14,23 +12,15 @@ vi.mock('./BaseDialog', () => ({
 }))
 
 vi.mock('./GameButton', () => ({
-  default: ({ children, onClick, variant, style }) => (
-    <button
-      data-testid={`game-button-${variant || 'default'}`}
-      onClick={onClick}
-      style={style}
-    >
+  default: ({ children, onClick, variant }) => (
+    <button data-testid={`game-button-${variant || 'default'}`} onClick={onClick}>
       {children}
     </button>
   ),
 }))
 
 vi.mock('./GameText', () => ({
-  default: ({ variant, size, weight, children, style }) => (
-    <span data-testid={`game-text-${variant || 'default'}`} style={style}>
-      {children}
-    </span>
-  ),
+  default: ({ children }) => <span>{children}</span>,
 }))
 
 describe('LootDialog', () => {
@@ -47,14 +37,6 @@ describe('LootDialog', () => {
         description: 'A well-crafted sword',
       },
       {
-        name: 'Gold Coin',
-        type: 'Currency',
-        weight: 0.1,
-        value: 1,
-        quantity: 50,
-        enchantment_count: 0,
-      },
-      {
         name: 'Healing Potion',
         type: 'Consumable',
         weight: 0.5,
@@ -66,1120 +48,136 @@ describe('LootDialog', () => {
     ],
   }
 
-  const mockOnCollect = vi.fn()
-  const mockOnSkip = vi.fn()
+  const onCollect = vi.fn()
+  const onSkip = vi.fn()
 
   beforeEach(() => {
     vi.clearAllMocks()
   })
 
-  describe('Rendering', () => {
-    it('renders loot dialog', () => {
-      render(
-        <LootDialog
-          endState={mockEndState}
-          playerWeight={20}
-          weightLimit={100}
-          onCollect={mockOnCollect}
-          onSkip={mockOnSkip}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('displays loot items from endState', () => {
-      render(
-        <LootDialog
-          endState={mockEndState}
-          playerWeight={20}
-          weightLimit={100}
-          onCollect={mockOnCollect}
-          onSkip={mockOnSkip}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('displays item count', () => {
-      render(
-        <LootDialog
-          endState={mockEndState}
-          playerWeight={20}
-          weightLimit={100}
-          onCollect={mockOnCollect}
-          onSkip={mockOnSkip}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('shows column headers', () => {
-      render(
-        <LootDialog
-          endState={mockEndState}
-          playerWeight={20}
-          weightLimit={100}
-          onCollect={mockOnCollect}
-          onSkip={mockOnSkip}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
+  it('renders all dropped items, all selected by default', () => {
+    render(<LootDialog endState={mockEndState} playerWeight={20} weightLimit={100} onCollect={onCollect} onSkip={onSkip} />)
+    expect(screen.getByText('Iron Sword')).toBeInTheDocument()
+    expect(screen.getByText('Healing Potion')).toBeInTheDocument()
+    expect(screen.getByText('2 items found')).toBeInTheDocument()
+    expect(screen.getByText(/COLLECT SELECTED ITEMS \(2 of 2\)/)).toBeInTheDocument()
   })
 
-  describe('Item Selection', () => {
-    it('allows selecting items', () => {
-      render(
-        <LootDialog
-          endState={mockEndState}
-          playerWeight={20}
-          weightLimit={100}
-          onCollect={mockOnCollect}
-          onSkip={mockOnSkip}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('displays selected item count', () => {
-      render(
-        <LootDialog
-          endState={mockEndState}
-          playerWeight={20}
-          weightLimit={100}
-          onCollect={mockOnCollect}
-          onSkip={mockOnSkip}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('allows deselecting items', () => {
-      render(
-        <LootDialog
-          endState={mockEndState}
-          playerWeight={20}
-          weightLimit={100}
-          onCollect={mockOnCollect}
-          onSkip={mockOnSkip}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('displays item details', () => {
-      render(
-        <LootDialog
-          endState={mockEndState}
-          playerWeight={20}
-          weightLimit={100}
-          onCollect={mockOnCollect}
-          onSkip={mockOnSkip}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
+  it('shows singular item count text for one item', () => {
+    const single = { items_dropped: [{ name: 'Coin', weight: 0.1, quantity: 1 }] }
+    render(<LootDialog endState={single} playerWeight={0} weightLimit={100} onCollect={onCollect} onSkip={onSkip} />)
+    expect(screen.getByText('1 item found')).toBeInTheDocument()
   })
 
-  describe('Weight System', () => {
-    it('displays current carry weight', () => {
-      render(
-        <LootDialog
-          endState={mockEndState}
-          playerWeight={20}
-          weightLimit={100}
-          onCollect={mockOnCollect}
-          onSkip={mockOnSkip}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('shows weight limit', () => {
-      render(
-        <LootDialog
-          endState={mockEndState}
-          playerWeight={20}
-          weightLimit={100}
-          onCollect={mockOnCollect}
-          onSkip={mockOnSkip}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('calculates selected weight', () => {
-      render(
-        <LootDialog
-          endState={mockEndState}
-          playerWeight={20}
-          weightLimit={100}
-          onCollect={mockOnCollect}
-          onSkip={mockOnSkip}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('shows total weight after pickup', () => {
-      render(
-        <LootDialog
-          endState={mockEndState}
-          playerWeight={20}
-          weightLimit={100}
-          onCollect={mockOnCollect}
-          onSkip={mockOnSkip}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('displays weight bar', () => {
-      render(
-        <LootDialog
-          endState={mockEndState}
-          playerWeight={20}
-          weightLimit={100}
-          onCollect={mockOnCollect}
-          onSkip={mockOnSkip}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
+  it('shows a message when nothing dropped', () => {
+    render(<LootDialog endState={{ items_dropped: [] }} playerWeight={0} weightLimit={100} onCollect={onCollect} onSkip={onSkip} />)
+    expect(screen.getByText('No items dropped.')).toBeInTheDocument()
+    expect(screen.queryByTestId('game-button-secondary')).not.toBeInTheDocument()
   })
 
-  describe('Bulk Actions', () => {
-    it('has Take All button', () => {
-      render(
-        <LootDialog
-          endState={mockEndState}
-          playerWeight={20}
-          weightLimit={100}
-          onCollect={mockOnCollect}
-          onSkip={mockOnSkip}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('has Leave All button', () => {
-      render(
-        <LootDialog
-          endState={mockEndState}
-          playerWeight={20}
-          weightLimit={100}
-          onCollect={mockOnCollect}
-          onSkip={mockOnSkip}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('selects all items with Take All', () => {
-      render(
-        <LootDialog
-          endState={mockEndState}
-          playerWeight={20}
-          weightLimit={100}
-          onCollect={mockOnCollect}
-          onSkip={mockOnSkip}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('deselects all items with Leave All', () => {
-      render(
-        <LootDialog
-          endState={mockEndState}
-          playerWeight={20}
-          weightLimit={100}
-          onCollect={mockOnCollect}
-          onSkip={mockOnSkip}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
+  it('handles an undefined endState gracefully', () => {
+    render(<LootDialog endState={undefined} playerWeight={0} weightLimit={100} onCollect={onCollect} onSkip={onSkip} />)
+    expect(screen.getByText('No items dropped.')).toBeInTheDocument()
   })
 
-  describe('Validation', () => {
-    it('prevents collecting when overweight', () => {
-      render(
-        <LootDialog
-          endState={mockEndState}
-          playerWeight={99}
-          weightLimit={100}
-          onCollect={mockOnCollect}
-          onSkip={mockOnSkip}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
+  it('deselects and reselects an item by clicking its row', () => {
+    render(<LootDialog endState={mockEndState} playerWeight={20} weightLimit={100} onCollect={onCollect} onSkip={onSkip} />)
+    fireEvent.click(screen.getByText('Iron Sword'))
+    expect(screen.getByText(/COLLECT SELECTED ITEMS \(1 of 2\)/)).toBeInTheDocument()
 
-    it('shows overweight toast message', async () => {
-      render(
-        <LootDialog
-          endState={mockEndState}
-          playerWeight={99}
-          weightLimit={100}
-          onCollect={mockOnCollect}
-          onSkip={mockOnSkip}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('disables Collect when nothing selected', () => {
-      const emptyEndState = { items_dropped: [] }
-      render(
-        <LootDialog
-          endState={emptyEndState}
-          playerWeight={20}
-          weightLimit={100}
-          onCollect={mockOnCollect}
-          onSkip={mockOnSkip}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('enables Collect when items selected', () => {
-      render(
-        <LootDialog
-          endState={mockEndState}
-          playerWeight={20}
-          weightLimit={100}
-          onCollect={mockOnCollect}
-          onSkip={mockOnSkip}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
+    fireEvent.click(screen.getByText('Iron Sword'))
+    expect(screen.getByText(/COLLECT SELECTED ITEMS \(2 of 2\)/)).toBeInTheDocument()
   })
 
-  describe('Collection', () => {
-    it('calls onCollect with selected items', () => {
-      render(
-        <LootDialog
-          endState={mockEndState}
-          playerWeight={20}
-          weightLimit={100}
-          onCollect={mockOnCollect}
-          onSkip={mockOnSkip}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('shows loading state during collection', () => {
-      render(
-        <LootDialog
-          endState={mockEndState}
-          playerWeight={20}
-          weightLimit={100}
-          onCollect={mockOnCollect}
-          onSkip={mockOnSkip}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('disables buttons during submission', () => {
-      render(
-        <LootDialog
-          endState={mockEndState}
-          playerWeight={20}
-          weightLimit={100}
-          onCollect={mockOnCollect}
-          onSkip={mockOnSkip}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
+  it('deselects all items with Leave All, disabling Collect', () => {
+    render(<LootDialog endState={mockEndState} playerWeight={20} weightLimit={100} onCollect={onCollect} onSkip={onSkip} />)
+    fireEvent.click(screen.getByText('Leave All'))
+    expect(screen.getByText('NOTHING SELECTED')).toBeInTheDocument()
+    expect(screen.getByText('NOTHING SELECTED').closest('button')).toBeDisabled()
   })
 
-  describe('Skip Action', () => {
-    it('has skip option', () => {
-      render(
-        <LootDialog
-          endState={mockEndState}
-          playerWeight={20}
-          weightLimit={100}
-          onCollect={mockOnCollect}
-          onSkip={mockOnSkip}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('calls onSkip when skip is clicked', () => {
-      render(
-        <LootDialog
-          endState={mockEndState}
-          playerWeight={20}
-          weightLimit={100}
-          onCollect={mockOnCollect}
-          onSkip={mockOnSkip}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('disables skip during submission', () => {
-      render(
-        <LootDialog
-          endState={mockEndState}
-          playerWeight={20}
-          weightLimit={100}
-          onCollect={mockOnCollect}
-          onSkip={mockOnSkip}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
+  it('reselects all items with Take All', () => {
+    render(<LootDialog endState={mockEndState} playerWeight={20} weightLimit={100} onCollect={onCollect} onSkip={onSkip} />)
+    fireEvent.click(screen.getByText('Leave All'))
+    fireEvent.click(screen.getByText('Take All'))
+    expect(screen.getByText(/COLLECT SELECTED ITEMS \(2 of 2\)/)).toBeInTheDocument()
   })
 
-  describe('Empty States', () => {
-    it('handles empty loot', () => {
-      const emptyEndState = { items_dropped: [] }
-      render(
-        <LootDialog
-          endState={emptyEndState}
-          playerWeight={20}
-          weightLimit={100}
-          onCollect={mockOnCollect}
-          onSkip={mockOnSkip}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('handles no endState', () => {
-      const undefinedEndState = undefined
-      render(
-        <LootDialog
-          endState={undefinedEndState}
-          playerWeight={20}
-          weightLimit={100}
-          onCollect={mockOnCollect}
-          onSkip={mockOnSkip}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('shows message when no items dropped', () => {
-      const emptyEndState = { items_dropped: [] }
-      render(
-        <LootDialog
-          endState={emptyEndState}
-          playerWeight={20}
-          weightLimit={100}
-          onCollect={mockOnCollect}
-          onSkip={mockOnSkip}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
+  it('shows the tooltip with item details on hover', () => {
+    render(<LootDialog endState={mockEndState} playerWeight={20} weightLimit={100} onCollect={onCollect} onSkip={onSkip} />)
+    fireEvent.mouseEnter(screen.getByText('Iron Sword'))
+    expect(screen.getByText('A well-crafted sword')).toBeInTheDocument()
+    expect(screen.getByText('Weapon')).toBeInTheDocument()
+    expect(screen.getByText('Sword')).toBeInTheDocument()
   })
 
-  describe('Item Properties', () => {
-    it('displays item names', () => {
-      render(
-        <LootDialog
-          endState={mockEndState}
-          playerWeight={20}
-          weightLimit={100}
-          onCollect={mockOnCollect}
-          onSkip={mockOnSkip}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('displays item types', () => {
-      render(
-        <LootDialog
-          endState={mockEndState}
-          playerWeight={20}
-          weightLimit={100}
-          onCollect={mockOnCollect}
-          onSkip={mockOnSkip}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('displays item quantities', () => {
-      render(
-        <LootDialog
-          endState={mockEndState}
-          playerWeight={20}
-          weightLimit={100}
-          onCollect={mockOnCollect}
-          onSkip={mockOnSkip}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('displays enchantment stars', () => {
-      render(
-        <LootDialog
-          endState={mockEndState}
-          playerWeight={20}
-          weightLimit={100}
-          onCollect={mockOnCollect}
-          onSkip={mockOnSkip}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('displays item weights', () => {
-      render(
-        <LootDialog
-          endState={mockEndState}
-          playerWeight={20}
-          weightLimit={100}
-          onCollect={mockOnCollect}
-          onSkip={mockOnSkip}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
+  it('hides the tooltip on mouse leave', () => {
+    render(<LootDialog endState={mockEndState} playerWeight={20} weightLimit={100} onCollect={onCollect} onSkip={onSkip} />)
+    const row = screen.getByText('Iron Sword')
+    fireEvent.mouseEnter(row)
+    fireEvent.mouseLeave(row)
+    expect(screen.queryByText('A well-crafted sword')).not.toBeInTheDocument()
   })
 
-  describe('Weight Calculations', () => {
-    it('calculates correct weight for single item', () => {
-      const singleItemState = {
-        items_dropped: [
-          {
-            name: 'Test Item',
-            weight: 5.0,
-            quantity: 1,
-          },
-        ],
-      }
-      render(
-        <LootDialog
-          endState={singleItemState}
-          playerWeight={10}
-          weightLimit={100}
-          onCollect={mockOnCollect}
-          onSkip={mockOnSkip}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('calculates correct weight for stacked items', () => {
-      const stackedItemState = {
-        items_dropped: [
-          {
-            name: 'Gold Coins',
-            weight: 0.1,
-            quantity: 50,
-          },
-        ],
-      }
-      render(
-        <LootDialog
-          endState={stackedItemState}
-          playerWeight={10}
-          weightLimit={100}
-          onCollect={mockOnCollect}
-          onSkip={mockOnSkip}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('handles zero weight items', () => {
-      const zeroWeightState = {
-        items_dropped: [
-          {
-            name: 'Weightless Item',
-            weight: 0,
-            quantity: 1,
-          },
-        ],
-      }
-      render(
-        <LootDialog
-          endState={zeroWeightState}
-          playerWeight={20}
-          weightLimit={100}
-          onCollect={mockOnCollect}
-          onSkip={mockOnSkip}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('handles items with null weight', () => {
-      const nullWeightState = {
-        items_dropped: [
-          {
-            name: 'Unknown Weight Item',
-            weight: null,
-            quantity: 1,
-          },
-        ],
-      }
-      render(
-        <LootDialog
-          endState={nullWeightState}
-          playerWeight={20}
-          weightLimit={100}
-          onCollect={mockOnCollect}
-          onSkip={mockOnSkip}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('shows danger color when overweight', () => {
-      render(
-        <LootDialog
-          endState={mockEndState}
-          playerWeight={95}
-          weightLimit={100}
-          onCollect={mockOnCollect}
-          onSkip={mockOnSkip}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('shows warning color when near limit', () => {
-      render(
-        <LootDialog
-          endState={mockEndState}
-          playerWeight={75}
-          weightLimit={100}
-          onCollect={mockOnCollect}
-          onSkip={mockOnSkip}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
+  it('shows enchantment stars in the tooltip when the item is enchanted', () => {
+    render(<LootDialog endState={mockEndState} playerWeight={20} weightLimit={100} onCollect={onCollect} onSkip={onSkip} />)
+    fireEvent.mouseEnter(screen.getByText('Healing Potion'))
+    expect(screen.getByText(/Enchanted/)).toBeInTheDocument()
   })
 
-  describe('Edge Cases', () => {
-    it('handles very large quantities', () => {
-      const largeQtyState = {
-        items_dropped: [
-          {
-            name: 'Many Coins',
-            weight: 0.01,
-            quantity: 10000,
-          },
-        ],
-      }
-      render(
-        <LootDialog
-          endState={largeQtyState}
-          playerWeight={20}
-          weightLimit={100}
-          onCollect={mockOnCollect}
-          onSkip={mockOnSkip}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
+  it('calls onCollect with the names of selected items', async () => {
+    onCollect.mockResolvedValue()
+    render(<LootDialog endState={mockEndState} playerWeight={20} weightLimit={100} onCollect={onCollect} onSkip={onSkip} />)
+    fireEvent.click(screen.getByText('Healing Potion'))
+    await act(async () => {
+      fireEvent.click(screen.getByText(/COLLECT SELECTED ITEMS/))
     })
-
-    it('handles very heavy items', () => {
-      const heavyItemState = {
-        items_dropped: [
-          {
-            name: 'Massive Block',
-            weight: 100.0,
-            quantity: 1,
-          },
-        ],
-      }
-      render(
-        <LootDialog
-          endState={heavyItemState}
-          playerWeight={0}
-          weightLimit={100}
-          onCollect={mockOnCollect}
-          onSkip={mockOnSkip}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('handles player already at weight limit', () => {
-      render(
-        <LootDialog
-          endState={mockEndState}
-          playerWeight={100}
-          weightLimit={100}
-          onCollect={mockOnCollect}
-          onSkip={mockOnSkip}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('handles player over weight limit', () => {
-      render(
-        <LootDialog
-          endState={mockEndState}
-          playerWeight={105}
-          weightLimit={100}
-          onCollect={mockOnCollect}
-          onSkip={mockOnSkip}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('handles very low weight limit', () => {
-      render(
-        <LootDialog
-          endState={mockEndState}
-          playerWeight={5}
-          weightLimit={10}
-          onCollect={mockOnCollect}
-          onSkip={mockOnSkip}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('handles missing weight properties', () => {
-      const missingWeightState = {
-        items_dropped: [
-          {
-            name: 'Item without weight',
-            quantity: 1,
-          },
-        ],
-      }
-      render(
-        <LootDialog
-          endState={missingWeightState}
-          playerWeight={20}
-          weightLimit={100}
-          onCollect={mockOnCollect}
-          onSkip={mockOnSkip}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('handles item with high enchantment count', () => {
-      const highEnchantState = {
-        items_dropped: [
-          {
-            name: 'Legendary Item',
-            weight: 10.0,
-            quantity: 1,
-            enchantment_count: 5,
-          },
-        ],
-      }
-      render(
-        <LootDialog
-          endState={highEnchantState}
-          playerWeight={20}
-          weightLimit={100}
-          onCollect={mockOnCollect}
-          onSkip={mockOnSkip}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
+    expect(onCollect).toHaveBeenCalledWith(['Iron Sword'])
   })
 
-  describe('Multiple Item Scenarios', () => {
-    it('handles many different items', () => {
-      const manyItemsState = {
-        items_dropped: Array.from({ length: 20 }, (_, i) => ({
-          name: `Item ${i + 1}`,
-          type: 'Weapon',
-          weight: Math.random() * 10,
-          quantity: Math.floor(Math.random() * 5) + 1,
-        })),
-      }
-      render(
-        <LootDialog
-          endState={manyItemsState}
-          playerWeight={20}
-          weightLimit={100}
-          onCollect={mockOnCollect}
-          onSkip={mockOnSkip}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('displays correct selection count with many items', () => {
-      const manyItemsState = {
-        items_dropped: Array.from({ length: 15 }, (_, i) => ({
-          name: `Item ${i + 1}`,
-          weight: 1.0,
-          quantity: 1,
-        })),
-      }
-      render(
-        <LootDialog
-          endState={manyItemsState}
-          playerWeight={20}
-          weightLimit={100}
-          onCollect={mockOnCollect}
-          onSkip={mockOnSkip}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
+  it('shows a toast and does not call onCollect when over weight', async () => {
+    render(<LootDialog endState={mockEndState} playerWeight={99} weightLimit={100} onCollect={onCollect} onSkip={onSkip} />)
+    fireEvent.click(screen.getByText(/COLLECT SELECTED ITEMS/))
+    expect(screen.getByText(/Cannot collect — carry weight would exceed capacity\./)).toBeInTheDocument()
+    expect(onCollect).not.toHaveBeenCalled()
   })
 
-  describe('Weight Calculation Precision', () => {
-    it('handles decimal weight values correctly', () => {
-      const decimalWeights = {
-        items_dropped: [
-          { name: 'Light Item', weight: 0.5, quantity: 1 },
-          { name: 'Feather', weight: 0.1, quantity: 1 },
-          { name: 'Heavy Item', weight: 5.7, quantity: 1 },
-        ],
-      }
-      render(
-        <LootDialog
-          endState={decimalWeights}
-          playerWeight={45.3}
-          weightLimit={50}
-          onCollect={mockOnCollect}
-          onSkip={mockOnSkip}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
+  it('disables the Collect button while a collection is in flight', async () => {
+    let resolveCollect
+    onCollect.mockReturnValue(new Promise((resolve) => { resolveCollect = resolve }))
+    render(<LootDialog endState={mockEndState} playerWeight={20} weightLimit={100} onCollect={onCollect} onSkip={onSkip} />)
 
-    it('handles rounding errors in weight calculations', () => {
-      const problematicWeights = {
-        items_dropped: [
-          { name: 'Item 1', weight: 0.1 + 0.2, quantity: 1 },
-          { name: 'Item 2', weight: 1.23, quantity: 3 },
-        ],
-      }
-      render(
-        <LootDialog
-          endState={problematicWeights}
-          playerWeight={49}
-          weightLimit={50}
-          onCollect={mockOnCollect}
-          onSkip={mockOnSkip}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
+    fireEvent.click(screen.getByText(/COLLECT SELECTED ITEMS/))
+    expect(screen.getByText('COLLECTING...')).toBeInTheDocument()
 
-    it('calculates total weight for multiple quantities', () => {
-      const quantityWeights = {
-        items_dropped: [
-          { name: 'Stacked Item', weight: 0.5, quantity: 5 },
-          { name: 'Single Item', weight: 1.0, quantity: 1 },
-          { name: 'Many Items', weight: 0.25, quantity: 10 },
-        ],
-      }
-      render(
-        <LootDialog
-          endState={quantityWeights}
-          playerWeight={10}
-          weightLimit={100}
-          onCollect={mockOnCollect}
-          onSkip={mockOnSkip}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
+    await act(async () => {
+      resolveCollect()
     })
-
-    it('handles zero weight items', () => {
-      const zeroWeightItems = {
-        items_dropped: [
-          { name: 'Ethereal Item', weight: 0, quantity: 1 },
-          { name: 'Normal Item', weight: 1, quantity: 1 },
-        ],
-      }
-      render(
-        <LootDialog
-          endState={zeroWeightItems}
-          playerWeight={49}
-          weightLimit={50}
-          onCollect={mockOnCollect}
-          onSkip={mockOnSkip}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('handles very large weight items', () => {
-      const largeWeightItems = {
-        items_dropped: [
-          { name: 'Mountain', weight: 999.9, quantity: 1 },
-          { name: 'Boulder', weight: 500, quantity: 1 },
-        ],
-      }
-      render(
-        <LootDialog
-          endState={largeWeightItems}
-          playerWeight={1}
-          weightLimit={10000}
-          onCollect={mockOnCollect}
-          onSkip={mockOnSkip}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
+    await waitFor(() => expect(screen.queryByText('COLLECTING...')).not.toBeInTheDocument())
   })
 
-  describe('Weight Limit Edge Cases', () => {
-    it('handles player exactly at weight limit', () => {
-      const atLimit = {
-        items_dropped: [
-          { name: 'Item', weight: 1, quantity: 1 },
-        ],
-      }
-      render(
-        <LootDialog
-          endState={atLimit}
-          playerWeight={50}
-          weightLimit={50}
-          onCollect={mockOnCollect}
-          onSkip={mockOnSkip}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('handles player over weight limit', () => {
-      const overLimit = {
-        items_dropped: [
-          { name: 'Item', weight: 0.1, quantity: 1 },
-        ],
-      }
-      render(
-        <LootDialog
-          endState={overLimit}
-          playerWeight={50.1}
-          weightLimit={50}
-          onCollect={mockOnCollect}
-          onSkip={mockOnSkip}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('handles very small weight limits', () => {
-      const smallLimit = {
-        items_dropped: [
-          { name: 'Tiny Item', weight: 0.01, quantity: 1 },
-        ],
-      }
-      render(
-        <LootDialog
-          endState={smallLimit}
-          playerWeight={0.5}
-          weightLimit={1}
-          onCollect={mockOnCollect}
-          onSkip={mockOnSkip}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('handles very large weight limits', () => {
-      const largeLimit = {
-        items_dropped: [
-          { name: 'Heavy Item', weight: 100, quantity: 1 },
-        ],
-      }
-      render(
-        <LootDialog
-          endState={largeLimit}
-          playerWeight={50}
-          weightLimit={10000}
-          onCollect={mockOnCollect}
-          onSkip={mockOnSkip}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
+  it('calls onSkip when the skip link is clicked', () => {
+    render(<LootDialog endState={mockEndState} playerWeight={20} weightLimit={100} onCollect={onCollect} onSkip={onSkip} />)
+    fireEvent.click(screen.getByText(/skip — drop all items on tile/))
+    expect(onSkip).toHaveBeenCalled()
   })
 
-  describe('Quantity Edge Cases', () => {
-    it('handles items with zero quantity', () => {
-      const zeroQuantity = {
-        items_dropped: [
-          { name: 'Ghost Item', weight: 1, quantity: 0 },
-          { name: 'Real Item', weight: 1, quantity: 1 },
-        ],
-      }
-      expect(() => {
-        render(
-          <LootDialog
-            endState={zeroQuantity}
-            playerWeight={10}
-            weightLimit={100}
-            onCollect={mockOnCollect}
-            onSkip={mockOnSkip}
-          />
-        )
-      }).not.toThrow()
-    })
-
-    it('handles items with very large quantities', () => {
-      const largeQuantity = {
-        items_dropped: [
-          { name: 'Gold Coins', weight: 0.01, quantity: 10000 },
-        ],
-      }
-      render(
-        <LootDialog
-          endState={largeQuantity}
-          playerWeight={10}
-          weightLimit={200}
-          onCollect={mockOnCollect}
-          onSkip={mockOnSkip}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('handles single quantity items', () => {
-      const singleQuantity = {
-        items_dropped: [
-          { name: 'Unique Sword', weight: 3, quantity: 1 },
-        ],
-      }
-      render(
-        <LootDialog
-          endState={singleQuantity}
-          playerWeight={10}
-          weightLimit={100}
-          onCollect={mockOnCollect}
-          onSkip={mockOnSkip}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
+  it('shows the current, added, and total carry weight', () => {
+    render(<LootDialog endState={mockEndState} playerWeight={20} weightLimit={100} onCollect={onCollect} onSkip={onSkip} />)
+    expect(screen.getByText('20.0 / 100.0 lb')).toBeInTheDocument()
+    expect(screen.getByText('6.5 lb')).toBeInTheDocument()
+    expect(screen.getByText('26.5 lb')).toBeInTheDocument()
   })
 
-  describe('Item Type Variations', () => {
-    it('handles diverse item types', () => {
-      const diverseItems = {
-        items_dropped: [
-          { name: 'Weapon', type: 'Weapon', weight: 2, quantity: 1 },
-          { name: 'Armor', type: 'Armor', weight: 3, quantity: 1 },
-          { name: 'Consumable', type: 'Consumable', weight: 0.1, quantity: 5 },
-          { name: 'Key Item', type: 'Key', weight: 0, quantity: 1 },
-          { name: 'Quest Item', type: 'Quest', weight: 0.5, quantity: 1 },
-        ],
-      }
-      render(
-        <LootDialog
-          endState={diverseItems}
-          playerWeight={20}
-          weightLimit={100}
-          onCollect={mockOnCollect}
-          onSkip={mockOnSkip}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('handles items with special characters in names', () => {
-      const specialNames = {
-        items_dropped: [
-          { name: "Blade of 'Darkness'", weight: 2, quantity: 1 },
-          { name: 'Shield [+1]', weight: 3, quantity: 1 },
-          { name: 'Rope (10m)', weight: 1, quantity: 1 },
-        ],
-      }
-      render(
-        <LootDialog
-          endState={specialNames}
-          playerWeight={20}
-          weightLimit={100}
-          onCollect={mockOnCollect}
-          onSkip={mockOnSkip}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
+  it('sums weight across item quantity for the selected-weight total', () => {
+    const stacked = { items_dropped: [{ name: 'Gold Coin', weight: 0.1, quantity: 50 }] }
+    render(<LootDialog endState={stacked} playerWeight={10} weightLimit={100} onCollect={onCollect} onSkip={onSkip} />)
+    expect(screen.getByText('5.0 lb')).toBeInTheDocument()
+    expect(screen.getByText('15.0 lb')).toBeInTheDocument()
   })
 
-  describe('Rapid Interaction', () => {
-    it('handles rapid selection toggling', () => {
-      const { rerender } = render(
-        <LootDialog
-          endState={mockEndState}
-          playerWeight={45}
-          weightLimit={50}
-          onCollect={mockOnCollect}
-          onSkip={mockOnSkip}
-        />
-      )
-
-      for (let i = 0; i < 5; i++) {
-        expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-      }
-    })
-
-    it('handles rapid open/close cycles', () => {
-      const { rerender } = render(
-        <LootDialog
-          endState={mockEndState}
-          playerWeight={45}
-          weightLimit={50}
-          onCollect={mockOnCollect}
-          onSkip={mockOnSkip}
-        />
-      )
-
-      for (let i = 0; i < 3; i++) {
-        expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-      }
-    })
-  })
-
-  describe('Accessibility', () => {
-    it('renders with proper dialog structure', () => {
-      render(
-        <LootDialog
-          endState={mockEndState}
-          playerWeight={45}
-          weightLimit={50}
-          onCollect={mockOnCollect}
-          onSkip={mockOnSkip}
-        />
-      )
-      const dialog = screen.getByTestId('base-dialog')
-      expect(dialog).toBeInTheDocument()
-    })
-
-    it('maintains semantic structure with many items', () => {
-      const manyItems = {
-        items_dropped: Array.from({ length: 50 }, (_, i) => ({
-          name: `Item ${i}`,
-          weight: 1,
-          quantity: 1,
-        })),
-      }
-      render(
-        <LootDialog
-          endState={manyItems}
-          playerWeight={20}
-          weightLimit={100}
-          onCollect={mockOnCollect}
-          onSkip={mockOnSkip}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
+  it('treats missing playerWeight/weightLimit as 0 and 100', () => {
+    render(<LootDialog endState={mockEndState} onCollect={onCollect} onSkip={onSkip} />)
+    expect(screen.getByText('0.0 / 100.0 lb')).toBeInTheDocument()
   })
 })

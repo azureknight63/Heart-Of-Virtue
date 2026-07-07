@@ -33,7 +33,7 @@ describe('StatusEffectsIconPanel', () => {
     it('responds to hover events', () => {
         const { container } = render(<StatusEffectsIconPanel effects={mockEffects} />);
 
-        const burnIcon = screen.getByText('🔥').parentElement;
+        const burnIcon = screen.getByText('🔥');
 
         // Verify icon exists
         expect(burnIcon).toBeDefined();
@@ -169,10 +169,10 @@ describe('StatusEffectsIconPanel', () => {
             const { container } = render(<StatusEffectsIconPanel effects={mockEffects} />);
             const shield = screen.getByText('🛡️');
 
-            fireEvent.mouseEnter(shield.parentElement);
+            fireEvent.mouseEnter(shield);
             expect(shield).toBeDefined();
 
-            fireEvent.mouseLeave(shield.parentElement);
+            fireEvent.mouseLeave(shield);
             expect(shield).toBeDefined();
         });
 
@@ -181,8 +181,8 @@ describe('StatusEffectsIconPanel', () => {
             const icons = screen.getAllByText(/🔥|🛡️/);
 
             icons.forEach(icon => {
-                fireEvent.mouseEnter(icon.parentElement);
-                fireEvent.mouseLeave(icon.parentElement);
+                fireEvent.mouseEnter(icon);
+                fireEvent.mouseLeave(icon);
             });
 
             expect(screen.getByText('🔥')).toBeDefined();
@@ -192,7 +192,7 @@ describe('StatusEffectsIconPanel', () => {
             const { container, unmount } = render(<StatusEffectsIconPanel effects={mockEffects} />);
             const burnIcon = screen.getByText('🔥');
 
-            fireEvent.mouseEnter(burnIcon.parentElement);
+            fireEvent.mouseEnter(burnIcon);
             unmount();
 
             expect(container.firstChild).toBeNull();
@@ -262,6 +262,94 @@ describe('StatusEffectsIconPanel', () => {
             expect(() => {
                 render(<StatusEffectsIconPanel effects={incomplete} />);
             }).not.toThrow();
+        });
+    });
+
+    describe('Tooltip Content', () => {
+        it('shows the tooltip with name, description, and duration on hover', () => {
+            render(<StatusEffectsIconPanel effects={mockEffects} />);
+            const burnIcon = screen.getByText('🔥');
+
+            fireEvent.mouseEnter(burnIcon);
+
+            expect(screen.getByText('BURN')).toBeInTheDocument();
+            expect(screen.getByText('Taking fire damage over time.')).toBeInTheDocument();
+            expect(screen.getByText('3 beats remaining')).toBeInTheDocument();
+        });
+
+        it('hides the tooltip after mouse leave', () => {
+            render(<StatusEffectsIconPanel effects={mockEffects} />);
+            const burnIcon = screen.getByText('🔥');
+
+            fireEvent.mouseEnter(burnIcon);
+            expect(screen.getByText('BURN')).toBeInTheDocument();
+
+            fireEvent.mouseLeave(burnIcon);
+            expect(screen.queryByText('BURN')).not.toBeInTheDocument();
+        });
+
+        it('falls back to a default message when description is missing', () => {
+            const noDesc = [{ name: 'Mystery Effect', type: 'buff' }];
+            render(<StatusEffectsIconPanel effects={noDesc} />);
+            fireEvent.mouseEnter(screen.getByText('✨'));
+            expect(screen.getByText('No description available.')).toBeInTheDocument();
+        });
+
+        it('omits the duration line when duration_remaining is undefined', () => {
+            const noDuration = [{ name: 'Mystery Effect', type: 'buff', description: 'Something' }];
+            render(<StatusEffectsIconPanel effects={noDuration} />);
+            fireEvent.mouseEnter(screen.getByText('✨'));
+            expect(screen.queryByText(/beats remaining/)).not.toBeInTheDocument();
+        });
+
+        it('shows only the hovered effect\'s tooltip, not others', () => {
+            render(<StatusEffectsIconPanel effects={mockEffects} />);
+            fireEvent.mouseEnter(screen.getByText('🔥'));
+            expect(screen.getByText('BURN')).toBeInTheDocument();
+            expect(screen.queryByText('SHIELD')).not.toBeInTheDocument();
+        });
+
+        it('applies the debuff color to a debuff effect tooltip', () => {
+            const debuffs = [{ name: 'Weakness', type: 'debuff', description: 'Reduced damage', duration_remaining: 4 }];
+            render(<StatusEffectsIconPanel effects={debuffs} />);
+            fireEvent.mouseEnter(screen.getByText('🥀'));
+            expect(screen.getByText('WEAKNESS')).toBeInTheDocument();
+        });
+
+        it('renders a passive effect and an unrecognized-type effect without error', () => {
+            const mixed = [
+                { name: 'Vigilance', type: 'passive', description: 'Always watching', duration_remaining: 1 },
+                { name: 'Curious', type: 'strange-type', description: 'Unclassified', duration_remaining: 1 },
+            ]
+            render(<StatusEffectsIconPanel effects={mixed} />);
+            const icons = screen.getAllByText('✨');
+            fireEvent.mouseEnter(icons[0]);
+            expect(screen.getByText('VIGILANCE')).toBeInTheDocument();
+
+            fireEvent.mouseLeave(icons[0]);
+            fireEvent.mouseEnter(icons[1]);
+            expect(screen.getByText('CURIOUS')).toBeInTheDocument();
+        });
+
+        it('handles an effect with no type using the default color', () => {
+            const noType = [{ name: 'Blank', description: 'No type set', duration_remaining: 2 }]
+            render(<StatusEffectsIconPanel effects={noType} />);
+            fireEvent.mouseEnter(screen.getByText('✨'));
+            expect(screen.getByText('BLANK')).toBeInTheDocument();
+        });
+    });
+
+    describe('Vertical Layout', () => {
+        it('stacks icons in a column when vertical is true', () => {
+            const { container } = render(<StatusEffectsIconPanel effects={mockEffects} vertical />);
+            const wrapper = container.firstChild;
+            expect(wrapper.style.flexDirection).toBe('column');
+        });
+
+        it('lays out icons in a row by default', () => {
+            const { container } = render(<StatusEffectsIconPanel effects={mockEffects} />);
+            const wrapper = container.firstChild;
+            expect(wrapper.style.flexDirection).toBe('row');
         });
     });
 
