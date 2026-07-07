@@ -205,6 +205,45 @@ def begin_conversation(cast):
     _emit_control({"type": "conversation_begin", "cast": roster})
 
 
+def enter_op(speaker, side=None, emotion="neutral", transition="fade", name=None):
+    """Build a stage-enter op dict without emitting it.
+
+    Use this to construct the ``enter=`` argument to :func:`say` (attaching the
+    entrance to a spoken/thought beat) instead of hand-writing the dict literal.
+    For a standalone entrance not tied to a beat, call :func:`enter_character`,
+    which emits this same shape immediately.
+
+    :param side: ``"left"``/``"right"`` or ``None`` to defer to the party-rule
+        default resolved by the API layer.
+    :param transition: ``"fade"`` (default) or ``"instant"``.
+    """
+    return {
+        "id": speaker,
+        "name": name or speaker,
+        "side": side,
+        "emotion": _norm_emotion(emotion),
+        "transition": transition,
+    }
+
+
+def exit_op(speaker, transition="fade", span=None):
+    """Build a stage-exit op dict without emitting it.
+
+    Use this to construct the ``leave=`` argument to :func:`say` (attaching the
+    exit to a spoken/thought beat) instead of hand-writing the dict literal.
+    For a standalone exit not tied to a beat, call :func:`exit_character`, which
+    emits this same shape immediately.
+
+    :param transition: ``"fade"`` (default) or ``"instant"``.
+    :param span: optional number of subsequent advances over which a ``fade``
+        steps out; omit for a fixed-duration fade.
+    """
+    entry = {"id": speaker, "transition": transition}
+    if span is not None:
+        entry["span"] = span
+    return entry
+
+
 def enter_character(
     speaker, side=None, emotion="neutral", transition="fade", name=None
 ):
@@ -214,16 +253,7 @@ def enter_character(
         default resolved by the API layer.
     :param transition: ``"fade"`` (default) or ``"instant"``.
     """
-    _emit_control(
-        {
-            "type": "stage_enter",
-            "id": speaker,
-            "name": name or speaker,
-            "side": side,
-            "emotion": _norm_emotion(emotion),
-            "transition": transition,
-        }
-    )
+    _emit_control({"type": "stage_enter", **enter_op(speaker, side, emotion, transition, name)})
 
 
 def exit_character(speaker, transition="fade", span=None):
@@ -233,10 +263,7 @@ def exit_character(speaker, transition="fade", span=None):
     :param span: optional number of subsequent advances over which a ``fade``
         steps out; omit for a fixed-duration fade.
     """
-    entry = {"type": "stage_exit", "id": speaker, "transition": transition}
-    if span is not None:
-        entry["span"] = span
-    _emit_control(entry)
+    _emit_control({"type": "stage_exit", **exit_op(speaker, transition, span)})
 
 
 def end_conversation():

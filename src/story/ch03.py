@@ -7,6 +7,9 @@ from src.functions import print_slow
 from src.narration import narrate, say, begin_conversation
 import time
 
+# Recurring conversation cast, to avoid retyping the same tuple at every stage.
+_JEAN_MARA = [("Jean", "left", "neutral"), ("Mara", None, "neutral")]
+
 
 class GorranGestureEvent(Event):
     """
@@ -177,7 +180,7 @@ class MaraFirstContactEvent(Event):
             time.sleep(1)
             print_slow("She didn't look up.")
             time.sleep(0.5)
-            begin_conversation([("Jean", "left", "neutral"), ("Mara", "right", "neutral")])
+            begin_conversation(_JEAN_MARA)
             say("Crossing west?", "Mara", "neutral")
             time.sleep(0.5)
             print_slow(
@@ -354,7 +357,7 @@ class MaraObservationEvent(Event):
                 "was sorting."
             )
             time.sleep(1)
-            begin_conversation([("Jean", "left", "neutral"), ("Mara", "right", "neutral")])
+            begin_conversation(_JEAN_MARA)
             if has_mace:
                 print_slow(
                     "Her eyes tracked to Jean's mace for just a moment. Then back to her work."

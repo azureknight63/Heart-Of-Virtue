@@ -7,7 +7,19 @@ from src.functions import print_slow, await_input
 import time
 from src import items
 from src.story.effects import MemoryFlash
-from src.narration import narrate, say, begin_conversation, end_conversation
+from src.narration import (
+    narrate,
+    say,
+    begin_conversation,
+    end_conversation,
+    enter_op,
+    exit_op,
+)
+
+# Recurring conversation casts, to avoid retyping the same tuple at every stage.
+_JEAN_SOLO = [("Jean", "left", "neutral")]
+_JEAN_GORRAN_ALLY = [("Jean", "left", "neutral"), ("Gorran", None, "neutral")]
+_JEAN_VOTHA_KRR = [("Jean", "left", "neutral"), ("Votha Krr", None, "neutral")]
 
 
 class AfterDefeatingLurker(Event):
@@ -180,7 +192,7 @@ class Ch02GuideToCitadel(
         if self._stage == 3:
             self.needs_input = True
             self.input_type = "choice"
-            begin_conversation([("Jean", "left", "neutral"), ("Gorran", None, "neutral")])
+            begin_conversation(_JEAN_GORRAN_ALLY)
             narrate(
                 "Gorran turned to Jean, his expression serious. He gestured toward the Citadel, "
                 "indicating that this was where they needed to go. Jean nodded, understanding "
@@ -247,7 +259,7 @@ class Ch02GuideToCitadel(
         if self._stage == 4:
             self.needs_input = True
             self.input_type = "choice"
-            begin_conversation([("Jean", "left", "neutral"), ("Gorran", None, "neutral")])
+            begin_conversation(_JEAN_GORRAN_ALLY)
             narrate(
                 "Gorran led Jean to a large chamber at the heart of the Citadel where a group of "
                 "Grondite elders were gathered. They were seated on stone thrones, their faces "
@@ -272,12 +284,7 @@ class Ch02GuideToCitadel(
                 "You are a friend of Gorran. You are welcome here.",
                 "Elder",
                 "neutral",
-                enter={
-                    "id": "Elder",
-                    "side": "right",
-                    "emotion": "neutral",
-                    "transition": "fade",
-                },
+                enter=enter_op("Elder", side=None),
             )
             narrate(
                 "Jean nodded, grateful for the warm welcome. He could feel the weight of the "
@@ -290,7 +297,7 @@ class Ch02GuideToCitadel(
                 "Gorran came over and stood beside Jean, his massive frame casting a shadow over "
                 "the elder. The elder looked up at Gorran and spoke in a low, rumbling voice. "
                 "Gorran rumbled briefly in reply, then turned and strode out of the chamber.",
-                exit=[{"id": "Gorran", "transition": "fade", "span": 2}],
+                exit=[exit_op("Gorran", span=2)],
             )
             narrate("The elder turned back to Jean, his expression serious.")
             narrate(
@@ -308,13 +315,8 @@ class Ch02GuideToCitadel(
                 "much weight they give that title.",
                 "Votha Krr",
                 "neutral",
-                enter={
-                    "id": "Votha Krr",
-                    "side": "right",
-                    "emotion": "neutral",
-                    "transition": "instant",
-                },
-                leave={"id": "Elder", "transition": "instant"},
+                enter=enter_op("Votha Krr", side=None, transition="instant"),
+                leave=exit_op("Elder", transition="instant"),
             )
             narrate(
                 "With that, a rolling rumble of laughter erupted from the elder's mouth like the "
@@ -368,7 +370,7 @@ class Ch02GuideToCitadel(
         if self._stage == 5:
             self.needs_input = True
             self.input_type = "choice"
-            begin_conversation([("Jean", "left", "neutral"), ("Votha Krr", "right", "neutral")])
+            begin_conversation(_JEAN_VOTHA_KRR)
             narrate(
                 "Jean paused. He wasn't sure how to answer — not any of those questions. He took "
                 "a deep breath, trying to gather his thoughts."
@@ -460,7 +462,7 @@ class Ch02GuideToCitadel(
             self.input_prompt = ""
             self.input_options = [{"value": "continue", "label": "Continue"}]
 
-            begin_conversation([("Jean", "left", "neutral"), ("Votha Krr", "right", "neutral")])
+            begin_conversation(_JEAN_VOTHA_KRR)
             if _choice == "a":
                 narrate(
                     "Votha Krr was quiet a moment. When he spoke again, his voice was the same — "
@@ -556,7 +558,7 @@ class Ch02GuideToCitadel(
 
             self.needs_input = True
             self.input_type = "choice"
-            begin_conversation([("Jean", "left", "neutral"), ("Votha Krr", "right", "neutral")])
+            begin_conversation(_JEAN_VOTHA_KRR)
             narrate(
                 "Votha Krr waved a hand, and a Grondite attendant stepped forward, carrying a "
                 "small bundle of supplies. The attendant handed the bundle to Jean, who took it "
@@ -635,7 +637,7 @@ class AfterDefeatingKingSlime(Event):
         if self.player.universe.story.get("king_slime_defeated"):
             return
         time.sleep(1)
-        begin_conversation([("Jean", "left", "neutral")])
+        begin_conversation(_JEAN_SOLO)
         print_slow("The churning stilled. A deep, resonant silence settled over the cavern.")
         time.sleep(1)
         print_slow(
@@ -1231,7 +1233,7 @@ class AfterKingSlimeReturn(Event):
         if self._stage == 1:
             self.needs_input = True
             self.input_type = "choice"
-            begin_conversation([("Jean", "left", "neutral"), ("Votha Krr", "right", "neutral")])
+            begin_conversation(_JEAN_VOTHA_KRR)
             narrate(
                 "Votha Krr rose from his throne as Jean entered. His deep-set eyes took in the "
                 "bleeding finger, the fragment in Jean's hand, and Jean's expression — all at once."
@@ -1265,7 +1267,7 @@ class AfterKingSlimeReturn(Event):
             if _frag_choice not in ("a", "b", "c"):
                 _frag_choice = "a"
 
-            begin_conversation([("Jean", "left", "neutral"), ("Votha Krr", "right", "neutral")])
+            begin_conversation(_JEAN_VOTHA_KRR)
             if _frag_choice == "a":
                 narrate("Jean held it out. Votha took it from his hand.")
                 self.description = "Jean held it out. Votha took it from his hand."
@@ -1308,7 +1310,7 @@ class AfterKingSlimeReturn(Event):
 
         # Stage 3 — Votha consumes the fragment
         if self._stage == 3:
-            begin_conversation([("Jean", "left", "neutral"), ("Votha Krr", "right", "neutral")])
+            begin_conversation(_JEAN_VOTHA_KRR)
             narrate("Votha regarded the fragment for a single moment — then placed it in his mouth.")
             narrate(
                 "A soft, contented rumble escaped him. The fragment was gone.",
@@ -1327,7 +1329,7 @@ class AfterKingSlimeReturn(Event):
 
         # Stage 4 — Votha acknowledges Jean's completion and his return
         if self._stage == 4:
-            begin_conversation([("Jean", "left", "neutral"), ("Votha Krr", "right", "neutral")])
+            begin_conversation(_JEAN_VOTHA_KRR)
             say(
                 "The pools are clean. You have done what we could not do alone, little one.",
                 "Votha Krr",
@@ -1355,7 +1357,7 @@ class AfterKingSlimeReturn(Event):
 
         # Stage 5 — Votha's philosophical directive
         if self._stage == 5:
-            begin_conversation([("Jean", "left", "neutral"), ("Votha Krr", "right", "neutral")])
+            begin_conversation(_JEAN_VOTHA_KRR)
             say(
                 "To mend what is broken, one must first understand the cracks. Go now. Seek "
                 "the Echoing Caves to the west, beyond the river. There, the earth sings the "
@@ -1380,7 +1382,7 @@ class AfterKingSlimeReturn(Event):
 
         # Stage 6 — Votha's farewell gesture
         if self._stage == 6:
-            begin_conversation([("Jean", "left", "neutral"), ("Votha Krr", "right", "neutral")])
+            begin_conversation(_JEAN_VOTHA_KRR)
             narrate(
                 "He did not elaborate. When Jean opened his mouth, Votha Krr's only answer "
                 "was to press two fingers briefly to his own chest — over the place a human "

@@ -2,7 +2,15 @@
 Chapter 01 events
 """
 
-from src.narration import cprint, colored, narrate, say, begin_conversation
+from src.narration import (
+    cprint,
+    colored,
+    narrate,
+    say,
+    begin_conversation,
+    enter_op,
+    exit_op,
+)
 import time
 import random
 
@@ -10,6 +18,9 @@ from events import Event
 import objects as objects
 from functions import await_input
 from story.effects import MemoryFlash
+
+# Recurring conversation casts, to avoid retyping the same tuple at every stage.
+_JEAN_SOLO = [("Jean", "left", "neutral")]
 
 SKULL_ART = '''
                .o oOOOOOOOo                                            OOOo
@@ -785,7 +796,7 @@ class AfterTheRumblerFight(Event):
         # Speaker id is "Rock-Man" (unnamed) until the naming beat below reveals
         # "Gorran" — matches the in-fiction reveal instead of leaking the name
         # onto the portrait early.
-        begin_conversation([("Jean", "left", "neutral"), ("Rock-Man", "right", "neutral")])
+        begin_conversation([("Jean", "left", "neutral"), ("Rock-Man", None, "neutral")])
         narrate("The Rock-Man lowers his club to the ground and turns toward Jean.")
         time.sleep(3)
         say(
@@ -807,13 +818,8 @@ class AfterTheRumblerFight(Event):
             "Mmmmm... Go-rra-nnnnnn...",
             "Gorran",
             "neutral",
-            enter={
-                "id": "Gorran",
-                "side": "right",
-                "emotion": "neutral",
-                "transition": "instant",
-            },
-            leave={"id": "Rock-Man", "transition": "instant"},
+            enter=enter_op("Gorran", side=None, transition="instant"),
+            leave=exit_op("Rock-Man", transition="instant"),
         )
         say(
             "Go... rran? Well, thank you, Gorran. But what were those things? "
@@ -866,7 +872,7 @@ class AfterGorranIntro(Event):
             "much too small for him to\npass through. Gorran waves an arm toward it and, miraculously, "
             "the opening widens with a loud rumble. Gorran walks through."
         )
-        begin_conversation([("Jean", "left", "neutral")])
+        begin_conversation(_JEAN_SOLO)
         narrate("Jean pauses at the threshold.")
         say(
             "A faint current of air presses against his face — cooler than the chamber, carrying "
@@ -1033,7 +1039,7 @@ class Ch01GorranFirstWord(Event):
             return
 
         time.sleep(0.5)
-        begin_conversation([("Jean", "left", "neutral")])
+        begin_conversation(_JEAN_SOLO)
         cprint(
             "The stone here has been moved with intention. Not a collapse — something large "
             "passed through repeatedly and the passage rearranged itself around that fact. "
@@ -1053,12 +1059,7 @@ class Ch01GorranFirstWord(Event):
             "Stop.",
             "Gorran",
             "neutral",
-            enter={
-                "id": "Gorran",
-                "side": "right",
-                "emotion": "neutral",
-                "transition": "fade",
-            },
+            enter=enter_op("Gorran", side=None),
         )
 
         time.sleep(2.5)
