@@ -266,4 +266,34 @@ describe('AudioContext', () => {
         warnSpy.mockRestore();
         global.Audio = originalAudio;
     });
+
+    it('removes an SFX instance from the active set once playback ends', () => {
+        const wrapper = ({ children }) => <AudioProvider>{children}</AudioProvider>;
+        const { result } = renderHook(() => useAudio(), { wrapper });
+
+        act(() => { result.current.playSFX('click'); });
+        const sfxInstance = global.__audioInstances[global.__audioInstances.length - 1];
+
+        expect(typeof sfxInstance.onended).toBe('function');
+        expect(() => sfxInstance.onended()).not.toThrow();
+    });
+
+    it('exposes no-op defaults when used outside an AudioProvider', () => {
+        const { result } = renderHook(() => useAudio());
+
+        expect(result.current.musicVolume).toBe(0.5);
+        expect(result.current.sfxVolume).toBe(0.5);
+        expect(result.current.isMusicMuted).toBe(false);
+        expect(result.current.isSfxMuted).toBe(false);
+        expect(result.current.currentBGM).toBeNull();
+
+        expect(() => result.current.playBGM('adventure')).not.toThrow();
+        expect(() => result.current.stopBGM()).not.toThrow();
+        expect(() => result.current.playSFX('click')).not.toThrow();
+        expect(() => result.current.playSting('memory_flash')).not.toThrow();
+        expect(() => result.current.setMusicVolume(0.2)).not.toThrow();
+        expect(() => result.current.setSfxVolume(0.2)).not.toThrow();
+        expect(() => result.current.setIsMusicMuted(true)).not.toThrow();
+        expect(() => result.current.setIsSfxMuted(true)).not.toThrow();
+    });
 });
