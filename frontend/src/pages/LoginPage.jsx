@@ -88,13 +88,16 @@ export default function LoginPage() {
   const handleSubmit = async (e) => {
     e.preventDefault()
     setError('')
+
+    if (isRegistering && password.length < 16) {
+      setError('Password must be at least 16 characters long for cloud security.')
+      return
+    }
+
     setLoading(true)
 
     try {
       if (isRegistering) {
-        if (password.length < 16) {
-          throw new Error('Password must be at least 16 characters long for cloud security.')
-        }
         await register(username, password, email)
       } else {
         await login(username, password)

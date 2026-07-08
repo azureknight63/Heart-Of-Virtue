@@ -122,4 +122,164 @@ describe('LoginPage', () => {
             expect(mockNavigate).toHaveBeenCalledWith('/menu');
         });
     });
+
+    it('rejects registration with a password under 16 characters without calling the API', async () => {
+        renderLoginPage();
+        fireEvent.click(screen.getByText(/Create Account/i));
+        fireEvent.change(screen.getByLabelText(/Username/i), { target: { value: 'newuser' } });
+        fireEvent.change(screen.getByLabelText(/New Password/i), { target: { value: 'short' } });
+        fireEvent.change(screen.getByLabelText(/Email Address/i), { target: { value: 'test@example.com' } });
+        fireEvent.click(screen.getByRole('button', { name: /Create Account/i }));
+
+        await waitFor(() => {
+            expect(screen.getByText(/Password must be at least 16 characters long/i)).toBeInTheDocument();
+        });
+        expect(mockRegister).not.toHaveBeenCalled();
+    });
+
+    it('toggles from register mode back to login mode', () => {
+        renderLoginPage();
+        fireEvent.click(screen.getByText(/Create Account/i));
+        expect(screen.getByRole('button', { name: /Create Account/i })).toBeInTheDocument();
+
+        fireEvent.click(screen.getByText(/Back to Login/i));
+        expect(screen.getByRole('button', { name: /Enter Game/i })).toBeInTheDocument();
+    });
+
+    it('shows a network-unreachable message when the login request has no response', async () => {
+        mockLogin.mockRejectedValue(new Error('Network Error'));
+        renderLoginPage();
+
+        fireEvent.change(screen.getByLabelText(/Username/i), { target: { value: 'testuser' } });
+        fireEvent.change(screen.getByLabelText(/Password/i), { target: { value: 'password123' } });
+        fireEvent.click(screen.getByRole('button', { name: /Enter Game/i }));
+
+        await waitFor(() => {
+            expect(screen.getByText(/The game server is unreachable/i)).toBeInTheDocument();
+        });
+    });
+
+    it('shows a network-unreachable message on a 500-level server error', async () => {
+        mockLogin.mockRejectedValue({ response: { status: 503 } });
+        renderLoginPage();
+
+        fireEvent.change(screen.getByLabelText(/Username/i), { target: { value: 'testuser' } });
+        fireEvent.change(screen.getByLabelText(/Password/i), { target: { value: 'password123' } });
+        fireEvent.click(screen.getByRole('button', { name: /Enter Game/i }));
+
+        await waitFor(() => {
+            expect(screen.getByText(/The game server is unreachable/i)).toBeInTheDocument();
+        });
+    });
+
+    it('shows the server-provided message for other 4xx errors', async () => {
+        mockLogin.mockRejectedValue({ response: { status: 400, data: { message: 'Username is taken' } } });
+        renderLoginPage();
+
+        fireEvent.change(screen.getByLabelText(/Username/i), { target: { value: 'testuser' } });
+        fireEvent.change(screen.getByLabelText(/Password/i), { target: { value: 'password123' } });
+        fireEvent.click(screen.getByRole('button', { name: /Enter Game/i }));
+
+        await waitFor(() => {
+            expect(screen.getByText('Username is taken')).toBeInTheDocument();
+        });
+    });
+
+    it('falls back to a generic message when a 4xx error has no server message', async () => {
+        mockLogin.mockRejectedValue({ response: { status: 400 } });
+        renderLoginPage();
+
+        fireEvent.change(screen.getByLabelText(/Username/i), { target: { value: 'testuser' } });
+        fireEvent.change(screen.getByLabelText(/Password/i), { target: { value: 'password123' } });
+        fireEvent.click(screen.getByRole('button', { name: /Enter Game/i }));
+
+        await waitFor(() => {
+            expect(screen.getByText('Authentication failed. Please try again.')).toBeInTheDocument();
+        });
+    });
+
+    it('shows a processing state on the submit button while logging in', async () => {
+        let resolveLogin;
+        mockLogin.mockReturnValue(new Promise((resolve) => { resolveLogin = resolve; }));
+        renderLoginPage();
+
+        fireEvent.change(screen.getByLabelText(/Username/i), { target: { value: 'testuser' } });
+        fireEvent.change(screen.getByLabelText(/Password/i), { target: { value: 'password123' } });
+        fireEvent.click(screen.getByRole('button', { name: /Enter Game/i }));
+
+        expect(screen.getByText('Processing...')).toBeInTheDocument();
+        await waitFor(() => resolveLogin({ success: true }));
+    });
+
+    it('navigates to the landing page via the back-to-home link', () => {
+        renderLoginPage();
+        fireEvent.click(screen.getByText(/Back to home/i));
+        expect(mockNavigate).toHaveBeenCalledWith('/landing');
+    });
+
+    it('clears a prior error when switching from login to register', async () => {
+        mockLogin.mockRejectedValue({ response: { status: 401 } });
+        renderLoginPage();
+
+        fireEvent.change(screen.getByLabelText(/Username/i), { target: { value: 'testuser' } });
+        fireEvent.change(screen.getByLabelText(/Password/i), { target: { value: 'wrong' } });
+        fireEvent.click(screen.getByRole('button', { name: /Enter Game/i }));
+        await waitFor(() => {
+            expect(screen.getByText(/Invalid username or password/i)).toBeInTheDocument();
+        });
+
+        fireEvent.click(screen.getByText(/Create Account/i));
+        expect(screen.queryByText(/Invalid username or password/i)).not.toBeInTheDocument();
+    });
+});
+
+describe('LoginPage embers canvas effect', () => {
+    let rafCallbacks;
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        useAuth.mockReturnValue({ login: vi.fn(), register: vi.fn() });
+
+        HTMLCanvasElement.prototype.getContext = vi.fn(() => ({
+            fillStyle: '',
+            clearRect: vi.fn(),
+            beginPath: vi.fn(),
+            arc: vi.fn(),
+            fill: vi.fn(),
+            scale: vi.fn(),
+        }));
+
+        rafCallbacks = [];
+        global.requestAnimationFrame = vi.fn((cb) => {
+            rafCallbacks.push(cb);
+            return rafCallbacks.length;
+        });
+        global.cancelAnimationFrame = vi.fn();
+    });
+
+    const renderLoginPage = () => render(<MemoryRouter><LoginPage /></MemoryRouter>);
+
+    it('starts the ember particle animation and ticks it forward', () => {
+        renderLoginPage();
+        expect(global.requestAnimationFrame).toHaveBeenCalled();
+
+        const tick = rafCallbacks[0];
+        expect(() => tick()).not.toThrow();
+    });
+
+    it('resizes the embers canvas on window resize', () => {
+        renderLoginPage();
+        expect(() => fireEvent(window, new Event('resize'))).not.toThrow();
+    });
+
+    it('stops the animation and removes the resize listener on unmount', () => {
+        const { unmount } = renderLoginPage();
+        unmount();
+        expect(global.cancelAnimationFrame).toHaveBeenCalled();
+    });
+
+    it('does nothing when the canvas has no 2D context available', () => {
+        HTMLCanvasElement.prototype.getContext = vi.fn(() => null);
+        expect(() => renderLoginPage()).not.toThrow();
+    });
 });
