@@ -258,4 +258,81 @@ describe('PartyPanel', () => {
     expect(screen.getByText(/PARTY \(2\)/)).toBeInTheDocument();
   });
 
+  it('applies and clears hover styling on the USE ITEM button', () => {
+    const player = {
+      party_members: [{ id: 1, name: 'Gorran' }],
+      inventory: [{ id: 'i1', name: 'Potion', can_use: true }],
+    };
+    render(<PartyPanel player={player} onClose={mockOnClose} />);
+    const useItemButton = screen.getByText('💊 USE ITEM');
+
+    fireEvent.mouseEnter(useItemButton);
+    expect(useItemButton.style.backgroundColor).toBe('rgb(0, 102, 153)');
+
+    fireEvent.mouseLeave(useItemButton);
+    expect(useItemButton.style.backgroundColor).toBe('rgb(0, 68, 102)');
+  });
+
+  it('does not apply hover styling to a disabled USE ITEM button', async () => {
+    let resolvePost;
+    apiClient.post.mockReturnValue(new Promise((resolve) => { resolvePost = resolve; }));
+    const player = {
+      party_members: [{ id: 1, name: 'Gorran' }],
+      inventory: [{ id: 'i1', name: 'Potion', can_use: true }],
+    };
+    render(<PartyPanel player={player} onClose={mockOnClose} />);
+    fireEvent.click(screen.getByText('💊 USE ITEM'));
+    fireEvent.click(screen.getByText('Potion'));
+
+    const useItemButton = screen.getByText('💊 USE ITEM');
+    fireEvent.mouseEnter(useItemButton);
+    expect(useItemButton.style.backgroundColor).toBe('rgb(0, 68, 102)');
+
+    await act(async () => resolvePost({ data: { success: true, message: '' } }));
+  });
+
+  it('applies and clears hover styling on a consumable option', () => {
+    const player = {
+      party_members: [{ id: 1, name: 'Gorran' }],
+      inventory: [{ id: 'i1', name: 'Potion', can_use: true }],
+    };
+    render(<PartyPanel player={player} onClose={mockOnClose} />);
+    fireEvent.click(screen.getByText('💊 USE ITEM'));
+    const potionButton = screen.getByText('Potion');
+
+    fireEvent.mouseEnter(potionButton);
+    expect(potionButton.style.backgroundColor).toBe('rgba(0, 60, 100, 0.9)');
+
+    fireEvent.mouseLeave(potionButton);
+    expect(potionButton.style.backgroundColor).toBe('rgba(10, 30, 50, 0.9)');
+  });
+
+  it('does not apply hover styling to a disabled consumable option', async () => {
+    let resolvePost;
+    apiClient.post.mockReturnValue(new Promise((resolve) => { resolvePost = resolve; }));
+    const player = {
+      party_members: [{ id: 1, name: 'Gorran' }],
+      inventory: [{ id: 'i1', name: 'Potion', can_use: true }],
+    };
+    render(<PartyPanel player={player} onClose={mockOnClose} />);
+    fireEvent.click(screen.getByText('💊 USE ITEM'));
+    const potionButton = screen.getByText('Potion');
+    fireEvent.click(potionButton);
+
+    fireEvent.mouseEnter(potionButton);
+    expect(potionButton.style.backgroundColor).toBe('rgba(10, 30, 50, 0.9)');
+
+    await act(async () => resolvePost({ data: { success: true, message: '' } }));
+  });
+
+  it('applies and clears hover styling on the DISMISS button', () => {
+    render(<PartyPanel player={{ party_members: [] }} onClose={mockOnClose} />);
+    const dismissButton = screen.getByText('DISMISS');
+
+    fireEvent.mouseEnter(dismissButton);
+    expect(dismissButton.style.color).toBe('rgb(0, 0, 0)');
+
+    fireEvent.mouseLeave(dismissButton);
+    expect(dismissButton.style.color).toBe('rgb(255, 170, 0)');
+  });
 });
