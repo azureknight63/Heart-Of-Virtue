@@ -4,10 +4,20 @@ import { MemoryRouter } from 'react-router-dom';
 import AccountDialog from './AccountDialog';
 import { useAuth } from '../hooks/useApi';
 
+const mockNavigate = vi.fn();
+
 // Mock useAuth
 vi.mock('../hooks/useApi', () => ({
   useAuth: vi.fn()
 }));
+
+vi.mock('react-router-dom', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    useNavigate: () => mockNavigate,
+  };
+});
 
 describe('AccountDialog', () => {
   const mockLogout = vi.fn();
@@ -93,6 +103,14 @@ describe('AccountDialog', () => {
     const dialogContent = screen.getByText('⚔️ Account Details').parentElement;
     fireEvent.click(dialogContent);
     expect(mockOnClose).not.toHaveBeenCalled();
+  });
+
+  it('navigates to the main menu and closes when Main Menu is clicked', () => {
+    render(<MemoryRouter><AccountDialog player={mockPlayer} onClose={mockOnClose} /></MemoryRouter>);
+    fireEvent.click(screen.getByText('Main Menu'));
+
+    expect(mockNavigate).toHaveBeenCalledWith('/menu');
+    expect(mockOnClose).toHaveBeenCalled();
   });
 
 });

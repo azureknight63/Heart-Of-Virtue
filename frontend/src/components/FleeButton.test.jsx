@@ -75,4 +75,15 @@ describe('FleeButton', () => {
     const btn = container.querySelector('[data-testid="flee-btn"]')
     expect(btn.style.fontSize).toBe('11px')
   })
+
+  it('applies and clears hover styling on the idle flee button', () => {
+    render(<FleeButton onFlee={vi.fn()} />)
+    const btn = screen.getByTestId('flee-btn')
+
+    fireEvent.mouseEnter(btn)
+    expect(btn.style.background).toBe('rgba(255, 136, 0, 0.133)')
+
+    fireEvent.mouseLeave(btn)
+    expect(btn.style.background).toBe('rgb(10, 10, 10)')
+  })
 })
