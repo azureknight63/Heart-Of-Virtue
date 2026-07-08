@@ -275,6 +275,36 @@ describe('Inventory', () => {
     })
   })
 
+  describe('Scroll fade indicators', () => {
+    it('shows both fade indicators when scrolled to the middle of a long list', () => {
+      const items = Array.from({ length: 20 }, (_, i) => ({ name: `Item ${i}`, quantity: 1 }))
+      const { getByTestId } = render(<Inventory items={items} onClose={mockOnClose} />)
+      const scrollEl = getByTestId('inventory-scroll')
+
+      Object.defineProperty(scrollEl, 'scrollTop', { value: 50, configurable: true })
+      Object.defineProperty(scrollEl, 'clientHeight', { value: 100, configurable: true })
+      Object.defineProperty(scrollEl, 'scrollHeight', { value: 300, configurable: true })
+      fireEvent.scroll(scrollEl)
+
+      expect(screen.getByText('▲ scroll ▲')).toBeInTheDocument()
+      expect(screen.getByText('▼ scroll ▼')).toBeInTheDocument()
+    })
+
+    it('shows neither fade indicator when the list fits entirely in view', () => {
+      const items = [{ name: 'Single Item', quantity: 1 }]
+      const { getByTestId } = render(<Inventory items={items} onClose={mockOnClose} />)
+      const scrollEl = getByTestId('inventory-scroll')
+
+      Object.defineProperty(scrollEl, 'scrollTop', { value: 0, configurable: true })
+      Object.defineProperty(scrollEl, 'clientHeight', { value: 100, configurable: true })
+      Object.defineProperty(scrollEl, 'scrollHeight', { value: 100, configurable: true })
+      fireEvent.scroll(scrollEl)
+
+      expect(screen.queryByText('▲ scroll ▲')).not.toBeInTheDocument()
+      expect(screen.queryByText('▼ scroll ▼')).not.toBeInTheDocument()
+    })
+  })
+
   describe('Accessibility', () => {
     it('close button is keyboard accessible', () => {
       render(<Inventory items={[]} onClose={mockOnClose} />)
