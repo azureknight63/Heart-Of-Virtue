@@ -719,4 +719,69 @@ describe('LeftPanel', () => {
             expect(mockPlaySting).toHaveBeenCalledWith('fanfare');
         }, { timeout: 5000 });
     }, 10000);
+
+    it('closes the Stats, Skills, Actions, and Interact panels via their onClose handlers', () => {
+        render(<LeftPanel player={mockPlayer} location={mockLocation} mode="exploration" />);
+
+        fireEvent.click(screen.getByText('Attributes Btn'));
+        expect(screen.getByTestId('stats-panel')).toBeInTheDocument();
+        fireEvent.click(screen.getByText('Close Stats'));
+        expect(screen.queryByTestId('stats-panel')).not.toBeInTheDocument();
+
+        fireEvent.click(screen.getByText('Skills Btn'));
+        expect(screen.getByTestId('skills-panel')).toBeInTheDocument();
+        fireEvent.click(screen.getByText('Close Skills'));
+        expect(screen.queryByTestId('skills-panel')).not.toBeInTheDocument();
+
+        fireEvent.click(screen.getByText('Actions Btn'));
+        expect(screen.getByTestId('actions-panel')).toBeInTheDocument();
+        fireEvent.click(screen.getByText('Close Actions'));
+        expect(screen.queryByTestId('actions-panel')).not.toBeInTheDocument();
+
+        fireEvent.click(screen.getByText('Interact Btn'));
+        expect(screen.getByTestId('interact-panel')).toBeInTheDocument();
+        fireEvent.click(screen.getByText('Close Interact'));
+        expect(screen.queryByTestId('interact-panel')).not.toBeInTheDocument();
+    });
+
+    it('opens the Defensive and Special combat move panels', () => {
+        const combat = {
+            log: [],
+            awaiting_input: true,
+            input_type: 'move_selection',
+            available_options: [
+                { id: 1, name: 'Dodge', category: 'Defensive', available: true },
+                { id: 2, name: 'Insight', category: 'Special', available: true },
+            ],
+            beat_states: [{ enemies: [] }],
+        };
+        render(<LeftPanel player={mockPlayer} location={mockLocation} mode="combat" combat={combat} />);
+
+        fireEvent.click(screen.getByText('Defensive Btn'));
+        expect(screen.getByTestId('combat-move-panel')).toBeInTheDocument();
+        expect(screen.getByText('Defensive')).toBeInTheDocument();
+
+        fireEvent.click(screen.getByText('Close Moves'));
+        fireEvent.click(screen.getByText('Special Btn'));
+        expect(screen.getByText('Special')).toBeInTheDocument();
+    });
+
+    it('applies and clears hover styling on the header Audio/Feedback/Account buttons', () => {
+        render(<LeftPanel player={mockPlayer} location={mockLocation} mode="exploration" />);
+
+        const audioBtn = screen.getByTitle('Audio Settings');
+        fireEvent.mouseEnter(audioBtn);
+        expect(audioBtn.style.backgroundColor).not.toBe('');
+        fireEvent.mouseLeave(audioBtn);
+
+        const feedbackBtn = screen.getByTitle('Send Feedback');
+        fireEvent.mouseEnter(feedbackBtn);
+        fireEvent.mouseLeave(feedbackBtn);
+
+        const accountBtn = screen.getByText('Account');
+        fireEvent.mouseEnter(accountBtn);
+        fireEvent.mouseLeave(accountBtn);
+
+        expect(screen.getByTitle('Audio Settings')).toBeInTheDocument();
+    });
 });
