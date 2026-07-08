@@ -327,9 +327,147 @@ describe('ShopDialog', () => {
     expect(screen.getByText(/Out of stock now\./)).toBeInTheDocument()
   })
 
+  it('shows "Out of stock." when stock/buyback_items are absent entirely from shopState', () => {
+    useShop.mockReturnValue(makeShopState({
+      shopState: { stock: undefined, buyback_items: undefined },
+    }))
+    render(<ShopDialog npcId="1" npcName="Jambo" player={{}} onClose={onClose} />)
+    expect(screen.getByText('Out of stock.')).toBeInTheDocument()
+  })
+
+  it('falls back to player-prop gold/weight when shopState exists but omits those fields', () => {
+    useShop.mockReturnValue(makeShopState({
+      shopState: { player_gold: undefined, player_weight_current: undefined, player_weight_max: undefined },
+    }))
+    render(
+      <ShopDialog
+        npcId="1"
+        npcName="Jambo"
+        player={{ gold: 77, weight_current: 3, weight_tolerance: 90 }}
+        onClose={onClose}
+      />
+    )
+    expect(screen.getByText(/💰\s*77/)).toBeInTheDocument()
+  })
+
+  it('treats a missing price/offer/count as 0/0/1 defaults', () => {
+    useShop.mockReturnValue(makeShopState({
+      shopState: {
+        stock: [{ id: 'free-1', name: 'Freebie', weight: 1, is_stackable: false }],
+      },
+    }))
+    render(<ShopDialog npcId="1" npcName="Jambo" player={{}} onClose={onClose} />)
+    fireEvent.click(screen.getByText('Freebie'))
+    expect(screen.getByText(/Buy · 0 💰/)).toBeInTheDocument()
+  })
+
+  it('falls back to the raw item count for maxQty when the price is negative (corrupted data)', () => {
+    useShop.mockReturnValue(makeShopState({
+      shopState: {
+        stock: [{ id: 'weird-1', name: 'Cursed Coin', price: -5, weight: 0.1, count: 3, is_stackable: true }],
+      },
+    }))
+    render(<ShopDialog npcId="1" npcName="Jambo" player={{}} onClose={onClose} />)
+    fireEvent.click(screen.getByText('Cursed Coin'))
+    fireEvent.click(screen.getByText('+'))
+    fireEvent.click(screen.getByText('+'))
+    expect(screen.getByText(/Buy 3 · -15 💰/)).toBeInTheDocument()
+  })
+
+  it('falls back to the raw item count for maxQty on sell when the offer is negative (corrupted data)', () => {
+    useShop.mockReturnValue(makeShopState({
+      sellInventory: [{ id: 'weird-sell', name: 'Broken Charm', offer: -2, weight: 0.1, count: 3, is_stackable: true }],
+    }))
+    render(<ShopDialog npcId="1" npcName="Jambo" player={{}} onClose={onClose} />)
+    fireEvent.click(screen.getByText('⬆ Sell'))
+    fireEvent.click(screen.getByText('Broken Charm'))
+    fireEvent.click(screen.getByText('+'))
+    fireEvent.click(screen.getByText('+'))
+    expect(screen.getByText(/Sell 3 · \+-6 💰/)).toBeInTheDocument()
+  })
+
+  it('shows the running total and multi-quantity Sell label for a stackable sell item', () => {
+    useShop.mockReturnValue(makeShopState({
+      sellInventory: [{ id: 'sell-stack', name: 'Bundle of Herbs', offer: 4, weight: 0.2, count: 5, is_stackable: true }],
+    }))
+    render(<ShopDialog npcId="1" npcName="Jambo" player={{}} onClose={onClose} />)
+    fireEvent.click(screen.getByText('⬆ Sell'))
+    fireEvent.click(screen.getByText('Bundle of Herbs'))
+    fireEvent.click(screen.getByText('+'))
+    expect(screen.getByText('= 8 💰')).toBeInTheDocument()
+    expect(screen.getByText(/Sell 2 · \+8 💰/)).toBeInTheDocument()
+  })
+
   it('renders in mobile layout without crashing', () => {
     render(<ShopDialog npcId="1" npcName="Jambo" player={{}} onClose={onClose} isMobile />)
     fireEvent.click(screen.getByText('Iron Sword'))
     expect(screen.getByText(/Buy · 100 💰/)).toBeInTheDocument()
+  })
+
+  it('renders the mobile-sized quantity picker for a stackable item', () => {
+    useShop.mockReturnValue(makeShopState({
+      shopState: {
+        stock: [{ id: 'stackable-1', name: 'Torch', price: 10, weight: 0.5, count: 5, is_stackable: true }],
+      },
+    }))
+    render(<ShopDialog npcId="1" npcName="Jambo" player={{}} onClose={onClose} isMobile />)
+    fireEvent.click(screen.getByText('Torch'))
+    fireEvent.click(screen.getByText('+'))
+    expect(screen.getByText(/Buy 2 · 20 💰/)).toBeInTheDocument()
+  })
+
+  it('defaults gold to 0 when it is missing from both shopState and the player prop', () => {
+    useShop.mockReturnValue(makeShopState({ shopState: { player_gold: undefined } }))
+    render(<ShopDialog npcId="1" npcName="Jambo" player={{}} onClose={onClose} />)
+    expect(screen.getByText(/💰\s*0/)).toBeInTheDocument()
+  })
+
+  it('does not color the weight bar red/orange when max carry weight is 0', () => {
+    useShop.mockReturnValue(makeShopState({
+      shopState: { player_weight_max: 0 },
+    }))
+    expect(() =>
+      render(<ShopDialog npcId="1" npcName="Jambo" player={{}} onClose={onClose} />)
+    ).not.toThrow()
+  })
+
+  it('uses the secondary (mid) weight-bar color between 75% and 90% capacity', () => {
+    useShop.mockReturnValue(makeShopState({
+      shopState: { player_weight_current: 80, player_weight_max: 100 },
+    }))
+    expect(() =>
+      render(<ShopDialog npcId="1" npcName="Jambo" player={{}} onClose={onClose} />)
+    ).not.toThrow()
+  })
+
+  it('defaults a listed item\'s weight to 0 kg when absent', () => {
+    useShop.mockReturnValue(makeShopState({
+      shopState: {
+        stock: [{ id: 'weightless-1', name: 'Feather', price: 1, count: 1 }],
+      },
+    }))
+    render(<ShopDialog npcId="1" npcName="Jambo" player={{}} onClose={onClose} />)
+    expect(screen.getByText('0.00 kg')).toBeInTheDocument()
+  })
+
+  it('clears the selected-item panel when the previously selected item disappears from a refreshed list', () => {
+    useShop.mockReturnValue(makeShopState())
+    const { rerender } = render(<ShopDialog npcId="1" npcName="Jambo" player={{}} onClose={onClose} />)
+    fireEvent.click(screen.getByText('Iron Sword'))
+    expect(screen.getByText(/Selected:/)).toBeInTheDocument()
+
+    useShop.mockReturnValue(makeShopState({ shopState: { stock: [] } }))
+    rerender(<ShopDialog npcId="1" npcName="Jambo" player={{}} onClose={onClose} />)
+    expect(screen.queryByText(/Selected:/)).not.toBeInTheDocument()
+  })
+
+  it('defaults a sell item\'s weight/offer to 0 when absent, and its own unit offer to 1 for maxQty', () => {
+    useShop.mockReturnValue(makeShopState({
+      sellInventory: [{ id: 'sell-bare', name: 'Odd Trinket', count: 2, is_stackable: true }],
+    }))
+    render(<ShopDialog npcId="1" npcName="Jambo" player={{}} onClose={onClose} />)
+    fireEvent.click(screen.getByText('⬆ Sell'))
+    fireEvent.click(screen.getByText('Odd Trinket'))
+    expect(screen.getByText(/Sell · \+0 💰/)).toBeInTheDocument()
   })
 })
