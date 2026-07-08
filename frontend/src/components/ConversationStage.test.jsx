@@ -75,6 +75,63 @@ describe('computeStage (cast replay)', () => {
         expect(staged).toBe(false)
     })
 
+    it('defaults to an empty roster when initialCast is falsy', () => {
+        const segments = [{ text: 'intro', in_conversation: true }]
+        const { members } = computeStage(segments, 0, null)
+        expect(members).toEqual([])
+    })
+
+    it('defaults name/side/emotion for a cast member missing those fields', () => {
+        const bareCast = [{ id: 'Stranger' }]
+        const { members } = computeStage([{ text: 'a', in_conversation: true }], 0, bareCast)
+        const stranger = members.find((m) => m.id === 'Stranger')
+        expect(stranger.name).toBe('Stranger')
+        expect(stranger.side).toBe('right')
+        expect(stranger.emotion).toBe('neutral')
+    })
+
+    it('defaults name/side/emotion for an enter op missing those fields', () => {
+        const segments = [
+            { text: 'a', in_conversation: true, enter: [{ id: 'Mara' }] },
+        ]
+        const { members } = computeStage(segments, 0, [])
+        const mara = members.find((m) => m.id === 'Mara')
+        expect(mara.name).toBe('Mara')
+        expect(mara.side).toBe('right')
+        expect(mara.emotion).toBe('neutral')
+    })
+
+    it('skips a sparse (undefined) segment entry without crashing', () => {
+        const segments = [undefined, { text: 'b', speaker: 'Jean', emotion: 'angry', in_conversation: true }]
+        const { members, activeSpeaker } = computeStage(segments, 1, CAST)
+        expect(activeSpeaker).toBe('Jean')
+        expect(members.find((m) => m.id === 'Jean').emotion).toBe('angry')
+    })
+
+    it('retains the previous emotion when a speaker beat omits one', () => {
+        const segments = [
+            { text: 'a', speaker: 'Jean', emotion: 'angry', in_conversation: true },
+            { text: 'b', speaker: 'Jean', in_conversation: true },
+        ]
+        const { members } = computeStage(segments, 1, CAST)
+        expect(members.find((m) => m.id === 'Jean').emotion).toBe('angry')
+    })
+
+    it('defaults an exit span to 1, removing the member on the same beat', () => {
+        const segments = [
+            { text: 'a', speaker: 'Jean', exit: [{ id: 'Amelia' }], in_conversation: true },
+        ]
+        const at0 = computeStage(segments, 0, CAST).members.find((m) => m.id === 'Amelia')
+        expect(at0).toBeUndefined()
+    })
+
+    it('treats an out-of-range index as an empty, un-staged beat', () => {
+        const segments = [{ text: 'only', speaker: 'Jean', in_conversation: true }]
+        const { activeSpeaker, staged } = computeStage(segments, 5, CAST)
+        expect(activeSpeaker).toBeNull()
+        expect(staged).toBe(false)
+    })
+
     it('adds members via enter ops mid-conversation', () => {
         const segments = [
             { text: 'a', speaker: 'Jean', emotion: 'neutral', in_conversation: true },
@@ -123,6 +180,92 @@ describe('ConversationStage rendering', () => {
         act(() => vi.advanceTimersByTime(3000))
         expect(screen.getByAltText(/Amelia \(happy\)/i)).toBeDefined()
         expect(screen.getByAltText(/Jean \(neutral\)/i)).toBeDefined()
+    })
+
+    it('renders with defaults when no segments or conversation prop is passed', () => {
+        render(<ConversationStage />)
+        expect(screen.getByTestId('conversation-stage')).toBeInTheDocument()
+    })
+
+    it('finishes the typewriter immediately on click instead of advancing', () => {
+        render(
+            <ConversationStage
+                segments={stagedSegments}
+                conversation={{ cast: CAST }}
+                onComplete={vi.fn()}
+            />
+        )
+        const stage = screen.getByTestId('conversation-stage')
+        act(() => vi.advanceTimersByTime(5)) // typewriter still mid-reveal
+        fireEvent.click(stage)
+        act(() => vi.advanceTimersByTime(3000))
+        // Still on beat 0 (Amelia's line), not advanced to beat 1 (Jean's line)
+        expect(screen.queryByText('You worry too much, dear.')).not.toBeInTheDocument()
+        expect(screen.getByText('You always were too stubborn.')).toBeInTheDocument()
+    })
+
+    it('auto-advances a silent (whitespace-only) beat after its fade delay', () => {
+        const silentSegments = [
+            { text: ' ', speaker: 'Jean', in_conversation: true, exit: [{ id: 'Amelia', span: 1 }] },
+            { text: 'Final line.', speaker: 'Jean', in_conversation: true },
+        ]
+        render(
+            <ConversationStage
+                segments={silentSegments}
+                conversation={{ cast: CAST }}
+                onComplete={vi.fn()}
+            />
+        )
+        act(() => vi.advanceTimersByTime(50)) // typewriter finishes the single space char
+        act(() => vi.advanceTimersByTime(500)) // auto-advance delay fires
+        act(() => vi.advanceTimersByTime(3000)) // beat 1's typewriter finishes
+        expect(screen.getByText('Final line.')).toBeInTheDocument()
+    })
+
+    it('falls back to the raw speaker id when the speaker is not in the cast', () => {
+        const ghostSegments = [
+            { text: 'Who said that?', speaker: 'Ghost', in_conversation: true },
+        ]
+        render(
+            <ConversationStage
+                segments={ghostSegments}
+                conversation={{ cast: CAST }}
+                onComplete={vi.fn()}
+            />
+        )
+        expect(screen.getByText('Ghost')).toBeInTheDocument()
+    })
+
+    it('renders non-dialogue prose centered and italicized', () => {
+        const proseSegments = [
+            { text: 'The wind howls through the ruins.', in_conversation: false },
+        ]
+        const { container } = render(
+            <ConversationStage
+                segments={proseSegments}
+                conversation={{ cast: CAST }}
+                onComplete={vi.fn()}
+            />
+        )
+        act(() => vi.advanceTimersByTime(3000))
+        const proseDiv = screen.getByText(/The wind howls/i)
+        expect(proseDiv.style.textAlign).toBe('center')
+        expect(proseDiv.style.fontStyle).toBe('italic')
+    })
+
+    it('advances on Enter/Space keydown', () => {
+        render(
+            <ConversationStage
+                segments={stagedSegments}
+                conversation={{ cast: CAST }}
+                onComplete={vi.fn()}
+            />
+        )
+        const stage = screen.getByTestId('conversation-stage')
+        act(() => vi.advanceTimersByTime(3000))
+        fireEvent.keyDown(stage, { key: 'Enter' })
+        act(() => vi.advanceTimersByTime(3000))
+        expect(screen.getByText('You worry too much, dear.')).toBeInTheDocument()
     })
 
     it('advances beats on click and calls onComplete after the last beat', () => {
