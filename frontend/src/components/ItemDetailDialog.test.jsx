@@ -7,6 +7,7 @@ import apiClient from '../api/client';
 vi.mock('../api/client', () => ({
   default: {
     post: vi.fn(),
+    get: vi.fn(),
   }
 }));
 
@@ -875,6 +876,208 @@ describe('ItemDetailDialog', () => {
     it('does not render a comparison block when item.comparison is absent', () => {
       render(<ItemDetailDialog item={mockItem} player={mockPlayer} onBack={mockOnBack} />);
       expect(screen.queryByText(/vs\. Equipped/)).toBeNull();
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Use-on-ally flow (handleUseOnAlly, party member picker)
+  // ---------------------------------------------------------------------------
+  describe('use on ally', () => {
+    const potion = {
+      ...mockItem,
+      can_equip: false,
+      can_use: true,
+      maintype: 'Consumable',
+      name: 'Health Potion',
+      effects: [{ type: 'heal', stat: 'hp', power: 30, range: [24, 36] }],
+    };
+    const playerWithParty = {
+      name: 'Jean',
+      party_members: [
+        { id: 'gorran', name: 'Gorran', hp: 50, max_hp: 100, states: [] },
+      ],
+    };
+
+    it('does not show the "Use on..." button when the player has no party members', () => {
+      render(<ItemDetailDialog item={potion} player={mockPlayer} onBack={mockOnBack} />);
+      expect(screen.queryByText(/Use on/i)).toBeNull();
+    });
+
+    it('opens the ally picker showing party members with a projected heal range', () => {
+      render(<ItemDetailDialog item={potion} player={playerWithParty} onBack={mockOnBack} />);
+      fireEvent.click(screen.getByText(/Use on/i));
+
+      expect(screen.getByText(/USE ON — Health Potion/)).toBeInTheDocument();
+      expect(screen.getByText('Gorran')).toBeInTheDocument();
+      expect(screen.getByText('50/100')).toBeInTheDocument();
+      expect(screen.getByText('+24–36 HP')).toBeInTheDocument();
+    });
+
+    it('closes the ally picker via Cancel', () => {
+      render(<ItemDetailDialog item={potion} player={playerWithParty} onBack={mockOnBack} />);
+      fireEvent.click(screen.getByText(/Use on/i));
+      fireEvent.click(screen.getByText('Cancel'));
+      expect(screen.queryByText(/USE ON —/)).not.toBeInTheDocument();
+    });
+
+    it('uses the item on the selected ally and shows the success dialog', async () => {
+      apiClient.post.mockResolvedValue({ data: { success: true, message: 'Gorran feels much better.' } });
+      render(
+        <ItemDetailDialog
+          item={potion}
+          player={playerWithParty}
+          onBack={mockOnBack}
+          onItemRemoved={mockOnItemRemoved}
+          onRefetch={mockOnRefetch}
+        />
+      );
+      fireEvent.click(screen.getByText(/Use on/i));
+      fireEvent.click(screen.getByText('Gorran'));
+
+      await waitFor(() => {
+        expect(apiClient.post).toHaveBeenCalledWith('/inventory/use', {
+          item_id: mockItem.id,
+          target_id: 'gorran',
+        });
+        expect(screen.getByText('✓ Health Potion used on Gorran!')).toBeInTheDocument();
+        expect(screen.getByText(/Gorran feels much better\./)).toBeInTheDocument();
+      });
+      expect(mockOnRefetch).toHaveBeenCalled();
+
+      fireEvent.click(screen.getByText(/Ok/i));
+      expect(mockOnItemRemoved).toHaveBeenCalledWith(mockItem.id);
+    });
+
+    it('shows a backend error message when using on an ally fails', async () => {
+      apiClient.post.mockResolvedValue({ data: { success: false, error: 'Out of range.' } });
+      render(<ItemDetailDialog item={potion} player={playerWithParty} onBack={mockOnBack} />);
+      fireEvent.click(screen.getByText(/Use on/i));
+      fireEvent.click(screen.getByText('Gorran'));
+
+      await waitFor(() => {
+        expect(screen.getByText(/Out of range\./)).toBeInTheDocument();
+      });
+    });
+
+    it('shows a network error message when using on an ally throws', async () => {
+      apiClient.post.mockRejectedValue(new Error('offline'));
+      render(<ItemDetailDialog item={potion} player={playerWithParty} onBack={mockOnBack} />);
+      fireEvent.click(screen.getByText(/Use on/i));
+      fireEvent.click(screen.getByText('Gorran'));
+
+      await waitFor(() => {
+        expect(screen.getByText(/✗ Error: offline/)).toBeInTheDocument();
+      });
+    });
+
+    it('prefers err.response.data.error over err.message when using on an ally', async () => {
+      const err = new Error('generic');
+      err.response = { data: { error: 'Gorran is unavailable.' } };
+      apiClient.post.mockRejectedValue(err);
+      render(<ItemDetailDialog item={potion} player={playerWithParty} onBack={mockOnBack} />);
+      fireEvent.click(screen.getByText(/Use on/i));
+      fireEvent.click(screen.getByText('Gorran'));
+
+      await waitFor(() => {
+        expect(screen.getByText('Gorran is unavailable.')).toBeInTheDocument();
+      });
+    });
+
+    it('disables an out-of-range ally and does not dispatch the use action when clicked', () => {
+      const farParty = { name: 'Jean', party_members: [{ id: 'mara', name: 'Mara', hp: 80, max_hp: 100, in_range: false, states: [] }] };
+      render(<ItemDetailDialog item={potion} player={farParty} onBack={mockOnBack} />);
+      fireEvent.click(screen.getByText(/Use on/i));
+
+      expect(screen.getByText('OUT OF RANGE')).toBeInTheDocument();
+      fireEvent.click(screen.getByText('Mara'));
+      expect(apiClient.post).not.toHaveBeenCalled();
+    });
+
+    it('shows only the effect chip (no heal projection) when the item has a non-heal effect', () => {
+      const buffItem = { ...potion, effects: [{ type: 'attr_buff', stat: 'strength', amount: 2, duration: 3 }] };
+      render(<ItemDetailDialog item={buffItem} player={playerWithParty} onBack={mockOnBack} />);
+      fireEvent.click(screen.getByText(/Use on/i));
+
+      expect(screen.queryByText('50/100')).toBeNull();
+      expect(screen.getByText(/STRENGTH \+2 · 3 beats/)).toBeInTheDocument();
+    });
+
+    it('shows a plain HP bar when the item has no effects at all', () => {
+      const noEffectItem = { ...potion, effects: undefined };
+      render(<ItemDetailDialog item={noEffectItem} player={playerWithParty} onBack={mockOnBack} />);
+      fireEvent.click(screen.getByText(/Use on/i));
+
+      expect(screen.getByText('50/100')).toBeInTheDocument();
+    });
+
+    it('shows an inactive status_remove chip when the ally does not have that status', () => {
+      const cureItem = { ...potion, effects: [{ type: 'status_remove', status_name: 'Poison', status_type: 'poison' }] };
+      render(<ItemDetailDialog item={cureItem} player={playerWithParty} onBack={mockOnBack} />);
+      fireEvent.click(screen.getByText(/Use on/i));
+
+      expect(screen.getByText(/Poison \(none\)/)).toBeInTheDocument();
+    });
+
+    it('shows an active status_remove chip and the status badge when the ally has that status', () => {
+      const poisonedParty = {
+        name: 'Jean',
+        party_members: [{ id: 'gorran', name: 'Gorran', hp: 50, max_hp: 100, states: [{ name: 'Poisoned', status_type: 'poison', beats_left: 3 }] }],
+      };
+      const cureItem = { ...potion, effects: [{ type: 'status_remove', status_name: 'Poisoned', status_type: 'poison' }] };
+      render(<ItemDetailDialog item={cureItem} player={poisonedParty} onBack={mockOnBack} />);
+      fireEvent.click(screen.getByText(/Use on/i));
+
+      expect(screen.getByText(/◆ Poisoned · 3/)).toBeInTheDocument();
+      expect(screen.getByText(/Poisoned removed/)).toBeInTheDocument();
+    });
+
+    it('shows a fresh status_apply chip when the ally does not already have the status', () => {
+      const applyItem = { ...potion, effects: [{ type: 'status_apply', status_name: 'Shielded', duration: 4 }] };
+      render(<ItemDetailDialog item={applyItem} player={playerWithParty} onBack={mockOnBack} />);
+      fireEvent.click(screen.getByText(/Use on/i));
+
+      expect(screen.getByText(/\+ Shielded · 4 beats/)).toBeInTheDocument();
+    });
+
+    it('shows a refresh status_apply chip when the ally already has the status', () => {
+      const shieldedParty = {
+        name: 'Jean',
+        party_members: [{ id: 'gorran', name: 'Gorran', hp: 50, max_hp: 100, states: [{ name: 'Shielded', status_type: 'buff', beats_left: 1 }] }],
+      };
+      const applyItem = { ...potion, effects: [{ type: 'status_apply', status_name: 'Shielded', duration: 4 }] };
+      render(<ItemDetailDialog item={applyItem} player={shieldedParty} onBack={mockOnBack} />);
+      fireEvent.click(screen.getByText(/Use on/i));
+
+      expect(screen.getByText(/↻ Shielded · refreshes to 4 beats/)).toBeInTheDocument();
+    });
+
+    it('fetches fresh party members in combat mode when the ally picker opens', async () => {
+      apiClient.get.mockResolvedValue({
+        data: { status: { party_members: [{ id: 'devet', name: 'Devet', hp: 90, max_hp: 90, states: [] }] } },
+      });
+
+      render(<ItemDetailDialog item={potion} player={playerWithParty} onBack={mockOnBack} combatMode={true} />);
+      fireEvent.click(screen.getByText(/Use on/i));
+
+      await waitFor(() => {
+        expect(screen.getByText('Devet')).toBeInTheDocument();
+      });
+      expect(apiClient.get).toHaveBeenCalledWith('/status');
+      expect(screen.queryByText('Gorran')).not.toBeInTheDocument();
+    });
+
+    it('falls back to the player prop party list when the fresh-party fetch fails', async () => {
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      apiClient.get.mockRejectedValue(new Error('offline'));
+
+      render(<ItemDetailDialog item={potion} player={playerWithParty} onBack={mockOnBack} combatMode={true} />);
+      fireEvent.click(screen.getByText(/Use on/i));
+
+      await waitFor(() => {
+        expect(errorSpy).toHaveBeenCalledWith('Failed to fetch fresh party members:', expect.any(Error));
+      });
+      expect(screen.getByText('Gorran')).toBeInTheDocument();
+      errorSpy.mockRestore();
     });
   });
 });
