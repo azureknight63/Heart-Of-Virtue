@@ -146,4 +146,42 @@ describe('StatsPanel', () => {
     render(<StatsPanel player={minimalPlayer} />);
     expect(screen.getByText(/📊 CHARACTER STATS/i)).toBeDefined();
   });
+
+  const sparsePlayer = {
+    hp: 10, max_hp: 10, fatigue: 5, max_fatigue: 5,
+    attack_damage_min: 1, attack_damage_max: 2, hit_accuracy: 50, evasion_chance: 10,
+  };
+
+  it('defaults protection and level when absent from the player object', () => {
+    render(<StatsPanel player={sparsePlayer} />);
+
+    expect(screen.getByText('Protection')).toBeDefined();
+    expect(screen.getByText('0')).toBeDefined(); // Protection default
+    expect(screen.getByText('Level')).toBeDefined();
+    expect(screen.getByText('1')).toBeDefined(); // Level default
+  });
+
+  it('defaults exp to 0 when absent, still rendering the EXP panel via max_exp', () => {
+    const player = { ...sparsePlayer, max_exp: 100 };
+    render(<StatsPanel player={player} />);
+
+    expect(screen.getByText('0 / 100')).toBeDefined();
+    expect(screen.getByText('100 EXP to next level')).toBeDefined();
+  });
+
+  it('defaults an attribute and its base to 10 when absent from the player object', () => {
+    render(<StatsPanel player={sparsePlayer} />);
+
+    const strengthContainer = screen.getByTitle(/Increases melee damage, carrying capacity, armor effectiveness/i);
+    expect(within(strengthContainer).getByText('10')).toBeDefined();
+    expect(within(strengthContainer).getByText('BASE: 10')).toBeDefined();
+  });
+
+  it('colors a resistance value above 1 as a weakness (danger color)', () => {
+    const player = { ...sparsePlayer, resistance: { fire: 1.5 } };
+    render(<StatsPanel player={player} />);
+
+    const chip = screen.getByText(/FIRE: 150%/i);
+    expect(chip.style.color).toBe('rgb(255, 68, 68)'); // colors.danger (#ff4444)
+  });
 });
