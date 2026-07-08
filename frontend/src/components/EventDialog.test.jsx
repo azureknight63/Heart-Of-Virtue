@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import EventDialog from './EventDialog';
 
@@ -374,6 +374,126 @@ describe('EventDialog', () => {
     it('does not apply Memory Flash flair to ordinary events', () => {
       render(<EventDialog event={{ event_id: 'e9', name: 'Lever', output_text: 'A lever.', needs_input: false }} onClose={mockOnClose} onSubmitInput={mockOnSubmitInput} />);
       expect(document.querySelector('.memory-flash-frame')).toBeNull();
+    });
+
+    it('detects a memory event from the event type instead of presentation', () => {
+      render(<EventDialog event={{ event_id: 'e10', type: 'memory_flash', name: 'Untitled', output_text: 'A recollection.', needs_input: false }} onClose={mockOnClose} onSubmitInput={mockOnSubmitInput} />);
+      expect(document.querySelector('.memory-flash-frame')).not.toBeNull();
+    });
+
+    it('detects a memory event from a "MEMORY STIRS" banner in the text', () => {
+      render(<EventDialog event={{ event_id: 'e11', name: 'Untitled', output_text: 'MEMORY STIRS within Jean.', needs_input: false }} onClose={mockOnClose} onSubmitInput={mockOnSubmitInput} />);
+      expect(document.querySelector('.memory-flash-frame')).not.toBeNull();
+    });
+  });
+
+  describe('event history view', () => {
+    const history = ['Jean opens the door.', 'A cold wind blows through.'];
+
+    it('shows the log toggle only when there is more than one history entry', () => {
+      render(<EventDialog event={mockEvent} history={history} onClose={mockOnClose} onSubmitInput={mockOnSubmitInput} />);
+      expect(screen.getByText(/Log \(2\)/i)).toBeInTheDocument();
+    });
+
+    it('does not show the log toggle for a single history entry', () => {
+      render(<EventDialog event={mockEvent} history={['Only one.']} onClose={mockOnClose} onSubmitInput={mockOnSubmitInput} />);
+      expect(screen.queryByText(/Log \(/i)).toBeNull();
+    });
+
+    it('toggles between the log view and the normal event body', () => {
+      render(<EventDialog event={mockEvent} history={history} onClose={mockOnClose} onSubmitInput={mockOnSubmitInput} />);
+
+      fireEvent.click(screen.getByText(/Log \(2\)/i));
+      expect(screen.getByText('Jean opens the door.')).toBeInTheDocument();
+      expect(screen.getByText('A cold wind blows through.')).toBeInTheDocument();
+      expect(screen.getByText('[1]')).toBeInTheDocument();
+      expect(screen.getByText('[2]')).toBeInTheDocument();
+      expect(screen.getByText(/↩ Back/i)).toBeInTheDocument();
+
+      fireEvent.click(screen.getByText(/↩ Back/i));
+      expect(screen.queryByText('Jean opens the door.')).toBeNull();
+      expect(screen.getByText(/Log \(2\)/i)).toBeInTheDocument();
+    });
+
+    it('does not close the dialog when clicking inside the history log', () => {
+      const simpleEvent = { ...mockEvent, needs_input: false };
+      render(<EventDialog event={simpleEvent} history={history} onClose={mockOnClose} onSubmitInput={mockOnSubmitInput} />);
+      act(() => { vi.advanceTimersByTime(5000); });
+
+      fireEvent.click(screen.getByText(/Log \(2\)/i));
+      fireEvent.click(screen.getByText('Jean opens the door.'));
+      expect(mockOnClose).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('damage hit effect', () => {
+    // The typewriter's per-character setInterval doesn't play well with fake
+    // timers here (React 18 batches the ticks in ways that swallow the damage
+    // match), so these two use real timers with a fast typing speed instead.
+    beforeEach(() => { vi.useRealTimers(); });
+    afterEach(() => { vi.useFakeTimers(); });
+
+    it('adds and removes damage-shake/flash body classes when a damage line appears', async () => {
+      const damageEvent = { ...mockEvent, needs_input: false, output_text: 'Jean suffers 12 damage!' };
+      render(<EventDialog event={damageEvent} onClose={mockOnClose} onSubmitInput={mockOnSubmitInput} />);
+
+      await waitFor(() => {
+        expect(document.body.classList.contains('damage-shake')).toBe(true);
+        expect(document.body.classList.contains('damage-flash-active')).toBe(true);
+      }, { timeout: 3000 });
+
+      await waitFor(() => {
+        expect(document.body.classList.contains('damage-shake')).toBe(false);
+        expect(document.body.classList.contains('damage-flash-active')).toBe(false);
+      }, { timeout: 3000 });
+    });
+
+    it('removes damage body classes on unmount mid-animation', async () => {
+      const damageEvent = { ...mockEvent, needs_input: false, output_text: 'Jean suffers 12 damage!' };
+      const { unmount } = render(<EventDialog event={damageEvent} onClose={mockOnClose} onSubmitInput={mockOnSubmitInput} />);
+
+      await waitFor(() => expect(document.body.classList.contains('damage-shake')).toBe(true), { timeout: 3000 });
+
+      unmount();
+      expect(document.body.classList.contains('damage-shake')).toBe(false);
+      expect(document.body.classList.contains('damage-flash-active')).toBe(false);
+    });
+  });
+
+  describe('event text fallbacks', () => {
+    it('falls back to event.message when output_text is absent', () => {
+      render(<EventDialog event={{ event_id: 'e12', name: 'Untitled', message: 'A fallback message.', needs_input: false }} onClose={mockOnClose} onSubmitInput={mockOnSubmitInput} />);
+      act(() => { vi.advanceTimersByTime(5000); });
+      expect(screen.getByText(/A fallback message\./i)).toBeInTheDocument();
+    });
+
+    it('falls back to event.description when output_text and message are absent', () => {
+      render(<EventDialog event={{ event_id: 'e13', name: 'Untitled', description: 'A described scene.', needs_input: false }} onClose={mockOnClose} onSubmitInput={mockOnSubmitInput} />);
+      act(() => { vi.advanceTimersByTime(5000); });
+      expect(screen.getByText(/A described scene\./i)).toBeInTheDocument();
+    });
+  });
+
+  describe('number input default clamp bounds', () => {
+    it('clamps decrement to 0 when no min_value is set', () => {
+      const numberEvent = { ...mockEvent, input_type: 'number' };
+      render(<EventDialog event={numberEvent} onClose={mockOnClose} onSubmitInput={mockOnSubmitInput} />);
+      act(() => { vi.advanceTimersByTime(5000); });
+
+      const input = screen.getByPlaceholderText('0');
+      fireEvent.click(screen.getByText('-'));
+      expect(input.value).toBe('0');
+    });
+
+    it('clamps increment to 999 when no max_value is set', () => {
+      const numberEvent = { ...mockEvent, input_type: 'number' };
+      render(<EventDialog event={numberEvent} onClose={mockOnClose} onSubmitInput={mockOnSubmitInput} />);
+      act(() => { vi.advanceTimersByTime(5000); });
+
+      const input = screen.getByPlaceholderText('0');
+      fireEvent.change(input, { target: { value: '999' } });
+      fireEvent.click(screen.getByText('+'));
+      expect(input.value).toBe('999');
     });
   });
 });
