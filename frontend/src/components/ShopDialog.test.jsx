@@ -245,7 +245,7 @@ describe('ShopDialog', () => {
     expect(screen.getByText(/Buy 2 · 20 💰/)).toBeInTheDocument()
   })
 
-  it('decrements quantity but not below 1', () => {
+  it('decrements quantity down to 1 and clamps there', () => {
     useShop.mockReturnValue(makeShopState({
       shopState: {
         stock: [{ id: 'stackable-1', name: 'Torch', price: 10, weight: 0.5, count: 5, is_stackable: true }],
@@ -253,6 +253,17 @@ describe('ShopDialog', () => {
     }))
     render(<ShopDialog npcId="1" npcName="Jambo" player={{}} onClose={onClose} />)
     fireEvent.click(screen.getByText('Torch'))
+    fireEvent.click(screen.getByText('+'))
+    fireEvent.click(screen.getByText('+'))
+    expect(screen.getByText(/Buy 3 · 30 💰/)).toBeInTheDocument()
+
+    // Decrementing from 2 exercises the Math.max(1, value - 1) clamp for real,
+    // since the button is only disabled once value is already at 1.
+    fireEvent.click(screen.getByText('−'))
+    fireEvent.click(screen.getByText('−'))
+    expect(screen.getByText(/Buy · 10 💰/)).toBeInTheDocument()
+
+    // At 1, the minus button is disabled — further clicks are no-ops.
     fireEvent.click(screen.getByText('−'))
     expect(screen.getByText(/Buy · 10 💰/)).toBeInTheDocument()
   })
