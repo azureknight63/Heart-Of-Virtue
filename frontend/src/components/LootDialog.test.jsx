@@ -180,4 +180,35 @@ describe('LootDialog', () => {
     render(<LootDialog endState={mockEndState} onCollect={onCollect} onSkip={onSkip} />)
     expect(screen.getByText('0.0 / 100.0 lb')).toBeInTheDocument()
   })
+
+  it('applies and clears hover styling on the Collect button while enabled', () => {
+    render(<LootDialog endState={mockEndState} playerWeight={20} weightLimit={100} onCollect={onCollect} onSkip={onSkip} />)
+    const collectBtn = screen.getByText(/COLLECT SELECTED ITEMS/)
+
+    fireEvent.mouseEnter(collectBtn)
+    expect(collectBtn.style.background).not.toBe('transparent')
+
+    fireEvent.mouseLeave(collectBtn)
+    expect(collectBtn.style.background).toBe('transparent')
+  })
+
+  it('does not apply hover styling to a disabled Collect button', () => {
+    render(<LootDialog endState={mockEndState} playerWeight={20} weightLimit={100} onCollect={onCollect} onSkip={onSkip} />)
+    fireEvent.click(screen.getByText('Leave All'))
+    const collectBtn = screen.getByText('NOTHING SELECTED')
+
+    fireEvent.mouseEnter(collectBtn)
+    expect(collectBtn.style.background).toBe('transparent')
+  })
+
+  it('applies and clears hover styling on the skip link', () => {
+    render(<LootDialog endState={mockEndState} playerWeight={20} weightLimit={100} onCollect={onCollect} onSkip={onSkip} />)
+    const skipLink = screen.getByText(/skip — drop all items on tile/)
+
+    fireEvent.mouseEnter(skipLink)
+    expect(skipLink.style.color).toBe('rgb(119, 119, 119)')
+
+    fireEvent.mouseLeave(skipLink)
+    expect(skipLink.style.color).toBe('rgb(68, 68, 68)')
+  })
 })
