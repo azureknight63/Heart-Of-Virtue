@@ -105,6 +105,16 @@ describe('endpoints', () => {
       endpoints.world.search();
       expect(apiClient.post).toHaveBeenCalledWith('/world/search');
     });
+
+    it('calls getPendingEvents endpoint', () => {
+      endpoints.world.getPendingEvents();
+      expect(apiClient.get).toHaveBeenCalledWith('/world/events/pending');
+    });
+
+    it('calls getExploredTiles endpoint', () => {
+      endpoints.world.getExploredTiles();
+      expect(apiClient.get).toHaveBeenCalledWith('/world/explored');
+    });
   });
 
   describe('combat', () => {
@@ -157,6 +167,32 @@ describe('endpoints', () => {
         move_type: 'cancel'
       });
     });
+
+    it('calls performAction with select_move_and_target type', () => {
+      endpoints.combat.performAction('select_move_and_target', { move_name: 'Slash', target_id: 'goblin1' });
+      expect(apiClient.post).toHaveBeenCalledWith('/combat/move', {
+        move_type: 'select_move_and_target',
+        move_id: 'Slash',
+        target_id: 'goblin1'
+      });
+    });
+
+    it('calls performAction with flee type', () => {
+      endpoints.combat.performAction('flee', {});
+      expect(apiClient.post).toHaveBeenCalledWith('/combat/move', {
+        move_type: 'flee'
+      });
+    });
+
+    it('calls collectLoot endpoint', () => {
+      endpoints.combat.collectLoot(['Gold Coin', 'Potion']);
+      expect(apiClient.post).toHaveBeenCalledWith('/combat/collect-loot', { item_names: ['Gold Coin', 'Potion'] });
+    });
+
+    it('calls pauseSuggestions endpoint', () => {
+      endpoints.combat.pauseSuggestions(true);
+      expect(apiClient.post).toHaveBeenCalledWith('/combat/suggestions/pause', { paused: true });
+    });
   });
 
   describe('inventory', () => {
@@ -193,6 +229,55 @@ describe('endpoints', () => {
     it('calls delete endpoint', () => {
       endpoints.saves.delete('save1');
       expect(apiClient.delete).toHaveBeenCalledWith('/saves/save1');
+    });
+
+    it('calls newGame endpoint', () => {
+      endpoints.saves.newGame();
+      expect(apiClient.post).toHaveBeenCalledWith('/game/new');
+    });
+  });
+
+  describe('feedback', () => {
+    it('calls submitIssue endpoint with default anonymous', () => {
+      endpoints.feedback.submitIssue('bug', 'Crash on login', { steps: 'Log in' });
+      expect(apiClient.post).toHaveBeenCalledWith('/feedback/issue', {
+        type: 'bug',
+        title: 'Crash on login',
+        fields: { steps: 'Log in' },
+        anonymous: false,
+      });
+    });
+
+    it('calls submitIssue endpoint with anonymous=true', () => {
+      endpoints.feedback.submitIssue('general', 'Great game', { message: 'Loved it' }, true);
+      expect(apiClient.post).toHaveBeenCalledWith('/feedback/issue', {
+        type: 'general',
+        title: 'Great game',
+        fields: { message: 'Loved it' },
+        anonymous: true,
+      });
+    });
+  });
+
+  describe('shop', () => {
+    it('calls getState endpoint', () => {
+      endpoints.shop.getState('merchant1');
+      expect(apiClient.get).toHaveBeenCalledWith('/shop/state', { params: { npc_id: 'merchant1' } });
+    });
+
+    it('calls buy endpoint', () => {
+      endpoints.shop.buy('merchant1', 'item1', 2);
+      expect(apiClient.post).toHaveBeenCalledWith('/shop/buy', { npc_id: 'merchant1', item_id: 'item1', quantity: 2 });
+    });
+
+    it('calls sell endpoint', () => {
+      endpoints.shop.sell('merchant1', 'item1', 3);
+      expect(apiClient.post).toHaveBeenCalledWith('/shop/sell', { npc_id: 'merchant1', item_id: 'item1', quantity: 3 });
+    });
+
+    it('calls buyback endpoint', () => {
+      endpoints.shop.buyback('merchant1', 'item1');
+      expect(apiClient.post).toHaveBeenCalledWith('/shop/buyback', { npc_id: 'merchant1', item_id: 'item1' });
     });
   });
 });
