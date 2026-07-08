@@ -170,7 +170,6 @@ const CombatantMarker = React.memo(({
         pendingGlowColor ? ' battlefield-pending-glow' : ''
       }${targetShake ? ' battlefield-target-shake' : ''}`}
       style={{
-        ...animationStyle,
         // Slightly lighter than panelDeep so the pulsing glow reads through the
         // token edge. panelHeavy keeps the marker legible without muddying the glow.
         backgroundColor: colors.bg.panelHeavy,
@@ -182,6 +181,10 @@ const CombatantMarker = React.memo(({
         boxShadow: pendingGlowColor
           ? undefined
           : `0 0 6px 1px ${isPlayer ? colors.alpha.primary[40] : colors.alpha.danger[40]}`,
+        // Spread last so an active animation's backgroundColor/boxShadow/transform
+        // (hit flash, parry/block flash, debuff/drain glow, per-phase source glow)
+        // actually take effect instead of being clobbered by the defaults above.
+        ...animationStyle,
       }}
     >
       {/* Background fill — saturated by alignment for high-contrast friend/foe */}
