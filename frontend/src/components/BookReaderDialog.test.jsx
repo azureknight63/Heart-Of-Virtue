@@ -167,4 +167,54 @@ describe('BookReaderDialog', () => {
     // Should render the short text without undefined/blank
     expect(screen.getByText(shortText)).toBeDefined()
   })
+
+  describe('button hover styling', () => {
+    it('applies and clears hover styling on CLOSE BOOK', () => {
+      render(<BookReaderDialog title="Book" text={shortText} onClose={mockOnClose} />)
+      const closeButton = screen.getByText('CLOSE BOOK')
+
+      fireEvent.mouseEnter(closeButton)
+      expect(closeButton.style.backgroundColor).toBe('rgb(51, 0, 0)')
+
+      fireEvent.mouseLeave(closeButton)
+      expect(closeButton.style.backgroundColor).toBe('rgb(26, 0, 0)')
+    })
+
+    it('applies and clears hover styling on NEXT while enabled (not on the last page)', () => {
+      render(<BookReaderDialog title="Book" text={longText} onClose={mockOnClose} />)
+      const next = screen.getByText('NEXT →')
+
+      fireEvent.mouseEnter(next)
+      expect(next.style.backgroundColor).toBe('rgb(0, 42, 77)')
+      fireEvent.mouseLeave(next)
+      expect(next.style.backgroundColor).toBe('rgb(0, 24, 51)')
+    })
+
+    it('applies and clears hover styling on PREV while enabled (not on the first page)', () => {
+      render(<BookReaderDialog title="Book" text={longText} onClose={mockOnClose} />)
+      fireEvent.click(screen.getByText('NEXT →'))
+
+      const prev = screen.getByText('← PREV')
+      fireEvent.mouseEnter(prev)
+      expect(prev.style.backgroundColor).toBe('rgb(0, 42, 77)')
+      fireEvent.mouseLeave(prev)
+      expect(prev.style.backgroundColor).toBe('rgb(0, 24, 51)')
+    })
+
+    it('does not apply hover styling to a disabled PREV/NEXT button', () => {
+      render(<BookReaderDialog title="Book" text={shortText} onClose={mockOnClose} />)
+      const prev = screen.getByText('← PREV')
+      const next = screen.getByText('NEXT →')
+
+      fireEvent.mouseEnter(prev)
+      expect(prev.style.backgroundColor).toBe('transparent')
+      fireEvent.mouseLeave(prev)
+      expect(prev.style.backgroundColor).toBe('transparent')
+
+      fireEvent.mouseEnter(next)
+      expect(next.style.backgroundColor).toBe('transparent')
+      fireEvent.mouseLeave(next)
+      expect(next.style.backgroundColor).toBe('transparent')
+    })
+  })
 })
