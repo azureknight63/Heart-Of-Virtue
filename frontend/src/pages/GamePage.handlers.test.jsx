@@ -5,6 +5,7 @@ import GamePage from './GamePage';
 import { usePlayer, useWorld, useCombat, useExploration, useAutosave } from '../hooks/useApi';
 import { useEventManager } from '../hooks/useEventManager';
 import { useCombatCoordinator } from '../hooks/useCombatCoordinator';
+import { useMobile } from '../hooks/useMobile';
 import { useAudio } from '../context/AudioContext';
 import { useToast } from '../context/ToastContext';
 import { combat as combatApi } from '../api/endpoints';
@@ -59,7 +60,7 @@ vi.mock('../api/endpoints', () => ({
 }));
 
 vi.mock('../components/LeftPanel', () => ({
-    default: ({ onMove, onCombatAction, onAdvisorPause, onAdvisorRequestSuggestions, onInteractionTypingChange, onInteractionClose }) => (
+    default: ({ onMove, onCombatAction, onAdvisorPause, onAdvisorRequestSuggestions, onInteractionTypingChange, onInteractionClose, onMoveSubmitted }) => (
         <div data-testid="left-panel">
             <button onClick={() => onMove('north').catch(() => {})}>Move North</button>
             <button onClick={() => onCombatAction('attack', { target: 'enemy_1' })}>Combat Action</button>
@@ -67,12 +68,17 @@ vi.mock('../components/LeftPanel', () => ({
             <button onClick={() => onAdvisorRequestSuggestions()}>Request Suggestions</button>
             <button onClick={() => onInteractionTypingChange(true)}>Start Typing</button>
             <button onClick={() => onInteractionClose()}>Close Interaction</button>
+            {onMoveSubmitted && <button onClick={onMoveSubmitted}>Move Submitted</button>}
         </div>
     )
 }));
 
 vi.mock('../components/RightPanel', () => ({
-    default: () => <div data-testid="right-panel" />
+    default: ({ onDescriptionInteract }) => (
+        <div data-testid="right-panel">
+            {onDescriptionInteract && <button onClick={onDescriptionInteract}>Description Interact</button>}
+        </div>
+    )
 }));
 
 vi.mock('../components/EventManager', () => ({
@@ -199,6 +205,7 @@ describe('GamePage handler wiring', () => {
         useExploration.mockReturnValue({ exploredTiles: new Map(), setExploredTiles: vi.fn(), refetch: refetchExploration });
         useCombat.mockReturnValue({ combat: null, inCombat: false, fetchCombatStatus, performAction });
         useAutosave.mockReturnValue({ triggerTick });
+        useMobile.mockReturnValue(false);
         useAudio.mockReturnValue({ playBGM: vi.fn(), playSFX: vi.fn(), playSting: vi.fn() });
         useToast.mockReturnValue({ error: vi.fn() });
         useEventManager.mockReturnValue(makeEventManagerReturn());
@@ -577,6 +584,97 @@ describe('GamePage handler wiring', () => {
             expect(handleCombatAction).toHaveBeenCalledWith(
                 'attack', { target: 'enemy_1' }, expect.any(Function), expect.any(Function)
             );
+        });
+    });
+
+    it('refreshes combat status when an event is processed while in combat', () => {
+        useCombat.mockReturnValue({ combat: { log: [] }, inCombat: true, fetchCombatStatus, performAction });
+        renderGamePage();
+
+        const onEventProcessed = useEventManager.mock.calls[useEventManager.mock.calls.length - 1][0].onEventProcessed;
+        fetchCombatStatus.mockClear();
+        onEventProcessed();
+
+        expect(fetchCombatStatus).toHaveBeenCalled();
+    });
+
+    it('does not refresh combat status when an event is processed outside combat', () => {
+        renderGamePage();
+
+        const onEventProcessed = useEventManager.mock.calls[useEventManager.mock.calls.length - 1][0].onEventProcessed;
+        fetchCombatStatus.mockClear();
+        onEventProcessed();
+
+        expect(fetchCombatStatus).not.toHaveBeenCalled();
+    });
+
+    it('logs and still closes the dialog when skip-loot collectLoot fails', async () => {
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+        combatApi.collectLoot.mockRejectedValue(new Error('server down'));
+        const setShowLootDialog = vi.fn();
+        useCombatCoordinator.mockReturnValue(makeCombatCoordinatorReturn({
+            showLootDialog: true,
+            endState: { status: 'victory' },
+            setShowLootDialog,
+        }));
+
+        renderGamePage();
+        await act(async () => {
+            fireEvent.click(screen.getByText('Skip Loot'));
+        });
+
+        expect(errorSpy).toHaveBeenCalledWith('collect-loot (skip) failed:', expect.any(Error));
+        expect(setShowLootDialog).toHaveBeenCalledWith(false);
+        errorSpy.mockRestore();
+    });
+
+    it('shows the beta-end dialog after skipping loot on a beta-end victory', async () => {
+        useCombatCoordinator.mockReturnValue(makeCombatCoordinatorReturn({
+            showLootDialog: true,
+            endState: { status: 'victory', beta_end: true },
+        }));
+
+        renderGamePage();
+        await act(async () => {
+            fireEvent.click(screen.getByText('Skip Loot'));
+        });
+
+        await waitFor(() => expect(screen.getByTestId('beta-end-dialog')).toBeInTheDocument());
+    });
+
+    it('forwards combat-triggered events to the event manager', () => {
+        const handleEventsTriggered = vi.fn();
+        useEventManager.mockReturnValue(makeEventManagerReturn({ handleEventsTriggered }));
+        useCombat.mockReturnValue({
+            combat: { log: [], events_triggered: [{ event_id: 'x', output_text: 'Ambush!' }] },
+            inCombat: true,
+            fetchCombatStatus,
+            performAction,
+        });
+
+        renderGamePage();
+
+        expect(handleEventsTriggered).toHaveBeenCalledWith([{ event_id: 'x', output_text: 'Ambush!' }]);
+    });
+
+    describe('mobile layout wiring', () => {
+        beforeEach(() => {
+            useMobile.mockReturnValue(true);
+        });
+
+        it('switches to the map tab when a move is submitted', () => {
+            renderGamePage();
+            expect(() => fireEvent.click(screen.getByText('Move Submitted'))).not.toThrow();
+        });
+
+        it('switches to the character tab when the room description is interacted with', () => {
+            renderGamePage();
+            expect(() => fireEvent.click(screen.getByText('Description Interact'))).not.toThrow();
+        });
+
+        it('renders the mobile tab bar', () => {
+            renderGamePage();
+            expect(screen.getByTestId('mobile-tab-bar')).toBeInTheDocument();
         });
     });
 });
