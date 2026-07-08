@@ -679,4 +679,109 @@ describe('NpcChatPanel', () => {
       )
     })
   })
+
+  describe('response fallback defaults', () => {
+    it('falls back to the npcName prop when the open response has no npc_name', async () => {
+      npcChat.open.mockResolvedValue({
+        data: { ...mockOpenResponse.data, npc_name: undefined },
+      })
+      render(<NpcChatPanel npcId={mockNpcId} npcName="Fallback Name" onClose={mockOnClose} />)
+
+      await waitFor(() => expect(screen.getByText('Fallback Name')).toBeInTheDocument())
+    })
+
+    it('defaults loquacity and jean_options when absent from the open response', async () => {
+      npcChat.open.mockResolvedValue({
+        data: {
+          npc_key: 'npc_session_123',
+          npc_name: 'Mynx the Swift',
+          npc_opening: 'Hello.',
+          conversation_ended: false,
+        },
+      })
+      const { container } = render(<NpcChatPanel npcId={mockNpcId} npcName={mockNpcName} onClose={mockOnClose} />)
+
+      await waitFor(() => expect(screen.getByTestId('typewriter')).toHaveTextContent('Hello.'))
+      // loquacity_current/max both default (0/1) -> 0% width, danger color
+      const bar = container.querySelector('[style*="height: 100%"]')
+      expect(bar.style.width).toBe('0%')
+      expect(bar.style.backgroundColor).toBe('rgb(255, 68, 68)')
+      // jean_options defaults to [] -> no option buttons rendered
+      expect(screen.queryByText('Hi there')).not.toBeInTheDocument()
+    })
+
+    it('defaults loquacity and jean_options when absent from a respond response', async () => {
+      npcChat.respond.mockResolvedValue({
+        data: { npc_response: 'A terse reply.', conversation_ended: false },
+      })
+      const { container } = render(<NpcChatPanel npcId={mockNpcId} npcName={mockNpcName} onClose={mockOnClose} />)
+
+      await waitFor(() => expect(npcChat.open).toHaveBeenCalled())
+      fireEvent.click(screen.getByText('Hi there'))
+
+      await waitFor(() => expect(screen.getByTestId('typewriter')).toHaveTextContent('A terse reply.'))
+      const bar = container.querySelector('[style*="height: 100%"]')
+      expect(bar.style.width).toBe('0%')
+      expect(screen.queryByText('Leave me alone')).not.toBeInTheDocument()
+    })
+  })
+
+  describe('loquacity bar color', () => {
+    const renderWithLoquacity = async (current, max) => {
+      npcChat.open.mockResolvedValue({
+        data: { ...mockOpenResponse.data, loquacity_current: current, loquacity_max: max },
+      })
+      const { container } = render(<NpcChatPanel npcId={mockNpcId} npcName={mockNpcName} onClose={mockOnClose} />)
+      await waitFor(() => expect(npcChat.open).toHaveBeenCalled())
+      return container
+    }
+
+    it('shows the primary color when loquacity is above 60%', async () => {
+      const container = await renderWithLoquacity(4, 5)
+      const bar = container.querySelector('[style*="height: 100%"]')
+      expect(bar.style.backgroundColor).toBe('rgb(0, 255, 136)')
+    })
+
+    it('shows the secondary color when loquacity is between 30% and 60%', async () => {
+      const container = await renderWithLoquacity(2, 5)
+      const bar = container.querySelector('[style*="height: 100%"]')
+      expect(bar.style.backgroundColor).toBe('rgb(255, 170, 0)')
+    })
+
+    it('shows the danger color when loquacity is at or below 30%', async () => {
+      const container = await renderWithLoquacity(1, 5)
+      const bar = container.querySelector('[style*="height: 100%"]')
+      expect(bar.style.backgroundColor).toBe('rgb(255, 68, 68)')
+    })
+
+    it('shows the primary color when loquacity max is zero', async () => {
+      const container = await renderWithLoquacity(0, 0)
+      const bar = container.querySelector('[style*="height: 100%"]')
+      expect(bar.style.backgroundColor).toBe('rgb(0, 255, 136)')
+    })
+  })
+
+  describe('relationship badge color', () => {
+    const renderWithAttitude = async (attitude) => {
+      npcChat.open.mockResolvedValue({
+        data: {
+          ...mockOpenResponse.data,
+          relationship: { ...mockOpenResponse.data.relationship, attitude },
+        },
+      })
+      render(<NpcChatPanel npcId={mockNpcId} npcName={mockNpcName} onClose={mockOnClose} />)
+      await waitFor(() => expect(screen.getByTestId('relationship-badge')).toBeInTheDocument())
+      return screen.getByTestId('relationship-badge')
+    }
+
+    it('colors a wary/hostile/enemy attitude with the danger color', async () => {
+      const badge = await renderWithAttitude('hostile')
+      expect(badge.style.color).toBe('rgb(255, 68, 68)')
+    })
+
+    it('colors an unrecognized attitude with the muted text color', async () => {
+      const badge = await renderWithAttitude('bemused')
+      expect(badge.style.color).not.toBe('')
+    })
+  })
 })
