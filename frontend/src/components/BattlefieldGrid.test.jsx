@@ -446,6 +446,16 @@ describe('BattlefieldGrid', () => {
             expect(container.querySelector('[style*="rgba(255, 200, 0, 0.7)"]')).not.toBeNull();
         });
 
+        it('applies no special target treatment for an unrecognized outcome (default branch)', () => {
+            const critCombat = { ...mockCombat, log: [{ animation: { type: 'attack', source_id: 'player', target_id: 'enemy_goblin', outcome: 'crit' } }] };
+            const { container } = render(<BattlefieldGrid combat={critCombat} tab="overview" zoom={1} displayedLogCount={1} />);
+            act(() => vi.advanceTimersByTime(200 + 160 + 10));
+            expect(container.querySelector('[style*="rgba(255, 0, 0, 0.7)"]')).toBeNull();
+            expect(container.querySelector('[style*="blur(2px)"]')).toBeNull();
+            expect(container.querySelector('[style*="rgba(255, 200, 0, 0.7)"]')).toBeNull();
+            expect(screen.getByText('G')).toBeInTheDocument();
+        });
+
         it('applies a fixed debuff treatment on the target instead of a strike flash', () => {
             const debuffCombat = { ...mockCombat, log: [{ animation: { type: 'debuff', source_id: 'player', target_id: 'enemy_goblin', outcome: 'hit' } }] };
             const { container } = render(<BattlefieldGrid combat={debuffCombat} tab="overview" zoom={1} displayedLogCount={1} />);
@@ -489,6 +499,16 @@ describe('BattlefieldGrid', () => {
         expect(screen.getByText('Jean')).toBeInTheDocument();
     });
 
+    it('falls back to Miscellaneous for a prepared_move with no category, in the enemies list', () => {
+        const combatEdge = {
+            ...mockCombat,
+            enemies: [{ id: 'x', name: 'Wisp', hp: 10, max_hp: 10, prepared_move: { name: 'Cackle' }, position: { x: 1, y: 1 } }],
+        };
+        render(<BattlefieldGrid combat={combatEdge} tab="enemies" zoom={1} />);
+        expect(screen.getByText(/Cackle/)).toBeInTheDocument();
+        expect(screen.getByText('(Miscellaneous)')).toBeInTheDocument();
+    });
+
     it('renders an enemy with no active move and zero max_hp without crashing', () => {
         const combatEdge = {
             ...mockCombat,
@@ -496,6 +516,47 @@ describe('BattlefieldGrid', () => {
         };
         render(<BattlefieldGrid combat={combatEdge} tab="enemies" zoom={1} />);
         expect(screen.getByText('Husk')).toBeInTheDocument();
+    });
+
+    it('reads HP/max HP from a nested health object when hp/max_hp are absent (torus marker)', () => {
+        const combatEdge = {
+            ...mockCombat,
+            enemies: [{
+                id: 'x', name: 'Wisp',
+                health: { current: 30, max: 60 },
+                position: { x: 1, y: 1 },
+            }],
+        };
+        const { container } = render(<BattlefieldGrid combat={combatEdge} tab="overview" zoom={1} />);
+        expect(screen.getByText('W')).toBeInTheDocument();
+        expect(container.querySelector('[stroke-dasharray="70.7 141.4"]')).not.toBeNull();
+    });
+
+    it('falls back to "?" for a marker with no displaySymbol, battle_symbol, or name', () => {
+        const combatEdge = {
+            ...mockCombat,
+            enemies: [{ id: 'x', hp: 10, max_hp: 10, position: { x: 1, y: 1 } }],
+        };
+        render(<BattlefieldGrid combat={combatEdge} tab="overview" zoom={1} />);
+        expect(screen.getByText('?')).toBeInTheDocument();
+    });
+
+    it('falls back to a 0-degree facing for an unrecognized cardinal string', () => {
+        const combatEdge = {
+            ...mockCombat,
+            player: { ...mockCombat.player, position: { x: 6, y: 6, facing: 'UNKNOWN' } },
+        };
+        const { container } = render(<BattlefieldGrid combat={combatEdge} tab="overview" zoom={1} />);
+        expect(container.querySelector('[style*="rotate(0deg)"]')).not.toBeNull();
+    });
+
+    it('renders a marker with no pending move without a category glow/border', () => {
+        const combatEdge = {
+            ...mockCombat,
+            player: { ...mockCombat.player, current_move: undefined, prepared_move: undefined },
+        };
+        render(<BattlefieldGrid combat={combatEdge} tab="overview" zoom={1} />);
+        expect(screen.getByText('J')).toBeInTheDocument();
     });
 
     it('renders a dashed extent marker when the real map is smaller than the viewport', () => {
