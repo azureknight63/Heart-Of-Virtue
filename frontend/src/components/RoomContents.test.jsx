@@ -106,3 +106,66 @@ test('sorts aliases by length to avoid partial matches', () => {
     fireEvent.click(largeLinks[0])
     expect(onInteract).toHaveBeenCalledWith(expect.objectContaining({ name: 'Large Switch' }))
 })
+
+test('handles a location with no items/npcs/objects keys at all', () => {
+    const location = { description: 'A bare, empty room.' }
+    render(<RoomContents location={location} onInteract={vi.fn()} />)
+    expect(screen.getByText('(Nothing else here...)')).toBeInTheDocument()
+})
+
+test('returns null when location is absent', () => {
+    const { container } = render(<RoomContents location={null} onInteract={vi.fn()} />)
+    expect(container.firstChild).toBeNull()
+})
+
+test('shows the empty-state message when there is nothing else in the room', () => {
+    const location = { description: 'An empty stone chamber.', items: [], npcs: [], objects: [] }
+    render(<RoomContents location={location} onInteract={vi.fn()} />)
+    expect(screen.getByText('(Nothing else here...)')).toBeInTheDocument()
+})
+
+test('renders NPC idle messages and a default item-here message', () => {
+    const location = {
+        description: 'A quiet clearing.',
+        items: [{ name: 'Gold Coin', hidden: false }],
+        npcs: [{ name: 'Gorran', idle_message: 'Gorran stands watch nearby.', hidden: false }],
+        objects: [],
+    }
+    const { container } = render(<RoomContents location={location} onInteract={vi.fn()} />)
+    expect(container.textContent).toContain('Gorran stands watch nearby.')
+    expect(container.textContent).toContain('There is a Gold Coin here.')
+})
+
+test('uses a custom announce message for items when provided', () => {
+    const location = {
+        description: 'A quiet clearing.',
+        items: [{ name: 'Torch', announce: 'A torch flickers against the wall.', hidden: false }],
+        npcs: [],
+        objects: [],
+    }
+    const { container } = render(<RoomContents location={location} onInteract={vi.fn()} />)
+    expect(container.textContent).toContain('A torch flickers against the wall.')
+})
+
+test('skips hidden items and NPCs/objects without idle messages', () => {
+    const location = {
+        description: 'A quiet clearing.',
+        items: [{ name: 'Hidden Key', hidden: true }],
+        npcs: [{ name: 'Silent Watcher' }],
+        objects: [{ name: 'Plain Rock' }],
+    }
+    render(<RoomContents location={location} onInteract={vi.fn()} />)
+    expect(screen.queryByText(/Hidden Key/)).not.toBeInTheDocument()
+    expect(screen.getByText('(Nothing else here...)')).toBeInTheDocument()
+})
+
+test('prefixes the entity name when the idle message starts with a space', () => {
+    const location = {
+        description: 'A quiet clearing.',
+        items: [],
+        npcs: [],
+        objects: [{ name: 'Rusty Lever', idle_message: ' juts out of the wall, caked in rust.', hidden: false }],
+    }
+    const { container } = render(<RoomContents location={location} onInteract={vi.fn()} />)
+    expect(container.textContent).toContain('Rusty Lever juts out of the wall, caked in rust.')
+})
