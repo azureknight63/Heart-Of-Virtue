@@ -14,6 +14,8 @@ class MockAudio {
         this.volume = 1;
         this.loop = false;
         this.currentTime = 0;
+        global.__audioInstances = global.__audioInstances || [];
+        global.__audioInstances.push(this);
     }
 }
 global.Audio = MockAudio;
@@ -35,6 +37,7 @@ describe('AudioContext', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         localStorage.clear();
+        global.__audioInstances = [];
     });
 
     it('provides music and sfx controls', () => {
@@ -97,5 +100,170 @@ describe('AudioContext', () => {
 
         expect(screen.getByTestId('music-volume').textContent).toBe('0.8');
         expect(screen.getByTestId('sfx-volume').textContent).toBe('0.2');
+    });
+
+    it('falls back to defaults when stored preferences are corrupt JSON', () => {
+        localStorage.setItem('audioPreferences', '{not valid json');
+        const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+        render(
+            <AudioProvider>
+                <TestComponent />
+            </AudioProvider>
+        );
+
+        expect(screen.getByTestId('music-volume').textContent).toBe('0.5');
+        expect(warnSpy).toHaveBeenCalled();
+        warnSpy.mockRestore();
+    });
+
+    it('does not throw when localStorage.setItem fails while saving preferences', () => {
+        const setItemSpy = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+            throw new Error('quota exceeded');
+        });
+        const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+        expect(() => {
+            render(
+                <AudioProvider>
+                    <TestComponent />
+                </AudioProvider>
+            );
+        }).not.toThrow();
+
+        expect(warnSpy).toHaveBeenCalledWith('Failed to save audio preferences:', expect.any(Error));
+        warnSpy.mockRestore();
+        setItemSpy.mockRestore();
+    });
+
+    it('does not restart a track that is already playing', () => {
+        const wrapper = ({ children }) => <AudioProvider>{children}</AudioProvider>;
+        const { result } = renderHook(() => useAudio(), { wrapper });
+
+        act(() => { result.current.playBGM('battle'); });
+        const audioInstance = result.current;
+        act(() => { result.current.playBGM('battle'); });
+
+        expect(result.current.currentBGM).toBe('battle');
+    });
+
+    it('fades out the current track before switching, then fades in the new one', () => {
+        vi.useFakeTimers();
+        const wrapper = ({ children }) => <AudioProvider>{children}</AudioProvider>;
+        const { result } = renderHook(() => useAudio(), { wrapper });
+
+        act(() => { result.current.playBGM('battle'); });
+        expect(result.current.currentBGM).toBe('battle');
+
+        // Let the fade-in complete so bgmRef.current.volume > 0, which is the
+        // precondition for the fade-OUT branch to trigger on the next switch.
+        act(() => { vi.advanceTimersByTime(1000); });
+
+        act(() => { result.current.playBGM('dungeon'); });
+        // Still fading out the old track — switch hasn't happened yet.
+        expect(result.current.currentBGM).toBe('battle');
+
+        act(() => { vi.advanceTimersByTime(2000); });
+        expect(result.current.currentBGM).toBe('dungeon');
+
+        vi.useRealTimers();
+    });
+
+    it('plays a sting and restores the previous BGM when it ends', () => {
+        vi.useFakeTimers();
+        const wrapper = ({ children }) => <AudioProvider>{children}</AudioProvider>;
+        const { result } = renderHook(() => useAudio(), { wrapper });
+
+        act(() => { result.current.playBGM('battle'); });
+        act(() => { vi.advanceTimersByTime(1000); }); // let the fade-in settle
+        act(() => { result.current.playSting('fanfare'); });
+        expect(result.current.currentBGM).toBe('fanfare');
+
+        // bgmRef.current is created once via useRef(new Audio()) on first render
+        // and never replaced, so it's always the first instance constructed —
+        // later re-renders also evaluate `new Audio()` but React discards them.
+        const bgmEl = global.__audioInstances[0];
+
+        // Simulate the underlying <audio> element firing its native 'ended' event.
+        // Restoring the previous BGM fades back in, which runs on a setInterval.
+        act(() => {
+            bgmEl.onended();
+            vi.advanceTimersByTime(1000);
+        });
+
+        expect(result.current.currentBGM).toBe('battle');
+        vi.useRealTimers();
+    });
+
+    it('does not restore the previous BGM if it changed during the sting', () => {
+        const wrapper = ({ children }) => <AudioProvider>{children}</AudioProvider>;
+        const { result } = renderHook(() => useAudio(), { wrapper });
+
+        act(() => { result.current.playBGM('battle'); });
+        act(() => { result.current.playSting('fanfare'); });
+        act(() => { result.current.stopBGM(); });
+
+        const bgmEl = global.__audioInstances[0];
+        act(() => {
+            bgmEl.onended?.();
+        });
+
+        expect(result.current.currentBGM).toBeNull();
+    });
+
+    it('mutes BGM volume when isMusicMuted is set', () => {
+        const wrapper = ({ children }) => <AudioProvider>{children}</AudioProvider>;
+        const { result } = renderHook(() => useAudio(), { wrapper });
+
+        act(() => { result.current.setIsMusicMuted(true); });
+        expect(result.current.isMusicMuted).toBe(true);
+    });
+
+    it('mutes SFX volume when isSfxMuted is set', () => {
+        const wrapper = ({ children }) => <AudioProvider>{children}</AudioProvider>;
+        const { result } = renderHook(() => useAudio(), { wrapper });
+
+        act(() => { result.current.setIsSfxMuted(true); });
+        act(() => { result.current.playSFX('click'); });
+        expect(result.current.isSfxMuted).toBe(true);
+    });
+
+    it('updates music and sfx volume via setters', () => {
+        const wrapper = ({ children }) => <AudioProvider>{children}</AudioProvider>;
+        const { result } = renderHook(() => useAudio(), { wrapper });
+
+        act(() => { result.current.setMusicVolume(0.9); });
+        act(() => { result.current.setSfxVolume(0.1); });
+
+        expect(result.current.musicVolume).toBe(0.9);
+        expect(result.current.sfxVolume).toBe(0.1);
+    });
+
+    it('warns but does not throw when SFX playback fails', async () => {
+        const originalAudio = global.Audio;
+        global.Audio = class {
+            constructor() {
+                this.play = vi.fn().mockRejectedValue(new Error('blocked'));
+                this.pause = vi.fn();
+                this.src = '';
+                this.volume = 1;
+                this.loop = false;
+                this.currentTime = 0;
+            }
+        };
+        const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+        const wrapper = ({ children }) => <AudioProvider>{children}</AudioProvider>;
+        const { result } = renderHook(() => useAudio(), { wrapper });
+
+        await act(async () => {
+            result.current.playSFX('click');
+            await Promise.resolve();
+            await Promise.resolve();
+        });
+
+        expect(warnSpy).toHaveBeenCalledWith('SFX play failed:', expect.any(Error));
+        warnSpy.mockRestore();
+        global.Audio = originalAudio;
     });
 });
