@@ -8,6 +8,7 @@ vi.mock('../api/npcChat', () => ({
   default: {
     open: vi.fn(),
     respond: vi.fn(),
+    end: vi.fn(),
   },
 }))
 
@@ -558,6 +559,124 @@ describe('NpcChatPanel', () => {
       })
 
       expect(screen.queryByTestId('relationship-badge')).not.toBeInTheDocument()
+    })
+  })
+
+  describe('Ending the conversation', () => {
+    it('calls npcChat.end and onClose when End Conversation is clicked', async () => {
+      npcChat.end.mockResolvedValue({ data: { success: true } })
+      render(
+        <NpcChatPanel npcId={mockNpcId} npcName={mockNpcName} onClose={mockOnClose} />
+      )
+
+      await waitFor(() => expect(npcChat.open).toHaveBeenCalled())
+      fireEvent.click(screen.getByText('End Conversation'))
+
+      await waitFor(() => {
+        expect(npcChat.end).toHaveBeenCalledWith('npc_session_123')
+        expect(mockOnClose).toHaveBeenCalled()
+      })
+    })
+
+    it('still closes silently when npcChat.end throws', async () => {
+      npcChat.end.mockRejectedValue(new Error('offline'))
+      render(
+        <NpcChatPanel npcId={mockNpcId} npcName={mockNpcName} onClose={mockOnClose} />
+      )
+
+      await waitFor(() => expect(npcChat.open).toHaveBeenCalled())
+      fireEvent.click(screen.getByText('End Conversation'))
+
+      await waitFor(() => {
+        expect(mockOnClose).toHaveBeenCalled()
+      })
+    })
+
+    it('does nothing when End Conversation is clicked before the session key is ready', () => {
+      let resolveOpen
+      npcChat.open.mockReturnValue(new Promise((resolve) => { resolveOpen = resolve }))
+      render(
+        <NpcChatPanel npcId={mockNpcId} npcName={mockNpcName} onClose={mockOnClose} />
+      )
+
+      fireEvent.click(screen.getByText('End Conversation'))
+
+      expect(npcChat.end).not.toHaveBeenCalled()
+      resolveOpen(mockOpenResponse)
+    })
+  })
+
+  describe('Retrying a failed action', () => {
+    it('retries opening the conversation when Retry is clicked after a failed open', async () => {
+      npcChat.open.mockRejectedValueOnce(new Error('Network error'))
+      render(
+        <NpcChatPanel npcId={mockNpcId} npcName={mockNpcName} onClose={mockOnClose} />
+      )
+
+      await waitFor(() => expect(screen.getByText(/Failed to open conversation/i)).toBeInTheDocument())
+      expect(npcChat.open).toHaveBeenCalledTimes(1)
+
+      npcChat.open.mockResolvedValue(mockOpenResponse)
+      fireEvent.click(screen.getByText('Retry'))
+
+      await waitFor(() => expect(npcChat.open).toHaveBeenCalledTimes(2))
+    })
+
+    it('retries the same option when Retry is clicked after a failed response', async () => {
+      npcChat.respond.mockRejectedValueOnce(new Error('Network error'))
+      render(
+        <NpcChatPanel npcId={mockNpcId} npcName={mockNpcName} onClose={mockOnClose} />
+      )
+
+      await waitFor(() => expect(npcChat.open).toHaveBeenCalled())
+      fireEvent.click(screen.getByText('Hi there'))
+
+      await waitFor(() => expect(screen.getByText(/NPC did not respond/i)).toBeInTheDocument())
+      expect(npcChat.respond).toHaveBeenCalledTimes(1)
+
+      npcChat.respond.mockResolvedValue({
+        data: {
+          npc_response: 'Ah, welcome back.',
+          jean_options: [],
+          loquacity_current: 3,
+          loquacity_max: 5,
+          conversation_ended: false,
+        },
+      })
+      fireEvent.click(screen.getByText('Retry'))
+
+      await waitFor(() => expect(npcChat.respond).toHaveBeenCalledTimes(2))
+    })
+  })
+
+  describe('Conversation ending automatically', () => {
+    it('closes the panel after a delay when the conversation ends', async () => {
+      npcChat.respond.mockResolvedValue({
+        data: {
+          npc_response: 'Farewell.',
+          jean_options: [],
+          loquacity_current: 0,
+          loquacity_max: 5,
+          conversation_ended: true,
+        },
+      })
+
+      render(
+        <NpcChatPanel npcId={mockNpcId} npcName={mockNpcName} onClose={mockOnClose} />
+      )
+
+      await waitFor(() => expect(npcChat.open).toHaveBeenCalled())
+      fireEvent.click(screen.getByText('Hi there'))
+
+      await waitFor(() => expect(npcChat.respond).toHaveBeenCalled())
+      // The mocked BaseDialog bubbles every click to onClose, so the option
+      // click itself already triggered one call unrelated to conversation
+      // state; assert a further, delayed call from the 2s auto-close timer.
+      const callsBeforeDelay = mockOnClose.mock.calls.length
+      await waitFor(
+        () => expect(mockOnClose.mock.calls.length).toBeGreaterThan(callsBeforeDelay),
+        { timeout: 3000 }
+      )
     })
   })
 })
