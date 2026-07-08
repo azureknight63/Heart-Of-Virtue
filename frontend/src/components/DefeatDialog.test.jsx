@@ -141,4 +141,56 @@ describe('DefeatDialog', () => {
     const loadBtn = screen.queryByText('LOAD');
     expect(loadBtn, 'LOAD button should not render when no saves exist').toBeNull();
   });
+
+  it('falls back to a generic defeat message when endState has none', async () => {
+    render(<DefeatDialog endState={{}} onLoadedSave={mockOnLoadedSave} />);
+    expect(screen.getByText('You have been defeated.')).toBeInTheDocument();
+  });
+
+  it('defaults the saves list to empty when the response has no data.saves', async () => {
+    apiEndpoints.saves.list.mockResolvedValue({});
+    render(<DefeatDialog endState={{}} onLoadedSave={mockOnLoadedSave} />);
+
+    await waitFor(() => {
+      expect(screen.getByText('No saves found.')).toBeInTheDocument();
+    });
+  });
+
+  it('shows the LOADING… label on the button while a load is in flight', async () => {
+    let resolveLoad;
+    apiEndpoints.saves.load.mockReturnValue(new Promise((r) => { resolveLoad = r; }));
+    render(<DefeatDialog endState={{}} onLoadedSave={mockOnLoadedSave} />);
+
+    await waitFor(() => expect(screen.getByText('Hero Save • Lv 5 • Dark Forest')).toBeInTheDocument());
+    fireEvent.click(screen.getByText('LOAD'));
+
+    expect(screen.getByText('LOADING…')).toBeInTheDocument();
+    resolveLoad({ success: true });
+    await waitFor(() => expect(mockOnLoadedSave).toHaveBeenCalled());
+  });
+
+  it('prefers the server-provided error message when loading a save fails', async () => {
+    apiEndpoints.saves.load.mockRejectedValue({ response: { data: { error: 'Save is corrupted.' } } });
+    render(<DefeatDialog endState={{}} onLoadedSave={mockOnLoadedSave} />);
+
+    await waitFor(() => expect(screen.getByText('Hero Save • Lv 5 • Dark Forest')).toBeInTheDocument());
+    fireEvent.click(screen.getByText('LOAD'));
+
+    await waitFor(() => {
+      expect(screen.getByText('Save is corrupted.')).toBeInTheDocument();
+    });
+  });
+
+  it('shows an error and stops loading when logout fails on Start Over', async () => {
+    mockLogout.mockRejectedValue(new Error('Logout failed'));
+    render(<DefeatDialog endState={{}} onLoadedSave={mockOnLoadedSave} />);
+
+    await waitFor(() => expect(screen.queryByText('Loading…')).toBeNull());
+    fireEvent.click(screen.getByText('START OVER'));
+
+    await waitFor(() => {
+      expect(screen.getByText('Logout failed')).toBeInTheDocument();
+    });
+    expect(screen.getByText('START OVER')).not.toBeDisabled();
+  });
 });
