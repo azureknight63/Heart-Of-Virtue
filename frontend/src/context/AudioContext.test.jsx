@@ -219,6 +219,46 @@ describe('AudioContext', () => {
         expect(result.current.isMusicMuted).toBe(true);
     });
 
+    it('silences BGM playback when isMusicMuted is set', () => {
+        const wrapper = ({ children }) => <AudioProvider>{children}</AudioProvider>;
+        const { result } = renderHook(() => useAudio(), { wrapper });
+
+        act(() => { result.current.setIsMusicMuted(true); });
+        act(() => { result.current.playBGM('battle'); });
+
+        const bgmInstance = global.__audioInstances.find(a => a.src.includes('bgm_battle'));
+        expect(bgmInstance.volume).toBe(0);
+    });
+
+    it('silences the sting when isMusicMuted is set', () => {
+        const wrapper = ({ children }) => <AudioProvider>{children}</AudioProvider>;
+        const { result } = renderHook(() => useAudio(), { wrapper });
+
+        act(() => { result.current.setIsMusicMuted(true); });
+        act(() => { result.current.playSting('fanfare'); });
+
+        const stingInstance = global.__audioInstances.find(a => a.src.includes('bgm_fanfare'));
+        expect(stingInstance.volume).toBe(0);
+    });
+
+    it('builds a fallback path for a BGM track not in BGM_MAP', () => {
+        const wrapper = ({ children }) => <AudioProvider>{children}</AudioProvider>;
+        const { result } = renderHook(() => useAudio(), { wrapper });
+
+        act(() => { result.current.playBGM('custom_track'); });
+        const instance = global.__audioInstances.find(a => a.src.includes('bgm_custom_track'));
+        expect(instance).toBeDefined();
+    });
+
+    it('builds a fallback path for a sting not in BGM_MAP', () => {
+        const wrapper = ({ children }) => <AudioProvider>{children}</AudioProvider>;
+        const { result } = renderHook(() => useAudio(), { wrapper });
+
+        act(() => { result.current.playSting('custom_sting'); });
+        const instance = global.__audioInstances.find(a => a.src.includes('bgm_custom_sting'));
+        expect(instance).toBeDefined();
+    });
+
     it('mutes SFX volume when isSfxMuted is set', () => {
         const wrapper = ({ children }) => <AudioProvider>{children}</AudioProvider>;
         const { result } = renderHook(() => useAudio(), { wrapper });
