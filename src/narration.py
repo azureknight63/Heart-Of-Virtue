@@ -136,6 +136,7 @@ def say(
     reactions=None,
     enter=None,
     leave=None,
+    thought=False,
     color=None,
     attrs=None,
     **meta,
@@ -143,11 +144,17 @@ def say(
     """Emit a spoken dialogue beat attributed to ``speaker`` with an ``emotion``.
 
     :param reactions: optional ``{char_id: emotion}`` applied to listening
-        characters on this beat (their faces persist until changed again).
+        characters on this beat (their faces persist until changed again). Works
+        the same whether the beat is spoken or a ``thought`` — pass it whenever a
+        strong-emotion thought should visibly land on another character's face;
+        omit it (the default) for a private thought no one reacts to.
     :param enter: optional stage-enter op(s) attached to this beat — a dict (or
         list of dicts) shaped like :func:`enter_character`'s entry.
     :param leave: optional stage-exit op(s) attached to this beat; maps to the
         wire field ``exit`` (a dict or list of dicts like :func:`exit_character`).
+    :param thought: when ``True``, marks this beat as ``speaker``'s internal
+        thought rather than spoken dialogue — the client renders it italicized
+        without quote marks while the speaker's portrait stays fully active.
     """
     extra = {"speaker": speaker, "emotion": _norm_emotion(emotion)}
     if reactions:
@@ -156,6 +163,8 @@ def say(
         extra["enter"] = enter if isinstance(enter, list) else [enter]
     if leave:
         extra["exit"] = leave if isinstance(leave, list) else [leave]
+    if thought:
+        extra["thought"] = True
     extra.update(meta)
     narrate(text, color=color, attrs=attrs, mtype="dialogue", **extra)
 
@@ -196,6 +205,45 @@ def begin_conversation(cast):
     _emit_control({"type": "conversation_begin", "cast": roster})
 
 
+def enter_op(speaker, side=None, emotion="neutral", transition="fade", name=None):
+    """Build a stage-enter op dict without emitting it.
+
+    Use this to construct the ``enter=`` argument to :func:`say` (attaching the
+    entrance to a spoken/thought beat) instead of hand-writing the dict literal.
+    For a standalone entrance not tied to a beat, call :func:`enter_character`,
+    which emits this same shape immediately.
+
+    :param side: ``"left"``/``"right"`` or ``None`` to defer to the party-rule
+        default resolved by the API layer.
+    :param transition: ``"fade"`` (default) or ``"instant"``.
+    """
+    return {
+        "id": speaker,
+        "name": name or speaker,
+        "side": side,
+        "emotion": _norm_emotion(emotion),
+        "transition": transition,
+    }
+
+
+def exit_op(speaker, transition="fade", span=None):
+    """Build a stage-exit op dict without emitting it.
+
+    Use this to construct the ``leave=`` argument to :func:`say` (attaching the
+    exit to a spoken/thought beat) instead of hand-writing the dict literal.
+    For a standalone exit not tied to a beat, call :func:`exit_character`, which
+    emits this same shape immediately.
+
+    :param transition: ``"fade"`` (default) or ``"instant"``.
+    :param span: optional number of subsequent advances over which a ``fade``
+        steps out; omit for a fixed-duration fade.
+    """
+    entry = {"id": speaker, "transition": transition}
+    if span is not None:
+        entry["span"] = span
+    return entry
+
+
 def enter_character(
     speaker, side=None, emotion="neutral", transition="fade", name=None
 ):
@@ -205,16 +253,7 @@ def enter_character(
         default resolved by the API layer.
     :param transition: ``"fade"`` (default) or ``"instant"``.
     """
-    _emit_control(
-        {
-            "type": "stage_enter",
-            "id": speaker,
-            "name": name or speaker,
-            "side": side,
-            "emotion": _norm_emotion(emotion),
-            "transition": transition,
-        }
-    )
+    _emit_control({"type": "stage_enter", **enter_op(speaker, side, emotion, transition, name)})
 
 
 def exit_character(speaker, transition="fade", span=None):
@@ -224,10 +263,7 @@ def exit_character(speaker, transition="fade", span=None):
     :param span: optional number of subsequent advances over which a ``fade``
         steps out; omit for a fixed-duration fade.
     """
-    entry = {"type": "stage_exit", "id": speaker, "transition": transition}
-    if span is not None:
-        entry["span"] = span
-    _emit_control(entry)
+    _emit_control({"type": "stage_exit", **exit_op(speaker, transition, span)})
 
 
 def end_conversation():

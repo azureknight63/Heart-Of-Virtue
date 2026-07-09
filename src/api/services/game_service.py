@@ -283,6 +283,8 @@ class GameService:
                 seg["emotion"] = m.get("emotion", "neutral")
             if m.get("reactions"):
                 seg["reactions"] = m.get("reactions")
+            if m.get("thought"):
+                seg["thought"] = True
             if enter_ops:
                 seg["enter"] = enter_ops
             if exit_ops:

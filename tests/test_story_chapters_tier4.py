@@ -667,10 +667,9 @@ class TestAfterTheRumblerFight(unittest.TestCase):
         """Test process method."""
         event = AfterTheRumblerFight(self.player, self.tile, params=None)
         self.tile.npcs_here = []
-        with patch('story.ch01.dialogue'):
-            with patch('src.functions.await_input'):
-                with patch('time.sleep'):
-                    event.process()
+        with patch('src.functions.await_input'):
+            with patch('time.sleep'):
+                event.process()
 
 
 class TestAfterGorranIntro(unittest.TestCase):
@@ -760,8 +759,7 @@ class TestCh01GorranMarkings(unittest.TestCase):
     def test_gorran_markings_process(self):
         """Test process method."""
         event = Ch01GorranMarkings(self.player, self.tile)
-        with patch('story.ch01.dialogue'):
-            event.process()
+        event.process()
 
 
 class TestCh01GorranDarkChamber(unittest.TestCase):

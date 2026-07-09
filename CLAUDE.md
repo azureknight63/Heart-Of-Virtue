@@ -222,6 +222,9 @@ See `docs/coverage/coverage-dashboard.md` for:
 - `player.reputation` doesn't exist initially. Methods that write to it initialize `player.reputation = {}` first. Read-only uses should do `getattr(player, 'reputation', {})`.
 - **Cooldown timing trap**: cooldowns must only drain during active combat beats. Any code path that calls cooldown drain outside the combat loop (e.g., during rest, world movement, or save/load) will silently corrupt move availability. Guard all drain calls with an active-combat check.
 
+### Frontend patterns (critical gotchas)
+- **`ConversationStage` reset trap**: `ConversationStage.jsx` renders staged (portrait) dialogue and tracks its position with `beatIndex` (`useState`) and a `completedRef` (`useRef`) that gates `onComplete` to fire exactly once. `EventDialog.jsx` mounts it with no `key` prop, so React reuses the same instance across re-renders instead of remounting it when `segments`/`conversation` change. This was harmless as long as every event handed it exactly one `segments` array for its whole life — but any event that calls `begin_conversation()` more than once across separate stages (multiple `process_event_input` round-trips within a single event, e.g. `Ch02GuideToCitadel`, `AfterKingSlimeReturn`) hands the *same mounted instance* a fresh `segments` array per stage. Without a reset, the next stage resumes at the previous stage's stale `beatIndex` (skipping or blanking beats) and `completedRef.current` is already `true`, so `onComplete` never fires again — soft-locking the player with no way to advance. `ConversationStage.jsx` now has a `useEffect` keyed on `segments` that resets both `beatIndex` and `completedRef.current` on every new stage (each API response builds a fresh array, so reference-equality naturally fires this once per stage). Any new component that holds per-conversation/per-stage state across a `segments`/`conversation` prop change needs the same reset-on-prop-change guard.
+
 ## Completed Milestones
 
 Key architectural work already merged into the codebase:
@@ -236,6 +239,7 @@ Key architectural work already merged into the codebase:
 - `GameService.move_player` calls `player.universe.game_tick_events()` on every move — required for map-entry spawners (NPCSpawnerEvents) to fire; mirrors the terminal game loop
 - `src/moves.py` split into `src/moves/` package (13 submodules, 73 classes) — `PassiveMove` base class added to eliminate ~200 lines of repeated passive-move boilerplate; all callers unchanged via `__init__.py` re-exports
 - Terminal-mode teardown (Phase 2): all four `interface.py` menu classes removed, dead `combat()` loop deleted, `TheAdjutant` menu converted to the `/api/debug` blueprint, event capture moved fully onto the narration sink + structured protocol (see "Terminal-mode removal" below for details and what remains)
+- Portrait-dialog rollout (Phase 2, ch02.py): staged `say()`/`narrate()`/`begin_conversation()` conversion extended to `ch02.py`'s `self.description`-driven events (Votha Krr introduction/farewell, King Slime memory flash, `AfterDefeatingKingSlime`). Uncovered and fixed the `ConversationStage` reset trap above, a Gorran/Votha-Krr name-reveal spoiler (canonical speaker id leaking onto the portrait before the in-fiction naming beat), a missing fade `span` on a stage-exit op, and a dropped narration sentence from a `narrate()` split.
 
 ### Terminal-mode removal (mostly complete)
 

@@ -148,6 +148,18 @@ function ConversationStage({ segments = [], conversation = null, onComplete, spe
 
     const { displayedText, isComplete, finishImmediately } = useTypewriter(current.text || '', speed)
 
+    // A single event can stage multiple conversations across separate turns
+    // (e.g. a multi-stage Votha Krr scene where each "Continue" advances the
+    // Python event to a new stage with its own fresh segments/conversation
+    // payload). ConversationStage isn't remounted between those payloads, so
+    // beatIndex/completedRef must reset whenever a new segments array arrives
+    // — otherwise the stage resumes at a stale index and onComplete (gated by
+    // completedRef) never fires again for the new conversation.
+    useEffect(() => {
+        setBeatIndex(0)
+        completedRef.current = false
+    }, [segments])
+
     const advance = useCallback(() => {
         if (!isComplete) {
             finishImmediately()
@@ -207,6 +219,7 @@ function ConversationStage({ segments = [], conversation = null, onComplete, spe
     )
 
     const isDialogue = Boolean(current.speaker)
+    const isThought = Boolean(current.thought)
 
     return (
         <div
@@ -263,7 +276,7 @@ function ConversationStage({ segments = [], conversation = null, onComplete, spe
                         lineHeight: 1.6,
                         whiteSpace: 'pre-wrap',
                         textAlign: isDialogue ? 'left' : 'center',
-                        fontStyle: isDialogue ? 'normal' : 'italic',
+                        fontStyle: isDialogue && !isThought ? 'normal' : 'italic',
                     }}
                 >
                     {displayedText}

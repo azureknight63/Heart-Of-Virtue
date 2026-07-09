@@ -65,6 +65,18 @@ def test_say_carries_reactions_and_exit_ops():
     assert entry["exit"] == [{"id": "Amelia", "transition": "fade", "span": 3}]
 
 
+def test_say_thought_flag_defaults_false_and_can_be_set():
+    from src.narration import capture_narration, say
+
+    with capture_narration() as msgs:
+        say("You worry too much, dear.", "Jean", "happy")
+        say("He'd expected a rumble. Not that.", "Jean", "surprised", thought=True)
+
+    spoken, thought = msgs
+    assert "thought" not in spoken
+    assert thought["thought"] is True
+
+
 def test_stage_control_helpers_emit_control_entries():
     from src.narration import (
         capture_narration,
@@ -180,6 +192,19 @@ def test_explicit_side_overrides_party_rule(game_service):
     assert conversation["cast"][0]["side"] == "left"
 
 
+def test_capture_propagates_thought_flag_onto_segment(game_service):
+    from src.narration import capture_narration, say
+
+    with capture_narration() as msgs:
+        say("Not now. Keep moving.", "Jean", "neutral")
+        say("He'd expected a rumble. Not that.", "Jean", "surprised", thought=True)
+
+    _out, segments, _conv = game_service._capture_conversation(msgs, FakePlayer())
+    spoken, thought = segments
+    assert "thought" not in spoken
+    assert thought["thought"] is True
+
+
 def test_trailing_stage_op_attaches_to_last_segment(game_service):
     from src.narration import capture_narration, say, exit_character
 
@@ -240,6 +265,149 @@ def test_ch01_amelia_memory_produces_staged_conversation(game_service):
     assert "MEMORY STIRS" not in all_text
     assert "THE MEMORY FADES" not in all_text
     assert "═" not in all_text
+
+
+def test_after_the_rumbler_fight_defers_gorrans_name_until_the_reveal(game_service):
+    """Canary: the naming scene doesn't leak 'Gorran' onto the portrait before
+    the in-fiction reveal (his first spoken line is the reveal itself)."""
+    from unittest.mock import Mock
+    from src.narration import capture_narration
+    from src.story.ch01 import AfterTheRumblerFight
+
+    player = FakePlayer(name="Jean")
+    player.in_combat = False
+    player.combat_list_allies = []
+    tile = Mock()
+    tile.npcs_here = []
+    event = AfterTheRumblerFight(player=player, tile=tile, params=None)
+
+    with patch("time.sleep", return_value=None):
+        with capture_narration() as msgs:
+            event.process()
+
+    out, segments, conversation = game_service._capture_conversation(msgs, player)
+
+    cast = {c["id"]: c for c in conversation["cast"]}
+    assert "Rock-Man" in cast
+    assert "Gorran" not in cast  # not in the initial roster — enters mid-scene
+
+    reveal_beat = next(s for s in segments if s.get("speaker") == "Gorran")
+    assert "Go-rra-nnnnnn" in reveal_beat["text"]
+    assert any(op["id"] == "Gorran" for op in reveal_beat.get("enter", []))
+    assert any(op["id"] == "Rock-Man" for op in reveal_beat.get("exit", []))
+
+    # No earlier beat is attributed to "Gorran" before the reveal.
+    reveal_index = segments.index(reveal_beat)
+    assert all(s.get("speaker") != "Gorran" for s in segments[:reveal_index])
+
+
+def test_ch02_guide_to_citadel_stage4_produces_staged_conversation(game_service):
+    """Canary: the Votha Krr introduction (Pattern C -> say()/narrate() rollout)
+    builds a real staged conversation, not just a legacy description string."""
+    from unittest.mock import Mock
+    from src.narration import capture_narration
+    from src.story.ch02 import Ch02GuideToCitadel
+
+    class Ally:
+        name = "Gorran"
+
+    player = FakePlayer(name="Jean", allies=[Ally()])
+    player.skip_dialog = False
+    player.combat_list = []
+    tile = Mock()
+    tile.remove_event = Mock()
+    event = Ch02GuideToCitadel(player=player, tile=tile, params=None)
+
+    with capture_narration() as msgs:
+        for _ in range(4):  # advance to stage 4 (Votha Krr's introduction)
+            event.process()
+
+    out, segments, conversation = game_service._capture_conversation(msgs, player)
+
+    cast = {c["id"]: c for c in conversation["cast"]}
+    assert cast["Jean"]["side"] == "left"
+    assert cast["Gorran"]["side"] == "left"  # ally -> party-rule left
+
+    # The elder is unnamed ("Elder") until his self-introduction beat, matching
+    # the reveal the legacy description text preserves ("Elder: ..." then
+    # "Votha Krr: ...") — his name shouldn't leak onto the portrait label early.
+    elder_beats = [s for s in segments if s.get("speaker") == "Elder"]
+    assert any("welcome here" in s["text"].lower() for s in elder_beats)
+    votha_beats = [s for s in segments if s.get("speaker") == "Votha Krr"]
+    assert any("i am elder votha krr" in s["text"].lower() for s in votha_beats)
+
+    # The self-introduction beat swaps "Elder" out for "Votha Krr".
+    reveal_beat = next(s for s in votha_beats if "i am elder votha krr" in s["text"].lower())
+    assert any(op["id"] == "Votha Krr" for op in reveal_beat.get("enter", []))
+    assert any(op["id"] == "Elder" for op in reveal_beat.get("exit", []))
+
+    # Gorran leaves partway through the scene, fading out over more than one beat.
+    exits = [op for s in segments for op in s.get("exit", [])]
+    gorran_exit = next(op for op in exits if op["id"] == "Gorran")
+    assert gorran_exit.get("span", 1) > 1
+
+
+def test_ch02_king_slime_memory_flash_produces_thought_segments(game_service):
+    """Canary: the King Slime flashback tags Jean's introspective beats as
+    internal thoughts (no other character on stage — a solo memory)."""
+    from unittest.mock import Mock, patch
+    from src.narration import capture_narration
+    from src.story.ch02 import Ch02KingSlimeMemoryFlash
+
+    player = FakePlayer(name="Jean")
+    player.universe = Mock()
+    player.universe.story = {}
+    tile = Mock()
+    tile.events_here = []
+    event = Ch02KingSlimeMemoryFlash(player=player, tile=tile)
+
+    with (
+        patch("src.animations.animate_to_main_screen", return_value=None),
+        patch("time.sleep", return_value=None),
+    ):
+        with capture_narration() as msgs:
+            event.process()
+
+    out, segments, conversation = game_service._capture_conversation(msgs, player)
+
+    cast = {c["id"]: c for c in conversation["cast"]}
+    assert list(cast.keys()) == ["Jean"]
+
+    thought_beats = [s for s in segments if s.get("thought")]
+    assert any("Pain" in s["text"] for s in thought_beats)
+    assert any("emptiness" in s["text"] for s in thought_beats)
+    assert all(s["speaker"] == "Jean" for s in thought_beats)
+    # No reactions are authored on a solo memory (no one else on stage).
+    assert all("reactions" not in s for s in thought_beats)
+
+
+def test_after_king_slime_return_stage1_produces_staged_conversation(game_service):
+    """Canary: Votha Krr's fragment-acceptance scene (Pattern C -> say()/narrate()
+    rollout) builds a staged conversation on stage 1."""
+    from unittest.mock import Mock
+    from src.narration import capture_narration
+    from src.story.ch02 import AfterKingSlimeReturn
+
+    player = FakePlayer(name="Jean")
+    player.universe = Mock()
+    player.universe.story = {"king_slime_defeated": "1"}
+    fragment = Mock()
+    fragment.__class__.__name__ = "MineralFragment"
+    player.inventory = [fragment]
+    tile = Mock()
+    event = AfterKingSlimeReturn(player=player, tile=tile)
+
+    with capture_narration() as msgs:
+        event.process()
+
+    out, segments, conversation = game_service._capture_conversation(msgs, player)
+
+    cast = {c["id"]: c for c in conversation["cast"]}
+    assert cast["Jean"]["side"] == "left"
+    assert cast["Votha Krr"]["side"] == "right"
+
+    by_speaker = [s for s in segments if s.get("speaker") == "Votha Krr"]
+    assert any("done well" in s["text"].lower() for s in by_speaker)
 
 
 def test_memory_chrome_entries_are_dropped(game_service):
