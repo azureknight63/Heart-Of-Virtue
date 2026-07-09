@@ -359,6 +359,24 @@ describe('FeedbackDialog', () => {
       });
     });
 
+    it('submits feature request fields when on the feature tab', async () => {
+      feedbackApi.submitIssue.mockResolvedValue({ success: true });
+      render(<FeedbackDialog onClose={mockOnClose} initialType="feature" />);
+
+      fireEvent.change(screen.getByPlaceholderText(/What feature would you like/i), { target: { value: 'Add fast travel' } });
+      fireEvent.change(screen.getByPlaceholderText(/Describe the feature/i), { target: { value: 'Let players warp between towns' } });
+      fireEvent.click(screen.getByText('Submit Feedback'));
+
+      await waitFor(() => {
+        expect(feedbackApi.submitIssue).toHaveBeenCalledWith(
+          'feature',
+          'Add fast travel',
+          expect.objectContaining({ description: 'Let players warp between towns' }),
+          false
+        );
+      });
+    });
+
     it('shows the server-provided error message when submission fails', async () => {
       feedbackApi.submitIssue.mockRejectedValue({ response: { data: { error: 'Rate limited.' } } });
       render(<FeedbackDialog onClose={mockOnClose} initialType="bug" />);
