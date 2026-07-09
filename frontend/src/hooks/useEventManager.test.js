@@ -270,6 +270,45 @@ describe('useEventManager', () => {
             expect(showError).toHaveBeenCalledWith('Something went wrong')
         })
 
+        it('falls back to a generic error message when the server omits one', async () => {
+            vi.spyOn(apiClient, 'post').mockResolvedValueOnce({
+                data: { success: false }
+            })
+
+            const { result } = renderHook(() => useEventManager(defaultParams))
+            const showError = vi.fn()
+
+            await act(async () => {
+                await result.current.handleEventInput('evt-1', 'user input', showError)
+            })
+
+            expect(showError).toHaveBeenCalledWith('Event processing failed')
+        })
+
+        it('carries segments, conversation, and is_death_scene through a standalone Event Result frame', async () => {
+            vi.spyOn(apiClient, 'post').mockResolvedValueOnce({
+                data: {
+                    success: true,
+                    output_text: 'Jean succumbs to his wounds.',
+                    needs_input: false,
+                    segments: [{ text: 'final seg' }],
+                    conversation: { cast: [{ id: 'Jean' }] },
+                    is_death_scene: true,
+                }
+            })
+
+            const { result } = renderHook(() => useEventManager(defaultParams))
+            const showError = vi.fn()
+
+            await act(async () => {
+                await result.current.handleEventInput('evt-1', 'user input', showError)
+            })
+
+            expect(result.current.currentEvent?.segments).toEqual([{ text: 'final seg' }])
+            expect(result.current.currentEvent?.conversation).toEqual({ cast: [{ id: 'Jean' }] })
+            expect(result.current.currentEvent?.is_death_scene).toBe(true)
+        })
+
         it('should show result event if output text is returned', async () => {
             vi.spyOn(apiClient, 'post').mockResolvedValueOnce({
                 data: { success: true, output_text: 'Result text', needs_input: false }
@@ -478,6 +517,43 @@ describe('useEventManager', () => {
             act(() => { result.current.handleEventsTriggered([event]) })
 
             await waitFor(() => expect(result.current.currentEvent?.event_id).toBe('evt-plain'))
+            expect(result.current.isInteractionDelayActive).toBe(false)
+        })
+
+        it('detects a memory event via the event type field alone', async () => {
+            vi.useFakeTimers()
+            const { result } = renderHook(() => useEventManager(defaultParams))
+
+            const event = { event_id: 'evt-mem-type', type: 'memory_flashback', name: 'Untitled', output_text: 'A recollection.', needs_input: false }
+            act(() => { result.current.handleEventsTriggered([event]) })
+
+            expect(result.current.isInteractionDelayActive).toBe(true)
+            act(() => { vi.advanceTimersByTime(3000) })
+            expect(result.current.currentEvent?.event_id).toBe('evt-mem-type')
+        })
+
+        it('delays a combat-end event solely because no enemies remain (no keyword match)', async () => {
+            vi.useFakeTimers()
+            const combat = { enemies: [] }
+            const { result } = renderHook(() => useEventManager({ ...defaultParams, mode: 'combat', combat }))
+
+            const event = { event_id: 'evt-quiet-end', name: 'Aftermath', output_text: 'The room falls silent.', needs_input: false }
+            act(() => { result.current.handleEventsTriggered([event]) })
+
+            expect(result.current.isInteractionDelayActive).toBe(true)
+            act(() => { vi.advanceTimersByTime(3000) })
+            expect(result.current.currentEvent?.event_id).toBe('evt-quiet-end')
+        })
+
+        it('derives the event text from message when output_text is absent', async () => {
+            const { result } = renderHook(() => useEventManager(defaultParams))
+
+            // Bypass handleEventsTriggered's own output_text/needs_input filter
+            // (this event only has `message`) by seeding the queue directly.
+            const event = { event_id: 'evt-msg', name: 'A Sign', message: 'Beware of the dog.', needs_input: true }
+            act(() => { result.current.setEventQueue([event]) })
+
+            await waitFor(() => expect(result.current.currentEvent?.event_id).toBe('evt-msg'))
             expect(result.current.isInteractionDelayActive).toBe(false)
         })
     })
