@@ -424,7 +424,7 @@ function InteractPanel({
                             <GameButton
                                 onClick={() => handleActionClick('take_all_ground')}
                                 variant="primary"
-                                disabled={loading || takingAllItems}
+                                disabled={loading || takingAllItems || isLocked}
                                 style={{
                                     padding: spacing.md,
                                     width: '100%',
