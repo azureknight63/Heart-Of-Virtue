@@ -268,6 +268,21 @@ describe('ConversationStage rendering', () => {
         expect(screen.getByText('You worry too much, dear.')).toBeInTheDocument()
     })
 
+    it('advances on Space keydown', () => {
+        render(
+            <ConversationStage
+                segments={stagedSegments}
+                conversation={{ cast: CAST }}
+                onComplete={vi.fn()}
+            />
+        )
+        const stage = screen.getByTestId('conversation-stage')
+        act(() => vi.advanceTimersByTime(3000))
+        fireEvent.keyDown(stage, { key: ' ' })
+        act(() => vi.advanceTimersByTime(3000))
+        expect(screen.getByText('You worry too much, dear.')).toBeInTheDocument()
+    })
+
     it('advances beats on click and calls onComplete after the last beat', () => {
         const onComplete = vi.fn()
         render(
