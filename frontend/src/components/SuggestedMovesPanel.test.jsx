@@ -209,6 +209,16 @@ describe('SuggestedMovesPanel', () => {
             expect(screen.getByText('analyzing…')).toBeInTheDocument();
         });
 
+        it('fades in the mobile strip after the visibility delay', () => {
+            vi.useFakeTimers();
+            localStorage.setItem('hov_tactical_advisor_collapsed', 'true');
+            const { container } = render(<SuggestedMovesPanel isPlayerTurn={true} suggestions={mockSuggestions} isMobile={true} />);
+
+            act(() => { vi.advanceTimersByTime(500); });
+            expect(container.querySelector('[style*="cursor: pointer"]').style.opacity).toBe('1');
+            vi.useRealTimers();
+        });
+
         it('expands again when the mobile strip is tapped', async () => {
             localStorage.setItem('hov_tactical_advisor_collapsed', 'true');
             const onPause = vi.fn().mockResolvedValue();
@@ -297,6 +307,46 @@ describe('SuggestedMovesPanel', () => {
             fireEvent.click(screen.getByText('DO IT AGAIN'));
             expect(onTargetHover).toHaveBeenCalledWith(null);
             expect(onSuggestClick).toHaveBeenCalledWith({ move_name: 'repeat_last' });
+            vi.useRealTimers();
+        });
+
+        it('applies and clears hover styling on the "DO IT AGAIN" button', () => {
+            vi.useFakeTimers();
+            render(
+                <SuggestedMovesPanel
+                    isPlayerTurn={true}
+                    suggestions={mockSuggestions}
+                    lastOutcome="Slash hit."
+                    lastMoveViable={true}
+                />
+            );
+            act(() => { vi.advanceTimersByTime(500); });
+
+            const repeatBtn = screen.getByText('DO IT AGAIN').closest('button');
+            fireEvent.mouseEnter(repeatBtn);
+            expect(repeatBtn.style.backgroundColor).toBe('rgba(0, 255, 136, 0.2)');
+            fireEvent.mouseLeave(repeatBtn);
+            expect(repeatBtn.style.backgroundColor).toBe('rgba(0, 255, 136, 0.1)');
+            vi.useRealTimers();
+        });
+
+        it('clears the hover target when a suggestion row itself is clicked', () => {
+            vi.useFakeTimers();
+            const onTargetHover = vi.fn();
+            const onSuggestClick = vi.fn();
+            render(
+                <SuggestedMovesPanel
+                    isPlayerTurn={true}
+                    suggestions={mockSuggestions}
+                    onTargetHover={onTargetHover}
+                    onSuggestClick={onSuggestClick}
+                />
+            );
+            act(() => { vi.advanceTimersByTime(500); });
+
+            fireEvent.click(screen.getByText('Slash'));
+            expect(onTargetHover).toHaveBeenCalledWith(null);
+            expect(onSuggestClick).toHaveBeenCalledWith(mockSuggestions[0]);
             vi.useRealTimers();
         });
     });

@@ -46,6 +46,23 @@ describe('StatusEffectsIconPanel', () => {
         expect(screen.getByText('🔥')).toBeDefined();
     });
 
+    it('picks the correct icon for bleed/stun/blind/slow/regen effects', () => {
+        const effects = [
+            { name: 'Bleeding', type: 'ailment' },
+            { name: 'Stunned', type: 'ailment' },
+            { name: 'Blinded', type: 'ailment' },
+            { name: 'Slowed', type: 'debuff' },
+            { name: 'Regeneration', type: 'buff' },
+        ];
+        render(<StatusEffectsIconPanel effects={effects} />);
+
+        expect(screen.getByText('🩸')).toBeDefined();
+        expect(screen.getByText('💫')).toBeDefined();
+        expect(screen.getByText('🕶️')).toBeDefined();
+        expect(screen.getByText('🐢')).toBeDefined();
+        expect(screen.getByText('💖')).toBeDefined();
+    });
+
     it('uses default icon for unknown effects', () => {
         const unknownEffects = [{ name: 'Mystic Energy', type: 'buff' }];
         render(<StatusEffectsIconPanel effects={unknownEffects} />);
