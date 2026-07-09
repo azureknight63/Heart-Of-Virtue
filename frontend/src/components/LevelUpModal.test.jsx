@@ -187,6 +187,15 @@ describe('LevelUpModal', () => {
     expect(screen.getByText(/boom/)).toBeInTheDocument()
   })
 
+  it('prefers err.response.data.error over err.message on randomize failure', async () => {
+    onAllocatePoints.mockRejectedValue({ response: { data: { error: 'server rejected randomize' } } })
+    render(<LevelUpModal player={makePlayer()} onAllocatePoints={onAllocatePoints} />)
+    await act(async () => {
+      fireEvent.click(screen.getByText('RANDOMIZE'))
+    })
+    expect(screen.getByText(/server rejected randomize/)).toBeInTheDocument()
+  })
+
   it('clears a stale error once the amount is brought back within range', () => {
     render(<LevelUpModal player={makePlayer({ pending_attribute_points: 2 })} onAllocatePoints={onAllocatePoints} />)
     const input = screen.getByRole('spinbutton')
