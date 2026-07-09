@@ -162,6 +162,49 @@ describe('ActionsPanel', () => {
     });
   });
 
+  it('defaults commands to an empty array when the response has no commands field', async () => {
+    apiEndpoints.world.getCommands.mockResolvedValue({ data: {} });
+
+    renderWithRouter(<ActionsPanel onClose={mockOnClose} />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/No commands currently available/i)).toBeDefined();
+    });
+  });
+
+  it('shows an error when the commands response has no data', async () => {
+    apiEndpoints.world.getCommands.mockResolvedValue({});
+
+    renderWithRouter(<ActionsPanel onClose={mockOnClose} />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Failed to load commands/i)).toBeDefined();
+    });
+  });
+
+  it('defaults to a generic success message when Save succeeds without one', async () => {
+    apiEndpoints.saves.save.mockResolvedValue({ data: { success: true } });
+
+    renderWithRouter(<ActionsPanel onClose={mockOnClose} />);
+    await waitFor(() => screen.getByText(/Save/i));
+    fireEvent.click(screen.getByText(/Save/i));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Game saved successfully!/i)).toBeDefined();
+    });
+  });
+
+  it('styles the tooltip/button for a debug command and falls back to a generic tooltip for an unrecognized command', async () => {
+    apiEndpoints.world.getCommands.mockResolvedValue({ data: { commands: [{ name: 'MysteryCmd', debug: true }] } });
+
+    renderWithRouter(<ActionsPanel onClose={mockOnClose} />);
+    await waitFor(() => screen.getByText(/MysteryCmd/i));
+
+    fireEvent.mouseEnter(screen.getByText(/MysteryCmd/i));
+    expect(screen.getByText(/General interaction command\./i)).toBeDefined();
+    fireEvent.mouseLeave(screen.getByText(/MysteryCmd/i));
+  });
+
   it('handles close button hover', () => {
     renderWithRouter(<ActionsPanel onClose={mockOnClose} />);
 
