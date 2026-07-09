@@ -81,6 +81,19 @@ describe('useCombatCoordinator', () => {
             expect(result.current.endState).toEqual(combat.end_state)
         })
 
+        it('clears the pending end-state timer on unmount', () => {
+            const combat = {
+                end_state: { id: 'victory-unmount', status: 'victory', message: 'You won!' },
+                log: []
+            }
+            const { unmount } = renderHook(() =>
+                useCombatCoordinator({ ...defaultParams, combat, inCombat: false })
+            )
+
+            // Unmount before the delayed dialog timer fires — should clear it without throwing.
+            expect(() => unmount()).not.toThrow()
+        })
+
         it('should show defeat dialog when combat ends with defeat', () => {
             const combat = {
                 end_state: {
@@ -296,6 +309,56 @@ describe('useCombatCoordinator', () => {
 
             await act(async () => {
                 await result.current.handleSuggestedMoveClick(suggestion)
+            })
+
+            expect(fetchCombatStatus).toHaveBeenCalled()
+        })
+
+        it('treats a missing enemies list as stale and refreshes combat status', async () => {
+            const performAction = vi.fn().mockResolvedValue({ success: true })
+            const fetchCombatStatus = vi.fn().mockResolvedValue(undefined)
+            const combat = {} // no enemies field at all
+
+            const { result } = renderHook(() =>
+                useCombatCoordinator({ ...defaultParams, performAction, fetchCombatStatus, combat })
+            )
+
+            await act(async () => {
+                await result.current.handleSuggestedMoveClick({ move_name: 'Attack', target_id: 'enemy_1' })
+            })
+
+            expect(fetchCombatStatus).toHaveBeenCalled()
+        })
+
+        it('uses the first enemy from the refreshed combat status when available', async () => {
+            const performAction = vi.fn().mockResolvedValue({ success: true })
+            const fetchCombatStatus = vi.fn().mockResolvedValue({ enemies: [{ id: 'enemy_3' }] })
+            const combat = { enemies: [{ id: 'enemy_2' }] }
+
+            const { result } = renderHook(() =>
+                useCombatCoordinator({ ...defaultParams, performAction, fetchCombatStatus, combat })
+            )
+
+            await act(async () => {
+                await result.current.handleSuggestedMoveClick({ move_name: 'Attack', target_id: 'enemy_1' })
+            })
+
+            expect(performAction).toHaveBeenCalledWith('select_move_and_target', {
+                move_name: 'Attack',
+                target_id: 'enemy_3'
+            })
+        })
+
+        it('refreshes combat status when the move rejection message mentions an invalid target', async () => {
+            const performAction = vi.fn().mockRejectedValue(new Error('invalid target selected'))
+            const fetchCombatStatus = vi.fn()
+
+            const { result } = renderHook(() =>
+                useCombatCoordinator({ ...defaultParams, performAction, fetchCombatStatus })
+            )
+
+            await act(async () => {
+                await result.current.handleSuggestedMoveClick({ move_name: 'Attack', target_id: null })
             })
 
             expect(fetchCombatStatus).toHaveBeenCalled()
