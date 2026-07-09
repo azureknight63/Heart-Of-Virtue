@@ -118,6 +118,19 @@ describe('usePlayer', () => {
     expect(result.current.loading).toBe(false);
   });
 
+  it('defaults inventory to an empty array when absent from the response', async () => {
+    apiEndpoints.player.getFullState.mockResolvedValue({
+      data: { status: { name: 'Hero', level: 5 }, stats: {}, skills: {} },
+    });
+
+    const { result } = renderHook(() => usePlayer());
+    await act(async () => {
+      await result.current.refetch();
+    });
+
+    expect(result.current.player.inventory).toEqual([]);
+  });
+
   it('handles fetch error', async () => {
     apiEndpoints.player.getFullState.mockRejectedValue(new Error('Fetch failed'));
 
@@ -353,6 +366,46 @@ describe('useWorld', () => {
     expect(caught.message).toBe('move blocked');
     expect(result.current.error).toBe('move blocked');
   });
+
+  it('carries an already-array exits field and populated items/npcs/objects through as new array references', async () => {
+    apiEndpoints.world.getCurrentLocation.mockResolvedValue({
+      data: {
+        room: {
+          x: 0, y: 0, name: 'Populated Room',
+          exits: ['north', 'south'],
+          items: [{ id: 'i1' }],
+          npcs: [{ id: 'n1' }],
+          objects: [{ id: 'o1' }],
+        },
+      },
+    });
+
+    const { result } = renderHook(() => useWorld());
+    await act(async () => {
+      await new Promise(resolve => setTimeout(resolve, 0));
+    });
+
+    expect(result.current.location.exits).toEqual(['north', 'south']);
+    expect(result.current.location.items).toEqual([{ id: 'i1' }]);
+    expect(result.current.location.npcs).toEqual([{ id: 'n1' }]);
+    expect(result.current.location.objects).toEqual([{ id: 'o1' }]);
+  });
+
+  it('defaults exits/items/npcs/objects to empty arrays when absent from the room', async () => {
+    apiEndpoints.world.getCurrentLocation.mockResolvedValue({
+      data: { room: { x: 0, y: 0, name: 'Bare Room' } },
+    });
+
+    const { result } = renderHook(() => useWorld());
+    await act(async () => {
+      await new Promise(resolve => setTimeout(resolve, 0));
+    });
+
+    expect(result.current.location.exits).toEqual([]);
+    expect(result.current.location.items).toEqual([]);
+    expect(result.current.location.npcs).toEqual([]);
+    expect(result.current.location.objects).toEqual([]);
+  });
 });
 
 describe('useExploration', () => {
@@ -378,6 +431,19 @@ describe('useExploration', () => {
     expect(result.current.exploredTiles.get('0,0').exits).toEqual(['north']);
     expect(result.current.exploredTiles.get('0,-1').exits).toEqual(['south']);
     expect(result.current.loading).toBe(false);
+  });
+
+  it('defaults a tile\'s exits to an empty array when absent', async () => {
+    apiEndpoints.world.getExploredTiles.mockResolvedValue({
+      data: { explored_tiles: { '1,1': { name: 'Bare Tile' } } },
+    });
+
+    const { result } = renderHook(() => useExploration());
+    await act(async () => {
+      await new Promise(resolve => setTimeout(resolve, 0));
+    });
+
+    expect(result.current.exploredTiles.get('1,1').exits).toEqual([]);
   });
 
   it('logs an error without throwing when fetching explored tiles fails', async () => {
