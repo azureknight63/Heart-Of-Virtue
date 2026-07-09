@@ -166,6 +166,35 @@ describe('useShop', () => {
       expect(txnResult).toEqual({ success: false, message: 'down' })
     })
 
+    it('buy() defaults sell_inventory to an empty array when the response omits it', async () => {
+      const result = await setup()
+      shopApi.buy.mockResolvedValue({
+        data: { success: true, shop_state: { gold: 90 }, message: 'Bought!' },
+      })
+      await act(async () => {
+        await result.current.buy('item-1', 1)
+      })
+      expect(result.current.sellInventory).toEqual([])
+    })
+
+    it('buy() prefers err.response.data.error over err.message on rejection', async () => {
+      const result = await setup()
+      shopApi.buy.mockRejectedValue({ response: { data: { error: 'Shop is closed.' } }, message: 'generic' })
+      await act(async () => {
+        await result.current.buy('item-1', 1)
+      })
+      expect(result.current.txnMessage).toEqual({ type: 'error', text: 'Shop is closed.' })
+    })
+
+    it('buy() falls back to "Network error" when the rejection has neither a response nor a message', async () => {
+      const result = await setup()
+      shopApi.buy.mockRejectedValue({})
+      await act(async () => {
+        await result.current.buy('item-1', 1)
+      })
+      expect(result.current.txnMessage).toEqual({ type: 'error', text: 'Network error' })
+    })
+
     it('sell() updates state via the sell endpoint', async () => {
       const result = await setup()
       shopApi.sell.mockResolvedValue({
