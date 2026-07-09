@@ -253,6 +253,77 @@ describe('MainMenuPage', () => {
         expect(mockAudioContext.setSfxVolume).toHaveBeenCalledWith(0.2);
     });
 
+    it('defaults music/sfx volume to 0% when undefined', () => {
+        saves.list.mockResolvedValue({ data: { saves: [] } });
+        const originalMusic = mockAudioContext.musicVolume;
+        const originalSfx = mockAudioContext.sfxVolume;
+        mockAudioContext.musicVolume = undefined;
+        mockAudioContext.sfxVolume = undefined;
+
+        render(<MemoryRouter><MainMenuPage /></MemoryRouter>);
+        fireEvent.click(screen.getByText(/Settings/i));
+
+        expect(screen.getAllByText('0%').length).toBe(2);
+        mockAudioContext.musicVolume = originalMusic;
+        mockAudioContext.sfxVolume = originalSfx;
+    });
+
+    it('defaults the load-modal save list to empty when the response has no data.saves', async () => {
+        saves.list.mockResolvedValueOnce({ data: { saves: [{ id: 'a', name: 'A', timestamp: '2023-01-01', level: 1, map_name: 'M', room_title: 'R' }] } });
+        render(<MemoryRouter><MainMenuPage /></MemoryRouter>);
+        await waitFor(() => screen.getByText(/Load Game/i));
+
+        saves.list.mockResolvedValueOnce({});
+        fireEvent.click(screen.getByText(/Load Game/i));
+
+        await waitFor(() => {
+            expect(screen.getByText(/No saves found\./i)).toBeInTheDocument();
+        });
+    });
+
+    it('activates a save row via keyboard (Enter/Space)', async () => {
+        const mockSaves = [{ id: 'cloud-1', name: 'Cloud Save', timestamp: '2023-01-01', level: 1, map_name: 'M', room_title: 'R' }];
+        saves.list.mockResolvedValue({ data: { saves: mockSaves } });
+        saves.load.mockResolvedValue({});
+
+        render(<MemoryRouter><MainMenuPage /></MemoryRouter>);
+        await waitFor(() => screen.getByText(/Load Game/i));
+        fireEvent.click(screen.getByText(/Load Game/i));
+        await waitFor(() => screen.getByText(/Cloud Save/i));
+
+        const row = screen.getByText(/Cloud Save/i).closest('[style*="cursor: pointer"]');
+        fireEvent.keyDown(row, { key: 'Enter' });
+
+        await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith('/game'));
+    });
+
+    it('reverts the hover border color for a local-autosave row on mouse leave', async () => {
+        const mockSaves = [{ id: 'local_autosave', name: 'Local Autosave', timestamp: '2023-01-01', level: 1, map_name: 'M', room_title: 'R', isLocal: true }];
+        saves.list.mockResolvedValue({ data: { saves: mockSaves } });
+
+        render(<MemoryRouter><MainMenuPage /></MemoryRouter>);
+        await waitFor(() => screen.getByText(/Load Game/i));
+        fireEvent.click(screen.getByText(/Load Game/i));
+        await waitFor(() => screen.getByText(/Local Autosave/i));
+
+        const row = screen.getByText(/Local Autosave/i).closest('[style*="cursor: pointer"]');
+        fireEvent.mouseEnter(row);
+        fireEvent.mouseLeave(row);
+    });
+
+    it('shows "Untitled Save" when a save has no name', async () => {
+        const mockSaves = [{ id: 'a', timestamp: '2023-01-01', level: 1, map_name: 'M', room_title: 'R' }];
+        saves.list.mockResolvedValue({ data: { saves: mockSaves } });
+
+        render(<MemoryRouter><MainMenuPage /></MemoryRouter>);
+        await waitFor(() => screen.getByText(/Load Game/i));
+        fireEvent.click(screen.getByText(/Load Game/i));
+
+        await waitFor(() => {
+            expect(screen.getByText('Untitled Save')).toBeInTheDocument();
+        });
+    });
+
     it('closes the settings and credits modals', () => {
         saves.list.mockResolvedValue({ data: { saves: [] } });
         render(<MemoryRouter><MainMenuPage /></MemoryRouter>);
@@ -314,6 +385,29 @@ describe('MainMenuPage', () => {
         expect(saves.load).not.toHaveBeenCalled();
 
         localStorage.removeItem('hov_local_autosave');
+    });
+
+    it('defaults a local autosave\'s map/room fields without crashing when absent', async () => {
+        localStorage.setItem('hov_local_autosave', JSON.stringify({
+            timestamp: '2099-01-01T00:00:00Z',
+            player: { level: 9 },
+        }));
+        saves.list.mockResolvedValue({ data: { saves: [] } });
+
+        render(<MemoryRouter><MainMenuPage /></MemoryRouter>);
+        await waitFor(() => {
+            expect(screen.getByText(/Continue/i)).toBeInTheDocument();
+        });
+        localStorage.removeItem('hov_local_autosave');
+    });
+
+    it('defaults the save list to empty when the response has no data.saves', async () => {
+        saves.list.mockResolvedValue({});
+        render(<MemoryRouter><MainMenuPage /></MemoryRouter>);
+
+        await waitFor(() => {
+            expect(screen.queryByText(/Continue/i)).not.toBeInTheDocument();
+        });
     });
 
     it('ignores a corrupted local autosave entry without crashing', async () => {
@@ -506,6 +600,34 @@ describe('MainMenuPage', () => {
         render(<MemoryRouter><MainMenuPage /></MemoryRouter>);
         fireEvent.click(screen.getByText(/Back to home/i));
         expect(mockNavigate).toHaveBeenCalledWith('/landing');
+    });
+
+    it('handles hover on the back-to-home button and the Nexus Fidei link', async () => {
+        saves.list.mockResolvedValue({ data: { saves: [] } });
+        render(<MemoryRouter><MainMenuPage /></MemoryRouter>);
+
+        const backBtn = screen.getByText(/Back to home/i);
+        fireEvent.mouseEnter(backBtn);
+        fireEvent.mouseLeave(backBtn);
+
+        await waitFor(() => screen.getByText(/Nexus Fidei/i));
+        const nexusLink = screen.getByText(/Nexus Fidei/i);
+        fireEvent.mouseEnter(nexusLink);
+        fireEvent.mouseLeave(nexusLink);
+    });
+
+    it('handles hover on a save-list row', async () => {
+        const mockSaves = [{ id: 'cloud-1', name: 'Cloud Save', timestamp: '2023-01-01', level: 1, map_name: 'M', room_title: 'R' }];
+        saves.list.mockResolvedValue({ data: { saves: mockSaves } });
+
+        render(<MemoryRouter><MainMenuPage /></MemoryRouter>);
+        await waitFor(() => screen.getByText(/Load Game/i));
+        fireEvent.click(screen.getByText(/Load Game/i));
+        await waitFor(() => screen.getByText(/Cloud Save/i));
+
+        const row = screen.getByText(/Cloud Save/i).closest('[style*="cursor: pointer"]');
+        fireEvent.mouseEnter(row);
+        fireEvent.mouseLeave(row);
     });
 
     it('marks a save with the Autosave badge when is_autosave is set', async () => {
