@@ -246,6 +246,62 @@ describe('CombatInputDialog', () => {
     expect(mockOnSelect).toHaveBeenCalled();
   });
 
+  it('notifies onTargetHover on hover and clears it on select', () => {
+    const mockOnTargetHover = vi.fn();
+    const options = [{ id: 't1', name: 'Target' }];
+    render(
+      <CombatInputDialog
+        inputType="target_selection"
+        options={options}
+        onSelect={mockOnSelect}
+        onCancel={mockOnCancel}
+        onTargetHover={mockOnTargetHover}
+      />
+    );
+
+    const card = screen.getByText('Target').closest('div').parentElement;
+    fireEvent.mouseEnter(card);
+    expect(mockOnTargetHover).toHaveBeenCalledWith('t1');
+    fireEvent.mouseLeave(card);
+    expect(mockOnTargetHover).toHaveBeenCalledWith(null);
+
+    fireEvent.click(card);
+    expect(mockOnTargetHover).toHaveBeenLastCalledWith(null);
+  });
+
+  it('falls back to name/label/id and renders plain strings for default-case options', () => {
+    const options = ['Plain String', { label: 'Label Only' }, { name: 'Named Item' }];
+    render(
+      <CombatInputDialog
+        inputType="unknown"
+        options={options}
+        onSelect={mockOnSelect}
+        onCancel={mockOnCancel}
+      />
+    );
+
+    expect(screen.getByText('Plain String')).toBeDefined();
+    expect(screen.getByText('Label Only')).toBeDefined();
+    expect(screen.getByText('Named Item')).toBeDefined();
+
+    fireEvent.click(screen.getByText('Plain String'));
+    expect(mockOnSelect).toHaveBeenCalledWith('Plain String');
+  });
+
+  it('defaults min/max/default when NumberInput options omit them', () => {
+    render(
+      <CombatInputDialog
+        inputType="number_input"
+        options={{}}
+        onSelect={mockOnSelect}
+        onCancel={mockOnCancel}
+      />
+    );
+
+    expect(screen.getByText('5')).toBeDefined();
+    expect(screen.getByText(/Range: 1 - 100/i)).toBeDefined();
+  });
+
   it('handles hover effects on generic option buttons', () => {
     render(
       <CombatInputDialog
