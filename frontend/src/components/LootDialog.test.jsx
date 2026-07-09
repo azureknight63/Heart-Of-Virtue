@@ -201,6 +201,47 @@ describe('LootDialog', () => {
     expect(collectBtn.style.background).toBe('transparent')
   })
 
+  it('shows em-dash placeholders for a tooltip item missing type/subtype/weight/value', () => {
+    const bareItem = { items_dropped: [{ name: 'Odd Trinket', quantity: 1 }] }
+    render(<LootDialog endState={bareItem} playerWeight={20} weightLimit={100} onCollect={onCollect} onSkip={onSkip} />)
+    fireEvent.mouseEnter(screen.getByText('Odd Trinket'))
+    expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(4)
+  })
+
+  it('shows an em-dash weight in the item row when weight is absent', () => {
+    const bareItem = { items_dropped: [{ name: 'Odd Trinket', quantity: 1 }] }
+    render(<LootDialog endState={bareItem} playerWeight={20} weightLimit={100} onCollect={onCollect} onSkip={onSkip} />)
+    expect(screen.getByText('—')).toBeInTheDocument()
+  })
+
+  it('skips a selected item missing weight when summing selected weight', () => {
+    const mixed = { items_dropped: [{ name: 'Weightless Charm', quantity: 1 }, { name: 'Gold Coin', weight: 2, quantity: 1 }] }
+    render(<LootDialog endState={mixed} playerWeight={10} weightLimit={100} onCollect={onCollect} onSkip={onSkip} />)
+    expect(screen.getByText('2.0 lb')).toBeInTheDocument()
+  })
+
+  it('clears a pending toast timer when triggering another over-weight attempt', () => {
+    render(<LootDialog endState={mockEndState} playerWeight={99} weightLimit={100} onCollect={onCollect} onSkip={onSkip} />)
+    fireEvent.click(screen.getByText(/COLLECT SELECTED ITEMS/))
+    fireEvent.click(screen.getByText(/COLLECT SELECTED ITEMS/))
+    expect(screen.getByText(/Cannot collect — carry weight would exceed capacity\./)).toBeInTheDocument()
+  })
+
+  it('uses the mid-tier (secondary) color between 80% and 100% carry capacity', () => {
+    render(<LootDialog endState={mockEndState} playerWeight={75} weightLimit={100} onCollect={onCollect} onSkip={onSkip} />)
+    // 75 base + 6.5 selected (5.0 + 0.5*3) = 81.5 / 100 -> mid tier, still under limit.
+    expect(screen.getByText('81.5 lb')).toBeInTheDocument()
+  })
+
+  it('does not restore hover color on the Collect button when nothing is selected', () => {
+    render(<LootDialog endState={mockEndState} playerWeight={20} weightLimit={100} onCollect={onCollect} onSkip={onSkip} />)
+    fireEvent.click(screen.getByText('Leave All'))
+    const collectBtn = screen.getByText('NOTHING SELECTED')
+
+    fireEvent.mouseLeave(collectBtn)
+    expect(collectBtn.style.color).toBe('rgb(51, 51, 51)')
+  })
+
   it('applies and clears hover styling on the skip link', () => {
     render(<LootDialog endState={mockEndState} playerWeight={20} weightLimit={100} onCollect={onCollect} onSkip={onSkip} />)
     const skipLink = screen.getByText(/skip — drop all items on tile/)
