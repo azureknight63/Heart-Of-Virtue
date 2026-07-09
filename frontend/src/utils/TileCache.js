@@ -181,11 +181,19 @@ export class TileCache {
         } catch (error) {
             console.error('Batch tile fetch failed, falling back to individual fetches:', error)
 
+            // Clear pending status first — fetchTile marks/checks pendingFetches
+            // itself, so leaving these keys marked here would make each fallback
+            // call think another fetch is already in flight and wait forever.
+            toFetch.forEach(({ x, y }) => {
+                this.pendingFetches.delete(this.getTileKey(x, y))
+            })
+
             // Fallback to individual fetches if batch fails
             const promises = toFetch.map(({ x, y }) => this.fetchTile(x, y))
             return Promise.all(promises)
         } finally {
-            // Clear pending status for all
+            // Clear pending status for all (no-op for the catch path above,
+            // where they were already cleared before the fallback fetches ran)
             toFetch.forEach(({ x, y }) => {
                 this.pendingFetches.delete(this.getTileKey(x, y))
             })

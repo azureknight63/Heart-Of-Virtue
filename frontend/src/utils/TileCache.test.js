@@ -105,6 +105,114 @@ describe('TileCache', () => {
     expect(tileCache.getStats().size).toBe(0);
   });
 
+  it('returns an already-cached tile without calling the API', async () => {
+    tileCache.set(5, 5, { name: 'Cached Mountain' });
+    const tile = await tileCache.fetchTile(5, 5);
+
+    expect(tile.name).toBe('Cached Mountain');
+    expect(apiEndpoints.world.getTile).not.toHaveBeenCalled();
+  });
+
+  it('returns null when the tile fetch succeeds but the server reports failure', async () => {
+    apiEndpoints.world.getTile.mockResolvedValue({ data: { success: false } });
+    const tile = await tileCache.fetchTile(2, 2);
+
+    expect(tile).toBeNull();
+    expect(tileCache.has(2, 2)).toBe(false);
+  });
+
+  it('waits for an in-flight fetch of the same tile instead of firing a second request', async () => {
+    let resolveFetch;
+    apiEndpoints.world.getTile.mockReturnValue(new Promise((r) => { resolveFetch = r; }));
+
+    const first = tileCache.fetchTile(7, 7);
+    const second = tileCache.fetchTile(7, 7);
+
+    resolveFetch({ data: { success: true, tile: { name: 'Shared Tile' } } });
+    await vi.advanceTimersByTimeAsync(50);
+
+    const [firstResult, secondResult] = await Promise.all([first, second]);
+    expect(apiEndpoints.world.getTile).toHaveBeenCalledTimes(1);
+    expect(firstResult.name).toBe('Shared Tile');
+    expect(secondResult.name).toBe('Shared Tile');
+  });
+
+  it('resolves the waiting caller with null when the in-flight fetch ultimately fails', async () => {
+    let rejectFetch;
+    apiEndpoints.world.getTile.mockReturnValue(new Promise((_, r) => { rejectFetch = r; }));
+
+    const first = tileCache.fetchTile(8, 8);
+    const second = tileCache.fetchTile(8, 8);
+
+    rejectFetch(new Error('offline'));
+    await vi.advanceTimersByTimeAsync(50);
+
+    const [firstResult, secondResult] = await Promise.all([first, second]);
+    expect(firstResult).toBeNull();
+    expect(secondResult).toBeNull();
+  });
+
+  it('skips the batch request entirely when every coordinate is already cached', async () => {
+    tileCache.set(0, 0, { id: 'cached' });
+    const tiles = await tileCache.fetchTiles([{ x: 0, y: 0 }]);
+
+    expect(tiles).toEqual([]);
+    expect(apiEndpoints.world.getTilesBatch).not.toHaveBeenCalled();
+  });
+
+  it('returns an empty array when the batch endpoint reports failure', async () => {
+    apiEndpoints.world.getTilesBatch.mockResolvedValue({ data: { success: false } });
+    const tiles = await tileCache.fetchTiles([{ x: 3, y: 3 }]);
+
+    expect(tiles).toEqual([]);
+    expect(tileCache.has(3, 3)).toBe(false);
+  });
+
+  it('falls back to individual fetches when the batch endpoint fails', async () => {
+    apiEndpoints.world.getTilesBatch.mockRejectedValue(new Error('batch offline'));
+    apiEndpoints.world.getTile.mockResolvedValue({ data: { success: true, tile: { name: 'Solo' } } });
+
+    const tiles = await tileCache.fetchTiles([{ x: 9, y: 9 }]);
+
+    expect(apiEndpoints.world.getTile).toHaveBeenCalledWith(9, 9);
+    expect(tiles[0].name).toBe('Solo');
+  });
+
+  it('logs a warning when the background prefetch itself rejects', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(tileCache, 'fetchTiles').mockRejectedValue(new Error('prefetch exploded'));
+
+    await tileCache.prefetchAdjacent(0, 0);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(warnSpy).toHaveBeenCalledWith('Background tile prefetch failed:', expect.any(Error));
+    warnSpy.mockRestore();
+  });
+
+  it('prefetches uncached adjacent tiles in the background', async () => {
+    apiEndpoints.world.getTilesBatch.mockResolvedValue({ data: { success: true, tiles: [] } });
+    await tileCache.prefetchAdjacent(0, 0);
+
+    expect(apiEndpoints.world.getTilesBatch).toHaveBeenCalled();
+  });
+
+  it('does not prefetch when all adjacent tiles are already cached', async () => {
+    const bigCache = new TileCache(20);
+    bigCache.getAdjacentCoordinates(0, 0).forEach(({ x, y }) => bigCache.set(x, y, { id: `${x},${y}` }));
+    await bigCache.prefetchAdjacent(0, 0);
+
+    expect(apiEndpoints.world.getTilesBatch).not.toHaveBeenCalled();
+  });
+
+  it('fetches a tile and triggers adjacent prefetch via getTileWithPrefetch', async () => {
+    apiEndpoints.world.getTile.mockResolvedValue({ data: { success: true, tile: { name: 'Center' } } });
+    apiEndpoints.world.getTilesBatch.mockResolvedValue({ data: { success: true, tiles: [] } });
+
+    const tile = await tileCache.getTileWithPrefetch(0, 0);
+
+    expect(tile.name).toBe('Center');
+    expect(apiEndpoints.world.getTilesBatch).toHaveBeenCalled();
+  });
+
   it('exports and imports cache data', () => {
     tileCache.set(0, 0, { id: 0, name: 'Start' });
     const exported = tileCache.export();
