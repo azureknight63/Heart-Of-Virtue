@@ -55,6 +55,85 @@ describe('VictoryDialog', () => {
     expect(screen.getByText(/\+5 Points awarded/)).toBeDefined();
   });
 
+  it('defaults exp_gained/items_dropped/level_ups/message when absent from endState', () => {
+    render(
+      <VictoryDialog
+        endState={{ attribute_points_available: 0 }}
+        onClose={mockOnClose}
+        onAllocatePoints={mockOnAllocatePoints}
+      />
+    );
+
+    expect(screen.getByText(/Combat Victory/i)).toBeInTheDocument();
+    expect(screen.getAllByText('None').length).toBe(1);
+    expect(screen.queryByText(/available to collect/i)).not.toBeInTheDocument();
+  });
+
+  it('uses singular wording for exactly 1 pending point and 1 dropped item', () => {
+    const singularState = { ...mockEndState, attribute_points_available: 1, items_dropped: [{ name: 'Coin', quantity: 1 }] };
+    render(
+      <VictoryDialog
+        endState={singularState}
+        onClose={mockOnClose}
+        onAllocatePoints={mockOnAllocatePoints}
+      />
+    );
+
+    expect(screen.getByText(/1 item available to collect/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByText('MINIMIZE'));
+    expect(screen.getByText(/1 point to allocate/i)).toBeInTheDocument();
+  });
+
+  it('shows CONTINUE (not COLLECT LOOT) on the minimized bar when there is no loot and no points remain', () => {
+    const noDropsNoPoints = { ...mockEndState, items_dropped: [], attribute_points_available: 0 };
+    render(
+      <VictoryDialog
+        endState={noDropsNoPoints}
+        onClose={mockOnClose}
+        onAllocatePoints={mockOnAllocatePoints}
+      />
+    );
+
+    fireEvent.click(screen.getByText('MINIMIZE'));
+    expect(screen.getByText('CONTINUE')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('CONTINUE'));
+    expect(mockOnClose).toHaveBeenCalled();
+  });
+
+  it('falls back to a generic error when allocation fails without an error field', async () => {
+    mockOnAllocatePoints.mockResolvedValue({ success: false });
+
+    render(
+      <VictoryDialog
+        endState={mockEndState}
+        onClose={mockOnClose}
+        onAllocatePoints={mockOnAllocatePoints}
+      />
+    );
+
+    fireEvent.click(screen.getByText('ALLOCATE POINTS'));
+    await waitFor(() => {
+      expect(screen.getByText(/Failed to allocate points\./)).toBeInTheDocument();
+    });
+  });
+
+  it('falls back to a generic error when allocation throws a message-less, response-less value', async () => {
+    mockOnAllocatePoints.mockRejectedValue({});
+
+    render(
+      <VictoryDialog
+        endState={mockEndState}
+        onClose={mockOnClose}
+        onAllocatePoints={mockOnAllocatePoints}
+      />
+    );
+
+    fireEvent.click(screen.getByText('ALLOCATE POINTS'));
+    await waitFor(() => {
+      expect(screen.getByText(/Failed to allocate points\./)).toBeInTheDocument();
+    });
+  });
+
   it('renders "None" when there are no rewards', () => {
     const emptyEndState = {
       message: 'Victory!',
@@ -214,6 +293,233 @@ describe('VictoryDialog', () => {
     expect(screen.getByText('⭐ Level Ups & Growth')).toBeDefined();
     expect(screen.getByText('Available Points:')).toBeDefined();
     expect(screen.getByText('3')).toBeDefined();
+  });
+
+  it('calls onContinueToLoot instead of onClose when advancing with loot present', () => {
+    const mockOnContinueToLoot = vi.fn();
+    const noPointsWithDrops = { ...mockEndState, attribute_points_available: 0 };
+    render(
+      <VictoryDialog
+        endState={noPointsWithDrops}
+        onClose={mockOnClose}
+        onAllocatePoints={mockOnAllocatePoints}
+        onContinueToLoot={mockOnContinueToLoot}
+      />
+    );
+
+    fireEvent.click(screen.getByText('COLLECT LOOT →'));
+    expect(mockOnContinueToLoot).toHaveBeenCalled();
+    expect(mockOnClose).not.toHaveBeenCalled();
+  });
+
+  it('advances to loot from the minimized bar once all points are spent', () => {
+    const mockOnContinueToLoot = vi.fn();
+    const noPointsWithDrops = { ...mockEndState, attribute_points_available: 0 };
+    render(
+      <VictoryDialog
+        endState={noPointsWithDrops}
+        onClose={mockOnClose}
+        onAllocatePoints={mockOnAllocatePoints}
+        onContinueToLoot={mockOnContinueToLoot}
+      />
+    );
+
+    fireEvent.click(screen.getByText('MINIMIZE'));
+    fireEvent.click(screen.getByText('COLLECT LOOT →'));
+    expect(mockOnContinueToLoot).toHaveBeenCalled();
+  });
+
+  it('prefers the server error over the axios message when allocation rejects with a response error', async () => {
+    mockOnAllocatePoints.mockRejectedValue({ response: { data: { error: 'Points already spent.' } }, message: 'Request failed' });
+
+    render(
+      <VictoryDialog
+        endState={mockEndState}
+        onClose={mockOnClose}
+        onAllocatePoints={mockOnAllocatePoints}
+      />
+    );
+
+    fireEvent.click(screen.getByText('ALLOCATE POINTS'));
+    await waitFor(() => {
+      expect(screen.getByText(/Points already spent\./)).toBeDefined();
+    });
+  });
+
+  it('advances to loot when allocation spends the last point', async () => {
+    const mockOnContinueToLoot = vi.fn();
+    mockOnAllocatePoints.mockResolvedValue({ success: true, remaining_points: 0 });
+
+    render(
+      <VictoryDialog
+        endState={mockEndState}
+        onClose={mockOnClose}
+        onAllocatePoints={mockOnAllocatePoints}
+        onContinueToLoot={mockOnContinueToLoot}
+      />
+    );
+
+    fireEvent.click(screen.getByText('ALLOCATE POINTS'));
+    await waitFor(() => {
+      expect(mockOnContinueToLoot).toHaveBeenCalled();
+    });
+  });
+
+  it('closes when allocation spends the last point and there is no loot', async () => {
+    mockOnAllocatePoints.mockResolvedValue({ success: true, remaining_points: 0 });
+    const noDropsEndState = { ...mockEndState, items_dropped: [] };
+
+    render(
+      <VictoryDialog
+        endState={noDropsEndState}
+        onClose={mockOnClose}
+        onAllocatePoints={mockOnAllocatePoints}
+      />
+    );
+
+    fireEvent.click(screen.getByText('ALLOCATE POINTS'));
+    await waitFor(() => {
+      expect(mockOnClose).toHaveBeenCalled();
+    });
+  });
+
+  describe('RANDOMIZE', () => {
+    it('randomizes points successfully and resets the amount input', async () => {
+      mockOnAllocatePoints.mockResolvedValue({ success: true });
+
+      render(
+        <VictoryDialog
+          endState={mockEndState}
+          onClose={mockOnClose}
+          onAllocatePoints={mockOnAllocatePoints}
+        />
+      );
+
+      fireEvent.click(screen.getByText('RANDOMIZE'));
+      await waitFor(() => {
+        expect(mockOnAllocatePoints).toHaveBeenCalledWith('randomize', mockEndState.attribute_points_available);
+      });
+    });
+
+    it('advances to loot when randomizing spends the last point', async () => {
+      const mockOnContinueToLoot = vi.fn();
+      mockOnAllocatePoints.mockResolvedValue({ success: true, remaining_points: 0 });
+
+      render(
+        <VictoryDialog
+          endState={mockEndState}
+          onClose={mockOnClose}
+          onAllocatePoints={mockOnAllocatePoints}
+          onContinueToLoot={mockOnContinueToLoot}
+        />
+      );
+
+      fireEvent.click(screen.getByText('RANDOMIZE'));
+      await waitFor(() => {
+        expect(mockOnContinueToLoot).toHaveBeenCalled();
+      });
+    });
+
+    it('shows a backend error when randomizing fails', async () => {
+      mockOnAllocatePoints.mockResolvedValue({ success: false, error: 'Randomize unavailable.' });
+
+      render(
+        <VictoryDialog
+          endState={mockEndState}
+          onClose={mockOnClose}
+          onAllocatePoints={mockOnAllocatePoints}
+        />
+      );
+
+      fireEvent.click(screen.getByText('RANDOMIZE'));
+      await waitFor(() => {
+        expect(screen.getByText(/Randomize unavailable\./)).toBeDefined();
+      });
+    });
+
+    it('shows a network error when randomizing throws', async () => {
+      mockOnAllocatePoints.mockRejectedValue(new Error('offline'));
+
+      render(
+        <VictoryDialog
+          endState={mockEndState}
+          onClose={mockOnClose}
+          onAllocatePoints={mockOnAllocatePoints}
+        />
+      );
+
+      fireEvent.click(screen.getByText('RANDOMIZE'));
+      await waitFor(() => {
+        expect(screen.getByText(/offline/)).toBeDefined();
+      });
+    });
+
+    it('closes (no loot) when randomizing spends the last point', async () => {
+      mockOnAllocatePoints.mockResolvedValue({ success: true, remaining_points: 0 });
+      const noDropsEndState = { ...mockEndState, items_dropped: [] };
+
+      render(
+        <VictoryDialog
+          endState={noDropsEndState}
+          onClose={mockOnClose}
+          onAllocatePoints={mockOnAllocatePoints}
+        />
+      );
+
+      fireEvent.click(screen.getByText('RANDOMIZE'));
+      await waitFor(() => {
+        expect(mockOnClose).toHaveBeenCalled();
+      });
+    });
+
+    it('falls back to a generic error when randomize fails without an error field', async () => {
+      mockOnAllocatePoints.mockResolvedValue({ success: false });
+
+      render(
+        <VictoryDialog
+          endState={mockEndState}
+          onClose={mockOnClose}
+          onAllocatePoints={mockOnAllocatePoints}
+        />
+      );
+
+      fireEvent.click(screen.getByText('RANDOMIZE'));
+      await waitFor(() => {
+        expect(screen.getByText(/Failed to randomize points\./)).toBeDefined();
+      });
+    });
+
+    it('falls back to a generic error when randomize throws a message-less, response-less value', async () => {
+      mockOnAllocatePoints.mockRejectedValue({});
+
+      render(
+        <VictoryDialog
+          endState={mockEndState}
+          onClose={mockOnClose}
+          onAllocatePoints={mockOnAllocatePoints}
+        />
+      );
+
+      fireEvent.click(screen.getByText('RANDOMIZE'));
+      await waitFor(() => {
+        expect(screen.getByText(/Failed to randomize points\./)).toBeDefined();
+      });
+    });
+  });
+
+  it('minimizes (instead of closing) when the dialog\'s own close button is clicked with points pending', () => {
+    render(
+      <VictoryDialog
+        endState={mockEndState}
+        onClose={mockOnClose}
+        onAllocatePoints={mockOnAllocatePoints}
+      />
+    );
+
+    fireEvent.click(screen.getByText('✕'));
+    expect(mockOnClose).not.toHaveBeenCalled();
+    expect(screen.queryByText('CLOSE')).toBeNull();
+    expect(screen.getByText('RESTORE')).toBeInTheDocument();
   });
 
   it('can minimize and restore the dialog when points are pending', () => {
