@@ -273,6 +273,25 @@ describe('InventoryDialog', () => {
     expect(screen.getByTestId('item-detail')).toBeInTheDocument();
   });
 
+  it('defaults to an empty inventory when neither items nor player.inventory is provided', () => {
+    render(<InventoryDialog player={{ gold: 0 }} onClose={mockOnClose} onRefetch={mockOnRefetch} />);
+    expect(screen.getByText(/No weapons in possession\./i)).toBeInTheDocument();
+  });
+
+  it('sorts items with a missing value on the second item to the fallback of 0', () => {
+    const player = {
+      ...mockPlayer,
+      inventory: [
+        { id: 10, name: 'Priced Sword', maintype: 'Weapon', subtype: 'Sword', value: 5, weight: 1 },
+        { id: 11, name: 'Free Sword', maintype: 'Weapon', subtype: 'Sword', weight: 1 },
+      ],
+    };
+    render(<InventoryDialog player={player} onClose={mockOnClose} onRefetch={mockOnRefetch} />);
+    fireEvent.click(screen.getByTitle('Sort by Value'));
+    const items = screen.getAllByText(/Priced Sword|Free Sword/);
+    expect(items[0].textContent).toContain('Priced Sword');
+  });
+
   it('opens item details when a merchandise (shop) item is clicked', () => {
     render(<InventoryDialog player={mockPlayer} onClose={mockOnClose} onRefetch={mockOnRefetch} />);
     fireEvent.click(screen.getByText('Unsold Item'));
