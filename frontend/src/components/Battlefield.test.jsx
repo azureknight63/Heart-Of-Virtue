@@ -31,6 +31,74 @@ const mockCombat = {
 };
 
 describe('Battlefield', () => {
+    it('shows "No active combat" when there is no combat data', () => {
+        render(<Battlefield combat={null} />);
+        expect(screen.getByText(/No active combat/i)).toBeInTheDocument();
+        expect(screen.queryByTestId('grid')).not.toBeInTheDocument();
+    });
+
+    it('detects an off-screen enemy whose HP comes from health.current instead of hp', async () => {
+        const offScreenCombat = {
+            beat_states: [
+                {
+                    player: { name: 'Jean', position: { x: 5, y: 5 } },
+                    enemies: [
+                        { id: 'e1', name: 'Far Goblin', health: { current: 10, max: 10 }, position: { x: 12, y: 5 } }
+                    ]
+                }
+            ],
+            enemies: [{ name: 'Far Goblin' }],
+            combat_active: true
+        };
+        render(<Battlefield combat={offScreenCombat} currentLogIndex={0} />);
+        await waitFor(() => {
+            expect(screen.getByRole('status')).toBeInTheDocument();
+        });
+    });
+
+    it('does not flag a dead off-screen enemy as needing the zoom hint', async () => {
+        const offScreenCombat = {
+            beat_states: [
+                {
+                    player: { name: 'Jean', position: { x: 5, y: 5 } },
+                    enemies: [
+                        { id: 'e1', name: 'Dead Goblin', hp: 0, max_hp: 10, position: { x: 12, y: 5 } }
+                    ]
+                }
+            ],
+            enemies: [{ name: 'Dead Goblin' }],
+            combat_active: true
+        };
+        render(<Battlefield combat={offScreenCombat} currentLogIndex={0} />);
+        await waitFor(() => {
+            expect(screen.queryByRole('status')).toBeNull();
+        });
+    });
+
+    it('does not crash or flag an enemy with no position data', () => {
+        const noPositionCombat = {
+            beat_states: [
+                {
+                    player: { name: 'Jean', position: { x: 5, y: 5 } },
+                    enemies: [{ id: 'e1', name: 'Ghost', hp: 10, max_hp: 10 }]
+                }
+            ],
+            enemies: [{ name: 'Ghost' }],
+            combat_active: true
+        };
+        render(<Battlefield combat={noPositionCombat} currentLogIndex={0} />);
+        expect(screen.queryByRole('status')).toBeNull();
+    });
+
+    it('resets accumulated beat states when combat ends', () => {
+        const activeCombat = { ...mockCombat, combat_active: true };
+        const { rerender } = render(<Battlefield combat={activeCombat} />);
+        expect(screen.getByTestId('grid')).toBeInTheDocument();
+
+        rerender(<Battlefield combat={{ ...mockCombat, combat_active: false, beat_states: [...mockCombat.beat_states, { combatants: [], enemies: [] }] }} />);
+        expect(screen.getByTestId('grid')).toBeInTheDocument();
+    });
+
     it('renders overview by default', () => {
         render(<Battlefield combat={mockCombat} />);
         expect(screen.getByTestId('grid')).toBeDefined();
