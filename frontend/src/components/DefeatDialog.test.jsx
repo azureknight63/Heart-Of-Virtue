@@ -116,6 +116,40 @@ describe('DefeatDialog', () => {
     });
   });
 
+  it('falls back to a generic message when fetching saves fails without one', async () => {
+    apiEndpoints.saves.list.mockRejectedValue({});
+
+    render(<DefeatDialog endState={{}} onLoadedSave={mockOnLoadedSave} />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Failed to load saves.')).toBeDefined();
+    });
+  });
+
+  it('falls back to a generic message when loading a save fails without a response or message', async () => {
+    apiEndpoints.saves.load.mockRejectedValue({});
+
+    render(<DefeatDialog endState={{}} onLoadedSave={mockOnLoadedSave} />);
+    await waitFor(() => expect(screen.getByText('Hero Save • Lv 5 • Dark Forest')).toBeDefined());
+
+    fireEvent.click(screen.getByText('LOAD'));
+    await waitFor(() => {
+      expect(screen.getByText('Failed to load save.')).toBeDefined();
+    });
+  });
+
+  it('falls back to a generic message when Start Over fails without one', async () => {
+    mockLogout.mockRejectedValue({});
+    render(<DefeatDialog endState={{}} onLoadedSave={mockOnLoadedSave} />);
+
+    await waitFor(() => expect(screen.queryByText('Loading…')).toBeNull());
+    fireEvent.click(screen.getByText('START OVER'));
+
+    await waitFor(() => {
+      expect(screen.getByText('Failed to start over.')).toBeDefined();
+    });
+  });
+
   it('changes selected save', async () => {
     render(<DefeatDialog endState={{}} onLoadedSave={mockOnLoadedSave} />);
 
