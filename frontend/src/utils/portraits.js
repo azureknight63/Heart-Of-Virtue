@@ -2,10 +2,13 @@
  * Portrait resolution for the staged conversation (event dialogue) feature.
  *
  * Portraits live at `/assets/portraits/<speaker-slug>/<emotion>.png` by
- * convention. Jean ships real emotion art; any other speaker (or a missing
- * emotion file) falls back to a generic placeholder via the image `onError`
- * handler, so the engine stays art-agnostic and new characters render
- * immediately without code changes.
+ * convention. On load failure, `handlePortraitError` walks a three-step
+ * fallback chain: the tagged emotion image -> that speaker's `neutral.png`
+ * -> the generic placeholder. This lets speakers ship partial emotion sets
+ * (or none at all) and still render something recognizable before falling
+ * back to the art-agnostic placeholder. Callers must set `data-speaker-slug`
+ * and `data-emotion` (the normalized emotion) on the `<img>` for the chain
+ * to resolve correctly — see `ConversationStage.jsx`.
  */
 
 /**
@@ -50,10 +53,32 @@ export function portraitUrl(speaker, emotion) {
     return assetPath(`/assets/portraits/${slug}/${normalizeEmotion(emotion)}.png`)
 }
 
-/** Shared `onError` handler: swap a failed portrait to the placeholder once. */
+/**
+ * Shared `onError` handler: walks the fallback chain step by step.
+ *   1. Tagged emotion image failed -> try that speaker's `neutral.png`.
+ *   2. `neutral.png` failed (or speaker is unknown) -> generic placeholder.
+ *   3. Placeholder failed -> give up (avoid an infinite error loop).
+ */
 export function handlePortraitError(e) {
     const img = e?.currentTarget
-    if (!img || img.dataset.fallback === '1') return
-    img.dataset.fallback = '1'
+    if (!img) return
+
+    const stage = img.dataset.fallback
+    if (stage === 'placeholder') return
+
+    // Skip the neutral step if the tagged emotion was already 'neutral' (its
+    // image just 404'd) — comparing `img.src` (the browser-resolved absolute
+    // URL) against a freshly-built relative path would never match, causing
+    // a redundant re-request of the same broken URL.
+    if (!stage && img.dataset.emotion !== 'neutral') {
+        const slug = img.dataset.speakerSlug
+        if (slug) {
+            img.dataset.fallback = 'neutral'
+            img.src = assetPath(`/assets/portraits/${slug}/neutral.png`)
+            return
+        }
+    }
+
+    img.dataset.fallback = 'placeholder'
     img.src = PLACEHOLDER_PORTRAIT
 }
