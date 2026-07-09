@@ -8,6 +8,7 @@ vi.mock('../api/npcChat', () => ({
   default: {
     open: vi.fn(),
     respond: vi.fn(),
+    end: vi.fn(),
   },
 }))
 
@@ -558,6 +559,253 @@ describe('NpcChatPanel', () => {
       })
 
       expect(screen.queryByTestId('relationship-badge')).not.toBeInTheDocument()
+    })
+  })
+
+  describe('Ending the conversation', () => {
+    it('calls npcChat.end and onClose when End Conversation is clicked', async () => {
+      npcChat.end.mockResolvedValue({ data: { success: true } })
+      render(
+        <NpcChatPanel npcId={mockNpcId} npcName={mockNpcName} onClose={mockOnClose} />
+      )
+
+      await waitFor(() => expect(npcChat.open).toHaveBeenCalled())
+      fireEvent.click(screen.getByText('End Conversation'))
+
+      await waitFor(() => {
+        expect(npcChat.end).toHaveBeenCalledWith('npc_session_123')
+        expect(mockOnClose).toHaveBeenCalled()
+      })
+    })
+
+    it('still closes silently when npcChat.end throws', async () => {
+      npcChat.end.mockRejectedValue(new Error('offline'))
+      render(
+        <NpcChatPanel npcId={mockNpcId} npcName={mockNpcName} onClose={mockOnClose} />
+      )
+
+      await waitFor(() => expect(npcChat.open).toHaveBeenCalled())
+      fireEvent.click(screen.getByText('End Conversation'))
+
+      await waitFor(() => {
+        expect(mockOnClose).toHaveBeenCalled()
+      })
+    })
+
+    it('does nothing when End Conversation is clicked before the session key is ready', () => {
+      let resolveOpen
+      npcChat.open.mockReturnValue(new Promise((resolve) => { resolveOpen = resolve }))
+      render(
+        <NpcChatPanel npcId={mockNpcId} npcName={mockNpcName} onClose={mockOnClose} />
+      )
+
+      fireEvent.click(screen.getByText('End Conversation'))
+
+      expect(npcChat.end).not.toHaveBeenCalled()
+      resolveOpen(mockOpenResponse)
+    })
+  })
+
+  describe('Retrying a failed action', () => {
+    it('retries opening the conversation when Retry is clicked after a failed open', async () => {
+      npcChat.open.mockRejectedValueOnce(new Error('Network error'))
+      render(
+        <NpcChatPanel npcId={mockNpcId} npcName={mockNpcName} onClose={mockOnClose} />
+      )
+
+      await waitFor(() => expect(screen.getByText(/Failed to open conversation/i)).toBeInTheDocument())
+      expect(npcChat.open).toHaveBeenCalledTimes(1)
+
+      npcChat.open.mockResolvedValue(mockOpenResponse)
+      fireEvent.click(screen.getByText('Retry'))
+
+      await waitFor(() => expect(npcChat.open).toHaveBeenCalledTimes(2))
+    })
+
+    it('retries the same option when Retry is clicked after a failed response', async () => {
+      npcChat.respond.mockRejectedValueOnce(new Error('Network error'))
+      render(
+        <NpcChatPanel npcId={mockNpcId} npcName={mockNpcName} onClose={mockOnClose} />
+      )
+
+      await waitFor(() => expect(npcChat.open).toHaveBeenCalled())
+      fireEvent.click(screen.getByText('Hi there'))
+
+      await waitFor(() => expect(screen.getByText(/NPC did not respond/i)).toBeInTheDocument())
+      expect(npcChat.respond).toHaveBeenCalledTimes(1)
+
+      npcChat.respond.mockResolvedValue({
+        data: {
+          npc_response: 'Ah, welcome back.',
+          jean_options: [],
+          loquacity_current: 3,
+          loquacity_max: 5,
+          conversation_ended: false,
+        },
+      })
+      fireEvent.click(screen.getByText('Retry'))
+
+      await waitFor(() => expect(npcChat.respond).toHaveBeenCalledTimes(2))
+    })
+
+    it('prefers the server error message over the generic fallback when respond fails with a response body', async () => {
+      const err = new Error('Bad Request')
+      err.response = { data: { error: 'Mynx refuses to answer.' } }
+      npcChat.respond.mockRejectedValueOnce(err)
+      render(
+        <NpcChatPanel npcId={mockNpcId} npcName={mockNpcName} onClose={mockOnClose} />
+      )
+
+      await waitFor(() => expect(npcChat.open).toHaveBeenCalled())
+      fireEvent.click(screen.getByText('Hi there'))
+
+      await waitFor(() => expect(screen.getByText('Mynx refuses to answer.')).toBeInTheDocument())
+    })
+  })
+
+  describe('Conversation ending automatically', () => {
+    it('closes the panel after a delay when the conversation ends', async () => {
+      npcChat.respond.mockResolvedValue({
+        data: {
+          npc_response: 'Farewell.',
+          jean_options: [],
+          loquacity_current: 0,
+          loquacity_max: 5,
+          conversation_ended: true,
+        },
+      })
+
+      render(
+        <NpcChatPanel npcId={mockNpcId} npcName={mockNpcName} onClose={mockOnClose} />
+      )
+
+      await waitFor(() => expect(npcChat.open).toHaveBeenCalled())
+      fireEvent.click(screen.getByText('Hi there'))
+
+      await waitFor(() => expect(npcChat.respond).toHaveBeenCalled())
+      // The mocked BaseDialog bubbles every click to onClose, so the option
+      // click itself already triggered one call unrelated to conversation
+      // state; assert a further, delayed call from the 2s auto-close timer.
+      const callsBeforeDelay = mockOnClose.mock.calls.length
+      await waitFor(
+        () => expect(mockOnClose.mock.calls.length).toBeGreaterThan(callsBeforeDelay),
+        { timeout: 3000 }
+      )
+    })
+  })
+
+  describe('response fallback defaults', () => {
+    it('falls back to the npcName prop when the open response has no npc_name', async () => {
+      npcChat.open.mockResolvedValue({
+        data: { ...mockOpenResponse.data, npc_name: undefined },
+      })
+      render(<NpcChatPanel npcId={mockNpcId} npcName="Fallback Name" onClose={mockOnClose} />)
+
+      await waitFor(() => expect(screen.getByText('Fallback Name')).toBeInTheDocument())
+    })
+
+    it('defaults loquacity and jean_options when absent from the open response', async () => {
+      npcChat.open.mockResolvedValue({
+        data: {
+          npc_key: 'npc_session_123',
+          npc_name: 'Mynx the Swift',
+          npc_opening: 'Hello.',
+          conversation_ended: false,
+        },
+      })
+      const { container } = render(<NpcChatPanel npcId={mockNpcId} npcName={mockNpcName} onClose={mockOnClose} />)
+
+      await waitFor(() => expect(screen.getByTestId('typewriter')).toHaveTextContent('Hello.'))
+      // loquacity_current/max both default (0/1) -> 0% width, danger color
+      const bar = container.querySelector('[style*="height: 100%"]')
+      expect(bar.style.width).toBe('0%')
+      expect(bar.style.backgroundColor).toBe('rgb(255, 68, 68)')
+      // jean_options defaults to [] -> no option buttons rendered
+      expect(screen.queryByText('Hi there')).not.toBeInTheDocument()
+    })
+
+    it('defaults loquacity and jean_options when absent from a respond response', async () => {
+      npcChat.respond.mockResolvedValue({
+        data: { npc_response: 'A terse reply.', conversation_ended: false },
+      })
+      const { container } = render(<NpcChatPanel npcId={mockNpcId} npcName={mockNpcName} onClose={mockOnClose} />)
+
+      await waitFor(() => expect(npcChat.open).toHaveBeenCalled())
+      fireEvent.click(screen.getByText('Hi there'))
+
+      await waitFor(() => expect(screen.getByTestId('typewriter')).toHaveTextContent('A terse reply.'))
+      const bar = container.querySelector('[style*="height: 100%"]')
+      expect(bar.style.width).toBe('0%')
+      expect(screen.queryByText('Leave me alone')).not.toBeInTheDocument()
+    })
+  })
+
+  describe('loquacity bar color', () => {
+    const renderWithLoquacity = async (current, max) => {
+      npcChat.open.mockResolvedValue({
+        data: { ...mockOpenResponse.data, loquacity_current: current, loquacity_max: max },
+      })
+      const { container } = render(<NpcChatPanel npcId={mockNpcId} npcName={mockNpcName} onClose={mockOnClose} />)
+      await waitFor(() => expect(npcChat.open).toHaveBeenCalled())
+      return container
+    }
+
+    it('shows the primary color when loquacity is above 60%', async () => {
+      const container = await renderWithLoquacity(4, 5)
+      const bar = container.querySelector('[style*="height: 100%"]')
+      expect(bar.style.backgroundColor).toBe('rgb(0, 255, 136)')
+    })
+
+    it('shows the secondary color when loquacity is between 30% and 60%', async () => {
+      const container = await renderWithLoquacity(2, 5)
+      const bar = container.querySelector('[style*="height: 100%"]')
+      expect(bar.style.backgroundColor).toBe('rgb(255, 170, 0)')
+    })
+
+    it('shows the danger color when loquacity is at or below 30%', async () => {
+      const container = await renderWithLoquacity(1, 5)
+      const bar = container.querySelector('[style*="height: 100%"]')
+      expect(bar.style.backgroundColor).toBe('rgb(255, 68, 68)')
+    })
+
+    it('shows the primary color when loquacity max is zero', async () => {
+      const container = await renderWithLoquacity(0, 0)
+      const bar = container.querySelector('[style*="height: 100%"]')
+      expect(bar.style.backgroundColor).toBe('rgb(0, 255, 136)')
+    })
+  })
+
+  describe('relationship badge color', () => {
+    const renderWithAttitude = async (attitude) => {
+      npcChat.open.mockResolvedValue({
+        data: {
+          ...mockOpenResponse.data,
+          relationship: { ...mockOpenResponse.data.relationship, attitude },
+        },
+      })
+      render(<NpcChatPanel npcId={mockNpcId} npcName={mockNpcName} onClose={mockOnClose} />)
+      await waitFor(() => expect(screen.getByTestId('relationship-badge')).toBeInTheDocument())
+      return screen.getByTestId('relationship-badge')
+    }
+
+    it('colors a wary/hostile/enemy attitude with the danger color', async () => {
+      const badge = await renderWithAttitude('hostile')
+      expect(badge.style.color).toBe('rgb(255, 68, 68)')
+    })
+
+    it('colors an unrecognized attitude with the muted text color', async () => {
+      const badge = await renderWithAttitude('bemused')
+      expect(badge.style.color).not.toBe('')
+    })
+
+    it('colors a friendly attitude with the primary color', async () => {
+      const badge = await renderWithAttitude('friendly')
+      expect(badge.style.color).toBe('rgb(0, 255, 136)')
+    })
+
+    it('colors a wary attitude with the danger color', async () => {
+      const badge = await renderWithAttitude('wary')
+      expect(badge.style.color).toBe('rgb(255, 68, 68)')
     })
   })
 })

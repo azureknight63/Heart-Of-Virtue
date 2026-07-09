@@ -97,7 +97,7 @@ class MerchantShopMixin:
             "'Keep an eye on that one,' {merchant} says, pointing to the {item} as he cocks a smile.",
             "{merchant} wraps the {item} in cloth and tucks it among the curios for safekeeping.",
             "{merchant} hums an old tune while polishing the {item}'s edges.",
-            "The {item} is placed upon a velvet cushion and presented as if it were a trinket of kings.",
+            "{merchant} places the {item} upon a velvet cushion, presenting it as if it were a trinket of kings.",
             "{merchant} traces a worn seam on the {item} and nods appreciatively.",
             "'I'll put a modest price to start,' {merchant} decides, fastening a tag to the {item}.",
             "{merchant} tests the {item}'s weight with a practiced hand before shelving it.",

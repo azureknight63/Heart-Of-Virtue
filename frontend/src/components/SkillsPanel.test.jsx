@@ -257,4 +257,111 @@ describe('SkillsPanel', () => {
     fireEvent.click(screen.getByText(/✕/i));
     expect(mockOnClose).toHaveBeenCalled();
   });
+
+  it('returns null when there is no player', () => {
+    const { container } = render(
+      <ToastProvider>
+        <SkillsPanel player={null} onClose={() => {}} />
+      </ToastProvider>
+    );
+    expect(container.firstChild.firstChild).toBeNull();
+  });
+
+  it('shows "No skill data available" when the fetch succeeds without data', async () => {
+    apiEndpoints.player.getSkills.mockResolvedValue({ data: { success: false } });
+    render(
+      <ToastProvider>
+        <SkillsPanel player={mockPlayer} onClose={() => {}} />
+      </ToastProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/No skill data available/i)).toBeInTheDocument();
+    });
+  });
+
+  it('does not auto-select a category when no discipline has any XP', async () => {
+    apiEndpoints.player.getSkills.mockResolvedValue({
+      data: {
+        success: true,
+        skills: { skill_tree: { Combat: [] }, skill_exp: { Combat: 0 } },
+      },
+    });
+    render(
+      <ToastProvider>
+        <SkillsPanel player={mockPlayer} onClose={() => {}} />
+      </ToastProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/⚡ ABILITIES & SKILLS/i)).toBeInTheDocument();
+    });
+    expect(screen.queryByText(/Available .* XP/i)).not.toBeInTheDocument();
+  });
+
+  it('shows the empty-discipline message when the selected category has no skills', async () => {
+    apiEndpoints.player.getSkills.mockResolvedValue({
+      data: {
+        success: true,
+        skills: { skill_tree: { Combat: [] }, skill_exp: { Combat: 50 } },
+      },
+    });
+    render(
+      <ToastProvider>
+        <SkillsPanel player={mockPlayer} onClose={() => {}} />
+      </ToastProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/No skills currently available in this discipline\./i)).toBeInTheDocument();
+    });
+  });
+
+  it('shows 0 XP when the selected category has no entry in skill_exp after an update', async () => {
+    apiEndpoints.player.getSkills.mockResolvedValue({
+      data: { success: true, skills: mockSkillsData },
+    });
+    apiEndpoints.player.learnSkill.mockResolvedValue({
+      data: {
+        success: true,
+        skills: {
+          skill_tree: mockSkillsData.skill_tree,
+          skill_exp: { Magic: 50 }, // Combat entry removed after spending all XP
+        },
+      },
+    });
+
+    render(
+      <ToastProvider>
+        <SkillsPanel player={mockPlayer} onClose={() => {}} />
+      </ToastProvider>
+    );
+
+    await waitFor(() => expect(screen.getByText(/100 XP/i)).toBeInTheDocument());
+    fireEvent.click(screen.getByText(/LEARN \(100\)/i));
+
+    await waitFor(() => expect(screen.getByText(/0 XP/i)).toBeInTheDocument());
+  });
+
+  it('falls back to a generic message when learnSkill fails without a server error', async () => {
+    apiEndpoints.player.getSkills.mockResolvedValue({
+      data: { success: true, skills: mockSkillsData },
+    });
+    const mockError = vi.fn();
+    useToast.mockReturnValue({ error: mockError, success: vi.fn(), info: vi.fn(), warning: vi.fn() });
+    apiEndpoints.player.learnSkill.mockRejectedValue(new Error('network down'));
+
+    render(
+      <ToastProvider>
+        <SkillsPanel player={mockPlayer} onClose={() => {}} />
+      </ToastProvider>
+    );
+
+    await waitFor(() => expect(screen.getByText(/Power Strike/i)).toBeInTheDocument());
+    fireEvent.click(screen.getByText(/LEARN \(100\)/i));
+
+    await waitFor(() => {
+      expect(mockError).toHaveBeenCalledWith('Failed to learn skill');
+    });
+  });
 });

@@ -1,783 +1,235 @@
-import React from 'react'
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, act } from '@testing-library/react'
 import LevelUpModal from './LevelUpModal'
+import { useAudio } from '../context/AudioContext'
 
-// Mock dependencies
 vi.mock('./BaseDialog', () => ({
-  default: ({ children, title, onClose }) => (
-    <div data-testid="base-dialog" onClick={onClose}>
+  default: ({ children, title }) => (
+    <div data-testid="base-dialog">
       <h2>{title}</h2>
       {children}
     </div>
   ),
 }))
 
-vi.mock('../hooks/useEventCoordinator', () => ({
-  useEventCoordinator: vi.fn(() => ({ emitToast: vi.fn() })),
+vi.mock('./GameButton', () => ({
+  default: ({ children, onClick, disabled }) => (
+    <button onClick={onClick} disabled={disabled}>{children}</button>
+  ),
 }))
 
-vi.mock('../api/endpoints', () => ({
-  player: {
-    levelUp: vi.fn(() => Promise.resolve({
-      data: { success: true, newStats: {} }
-    })),
-  },
+vi.mock('./GameText', () => ({
+  default: ({ children }) => <span>{children}</span>,
 }))
+
+vi.mock('../context/AudioContext', () => ({
+  useAudio: vi.fn(),
+}))
+
+function makePlayer(overrides = {}) {
+  return {
+    pending_attribute_points: 3,
+    pending_level_ups: [],
+    strength_base: 10,
+    finesse_base: 9,
+    speed_base: 11,
+    endurance_base: 8,
+    charisma_base: 7,
+    intelligence_base: 6,
+    faith_base: 5,
+    ...overrides,
+  }
+}
 
 describe('LevelUpModal', () => {
-  const mockOnClose = vi.fn()
-  const mockLevelUpData = {
-    currentLevel: 5,
-    newLevel: 6,
-    availablePoints: 3,
-    attributeOptions: [
-      { attribute: 'strength', current: 10, cost: 1 },
-      { attribute: 'finesse', current: 9, cost: 1 },
-      { attribute: 'speed', current: 11, cost: 1 },
-      { attribute: 'wisdom', current: 8, cost: 1 },
-      { attribute: 'constitution', current: 10, cost: 1 },
-    ],
-  }
+  const onAllocatePoints = vi.fn()
+  const playSFX = vi.fn()
 
   beforeEach(() => {
     vi.clearAllMocks()
+    useAudio.mockReturnValue({ playSFX })
   })
 
-  describe('Rendering', () => {
-    it('renders level up modal', () => {
-      render(
-        <LevelUpModal
-          levelUpData={mockLevelUpData}
-          onClose={mockOnClose}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('displays new level number', () => {
-      render(
-        <LevelUpModal
-          levelUpData={mockLevelUpData}
-          onClose={mockOnClose}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('shows available points', () => {
-      render(
-        <LevelUpModal
-          levelUpData={mockLevelUpData}
-          onClose={mockOnClose}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('displays all attributes', () => {
-      render(
-        <LevelUpModal
-          levelUpData={mockLevelUpData}
-          onClose={mockOnClose}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
+  it('renders available points and attribute options', () => {
+    render(<LevelUpModal player={makePlayer()} onAllocatePoints={onAllocatePoints} />)
+    expect(screen.getByText('3')).toBeInTheDocument()
+    expect(screen.getByText('Strength (10)')).toBeInTheDocument()
+    expect(screen.getByText('Finesse (9)')).toBeInTheDocument()
+    expect(screen.getByText('Faith (5)')).toBeInTheDocument()
   })
 
-  describe('Attribute Selection', () => {
-    it('allows selecting attributes', () => {
-      render(
-        <LevelUpModal
-          levelUpData={mockLevelUpData}
-          onClose={mockOnClose}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('shows current attribute values', () => {
-      render(
-        <LevelUpModal
-          levelUpData={mockLevelUpData}
-          onClose={mockOnClose}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('displays cost per attribute increase', () => {
-      render(
-        <LevelUpModal
-          levelUpData={mockLevelUpData}
-          onClose={mockOnClose}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('prevents selecting more points than available', () => {
-      render(
-        <LevelUpModal
-          levelUpData={mockLevelUpData}
-          onClose={mockOnClose}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
+  it('treats a missing player as zero remaining points', () => {
+    render(<LevelUpModal player={undefined} onAllocatePoints={onAllocatePoints} />)
+    expect(screen.getByText('0')).toBeInTheDocument()
+    expect(screen.getByText('ALLOCATE POINTS').closest('button')).toBeDisabled()
   })
 
-  describe('Point Allocation', () => {
-    it('tracks allocated points', () => {
-      render(
-        <LevelUpModal
-          levelUpData={mockLevelUpData}
-          onClose={mockOnClose}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('updates remaining points when allocating', () => {
-      render(
-        <LevelUpModal
-          levelUpData={mockLevelUpData}
-          onClose={mockOnClose}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('prevents over-allocation', () => {
-      render(
-        <LevelUpModal
-          levelUpData={mockLevelUpData}
-          onClose={mockOnClose}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('allows deallocating points', () => {
-      render(
-        <LevelUpModal
-          levelUpData={mockLevelUpData}
-          onClose={mockOnClose}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('resets allocation to zero', () => {
-      render(
-        <LevelUpModal
-          levelUpData={mockLevelUpData}
-          onClose={mockOnClose}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
+  it('plays the level_up SFX when there are pending level-ups', () => {
+    render(
+      <LevelUpModal
+        player={makePlayer({ pending_level_ups: [{ old_level: 4, new_level: 5, points_awarded: 3 }] })}
+        onAllocatePoints={onAllocatePoints}
+      />
+    )
+    expect(playSFX).toHaveBeenCalledWith('level_up')
+    expect(screen.getByText(/LEVEL 4/)).toBeInTheDocument()
+    expect(screen.getByText('5')).toBeInTheDocument()
+    expect(screen.getByText('+3 attribute points awarded')).toBeInTheDocument()
   })
 
-  describe('Submission', () => {
-    it('allows submitting allocation', () => {
-      render(
-        <LevelUpModal
-          levelUpData={mockLevelUpData}
-          onClose={mockOnClose}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('disables submit when no points allocated', () => {
-      render(
-        <LevelUpModal
-          levelUpData={{ ...mockLevelUpData, availablePoints: 0 }}
-          onClose={mockOnClose}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('shows loading during submission', () => {
-      render(
-        <LevelUpModal
-          levelUpData={mockLevelUpData}
-          onClose={mockOnClose}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
+  it('does not play the SFX when there are no pending level-ups', () => {
+    render(<LevelUpModal player={makePlayer()} onAllocatePoints={onAllocatePoints} />)
+    expect(playSFX).not.toHaveBeenCalled()
   })
 
-  describe('Validation', () => {
-    it('validates attribute costs', () => {
-      render(
-        <LevelUpModal
-          levelUpData={mockLevelUpData}
-          onClose={mockOnClose}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
+  it('changes the selected attribute via the dropdown', () => {
+    render(<LevelUpModal player={makePlayer()} onAllocatePoints={onAllocatePoints} />)
+    const select = screen.getByRole('combobox')
+    fireEvent.change(select, { target: { value: 'faith_base' } })
+    expect(select.value).toBe('faith_base')
+  })
 
-    it('prevents invalid allocations', () => {
-      render(
-        <LevelUpModal
-          levelUpData={mockLevelUpData}
-          onClose={mockOnClose}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
+  it('rejects a non-numeric or zero amount', async () => {
+    render(<LevelUpModal player={makePlayer()} onAllocatePoints={onAllocatePoints} />)
+    const input = screen.getByRole('spinbutton')
+    fireEvent.change(input, { target: { value: '0' } })
+    await act(async () => {
+      fireEvent.click(screen.getByText('ALLOCATE POINTS'))
     })
+    expect(screen.getByText(/Enter a valid point amount\./)).toBeInTheDocument()
+    expect(onAllocatePoints).not.toHaveBeenCalled()
+  })
 
-    it('validates total points do not exceed available', () => {
-      render(
-        <LevelUpModal
-          levelUpData={mockLevelUpData}
-          onClose={mockOnClose}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
+  it('rejects allocating more points than available', async () => {
+    render(<LevelUpModal player={makePlayer({ pending_attribute_points: 2 })} onAllocatePoints={onAllocatePoints} />)
+    const input = screen.getByRole('spinbutton')
+    fireEvent.change(input, { target: { value: '5' } })
+    await act(async () => {
+      fireEvent.click(screen.getByText('ALLOCATE POINTS'))
+    })
+    expect(screen.getByText(/Not enough points available\./)).toBeInTheDocument()
+    expect(onAllocatePoints).not.toHaveBeenCalled()
+  })
+
+  it('allocates points successfully and resets the amount field', async () => {
+    onAllocatePoints.mockResolvedValue({ success: true })
+    render(<LevelUpModal player={makePlayer()} onAllocatePoints={onAllocatePoints} />)
+    const input = screen.getByRole('spinbutton')
+    fireEvent.change(input, { target: { value: '2' } })
+    await act(async () => {
+      fireEvent.click(screen.getByText('ALLOCATE POINTS'))
+    })
+    expect(onAllocatePoints).toHaveBeenCalledWith('strength_base', 2)
+    expect(input.value).toBe('1')
+    expect(screen.queryByText(/Enter a valid/)).not.toBeInTheDocument()
+  })
+
+  it('shows a server-provided error when allocation is rejected', async () => {
+    onAllocatePoints.mockResolvedValue({ success: false, error: 'Attribute already maxed.' })
+    render(<LevelUpModal player={makePlayer()} onAllocatePoints={onAllocatePoints} />)
+    await act(async () => {
+      fireEvent.click(screen.getByText('ALLOCATE POINTS'))
+    })
+    expect(screen.getByText(/Attribute already maxed\./)).toBeInTheDocument()
+  })
+
+  it('shows a default error when the API omits one on rejection', async () => {
+    onAllocatePoints.mockResolvedValue({ success: false })
+    render(<LevelUpModal player={makePlayer()} onAllocatePoints={onAllocatePoints} />)
+    await act(async () => {
+      fireEvent.click(screen.getByText('ALLOCATE POINTS'))
+    })
+    expect(screen.getByText(/Failed to allocate points\./)).toBeInTheDocument()
+  })
+
+  it('shows a network error message when allocation throws', async () => {
+    onAllocatePoints.mockRejectedValue(new Error('network down'))
+    render(<LevelUpModal player={makePlayer()} onAllocatePoints={onAllocatePoints} />)
+    await act(async () => {
+      fireEvent.click(screen.getByText('ALLOCATE POINTS'))
+    })
+    expect(screen.getByText(/network down/)).toBeInTheDocument()
+  })
+
+  it('prefers err.response.data.error over err.message on allocation failure', async () => {
+    onAllocatePoints.mockRejectedValue({ response: { data: { error: 'server rejected' } } })
+    render(<LevelUpModal player={makePlayer()} onAllocatePoints={onAllocatePoints} />)
+    await act(async () => {
+      fireEvent.click(screen.getByText('ALLOCATE POINTS'))
+    })
+    expect(screen.getByText(/server rejected/)).toBeInTheDocument()
+  })
+
+  it('randomizes remaining points via the Randomize button', async () => {
+    onAllocatePoints.mockResolvedValue({ success: true })
+    render(<LevelUpModal player={makePlayer({ pending_attribute_points: 4 })} onAllocatePoints={onAllocatePoints} />)
+    await act(async () => {
+      fireEvent.click(screen.getByText('RANDOMIZE'))
+    })
+    expect(onAllocatePoints).toHaveBeenCalledWith('randomize', 4)
+  })
+
+  it('shows a default error when randomize fails without a message', async () => {
+    onAllocatePoints.mockResolvedValue({ success: false })
+    render(<LevelUpModal player={makePlayer()} onAllocatePoints={onAllocatePoints} />)
+    await act(async () => {
+      fireEvent.click(screen.getByText('RANDOMIZE'))
+    })
+    expect(screen.getByText(/Failed to randomize points\./)).toBeInTheDocument()
+  })
+
+  it('shows a network error message when randomize throws', async () => {
+    onAllocatePoints.mockRejectedValue(new Error('boom'))
+    render(<LevelUpModal player={makePlayer()} onAllocatePoints={onAllocatePoints} />)
+    await act(async () => {
+      fireEvent.click(screen.getByText('RANDOMIZE'))
+    })
+    expect(screen.getByText(/boom/)).toBeInTheDocument()
+  })
+
+  it('prefers err.response.data.error over err.message on randomize failure', async () => {
+    onAllocatePoints.mockRejectedValue({ response: { data: { error: 'server rejected randomize' } } })
+    render(<LevelUpModal player={makePlayer()} onAllocatePoints={onAllocatePoints} />)
+    await act(async () => {
+      fireEvent.click(screen.getByText('RANDOMIZE'))
+    })
+    expect(screen.getByText(/server rejected randomize/)).toBeInTheDocument()
+  })
+
+  it('clears a stale error once the amount is brought back within range', () => {
+    render(<LevelUpModal player={makePlayer({ pending_attribute_points: 2 })} onAllocatePoints={onAllocatePoints} />)
+    const input = screen.getByRole('spinbutton')
+    fireEvent.change(input, { target: { value: '5' } })
+    fireEvent.click(screen.getByText('ALLOCATE POINTS'))
+    expect(screen.getByText(/Not enough points available\./)).toBeInTheDocument()
+
+    fireEvent.change(input, { target: { value: '1' } })
+    expect(screen.queryByText(/Not enough points available\./)).not.toBeInTheDocument()
+  })
+
+  it('disables both action buttons while a submission is in flight', async () => {
+    let resolveFn
+    onAllocatePoints.mockReturnValue(new Promise((resolve) => { resolveFn = resolve }))
+    render(<LevelUpModal player={makePlayer()} onAllocatePoints={onAllocatePoints} />)
+
+    fireEvent.click(screen.getByText('ALLOCATE POINTS'))
+    expect(screen.getByText('ALLOCATING...')).toBeInTheDocument()
+    expect(screen.getByText('ALLOCATING...').closest('button')).toBeDisabled()
+    expect(screen.getByText('RANDOMIZE').closest('button')).toBeDisabled()
+
+    await act(async () => {
+      resolveFn({ success: true })
     })
   })
 
-  describe('User Feedback', () => {
-    it('shows stat preview after allocation', () => {
-      render(
-        <LevelUpModal
-          levelUpData={mockLevelUpData}
-          onClose={mockOnClose}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('displays error on submission failure', () => {
-      render(
-        <LevelUpModal
-          levelUpData={mockLevelUpData}
-          onClose={mockOnClose}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('displays success message on submission', () => {
-      render(
-        <LevelUpModal
-          levelUpData={mockLevelUpData}
-          onClose={mockOnClose}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
+  it('disables allocation buttons when there are no points remaining', () => {
+    render(<LevelUpModal player={makePlayer({ pending_attribute_points: 0 })} onAllocatePoints={onAllocatePoints} />)
+    expect(screen.getByText('ALLOCATE POINTS').closest('button')).toBeDisabled()
+    expect(screen.getByText('RANDOMIZE').closest('button')).toBeDisabled()
   })
 
-  describe('Edge Cases', () => {
-    it('handles zero available points', () => {
-      render(
-        <LevelUpModal
-          levelUpData={{ ...mockLevelUpData, availablePoints: 0 }}
-          onClose={mockOnClose}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('handles large number of available points', () => {
-      render(
-        <LevelUpModal
-          levelUpData={{ ...mockLevelUpData, availablePoints: 50 }}
-          onClose={mockOnClose}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('handles very high attribute values', () => {
-      const dataWithHighStats = {
-        ...mockLevelUpData,
-        attributeOptions: mockLevelUpData.attributeOptions.map(attr => ({
-          ...attr,
-          current: 99,
-        })),
-      }
-
-      render(
-        <LevelUpModal
-          levelUpData={dataWithHighStats}
-          onClose={mockOnClose}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('handles single attribute', () => {
-      render(
-        <LevelUpModal
-          levelUpData={{
-            ...mockLevelUpData,
-            attributeOptions: [mockLevelUpData.attributeOptions[0]],
-          }}
-          onClose={mockOnClose}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-  })
-
-  describe('Closing Modal', () => {
-    it('has close functionality', () => {
-      render(
-        <LevelUpModal
-          levelUpData={mockLevelUpData}
-          onClose={mockOnClose}
-        />
-      )
-
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('closes after successful submission', async () => {
-      render(
-        <LevelUpModal
-          levelUpData={mockLevelUpData}
-          onClose={mockOnClose}
-        />
-      )
-
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-  })
-
-  describe('Interface Elements', () => {
-    it('displays increment/decrement buttons', () => {
-      render(
-        <LevelUpModal
-          levelUpData={mockLevelUpData}
-          onClose={mockOnClose}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('shows submit button', () => {
-      render(
-        <LevelUpModal
-          levelUpData={mockLevelUpData}
-          onClose={mockOnClose}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('shows reset button', () => {
-      render(
-        <LevelUpModal
-          levelUpData={mockLevelUpData}
-          onClose={mockOnClose}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('displays points remaining indicator', () => {
-      render(
-        <LevelUpModal
-          levelUpData={mockLevelUpData}
-          onClose={mockOnClose}
-        />
-      )
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-  })
-
-  describe('Stat Allocation Edge Cases', () => {
-    it('handles allocating all points to one attribute', () => {
-      const { rerender } = render(
-        <LevelUpModal
-          levelUpData={mockLevelUpData}
-          onClose={mockOnClose}
-        />
-      )
-
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('handles allocating points across multiple attributes', () => {
-      render(
-        <LevelUpModal
-          levelUpData={mockLevelUpData}
-          onClose={mockOnClose}
-        />
-      )
-
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('prevents over-allocation of points', () => {
-      const levelUpDataWithLimitedPoints = {
-        ...mockLevelUpData,
-        available_points: 1,
-      }
-
-      render(
-        <LevelUpModal
-          levelUpData={levelUpDataWithLimitedPoints}
-          onClose={mockOnClose}
-        />
-      )
-
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('handles zero available points', () => {
-      const levelUpDataNoPoints = {
-        ...mockLevelUpData,
-        available_points: 0,
-      }
-
-      render(
-        <LevelUpModal
-          levelUpData={levelUpDataNoPoints}
-          onClose={mockOnClose}
-        />
-      )
-
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('handles very large available points', () => {
-      const levelUpDataManyPoints = {
-        ...mockLevelUpData,
-        available_points: 100,
-      }
-
-      render(
-        <LevelUpModal
-          levelUpData={levelUpDataManyPoints}
-          onClose={mockOnClose}
-        />
-      )
-
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-  })
-
-  describe('Stat Increase Validation', () => {
-    it('calculates new stats correctly after allocation', () => {
-      const levelUpDataWithStats = {
-        level: 10,
-        current_attributes: {
-          strength: 10,
-          finesse: 8,
-          speed: 9,
-          endurance: 12,
-          resolve: 7,
-        },
-        stat_increases: {
-          strength: 1,
-          finesse: 0,
-          speed: 0,
-          endurance: 0,
-          resolve: 0,
-        },
-        available_points: 4,
-      }
-
-      render(
-        <LevelUpModal
-          levelUpData={levelUpDataWithStats}
-          onClose={mockOnClose}
-        />
-      )
-
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('handles maximum attribute values', () => {
-      const levelUpDataMaxStats = {
-        level: 20,
-        current_attributes: {
-          strength: 20,
-          finesse: 19,
-          speed: 18,
-          endurance: 20,
-          resolve: 15,
-        },
-        stat_increases: {
-          strength: 0,
-          finesse: 1,
-          speed: 2,
-          endurance: 0,
-          resolve: 2,
-        },
-        available_points: 5,
-      }
-
-      render(
-        <LevelUpModal
-          levelUpData={levelUpDataMaxStats}
-          onClose={mockOnClose}
-        />
-      )
-
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('handles minimum attribute values', () => {
-      const levelUpDataMinStats = {
-        level: 1,
-        current_attributes: {
-          strength: 1,
-          finesse: 1,
-          speed: 1,
-          endurance: 1,
-          resolve: 1,
-        },
-        stat_increases: {
-          strength: 0,
-          finesse: 0,
-          speed: 0,
-          endurance: 0,
-          resolve: 0,
-        },
-        available_points: 5,
-      }
-
-      render(
-        <LevelUpModal
-          levelUpData={levelUpDataMinStats}
-          onClose={mockOnClose}
-        />
-      )
-
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-  })
-
-  describe('Level Progression', () => {
-    it('displays correct level on level up', () => {
-      const levelUpDataLevel5 = {
-        ...mockLevelUpData,
-        level: 5,
-      }
-
-      render(
-        <LevelUpModal
-          levelUpData={levelUpDataLevel5}
-          onClose={mockOnClose}
-        />
-      )
-
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('handles maximum level', () => {
-      const levelUpDataMaxLevel = {
-        ...mockLevelUpData,
-        level: 99,
-      }
-
-      render(
-        <LevelUpModal
-          levelUpData={levelUpDataMaxLevel}
-          onClose={mockOnClose}
-        />
-      )
-
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('handles level 1 first-time level up', () => {
-      const levelUpDataFirstLevel = {
-        level: 2,
-        current_attributes: {
-          strength: 3,
-          finesse: 3,
-          speed: 3,
-          endurance: 3,
-          resolve: 3,
-        },
-        stat_increases: {
-          strength: 0,
-          finesse: 0,
-          speed: 0,
-          endurance: 0,
-          resolve: 0,
-        },
-        available_points: 5,
-      }
-
-      render(
-        <LevelUpModal
-          levelUpData={levelUpDataFirstLevel}
-          onClose={mockOnClose}
-        />
-      )
-
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-  })
-
-  describe('Dialog Interaction', () => {
-    it('renders the level up modal properly', () => {
-      render(
-        <LevelUpModal
-          levelUpData={mockLevelUpData}
-          onClose={mockOnClose}
-        />
-      )
-
-      const dialog = screen.getByTestId('base-dialog')
-      expect(dialog).toBeInTheDocument()
-    })
-
-    it('allows confirming allocation and closing', () => {
-      render(
-        <LevelUpModal
-          levelUpData={mockLevelUpData}
-          onClose={mockOnClose}
-        />
-      )
-
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('handles rapid open/close cycles', () => {
-      const { rerender } = render(
-        <LevelUpModal
-          levelUpData={mockLevelUpData}
-          onClose={mockOnClose}
-        />
-      )
-
-      for (let i = 0; i < 3; i++) {
-        expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-      }
-    })
-  })
-
-  describe('Visual Feedback', () => {
-    it('shows stat increase previews during allocation', () => {
-      render(
-        <LevelUpModal
-          levelUpData={mockLevelUpData}
-          onClose={mockOnClose}
-        />
-      )
-
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('displays available points counter', () => {
-      render(
-        <LevelUpModal
-          levelUpData={mockLevelUpData}
-          onClose={mockOnClose}
-        />
-      )
-
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('highlights unallocated points', () => {
-      const levelUpDataUnallocated = {
-        ...mockLevelUpData,
-        available_points: 3,
-        stat_increases: {
-          strength: 0,
-          finesse: 0,
-          speed: 0,
-          endurance: 0,
-          resolve: 0,
-        },
-      }
-
-      render(
-        <LevelUpModal
-          levelUpData={levelUpDataUnallocated}
-          onClose={mockOnClose}
-        />
-      )
-
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-  })
-
-  describe('Uneven Stat Distribution', () => {
-    it('handles heavily weighted allocation to single stat', () => {
-      const levelUpDataUneven = {
-        ...mockLevelUpData,
-        available_points: 0,
-        stat_increases: {
-          strength: 10,
-          finesse: 0,
-          speed: 0,
-          endurance: 0,
-          resolve: 0,
-        },
-      }
-
-      render(
-        <LevelUpModal
-          levelUpData={levelUpDataUneven}
-          onClose={mockOnClose}
-        />
-      )
-
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-
-    it('handles balanced distribution across all stats', () => {
-      const levelUpDataBalanced = {
-        ...mockLevelUpData,
-        available_points: 0,
-        stat_increases: {
-          strength: 2,
-          finesse: 2,
-          speed: 2,
-          endurance: 2,
-          resolve: 2,
-        },
-      }
-
-      render(
-        <LevelUpModal
-          levelUpData={levelUpDataBalanced}
-          onClose={mockOnClose}
-        />
-      )
-
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
-  })
-
-  describe('Accessibility', () => {
-    it('renders dialog with proper role', () => {
-      render(
-        <LevelUpModal
-          levelUpData={mockLevelUpData}
-          onClose={mockOnClose}
-        />
-      )
-
-      const dialog = screen.getByTestId('base-dialog')
-      expect(dialog).toBeInTheDocument()
-    })
-
-    it('maintains focus management', () => {
-      render(
-        <LevelUpModal
-          levelUpData={mockLevelUpData}
-          onClose={mockOnClose}
-        />
-      )
-
-      expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-    })
+  it('omits the numeric suffix for attributes with a non-numeric value', () => {
+    render(<LevelUpModal player={makePlayer({ strength_base: undefined })} onAllocatePoints={onAllocatePoints} />)
+    expect(screen.getByText('Strength')).toBeInTheDocument()
   })
 })

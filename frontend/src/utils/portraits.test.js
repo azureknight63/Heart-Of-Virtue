@@ -39,10 +39,30 @@ describe('portrait asset path resolution', () => {
         expect(portraitUrl('Jean', 'furious')).toBe('/assets/portraits/jean/neutral.png')
     })
 
+    it('falls back to neutral when no emotion is given at all', () => {
+        expect(normalizeEmotion(undefined)).toBe('neutral')
+        expect(normalizeEmotion(null)).toBe('neutral')
+    })
+
+    it('assetPath does not double-prefix a path that already starts with a slash', () => {
+        vi.stubEnv('BASE_URL', '/')
+        expect(assetPath('already/relative.png')).toBe('/already/relative.png')
+    })
+
     it('returns the placeholder when there is no speaker', () => {
         // PLACEHOLDER_PORTRAIT is resolved once at import against the build base.
         expect(portraitUrl('', 'happy')).toBe(PLACEHOLDER_PORTRAIT)
         expect(PLACEHOLDER_PORTRAIT).toContain('/assets/portraits/_placeholder.png')
+    })
+
+    it('falls back to a root base when BASE_URL is unset', () => {
+        vi.stubEnv('BASE_URL', '')
+        expect(assetPath('/assets/portraits/_placeholder.png')).toBe('/assets/portraits/_placeholder.png')
+    })
+
+    it('handlePortraitError does nothing when there is no currentTarget', () => {
+        expect(() => handlePortraitError({})).not.toThrow()
+        expect(() => handlePortraitError({ currentTarget: null })).not.toThrow()
     })
 
     it('handlePortraitError swaps the src to the placeholder once', () => {

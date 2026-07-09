@@ -23,6 +23,12 @@ describe('BetaEndDialog', () => {
     expect(screen.getByText(/Thank you for playing/i)).toBeDefined();
   });
 
+  it('does not throw when clicked with no handlers provided (default no-ops)', () => {
+    render(<BetaEndDialog />);
+    expect(() => fireEvent.click(screen.getByText('Continue Exploring'))).not.toThrow();
+    expect(() => fireEvent.click(screen.getByText('Send Feedback'))).not.toThrow();
+  });
+
   it('calls onContinue when "Continue Exploring" is clicked', () => {
     render(
       <BetaEndDialog

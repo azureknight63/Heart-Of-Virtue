@@ -112,14 +112,14 @@ The `tests/api/`, `tests/broken/`, and `tests/uat/` directories are excluded fro
 
 | Layer | Current | Target | CI Minimum |
 |-------|---------|--------|-----------|
-| Backend (Python) | 47% | 60% | 55% |
-| Frontend (React) | ~75% | 85% | 80% |
+| Backend (Python) | 47% | 85% | 85% |
+| Frontend (React) | ~75% | 95% | 95% |
 | Total Tests | 1,308 | 1,500+ | - |
 
 ### Backend Coverage Enforcement
 
 **CI/CD Rule**: Every PR and push to `master`, `develop`, or `web-api` must pass coverage checks:
-- Minimum 55% coverage (via `--cov-fail-under=55`)
+- Minimum 85% coverage (via `--cov-fail-under=85`)
 - All tests must pass
 - Coverage must not decrease from the previous commit
 
@@ -129,7 +129,7 @@ python -m pytest \
   --cov=src \
   --cov=ai \
   --cov-report=term-missing \
-  --cov-fail-under=55 \
+  --cov-fail-under=85 \
   -q
 ```
 
@@ -146,10 +146,9 @@ python -m pytest \
 
 ### Frontend Coverage Enforcement
 
-**CI/CD Rule**: Frontend tests must pass with ~80%+ coverage:
+**CI/CD Rule**: Frontend tests must pass with 95%+ coverage:
 - Run via `npm test -- --run --coverage` in CI
-- No hard threshold yet (frontend tests still maturing)
-- Target: 85%+ by v0.1
+- Enforced via `coverage.thresholds` (95% lines/statements/functions/branches) in `frontend/vite.config.js` — the build fails below this
 
 High-coverage components (>80%):
 - `pages/` — Login, menu, game pages
@@ -188,9 +187,8 @@ See `docs/coverage/coverage-dashboard.md` for:
 
 ### Why These Numbers?
 
-- **55% minimum**: Catches major regressions (broken imports, syntax, obvious bugs)
-- **60% target**: High confidence in core logic (combat, inventory, movement)
-- **80%+ frontend**: User-facing code must be reliable
+- **85% backend minimum**: High confidence in core logic (combat, inventory, movement); catches regressions early
+- **95%+ frontend**: User-facing code must be reliable
 - **Story intentionally low**: Narrative branches are hard to test; we focus on mechanics
 
 ## Coding Conventions

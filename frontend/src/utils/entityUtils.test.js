@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { cleanTerminalLineBreaks } from './entityUtils'
+import { cleanTerminalLineBreaks, renderTextWithLinks } from './entityUtils'
 
 describe('cleanTerminalLineBreaks', () => {
     it('returns falsy input unchanged', () => {
@@ -66,5 +66,21 @@ describe('cleanTerminalLineBreaks', () => {
         const input = '\n\nHello world\n\n'
         const result = cleanTerminalLineBreaks(input)
         expect(result).toBe('Hello world')
+    })
+})
+
+describe('renderTextWithLinks', () => {
+    it('returns the text unchanged when every entity in the list is falsy', () => {
+        const result = renderTextWithLinks('A rusty lever sits here.', [null, undefined])
+        expect(result).toBe('A rusty lever sits here.')
+    })
+
+    it('truncates a long entity description in the link tooltip', () => {
+        const longDescription = 'A'.repeat(200)
+        const entities = [{ name: 'Lever', type: 'object', description: longDescription }]
+        const result = renderTextWithLinks('Pull the Lever now.', entities)
+
+        const linkPart = result.find((part) => typeof part === 'object' && part !== null)
+        expect(linkPart.props.title).toBe(`${'A'.repeat(147)}...`)
     })
 })

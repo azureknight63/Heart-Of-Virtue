@@ -32,6 +32,7 @@ export default function DefeatDialog({ endState, onLoadedSave }) {
   const { logout } = useAuth()
   const { playSFX } = useAudio()
   const [loading, setLoading] = useState(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState('')
   const [saves, setSaves] = useState([])
   const [selectedSaveId, setSelectedSaveId] = useState('')
@@ -91,7 +92,7 @@ export default function DefeatDialog({ endState, onLoadedSave }) {
     }
 
     try {
-      setLoading(true)
+      setIsSubmitting(true)
       await apiEndpoints.saves.load(selectedSaveId)
       if (typeof onLoadedSave === 'function') {
         await onLoadedSave()
@@ -99,17 +100,17 @@ export default function DefeatDialog({ endState, onLoadedSave }) {
     } catch (e) {
       setError(e?.response?.data?.error || e?.message || 'Failed to load save.')
     } finally {
-      setLoading(false)
+      setIsSubmitting(false)
     }
   }
 
   const handleStartOver = async () => {
     try {
-      setLoading(true)
+      setIsSubmitting(true)
       await logout()
     } catch (e) {
       setError(e?.message || 'Failed to start over.')
-      setLoading(false)
+      setIsSubmitting(false)
     }
   }
 
@@ -166,10 +167,10 @@ export default function DefeatDialog({ endState, onLoadedSave }) {
 
             <GameButton
               onClick={handleLoad}
-              disabled={loading || !selectedSaveId}
+              disabled={isSubmitting || !selectedSaveId}
               variant="danger"
             >
-              {loading ? 'LOADING…' : 'LOAD'}
+              {isSubmitting ? 'LOADING…' : 'LOAD'}
             </GameButton>
           </div>
         )}
@@ -180,7 +181,7 @@ export default function DefeatDialog({ endState, onLoadedSave }) {
       <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
         <GameButton
           onClick={handleStartOver}
-          disabled={loading}
+          disabled={loading || isSubmitting}
           variant="secondary"
           style={{ border: `1px solid ${colors.border.danger}`, color: colors.text.danger }}
         >

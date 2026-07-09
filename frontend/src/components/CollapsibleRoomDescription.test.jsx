@@ -69,4 +69,17 @@ describe('CollapsibleRoomDescription', () => {
 
     expect(scrollContainer.scrollTop).toBe(0)
   })
+
+  it('shows top and bottom scroll fade indicators when content overflows', () => {
+    const { container } = render(<CollapsibleRoomDescription location={loc} defaultOpen={true} />)
+    const scrollContainer = screen.getByTestId('room-contents').parentElement
+
+    Object.defineProperty(scrollContainer, 'scrollHeight', { value: 500, configurable: true })
+    Object.defineProperty(scrollContainer, 'clientHeight', { value: 100, configurable: true })
+    Object.defineProperty(scrollContainer, 'scrollTop', { value: 200, configurable: true, writable: true })
+    fireEvent.scroll(scrollContainer)
+
+    const fadeIndicators = container.querySelectorAll('[style*="linear-gradient"]')
+    expect(fadeIndicators.length).toBe(2)
+  })
 })

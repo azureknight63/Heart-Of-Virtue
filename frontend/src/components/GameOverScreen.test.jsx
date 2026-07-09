@@ -1,8 +1,17 @@
 import React from 'react'
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
-import { render, screen, waitFor, act } from '@testing-library/react'
+import { render, screen, waitFor, act, fireEvent } from '@testing-library/react'
 import { BrowserRouter } from 'react-router-dom'
 import GameOverScreen from './GameOverScreen'
+
+const mockNavigate = vi.fn()
+vi.mock('react-router-dom', async (importOriginal) => {
+  const actual = await importOriginal()
+  return {
+    ...actual,
+    useNavigate: () => mockNavigate,
+  }
+})
 
 describe('GameOverScreen', () => {
   beforeEach(() => {
@@ -176,6 +185,18 @@ describe('GameOverScreen', () => {
       })
       const menuButton = screen.getByText(/MAIN MENU/i)
       expect(menuButton.tagName).toBe('BUTTON')
+    })
+  })
+
+  describe('Main menu navigation', () => {
+    it('navigates to /menu when the MAIN MENU button is clicked', () => {
+      renderWithRouter(<GameOverScreen />)
+      act(() => {
+        vi.advanceTimersByTime(1500)
+        vi.runAllTimers()
+      })
+      fireEvent.click(screen.getByText(/MAIN MENU/i))
+      expect(mockNavigate).toHaveBeenCalledWith('/menu')
     })
   })
 })

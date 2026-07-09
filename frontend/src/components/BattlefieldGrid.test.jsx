@@ -1,12 +1,14 @@
 import React from 'react';
 import { render, screen, fireEvent, act } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import BattlefieldGrid from './BattlefieldGrid';
 import { getAnimationDuration } from '../utils/animationConfigs';
 
+const { mockPlaySFX } = vi.hoisted(() => ({ mockPlaySFX: vi.fn() }));
+
 // Mock AudioContext so playSFX doesn't throw
 vi.mock('../context/AudioContext', () => ({
-    useAudio: () => ({ playSFX: vi.fn() })
+    useAudio: () => ({ playSFX: mockPlaySFX })
 }));
 
 describe('BattlefieldGrid', () => {
@@ -309,6 +311,358 @@ describe('BattlefieldGrid', () => {
             unmount();
 
             expect(onAnimatingChange).toHaveBeenCalledWith(false);
+        });
+    });
+
+    describe('death animation lifecycle', () => {
+        beforeEach(() => {
+            vi.useFakeTimers();
+            mockPlaySFX.mockClear();
+        });
+
+        afterEach(() => {
+            vi.useRealTimers();
+        });
+
+        it('plays a death burst and the enemy_death SFX after a killing blow, then clears it', () => {
+            const allBeatStates = [
+                { enemies: [{ id: 'enemy_goblin', hp: 50, position: { x: 8, y: 6 } }] },
+                { enemies: [] },
+            ];
+            const combatWithKill = {
+                ...mockCombat,
+                log: [
+                    { beat_index: 1, animation: { type: 'attack', source_id: 'player', target_id: 'enemy_goblin', outcome: 'hit' } },
+                ],
+            };
+            const { container } = render(
+                <BattlefieldGrid
+                    combat={combatWithKill}
+                    allBeatStates={allBeatStates}
+                    currentBeatIndex={1}
+                    tab="overview"
+                    zoom={1}
+                    displayedLogCount={1}
+                />
+            );
+
+            // Finish the attack animation — the chained death animation should begin
+            act(() => vi.advanceTimersByTime(800 + 50));
+            expect(mockPlaySFX).toHaveBeenCalledWith('enemy_death');
+            expect(container.querySelector('svg[viewBox="-100 -100 200 200"]')).not.toBeNull();
+
+            // Let the death animation finish completely
+            act(() => vi.advanceTimersByTime(700 + 50));
+            expect(container.querySelector('svg[viewBox="-100 -100 200 200"]')).toBeNull();
+        });
+    });
+
+    describe('effects layer visuals', () => {
+        beforeEach(() => {
+            vi.useFakeTimers();
+        });
+
+        afterEach(() => {
+            vi.useRealTimers();
+        });
+
+        it('renders a ring effect anchored on the target for a heavy attack', () => {
+            const combatWithHeavy = {
+                ...mockCombat,
+                log: [{ animation: { type: 'heavy_attack', source_id: 'player', target_id: 'enemy_goblin', outcome: 'hit' } }],
+            };
+            const { container } = render(<BattlefieldGrid combat={combatWithHeavy} tab="overview" zoom={1} displayedLogCount={1} />);
+            act(() => vi.advanceTimersByTime(380 + 150 + 10)); // windup + strike -> into impact
+            expect(container.querySelector('.battlefield-effect-ring')).not.toBeNull();
+        });
+
+        it('renders a ring effect anchored on the source for a sweep attack', () => {
+            const combatWithSweep = {
+                ...mockCombat,
+                log: [{ animation: { type: 'sweep', source_id: 'player', target_id: 'enemy_goblin', outcome: 'hit' } }],
+            };
+            const { container } = render(<BattlefieldGrid combat={combatWithSweep} tab="overview" zoom={1} displayedLogCount={1} />);
+            act(() => vi.advanceTimersByTime(180 + 10)); // windup -> into spin
+            expect(container.querySelector('.battlefield-effect-ring')).not.toBeNull();
+        });
+
+        it('renders a travelling projectile dot from source to target', () => {
+            const combatWithProjectile = {
+                ...mockCombat,
+                log: [{ animation: { type: 'projectile', source_id: 'player', target_id: 'enemy_goblin', outcome: 'hit' } }],
+            };
+            const { container } = render(<BattlefieldGrid combat={combatWithProjectile} tab="overview" zoom={1} displayedLogCount={1} />);
+            act(() => vi.advanceTimersByTime(220 + 10)); // aim -> into launch
+            const dots = Array.from(container.querySelectorAll('div')).filter((d) => d.style.backgroundColor === 'rgb(255, 238, 136)');
+            expect(dots.length).toBeGreaterThan(0);
+
+            // Advance further so the double-RAF launch flips the dot into its travelling state
+            act(() => vi.advanceTimersByTime(50));
+        });
+
+        it('renders drain motes flowing from an ally target back to the source', () => {
+            const combatWithAlly = {
+                ...mockCombat,
+                allies: [{ id: 'gorran', name: 'Gorran', hp: 40, max_hp: 100, position: { x: 5, y: 6 } }],
+                log: [{ animation: { type: 'drain', source_id: 'player', target_id: 'gorran', outcome: 'hit' } }],
+            };
+            const { container } = render(<BattlefieldGrid combat={combatWithAlly} tab="overview" zoom={1} displayedLogCount={1} />);
+            act(() => vi.advanceTimersByTime(240 + 10)); // windup -> into impact
+            const dots = Array.from(container.querySelectorAll('div')).filter((d) => d.style.backgroundColor === 'rgba(170, 255, 170, 0.9)');
+            expect(dots.length).toBeGreaterThan(0);
+        });
+
+        it('renders rising particles for a buff animation', () => {
+            const combatWithBuff = {
+                ...mockCombat,
+                log: [{ animation: { type: 'buff', source_id: 'player' } }],
+            };
+            const { container } = render(<BattlefieldGrid combat={combatWithBuff} tab="overview" zoom={1} displayedLogCount={1} />);
+            act(() => vi.advanceTimersByTime(260 + 10)); // windup -> into burst
+            expect(container.querySelector('.battlefield-effect-rise')).not.toBeNull();
+        });
+    });
+
+    describe('animation visual states', () => {
+        beforeEach(() => {
+            vi.useFakeTimers();
+        });
+
+        afterEach(() => {
+            vi.useRealTimers();
+        });
+
+        it('applies a miss flash on the target during an attack animation', () => {
+            const missCombat = { ...mockCombat, log: [{ animation: { type: 'attack', source_id: 'player', target_id: 'enemy_goblin', outcome: 'miss' } }] };
+            const { container } = render(<BattlefieldGrid combat={missCombat} tab="overview" zoom={1} displayedLogCount={1} />);
+            act(() => vi.advanceTimersByTime(200 + 160 + 10)); // windup + strike -> into impact
+            expect(container.querySelector('[style*="blur(2px)"]')).not.toBeNull();
+        });
+
+        it('applies a parry flash on the target during an attack animation', () => {
+            const parryCombat = { ...mockCombat, log: [{ animation: { type: 'attack', source_id: 'player', target_id: 'enemy_goblin', outcome: 'parry' } }] };
+            const { container } = render(<BattlefieldGrid combat={parryCombat} tab="overview" zoom={1} displayedLogCount={1} />);
+            act(() => vi.advanceTimersByTime(200 + 160 + 10));
+            expect(container.querySelector('[style*="rgba(255, 200, 0, 0.7)"]')).not.toBeNull();
+        });
+
+        it('applies no special target treatment for an unrecognized outcome (default branch)', () => {
+            const critCombat = { ...mockCombat, log: [{ animation: { type: 'attack', source_id: 'player', target_id: 'enemy_goblin', outcome: 'crit' } }] };
+            const { container } = render(<BattlefieldGrid combat={critCombat} tab="overview" zoom={1} displayedLogCount={1} />);
+            act(() => vi.advanceTimersByTime(200 + 160 + 10));
+            expect(container.querySelector('[style*="rgba(255, 0, 0, 0.7)"]')).toBeNull();
+            expect(container.querySelector('[style*="blur(2px)"]')).toBeNull();
+            expect(container.querySelector('[style*="rgba(255, 200, 0, 0.7)"]')).toBeNull();
+            expect(screen.getByText('G')).toBeInTheDocument();
+        });
+
+        it('applies a fixed debuff treatment on the target instead of a strike flash', () => {
+            const debuffCombat = { ...mockCombat, log: [{ animation: { type: 'debuff', source_id: 'player', target_id: 'enemy_goblin', outcome: 'hit' } }] };
+            const { container } = render(<BattlefieldGrid combat={debuffCombat} tab="overview" zoom={1} displayedLogCount={1} />);
+            act(() => vi.advanceTimersByTime(240 + 10)); // windup -> into impact
+            expect(container.querySelector('[style*="rgba(153, 68, 255, 0.9)"]')).not.toBeNull();
+        });
+
+        it('resets the source transform during the contract phase of a fallback pulse animation', () => {
+            const pulseCombat = { ...mockCombat, log: [{ animation: { type: 'mystery_move', source_id: 'player' } }] };
+            const { container } = render(<BattlefieldGrid combat={pulseCombat} tab="overview" zoom={1} displayedLogCount={1} />);
+            act(() => vi.advanceTimersByTime(200 + 10)); // expand -> into contract
+            expect(container.querySelector('[style*="scale(1)"]')).not.toBeNull();
+        });
+
+        it('resolves a cardinal string facing to a rotation angle', () => {
+            const cardinalCombat = {
+                ...mockCombat,
+                player: { ...mockCombat.player, position: { x: 6, y: 6, facing: 'NE' } },
+            };
+            const { container } = render(<BattlefieldGrid combat={cardinalCombat} tab="overview" zoom={1} />);
+            expect(container.querySelector('[style*="rotate(45deg)"]')).not.toBeNull();
+        });
+    });
+
+    it('shows status effect icons at full opacity on hover', () => {
+        render(<BattlefieldGrid combat={mockCombat} tab="overview" zoom={1} />);
+        const statusWrapper = document.querySelector('.absolute.bottom-full');
+        expect(statusWrapper).not.toBeNull();
+        expect(() => fireEvent.mouseEnter(statusWrapper)).not.toThrow();
+        expect(() => fireEvent.mouseLeave(statusWrapper)).not.toThrow();
+    });
+
+    it('does not close the selected entity panel when clicking inside it', () => {
+        render(<BattlefieldGrid combat={mockCombat} tab="overview" zoom={1} />);
+        const jeanToken = screen.getByText('J');
+        fireEvent.click(jeanToken.closest('[style*="cursor"]'));
+        expect(screen.getByText('Jean')).toBeInTheDocument();
+
+        const panelHeader = screen.getByText('Jean').closest('div');
+        fireEvent.click(panelHeader);
+        expect(screen.getByText('Jean')).toBeInTheDocument();
+    });
+
+    it('falls back to Miscellaneous for a prepared_move with no category, in the enemies list', () => {
+        const combatEdge = {
+            ...mockCombat,
+            enemies: [{ id: 'x', name: 'Wisp', hp: 10, max_hp: 10, prepared_move: { name: 'Cackle' }, position: { x: 1, y: 1 } }],
+        };
+        render(<BattlefieldGrid combat={combatEdge} tab="enemies" zoom={1} />);
+        expect(screen.getByText(/Cackle/)).toBeInTheDocument();
+        expect(screen.getByText('(Miscellaneous)')).toBeInTheDocument();
+    });
+
+    it('renders an enemy with no active move and zero max_hp without crashing', () => {
+        const combatEdge = {
+            ...mockCombat,
+            enemies: [{ id: 'x', name: 'Husk', hp: 0, max_hp: 0, position: { x: 1, y: 1 } }],
+        };
+        render(<BattlefieldGrid combat={combatEdge} tab="enemies" zoom={1} />);
+        expect(screen.getByText('Husk')).toBeInTheDocument();
+    });
+
+    it('reads HP/max HP from a nested health object when hp/max_hp are absent (torus marker)', () => {
+        const combatEdge = {
+            ...mockCombat,
+            enemies: [{
+                id: 'x', name: 'Wisp',
+                health: { current: 30, max: 60 },
+                position: { x: 1, y: 1 },
+            }],
+        };
+        const { container } = render(<BattlefieldGrid combat={combatEdge} tab="overview" zoom={1} />);
+        expect(screen.getByText('W')).toBeInTheDocument();
+        expect(container.querySelector('[stroke-dasharray="70.7 141.4"]')).not.toBeNull();
+    });
+
+    it('falls back to "?" for a marker with no displaySymbol, battle_symbol, or name', () => {
+        const combatEdge = {
+            ...mockCombat,
+            enemies: [{ id: 'x', hp: 10, max_hp: 10, position: { x: 1, y: 1 } }],
+        };
+        render(<BattlefieldGrid combat={combatEdge} tab="overview" zoom={1} />);
+        expect(screen.getByText('?')).toBeInTheDocument();
+    });
+
+    it('falls back to a 0-degree facing for an unrecognized cardinal string', () => {
+        const combatEdge = {
+            ...mockCombat,
+            player: { ...mockCombat.player, position: { x: 6, y: 6, facing: 'UNKNOWN' } },
+        };
+        const { container } = render(<BattlefieldGrid combat={combatEdge} tab="overview" zoom={1} />);
+        expect(container.querySelector('[style*="rotate(0deg)"]')).not.toBeNull();
+    });
+
+    it('renders a marker with no pending move without a category glow/border', () => {
+        const combatEdge = {
+            ...mockCombat,
+            player: { ...mockCombat.player, current_move: undefined, prepared_move: undefined },
+        };
+        render(<BattlefieldGrid combat={combatEdge} tab="overview" zoom={1} />);
+        expect(screen.getByText('J')).toBeInTheDocument();
+    });
+
+    it('renders a dashed extent marker when the real map is smaller than the viewport', () => {
+        const { container } = render(<BattlefieldGrid combat={mockCombat} tab="overview" zoom={1} mapSize={5} />);
+        expect(container.querySelector('[style*="dashed"]')).not.toBeNull();
+    });
+
+    it('renders breadcrumb trail dots from beat history', () => {
+        const allBeatStates = [
+            { player: { position: { x: 5, y: 6 } }, enemies: [{ id: 'enemy_goblin', position: { x: 7, y: 6 } }] },
+            { player: { position: { x: 6, y: 6 } }, enemies: [{ id: 'enemy_goblin', position: { x: 8, y: 6 } }] },
+        ];
+        const { container } = render(
+            <BattlefieldGrid combat={mockCombat} allBeatStates={allBeatStates} currentBeatIndex={2} tab="overview" zoom={1} />
+        );
+        expect(container.querySelectorAll('[style*="blur(1px)"]').length).toBeGreaterThan(0);
+    });
+
+    it('derives the map size from entity positions when mapSize is not provided', () => {
+        const farCombat = {
+            player: { ...mockCombat.player, position: { x: 15, y: 15 } },
+            enemies: [],
+        };
+        const { container } = render(<BattlefieldGrid combat={farCombat} tab="overview" zoom="full" />);
+        // Full mode shows the entire derived map: maxCoord 15 + 1 = 16x16 cells
+        const cells = container.querySelectorAll('[style*="background-color: rgba(255, 255, 255, 0.03)"]');
+        expect(cells.length).toBe(256);
+    });
+
+    describe('touch and mouse panning', () => {
+        beforeEach(() => {
+            vi.useFakeTimers();
+        });
+
+        afterEach(() => {
+            vi.useRealTimers();
+        });
+
+        it('pans the map via touch drag and decays back afterward', () => {
+            const { container } = render(<BattlefieldGrid combat={mockCombat} tab="overview" zoom={1} />);
+            const gridEl = container.firstChild;
+            expect(gridEl).not.toBeNull();
+
+            fireEvent.touchStart(gridEl, { touches: [{ clientX: 100, clientY: 100 }] });
+            fireEvent.touchMove(gridEl, { touches: [{ clientX: 60, clientY: 80 }] });
+            fireEvent.touchEnd(gridEl);
+
+            expect(() => act(() => vi.advanceTimersByTime(500))).not.toThrow();
+        });
+
+        it('pans the map via mouse drag and decays back afterward', () => {
+            const { container } = render(<BattlefieldGrid combat={mockCombat} tab="overview" zoom={1} />);
+            const gridEl = container.firstChild;
+
+            fireEvent.mouseDown(gridEl, { button: 0, clientX: 100, clientY: 100 });
+            fireEvent.mouseMove(window, { clientX: 60, clientY: 80 });
+            fireEvent.mouseUp(window);
+
+            expect(() => act(() => vi.advanceTimersByTime(500))).not.toThrow();
+        });
+
+        it('ignores multi-touch gestures and secondary mouse buttons', () => {
+            const { container } = render(<BattlefieldGrid combat={mockCombat} tab="overview" zoom={1} />);
+            const gridEl = container.firstChild;
+
+            expect(() => fireEvent.touchStart(gridEl, { touches: [{ clientX: 0, clientY: 0 }, { clientX: 10, clientY: 10 }] })).not.toThrow();
+            expect(() => fireEvent.mouseDown(gridEl, { button: 2, clientX: 0, clientY: 0 })).not.toThrow();
+            expect(() => fireEvent.mouseMove(window, { clientX: 5, clientY: 5 })).not.toThrow();
+            expect(() => fireEvent.mouseUp(window)).not.toThrow();
+        });
+    });
+
+    describe('smooth camera panning', () => {
+        beforeEach(() => {
+            vi.useFakeTimers();
+        });
+
+        afterEach(() => {
+            vi.useRealTimers();
+        });
+
+        it('animates the camera toward the player when they move within the viewport', () => {
+            const { rerender, unmount } = render(<BattlefieldGrid combat={mockCombat} tab="overview" zoom={1} />);
+            const movedCombat = { ...mockCombat, player: { ...mockCombat.player, position: { x: 7, y: 6, facing: 0 } } };
+
+            expect(() => {
+                rerender(<BattlefieldGrid combat={movedCombat} tab="overview" zoom={1} />);
+                act(() => vi.advanceTimersByTime(500));
+            }).not.toThrow();
+
+            unmount();
+        });
+
+        it('snaps the camera immediately on a jump larger than the viewport radius', () => {
+            const { rerender } = render(<BattlefieldGrid combat={mockCombat} tab="overview" zoom={1} />);
+            const jumpedCombat = { ...mockCombat, player: { ...mockCombat.player, position: { x: 40, y: 40, facing: 0 } } };
+
+            expect(() => {
+                rerender(<BattlefieldGrid combat={jumpedCombat} tab="overview" zoom={1} />);
+                act(() => vi.advanceTimersByTime(50));
+            }).not.toThrow();
+        });
+
+        it('clears the camera transform when switching into full-map zoom', () => {
+            const { rerender } = render(<BattlefieldGrid combat={mockCombat} tab="overview" zoom={1} />);
+            expect(() => rerender(<BattlefieldGrid combat={mockCombat} tab="overview" zoom="full" />)).not.toThrow();
         });
     });
 });

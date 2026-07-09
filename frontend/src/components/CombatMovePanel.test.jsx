@@ -145,6 +145,56 @@ describe('CombatMovePanel', () => {
     expect(mockOnClose).toHaveBeenCalled();
   });
 
+  it('notifies onTargetHover with the single viable enemy target on hover, and clears it on click/leave', () => {
+    const singleTargetMoves = [
+      { name: 'Lunge', category: 'Attack', description: 'A quick lunge', available: true, targeted: true, requires_target_selection: false, viable_targets: [{ id: 'enemy_1' }] },
+    ];
+    const mockOnTargetHover = vi.fn();
+    render(
+      <CombatMovePanel
+        moves={singleTargetMoves}
+        category="Attack"
+        onMoveClick={mockOnMoveClick}
+        onClose={mockOnClose}
+        onTargetHover={mockOnTargetHover}
+      />
+    );
+
+    const moveBtn = screen.getByText('Lunge').closest('button');
+    fireEvent.mouseEnter(moveBtn);
+    expect(mockOnTargetHover).toHaveBeenCalledWith('enemy_1');
+
+    fireEvent.mouseLeave(moveBtn);
+    expect(mockOnTargetHover).toHaveBeenCalledWith(null);
+
+    fireEvent.mouseEnter(moveBtn);
+    fireEvent.click(moveBtn);
+    expect(mockOnTargetHover).toHaveBeenLastCalledWith(null);
+  });
+
+  it('does not send a hover target for a non-enemy id or multiple viable targets', () => {
+    const mockOnTargetHover = vi.fn();
+    const multiTargetMoves = [
+      { name: 'Sweep', category: 'Attack', description: 'Hits everyone', available: true, targeted: true, requires_target_selection: false, viable_targets: [{ id: 'enemy_1' }, { id: 'enemy_2' }] },
+      { name: 'HealAlly', category: 'Attack', description: 'Heals a friend', available: true, targeted: true, requires_target_selection: false, viable_targets: [{ id: 'ally_1' }] },
+    ];
+    render(
+      <CombatMovePanel
+        moves={multiTargetMoves}
+        category="Attack"
+        onMoveClick={mockOnMoveClick}
+        onClose={mockOnClose}
+        onTargetHover={mockOnTargetHover}
+      />
+    );
+
+    fireEvent.mouseEnter(screen.getByText('Sweep').closest('button'));
+    fireEvent.mouseEnter(screen.getByText('HealAlly').closest('button'));
+    expect(mockOnTargetHover).not.toHaveBeenCalledWith('enemy_1');
+    expect(mockOnTargetHover).not.toHaveBeenCalledWith('enemy_2');
+    expect(mockOnTargetHover).not.toHaveBeenCalledWith('ally_1');
+  });
+
   it('handles hover effects on available moves', () => {
     render(
       <CombatMovePanel 

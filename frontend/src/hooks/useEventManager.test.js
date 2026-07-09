@@ -270,6 +270,45 @@ describe('useEventManager', () => {
             expect(showError).toHaveBeenCalledWith('Something went wrong')
         })
 
+        it('falls back to a generic error message when the server omits one', async () => {
+            vi.spyOn(apiClient, 'post').mockResolvedValueOnce({
+                data: { success: false }
+            })
+
+            const { result } = renderHook(() => useEventManager(defaultParams))
+            const showError = vi.fn()
+
+            await act(async () => {
+                await result.current.handleEventInput('evt-1', 'user input', showError)
+            })
+
+            expect(showError).toHaveBeenCalledWith('Event processing failed')
+        })
+
+        it('carries segments, conversation, and is_death_scene through a standalone Event Result frame', async () => {
+            vi.spyOn(apiClient, 'post').mockResolvedValueOnce({
+                data: {
+                    success: true,
+                    output_text: 'Jean succumbs to his wounds.',
+                    needs_input: false,
+                    segments: [{ text: 'final seg' }],
+                    conversation: { cast: [{ id: 'Jean' }] },
+                    is_death_scene: true,
+                }
+            })
+
+            const { result } = renderHook(() => useEventManager(defaultParams))
+            const showError = vi.fn()
+
+            await act(async () => {
+                await result.current.handleEventInput('evt-1', 'user input', showError)
+            })
+
+            expect(result.current.currentEvent?.segments).toEqual([{ text: 'final seg' }])
+            expect(result.current.currentEvent?.conversation).toEqual({ cast: [{ id: 'Jean' }] })
+            expect(result.current.currentEvent?.is_death_scene).toBe(true)
+        })
+
         it('should show result event if output text is returned', async () => {
             vi.spyOn(apiClient, 'post').mockResolvedValueOnce({
                 data: { success: true, output_text: 'Result text', needs_input: false }
@@ -382,6 +421,247 @@ describe('useEventManager', () => {
             const { result } = renderHook(() => useEventManager(defaultParams))
 
             expect(result.current.isEventDialogActive).toBe(false)
+        })
+    })
+
+    describe('checkPendingEvents error handling', () => {
+        it('logs and marks events checked when the pending-events fetch fails', async () => {
+            const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+            vi.spyOn(apiClient, 'get').mockRejectedValueOnce(new Error('offline'))
+
+            const { result } = renderHook(() => useEventManager(defaultParams))
+
+            await waitFor(() => {
+                expect(result.current.eventsChecked).toBe(true)
+            })
+            expect(errorSpy).toHaveBeenCalledWith('Failed to fetch pending events after retries:', expect.any(Error))
+            errorSpy.mockRestore()
+        })
+    })
+
+    describe('duplicate event guards', () => {
+        it('logs and skips a duplicate event that matches the currently displayed event', async () => {
+            const { result } = renderHook(() => useEventManager(defaultParams))
+
+            const event = { event_id: 'evt-1', name: 'Event 1', output_text: 'Test', needs_input: false }
+            act(() => { result.current.handleEventsTriggered([event]) })
+
+            await waitFor(() => expect(result.current.currentEvent?.event_id).toBe('evt-1'))
+
+            // Trigger the same event again while it's the current event — the
+            // "isCurrent" check only logs a diagnostic; it does not suppress
+            // the requeue (that's the queue-side dedup, covered separately).
+            act(() => { result.current.handleEventsTriggered([{ ...event }]) })
+
+            expect(result.current.currentEvent?.event_id).toBe('evt-1')
+            expect(result.current.eventQueue).toHaveLength(1)
+        })
+
+        it('skips a recently processed event still lingering at the head of the queue', async () => {
+            const { result } = renderHook(() => useEventManager(defaultParams))
+            const showError = vi.fn()
+
+            vi.spyOn(apiClient, 'post').mockResolvedValueOnce({ data: { success: true, output_text: '', needs_input: false } })
+            await act(async () => {
+                await result.current.handleEventInput('evt-1', 'reply', showError)
+            })
+
+            // evt-1 is now in processedEventIds; re-queue an event with the same id
+            act(() => {
+                result.current.setEventQueue([{ event_id: 'evt-1', name: 'Event 1', output_text: 'Test', needs_input: false }])
+            })
+
+            await waitFor(() => {
+                expect(result.current.eventQueue).toHaveLength(0)
+            })
+            expect(result.current.currentEvent).toBeNull()
+        })
+    })
+
+    describe('memory and combat-end delay detection', () => {
+        it('applies the 3s delay and plays memory_flash BGM for a memory event', async () => {
+            vi.useFakeTimers()
+            const playBGM = vi.fn()
+            const { result } = renderHook(() => useEventManager({ ...defaultParams, playBGM }))
+
+            const event = { event_id: 'evt-mem', name: 'A Memory Stirs', output_text: 'Recollection.', needs_input: false }
+            act(() => { result.current.handleEventsTriggered([event]) })
+
+            expect(result.current.isInteractionDelayActive).toBe(true)
+            expect(result.current.currentEvent).toBeNull()
+
+            act(() => { vi.advanceTimersByTime(3000) })
+
+            expect(result.current.currentEvent?.event_id).toBe('evt-mem')
+            expect(playBGM).toHaveBeenCalledWith('memory_flash')
+        })
+
+        it('delays a combat victory/defeat event when no enemies remain', async () => {
+            vi.useFakeTimers()
+            const combat = { enemies: [] }
+            const { result } = renderHook(() => useEventManager({ ...defaultParams, mode: 'combat', combat }))
+
+            const event = { event_id: 'evt-end', name: 'Battle Result', output_text: 'Victory! The enemy is slain.', needs_input: false }
+            act(() => { result.current.handleEventsTriggered([event]) })
+
+            expect(result.current.isInteractionDelayActive).toBe(true)
+
+            act(() => { vi.advanceTimersByTime(3000) })
+            expect(result.current.currentEvent?.event_id).toBe('evt-end')
+        })
+
+        it('shows a non-memory, non-combat-end event immediately without delay', async () => {
+            const { result } = renderHook(() => useEventManager(defaultParams))
+
+            const event = { event_id: 'evt-plain', name: 'A Lever', output_text: 'A plain lever.', needs_input: false }
+            act(() => { result.current.handleEventsTriggered([event]) })
+
+            await waitFor(() => expect(result.current.currentEvent?.event_id).toBe('evt-plain'))
+            expect(result.current.isInteractionDelayActive).toBe(false)
+        })
+
+        it('detects a memory event via the event type field alone', async () => {
+            vi.useFakeTimers()
+            const { result } = renderHook(() => useEventManager(defaultParams))
+
+            const event = { event_id: 'evt-mem-type', type: 'memory_flashback', name: 'Untitled', output_text: 'A recollection.', needs_input: false }
+            act(() => { result.current.handleEventsTriggered([event]) })
+
+            expect(result.current.isInteractionDelayActive).toBe(true)
+            act(() => { vi.advanceTimersByTime(3000) })
+            expect(result.current.currentEvent?.event_id).toBe('evt-mem-type')
+        })
+
+        it('delays a combat-end event solely because no enemies remain (no keyword match)', async () => {
+            vi.useFakeTimers()
+            const combat = { enemies: [] }
+            const { result } = renderHook(() => useEventManager({ ...defaultParams, mode: 'combat', combat }))
+
+            const event = { event_id: 'evt-quiet-end', name: 'Aftermath', output_text: 'The room falls silent.', needs_input: false }
+            act(() => { result.current.handleEventsTriggered([event]) })
+
+            expect(result.current.isInteractionDelayActive).toBe(true)
+            act(() => { vi.advanceTimersByTime(3000) })
+            expect(result.current.currentEvent?.event_id).toBe('evt-quiet-end')
+        })
+
+        it('derives the event text from message when output_text is absent', async () => {
+            const { result } = renderHook(() => useEventManager(defaultParams))
+
+            // Bypass handleEventsTriggered's own output_text/needs_input filter
+            // (this event only has `message`) by seeding the queue directly.
+            const event = { event_id: 'evt-msg', name: 'A Sign', message: 'Beware of the dog.', needs_input: true }
+            act(() => { result.current.setEventQueue([event]) })
+
+            await waitFor(() => expect(result.current.currentEvent?.event_id).toBe('evt-msg'))
+            expect(result.current.isInteractionDelayActive).toBe(false)
+        })
+    })
+
+    describe('handleEventInput advanced flows', () => {
+        it('merges output text into the next staged event when needs_input is true', async () => {
+            vi.spyOn(apiClient, 'post').mockResolvedValueOnce({
+                data: {
+                    success: true,
+                    output_text: 'The tale continues.',
+                    needs_input: true,
+                    event: { event_id: 'evt-2', name: 'Next Stage', input_type: 'choice', input_options: [] },
+                    segments: [{ text: 'seg' }],
+                    conversation: { cast: [] },
+                }
+            })
+
+            const { result } = renderHook(() => useEventManager(defaultParams))
+            const showError = vi.fn()
+
+            await act(async () => {
+                await result.current.handleEventInput('evt-1', 'reply', showError)
+            })
+
+            expect(result.current.currentEvent?.event_id).toBe('evt-2')
+            expect(result.current.currentEvent?.output_text).toBe('The tale continues.')
+            expect(result.current.currentEvent?.segments).toEqual([{ text: 'seg' }])
+            expect(result.current.currentEvent?.conversation).toEqual({ cast: [] })
+        })
+
+        it('requeues a persistent needs_input event without output text', async () => {
+            vi.spyOn(apiClient, 'post').mockResolvedValueOnce({
+                data: {
+                    success: true,
+                    output_text: '',
+                    needs_input: true,
+                    event: { event_id: 'evt-2', name: 'Next Stage' },
+                }
+            })
+
+            // Keep interaction typing active so the queue-processing effect
+            // doesn't immediately dequeue evt-2 into currentEvent — this test
+            // is only about the requeue itself, not the subsequent display.
+            const { result } = renderHook(() => useEventManager({ ...defaultParams, isInteractionTyping: true }))
+            const showError = vi.fn()
+
+            await act(async () => {
+                await result.current.handleEventInput('evt-1', 'reply', showError)
+            })
+
+            expect(result.current.eventQueue.some(e => e.event_id === 'evt-2')).toBe(true)
+        })
+
+        it('does not duplicate a requeued event already at the front of the queue', async () => {
+            vi.spyOn(apiClient, 'post').mockResolvedValueOnce({
+                data: {
+                    success: true,
+                    output_text: '',
+                    needs_input: true,
+                    event: { event_id: 'evt-2', name: 'Next Stage' },
+                }
+            })
+
+            const { result } = renderHook(() => useEventManager({ ...defaultParams, isInteractionTyping: true }))
+            act(() => {
+                result.current.setEventQueue([{ event_id: 'evt-2', name: 'Next Stage' }])
+            })
+
+            const showError = vi.fn()
+            await act(async () => {
+                await result.current.handleEventInput('evt-1', 'reply', showError)
+            })
+
+            expect(result.current.eventQueue.filter(e => e.event_id === 'evt-2')).toHaveLength(1)
+        })
+
+        it('reports a network error via showError and returns the error result', async () => {
+            const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+            vi.spyOn(apiClient, 'post').mockRejectedValueOnce(new Error('network down'))
+
+            const { result } = renderHook(() => useEventManager(defaultParams))
+            const showError = vi.fn()
+
+            let response
+            await act(async () => {
+                response = await result.current.handleEventInput('evt-1', 'reply', showError)
+            })
+
+            expect(response.success).toBe(false)
+            expect(showError).toHaveBeenCalledWith('Failed to submit input. Please try again.')
+            errorSpy.mockRestore()
+        })
+
+        it('does not track combat_init as a processed event id', async () => {
+            vi.spyOn(apiClient, 'post').mockResolvedValueOnce({ data: { success: true, output_text: '', needs_input: false } })
+            const { result } = renderHook(() => useEventManager(defaultParams))
+            const showError = vi.fn()
+
+            await act(async () => {
+                await result.current.handleEventInput('combat_init', 'reply', showError)
+            })
+
+            // Re-queuing combat_init should NOT be skipped as "recently processed"
+            act(() => {
+                result.current.setEventQueue([{ event_id: 'combat_init', name: 'Combat Start', output_text: 'Begin!', needs_input: false }])
+            })
+
+            await waitFor(() => expect(result.current.currentEvent?.event_id).toBe('combat_init'))
         })
     })
 })

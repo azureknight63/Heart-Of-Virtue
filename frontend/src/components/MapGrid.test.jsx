@@ -421,6 +421,68 @@ describe('MapGrid', () => {
       )
       expect(container.firstChild).toBeInTheDocument()
     })
+    it('shows the object symbol when only objects are present', () => {
+      const location = {
+        ...mockLocation,
+        objects: [{ name: 'Chest' }],
+        items: [],
+        npcs: [],
+      }
+
+      const { container } = render(
+        <MapGrid
+          location={location}
+          onMove={mockOnMove}
+          exits={location.exits}
+          loading={false}
+          exploredTiles={new Map()}
+        />
+      )
+      expect(container.firstChild).toBeInTheDocument()
+    })
+
+    it('defaults items/npcs/objects to empty arrays when absent from the player tile', () => {
+      const location = { map_name: 'test-map', x: 6, y: 6, exits: ['north'] }
+
+      const { container } = render(
+        <MapGrid
+          location={location}
+          onMove={mockOnMove}
+          exits={location.exits}
+          loading={false}
+          exploredTiles={new Map()}
+        />
+      )
+      expect(container.firstChild).toBeInTheDocument()
+    })
+
+    it('falls back to location.name when map_name is absent', () => {
+      const location = { ...mockLocation, map_name: undefined, name: 'The Ruins' }
+      render(
+        <MapGrid
+          location={location}
+          onMove={mockOnMove}
+          exits={location.exits}
+          loading={false}
+          exploredTiles={new Map()}
+        />
+      )
+      expect(screen.getByText(/The Ruins/i)).toBeInTheDocument()
+    })
+
+    it('falls back to "World Map" when both map_name and name are absent', () => {
+      const location = { ...mockLocation, map_name: undefined, name: undefined }
+      render(
+        <MapGrid
+          location={location}
+          onMove={mockOnMove}
+          exits={location.exits}
+          loading={false}
+          exploredTiles={new Map()}
+        />
+      )
+      expect(screen.getByText(/World Map/i)).toBeInTheDocument()
+    })
   })
 
   describe('Mouse Interactions', () => {
@@ -474,6 +536,19 @@ describe('MapGrid', () => {
       )
       // Component should render without errors even with no exits
       expect(container.firstChild).toBeInTheDocument()
+    })
+
+    it('defaults the exits prop to an empty array when undefined', () => {
+      render(
+        <MapGrid
+          location={mockLocation}
+          onMove={mockOnMove}
+          exits={undefined}
+          loading={false}
+          exploredTiles={new Map()}
+        />
+      )
+      expect(screen.getByTestId('movement-star')).toBeInTheDocument()
     })
 
     it('handles location with undefined exits', () => {

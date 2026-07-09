@@ -70,6 +70,28 @@ describe('CombatLog', () => {
     expect(logElement.style.height).toBe('100px');
   });
 
+  it('ignores mousemove when not currently resizing', () => {
+    const { container } = render(<CombatLog log={mockLog} allowResize={true} />);
+    const logElement = container.firstChild;
+    const originalHeight = logElement.style.height;
+
+    // No mouseDown first, so isResizing is false — mousemove should be a no-op.
+    fireEvent.mouseMove(document, { clientY: 999 });
+    expect(logElement.style.height).toBe(originalHeight);
+  });
+
+  it('shows top/bottom scroll fade indicators when content overflows', () => {
+    const { container } = render(<CombatLog log={mockLog} />);
+    const contentEl = container.querySelector('div[style*="overflow-y: auto"]');
+
+    Object.defineProperty(contentEl, 'scrollHeight', { value: 500, configurable: true });
+    Object.defineProperty(contentEl, 'clientHeight', { value: 100, configurable: true });
+    Object.defineProperty(contentEl, 'scrollTop', { value: 50, configurable: true });
+    fireEvent.scroll(contentEl);
+
+    expect(container.querySelector('[style*="position: absolute"]')).not.toBeNull();
+  });
+
   it('respects allowResize prop', () => {
     const { container } = render(<CombatLog log={mockLog} allowResize={false} />);
     const resizeHandle = container.querySelector('[style*="cursor: ns-resize"], [style*="ns-resize"]');

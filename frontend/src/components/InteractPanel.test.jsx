@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import InteractPanel from './InteractPanel';
 import apiEndpoints from '../api/endpoints';
@@ -13,6 +13,17 @@ vi.mock('../api/endpoints', () => ({
       getEvents: vi.fn().mockResolvedValue({ data: { success: true, events: [] } }),
     },
   },
+}));
+
+// Mock NpcChatPanel — a heavy child with its own LLM API; InteractPanel's own
+// wiring (open/close, onRefetch on close) is what's under test here.
+vi.mock('./NpcChatPanel', () => ({
+  default: ({ npcId, npcName, onClose }) => (
+    <div data-testid="npc-chat-panel">
+      <span>Chatting with {npcName} ({npcId})</span>
+      <button onClick={onClose}>Close Chat</button>
+    </div>
+  ),
 }));
 
 describe('InteractPanel', () => {
@@ -427,5 +438,557 @@ describe('InteractPanel', () => {
 
     // 5. Verify NPC buttons are NOT disabled
     expect(screen.getByText(/Talk/i).closest('button')).not.toBeDisabled();
+  });
+
+  describe('Take All Items (ground)', () => {
+    const multiItemLocation = {
+      ...mockLocation,
+      items: [
+        { id: 'item1', name: 'Gold Coin', description: 'A shiny coin.', count: 10, keywords: ['Take'] },
+        { id: 'item2', name: 'Silver Ring', description: 'A plain ring.', count: 1, keywords: ['Take'] },
+      ],
+    };
+
+    it('shows the Take All Items button when more than one ground item is present', () => {
+      render(<InteractPanel location={multiItemLocation} onClose={mockOnClose} />);
+      expect(screen.getByText(/Take All Items/i)).toBeInTheDocument();
+    });
+
+    it('takes every ground item and summarizes the result', async () => {
+      apiEndpoints.world.interact
+        .mockResolvedValueOnce({ data: { success: true } })
+        .mockResolvedValueOnce({ data: { success: true } });
+
+      const { container } = render(<InteractPanel location={multiItemLocation} onClose={mockOnClose} onRefetch={mockOnRefetch} />);
+      fireEvent.click(screen.getByText(/Take All Items/i));
+
+      await waitFor(() => {
+        expect(container.textContent).toContain('Jean takes: 10× Gold Coin, Silver Ring.');
+      }, { timeout: 3000 });
+      expect(mockOnRefetch).toHaveBeenCalled();
+      expect(apiEndpoints.world.interact).toHaveBeenCalledWith('item1', 'take', 10);
+      expect(apiEndpoints.world.interact).toHaveBeenCalledWith('item2', 'take', 1);
+    });
+
+    it('stops taking items and shows an error when one fails', async () => {
+      apiEndpoints.world.interact
+        .mockResolvedValueOnce({ data: { success: true } })
+        .mockResolvedValueOnce({ data: { success: false, error: 'Too heavy to carry.' } });
+
+      render(<InteractPanel location={multiItemLocation} onClose={mockOnClose} />);
+      fireEvent.click(screen.getByText(/Take All Items/i));
+
+      await waitFor(() => {
+        expect(screen.getByText(/Too heavy to carry\./i)).toBeInTheDocument();
+      });
+    });
+
+    it('shows a network error message when take-all throws', async () => {
+      apiEndpoints.world.interact.mockRejectedValue(new Error('offline'));
+
+      render(<InteractPanel location={multiItemLocation} onClose={mockOnClose} />);
+      fireEvent.click(screen.getByText(/Take All Items/i));
+
+      await waitFor(() => {
+        expect(screen.getByText(/Network error/i)).toBeInTheDocument();
+      });
+    });
+  });
+
+  it('toggles the search button hover state without error', () => {
+    render(<InteractPanel location={mockLocation} onClose={mockOnClose} />);
+    const searchButton = screen.getByText(/Search Area/i).closest('button');
+    expect(() => fireEvent.mouseEnter(searchButton)).not.toThrow();
+    expect(() => fireEvent.mouseLeave(searchButton)).not.toThrow();
+  });
+
+  it('shows a network-error message when search throws', async () => {
+    apiEndpoints.world.search.mockRejectedValue(new Error('offline'));
+    render(<InteractPanel location={mockLocation} onClose={mockOnClose} />);
+    fireEvent.click(screen.getByText(/Search Area/i));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Search failed\./i)).toBeInTheDocument();
+    });
+  });
+
+  it('clamps the quantity input between 1 and the available count', () => {
+    render(<InteractPanel location={mockLocation} onClose={mockOnClose} />);
+    fireEvent.click(screen.getAllByText(/Gold Coin/i)[0]);
+    fireEvent.click(screen.getByText(/Take/i));
+
+    const qtyInput = screen.getByDisplayValue('10');
+    fireEvent.change(qtyInput, { target: { value: '999' } });
+    expect(qtyInput.value).toBe('10');
+
+    fireEvent.change(qtyInput, { target: { value: '0' } });
+    expect(qtyInput.value).toBe('1');
+
+    fireEvent.change(qtyInput, { target: { value: 'abc' } });
+    expect(qtyInput.value).toBe('1');
+  });
+
+  it('routes shop keywords to onOpenShop instead of interacting directly', () => {
+    const shopLocation = {
+      ...mockLocation,
+      npcs: [{ id: 'merchant1', name: 'Trader Joe', description: 'Sells wares.', keywords: ['Buy', 'Sell'] }],
+    };
+    const mockOnOpenShop = vi.fn();
+    render(<InteractPanel location={shopLocation} onClose={mockOnClose} onOpenShop={mockOnOpenShop} />);
+    fireEvent.click(screen.getAllByText(/Trader Joe/i)[0]);
+    fireEvent.click(screen.getByText(/^Sell$/i));
+
+    expect(mockOnOpenShop).toHaveBeenCalledWith('merchant1', 'Trader Joe', 'sell');
+    expect(apiEndpoints.world.interact).not.toHaveBeenCalled();
+  });
+
+  describe('NPC chat panel', () => {
+    const chatLocation = {
+      ...mockLocation,
+      npcs: [{ id: 'npc1', name: 'Mynx', npc_class: 'mynx', description: 'A curious sprite.', keywords: ['Talk'], llm_chat_enabled: true }],
+    };
+
+    it('opens the chat panel for the talk action on an LLM-capable NPC', () => {
+      render(<InteractPanel location={chatLocation} onClose={mockOnClose} />);
+      fireEvent.click(screen.getAllByText(/Mynx/i)[0]);
+      fireEvent.click(screen.getByText(/^Talk$/i));
+
+      expect(screen.getByTestId('npc-chat-panel')).toBeInTheDocument();
+      expect(apiEndpoints.world.interact).not.toHaveBeenCalled();
+    });
+
+    it('closes the chat panel and refetches on close', () => {
+      render(<InteractPanel location={chatLocation} onClose={mockOnClose} onRefetch={mockOnRefetch} />);
+      fireEvent.click(screen.getAllByText(/Mynx/i)[0]);
+      fireEvent.click(screen.getByText(/^Talk$/i));
+
+      fireEvent.click(screen.getByText('Close Chat'));
+      expect(screen.queryByTestId('npc-chat-panel')).not.toBeInTheDocument();
+      expect(mockOnRefetch).toHaveBeenCalled();
+    });
+
+    it('does not open the chat panel when loquacity is unavailable', () => {
+      const unavailableLocation = {
+        ...mockLocation,
+        npcs: [{ id: 'npc1', name: 'Mynx', description: 'A curious sprite.', keywords: ['Talk'], llm_chat_enabled: true, loquacity_available: false }],
+      };
+      apiEndpoints.world.interact.mockResolvedValue({ data: { success: true, message: 'Mynx stays quiet.' } });
+      render(<InteractPanel location={unavailableLocation} onClose={mockOnClose} />);
+      fireEvent.click(screen.getAllByText(/Mynx/i)[0]);
+      fireEvent.click(screen.getByText(/^Talk$/i));
+
+      expect(screen.queryByTestId('npc-chat-panel')).not.toBeInTheDocument();
+      expect(apiEndpoints.world.interact).toHaveBeenCalled();
+    });
+  });
+
+  it('closes the dialog after a teleport interaction', async () => {
+    vi.useFakeTimers();
+    apiEndpoints.world.interact.mockResolvedValue({ data: { success: true, message: 'The floor gives way!', teleported: true } });
+    const mockOnInteractionComplete = vi.fn();
+
+    render(
+      <InteractPanel
+        location={mockLocation}
+        onClose={mockOnClose}
+        onRefetch={mockOnRefetch}
+        onInteractionComplete={mockOnInteractionComplete}
+      />
+    );
+    fireEvent.click(screen.getAllByText(/Guard/i)[0]);
+    fireEvent.click(screen.getByText(/^Talk$/i));
+
+    await vi.waitFor(() => {
+      expect(mockOnRefetch).toHaveBeenCalled();
+      expect(mockOnInteractionComplete).toHaveBeenCalled();
+    });
+
+    act(() => vi.advanceTimersByTime(800));
+    expect(mockOnClose).toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  it('updates the selected target locally from the response object_state', async () => {
+    const lockableObject = {
+      ...mockLocation,
+      objects: [{ id: 'door1', name: 'Door', description: 'A locked door.', keywords: ['Unlock'], locked: true }],
+    };
+    apiEndpoints.world.interact.mockResolvedValue({
+      data: {
+        success: true,
+        message: 'You unlock the door.',
+        object_state: { keywords: ['Open'], locked: false, state: 'unlocked' },
+      },
+    });
+
+    const { container } = render(<InteractPanel location={lockableObject} onClose={mockOnClose} />);
+    fireEvent.click(screen.getAllByText(/Door/i)[0]);
+    fireEvent.click(screen.getByText(/^Unlock$/i));
+
+    await waitFor(() => {
+      expect(container.textContent).toContain('You unlock the door.');
+    }, { timeout: 3000 });
+  });
+
+  it('does not lock the panel when a partial quantity was taken', async () => {
+    apiEndpoints.world.interact.mockResolvedValue({ data: { success: true, message: 'Took some.' } });
+
+    render(<InteractPanel location={mockLocation} onClose={mockOnClose} />);
+    fireEvent.click(screen.getAllByText(/Gold Coin/i)[0]);
+    fireEvent.click(screen.getByText(/Take/i));
+
+    const qtyInput = screen.getByDisplayValue('10');
+    fireEvent.change(qtyInput, { target: { value: '3' } });
+    fireEvent.click(screen.getByText(/CONFIRM/i));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Took some\./i)).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByText(/← Back/i));
+    fireEvent.click(screen.getAllByText(/Gold Coin/i)[0]);
+    expect(screen.getByText(/Take/i).closest('button')).not.toBeDisabled();
+  });
+
+  it('forwards events_triggered directly from the interact response', async () => {
+    const mockOnEventsTriggered = vi.fn();
+    apiEndpoints.world.interact.mockResolvedValue({
+      data: { success: true, message: 'Something stirs.', events_triggered: [{ output_text: 'A trap springs!' }] },
+    });
+
+    render(
+      <InteractPanel location={mockLocation} onClose={mockOnClose} onEventsTriggered={mockOnEventsTriggered} />
+    );
+    fireEvent.click(screen.getAllByText(/Guard/i)[0]);
+    fireEvent.click(screen.getByText(/^Talk$/i));
+
+    await waitFor(() => {
+      expect(mockOnEventsTriggered).toHaveBeenCalledWith([{ output_text: 'A trap springs!' }]);
+    });
+  });
+
+  it('silently logs when the background events check fails', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    apiEndpoints.world.interact.mockResolvedValue({ data: { success: true, message: 'Ok.' } });
+    apiEndpoints.world.getEvents.mockRejectedValue(new Error('events offline'));
+
+    render(<InteractPanel location={mockLocation} onClose={mockOnClose} />);
+    fireEvent.click(screen.getAllByText(/Guard/i)[0]);
+    fireEvent.click(screen.getByText(/^Talk$/i));
+
+    await waitFor(() => {
+      expect(errorSpy).toHaveBeenCalledWith('Failed to trigger events:', expect.any(Error));
+    });
+    errorSpy.mockRestore();
+    apiEndpoints.world.getEvents.mockResolvedValue({ data: { success: true, events: [] } });
+  });
+
+  it('resyncs the selected target in place when its data changes without disappearing', async () => {
+    const { rerender } = render(<InteractPanel location={mockLocation} onClose={mockOnClose} />);
+    fireEvent.click(screen.getAllByText(/Gold Coin/i)[0]);
+
+    const updatedLocation = {
+      ...mockLocation,
+      items: [{ id: 'item1', name: 'Gold Coin', description: 'A shiny coin.', count: 4, keywords: ['Take'] }],
+    };
+    rerender(<InteractPanel location={updatedLocation} onClose={mockOnClose} />);
+    fireEvent.click(screen.getByText(/Take/i));
+
+    expect(screen.getByText(/Available: 4/i)).toBeInTheDocument();
+  });
+
+  describe('container contents', () => {
+    const containerLocation = {
+      ...mockLocation,
+      objects: [
+        {
+          id: 'chest1',
+          name: 'Chest',
+          is_container: true,
+          opened: true,
+          contents: [{ id: 'gold1', name: 'Gold', count: 10 }],
+          keywords: ['Open'],
+        },
+      ],
+    };
+
+    it('takes a single item from the container contents', async () => {
+      apiEndpoints.world.interact.mockResolvedValue({ data: { success: true, message: 'Took Gold.' } });
+      render(<InteractPanel location={containerLocation} onClose={mockOnClose} onRefetch={mockOnRefetch} />);
+      fireEvent.click(screen.getAllByText(/Chest/i)[0]);
+      fireEvent.click(screen.getByText('TAKE'));
+
+      await waitFor(() => {
+        expect(screen.getByText(/Took Gold\./i)).toBeInTheDocument();
+      });
+      expect(mockOnRefetch).toHaveBeenCalled();
+    });
+
+    it('shows an error when taking a single container item fails', async () => {
+      apiEndpoints.world.interact.mockResolvedValue({ data: { success: false, error: 'Cannot take that.' } });
+      render(<InteractPanel location={containerLocation} onClose={mockOnClose} />);
+      fireEvent.click(screen.getAllByText(/Chest/i)[0]);
+      fireEvent.click(screen.getByText('TAKE'));
+
+      await waitFor(() => {
+        expect(screen.getByText(/Cannot take that\./i)).toBeInTheDocument();
+      });
+    });
+
+    it('shows a network error when taking a single container item throws', async () => {
+      apiEndpoints.world.interact.mockRejectedValue(new Error('offline'));
+      render(<InteractPanel location={containerLocation} onClose={mockOnClose} />);
+      fireEvent.click(screen.getAllByText(/Chest/i)[0]);
+      fireEvent.click(screen.getByText('TAKE'));
+
+      await waitFor(() => {
+        expect(screen.getByText(/Network error/i)).toBeInTheDocument();
+      });
+    });
+
+    it('defaults to "Took <name>" when the single-item take response omits a message', async () => {
+      apiEndpoints.world.interact.mockResolvedValue({ data: { success: true } });
+      render(<InteractPanel location={containerLocation} onClose={mockOnClose} />);
+      fireEvent.click(screen.getAllByText(/Chest/i)[0]);
+      fireEvent.click(screen.getByText('TAKE'));
+
+      await waitFor(() => {
+        expect(screen.getByText(/Took Gold/i)).toBeInTheDocument();
+      });
+    });
+
+    it('defaults to "Failed to take item" when the single-item take fails without an error field', async () => {
+      apiEndpoints.world.interact.mockResolvedValue({ data: { success: false } });
+      render(<InteractPanel location={containerLocation} onClose={mockOnClose} />);
+      fireEvent.click(screen.getAllByText(/Chest/i)[0]);
+      fireEvent.click(screen.getByText('TAKE'));
+
+      await waitFor(() => {
+        expect(screen.getByText(/Failed to take item/i)).toBeInTheDocument();
+      });
+    });
+
+    it('clicks TAKE ALL for a container and routes through handleActionClick', async () => {
+      const multiContainer = {
+        ...mockLocation,
+        objects: [{ ...containerLocation.objects[0], contents: [{ id: 'g1', name: 'Gold', count: 10 }, { id: 'k1', name: 'Key', count: 1 }] }],
+      };
+      apiEndpoints.world.interact.mockResolvedValue({ data: { success: true, message: 'Took everything.' } });
+      render(<InteractPanel location={multiContainer} onClose={mockOnClose} />);
+      fireEvent.click(screen.getAllByText(/Chest/i)[0]);
+      fireEvent.click(screen.getByText(/TAKE ALL/i));
+
+      await waitFor(() => {
+        expect(apiEndpoints.world.interact).toHaveBeenCalledWith('chest1', 'take_all', null);
+      });
+    });
+
+    it('shows an empty-container message when contents is an empty array', () => {
+      const emptyContainer = {
+        ...mockLocation,
+        objects: [{ id: 'chest1', name: 'Chest', is_container: true, opened: true, contents: [], keywords: ['Open'] }],
+      };
+      render(<InteractPanel location={emptyContainer} onClose={mockOnClose} />);
+      fireEvent.click(screen.getAllByText(/Chest/i)[0]);
+      expect(screen.getByText(/The container is empty\./i)).toBeInTheDocument();
+    });
+  });
+
+  it('shows a no-actions message when the target has no keywords', () => {
+    const noKeywordLocation = {
+      ...mockLocation,
+      objects: [{ id: 'rock1', name: 'Rock', description: 'Just a rock.' }],
+    };
+    render(<InteractPanel location={noKeywordLocation} onClose={mockOnClose} />);
+    fireEvent.click(screen.getAllByText(/Rock/i)[0]);
+    expect(screen.getByText(/No actions available for this target\./i)).toBeInTheDocument();
+  });
+
+  it('defaults npcs/objects/items to empty arrays when absent from location', () => {
+    const bareLocation = { name: 'Empty Room' };
+    render(<InteractPanel location={bareLocation} onClose={mockOnClose} />);
+    expect(screen.getByText(/There is nothing here to interact with\./i)).toBeInTheDocument();
+  });
+
+  it('re-syncs the selected target by name/type when its id changes on refresh', () => {
+    const { rerender } = render(<InteractPanel location={mockLocation} onClose={mockOnClose} />);
+    fireEvent.click(screen.getAllByText(/Gold Coin/i)[0]);
+    expect(screen.getByText(/✨ Gold Coin/i)).toBeInTheDocument();
+
+    const reloadedLocation = {
+      ...mockLocation,
+      items: [{ id: 'item1-reloaded', name: 'Gold Coin', description: 'A shiny coin.', count: 7, keywords: ['Take'] }],
+    };
+    rerender(<InteractPanel location={reloadedLocation} onClose={mockOnClose} />);
+    fireEvent.click(screen.getByText(/Take/i));
+    expect(screen.getByDisplayValue('7')).toBeInTheDocument();
+  });
+
+  it('defaults to "Action completed." and fires onTypingChange/onInteractionComplete for a non-teleport success', async () => {
+    apiEndpoints.world.interact.mockResolvedValue({ data: { success: true } });
+    const mockOnTypingChange = vi.fn();
+    const mockOnInteractionComplete = vi.fn();
+
+    render(
+      <InteractPanel
+        location={mockLocation}
+        onClose={mockOnClose}
+        onTypingChange={mockOnTypingChange}
+        onInteractionComplete={mockOnInteractionComplete}
+      />
+    );
+    fireEvent.click(screen.getAllByText(/Guard/i)[0]);
+    fireEvent.click(screen.getByText(/^Talk$/i));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Action completed\./i)).toBeInTheDocument();
+    });
+    expect(mockOnTypingChange).toHaveBeenCalledWith(true);
+    expect(mockOnInteractionComplete).toHaveBeenCalled();
+  });
+
+  it('falls back to a generic "Interaction failed" message when the server omits both error and message', async () => {
+    apiEndpoints.world.interact.mockResolvedValue({ data: { success: false } });
+    render(<InteractPanel location={mockLocation} onClose={mockOnClose} />);
+    fireEvent.click(screen.getAllByText(/Guard/i)[0]);
+    fireEvent.click(screen.getByText(/^Talk$/i));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Interaction failed/i)).toBeInTheDocument();
+    });
+  });
+
+  it('prefers data.message over the default failure text when error is absent', async () => {
+    apiEndpoints.world.interact.mockResolvedValue({ data: { success: false, message: 'The guard ignores you.' } });
+    render(<InteractPanel location={mockLocation} onClose={mockOnClose} />);
+    fireEvent.click(screen.getAllByText(/Guard/i)[0]);
+    fireEvent.click(screen.getByText(/^Talk$/i));
+
+    await waitFor(() => {
+      expect(screen.getByText(/The guard ignores you\./i)).toBeInTheDocument();
+    });
+  });
+
+  it('retains the previous keywords/locked/state when object_state only updates one field', async () => {
+    const lockableObject = {
+      ...mockLocation,
+      objects: [{ id: 'door1', name: 'Door', description: 'A locked door.', keywords: ['Unlock'], locked: true, state: 'closed' }],
+    };
+    apiEndpoints.world.interact.mockResolvedValue({
+      data: {
+        success: true,
+        message: 'Click.',
+        object_state: {},
+      },
+    });
+
+    render(<InteractPanel location={lockableObject} onClose={mockOnClose} />);
+    fireEvent.click(screen.getAllByText(/Door/i)[0]);
+    fireEvent.click(screen.getByText(/^Unlock$/i));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Click\./i)).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByText(/← Back/i));
+    fireEvent.click(screen.getAllByText(/Door/i)[0]);
+    expect(screen.getByText(/^Unlock$/i)).toBeInTheDocument();
+  });
+
+  it('hides an action button whose keyword is listed in action_aliases', () => {
+    const aliasedLocation = {
+      ...mockLocation,
+      objects: [{ id: 'obj2', name: 'Lever', description: 'A rusty lever.', keywords: ['Pull', 'Yank'], action_aliases: ['Yank'] }],
+    };
+    render(<InteractPanel location={aliasedLocation} onClose={mockOnClose} />);
+    fireEvent.click(screen.getAllByText(/Lever/i)[0]);
+    expect(screen.getByText(/^Pull$/i)).toBeInTheDocument();
+    expect(screen.queryByText(/^Yank$/i)).not.toBeInTheDocument();
+  });
+
+  it('routes the Buy keyword to onOpenShop with the "buy" tab', () => {
+    const shopLocation = {
+      ...mockLocation,
+      npcs: [{ id: 'merchant1', name: 'Trader Joe', description: 'Sells wares.', keywords: ['Buy', 'Sell'] }],
+    };
+    const mockOnOpenShop = vi.fn();
+    render(<InteractPanel location={shopLocation} onClose={mockOnClose} onOpenShop={mockOnOpenShop} />);
+    fireEvent.click(screen.getAllByText(/Trader Joe/i)[0]);
+    fireEvent.click(screen.getByText(/^Buy$/i));
+
+    expect(mockOnOpenShop).toHaveBeenCalledWith('merchant1', 'Trader Joe', 'buy');
+  });
+
+  it('notifies onTypingChange and onInteractionComplete for a ground Take All run', async () => {
+    const multiItemLocation = {
+      ...mockLocation,
+      items: [
+        { id: 'item1', name: 'Gold Coin', description: 'A shiny coin.', count: 10, keywords: ['Take'] },
+        { id: 'item2', name: 'Silver Ring', description: 'A plain ring.', count: 1, keywords: ['Take'] },
+      ],
+    };
+    apiEndpoints.world.interact
+      .mockResolvedValueOnce({ data: { success: true } })
+      .mockResolvedValueOnce({ data: { success: true } });
+    const mockOnTypingChange = vi.fn();
+    const mockOnInteractionComplete = vi.fn();
+
+    render(
+      <InteractPanel
+        location={multiItemLocation}
+        onClose={mockOnClose}
+        onTypingChange={mockOnTypingChange}
+        onInteractionComplete={mockOnInteractionComplete}
+      />
+    );
+    fireEvent.click(screen.getByText(/Take All Items/i));
+
+    await waitFor(() => {
+      expect(mockOnInteractionComplete).toHaveBeenCalled();
+    });
+    expect(mockOnTypingChange).toHaveBeenCalledWith(true);
+  });
+
+  it('ignores a second Take All click while the first run is still in flight', async () => {
+    const multiItemLocation = {
+      ...mockLocation,
+      items: [
+        { id: 'item1', name: 'Gold Coin', description: 'A shiny coin.', count: 10, keywords: ['Take'] },
+        { id: 'item2', name: 'Silver Ring', description: 'A plain ring.', count: 1, keywords: ['Take'] },
+      ],
+    };
+    let resolveFirst;
+    apiEndpoints.world.interact.mockReturnValue(new Promise((r) => { resolveFirst = r; }));
+
+    render(<InteractPanel location={multiItemLocation} onClose={mockOnClose} />);
+    const takeAllBtn = screen.getByText(/Take All Items/i);
+    fireEvent.click(takeAllBtn);
+    fireEvent.click(takeAllBtn);
+
+    expect(apiEndpoints.world.interact).toHaveBeenCalledTimes(1);
+    resolveFirst({ data: { success: true } });
+    await waitFor(() => expect(apiEndpoints.world.interact).toHaveBeenCalledTimes(2));
+  });
+
+  describe('interaction history', () => {
+    it('toggles between last message and full history view', async () => {
+      apiEndpoints.world.interact
+        .mockResolvedValueOnce({ data: { success: true, message: 'First message.' } })
+        .mockResolvedValueOnce({ data: { success: true, message: 'Second message.' } });
+
+      render(<InteractPanel location={mockLocation} onClose={mockOnClose} />);
+      fireEvent.click(screen.getAllByText(/Guard/i)[0]);
+      fireEvent.click(screen.getByText(/^Talk$/i));
+      await waitFor(() => expect(screen.getByText(/First message\./i)).toBeInTheDocument(), { timeout: 3000 });
+
+      fireEvent.click(screen.getByText(/^Attack$/i));
+      await waitFor(() => expect(screen.getByText(/Second message\./i)).toBeInTheDocument(), { timeout: 3000 });
+
+      fireEvent.click(screen.getByText(/View History/i));
+      expect(screen.getByText(/First message\./i)).toBeInTheDocument();
+      expect(screen.getByText(/Second message\./i)).toBeInTheDocument();
+
+      fireEvent.click(screen.getByText(/Hide History/i));
+      expect(screen.queryByText(/First message\./i)).not.toBeInTheDocument();
+      await waitFor(() => expect(screen.getByText(/Second message\./i)).toBeInTheDocument(), { timeout: 3000 });
+    });
   });
 });

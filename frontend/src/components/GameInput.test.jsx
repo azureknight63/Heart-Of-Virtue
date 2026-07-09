@@ -39,6 +39,20 @@ describe('GameInput', () => {
       expect(input).toBeDisabled()
     })
 
+    it('renders the error message and error styling when error is provided', () => {
+      const { container } = render(
+        <GameInput label="Username" error="This field is required" onChange={mockOnChange} />
+      )
+      expect(screen.getByText('This field is required')).toBeInTheDocument()
+      const input = container.querySelector('input')
+      expect(input.style.borderColor).not.toBe('')
+    })
+
+    it('does not render an error message when error is absent', () => {
+      render(<GameInput onChange={mockOnChange} />)
+      expect(screen.queryByText(/required/i)).not.toBeInTheDocument()
+    })
+
     it('renders with custom className', () => {
       const { container } = render(
         <GameInput className="custom-input" onChange={mockOnChange} />
