@@ -125,6 +125,30 @@ describe('PartyPanel', () => {
     expect(screen.getByText('Elixir')).toBeInTheDocument();
   });
 
+  it('defaults a stacked item\'s running quantity to 1 when the first instance omits it', () => {
+    const player = {
+      party_members: [{ id: 1, name: 'Gorran' }],
+      inventory: [
+        { id: 'i1', name: 'Potion', can_use: true },
+        { id: 'i2', name: 'Potion', can_use: true },
+      ],
+    };
+    render(<PartyPanel player={player} onClose={mockOnClose} />);
+    fireEvent.click(screen.getByText('💊 USE ITEM'));
+    expect(screen.getByText('×2')).toBeInTheDocument();
+  });
+
+  it('defaults party_members to an empty array when absent from the player object', () => {
+    render(<PartyPanel player={{}} onClose={mockOnClose} />);
+    expect(screen.getByText(/No party members currently in your group/i)).toBeDefined();
+  });
+
+  it('shows "Unknown" for a party member with no name', () => {
+    const player = { party_members: [{ id: 1 }] };
+    render(<PartyPanel player={player} onClose={mockOnClose} />);
+    expect(screen.getByText('Unknown')).toBeInTheDocument();
+  });
+
   it('closes the consumable picker via Cancel', () => {
     const player = {
       party_members: [{ id: 1, name: 'Gorran' }],
