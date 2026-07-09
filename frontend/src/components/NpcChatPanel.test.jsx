@@ -647,6 +647,20 @@ describe('NpcChatPanel', () => {
 
       await waitFor(() => expect(npcChat.respond).toHaveBeenCalledTimes(2))
     })
+
+    it('prefers the server error message over the generic fallback when respond fails with a response body', async () => {
+      const err = new Error('Bad Request')
+      err.response = { data: { error: 'Mynx refuses to answer.' } }
+      npcChat.respond.mockRejectedValueOnce(err)
+      render(
+        <NpcChatPanel npcId={mockNpcId} npcName={mockNpcName} onClose={mockOnClose} />
+      )
+
+      await waitFor(() => expect(npcChat.open).toHaveBeenCalled())
+      fireEvent.click(screen.getByText('Hi there'))
+
+      await waitFor(() => expect(screen.getByText('Mynx refuses to answer.')).toBeInTheDocument())
+    })
   })
 
   describe('Conversation ending automatically', () => {
@@ -782,6 +796,16 @@ describe('NpcChatPanel', () => {
     it('colors an unrecognized attitude with the muted text color', async () => {
       const badge = await renderWithAttitude('bemused')
       expect(badge.style.color).not.toBe('')
+    })
+
+    it('colors a friendly attitude with the primary color', async () => {
+      const badge = await renderWithAttitude('friendly')
+      expect(badge.style.color).toBe('rgb(0, 255, 136)')
+    })
+
+    it('colors a wary attitude with the danger color', async () => {
+      const badge = await renderWithAttitude('wary')
+      expect(badge.style.color).toBe('rgb(255, 68, 68)')
     })
   })
 })
