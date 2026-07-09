@@ -42,6 +42,7 @@ vi.mock('./HeroPanel', () => ({
             <button onClick={props.onManeuverClick}>Maneuver Btn</button>
             <button onClick={props.onMiscellaneousClick}>Miscellaneous Btn</button>
             <button onClick={props.onSpecialClick}>Special Btn</button>
+            <span data-testid="hero-player-hp">{props.player?.hp}</span>
             <span data-testid="hero-flags">
                 {[
                     props.hasOffensiveMoves && 'offensive',
@@ -322,6 +323,28 @@ describe('LeftPanel', () => {
         expect(screen.queryByTestId('flee-button')).not.toBeInTheDocument();
     });
 
+    it('treats an enemy with no distance field as too close to flee (defaults to 0)', () => {
+        const combat = {
+            log: [],
+            awaiting_input: true,
+            enemies: [{ id: 1 }],
+            beat_states: [{ enemies: [] }],
+        };
+        render(<LeftPanel player={mockPlayer} location={mockLocation} mode="combat" combat={combat} />);
+        expect(screen.queryByTestId('flee-button')).not.toBeInTheDocument();
+    });
+
+    it('merges combat.player onto the base player for the hero panel', () => {
+        const combat = {
+            log: [],
+            awaiting_input: true,
+            player: { hp: 42 },
+            beat_states: [{ enemies: [] }],
+        };
+        render(<LeftPanel player={mockPlayer} location={mockLocation} mode="combat" combat={combat} />);
+        expect(screen.getByTestId('hero-player-hp')).toHaveTextContent('42');
+    });
+
     it('opens the move panel for a category and toggles it closed on re-click', () => {
         const combat = {
             log: [],
@@ -355,6 +378,51 @@ describe('LeftPanel', () => {
         };
         render(<LeftPanel player={mockPlayer} location={mockLocation} mode="combat" combat={combat} />);
         expect(screen.getByTestId('hero-flags')).toHaveTextContent('offensive,defensive,maneuver,misc,special');
+    });
+
+    it('falls back to combat.battle_state.available_options when available_options is absent', () => {
+        const combat = {
+            log: [],
+            awaiting_input: true,
+            input_type: 'move_selection',
+            battle_state: {
+                available_options: [{ id: 1, name: 'Slash', category: 'Offensive', available: true }],
+            },
+            beat_states: [{ enemies: [] }],
+        };
+        render(<LeftPanel player={mockPlayer} location={mockLocation} mode="combat" combat={combat} />);
+        fireEvent.click(screen.getByText('Offensive Btn'));
+        expect(screen.getByText('Slash')).toBeInTheDocument();
+    });
+
+    it('excludes the UseItem and "Use Item" moves from the combat move panel, and tolerates a nameless move', () => {
+        const combat = {
+            log: [],
+            awaiting_input: true,
+            input_type: 'move_selection',
+            available_options: [
+                { id: 1, name: 'Slash', category: 'Offensive', available: true },
+                { id: 2, name: 'UseItem', category: 'Offensive', available: true },
+                { id: 3, name: 'Use Item', category: 'Offensive', available: true },
+                { id: 4, category: 'Offensive', available: true },
+            ],
+            beat_states: [{ enemies: [] }],
+        };
+        render(<LeftPanel player={mockPlayer} location={mockLocation} mode="combat" combat={combat} />);
+        fireEvent.click(screen.getByText('Offensive Btn'));
+        expect(screen.getByText('Slash')).toBeInTheDocument();
+        expect(screen.queryByText('UseItem')).not.toBeInTheDocument();
+        expect(screen.queryByText('Use Item')).not.toBeInTheDocument();
+    });
+
+    it('scales the hero panel when the container reports non-zero bounds', () => {
+        const originalRect = Element.prototype.getBoundingClientRect;
+        Element.prototype.getBoundingClientRect = () => ({
+            width: 720, height: 620, top: 0, left: 0, right: 0, bottom: 0, x: 0, y: 0, toJSON() {},
+        });
+        render(<LeftPanel player={mockPlayer} location={mockLocation} mode="exploration" />);
+        expect(screen.getByTestId('hero-panel')).toBeInTheDocument();
+        Element.prototype.getBoundingClientRect = originalRect;
     });
 
     it('auto-selects the single viable target for a targeted move without requiring selection', async () => {
@@ -498,6 +566,47 @@ describe('LeftPanel', () => {
 
         expect(screen.queryByTestId('combat-input-dialog')).not.toBeInTheDocument();
         expect(onCombatAction).not.toHaveBeenCalled();
+    });
+
+    it('opens an empty local target-selection dialog when viable_targets is absent', () => {
+        const combat = {
+            log: [],
+            awaiting_input: true,
+            input_type: 'move_selection',
+            available_options: [{
+                id: 1, name: 'Lunge', category: 'Offensive', available: true,
+                targeted: true, requires_target_selection: true,
+            }],
+            beat_states: [{ enemies: [] }],
+        };
+        render(<LeftPanel player={mockPlayer} location={mockLocation} mode="combat" combat={combat} />);
+        fireEvent.click(screen.getByText('Offensive Btn'));
+        fireEvent.click(screen.getByText('Lunge'));
+        expect(screen.getByTestId('combat-input-dialog')).toBeInTheDocument();
+    });
+
+    it('logs an error and resets pending state when auto-target selection fails', async () => {
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+        const onCombatAction = vi.fn().mockRejectedValue(new Error('network down'));
+        const combat = {
+            log: [],
+            awaiting_input: true,
+            input_type: 'move_selection',
+            available_options: [{
+                id: 1, name: 'Slash', category: 'Offensive', available: true,
+                targeted: true, requires_target_selection: false,
+                viable_targets: [{ id: 'enemy_1' }],
+            }],
+            beat_states: [{ enemies: [] }],
+        };
+        render(<LeftPanel player={mockPlayer} location={mockLocation} mode="combat" combat={combat} onCombatAction={onCombatAction} />);
+        fireEvent.click(screen.getByText('Offensive Btn'));
+        fireEvent.click(screen.getByText('Slash'));
+
+        await waitFor(() => {
+            expect(errorSpy).toHaveBeenCalledWith('Failed to auto-select target:', expect.any(Error));
+        });
+        errorSpy.mockRestore();
     });
 
     it('executes a non-targeted move via the default flow', async () => {
@@ -701,6 +810,121 @@ describe('LeftPanel', () => {
         expect(mockPlaySFX).toHaveBeenCalledWith('item_use');
         expect(mockPlaySFX).toHaveBeenCalledWith('quest_complete');
     }, 15000);
+
+    it('plays a heal SFX and notifies onLogProgress/onLogProcessingChange/onDisplayedLogCountChange', async () => {
+        const seedEntry = { message: 'Combat begins', round: 0, type: 'info' };
+        const combat = { log: [seedEntry], beat_states: [{ enemies: [] }] };
+        const onLogProgress = vi.fn();
+        const onLogProcessingChange = vi.fn();
+        const onDisplayedLogCountChange = vi.fn();
+        const { rerender } = render(
+            <LeftPanel
+                player={mockPlayer} location={mockLocation} mode="combat" combat={combat}
+                onLogProgress={onLogProgress}
+                onLogProcessingChange={onLogProcessingChange}
+                onDisplayedLogCountChange={onDisplayedLogCountChange}
+            />
+        );
+        await waitFor(() => {
+            expect(screen.getByText('Combat begins')).toBeInTheDocument();
+        }, { timeout: 3000 });
+
+        rerender(
+            <LeftPanel
+                player={mockPlayer} location={mockLocation} mode="combat"
+                combat={{
+                    log: [seedEntry, { message: 'Jean restores 20 HP', round: 1, type: 'result', beat_index: 3 }],
+                    beat_states: [{ enemies: [] }],
+                }}
+                onLogProgress={onLogProgress}
+                onLogProcessingChange={onLogProcessingChange}
+                onDisplayedLogCountChange={onDisplayedLogCountChange}
+            />
+        );
+
+        await waitFor(() => {
+            expect(mockPlaySFX).toHaveBeenCalledWith('heal');
+        }, { timeout: 5000 });
+        expect(onLogProgress).toHaveBeenCalledWith(3);
+        expect(onLogProcessingChange).toHaveBeenCalledWith(true);
+        expect(onDisplayedLogCountChange).toHaveBeenCalled();
+    }, 10000);
+
+    it('does not duplicate a log entry with the same message and round', async () => {
+        const seedEntry = { message: 'Combat begins', round: 0, type: 'info' };
+        const combat = { log: [seedEntry], beat_states: [{ enemies: [] }] };
+        const { rerender } = render(<LeftPanel player={mockPlayer} location={mockLocation} mode="combat" combat={combat} />);
+        await waitFor(() => {
+            expect(screen.getByText('Combat begins')).toBeInTheDocument();
+        }, { timeout: 3000 });
+
+        const dupEntry = { message: 'Jean attacks Slime', round: 1, type: 'action' };
+        rerender(<LeftPanel player={mockPlayer} location={mockLocation} mode="combat" combat={{
+            log: [seedEntry, dupEntry, { ...dupEntry }],
+            beat_states: [{ enemies: [] }],
+        }} />);
+
+        await waitFor(() => {
+            expect(screen.getAllByText('Jean attacks Slime').length).toBe(1);
+        }, { timeout: 5000 });
+    });
+
+    it('does not play a quest SFX when "quest" appears without a completion keyword', async () => {
+        const seedEntry = { message: 'Combat begins', round: 0, type: 'info' };
+        const combat = { log: [seedEntry], beat_states: [{ enemies: [] }] };
+        const { rerender } = render(<LeftPanel player={mockPlayer} location={mockLocation} mode="combat" combat={combat} />);
+        await waitFor(() => {
+            expect(screen.getByText('Combat begins')).toBeInTheDocument();
+        }, { timeout: 3000 });
+
+        rerender(<LeftPanel player={mockPlayer} location={mockLocation} mode="combat" combat={{
+            log: [seedEntry, { message: 'A new quest is now available', round: 1, type: 'quest' }],
+            beat_states: [{ enemies: [] }],
+        }} />);
+
+        await waitFor(() => {
+            expect(screen.getByText('A new quest is now available')).toBeInTheDocument();
+        }, { timeout: 5000 });
+        expect(mockPlaySFX).not.toHaveBeenCalledWith('quest_complete');
+    });
+
+    it('plays a low-health warning when Jean is attacked below 30% HP', async () => {
+        const lowHpPlayer = { ...mockPlayer, hp: 20, max_hp: 100 };
+        const seedEntry = { message: 'Combat begins', round: 0, type: 'info' };
+        const combat = { log: [seedEntry], beat_states: [{ enemies: [] }] };
+        const { rerender } = render(<LeftPanel player={lowHpPlayer} location={mockLocation} mode="combat" combat={combat} />);
+        await waitFor(() => {
+            expect(screen.getByText('Combat begins')).toBeInTheDocument();
+        }, { timeout: 3000 });
+
+        rerender(<LeftPanel player={lowHpPlayer} location={mockLocation} mode="combat" combat={{
+            log: [seedEntry, { message: 'Slime attacks Jean', round: 1, type: 'action' }],
+            beat_states: [{ enemies: [] }],
+        }} />);
+
+        await waitFor(() => {
+            expect(mockPlaySFX).toHaveBeenCalledWith('low_health_warning');
+        }, { timeout: 5000 });
+    });
+
+    it('skips the keyword SFX and holds the reveal for an animation-carrying log entry', async () => {
+        const seedEntry = { message: 'Combat begins', round: 0, type: 'info' };
+        const combat = { log: [seedEntry], beat_states: [{ enemies: [] }] };
+        const { rerender } = render(<LeftPanel player={mockPlayer} location={mockLocation} mode="combat" combat={combat} />);
+        await waitFor(() => {
+            expect(screen.getByText('Combat begins')).toBeInTheDocument();
+        }, { timeout: 3000 });
+
+        rerender(<LeftPanel player={mockPlayer} location={mockLocation} mode="combat" combat={{
+            log: [seedEntry, { message: 'Jean attacks Slime', round: 1, type: 'result', animation: { type: 'attack' } }],
+            beat_states: [{ enemies: [] }],
+        }} />);
+
+        await waitFor(() => {
+            expect(screen.getByText('Jean attacks Slime')).toBeInTheDocument();
+        }, { timeout: 5000 });
+        expect(mockPlaySFX).not.toHaveBeenCalledWith('attack_swipe');
+    });
 
     it('plays the victory sting for a victory log line', async () => {
         const seedEntry = { message: 'Combat begins', round: 0, type: 'info' };

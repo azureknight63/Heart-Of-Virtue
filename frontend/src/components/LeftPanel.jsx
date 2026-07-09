@@ -143,11 +143,6 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
     }
     : player
 
-  // Use player from combat state if available (for combat), otherwise use global player
-  const effectivePlayer = combat?.player_state
-    ? { ...player, ...combat.player_state }
-    : player
-
   // Process new log entries to play SFX and handle delay
   useEffect(() => {
     let isMounted = true
