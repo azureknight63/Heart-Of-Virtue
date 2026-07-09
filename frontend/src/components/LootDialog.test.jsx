@@ -111,6 +111,17 @@ describe('LootDialog', () => {
     expect(screen.getByText('Sword')).toBeInTheDocument()
   })
 
+  it('flips the tooltip to the left side when it would overflow the right edge of the viewport', () => {
+    const original = Element.prototype.getBoundingClientRect
+    Element.prototype.getBoundingClientRect = () => ({
+      top: 100, bottom: 120, left: window.innerWidth - 50, right: window.innerWidth - 10, width: 40, height: 20, x: 0, y: 0, toJSON() {},
+    })
+    render(<LootDialog endState={mockEndState} playerWeight={20} weightLimit={100} onCollect={onCollect} onSkip={onSkip} />)
+    fireEvent.mouseEnter(screen.getByText('Iron Sword'))
+    expect(screen.getByText('A well-crafted sword')).toBeInTheDocument()
+    Element.prototype.getBoundingClientRect = original
+  })
+
   it('hides the tooltip on mouse leave', () => {
     render(<LootDialog endState={mockEndState} playerWeight={20} weightLimit={100} onCollect={onCollect} onSkip={onSkip} />)
     const row = screen.getByText('Iron Sword')
