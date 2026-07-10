@@ -65,14 +65,64 @@ describe('portrait asset path resolution', () => {
         expect(() => handlePortraitError({ currentTarget: null })).not.toThrow()
     })
 
-    it('handlePortraitError swaps the src to the placeholder once', () => {
-        const img = { dataset: {}, src: '/assets/portraits/amelia/happy.png' }
+    it('falls back tagged emotion -> neutral -> placeholder for a known speaker', () => {
+        vi.stubEnv('BASE_URL', '/')
+        const img = {
+            dataset: { speakerSlug: 'amelia', emotion: 'happy' },
+            src: '/assets/portraits/amelia/happy.png',
+        }
+
+        // Step 1: tagged emotion image missing -> try that speaker's neutral.png.
+        handlePortraitError({ currentTarget: img })
+        expect(img.src).toBe('/assets/portraits/amelia/neutral.png')
+        expect(img.dataset.fallback).toBe('neutral')
+
+        // Step 2: neutral.png also missing -> generic placeholder.
         handlePortraitError({ currentTarget: img })
         expect(img.src).toContain('_placeholder.png')
-        expect(img.dataset.fallback).toBe('1')
-        // Second error (e.g. emotion change) must not loop.
+        expect(img.dataset.fallback).toBe('placeholder')
+
+        // Step 3: placeholder itself erroring must not loop.
         const prev = img.src
         handlePortraitError({ currentTarget: img })
         expect(img.src).toBe(prev)
+        expect(img.dataset.fallback).toBe('placeholder')
+    })
+
+    it('skips the neutral step and goes straight to placeholder for an unknown speaker', () => {
+        const img = { dataset: {}, src: PLACEHOLDER_PORTRAIT }
+        handlePortraitError({ currentTarget: img })
+        expect(img.src).toContain('_placeholder.png')
+        expect(img.dataset.fallback).toBe('placeholder')
+    })
+
+    it('skips straight to placeholder when the tagged emotion was already neutral', () => {
+        vi.stubEnv('BASE_URL', '/')
+        const img = {
+            dataset: { speakerSlug: 'amelia', emotion: 'neutral' },
+            src: '/assets/portraits/amelia/neutral.png',
+        }
+        handlePortraitError({ currentTarget: img })
+        expect(img.src).toContain('_placeholder.png')
+        expect(img.dataset.fallback).toBe('placeholder')
+    })
+
+    it('regression: does not re-request the identical neutral.png URL when a real <img> resolves it to an absolute URL', () => {
+        // `img.src` on a real DOM element returns the browser-resolved absolute
+        // URL (e.g. http://localhost/assets/...), never the root-relative path
+        // portraitUrl() builds. A same-string comparison between the two would
+        // never match, causing a redundant re-request of the same broken URL
+        // before finally reaching the placeholder. Using `data-emotion` instead
+        // of a src comparison avoids that.
+        vi.stubEnv('BASE_URL', '/')
+        const img = document.createElement('img')
+        img.dataset.speakerSlug = 'amelia'
+        img.dataset.emotion = 'neutral'
+        img.src = '/assets/portraits/amelia/neutral.png'
+
+        handlePortraitError({ currentTarget: img })
+
+        expect(img.dataset.fallback).toBe('placeholder')
+        expect(img.src).toContain('_placeholder.png')
     })
 })

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import useTypewriter from '../hooks/useTypewriter'
 import { colors, spacing, fonts } from '../styles/theme'
-import { portraitUrl, handlePortraitError } from '../utils/portraits'
+import { portraitUrl, handlePortraitError, speakerSlug, normalizeEmotion } from '../utils/portraits'
 
 /**
  * Replay the segment list up to `idx` to derive the current cast state.
@@ -92,6 +92,8 @@ function Portrait({ member, isSpeaker }) {
             <img
                 key={`${member.id}:${member.emotion}`}
                 src={portraitUrl(member.id, member.emotion)}
+                data-speaker-slug={speakerSlug(member.id)}
+                data-emotion={normalizeEmotion(member.emotion)}
                 onError={handlePortraitError}
                 alt={`${member.name} (${member.emotion})`}
                 draggable={false}
