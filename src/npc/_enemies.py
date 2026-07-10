@@ -335,7 +335,7 @@ class TalusHound(NPC):
                     weight += 6  # Significantly boost flanking when pack is present
                 elif move.name == "Advance":
                     weight += 3  # Position for coordinated strikes
-                elif move.name == "NpcAttack":
+                elif move.name == "NPC_Attack":
                     weight += 2  # Basic attacks with pack support
                 elif move.name == "Withdraw":
                     weight -= 2  # Less need to retreat with backup

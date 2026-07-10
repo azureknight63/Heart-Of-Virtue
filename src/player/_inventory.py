@@ -93,15 +93,16 @@ class PlayerInventoryMixin:
                     if lower_phrase in search_item:
                         candidates.append(item)
             if target_item is None:
-                to_remove = []
-                for i, item in enumerate(self.current_room.items_here):
+                # Collect phrase-matching room items as candidates, but do NOT
+                # remove them here — only the item actually equipped
+                # (target_item) should leave the room, which happens below once
+                # target_item is chosen. Removing every match up front deleted
+                # non-equipped items from the world (permanent item loss).
+                for item in self.current_room.items_here:
                     if hasattr(item, "isequipped"):
                         search_item = item.name.lower() + " " + item.announce.lower()
                         if lower_phrase in search_item:
                             candidates.append(item)
-                            to_remove.append(item)
-                for item in to_remove:
-                    self.current_room.items_here.remove(item)
         # phrase == "" with no item_object -> nothing to equip (no terminal menu).
 
         if candidates:

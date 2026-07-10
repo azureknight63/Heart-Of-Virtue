@@ -795,7 +795,7 @@ class Mara(HumanNPCLLMMixin, Friend):
                     weight += 4  # Actively maintain bow range
                 elif move.name == "Advance":
                     weight -= 2  # Don't advance in bow mode unless necessary
-                elif move.name == "NpcAttack":
+                elif move.name == "NPC_Attack":
                     weight += 1  # Bow strikes when at optimal range
                 elif move.name == "Parry":
                     weight -= 1  # Less relevant when staying at range
@@ -805,7 +805,7 @@ class Mara(HumanNPCLLMMixin, Friend):
                     weight += 3  # Close the distance for dagger work
                 elif move.name == "Withdraw":
                     weight += 1  # Tactical retreat to dodge and reset
-                elif move.name == "NpcAttack":
+                elif move.name == "NPC_Attack":
                     weight += 3  # Aggressive dagger strikes at close range
                 elif move.name == "Parry":
                     weight += 2  # Parrying matters in close quarters
