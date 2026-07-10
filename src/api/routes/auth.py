@@ -436,7 +436,7 @@ async def settings():
     """
     try:
         session = request.session_obj
-        if not session.db_user_id:
+        if not getattr(session, "db_user_id", None):
             return jsonify({"success": False, "error": "Unauthorized"}), 401
 
         user_id = session.db_user_id

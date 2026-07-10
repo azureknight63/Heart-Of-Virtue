@@ -1,6 +1,11 @@
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
-import winsound
+try:
+    # winsound is Windows-only; guard the import so this tool can at least be
+    # imported (and non-playback features exercised) on Linux/macOS/CI.
+    import winsound
+except ImportError:  # pragma: no cover - platform-dependent
+    winsound = None
 import os
 import struct
 import tempfile
@@ -165,6 +170,13 @@ class AudioPlayerApp:
             messagebox.showwarning("No Audio", "Please render the song first.")
             return
 
+        if winsound is None:
+            messagebox.showerror(
+                "Unsupported Platform",
+                "Audio playback uses winsound and is only available on Windows.",
+            )
+            return
+
         # Save to temp file for winsound
         try:
             if self.temp_file:
@@ -192,7 +204,8 @@ class AudioPlayerApp:
             messagebox.showerror("Playback Error", str(e))
 
     def stop_song(self):
-        winsound.PlaySound(None, 0)
+        if winsound is not None:
+            winsound.PlaySound(None, 0)
         self.is_playing = False
         self.status_var.set("Stopped.")
 

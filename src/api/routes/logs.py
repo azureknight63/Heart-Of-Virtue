@@ -6,6 +6,7 @@ Handles receiving and storing browser console logs
 from flask import Blueprint, request, jsonify
 from datetime import datetime
 import os
+import re
 from pathlib import Path
 from src.api.utils.log_cleanup import LogCleanupManager
 
@@ -50,6 +51,14 @@ def receive_browser_logs():
 
         if not logs:
             return jsonify({"message": "No logs to write"}), 200
+
+        # Sanitize the client-supplied session id before it becomes part of a
+        # filesystem path — strip directory components and restrict to a safe
+        # charset so it cannot be used to escape LOGS_DIR (matches the
+        # basename() guard used by the read/delete routes below).
+        session_id = re.sub(r"[^A-Za-z0-9_-]", "_", os.path.basename(session_id))
+        if not session_id:
+            session_id = "unknown"
 
         # Create a log file for today with session ID
         today = datetime.now().strftime("%Y-%m-%d")
