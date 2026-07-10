@@ -53,7 +53,7 @@ except Exception as _e:
 _CORE_MODULES = [
     "animations", "genericng", "items", "states", "enchant_tables",
     "objects", "loot_tables", "actions", "tiles", "universe", "positions",
-    "moves", "combatant", "npc", "skilltree", "switch", "player",
+    "moves", "combatant", "npc", "skilltree", "player",
 ]
 for _name in _CORE_MODULES:
     if _name not in sys.modules:

@@ -353,7 +353,7 @@ class Wait(Move):  # player chooses how many beats he'd like to wait
         # Duration comes from the combat adapter's select_number flow; default
         # to 5 beats when unset. (No terminal prompt.)
         duration = self.duration if self.duration is not None else 5
-        self.stage_beat[2] = duration - 2
+        self.stage_beat[2] = max(1, duration - 2)
         if hasattr(player, "combat_log"):
             player.combat_log.append(
                 {

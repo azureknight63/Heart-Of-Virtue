@@ -79,7 +79,7 @@ item_types: Dict[str, Dict[str, Any]] = {
 def get_all_subtypes() -> None:
     collection: List[str] = []
     for group in item_types.keys():
-        for subtype in item_types[group]:  # type: ignore[index]
+        for subtype in item_types[group]["subtypes"]:  # type: ignore[index]
             collection.append(subtype)  # pragma: no cover - logic preserved as-is
         item_types[group]["archetypes"]["All"] = collection  # type: ignore[index]
 
@@ -231,7 +231,9 @@ class Item:
                                 for _ in range(int(drop_count)):
                                     self.count -= 1  # type: ignore[attr-defined]
                                     itemtype = self.__class__.__name__
-                                    player.current_room.spawn_item(item_type=itemtype)
+                                    player.current_room.spawn_item(
+                                        item_type=itemtype, template=self
+                                    )
                                 if hasattr(self, "stack_grammar"):
                                     self.stack_grammar()
                                 player.current_room.stack_duplicate_items()
@@ -328,12 +330,24 @@ class Item:
                                 self.count -= take_count
                                 if hasattr(self, "stack_grammar"):
                                     self.stack_grammar()
-                                # Create a new item for inventory
+                                # Create a new item for inventory, preserving
+                                # enchantment_level and any other custom attrs
+                                # from the original stack (see inventory_utils
+                                # .transfer_item for the same pattern).
+                                import copy as _copy
                                 import importlib
 
                                 items_mod = importlib.import_module("items")
                                 item_cls = getattr(items_mod, self.__class__.__name__)
-                                new_item = item_cls()
+                                new_item = item_cls.__new__(item_cls)
+                                for _k, _v in self.__dict__.items():
+                                    try:
+                                        setattr(new_item, _k, _copy.copy(_v))
+                                    except Exception:
+                                        try:
+                                            setattr(new_item, _k, _v)
+                                        except Exception:
+                                            pass
                                 if hasattr(new_item, "count"):
                                     new_item.count = take_count
                                 # Update the new item's description based on count

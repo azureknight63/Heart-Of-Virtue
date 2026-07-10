@@ -51,38 +51,6 @@ os.environ.setdefault("MYNX_LLM_ENABLED", "0")
 os.environ.setdefault("MYNX_FALLBACK_DELAY", "0")
 os.environ.setdefault("MYNX_LLM_PROVIDER", "none")
 
-# ---------------------------------------------------------------------------
-# Headless tkinter stub.
-#
-# combat_battlefield.py imports tkinter for its ASCII-art window, which is
-# unavailable in headless CI environments.  We inject a lightweight stub so
-# that create_app() can load without a display server.  The combat_battlefield
-# module is only used by the terminal game loop; the web API never calls it.
-# ---------------------------------------------------------------------------
-if "tkinter" not in sys.modules:
-    import types as _types
-
-    _tk_stub = _types.ModuleType("tkinter")
-    _tk_stub.Tk = type("Tk", (), {"__init__": lambda s, *a, **k: None,
-                                   "title": lambda s, *a: None,
-                                   "geometry": lambda s, *a: None,
-                                   "resizable": lambda s, *a: None,
-                                   "configure": lambda s, *a, **k: None,
-                                   "after": lambda s, *a: None,
-                                   "destroy": lambda s: None,
-                                   "mainloop": lambda s: None})
-    _tk_stub.Canvas = type("Canvas", (), {"__init__": lambda s, *a, **k: None,
-                                           "pack": lambda s, *a, **k: None,
-                                           "delete": lambda s, *a: None,
-                                           "create_text": lambda s, *a, **k: None,
-                                           "create_rectangle": lambda s, *a, **k: None})
-    _tk_stub.font = _types.ModuleType("tkinter.font")
-    _tk_stub.font.Font = type("Font", (), {"__init__": lambda s, *a, **k: None,
-                                            "measure": lambda s, *a: 8})
-    _tk_stub.END = "end"
-    sys.modules["tkinter"] = _tk_stub
-    sys.modules["tkinter.font"] = _tk_stub.font
-
 # Shim core game-engine modules so bare imports resolve correctly.
 try:
     import src.functions as _functions_mod
@@ -93,7 +61,7 @@ except Exception as _e:
 _CORE_MODULES = [
     "animations", "genericng", "items", "states", "enchant_tables",
     "objects", "loot_tables", "actions", "tiles", "universe", "positions",
-    "moves", "combatant", "npc", "skilltree", "switch", "player",
+    "moves", "combatant", "npc", "skilltree", "player",
 ]
 for _name in _CORE_MODULES:
     if _name not in sys.modules:

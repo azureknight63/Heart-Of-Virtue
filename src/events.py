@@ -3,27 +3,7 @@ Combat states to be used within combat module. May also spill over to the standa
  States are objects applied to a player/npc that hang around until they expire or are removed.
 """
 
-from src.narration import colored
-from functions import print_slow, await_input
 from typing import Optional
-
-
-def dialogue(speaker, text, speaker_color="cyan", text_color="white"):
-    """
-    Displays a dialogue line with colored speaker and text, then waits for user input.
-    This handles line breaks on its own, no need for newlines in the text.
-
-    Args:
-        speaker (str): Name of the speaker.
-        text (str): Dialogue text to display.
-        speaker_color (str, optional): Color for the speaker's name. Defaults to "cyan".
-        text_color (str, optional): Color for the dialogue text. Defaults to "white".
-    """
-    print_slow(
-        (colored(speaker + ": ", speaker_color) + colored(text, text_color)),
-        "fast",
-    )
-    await_input()
 
 
 class Event:  # master class for all events

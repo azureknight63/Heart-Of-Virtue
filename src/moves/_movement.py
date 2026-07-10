@@ -8,7 +8,7 @@ import functions  # noqa: F401
 import items  # noqa: F401
 import positions  # noqa: F401
 from animations import animate_to_main_screen as animate  # noqa: F401
-from ._base import Move  # noqa: F401
+from ._base import Move, PassiveMove  # noqa: F401
 
 
 def _apply_sentinels_vigil(advancer, defender):
@@ -728,45 +728,15 @@ class FlankingManeuver(Move):
             cprint(f"{user.name} finished maneuvering.", "green")
 
 
-class QuietMovement(Move):
-    """
-    This is a passive move; it cannot be selected while in combat.
-    """
-
-    web_animation = "dash"
+class QuietMovement(PassiveMove):
+    """Passive: Improves ability to move undetected."""
 
     def __init__(self, user):
-        description = "Improves ability to move undetected."
-        prep = 0
-        execute = 0
-        recoil = 0
-        cooldown = 0
-        fatigue_cost = 0
         super().__init__(
-            name="Quiet Movement",
-            description=description,
-            xp_gain=0,
-            current_stage=0,
-            stage_beat=[prep, execute, recoil, cooldown],
-            targeted=False,
-            stage_announce=["", "", "", ""],
-            fatigue_cost=fatigue_cost,
-            beats_left=prep,
-            target=user,
-            user=user,
+            user,
+            "Quiet Movement",
+            "Improves ability to move undetected.",
         )
-        self.evaluate()
-
-    def evaluate(
-        self,
-    ):  # adjusts the move's attributes to match the current game state
-        pass
-
-    def execute(self, user):
-        pass
-
-    def viable(self):
-        return False
 
 
 class TacticalPositioning(Move):

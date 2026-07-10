@@ -5,7 +5,7 @@ __author__ = "Alex Egbert"
 import importlib
 import random
 
-from src.narration import colored
+from src.narration import colored, narrate
 
 import actions  # type: ignore
 import functions  # type: ignore
@@ -197,18 +197,75 @@ class MapTile:
             pass
         return npc
 
-    def spawn_item(self, item_type, amt=1, hidden=False, hfactor=0, merchandise=False):
+    def spawn_item(
+        self, item_type, amt=1, hidden=False, hfactor=0, merchandise=False, template=None
+    ):
+        """Spawn ``amt`` of ``item_type`` on this tile.
+
+        If ``template`` is provided (an existing Item instance being split,
+        e.g. from Item.drop), the spawned instance(s) copy the template's
+        attributes (enchantment_level, custom descriptions, etc.) instead of
+        being built from bare defaults, so splitting a stack doesn't silently
+        discard enchantments. ``count``/``merchandise`` are still set
+        explicitly below regardless of the template's own values.
+        """
         items_mod = importlib.import_module("items")
         amt = max(1, int(amt))
         spawned = []
+
+        item_cls = None
+        if item_type != "Gold":
+            try:
+                item_cls = getattr(items_mod, item_type)
+            except AttributeError:
+                item_cls = None
+            if item_cls is None:
+                narrate(
+                    f"### ERR: Unknown item type '{item_type}' - skipping spawn.",
+                    color="red",
+                )
+
+                # Fallback lightweight stub so callers that immediately touch
+                # the returned item (e.g. `.name`) don't crash, mirroring
+                # spawn_npc's stub fallback for a bad npc_type.
+                class _StubItem:
+                    def __init__(self, name, count):
+                        self.name = f"{name} (unknown)"
+                        self.description = "An indeterminate object."
+                        self.count = count
+                        self.hidden = False
+                        self.hide_factor = 0
+                        self.merchandise = False
+
+                stub = _StubItem(item_type, amt)
+                if hidden:
+                    stub.hidden = True
+                    stub.hide_factor = hfactor
+                self.items_here.append(stub)
+                return stub
+
+        def _new_instance(cls):
+            if template is not None and isinstance(template, cls):
+                import copy as _copy
+
+                inst = cls.__new__(cls)
+                for k, v in template.__dict__.items():
+                    try:
+                        setattr(inst, k, _copy.copy(v))
+                    except Exception:
+                        try:
+                            setattr(inst, k, v)
+                        except Exception:
+                            pass
+                return inst
+            return cls()
 
         if item_type == "Gold":
             item = getattr(items_mod, item_type)(amt)
             spawned.append(item)
         else:
-            item_cls = getattr(items_mod, item_type)
             # create a sample to inspect attributes
-            sample = item_cls()
+            sample = _new_instance(item_cls)
             if hasattr(sample, "count"):
                 # stackable: create a single item with the requested count
                 item = sample
@@ -219,7 +276,7 @@ class MapTile:
             else:
                 # non-stackable: create separate instances
                 for _ in range(amt):
-                    inst = item_cls()
+                    inst = _new_instance(item_cls)
                     if hasattr(inst, "merchandise"):
                         inst.merchandise = merchandise
                     spawned.append(inst)
@@ -286,7 +343,14 @@ class MapTile:
                     pass  # Fall back to passing params as-is
 
         # Import the object class
-        obj_cls = getattr(__import__("objects"), obj_type)
+        try:
+            obj_cls = getattr(__import__("objects"), obj_type)
+        except AttributeError:
+            narrate(
+                f"### ERR: Unknown object type '{obj_type}' - skipping spawn.",
+                color="red",
+            )
+            return None
 
         # Try to instantiate with kwargs first (modern approach)
         if kwargs:

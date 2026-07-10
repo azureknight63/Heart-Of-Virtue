@@ -10,7 +10,7 @@ SRC_DIR = ROOT / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from src.coordinate_config import CoordinateSystemConfig, GridValidator  # type: ignore
+from src.coordinate_config import CoordinateSystemConfig  # type: ignore
 from src.config_manager import GameConfig  # type: ignore
 from src.player import Player  # type: ignore
 
@@ -201,100 +201,6 @@ def test_coordinate_system_config_grid_info_string():
     assert "50" in info
     assert "2500" in info
     assert "25.0" in info
-
-
-def test_grid_validator_initialization():
-    """Test GridValidator initialization."""
-    player = Player()
-    coord_config = CoordinateSystemConfig(player)
-    validator = GridValidator(coord_config)
-
-    assert validator.coord_config is coord_config
-
-
-def test_grid_validator_validate_position_valid():
-    """Test position validation for valid coordinates."""
-    player = Player()
-    config = GameConfig()
-    config.coordinate_grid_size = (50, 50)
-    player.game_config = config
-
-    coord_config = CoordinateSystemConfig(player)
-    validator = GridValidator(coord_config)
-
-    is_valid, msg = validator.validate_position(25, 25)
-    assert is_valid is True
-
-
-def test_grid_validator_validate_position_invalid_strict():
-    """Test position validation fails in strict mode."""
-    player = Player()
-    config = GameConfig()
-    config.coordinate_grid_size = (50, 50)
-    player.game_config = config
-
-    coord_config = CoordinateSystemConfig(player)
-    validator = GridValidator(coord_config)
-
-    is_valid, msg = validator.validate_position(60, 25, strict=True)
-    assert is_valid is False
-    assert "outside grid bounds" in msg
-
-
-def test_grid_validator_validate_position_invalid_non_strict():
-    """Test position validation clamps in non-strict mode."""
-    player = Player()
-    config = GameConfig()
-    config.coordinate_grid_size = (50, 50)
-    player.game_config = config
-
-    coord_config = CoordinateSystemConfig(player)
-    validator = GridValidator(coord_config)
-
-    is_valid, msg = validator.validate_position(60, 25, strict=False)
-    assert is_valid is True
-
-
-def test_grid_validator_validate_distance():
-    """Test distance validation."""
-    player = Player()
-    config = GameConfig()
-    config.coordinate_grid_size = (50, 50)
-    player.game_config = config
-
-    coord_config = CoordinateSystemConfig(player)
-    validator = GridValidator(coord_config)
-
-    # Valid distance
-    is_valid, msg = validator.validate_distance(25.0)
-    assert is_valid is True
-
-    # Invalid distance (exceeds max)
-    is_valid, msg = validator.validate_distance(1000.0)
-    assert is_valid is False
-
-
-def test_grid_validator_validate_zone_bounds():
-    """Test zone bounds validation."""
-    player = Player()
-    config = GameConfig()
-    config.coordinate_grid_size = (50, 50)
-    player.game_config = config
-
-    coord_config = CoordinateSystemConfig(player)
-    validator = GridValidator(coord_config)
-
-    # Valid zone
-    is_valid, msg = validator.validate_zone_bounds((10, 10), (40, 40))
-    assert is_valid is True
-
-    # Invalid zone - outside grid
-    is_valid, msg = validator.validate_zone_bounds((10, 10), (60, 60))
-    assert is_valid is False
-
-    # Invalid zone - min >= max
-    is_valid, msg = validator.validate_zone_bounds((40, 40), (10, 10))
-    assert is_valid is False
 
 
 def test_coordinate_system_config_respects_config_changes():

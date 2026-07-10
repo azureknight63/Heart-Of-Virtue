@@ -12,27 +12,8 @@ if str(SRC_DIR) not in sys.path:
 
 import pytest
 
-from src.events import Event, CombatEvent, LootEvent, dialogue
+from src.events import Event, CombatEvent, LootEvent
 from src.combat_event_config import CombatEventConfig
-
-
-class TestDialogue:
-    """Test the dialogue function."""
-
-    @patch('src.events.print_slow')
-    @patch('src.events.await_input')
-    def test_dialogue_function(self, mock_await_input, mock_print_slow):
-        """Test that dialogue displays correctly and waits for input."""
-        dialogue("TestSpeaker", "Test message", "red", "blue")
-
-        # Verify print_slow was called with colored text
-        mock_print_slow.assert_called_once()
-        args = mock_print_slow.call_args[0]
-        assert "TestSpeaker" in args[0]
-        assert "Test message" in args[0]
-
-        # Verify await_input was called
-        mock_await_input.assert_called_once()
 
 
 class TestEvent:
