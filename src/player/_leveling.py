@@ -54,7 +54,7 @@ class PlayerLevelingMixin:
         # stat-allocation prompt has been removed). `api_mode` is retained for
         # caller compatibility.
         events = []
-        while self.exp >= self.exp_to_level:
+        while self.level < 100 and self.exp >= self.exp_to_level:
             events.append(self._level_up_api())
         return events
 

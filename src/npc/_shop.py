@@ -157,29 +157,6 @@ class MerchantShopMixin:
         if not getattr(self, "shop_name", None):
             self.shop_name = f"{self.name}'s Shop"
 
-    # ── Stock counting ─────────────────────────────────────────────────────────
-
-    def count_stock(self):
-        """Return the total number of items in stock, including container inventories.
-
-        :return int: Total stock count across merchant inventory and linked containers.
-        """
-        total = len(self.inventory)
-        rooms_source = self._resolve_rooms_source()
-        if rooms_source:
-            rooms = (
-                rooms_source.values()
-                if hasattr(rooms_source, "values")
-                else rooms_source
-            )
-            for room in rooms:
-                for obj in getattr(room, "objects", []):
-                    if hasattr(obj, "inventory") and hasattr(obj, "merchant"):
-                        owner = getattr(obj, "merchant", None)
-                        if owner == self or owner == self.name:
-                            total += len(getattr(obj, "inventory", []))
-        return total
-
     # ── Room/item helpers ──────────────────────────────────────────────────────
 
     def _resolve_rooms_source(self):

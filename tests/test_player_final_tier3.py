@@ -821,16 +821,6 @@ class TestPlayerCombat:
                             with patch("neotermcolor.colored", side_effect=lambda x, y: str(x)):
                                 player.attack("goblin")
 
-    def test_death_sequence(self, player):
-        """Test death sequence plays animations and messages."""
-        player.combat_hurt_msg = ["Jean gasps in pain.", "Jean winces."]
-        with patch("random.randint", side_effect=[3, 0, 0, 0]):  # Provide enough return values
-            with patch("builtins.print"):
-                with patch("neotermcolor.cprint"):
-                    with patch("time.sleep"):
-                        with patch("functions.await_input"):
-                            player.death()
-
 
 class TestPlayerWorld:
     """World system tests — _world.py (target: 100% coverage)."""

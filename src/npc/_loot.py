@@ -48,6 +48,9 @@ class NPCLootMixin:
         return True
 
     def drop_inventory(self):
+        if len(self.inventory) > 0 and self.current_room is None:
+            narrate("### ERR: Current room for {} ({}) is None".format(self.name, self))
+            return
         if len(self.inventory) > 0:
             for item in self.inventory:
                 quantity = 1

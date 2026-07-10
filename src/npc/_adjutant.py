@@ -10,9 +10,10 @@ blueprint (src/api/routes/debug.py); the legacy terminal input() menu has been
 removed.  Every operation is a parametrized method that returns a JSON-safe
 result dict — no input()/print().
 
-The _add_combatant logic uses globals().get(cls_name) to dynamically
-instantiate NPC classes by name.  All concrete NPC classes are imported into
-this module's namespace so that lookup works correctly.
+The add_combatant logic resolves NPC classes by name via an explicit
+allow-list (ADD_COMBATANT_ALLOWED_CLASSES) rather than a globals() lookup, so
+only intended NPC/Friend/Merchant classes can ever be instantiated through the
+debug API.
 """
 
 import functions  # type: ignore
@@ -41,6 +42,32 @@ from ._friends import (  # noqa: F401
 from ._merchants import JamboHealsU, MiloCurioDealer, Merchant  # noqa: F401
 
 from src.narration import narrate
+
+# Explicit allow-list of NPC/Friend/Merchant classes instantiable through the
+# debug-only add_combatant operation. Deliberately narrower than "everything
+# imported into this module" (e.g. excludes the NPC/Friend base classes and
+# TheAdjutant itself) so the test-only debug API can only ever spawn a
+# concrete, intended combatant — never an arbitrary module-level name.
+ADD_COMBATANT_ALLOWED_CLASSES = {
+    "CaveBat": CaveBat,
+    "ElderSlime": ElderSlime,
+    "GiantSpider": GiantSpider,
+    "KingSlime": KingSlime,
+    "Lurker": Lurker,
+    "RockRumbler": RockRumbler,
+    "Slime": Slime,
+    "StatusDummy": StatusDummy,
+    "Testexp": Testexp,
+    "Gorran": Gorran,
+    "GronditeConclaveElder": GronditeConclaveElder,
+    "GronditeElder": GronditeElder,
+    "GronditePasserby": GronditePasserby,
+    "GronditeWorker": GronditeWorker,
+    "Mynx": Mynx,
+    "JamboHealsU": JamboHealsU,
+    "MiloCurioDealer": MiloCurioDealer,
+    "Merchant": Merchant,
+}
 
 
 # Arena tile coordinates (map-tile coordinates, not combat-grid).
@@ -329,7 +356,7 @@ class TheAdjutant(Friend):
         if tile is None:
             return {"success": False, "error": f"Tile {coords} not loaded."}
 
-        cls = globals().get(cls_name)
+        cls = ADD_COMBATANT_ALLOWED_CLASSES.get(cls_name)
         if cls is None or not isinstance(cls, type):
             return {"success": False, "error": f"Class '{cls_name}' not found."}
 
