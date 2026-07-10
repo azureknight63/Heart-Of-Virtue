@@ -23,6 +23,26 @@ function isDebugMode() {
   return import.meta.env.DEV;
 }
 
+// Debug commands advertised by the backend (Teleport, Alter, Showvar, etc.) have
+// no wired handler and no execute endpoint — COMMAND_HANDLERS only supports Menu
+// and Save, so anything else falls through to a fake "..." toast that does
+// nothing. Filter them out so the panel doesn't show convincing-but-inert
+// buttons. Primary signal is the API's `debug` flag; the name set is a fallback
+// for any command payload that omits it.
+const KNOWN_DEBUG_COMMAND_NAMES = new Set([
+  'Teleport',
+  'Alter',
+  'Showvar',
+  'Supersaiyan',
+  'TestEvent',
+  'SpawnObj',
+  'Refresh Merchants',
+])
+
+function isInertDebugCommand(command) {
+  return command.debug === true || KNOWN_DEBUG_COMMAND_NAMES.has(command.name)
+}
+
 /**
  * ActionsPanel - Display available actions player can take
  */
@@ -174,11 +194,10 @@ export default function ActionsPanel({ player, location, onClose, onRefetch, onM
               gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))',
               gap: '10px'
             }}>
-              {commands.filter(cmd => cmd.name !== 'Search').map((command, idx) => {
-                const isDebug = command.debug === true
+              {commands
+                .filter(cmd => cmd.name !== 'Search' && !isInertDebugCommand(cmd))
+                .map((command, idx) => {
                 const isHovered = hoveredCommand === idx
-                const borderColor = isDebug ? 'rgba(200, 200, 200, 0.4)' : colors.secondary
-                const textColor = isDebug ? '#999' : colors.gold
 
                 return (
                   <div key={command.name} style={{ position: 'relative' }}>
@@ -189,12 +208,10 @@ export default function ActionsPanel({ player, location, onClose, onRefetch, onM
                       style={{
                         width: '100%',
                         padding: '12px 8px',
-                        backgroundColor: isHovered
-                          ? (isDebug ? 'rgba(100, 100, 100, 0.2)' : 'rgba(255, 170, 0, 0.1)')
-                          : 'transparent',
-                        border: `1.5px solid ${isHovered ? colors.primary : borderColor}`,
+                        backgroundColor: isHovered ? 'rgba(255, 170, 0, 0.1)' : 'transparent',
+                        border: `1.5px solid ${isHovered ? colors.primary : colors.secondary}`,
                         borderRadius: '8px',
-                        color: isHovered ? colors.primary : textColor,
+                        color: isHovered ? colors.primary : colors.gold,
                         fontFamily: 'monospace',
                         fontSize: '13px',
                         fontWeight: 'bold',

@@ -29,6 +29,7 @@ describe('ActionsPanel', () => {
   const mockCommands = [
     { name: 'Menu', debug: false },
     { name: 'Save', debug: false },
+    { name: 'Look', debug: false },
     { name: 'Teleport', debug: true },
   ];
 
@@ -58,6 +59,10 @@ describe('ActionsPanel', () => {
       expect(screen.getByText(/Save/i)).toBeDefined();
       expect(screen.queryByText(/^Search$/i)).toBeNull();
     }, { timeout: 2000 });
+
+    // Debug commands (flagged debug: true by the API) are inert no-ops with no
+    // backend execute endpoint, so they must not be rendered.
+    expect(screen.queryByText(/^Teleport$/i)).toBeNull();
   });
 
   it('handles Menu action', async () => {
@@ -95,11 +100,11 @@ describe('ActionsPanel', () => {
   it('handles generic action', async () => {
     renderWithRouter(<ActionsPanel onClose={mockOnClose} />);
 
-    await waitFor(() => screen.getByText(/Teleport/i));
+    await waitFor(() => screen.getByText(/^Look$/i));
 
-    fireEvent.click(screen.getByText(/Teleport/i));
+    fireEvent.click(screen.getByText(/^Look$/i));
 
-    expect(screen.getByText(/Teleport.../i)).toBeDefined();
+    expect(screen.getByText(/Look.../i)).toBeDefined();
   });
 
   it('shows tooltip on hover', async () => {
@@ -194,8 +199,8 @@ describe('ActionsPanel', () => {
     });
   });
 
-  it('styles the tooltip/button for a debug command and falls back to a generic tooltip for an unrecognized command', async () => {
-    apiEndpoints.world.getCommands.mockResolvedValue({ data: { commands: [{ name: 'MysteryCmd', debug: true }] } });
+  it('falls back to a generic tooltip for an unrecognized non-debug command', async () => {
+    apiEndpoints.world.getCommands.mockResolvedValue({ data: { commands: [{ name: 'MysteryCmd', debug: false }] } });
 
     renderWithRouter(<ActionsPanel onClose={mockOnClose} />);
     await waitFor(() => screen.getByText(/MysteryCmd/i));
@@ -203,6 +208,29 @@ describe('ActionsPanel', () => {
     fireEvent.mouseEnter(screen.getByText(/MysteryCmd/i));
     expect(screen.getByText(/General interaction command\./i)).toBeDefined();
     fireEvent.mouseLeave(screen.getByText(/MysteryCmd/i));
+  });
+
+  it('filters out commands flagged debug:true by the API', async () => {
+    apiEndpoints.world.getCommands.mockResolvedValue({
+      data: { commands: [{ name: 'Menu', debug: false }, { name: 'MysteryDebugCmd', debug: true }] }
+    });
+
+    renderWithRouter(<ActionsPanel onClose={mockOnClose} />);
+    await waitFor(() => screen.getByText(/Menu/i));
+
+    expect(screen.queryByText(/MysteryDebugCmd/i)).toBeNull();
+  });
+
+  it('filters out known debug commands by name even when the API omits the debug flag', async () => {
+    apiEndpoints.world.getCommands.mockResolvedValue({
+      data: { commands: [{ name: 'Menu' }, { name: 'Supersaiyan' }, { name: 'Showvar' }] }
+    });
+
+    renderWithRouter(<ActionsPanel onClose={mockOnClose} />);
+    await waitFor(() => screen.getByText(/Menu/i));
+
+    expect(screen.queryByText(/Supersaiyan/i)).toBeNull();
+    expect(screen.queryByText(/Showvar/i)).toBeNull();
   });
 
   it('handles close button hover', () => {

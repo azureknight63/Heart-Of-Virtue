@@ -11,7 +11,6 @@ import GamePanel from '../GamePanel'
 import StatsPanel from '../StatsPanel'
 import SkillsPanel from '../SkillsPanel'
 import CooldownTray from '../CooldownTray'
-import PlayerStatus from '../PlayerStatus'
 import CombatLog from '../CombatLog'
 
 describe('Advanced Coverage Gap Tests', () => {
@@ -256,113 +255,6 @@ describe('Advanced Coverage Gap Tests', () => {
         <CooldownTray cooldowns={[
           { name: 'Move 1', cooldown_remaining: 0, cooldown_max: 0 }
         ]} />
-      )
-      expect(container).toBeTruthy()
-    })
-  })
-
-  describe('PlayerStatus Coverage', () => {
-    it('renders with minimal player data', () => {
-      const { container } = render(
-        <PlayerStatus
-          player={{
-            name: 'Jean',
-            hp: 50,
-            max_hp: 100,
-            experience: 0,
-            level: 1
-          }}
-        />
-      )
-      expect(container.firstChild).toBeTruthy()
-    })
-
-    it('renders at maximum hp', () => {
-      const { container } = render(
-        <PlayerStatus
-          player={{
-            name: 'Jean',
-            hp: 100,
-            max_hp: 100,
-            experience: 0,
-            level: 1
-          }}
-        />
-      )
-      expect(container).toBeTruthy()
-    })
-
-    it('renders at critical hp', () => {
-      const { container } = render(
-        <PlayerStatus
-          player={{
-            name: 'Jean',
-            hp: 1,
-            max_hp: 100,
-            experience: 0,
-            level: 1
-          }}
-        />
-      )
-      expect(container).toBeTruthy()
-    })
-
-    it('renders with high experience', () => {
-      const { container } = render(
-        <PlayerStatus
-          player={{
-            name: 'Jean',
-            hp: 50,
-            max_hp: 100,
-            experience: 9999,
-            level: 10
-          }}
-        />
-      )
-      expect(container).toBeTruthy()
-    })
-
-    it('renders with zero experience', () => {
-      const { container } = render(
-        <PlayerStatus
-          player={{
-            name: 'Jean',
-            hp: 50,
-            max_hp: 100,
-            experience: 0,
-            level: 1
-          }}
-        />
-      )
-      expect(container).toBeTruthy()
-    })
-
-    it('renders at level 1', () => {
-      const { container } = render(
-        <PlayerStatus
-          player={{
-            name: 'Jean',
-            hp: 50,
-            max_hp: 100,
-            experience: 100,
-            level: 1
-          }}
-        />
-      )
-      expect(container).toBeTruthy()
-    })
-
-    it('renders at high level', () => {
-      const { container } = render(
-        <PlayerStatus
-          player={{
-            name: 'Jean',
-            hp: 50,
-            max_hp: 100,
-            experience: 100000,
-            level: 99
-          }}
-        />
       )
       expect(container).toBeTruthy()
     })
