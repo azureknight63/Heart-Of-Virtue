@@ -1,4 +1,6 @@
 from __future__ import annotations
+import copy
+import importlib
 import random
 import math
 from src.narration import colored, cprint, narrate
@@ -334,15 +336,12 @@ class Item:
                                 # enchantment_level and any other custom attrs
                                 # from the original stack (see inventory_utils
                                 # .transfer_item for the same pattern).
-                                import copy as _copy
-                                import importlib
-
                                 items_mod = importlib.import_module("items")
                                 item_cls = getattr(items_mod, self.__class__.__name__)
                                 new_item = item_cls.__new__(item_cls)
                                 for _k, _v in self.__dict__.items():
                                     try:
-                                        setattr(new_item, _k, _copy.copy(_v))
+                                        setattr(new_item, _k, copy.copy(_v))
                                     except Exception:
                                         try:
                                             setattr(new_item, _k, _v)

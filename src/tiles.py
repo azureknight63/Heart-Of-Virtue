@@ -2,6 +2,7 @@
 
 __author__ = "Alex Egbert"
 
+import copy
 import importlib
 import random
 
@@ -246,12 +247,10 @@ class MapTile:
 
         def _new_instance(cls):
             if template is not None and isinstance(template, cls):
-                import copy as _copy
-
                 inst = cls.__new__(cls)
                 for k, v in template.__dict__.items():
                     try:
-                        setattr(inst, k, _copy.copy(v))
+                        setattr(inst, k, copy.copy(v))
                     except Exception:
                         try:
                             setattr(inst, k, v)

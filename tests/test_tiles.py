@@ -499,3 +499,31 @@ def test_tile_respawn_rate_default(basic_tile):
 def test_tile_symbol_default(basic_tile):
     """Test default symbol"""
     assert basic_tile.symbol == '●'
+
+
+@patch('src.tiles.importlib.import_module')
+def test_spawn_item_unknown_type_returns_stub(mock_import, basic_tile):
+    """An unknown item type degrades to a stub instead of raising AttributeError.
+
+    Mirrors spawn_npc's stub fallback so callers that immediately touch the
+    returned item (e.g. .name) don't crash on a typo'd type name.
+    """
+    mock_items = Mock(spec=[])  # no attributes -> getattr(...) raises AttributeError
+    mock_import.return_value = mock_items
+
+    item = basic_tile.spawn_item("NoSuchItem", amt=2)
+
+    assert item is not None
+    assert "unknown" in item.name.lower()
+    assert item.count == 2
+    assert item in basic_tile.items_here
+
+
+def test_spawn_object_unknown_type_returns_none(basic_tile):
+    """An unknown object type is skipped gracefully (returns None) instead of raising."""
+    mock_player = Mock()
+
+    obj = basic_tile.spawn_object("NoSuchObject_xyz", mock_player, basic_tile, {})
+
+    assert obj is None
+    assert basic_tile.objects_here == []
