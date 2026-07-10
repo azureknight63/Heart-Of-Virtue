@@ -167,6 +167,7 @@ class Slash(
             glance = True
         damage = int(damage)
         if hasattr(player, "eq_weapon") and player.eq_weapon:
+            _ensure_weapon_exp(player)
             player.combat_exp[player.eq_weapon.subtype] += 10
         if hit_chance >= roll:  # a hit!
             if functions.check_parry(self.target):
