@@ -3,7 +3,7 @@ Browser logging API routes
 Handles receiving and storing browser console logs
 """
 
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, current_app, request, jsonify, abort
 from datetime import datetime
 import os
 import re
@@ -11,6 +11,20 @@ from pathlib import Path
 from src.api.utils.log_cleanup import LogCleanupManager
 
 logs_bp = Blueprint("logs", __name__)
+
+
+def _require_testing():
+    """Gate log-management routes behind TESTING mode.
+
+    Listing/reading/deleting/cleaning server log files is a debug/QA
+    capability only — never reachable in production. Mirrors the
+    `/api/debug/routes` self-check pattern in src/api/app.py. The POST
+    `/browser` (receive) route is intentionally NOT gated by this: the
+    frontend logger posts to it unauthenticated (incl. via sendBeacon).
+    """
+    if not current_app.config.get("TESTING"):
+        abort(404)
+
 
 # Create logs directory if it doesn't exist
 LOGS_DIR = Path(__file__).parent.parent.parent.parent / "logs" / "browser"
@@ -106,6 +120,7 @@ def list_browser_log_files():
     """
     List all available browser log files
     """
+    _require_testing()
     try:
         log_files = []
 
@@ -132,6 +147,7 @@ def get_browser_log_file(filename):
     """
     Retrieve the contents of a specific browser log file
     """
+    _require_testing()
     try:
         # Sanitize filename to prevent directory traversal
         safe_filename = os.path.basename(filename)
@@ -161,6 +177,7 @@ def cleanup_logs():
         "max_size_mb": 100    // Override default max size
     }
     """
+    _require_testing()
     try:
         data = request.get_json() if request.is_json else {}
 
@@ -187,6 +204,7 @@ def get_log_stats():
     """
     Get statistics about browser log files
     """
+    _require_testing()
     try:
         stats = cleanup_manager.get_stats()
 
@@ -213,6 +231,7 @@ def delete_browser_log_file(filename):
     """
     Delete a specific browser log file
     """
+    _require_testing()
     try:
         # Sanitize filename to prevent directory traversal
         safe_filename = os.path.basename(filename)

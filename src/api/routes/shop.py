@@ -13,12 +13,16 @@ GameService — the client only sends identifiers and quantity.
 URL prefix: /api/shop  (registered in app.py)
 """
 
+import logging
+
 from flask import Blueprint, current_app, jsonify, request
 
 from src.api.services.validators import validate_required_fields
 from src.api.middleware.auth import get_session_and_player
 
 shop_bp = Blueprint("shop", __name__)
+
+logger = logging.getLogger(__name__)
 
 
 @shop_bp.route("/state", methods=["GET"])
@@ -53,8 +57,9 @@ def get_shop_state():
     try:
         result = current_app.game_service.get_shop_state(player, npc_id)
         return jsonify(result), 200 if result.get("success") else 404
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
+    except Exception:
+        logger.exception("Unhandled error in get_shop_state")
+        return jsonify({"success": False, "error": "An internal error occurred"}), 500
 
 
 @shop_bp.route("/buy", methods=["POST"])
@@ -101,8 +106,9 @@ def buy_item():
         return jsonify(result), 200 if result.get("success") else 400
     except (ValueError, TypeError) as e:
         return jsonify({"success": False, "error": f"Invalid input: {e}"}), 400
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
+    except Exception:
+        logger.exception("Unhandled error in buy_item")
+        return jsonify({"success": False, "error": "An internal error occurred"}), 500
 
 
 @shop_bp.route("/sell", methods=["POST"])
@@ -149,8 +155,9 @@ def sell_item():
         return jsonify(result), 200 if result.get("success") else 400
     except (ValueError, TypeError) as e:
         return jsonify({"success": False, "error": f"Invalid input: {e}"}), 400
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
+    except Exception:
+        logger.exception("Unhandled error in sell_item")
+        return jsonify({"success": False, "error": "An internal error occurred"}), 500
 
 
 @shop_bp.route("/buyback", methods=["POST"])
@@ -193,5 +200,6 @@ def buyback_item():
             current_app.session_manager.save_session(session.session_id)
 
         return jsonify(result), 200 if result.get("success") else 400
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
+    except Exception:
+        logger.exception("Unhandled error in buyback_item")
+        return jsonify({"success": False, "error": "An internal error occurred"}), 500

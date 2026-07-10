@@ -54,12 +54,13 @@ def get_status():
 
         return jsonify({"success": True, "status": status}), 200
 
-    except Exception as e:
+    except Exception:
+        _log.exception("Unhandled error in get_status")
         return (
             jsonify(
                 {
                     "success": False,
-                    "error": str(e),
+                    "error": "An internal error occurred",
                 }
             ),
             500,
@@ -120,9 +121,9 @@ def get_full_state():
             200,
         )
 
-    except Exception as e:
-        _log.exception("Player route exception")
-        return jsonify({"success": False, "error": str(e)}), 500
+    except Exception:
+        _log.exception("Unhandled error in get_full_state")
+        return jsonify({"success": False, "error": "An internal error occurred"}), 500
 
 
 @player_bp.route("/stats", methods=["GET"])
@@ -169,12 +170,13 @@ def get_stats():
 
         return jsonify({"success": True, "stats": stats}), 200
 
-    except Exception as e:
+    except Exception:
+        _log.exception("Unhandled error in get_stats")
         return (
             jsonify(
                 {
                     "success": False,
-                    "error": str(e),
+                    "error": "An internal error occurred",
                 }
             ),
             500,
@@ -222,12 +224,13 @@ def get_skills():
 
         return jsonify({"success": True, "skills": skills}), 200
 
-    except Exception as e:
+    except Exception:
+        _log.exception("Unhandled error in get_skills")
         return (
             jsonify(
                 {
                     "success": False,
-                    "error": str(e),
+                    "error": "An internal error occurred",
                 }
             ),
             500,
@@ -294,12 +297,13 @@ def learn_skill():
         else:
             return jsonify(result), 400
 
-    except Exception as e:
+    except Exception:
+        _log.exception("Unhandled error in learn_skill")
         return (
             jsonify(
                 {
                     "success": False,
-                    "error": str(e),
+                    "error": "An internal error occurred",
                 }
             ),
             500,
@@ -348,12 +352,13 @@ def allocate_level_up_points():
 
         return jsonify(result), 200
 
-    except Exception as e:
+    except Exception:
+        _log.exception("Unhandled error in allocate_level_up_points")
         return (
             jsonify(
                 {
                     "success": False,
-                    "error": str(e),
+                    "error": "An internal error occurred",
                 }
             ),
             500,

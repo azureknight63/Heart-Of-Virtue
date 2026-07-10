@@ -1,9 +1,13 @@
 """Save and load game routes."""
 
+import logging
+
 from flask import Blueprint, request, jsonify
 from src.api.middleware.auth import get_session_and_player
 
 saves_bp = Blueprint("saves", __name__)
+
+logger = logging.getLogger(__name__)
 
 
 @saves_bp.route("/saves", methods=["GET"])
@@ -26,12 +30,13 @@ async def list_saves():
 
         return jsonify({"success": True, "saves": saves}), 200
 
-    except Exception as e:
+    except Exception:
+        logger.exception("Unhandled error in list_saves")
         return (
             jsonify(
                 {
                     "success": False,
-                    "error": str(e),
+                    "error": "An internal error occurred",
                 }
             ),
             500,
@@ -97,12 +102,13 @@ async def create_save():
             201,
         )
 
-    except Exception as e:
+    except Exception:
+        logger.exception("Unhandled error in create_save")
         return (
             jsonify(
                 {
                     "success": False,
-                    "error": str(e),
+                    "error": "An internal error occurred",
                 }
             ),
             500,
@@ -159,12 +165,13 @@ async def load_save(save_id):
             200,
         )
 
-    except Exception as e:
+    except Exception:
+        logger.exception("Unhandled error in load_save")
         return (
             jsonify(
                 {
                     "success": False,
-                    "error": str(e),
+                    "error": "An internal error occurred",
                 }
             ),
             500,
@@ -212,12 +219,13 @@ async def delete_save(save_id):
                 404,
             )
 
-    except Exception as e:
+    except Exception:
+        logger.exception("Unhandled error in delete_save")
         return (
             jsonify(
                 {
                     "success": False,
-                    "error": str(e),
+                    "error": "An internal error occurred",
                 }
             ),
             500,
@@ -265,12 +273,13 @@ def new_game():
                 400,
             )
 
-    except Exception as e:
+    except Exception:
+        logger.exception("Unhandled error in new_game")
         return (
             jsonify(
                 {
                     "success": False,
-                    "error": str(e),
+                    "error": "An internal error occurred",
                 }
             ),
             500,

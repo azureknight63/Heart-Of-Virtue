@@ -1,11 +1,47 @@
 """Authentication routes."""
 
+import logging
+import time
+from collections import defaultdict
+
 from flask import Blueprint, request, jsonify
 from src.api.services.auth_service import auth_service
 from functools import wraps
 import asyncio
 
 auth_bp = Blueprint("auth", __name__)
+
+logger = logging.getLogger(__name__)
+
+# Simple in-memory login throttle: 10 failed attempts per username+IP per 15
+# minutes. Per-worker (not shared across Gunicorn workers) — adapted from the
+# feedback.py rate limiter (`_is_rate_limited`); sufficient for beta. Only
+# failed (invalid-credential) attempts count, so retries after a typo or a
+# flaky DB call don't lock out a legitimate player.
+_LOGIN_RATE_LIMIT = 10
+_LOGIN_RATE_WINDOW = 900  # 15 minutes
+_login_attempt_store: dict = defaultdict(list)
+
+
+def _login_rate_limit_key(username: str) -> str:
+    ip = request.remote_addr or "unknown"
+    return f"{(username or '').strip().lower()}:{ip}"
+
+
+def _is_login_rate_limited(key: str) -> bool:
+    now = time.time()
+    cutoff = now - _LOGIN_RATE_WINDOW
+    hits = [t for t in _login_attempt_store[key] if t > cutoff]
+    _login_attempt_store[key] = hits
+    return len(hits) >= _LOGIN_RATE_LIMIT
+
+
+def _record_failed_login(key: str) -> None:
+    _login_attempt_store[key].append(time.time())
+
+
+def _clear_login_attempts(key: str) -> None:
+    _login_attempt_store.pop(key, None)
 
 
 def require_auth(f):
@@ -195,13 +231,14 @@ async def register():
             201,
         )
 
-    except Exception as e:
+    except Exception:
+        logger.exception("Unhandled error in register")
         return (
             jsonify(
                 {
                     "success": False,
                     "error": "server_error",
-                    "message": str(e),
+                    "message": "Internal server error",
                 }
             ),
             500,
@@ -246,10 +283,24 @@ async def login():
         username = data["username"].strip()
         password = data["password"]
 
+        rate_key = _login_rate_limit_key(username)
+        if _is_login_rate_limited(rate_key):
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "error": "rate_limited",
+                        "message": "Too many failed login attempts. Please try again later.",
+                    }
+                ),
+                429,
+            )
+
         # Authenticate using auth_service
         user = await auth_service.authenticate_user(username, password)
 
         if not user:
+            _record_failed_login(rate_key)
             return (
                 jsonify(
                     {
@@ -260,6 +311,8 @@ async def login():
                 ),
                 401,
             )
+
+        _clear_login_attempts(rate_key)
 
         # Get session manager from app context
         from flask import current_app
@@ -287,6 +340,7 @@ async def login():
         )
 
     except Exception as e:
+        logger.exception("Unhandled error in login")
         msg = str(e)
         # Don't expose internal config/infrastructure details to users
         if any(kw in msg for kw in ("_URL", "_KEY", "_TOKEN", "not set", "os.environ")):
@@ -305,7 +359,7 @@ async def login():
                 {
                     "success": False,
                     "error": "server_error",
-                    "message": msg,
+                    "message": "Internal server error",
                 }
             ),
             500,
@@ -349,12 +403,13 @@ def logout():
                 404,
             )
 
-    except Exception as e:
+    except Exception:
+        logger.exception("Unhandled error in logout")
         return (
             jsonify(
                 {
                     "success": False,
-                    "error": str(e),
+                    "error": "An internal error occurred",
                 }
             ),
             500,
@@ -406,12 +461,13 @@ def validate_session():
                 401,
             )
 
-    except Exception as e:
+    except Exception:
+        logger.exception("Unhandled error in validate_session")
         return (
             jsonify(
                 {
                     "valid": False,
-                    "error": str(e),
+                    "error": "An internal error occurred",
                 }
             ),
             500,
@@ -493,5 +549,6 @@ async def settings():
                     500,
                 )
 
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
+    except Exception:
+        logger.exception("Unhandled error in settings")
+        return jsonify({"success": False, "error": "An internal error occurred"}), 500

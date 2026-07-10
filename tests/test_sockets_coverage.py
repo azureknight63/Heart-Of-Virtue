@@ -8,7 +8,7 @@ src/api/sockets.py imports them under).
 
 from unittest.mock import MagicMock, patch
 
-from src.api.sockets import register_socket_handlers, authenticated_only
+from src.api.sockets import register_socket_handlers
 
 
 def _register_and_capture_handlers():
@@ -26,18 +26,6 @@ def _register_and_capture_handlers():
     socketio.on = fake_on
     register_socket_handlers(socketio)
     return handlers
-
-
-def test_authenticated_only_wraps_and_calls_through():
-    calls = []
-
-    @authenticated_only
-    def inner(*args, **kwargs):
-        calls.append((args, kwargs))
-        return "result"
-
-    assert inner(1, 2, foo="bar") == "result"
-    assert calls == [((1, 2), {"foo": "bar"})]
 
 
 def test_handle_connect_and_disconnect_print_client_sid(capsys):

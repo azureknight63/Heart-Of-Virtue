@@ -9,14 +9,15 @@ from src.api.db import db
 class AuthService:
     def __init__(self):
         self.ph = PasswordHasher()
-        # In a real production app, the encryption key should be in environment variables
-        # If not present, we can generate one for now but it won't persist across restarts
-        # if you want encrypted data to be readable later.
+        # Mirrors the SECRET_KEY handling in src/api/config.py: production must
+        # set ENCRYPTION_KEY explicitly (an ephemeral key would silently orphan
+        # already-encrypted data — e.g. user emails — on every restart). Testing
+        # and development fall back to a generated key so the suite/dev server
+        # don't need one configured.
         self.encryption_key = os.getenv("ENCRYPTION_KEY")
         if not self.encryption_key:
-            # Generate a consistent key based on SECRET_KEY if available,
-            # or just use a placeholder for now to avoid crashing in this demo.
-            # RECOMMENDED: User should set ENCRYPTION_KEY.
+            if os.environ.get("FLASK_ENV") == "production":
+                raise RuntimeError("ENCRYPTION_KEY must be set in production")
             self.encryption_key = Fernet.generate_key()
         self.fernet = Fernet(self.encryption_key)
 
