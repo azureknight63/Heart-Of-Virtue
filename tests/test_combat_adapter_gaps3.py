@@ -1387,7 +1387,7 @@ class TestProcessNpcHealAndAnimationFallback:
 
 class TestNpcTryHealAllyExecution:
     def test_prefers_most_injured_and_heals_successfully(self):
-        import items as items_module
+        import src.items as items_module
 
         player = _make_player()
         npc = _make_enemy("Healer", friend=True)
@@ -1417,7 +1417,7 @@ class TestNpcTryHealAllyExecution:
         )
 
     def test_out_of_range_injured_friendly_is_skipped(self):
-        import items as items_module
+        import src.items as items_module
 
         player = _make_player()
         npc = _make_enemy("Healer", friend=True)
@@ -1445,7 +1445,7 @@ class TestNpcTryHealAllyExecution:
         consumable.use.assert_called_once_with(near_friendly, user=npc)
 
     def test_item_use_exception_returns_false(self):
-        import items as items_module
+        import src.items as items_module
 
         player = _make_player()
         npc = _make_enemy("Healer", friend=True)

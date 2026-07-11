@@ -21,8 +21,8 @@ if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 import pytest
-from player import Player
-import items
+from src.player import Player
+import src.items as items
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -55,14 +55,14 @@ class TestRefreshMerchantsWorld:
     def test_no_universe_prints_warning(self):
         p = _make_player()
         p.universe = None
-        with patch("builtins.print"), patch("player._world.cprint") as mock_cp:
+        with patch("builtins.print"), patch("src.player._world.cprint") as mock_cp:
             p.refresh_merchants()
         mock_cp.assert_called()
 
     def test_universe_without_maps_attr(self):
         p = _make_player()
         p.universe = MagicMock(spec=[])  # no 'maps' attribute
-        with patch("builtins.print"), patch("player._world.cprint") as mock_cp:
+        with patch("builtins.print"), patch("src.player._world.cprint") as mock_cp:
             p.refresh_merchants()
         mock_cp.assert_called()
 
@@ -73,8 +73,8 @@ class TestRefreshMerchantsWorld:
         p.universe = mock_universe
         with (
             patch("builtins.print"),
-            patch("player._world.cprint") as mock_cp,
-            patch("player._world.time"),
+            patch("src.player._world.cprint") as mock_cp,
+            patch("src.player._world.time"),
         ):
             p.refresh_merchants()
         # Should print "No merchants found" in yellow
@@ -88,8 +88,8 @@ class TestRefreshMerchantsWorld:
         p.universe = mock_universe
         with (
             patch("builtins.print"),
-            patch("player._world.cprint") as mock_cp,
-            patch("player._world.time"),
+            patch("src.player._world.cprint") as mock_cp,
+            patch("src.player._world.time"),
         ):
             p.refresh_merchants(phrase="blacksmith")
         calls_text = " ".join(str(c) for c in mock_cp.call_args_list)
@@ -103,8 +103,8 @@ class TestRefreshMerchantsWorld:
         p.universe = mock_universe
         with (
             patch("builtins.print"),
-            patch("player._world.cprint"),
-            patch("player._world.time"),
+            patch("src.player._world.cprint"),
+            patch("src.player._world.time"),
         ):
             # Should not raise; no merchants found
             p.refresh_merchants()
@@ -136,8 +136,8 @@ class TestRefreshMerchantsWorld:
 
         with (
             patch("builtins.print"),
-            patch("player._world.cprint"),
-            patch("player._world.time"),
+            patch("src.player._world.cprint"),
+            patch("src.player._world.time"),
         ):
             p.refresh_merchants()
 
@@ -173,8 +173,8 @@ class TestRefreshMerchantsWorld:
 
         with (
             patch("builtins.print"),
-            patch("player._world.cprint"),
-            patch("player._world.time"),
+            patch("src.player._world.cprint"),
+            patch("src.player._world.time"),
         ):
             p.refresh_merchants()
 
@@ -202,8 +202,8 @@ class TestRefreshMerchantsWorld:
 
         with (
             patch("builtins.print"),
-            patch("player._world.cprint") as mock_cp,
-            patch("player._world.time"),
+            patch("src.player._world.cprint") as mock_cp,
+            patch("src.player._world.time"),
         ):
             p.refresh_merchants()
 
@@ -236,8 +236,8 @@ class TestRefreshMerchantsWorld:
 
         with (
             patch("builtins.print"),
-            patch("player._world.cprint"),
-            patch("player._world.time"),
+            patch("src.player._world.cprint"),
+            patch("src.player._world.time"),
         ):
             p.refresh_merchants(phrase="alchemist")  # doesn't match weaponsmith
 
@@ -254,8 +254,8 @@ class TestRefreshMerchantsWorld:
 
         with (
             patch("builtins.print"),
-            patch("player._world.cprint"),
-            patch("player._world.time"),
+            patch("src.player._world.cprint"),
+            patch("src.player._world.time"),
         ):
             p.refresh_merchants()
 
@@ -360,7 +360,7 @@ class TestInventoryCoverage:
     def test_drop_merchandise_items_no_tile(self):
         """drop_merchandise_items with no current_room does nothing."""
         p = _make_player()
-        with patch("player._inventory.tile_exists", return_value=None):
+        with patch("src.player._inventory.tile_exists", return_value=None):
             # Should not raise
             p.drop_merchandise_items()
 
@@ -381,9 +381,9 @@ class TestInventoryCoverage:
         p.current_room = tile
 
         with (
-            patch("player._inventory.tile_exists", return_value=tile),
+            patch("src.player._inventory.tile_exists", return_value=tile),
             patch("builtins.print"),
-            patch("player._inventory.time"),
+            patch("src.player._inventory.time"),
         ):
             p.drop_merchandise_items()
 
@@ -514,7 +514,7 @@ class TestUIGridCoverage:
 
     def test_generate_output_grid_auto_square(self):
         """Grid auto-squares when neither rows nor cols given."""
-        from player import generate_output_grid
+        from src.player import generate_output_grid
 
         data = ["A", "B", "C", "D"]
         result = generate_output_grid(data)
@@ -522,7 +522,7 @@ class TestUIGridCoverage:
 
     def test_generate_output_grid_cols_specified(self):
         """When cols are specified, rows are calculated automatically."""
-        from player import generate_output_grid
+        from src.player import generate_output_grid
 
         data = ["X"] * 9
         result = generate_output_grid(data, cols=3)
@@ -530,7 +530,7 @@ class TestUIGridCoverage:
 
     def test_generate_output_grid_rows_and_cols_specified(self):
         """When both rows and cols are specified, those exact dims are used."""
-        from player import generate_output_grid
+        from src.player import generate_output_grid
 
         data = ["Q"] * 6
         result = generate_output_grid(data, rows=2, cols=3)
@@ -538,7 +538,7 @@ class TestUIGridCoverage:
 
     def test_generate_output_grid_very_long_string_no_crash(self):
         """A very long string that exceeds row limit completes without raising."""
-        from player import generate_output_grid
+        from src.player import generate_output_grid
 
         long_str = "A" * 350
         result = generate_output_grid([long_str])
@@ -546,13 +546,13 @@ class TestUIGridCoverage:
         assert isinstance(result, str)
 
     def test_generate_output_grid_returns_string(self):
-        from player import generate_output_grid
+        from src.player import generate_output_grid
 
         result = generate_output_grid(["hello", "world"], rows=1, cols=2)
         assert isinstance(result, str)
 
     def test_generate_output_grid_single_item(self):
-        from player import generate_output_grid
+        from src.player import generate_output_grid
 
         result = generate_output_grid(["solo"])
         assert "solo" in result
@@ -610,8 +610,8 @@ class TestUIGridCoverage:
             patch("builtins.print"),
             patch("neotermcolor.cprint"),
             patch("neotermcolor.colored", side_effect=lambda t, *a, **k: t),
-            patch("functions.await_input"),
-            patch("functions.refresh_stat_bonuses"),
+            patch("src.functions.await_input"),
+            patch("src.functions.refresh_stat_bonuses"),
         ):
             p.print_status()
 
@@ -627,8 +627,8 @@ class TestUIGridCoverage:
             patch("builtins.print"),
             patch("neotermcolor.cprint"),
             patch("neotermcolor.colored", side_effect=lambda t, *a, **k: t),
-            patch("functions.await_input"),
-            patch("functions.refresh_stat_bonuses"),
+            patch("src.functions.await_input"),
+            patch("src.functions.refresh_stat_bonuses"),
         ):
             p.print_status()
 
@@ -641,8 +641,8 @@ class TestUIGridCoverage:
             patch("builtins.print"),
             patch("neotermcolor.cprint"),
             patch("neotermcolor.colored", side_effect=lambda t, *a, **k: t),
-            patch("functions.await_input"),
-            patch("functions.refresh_stat_bonuses"),
+            patch("src.functions.await_input"),
+            patch("src.functions.refresh_stat_bonuses"),
         ):
             p.print_status()
 
@@ -655,8 +655,8 @@ class TestUIGridCoverage:
             patch("builtins.print"),
             patch("neotermcolor.cprint"),
             patch("neotermcolor.colored", side_effect=lambda t, *a, **k: t),
-            patch("functions.await_input"),
-            patch("functions.refresh_stat_bonuses"),
+            patch("src.functions.await_input"),
+            patch("src.functions.refresh_stat_bonuses"),
         ):
             p.print_status()
 
@@ -670,8 +670,8 @@ class TestUIGridCoverage:
             patch("builtins.print") as mock_print,
             patch("neotermcolor.cprint"),
             patch("neotermcolor.colored", side_effect=lambda t, *a, **k: t),
-            patch("functions.await_input"),
-            patch("functions.refresh_stat_bonuses"),
+            patch("src.functions.await_input"),
+            patch("src.functions.refresh_stat_bonuses"),
         ):
             p.print_status()
 
@@ -688,8 +688,8 @@ class TestUIGridCoverage:
         p.current_room.available_actions.return_value = [action]
 
         with (
-            patch("player._ui.cprint") as mock_cp,
-            patch("player._ui.functions") as mock_fn,
+            patch("src.player._ui.cprint") as mock_cp,
+            patch("src.player._ui.functions") as mock_fn,
         ):
             mock_fn.await_input = MagicMock()
             p.commands()
@@ -698,7 +698,7 @@ class TestUIGridCoverage:
 
     def test_menu_calls_autosave_and_sets_main_menu(self):
         p = _make_player()
-        with patch("functions.autosave") as mock_save:
+        with patch("src.functions.autosave") as mock_save:
             p.menu()
         mock_save.assert_called_once_with(p)
         assert p.main_menu is True

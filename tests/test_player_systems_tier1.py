@@ -23,10 +23,10 @@ if str(SRC_DIR) not in sys.path:
 
 import pytest
 from unittest.mock import MagicMock, patch, PropertyMock
-from player import Player
-import items
-import states
-import moves
+from src.player import Player
+import src.items as items
+import src.states as states
+import src.moves as moves
 
 
 class TestPlayerAttributeCalculations:
@@ -129,7 +129,7 @@ class TestPlayerEquipmentSwapping:
         armor.isequipped = True
 
         # Call refresh_stat_bonuses to apply equipment bonuses
-        import functions
+        import src.functions as functions
         functions.refresh_stat_bonuses(player)
 
         # Verify armor was equipped
@@ -143,7 +143,7 @@ class TestPlayerEquipmentSwapping:
 
         # First equip
         armor.isequipped = True
-        import functions
+        import src.functions as functions
         functions.refresh_stat_bonuses(player)
         equipped_protection = player.protection
 
@@ -988,7 +988,7 @@ class TestPlayerMerchandiseHandling:
         player.inventory.append(merch)
 
         # Mock tile_exists to return a valid tile
-        with patch('player._inventory.tile_exists', return_value=tile), \
+        with patch('src.player._inventory.tile_exists', return_value=tile), \
              patch('time.sleep'):  # Mock sleep to avoid delays
             player.drop_merchandise_items()
 

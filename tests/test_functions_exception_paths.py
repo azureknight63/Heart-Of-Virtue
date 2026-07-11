@@ -101,7 +101,7 @@ class _SlottedEnemy:
 
 class TestAddEnemiesToCombatExceptionPaths:
     def _player_in_combat(self):
-        from player import Player
+        from src.player import Player
 
         p = Player()
         p.combat_list = []
@@ -392,7 +392,7 @@ class _FlakyOnceDescriptor:
 def test_patch_player_integrity_fallback_setattr_retry_succeeds(monkeypatch):
     """Lines 687-690: first setattr raises, fallback retry (factory is list)
     succeeds on the second attempt."""
-    from player import Player
+    from src.player import Player
 
     player = Player()
     monkeypatch.setattr(Player, "combat_log", _FlakyOnceDescriptor(), raising=False)

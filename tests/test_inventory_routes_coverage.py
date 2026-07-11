@@ -676,7 +676,7 @@ class TestUseItemAdditionalBranches:
     def test_use_captures_legacy_neotermcolor_and_print_slow_output(self):
         """Covers lines 383/386: legacy cprint/print_slow output capture paths."""
         import neotermcolor
-        import functions as functions_mod
+        import src.functions as functions_mod
 
         item = _make_item()
         item.merchandise = False

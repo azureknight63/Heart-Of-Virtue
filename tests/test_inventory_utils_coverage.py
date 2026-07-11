@@ -23,8 +23,8 @@ if str(SRC_DIR) not in sys.path:
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from inventory_utils import get_gold, transfer_gold, transfer_item  # noqa: E402
-from items import Gold, Restorative  # noqa: E402
+from src.inventory_utils import get_gold, transfer_gold, transfer_item  # noqa: E402
+from src.items import Gold, Restorative  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -292,7 +292,7 @@ class TestTransferItemGuards:
         target = _PlainInventoryHolder()
 
         with patch(
-            "inventory_utils.stack_inv_items", side_effect=RuntimeError("boom")
+            "src.inventory_utils.stack_inv_items", side_effect=RuntimeError("boom")
         ):
             transfer_item(source, target, item, qty=1)
 

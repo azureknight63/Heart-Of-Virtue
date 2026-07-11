@@ -8,7 +8,7 @@ CombatEvent's terminal fallback) are dead. This suite guards their removal.
 
 import importlib
 
-from player import Player
+from src.player import Player
 
 
 def test_engine_combat_loop_is_gone():
@@ -36,7 +36,7 @@ def test_actions_has_no_attack_action():
 def test_combat_event_has_no_terminal_fallback():
     """CombatEvent.process must not import/run the terminal combat() loop."""
     import inspect
-    from events import CombatEvent
+    from src.events import CombatEvent
 
     src = inspect.getsource(CombatEvent.process)
     assert "import combat" not in src

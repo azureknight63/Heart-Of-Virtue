@@ -12,8 +12,8 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
 
 import pytest
-from items import Restorative, Gold, Shortsword
-from npc import Merchant
+from src.items import Restorative, Gold, Shortsword
+from src.npc import Merchant
 from src.api.serializers.shop_serializer import ShopSerializer, _serialize_shop_item, _serialize_buyback_item
 
 
@@ -49,7 +49,7 @@ def make_merchant(name="Tester"):
             self.universe = None
 
         def spawn_item(self, item_type, amt=1, hidden=False, hfactor=0, merchandise=False):
-            import items as items_module
+            import src.items as items_module
             cls = getattr(items_module, item_type, None)
             if cls is None:
                 return None

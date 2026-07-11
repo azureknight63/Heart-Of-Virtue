@@ -1155,7 +1155,7 @@ class TestInteractWithTargetExtra:
         # interact_with_target does `from inventory_utils import transfer_item`
         # (bare module name) inside its try block, so the patch target must be
         # the bare module, not src.inventory_utils.
-        with patch("inventory_utils.transfer_item") as mock_transfer:
+        with patch("src.inventory_utils.transfer_item") as mock_transfer:
             result = game_service.interact_with_target(
                 mock_player, str(id(item)), "take"
             )

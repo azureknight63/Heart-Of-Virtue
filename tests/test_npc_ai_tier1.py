@@ -29,7 +29,7 @@ from src.npc._friends import Mynx, Gorran
 from src.player import Player
 from src.states import Poisoned, Enflamed
 from src.items import Item, Weapon
-import moves  # type: ignore
+import src.moves as moves  # type: ignore
 
 
 class TestNPCStateManagement:

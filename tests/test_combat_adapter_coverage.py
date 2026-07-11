@@ -1587,7 +1587,7 @@ class TestSynchronizeDistances:
 
 class TestCaptureOutput:
     def test_captures_narration_and_syncs_to_log(self):
-        from narration import narrate
+        from src.narration import narrate
 
         player = _make_player()
         player.combat_log = []
@@ -1599,7 +1599,7 @@ class TestCaptureOutput:
         assert any("combat event" in e["message"] for e in player.combat_log)
 
     def test_clears_capture_after_context(self):
-        from narration import narrate
+        from src.narration import narrate
 
         player = _make_player()
         player.combat_log = []
@@ -1927,7 +1927,7 @@ class TestNpcTryHealAlly:
         npc = _make_enemy()
         npc.friend = False
         # Add a consumable but friendly is at full HP
-        import items as items_mod
+        import src.items as items_mod
 
         consumable = MagicMock(spec=items_mod.Consumable)
         consumable.use = MagicMock()

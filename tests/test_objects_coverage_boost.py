@@ -16,8 +16,8 @@ if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 import pytest
-from player import Player
-import objects
+from src.player import Player
+import src.objects as objects
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -96,9 +96,9 @@ class TestWallInscription:
         wi = objects.WallInscription(player=p, tile=tile, text="Sacred inscription.")
         with (
             patch("builtins.print"),
-            patch("functions.print_slow"),
-            patch("functions.await_input"),
-            patch("objects.cprint"),
+            patch("src.functions.print_slow"),
+            patch("src.functions.await_input"),
+            patch("src.objects.cprint"),
         ):
             wi.read()
 
@@ -109,9 +109,9 @@ class TestWallInscription:
         tile = _mock_tile()
         wi = objects.WallInscription(player=p, tile=tile, text="Ancient text.")
         with (
-            patch("functions.print_slow"),
-            patch("functions.await_input"),
-            patch("objects.cprint") as mock_cp,
+            patch("src.functions.print_slow"),
+            patch("src.functions.await_input"),
+            patch("src.objects.cprint") as mock_cp,
         ):
             wi.read()
         assert any("Jean" in str(c) for c in mock_cp.call_args_list)
@@ -121,9 +121,9 @@ class TestWallInscription:
         tile = _mock_tile()
         wi = objects.WallInscription(player=None, tile=tile, text="Ancient text.")
         with (
-            patch("functions.print_slow"),
-            patch("functions.await_input"),
-            patch("objects.cprint") as mock_cp,
+            patch("src.functions.print_slow"),
+            patch("src.functions.await_input"),
+            patch("src.objects.cprint") as mock_cp,
         ):
             wi.read()
         assert mock_cp.called
@@ -224,12 +224,12 @@ class TestContainer:
     def test_take_all_with_items(self):
         """Lines 453-464: take_all transfers items to player."""
         c, p, _ = self._make_container(start_open=True)
-        import items
+        import src.items as items
 
         gold = items.Gold(5)
         c.inventory = [gold]
         with (
-            patch("inventory_utils.transfer_item") as mock_transfer,
+            patch("src.inventory_utils.transfer_item") as mock_transfer,
             patch("builtins.print"),
             patch.object(c, "refresh_description"),
             patch.object(c, "process_events"),
@@ -247,7 +247,7 @@ class TestContainer:
     def test_stack_items_merges_duplicates(self):
         """Lines 518-553: stack_items combines duplicate stackable items."""
         c, _, _ = self._make_container()
-        import items
+        import src.items as items
 
         a1 = items.Antidote()
         a2 = items.Antidote()
@@ -322,7 +322,7 @@ class TestShrine:
         with (
             patch("time.sleep"),
             patch("builtins.print"),
-            patch("functions.await_input"),
+            patch("src.functions.await_input"),
         ):
             shrine.pray(p)
 
@@ -338,7 +338,7 @@ class TestShrine:
         with (
             patch("time.sleep"),
             patch("builtins.print"),
-            patch("functions.await_input"),
+            patch("src.functions.await_input"),
         ):
             shrine.pray(p)
         ev.process.assert_called_once()
@@ -361,8 +361,8 @@ class TestHealingSpring:
         with (
             patch("time.sleep"),
             patch("builtins.print"),
-            patch("objects.cprint"),
-            patch("functions.await_input"),
+            patch("src.objects.cprint"),
+            patch("src.functions.await_input"),
         ):
             spring.drink(p)
         assert p.hp == p.maxhp
@@ -378,8 +378,8 @@ class TestHealingSpring:
         with (
             patch("time.sleep"),
             patch("builtins.print"),
-            patch("objects.cprint"),
-            patch("functions.await_input"),
+            patch("src.objects.cprint"),
+            patch("src.functions.await_input"),
         ):
             spring.drink(p)
         ev.process.assert_called_once()
@@ -391,7 +391,7 @@ class TestHealingSpring:
         with (
             patch("time.sleep"),
             patch("builtins.print"),
-            patch("objects.cprint"),
+            patch("src.objects.cprint"),
             patch.object(p, "apply_state") as mock_apply,
         ):
             objects.HealingSpring.clean(p)
@@ -428,7 +428,7 @@ class TestPassageway:
             patch.object(p, "teleport") as mock_teleport,
             patch("builtins.print"),
             patch("time.sleep"),
-            patch("functions.await_input"),
+            patch("src.functions.await_input"),
         ):
             pw.enter(p)
         mock_teleport.assert_called_once_with("forest", (5, 5))
@@ -441,7 +441,7 @@ class TestPassageway:
         with (
             patch.object(p, "drop_merchandise_items"),
             patch("builtins.print") as mock_print,
-            patch("functions.await_input"),
+            patch("src.functions.await_input"),
         ):
             pw.enter(p)
         printed = " ".join(str(c) for c in mock_print.call_args_list)
@@ -463,7 +463,7 @@ class TestPassageway:
             patch.object(p, "teleport"),
             patch("builtins.print") as mock_print,
             patch("time.sleep"),
-            patch("functions.await_input"),
+            patch("src.functions.await_input"),
         ):
             pw.enter(p)
         printed = " ".join(str(c) for c in mock_print.call_args_list)
@@ -485,7 +485,7 @@ class TestPassageway:
             patch.object(p, "teleport"),
             patch("builtins.print") as mock_print,
             patch("time.sleep"),
-            patch("functions.await_input"),
+            patch("src.functions.await_input"),
         ):
             pw.enter(p)
         printed = " ".join(str(c) for c in mock_print.call_args_list)
@@ -510,7 +510,7 @@ class TestPassageway:
             patch.object(p, "teleport"),
             patch("builtins.print"),
             patch("time.sleep"),
-            patch("functions.await_input"),
+            patch("src.functions.await_input"),
         ):
             pw.enter(p)
         ev_before.process.assert_called_once()
@@ -529,10 +529,10 @@ class TestMarketBell:
         tile = _mock_tile()
         bell = objects.MarketBell(player=p, tile=tile)
         with (
-            patch("objects.cprint"),
+            patch("src.objects.cprint"),
             patch("time.sleep"),
             patch("builtins.print"),
-            patch("functions.await_input"),
+            patch("src.functions.await_input"),
         ):
             bell.ring()
 
@@ -544,10 +544,10 @@ class TestMarketBell:
         ev.repeat = False
         bell = objects.MarketBell(player=p, tile=tile, event=ev)
         with (
-            patch("objects.cprint"),
+            patch("src.objects.cprint"),
             patch("time.sleep"),
             patch("builtins.print"),
-            patch("functions.await_input"),
+            patch("src.functions.await_input"),
         ):
             bell.ring()
         ev.process.assert_called_once()
@@ -561,10 +561,10 @@ class TestMarketBell:
         ev.repeat = True
         bell = objects.MarketBell(player=p, tile=tile, event=ev)
         with (
-            patch("objects.cprint"),
+            patch("src.objects.cprint"),
             patch("time.sleep"),
             patch("builtins.print"),
-            patch("functions.await_input"),
+            patch("src.functions.await_input"),
         ):
             bell.ring()
         assert bell.event is ev  # Not cleared for repeat events
@@ -582,9 +582,9 @@ class TestFountain:
         tile = _mock_tile()
         fountain = objects.Fountain(player=p, tile=tile)
         with (
-            patch("objects.cprint"),
+            patch("src.objects.cprint"),
             patch("time.sleep"),
-            patch("functions.await_input"),
+            patch("src.functions.await_input"),
         ):
             fountain.drink()
 
@@ -596,9 +596,9 @@ class TestFountain:
         ev.repeat = False
         fountain = objects.Fountain(player=p, tile=tile, event=ev)
         with (
-            patch("objects.cprint"),
+            patch("src.objects.cprint"),
             patch("time.sleep"),
-            patch("functions.await_input"),
+            patch("src.functions.await_input"),
         ):
             fountain.drink()
         ev.process.assert_called_once()
@@ -609,7 +609,7 @@ class TestFountain:
         p = _player()
         tile = _mock_tile()
         fountain = objects.Fountain(player=p, tile=tile)
-        with patch("builtins.print"), patch("functions.await_input") as mock_await:
+        with patch("builtins.print"), patch("src.functions.await_input") as mock_await:
             fountain.listen()
         mock_await.assert_called_once()
 
@@ -618,7 +618,7 @@ class TestFountain:
         p = _player()
         tile = _mock_tile()
         fountain = objects.Fountain(player=p, tile=tile)
-        with patch("builtins.print"), patch("functions.await_input") as mock_await:
+        with patch("builtins.print"), patch("src.functions.await_input") as mock_await:
             fountain.admire()
         mock_await.assert_called_once()
 
@@ -643,7 +643,7 @@ class TestStreetLantern:
         p = _player()
         tile = _mock_tile()
         lantern = objects.StreetLantern(player=p, tile=tile, lit=False)
-        with patch("builtins.print"), patch("functions.await_input"):
+        with patch("builtins.print"), patch("src.functions.await_input"):
             lantern.light()
         assert lantern.lit is True
 
@@ -661,7 +661,7 @@ class TestStreetLantern:
         p = _player()
         tile = _mock_tile()
         lantern = objects.StreetLantern(player=p, tile=tile, lit=True)
-        with patch("builtins.print"), patch("functions.await_input"):
+        with patch("builtins.print"), patch("src.functions.await_input"):
             lantern.douse()
         assert lantern.lit is False
 
@@ -683,7 +683,7 @@ class TestStreetLantern:
         lantern = objects.StreetLantern(
             player=p, tile=tile, lit=False, event_when_lighting=ev
         )
-        with patch("builtins.print"), patch("functions.await_input"):
+        with patch("builtins.print"), patch("src.functions.await_input"):
             lantern.light()
         ev.process.assert_called_once()
         assert lantern.event_on is None
@@ -700,7 +700,7 @@ class TestNoticeBoard:
         p = _player()
         tile = _mock_tile()
         board = objects.NoticeBoard(player=p, tile=tile)
-        with patch("builtins.print") as mock_print, patch("functions.await_input"):
+        with patch("builtins.print") as mock_print, patch("src.functions.await_input"):
             board.read()
         # At least 5 notes printed
         assert mock_print.call_count >= 5
@@ -715,7 +715,7 @@ class TestNoticeBoard:
         with (
             patch("builtins.print"),
             patch("time.sleep"),
-            patch("functions.await_input"),
+            patch("src.functions.await_input"),
         ):
             board.read()
         ev.process.assert_called_once()
@@ -742,7 +742,7 @@ class TestPrayerCandleRack:
         p = _player()
         tile = _mock_tile()
         rack = objects.PrayerCandleRack(player=p, tile=tile, lit_candles=0)
-        with patch("builtins.print"), patch("functions.await_input"):
+        with patch("builtins.print"), patch("src.functions.await_input"):
             rack.light()
         assert rack.lit_candles == 1
 
@@ -751,7 +751,7 @@ class TestPrayerCandleRack:
         p = _player()
         tile = _mock_tile()
         rack = objects.PrayerCandleRack(player=p, tile=tile, lit_candles=20)
-        with patch("builtins.print") as mock_print, patch("functions.await_input"):
+        with patch("builtins.print") as mock_print, patch("src.functions.await_input"):
             rack.light()
         assert rack.lit_candles == 20
         assert mock_print.called
@@ -764,7 +764,7 @@ class TestPrayerCandleRack:
         with (
             patch("builtins.print"),
             patch("time.sleep"),
-            patch("functions.await_input"),
+            patch("src.functions.await_input"),
         ):
             rack.pray()
 
@@ -778,7 +778,7 @@ class TestPrayerCandleRack:
         with (
             patch("builtins.print"),
             patch("time.sleep"),
-            patch("functions.await_input"),
+            patch("src.functions.await_input"),
         ):
             rack.pray()
         ev.process.assert_called_once()
@@ -797,10 +797,10 @@ class TestMarketGong:
         tile = _mock_tile()
         gong = objects.MarketGong(player=p, tile=tile)
         with (
-            patch("objects.cprint"),
+            patch("src.objects.cprint"),
             patch("time.sleep"),
             patch("builtins.print"),
-            patch("functions.await_input"),
+            patch("src.functions.await_input"),
         ):
             gong.strike()
 
@@ -812,10 +812,10 @@ class TestMarketGong:
         ev.repeat = False
         gong = objects.MarketGong(player=p, tile=tile, event=ev)
         with (
-            patch("objects.cprint"),
+            patch("src.objects.cprint"),
             patch("time.sleep"),
             patch("builtins.print"),
-            patch("functions.await_input"),
+            patch("src.functions.await_input"),
         ):
             gong.strike()
         ev.process.assert_called_once()

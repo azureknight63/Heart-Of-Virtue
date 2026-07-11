@@ -6,10 +6,10 @@ SRC_DIR = ROOT / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-import positions
-from functions import add_enemies_to_combat
-from npc import CaveBat
-from player import Player
+import src.positions as positions
+from src.functions import add_enemies_to_combat
+from src.npc import CaveBat
+from src.player import Player
 
 
 class DummyAdapter:

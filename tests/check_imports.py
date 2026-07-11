@@ -6,11 +6,11 @@ sys.path.append(os.path.join(os.getcwd(), 'src'))
 
 try:
     print("Importing moves...")
-    import moves
+    import src.moves as moves
     print("Successfully imported moves.")
 
     print("Importing api.serializers.combat...")
-    import api.serializers.combat
+    import src.api.serializers.combat
     print("Successfully imported api.serializers.combat.")
 
 except Exception as e:

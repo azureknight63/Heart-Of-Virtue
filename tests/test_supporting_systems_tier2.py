@@ -19,9 +19,9 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from src.player import Player
-import items  # pragma: no cover - ensures module is imported for coverage
-import functions
-import states
+import src.items as items  # pragma: no cover - ensures module is imported for coverage
+import src.functions as functions
+import src.states as states
 
 
 # ============================================================================
@@ -1330,7 +1330,7 @@ class TestItemUnequip:
         player.eq_weapon = weapon
 
         with patch("builtins.print"):
-            with patch("functions.refresh_stat_bonuses"):
+            with patch("src.functions.refresh_stat_bonuses"):
                 weapon.unequip(player)
                 # Weapon should be unequipped
 

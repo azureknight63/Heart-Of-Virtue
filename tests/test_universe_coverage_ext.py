@@ -30,7 +30,7 @@ if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 import pytest
-from universe import Universe, tile_exists
+from src.universe import Universe, tile_exists
 
 # ---------------------------------------------------------------------------
 # Helpers

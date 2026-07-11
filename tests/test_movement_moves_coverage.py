@@ -39,8 +39,8 @@ if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 import pytest
-from player import Player
-import positions
+from src.player import Player
+import src.positions as positions
 
 
 def _player():
@@ -77,7 +77,7 @@ class TestDodge:
 
     def test_dodge_execute_adds_state(self):
         """Lines 54-58: execute adds Dodging state, deducts fatigue."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         dodge = moves.Dodge(p)
@@ -85,15 +85,15 @@ class TestDodge:
         initial_fatigue = p.fatigue
         with patch("builtins.print"):
             dodge.execute(p)
-        import states
+        import src.states as states
 
         assert any(isinstance(s, states.Dodging) for s in p.states)
         assert p.fatigue < initial_fatigue
 
     def test_dodge_removes_existing_dodging_state(self):
         """Line 54-57: duplicate Dodging state removed before adding new one."""
-        import moves
-        import states
+        import src.moves as moves
+        import src.states as states
 
         p = _player()
         p.states.append(states.Dodging(p))
@@ -114,7 +114,7 @@ class TestParry:
 
     def test_parry_viable_with_weapon(self):
         """Lines 100-104: Parry viable when Jean has eq_weapon."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         p.name = "Jean"
@@ -124,7 +124,7 @@ class TestParry:
 
     def test_parry_not_viable_without_weapon(self):
         """Lines 102-103: Parry not viable when Jean has no weapon."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         p.name = "Jean"
@@ -134,8 +134,8 @@ class TestParry:
 
     def test_parry_execute_adds_state(self):
         """Lines 114-118: execute adds Parrying state."""
-        import moves
-        import states
+        import src.moves as moves
+        import src.states as states
 
         p = _player()
         parry = moves.Parry(p)
@@ -145,7 +145,7 @@ class TestParry:
 
     def test_parry_refresh_announcements(self):
         """Lines 92-98: refresh_announcements updates stage_announce."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         parry = moves.Parry(p)
@@ -163,7 +163,7 @@ class TestAdvance:
 
     def test_advance_viable_target_in_range(self):
         """Lines 153-166: Advance viable when target is farther than 1."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         enemy = _make_enemy()
@@ -174,7 +174,7 @@ class TestAdvance:
 
     def test_advance_not_viable_target_adjacent(self):
         """Lines 164-166: Advance not viable when target is adjacent."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         enemy = _make_enemy()
@@ -185,7 +185,7 @@ class TestAdvance:
 
     def test_advance_not_viable_no_combat_proximity(self):
         """Line 159-160: Advance not viable without combat_proximity."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         del p.combat_proximity
@@ -194,7 +194,7 @@ class TestAdvance:
 
     def test_advance_viable_no_target_checks_any(self):
         """Lines 168-172: Advance checks any combatant if no target."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         enemy = _make_enemy()
@@ -213,7 +213,7 @@ class TestAdvance:
         other. cprint falls back to real stdout when no narration capture
         is active, so capsys is import-path agnostic.
         """
-        import moves
+        import src.moves as moves
 
         p = _player()
         p.name = "Jean"
@@ -227,7 +227,7 @@ class TestAdvance:
 
     def test_advance_beat_update_legacy(self):
         """Lines 257-270: _beat_legacy reduces proximity."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         enemy = _make_enemy()
@@ -243,7 +243,7 @@ class TestAdvance:
 
     def test_advance_beat_update_switches_target_when_dead(self):
         """Lines 182-200: beat_update finds new target when current target dead."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         dead_enemy = _make_enemy(alive=False)
@@ -257,14 +257,14 @@ class TestAdvance:
         with (
             patch.object(advance, "can_use_coordinates", return_value=False),
             patch.object(advance, "_beat_legacy"),
-            patch("moves._movement.cprint"),
+            patch("src.moves._movement.cprint"),
         ):
             advance.beat_update(p)
         assert advance.target is live_enemy
 
     def test_advance_refresh_announcements(self):
         """Line 150-151: refresh_announcements updates stage_announce."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         advance = moves.Advance(p)
@@ -282,7 +282,7 @@ class TestWithdraw:
 
     def test_withdraw_viable_enemy_in_range(self):
         """Lines 307-315: Withdraw viable when enemy within max range."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         p.name = "Jean"
@@ -293,7 +293,7 @@ class TestWithdraw:
 
     def test_withdraw_not_viable_no_proximity(self):
         """Lines 309-310: Withdraw not viable without combat_proximity."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         del p.combat_proximity
@@ -302,7 +302,7 @@ class TestWithdraw:
 
     def test_withdraw_npc_not_viable_when_hp_high(self):
         """Lines 317-321: NPC won't withdraw unless HP < 20%."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         p.name = "Goblin"  # not Jean
@@ -315,7 +315,7 @@ class TestWithdraw:
 
     def test_withdraw_npc_viable_when_hp_low(self):
         """Lines 321-328: NPC viable when HP < 20%."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         p.name = "Goblin"  # not Jean
@@ -328,7 +328,7 @@ class TestWithdraw:
 
     def test_withdraw_execute_announces(self, capsys):
         """Lines 394-398: execute announces retreat."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         p.name = "Jean"
@@ -338,7 +338,7 @@ class TestWithdraw:
 
     def test_withdraw_beat_legacy(self):
         """Lines 386-392: _beat_legacy increases all enemy distances."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         p.speed = 5
@@ -361,7 +361,7 @@ class TestBullCharge:
 
     def test_bullcharge_viable_distance_in_range(self):
         """Lines 430-437: viable when 3-20 distance."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         enemy = _make_enemy()
@@ -372,7 +372,7 @@ class TestBullCharge:
 
     def test_bullcharge_not_viable_too_close(self):
         """Line 437: not viable when distance < 3."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         enemy = _make_enemy()
@@ -383,7 +383,7 @@ class TestBullCharge:
 
     def test_bullcharge_not_viable_no_target(self):
         """Lines 433-435: not viable when no target or target not in proximity."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         bc = moves.BullCharge(p)
@@ -392,7 +392,7 @@ class TestBullCharge:
 
     def test_bullcharge_prep_announces(self, capsys):
         """Lines 442-443: prep cprints charge message."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         p.name = "Jean"
@@ -402,7 +402,7 @@ class TestBullCharge:
 
     def test_bullcharge_execute_announces(self, capsys):
         """Lines 495-500: execute announces charge."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         p.name = "Jean"
@@ -419,7 +419,7 @@ class TestBullCharge:
 
     def test_bullcharge_beat_legacy(self):
         """Lines 488-493: _beat_legacy decreases proximity."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         enemy = _make_enemy()
@@ -441,7 +441,7 @@ class TestTacticalRetreat:
 
     def test_tacticalretreat_viable(self):
         """Lines 531-534: viable when combat_proximity not empty."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         enemy = _make_enemy()
@@ -451,7 +451,7 @@ class TestTacticalRetreat:
 
     def test_tacticalretreat_not_viable_no_proximity(self):
         """Lines 532: not viable without combat_proximity."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         del p.combat_proximity
@@ -460,7 +460,7 @@ class TestTacticalRetreat:
 
     def test_tacticalretreat_prep_announces(self, capsys):
         """Lines 539-540: prep announces retreat preparation."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         p.name = "Jean"
@@ -470,7 +470,7 @@ class TestTacticalRetreat:
 
     def test_tacticalretreat_execute_announces(self, capsys):
         """Lines 583-587: execute announces finished retreat."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         p.name = "Jean"
@@ -482,7 +482,7 @@ class TestTacticalRetreat:
 
     def test_tacticalretreat_beat_legacy(self):
         """Lines 578-581: _beat_legacy increases all enemy distances."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         enemy = _make_enemy()
@@ -503,7 +503,7 @@ class TestFlankingManeuver:
 
     def test_flankingmaneuver_viable(self):
         """Lines 618-625: viable when target in 3-15 range."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         enemy = _make_enemy()
@@ -514,7 +514,7 @@ class TestFlankingManeuver:
 
     def test_flankingmaneuver_prep_announces(self, capsys):
         """Lines 630-631: prep announces flanking."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         p.name = "Jean"
@@ -526,7 +526,7 @@ class TestFlankingManeuver:
         """Lines 656-682: execute announces flanking result (generic 'finished
         maneuvering' branch, since combat_position is unset -> the two
         angle-based branches above it are skipped)."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         p.name = "Jean"
@@ -540,7 +540,7 @@ class TestFlankingManeuver:
 
     def test_flankingmaneuver_execute_no_combat_position(self, capsys):
         """Lines 681-682: execute announces generic maneuver when no position."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         p.name = "Jean"
@@ -566,7 +566,7 @@ class TestQuietMovement:
 
     def test_quiet_movement_viable_false(self):
         """Line 721-722: viable() always False (passive move)."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         qm = moves.QuietMovement(p)
@@ -574,7 +574,7 @@ class TestQuietMovement:
 
     def test_quiet_movement_execute_noop(self):
         """Lines 717-719: execute is no-op."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         qm = moves.QuietMovement(p)
@@ -591,7 +591,7 @@ class TestTacticalPositioning:
 
     def test_tacticalpos_viable(self):
         """Line 755-756: viable() returns True always."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         tp = moves.TacticalPositioning(p)
@@ -599,7 +599,7 @@ class TestTacticalPositioning:
 
     def test_tacticalpos_prep_uses_adapter_distance(self):
         """prep() uses the adapter-provided distance (no terminal prompt)."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         tp = moves.TacticalPositioning(p)
@@ -610,7 +610,7 @@ class TestTacticalPositioning:
     def test_tacticalpos_execute_announces(self, capsys):
         """Lines 862-870: execute announces position adjustment and awards
         5 "Basic" combat exp."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         p.name = "Jean"
@@ -631,7 +631,7 @@ class TestTacticalPositioning:
 
     def test_tacticalpos_beat_legacy(self):
         """Lines 847-860: _beat_legacy adjusts proximity toward target distance."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         enemy = _make_enemy()
@@ -655,7 +655,7 @@ class TestTurn:
 
     def test_turn_viable_with_position(self):
         """Lines 909-917: viable when user has combat_position."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         p.combat_position = _make_combat_position()
@@ -664,7 +664,7 @@ class TestTurn:
 
     def test_turn_not_viable_without_position(self):
         """Lines 910-915: not viable without combat_position."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         if hasattr(p, "combat_position"):
@@ -674,37 +674,37 @@ class TestTurn:
 
     def test_turn_prep_with_direction_set(self):
         """Line 1078-1079: prep announces turn when direction is set."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         p.combat_position = _make_combat_position()
         turn = moves.Turn(p)
         turn.target_direction = positions.Direction.E
-        with patch("moves._movement.cprint"):
+        with patch("src.moves._movement.cprint"):
             turn.prep(p)
         pass  # code executed = success
 
     def test_turn_execute_sets_facing(self):
         """Lines 1081-1097: execute sets combat_position.facing."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         p.combat_position = _make_combat_position()
         turn = moves.Turn(p)
         turn.target_direction = positions.Direction.S
-        with patch("moves._movement.cprint"):
+        with patch("src.moves._movement.cprint"):
             turn.execute(p)
         assert p.combat_position.facing == positions.Direction.S
 
     def test_turn_execute_no_direction_warning(self):
         """Lines 1083-1088: execute warns when no direction."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         p.combat_position = _make_combat_position()
         turn = moves.Turn(p)
         turn.target_direction = None
-        with patch("moves._movement.cprint"):
+        with patch("src.moves._movement.cprint"):
             turn.execute(p)
         pass  # code executed = success
 
@@ -718,7 +718,7 @@ class TestQuickSwap:
 
     def test_quickswap_viable_no_proximity(self):
         """Line 1142-1143: viable() False when no combat_proximity."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         del p.combat_proximity
@@ -727,7 +727,7 @@ class TestQuickSwap:
 
     def test_quickswap_viable_no_allies(self):
         """Line 1134-1135: viable() False when no nearby allies."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         p.combat_list_allies = []
@@ -736,7 +736,7 @@ class TestQuickSwap:
 
     def test_quickswap_prep_no_allies(self, capsys):
         """Lines 1185-1187: prep warns when no allies."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         p.combat_list_allies = []
@@ -746,7 +746,7 @@ class TestQuickSwap:
 
     def test_quickswap_execute_no_allies(self, capsys):
         """Lines 1205-1207: execute warns when no nearby allies."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         p.name = "Jean"
@@ -761,7 +761,7 @@ class TestQuickSwap:
     def test_quickswap_execute_legacy(self, capsys):
         """Lines 1279-1295: _execute_legacy swaps proximity dicts wholesale
         and keeps the enemy's mirrored distances in sync."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         p.name = "Jean"
@@ -789,7 +789,7 @@ class TestQuickSwap:
 
     def test_quickswap_get_nearby_allies_legacy(self):
         """Lines 1164-1173: legacy proximity used when no combat_position."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         p.combat_list_allies = []
@@ -809,7 +809,7 @@ class TestQuickSwap:
 
     def test_quickswap_prep_shows_allies(self, capsys):
         """Lines 1183-1199: prep shows ally list when allies present."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         p.name = "Jean"
@@ -854,7 +854,7 @@ class TestApplySentinelsVigil:
         return defender
 
     def test_noop_without_passive(self):
-        from moves._movement import _apply_sentinels_vigil
+        from src.moves._movement import _apply_sentinels_vigil
 
         defender = MagicMock()
         defender.known_moves = []
@@ -864,7 +864,7 @@ class TestApplySentinelsVigil:
         assert advancer.hp == 100
 
     def test_noop_when_advancer_dead(self):
-        from moves._movement import _apply_sentinels_vigil
+        from src.moves._movement import _apply_sentinels_vigil
 
         defender = self._spear_defender()
         advancer = MagicMock()
@@ -874,7 +874,7 @@ class TestApplySentinelsVigil:
         assert advancer.hp == 50
 
     def test_noop_when_damage_non_positive(self):
-        from moves._movement import _apply_sentinels_vigil
+        from src.moves._movement import _apply_sentinels_vigil
 
         defender = self._spear_defender()
         defender.strength = 0
@@ -883,19 +883,19 @@ class TestApplySentinelsVigil:
         advancer.is_alive = MagicMock(return_value=True)
         advancer.protection = 1000  # damage - protection <= 0
         advancer.hp = 50
-        with patch("moves._movement.cprint"):
+        with patch("src.moves._movement.cprint"):
             _apply_sentinels_vigil(advancer, defender)
         assert advancer.hp == 50
 
     def test_applies_damage_when_all_conditions_met(self):
-        from moves._movement import _apply_sentinels_vigil
+        from src.moves._movement import _apply_sentinels_vigil
 
         defender = self._spear_defender()
         advancer = MagicMock()
         advancer.is_alive = MagicMock(return_value=True)
         advancer.protection = 0
         advancer.hp = 50
-        with patch("moves._movement.cprint"):
+        with patch("src.moves._movement.cprint"):
             _apply_sentinels_vigil(advancer, defender)
         assert advancer.hp < 50
 
@@ -909,7 +909,7 @@ class TestParryFatigueFloor:
     """Line 130-131: fatigue_cost floors at 10."""
 
     def test_fatigue_floors_at_ten(self):
-        import moves
+        import src.moves as moves
 
         p = _player()
         p.endurance = 100
@@ -926,7 +926,7 @@ class TestParryFatigueFloor:
 class TestAdvanceRemainingGaps:
     def test_advance_prep_is_noop(self):
         """Line 206: prep() is a no-op."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         advance = moves.Advance(p)
@@ -934,7 +934,7 @@ class TestAdvanceRemainingGaps:
 
     def test_beat_update_returns_when_no_enemies_left(self):
         """Line 227-228: no living enemies -> early return."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         dead_enemy = _make_enemy(alive=False)
@@ -949,7 +949,7 @@ class TestAdvanceRemainingGaps:
 
     def test_beat_coordinate_based_returns_when_already_close(self):
         """Line 250-251: current_distance <= 3 -> no movement."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         p.combat_position = _make_combat_position(x=5, y=5)
@@ -964,7 +964,7 @@ class TestAdvanceRemainingGaps:
 
     def test_beat_coordinate_based_collects_occupied_positions_and_moves(self):
         """Lines 253-285: occupied-position collection + sentinel's vigil trigger."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         p.combat_position = _make_combat_position(x=0, y=0)
@@ -984,15 +984,15 @@ class TestAdvanceRemainingGaps:
 
         advance = moves.Advance(p)
         advance.target = enemy
-        with patch("moves._movement.random.randint", return_value=30), \
-             patch("moves._movement.cprint"):
+        with patch("src.moves._movement.random.randint", return_value=30), \
+             patch("src.moves._movement.cprint"):
             advance._beat_coordinate_based(p)
         # Position should have moved from the origin
         assert (p.combat_position.x, p.combat_position.y) != (0, 0)
 
     def test_beat_legacy_returns_when_already_close(self):
         """Line 289-290: distance <= 3 -> no movement."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         enemy = _make_enemy()
@@ -1011,7 +1011,7 @@ class TestAdvanceRemainingGaps:
 class TestWithdrawRemainingGaps:
     def test_viable_false_beyond_max_flee_distance(self):
         """Lines 356-361: NPC stops withdrawing once fled past max flee distance."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         p.name = "Goblin"
@@ -1024,7 +1024,7 @@ class TestWithdrawRemainingGaps:
 
     def test_prep_is_noop(self):
         """Line 368: prep() is a no-op."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         withdraw = moves.Withdraw(p)
@@ -1032,7 +1032,7 @@ class TestWithdrawRemainingGaps:
 
     def test_beat_update_dispatches_legacy_without_coordinates(self):
         """Line 372-375: beat_update calls _beat_legacy when coordinates unavailable."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         withdraw = moves.Withdraw(p)
@@ -1044,7 +1044,7 @@ class TestWithdrawRemainingGaps:
 
     def test_beat_coordinate_based_returns_when_no_threat(self):
         """Line 393-394: no combat_position enemies -> early return."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         p.combat_position = _make_combat_position()
@@ -1065,7 +1065,7 @@ class TestWithdrawRemainingGaps:
 class TestBullChargeRemainingGaps:
     def test_viable_false_without_combat_proximity(self):
         """Line 463-464: no combat_proximity -> False."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         del p.combat_proximity
@@ -1074,7 +1074,7 @@ class TestBullChargeRemainingGaps:
 
     def test_beat_update_returns_when_target_dead(self):
         """Line 479-480: dead target -> early return."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         dead_enemy = _make_enemy(alive=False)
@@ -1089,7 +1089,7 @@ class TestBullChargeRemainingGaps:
 
     def test_beat_update_dispatches_legacy_without_coordinates(self):
         """Line 484-485: beat_update calls _beat_legacy when coordinates unavailable."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         enemy = _make_enemy()
@@ -1104,7 +1104,7 @@ class TestBullChargeRemainingGaps:
 
     def test_beat_coordinate_based_collects_occupied_positions(self):
         """Lines 492-500: occupied-position collection from combat_list/allies."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         p.combat_position = _make_combat_position(x=0, y=0)
@@ -1122,13 +1122,13 @@ class TestBullChargeRemainingGaps:
 
         bc = moves.BullCharge(p)
         bc.target = enemy
-        with patch("moves._movement.random.randint", return_value=2):
+        with patch("src.moves._movement.random.randint", return_value=2):
             bc._beat_coordinate_based(p)
         assert (p.combat_position.x, p.combat_position.y) != (0, 0)
 
     def test_beat_legacy_floors_distance_at_three(self):
         """Line 523-524: distance floors at 3."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         enemy = _make_enemy()
@@ -1136,7 +1136,7 @@ class TestBullChargeRemainingGaps:
         enemy.combat_proximity[p] = 4
         bc = moves.BullCharge(p)
         bc.target = enemy
-        with patch("moves._movement.random.randint", return_value=6):
+        with patch("src.moves._movement.random.randint", return_value=6):
             bc._beat_legacy(p)
         assert p.combat_proximity[enemy] == 3
 
@@ -1149,7 +1149,7 @@ class TestBullChargeRemainingGaps:
 class TestTacticalRetreatRemainingGaps:
     def test_beat_update_dispatches_legacy_without_coordinates(self):
         """Line 578-579: beat_update calls _beat_legacy when coordinates unavailable."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         enemy = _make_enemy()
@@ -1163,7 +1163,7 @@ class TestTacticalRetreatRemainingGaps:
 
     def test_beat_coordinate_based_returns_when_no_threat(self):
         """Line 596-597: no combat_position enemies -> early return."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         p.combat_position = _make_combat_position()
@@ -1184,7 +1184,7 @@ class TestTacticalRetreatRemainingGaps:
 class TestFlankingManeuverRemainingGaps:
     def test_viable_false_without_combat_proximity(self):
         """Line 651-652: no combat_proximity -> False."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         del p.combat_proximity
@@ -1193,7 +1193,7 @@ class TestFlankingManeuverRemainingGaps:
 
     def test_beat_update_returns_when_target_dead(self):
         """Line 667-668: dead target -> early return."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         dead_enemy = _make_enemy(alive=False)
@@ -1216,7 +1216,7 @@ class TestFlankingManeuverRemainingGaps:
         falls back to real stdout when no narration capture is active
         (see src/narration.py), so capsys is import-path agnostic.
         """
-        import moves
+        import src.moves as moves
 
         p = _player()
         p.name = "Jean"
@@ -1232,7 +1232,7 @@ class TestFlankingManeuverRemainingGaps:
 
     def test_execute_side_move_branch(self, capsys):
         """Lines 708-712: execute reports generic side-move (front/rear angle)."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         p.name = "Jean"
@@ -1255,7 +1255,7 @@ class TestFlankingManeuverRemainingGaps:
 class TestTacticalPositioningRemainingGaps:
     def test_prep_defaults_distance_to_max_range(self):
         """Line 796-797: distance defaults to mvrange[1] when unset."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         tp = moves.TacticalPositioning(p)
@@ -1265,7 +1265,7 @@ class TestTacticalPositioningRemainingGaps:
 
     def test_beat_update_returns_when_target_dead(self):
         """Lines 801-803: dead target -> early return."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         dead_enemy = _make_enemy(alive=False)
@@ -1277,7 +1277,7 @@ class TestTacticalPositioningRemainingGaps:
 
     def test_beat_update_initializes_target_dist_final_and_dispatches_legacy(self):
         """Lines 805-824: variance calc + legacy dispatch."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         enemy = _make_enemy()
@@ -1295,7 +1295,7 @@ class TestTacticalPositioningRemainingGaps:
 
     def test_beat_coordinate_based_moves_closer(self):
         """Lines 826-862: coordinate-based movement toward target distance."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         p.combat_position = _make_combat_position(x=0, y=0)
@@ -1312,7 +1312,7 @@ class TestTacticalPositioningRemainingGaps:
 
     def test_beat_coordinate_based_moves_further(self):
         """Lines 839-849: 'move further away' branch."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         p.combat_position = _make_combat_position(x=10, y=0)
@@ -1329,7 +1329,7 @@ class TestTacticalPositioningRemainingGaps:
 
     def test_beat_coordinate_based_noop_when_close_enough(self):
         """Line 833-834: abs(diff) < 1 -> no movement."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         p.combat_position = _make_combat_position(x=0, y=0)
@@ -1347,7 +1347,7 @@ class TestTacticalPositioningRemainingGaps:
 
     def test_beat_legacy_noop_when_close_enough(self):
         """Line 868-869: abs(diff) < 1 -> no movement."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         enemy = _make_enemy()
@@ -1361,7 +1361,7 @@ class TestTacticalPositioningRemainingGaps:
 
     def test_beat_legacy_moves_further_away(self):
         """Line 874-875: 'move further away' branch in legacy system."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         enemy = _make_enemy()
@@ -1382,13 +1382,13 @@ class TestTacticalPositioningRemainingGaps:
 class TestTurnRemainingGaps:
     def test_prep_defaults_direction_to_north(self):
         """Line 952-953: target_direction defaults to North when unset."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         p.combat_position = _make_combat_position()
         turn = moves.Turn(p)
         turn.target_direction = None
-        with patch("moves._movement.cprint"):
+        with patch("src.moves._movement.cprint"):
             turn.prep(p)
         # Compare by name rather than enum identity: under the full suite,
         # src.positions and the bare `positions` module used internally by
@@ -1406,7 +1406,7 @@ class TestTurnRemainingGaps:
 class TestQuickSwapRemainingGaps:
     def test_prep_shows_distance_fallback_without_coordinates(self):
         """Line 1073-1074: legacy distance fallback in prep's ally list."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         p.name = "Jean"
@@ -1419,13 +1419,13 @@ class TestQuickSwapRemainingGaps:
         p.combat_list_allies = [p, ally]
         p.combat_proximity[ally] = 2
         qs = moves.QuickSwap(p)
-        with patch("builtins.print"), patch("moves._movement.cprint"):
+        with patch("builtins.print"), patch("src.moves._movement.cprint"):
             qs.prep(p)
         # No crash = success
 
     def test_execute_raises_when_selected_target_no_longer_nearby(self):
         """Lines 1084-1088: explicit target no longer within range -> ValueError."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         p.name = "Jean"
@@ -1439,13 +1439,13 @@ class TestQuickSwapRemainingGaps:
 
         qs = moves.QuickSwap(p)
         qs.target = far_ally
-        with patch("moves._movement.cprint"):
+        with patch("src.moves._movement.cprint"):
             with pytest.raises(ValueError):
                 qs.execute(p)
 
     def test_execute_uses_explicit_target_when_nearby(self, capsys):
         """Line 1088: explicit target used directly when still within range."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         p.name = "Jean"
@@ -1470,7 +1470,7 @@ class TestQuickSwapRemainingGaps:
 
     def test_execute_dispatches_legacy_swap(self):
         """Line 1105-1106: legacy execute branch dispatched when no coordinates."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         p.name = "Jean"
@@ -1485,13 +1485,13 @@ class TestQuickSwapRemainingGaps:
 
         qs = moves.QuickSwap(p)
         with patch.object(qs, "_execute_legacy") as mock_legacy, \
-             patch("moves._movement.cprint"):
+             patch("src.moves._movement.cprint"):
             qs.execute(p)
         mock_legacy.assert_called_once()
 
     def test_execute_handles_exception_gracefully(self, capsys):
         """Line 1107-1108: exceptions during swap are caught and reported."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         p.name = "Jean"

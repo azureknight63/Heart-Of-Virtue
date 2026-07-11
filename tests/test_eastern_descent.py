@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import patch, MagicMock
-from npc._eastern_descent import NomadCamper, NomadScout, NomadTrader
+from src.npc._eastern_descent import NomadCamper, NomadScout, NomadTrader
 
 def test_nomad_camper_properties():
     npc = NomadCamper()
@@ -45,16 +45,16 @@ def test_nomad_trader_talk(mock_print):
     assert mock_print.called
 
 def test_nomad_camper_known_moves_exception_falls_back_to_empty_list():
-    with patch("npc._eastern_descent.moves.NpcIdle", side_effect=RuntimeError("boom")):
+    with patch("src.npc._eastern_descent.moves.NpcIdle", side_effect=RuntimeError("boom")):
         npc = NomadCamper()
     assert npc.known_moves == []
 
 def test_nomad_scout_known_moves_exception_falls_back_to_empty_list():
-    with patch("npc._eastern_descent.moves.NpcIdle", side_effect=RuntimeError("boom")):
+    with patch("src.npc._eastern_descent.moves.NpcIdle", side_effect=RuntimeError("boom")):
         npc = NomadScout()
     assert npc.known_moves == []
 
 def test_nomad_trader_known_moves_exception_falls_back_to_empty_list():
-    with patch("npc._eastern_descent.moves.NpcIdle", side_effect=RuntimeError("boom")):
+    with patch("src.npc._eastern_descent.moves.NpcIdle", side_effect=RuntimeError("boom")):
         npc = NomadTrader()
     assert npc.known_moves == []

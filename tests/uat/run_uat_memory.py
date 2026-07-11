@@ -5,7 +5,6 @@ Quick test to experience the memory flash without playing through the game.
 
 def run_uat():
     import sys
-    sys.path.insert(0, 'src')
 
     print("\n" + "="*79)
     print("UAT: Memory Flash System".center(79))

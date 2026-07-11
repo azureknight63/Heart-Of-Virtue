@@ -1,15 +1,14 @@
 """Tests for the player's view_map functionality and map rendering."""
 import sys
 import os
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
 
 import pytest
 from unittest.mock import MagicMock, patch, Mock
 
 # Import modules after sys.path is set
-from player import Player
-from tiles import MapTile
-from universe import Universe
+from src.player import Player
+from src.tiles import MapTile
+from src.universe import Universe
 
 
 def test_player_has_prev_location_attributes():

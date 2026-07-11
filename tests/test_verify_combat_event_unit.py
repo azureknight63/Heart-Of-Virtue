@@ -13,10 +13,10 @@ import os
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "."))
 
-from universe import Universe  # noqa: E402
-from player import Player  # noqa: E402
-from events import CombatEvent  # noqa: E402
-from combat_event_config import CombatEventConfig  # noqa: E402
+from src.universe import Universe  # noqa: E402
+from src.player import Player  # noqa: E402
+from src.events import CombatEvent  # noqa: E402
+from src.combat_event_config import CombatEventConfig  # noqa: E402
 
 
 class TestCombatEventLoading(unittest.TestCase):

@@ -11,7 +11,7 @@ for _p in (_PROJECT_ROOT, _SRC_DIR):
 try:
     import src.functions as functions
 except ModuleNotFoundError:  # fallback if src not discoverable in isolated test invocation
-    import functions  # type: ignore
+    import src.functions as functions  # type: ignore
 
 class MockItem:
     def __init__(self, **attrs):

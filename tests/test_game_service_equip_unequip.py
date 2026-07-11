@@ -85,8 +85,8 @@ def test_engine_unequip_weapon_resets_to_fists():
     p.eq_weapon = item
 
     with (
-        patch("player._inventory.functions.refresh_stat_bonuses") as mock_refresh,
-        patch("player._inventory.cprint"),
+        patch("src.player._inventory.functions.refresh_stat_bonuses") as mock_refresh,
+        patch("src.player._inventory.cprint"),
     ):
         p.unequip_item(item_object=item)
 
@@ -104,7 +104,7 @@ def test_engine_unequip_not_equipped_is_noop():
     item.isequipped = False
     p.inventory = [item]
 
-    with patch("player._inventory.functions.refresh_stat_bonuses") as mock_refresh:
+    with patch("src.player._inventory.functions.refresh_stat_bonuses") as mock_refresh:
         p.unequip_item(item_object=item)
 
     assert item.isequipped is False
@@ -123,8 +123,8 @@ def test_service_equip_equips_weapon(game_service):
     p.inventory = [item]
 
     with (
-        patch("player._inventory.functions.refresh_stat_bonuses"),
-        patch("player._inventory.cprint"),
+        patch("src.player._inventory.functions.refresh_stat_bonuses"),
+        patch("src.player._inventory.cprint"),
     ):
         result = game_service.equip_item(p, item)
 
@@ -142,8 +142,8 @@ def test_service_equip_toggles_unequip_when_equipped(game_service):
     p.inventory = [item]
 
     with (
-        patch("player._inventory.functions.refresh_stat_bonuses"),
-        patch("player._inventory.cprint"),
+        patch("src.player._inventory.functions.refresh_stat_bonuses"),
+        patch("src.player._inventory.cprint"),
     ):
         result = game_service.equip_item(p, item)
 
@@ -189,8 +189,8 @@ def test_service_unequip_success(game_service):
     p.inventory = [item]
 
     with (
-        patch("player._inventory.functions.refresh_stat_bonuses"),
-        patch("player._inventory.cprint"),
+        patch("src.player._inventory.functions.refresh_stat_bonuses"),
+        patch("src.player._inventory.cprint"),
     ):
         result = game_service.unequip_item(p, item)
 
@@ -230,8 +230,8 @@ def test_service_drop_equipped_item_unequips_then_drops(game_service):
     p.universe.get_tile.return_value = tile
 
     with (
-        patch("player._inventory.functions.refresh_stat_bonuses"),
-        patch("player._inventory.cprint"),
+        patch("src.player._inventory.functions.refresh_stat_bonuses"),
+        patch("src.player._inventory.cprint"),
     ):
         result = game_service.drop_item(p, item)
 
@@ -254,7 +254,7 @@ def test_service_equip_returns_engine_narration(game_service):
     p.inventory = [item]
 
     # Note: cprint is NOT patched here so real narration flows into the sink.
-    with patch("player._inventory.functions.refresh_stat_bonuses"):
+    with patch("src.player._inventory.functions.refresh_stat_bonuses"):
         result = game_service.equip_item(p, item)
 
     assert result["success"] is True
@@ -293,7 +293,7 @@ def test_service_drop_equipped_returns_unequip_narration(game_service):
     p.universe = MagicMock()
     p.universe.get_tile.return_value = tile
 
-    with patch("player._inventory.functions.refresh_stat_bonuses"):
+    with patch("src.player._inventory.functions.refresh_stat_bonuses"):
         result = game_service.drop_item(p, item)
 
     assert result["success"] is True

@@ -17,7 +17,7 @@ if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 import pytest
-from player import Player
+from src.player import Player
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -60,7 +60,7 @@ class TestUniverseDeserialize:
         payload = {"__class_type__": "items:Gold"}
         result = u._deserialize_saved_instance(payload)
         # Should return the class (Gold), not None
-        import items
+        import src.items as items
 
         assert result is items.Gold or result is None  # graceful if import fails
 
@@ -540,7 +540,7 @@ class TestCh01StartOpenWallWithTileDescription:
         tile = _mock_tile()
         tile.block_exit = ["east"]
 
-        import objects
+        import src.objects as objects
 
         # Add a Wall Depression and TileDescription to the tile
         wall_dep = MagicMock()
@@ -558,8 +558,8 @@ class TestCh01StartOpenWallWithTileDescription:
 
     def test_process_updates_tile_description(self):
         """TileDescription gets new description when wall opens."""
-        from story.ch01 import Ch01StartOpenWall
-        import objects
+        from src.story.ch01 import Ch01StartOpenWall
+        import src.objects as objects
 
         p, tile = self._setup()
 
@@ -568,7 +568,7 @@ class TestCh01StartOpenWallWithTileDescription:
 
         event = Ch01StartOpenWall(player=p, tile=tile)
 
-        with patch("time.sleep"), patch("story.ch01.cprint"):
+        with patch("time.sleep"), patch("src.story.ch01.cprint"):
             event.process()
 
         # Exit should now be unblocked
@@ -580,8 +580,8 @@ class TestCh01BridgeWallWithTileDescription:
 
     def test_process_removes_tile_description(self):
         """TileDescription is removed from objects_here when bridge wall opens."""
-        from story.ch01 import Ch01BridgeWall
-        import objects
+        from src.story.ch01 import Ch01BridgeWall
+        import src.objects as objects
 
         p = _player()
         tile = _mock_tile()
@@ -600,7 +600,7 @@ class TestCh01BridgeWallWithTileDescription:
 
         event = Ch01BridgeWall(player=p, tile=tile)
 
-        with patch("time.sleep"), patch("story.ch01.cprint"):
+        with patch("time.sleep"), patch("src.story.ch01.cprint"):
             event.process()
 
         assert "east" not in tile.block_exit
@@ -611,7 +611,7 @@ class TestCh01PostRumblerStage2And3:
 
     def test_stage_2_spawns_enemies_and_sets_follow_up(self):
         """Stage 2 spawns rumblers and queues Ch01PostRumblerRep/Ch01PostRumbler2."""
-        from story.ch01 import Ch01PostRumbler
+        from src.story.ch01 import Ch01PostRumbler
 
         p = _player()
         tile = _mock_tile()
@@ -623,8 +623,8 @@ class TestCh01PostRumblerStage2And3:
         event._stage = 2  # Force to stage 2
 
         with (
-            patch("story.ch01.cprint"),
-            patch("functions.add_enemies_to_combat"),
+            patch("src.story.ch01.cprint"),
+            patch("src.functions.add_enemies_to_combat"),
         ):
             event.process()
 
@@ -634,7 +634,7 @@ class TestCh01PostRumblerStage2And3:
 
     def test_stage_3_completes_event(self):
         """Stage 3 marks event as completed and removes it from combat_events."""
-        from story.ch01 import Ch01PostRumbler
+        from src.story.ch01 import Ch01PostRumbler
 
         p = _player()
         tile = _mock_tile()
@@ -655,7 +655,7 @@ class TestCh01PostRumbler2WithRepEvent:
 
     def test_process_removes_rep_event(self):
         """Ch01PostRumbler2.process removes Ch01_PostRumbler_Rep from combat_events."""
-        from story.ch01 import Ch01PostRumbler2
+        from src.story.ch01 import Ch01PostRumbler2
 
         p = _player()
         tile = _mock_tile()
@@ -670,8 +670,8 @@ class TestCh01PostRumbler2WithRepEvent:
         event = Ch01PostRumbler2(player=p, tile=tile)
 
         with (
-            patch("story.ch01.cprint"),
-            patch("story.ch01.colored", side_effect=lambda *a, **k: a[0]),
+            patch("src.story.ch01.cprint"),
+            patch("src.story.ch01.colored", side_effect=lambda *a, **k: a[0]),
         ):
             event.process()
 
@@ -679,7 +679,7 @@ class TestCh01PostRumbler2WithRepEvent:
 
     def test_process_with_combat_list_enemy(self):
         """Ch01PostRumbler2.process instagib first enemy in combat_list."""
-        from story.ch01 import Ch01PostRumbler2
+        from src.story.ch01 import Ch01PostRumbler2
 
         p = _player()
         tile = _mock_tile()
@@ -695,8 +695,8 @@ class TestCh01PostRumbler2WithRepEvent:
         event = Ch01PostRumbler2(player=p, tile=tile)
 
         with (
-            patch("story.ch01.cprint"),
-            patch("story.ch01.colored", side_effect=lambda *a, **k: a[0]),
+            patch("src.story.ch01.cprint"),
+            patch("src.story.ch01.colored", side_effect=lambda *a, **k: a[0]),
             patch.object(p, "refresh_enemy_list_and_prox"),
         ):
             event.process()
@@ -709,7 +709,7 @@ class TestCh01ChestRumblerBattleStage2:
 
     def test_second_stage_spawns_rumbler(self):
         """After user acknowledgment, a RockRumbler is spawned."""
-        from story.ch01 import Ch01ChestRumblerBattle
+        from src.story.ch01 import Ch01ChestRumblerBattle
 
         p = _player()
         tile = _mock_tile()
@@ -719,7 +719,7 @@ class TestCh01ChestRumblerBattleStage2:
         event = Ch01ChestRumblerBattle(player=p, tile=tile)
         event.needs_input = True  # Simulate after first stage
 
-        with patch("story.ch01.cprint"), patch("time.sleep"):
+        with patch("src.story.ch01.cprint"), patch("time.sleep"):
             event.process(user_input="continue")
 
         tile.spawn_npc.assert_called_once_with("RockRumbler")
@@ -732,7 +732,7 @@ class TestCh01PostRumbler3Stages:
 
     def test_stage_1_shows_prompt(self):
         """Stage 1 sets needs_input and advances stage."""
-        from story.ch01 import Ch01PostRumbler3
+        from src.story.ch01 import Ch01PostRumbler3
 
         p = _player()
         tile = _mock_tile()
@@ -741,8 +741,8 @@ class TestCh01PostRumbler3Stages:
         event = Ch01PostRumbler3(player=p, tile=tile)
 
         with (
-            patch("story.ch01.cprint"),
-            patch("story.ch01.colored", side_effect=lambda *a, **k: a[0]),
+            patch("src.story.ch01.cprint"),
+            patch("src.story.ch01.colored", side_effect=lambda *a, **k: a[0]),
         ):
             event.process()
 
@@ -751,7 +751,7 @@ class TestCh01PostRumbler3Stages:
 
     def test_check_combat_conditions_fires_when_empty(self):
         """check_combat_conditions passes when combat_list is empty."""
-        from story.ch01 import Ch01PostRumbler3
+        from src.story.ch01 import Ch01PostRumbler3
 
         p = _player()
         tile = _mock_tile()
@@ -767,7 +767,7 @@ class TestCh01PostRumbler3Stages:
 
     def test_check_combat_conditions_no_fire_when_combat_active(self):
         """check_combat_conditions does not pass when combat_list is not empty."""
-        from story.ch01 import Ch01PostRumbler3
+        from src.story.ch01 import Ch01PostRumbler3
 
         p = _player()
         tile = _mock_tile()
@@ -788,7 +788,7 @@ class TestCh01PostRumblerRepStage2:
 
     def test_stage_2_resets_announcement_stage(self):
         """Stage 2 acknowledges, resets for re-triggering."""
-        from story.ch01 import Ch01PostRumblerRep
+        from src.story.ch01 import Ch01PostRumblerRep
 
         p = _player()
         tile = _mock_tile()
@@ -804,7 +804,7 @@ class TestCh01PostRumblerRepStage2:
 
     def test_stage_1_spawns_enemies(self):
         """Stage 1 spawns enemies and sets up announcement dialog."""
-        from story.ch01 import Ch01PostRumblerRep
+        from src.story.ch01 import Ch01PostRumblerRep
 
         p = _player()
         tile = _mock_tile()
@@ -815,7 +815,7 @@ class TestCh01PostRumblerRepStage2:
         event._announcement_stage = 1
         event.iteration = 2
 
-        with (patch("functions.add_enemies_to_combat"),):
+        with (patch("src.functions.add_enemies_to_combat"),):
             event.process()
 
         assert event.needs_input is True

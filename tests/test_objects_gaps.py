@@ -44,7 +44,7 @@ def _make_player():
 
 def test_tile_description_with_params_tilde():
     """TileDescription constructed from params list with tilde end mark."""
-    from objects import TileDescription
+    from src.objects import TileDescription
 
     player = MagicMock()
     tile = _make_tile()
@@ -56,7 +56,7 @@ def test_tile_description_with_params_tilde():
 
 def test_tile_description_with_params_no_tilde():
     """TileDescription constructed from params without tilde."""
-    from objects import TileDescription
+    from src.objects import TileDescription
 
     player = MagicMock()
     tile = _make_tile()
@@ -67,7 +67,7 @@ def test_tile_description_with_params_no_tilde():
 
 def test_tile_description_missing_both_raises():
     """TileDescription raises ValueError when neither description nor params provided."""
-    from objects import TileDescription
+    from src.objects import TileDescription
     import pytest
 
     player = MagicMock()
@@ -78,7 +78,7 @@ def test_tile_description_missing_both_raises():
 
 def test_tile_description_with_description_string():
     """TileDescription constructed directly from a description string."""
-    from objects import TileDescription
+    from src.objects import TileDescription
 
     player = MagicMock()
     tile = _make_tile()
@@ -93,7 +93,7 @@ def test_tile_description_with_description_string():
 
 def test_container_start_open_true():
     """Container with start_open=True sets state to opened and locked=False."""
-    from objects import Container
+    from src.objects import Container
 
     player = MagicMock()
     tile = _make_tile()
@@ -104,7 +104,7 @@ def test_container_start_open_true():
 
 def test_container_start_open_false():
     """Container with start_open=False sets state to closed."""
-    from objects import Container
+    from src.objects import Container
 
     player = MagicMock()
     tile = _make_tile()
@@ -114,7 +114,7 @@ def test_container_start_open_false():
 
 def test_container_start_open_property_set_after_init():
     """Setting start_open property after init updates state correctly."""
-    from objects import Container
+    from src.objects import Container
 
     player = MagicMock()
     tile = _make_tile()
@@ -131,7 +131,7 @@ def test_container_start_open_property_set_after_init():
 
 def test_container_merchant_object_normalized():
     """Container normalizes a merchant object to its name string."""
-    from objects import Container
+    from src.objects import Container
 
     player = MagicMock()
     tile = _make_tile()
@@ -143,7 +143,7 @@ def test_container_merchant_object_normalized():
 
 def test_container_merchant_string_unchanged():
     """Container keeps a string merchant as-is."""
-    from objects import Container
+    from src.objects import Container
 
     player = MagicMock()
     tile = _make_tile()
@@ -153,7 +153,7 @@ def test_container_merchant_string_unchanged():
 
 def test_container_merchant_exception_fallback():
     """Container falls back to merchant value on exception."""
-    from objects import Container
+    from src.objects import Container
 
     player = MagicMock()
     tile = _make_tile()
@@ -175,7 +175,7 @@ def test_container_merchant_exception_fallback():
 
 def test_container_events_extended():
     """Container extends and processes events when events are provided."""
-    from objects import Container
+    from src.objects import Container
 
     player = MagicMock()
     tile = _make_tile()
@@ -194,7 +194,7 @@ def test_container_events_extended():
 
 def test_container_take_all_empty():
     """Container.take_all on empty container prints already-empty message."""
-    from objects import Container
+    from src.objects import Container
 
     player = _make_player()
     tile = _make_tile()
@@ -210,7 +210,7 @@ def test_container_take_all_empty():
 
 def test_container_take_all_closed_opens_first():
     """Container.take_all on a closed container opens it before looting."""
-    from objects import Container
+    from src.objects import Container
 
     player = _make_player()
     tile = _make_tile()
@@ -239,7 +239,7 @@ def test_container_take_all_closed_opens_first():
 
 def test_container_loot_closed_opens_first():
     """Container.loot opens the container if it's closed."""
-    from objects import Container
+    from src.objects import Container
 
     player = _make_player()
     tile = _make_tile()
@@ -260,7 +260,7 @@ def test_container_loot_closed_opens_first():
 
 def test_container_loot_locked_does_not_open():
     """Container.loot on a locked container opens (no-op when locked) without error."""
-    from objects import Container
+    from src.objects import Container
 
     player = _make_player()
     tile = _make_tile()
@@ -278,7 +278,7 @@ def test_container_loot_locked_does_not_open():
 
 def test_crate_removes_open_keyword():
     """Crate removes 'open' from keywords since it starts open."""
-    from objects import Crate
+    from src.objects import Crate
 
     player = MagicMock()
     tile = _make_tile()
@@ -288,7 +288,7 @@ def test_crate_removes_open_keyword():
 
 def test_crate_removes_unlock_keyword():
     """Crate removes 'unlock' from keywords."""
-    from objects import Crate
+    from src.objects import Crate
 
     player = MagicMock()
     tile = _make_tile()
@@ -303,7 +303,7 @@ def test_crate_removes_unlock_keyword():
 
 def test_shelf_removes_open_keyword():
     """Shelf removes 'open' from keywords since it starts open."""
-    from objects import Shelf
+    from src.objects import Shelf
 
     player = MagicMock()
     tile = _make_tile()
@@ -313,7 +313,7 @@ def test_shelf_removes_open_keyword():
 
 def test_shelf_removes_unlock_keyword():
     """Shelf removes 'unlock' from keywords."""
-    from objects import Shelf
+    from src.objects import Shelf
 
     player = MagicMock()
     tile = _make_tile()
@@ -328,7 +328,7 @@ def test_shelf_removes_unlock_keyword():
 
 def test_shrine_no_params():
     """Shrine constructed without params has no event."""
-    from objects import Shrine
+    from src.objects import Shrine
 
     player = MagicMock()
     tile = _make_tile()
@@ -339,13 +339,13 @@ def test_shrine_no_params():
 
 def test_shrine_params_with_event():
     """Shrine constructed with params sets up an event."""
-    from objects import Shrine
+    from src.objects import Shrine
 
     player = MagicMock()
     tile = _make_tile()
     mock_event = MagicMock()
 
-    with patch("objects.functions") as mock_funcs:
+    with patch("src.objects.functions") as mock_funcs:
         mock_funcs.seek_class = MagicMock(return_value=MagicMock())
         mock_funcs.instantiate_event = MagicMock(return_value=mock_event)
         shrine = Shrine(player=player, tile=tile, params=["!TestEvent:r"])
@@ -355,13 +355,13 @@ def test_shrine_params_with_event():
 
 def test_shrine_params_repeat_flag():
     """Shrine params with 'r' setting sets repeat=True."""
-    from objects import Shrine
+    from src.objects import Shrine
 
     player = MagicMock()
     tile = _make_tile()
     mock_event = MagicMock()
 
-    with patch("objects.functions") as mock_funcs:
+    with patch("src.objects.functions") as mock_funcs:
         mock_funcs.seek_class = MagicMock(return_value=MagicMock())
         mock_funcs.instantiate_event = MagicMock(return_value=mock_event)
         Shrine(player=player, tile=tile, params=["!TestEvent:r"])
@@ -380,7 +380,7 @@ def test_shrine_params_repeat_flag():
 
 def test_healing_spring_no_params():
     """HealingSpring without params has drink/clean/wash keywords."""
-    from objects import HealingSpring
+    from src.objects import HealingSpring
 
     player = MagicMock()
     tile = _make_tile()
@@ -393,13 +393,13 @@ def test_healing_spring_no_params():
 
 def test_healing_spring_with_params():
     """HealingSpring with event params sets self.event."""
-    from objects import HealingSpring
+    from src.objects import HealingSpring
 
     player = MagicMock()
     tile = _make_tile()
     mock_event = MagicMock()
 
-    with patch("objects.functions") as mock_funcs:
+    with patch("src.objects.functions") as mock_funcs:
         mock_funcs.seek_class = MagicMock(return_value=MagicMock())
         mock_funcs.instantiate_event = MagicMock(return_value=mock_event)
         spring = HealingSpring(player=player, tile=tile, params=["!HealEvent"])
@@ -414,16 +414,16 @@ def test_healing_spring_with_params():
 
 def test_bell_ring_no_event():
     """Bell.ring() with no event just prints and awaits input."""
-    from objects import MarketBell as Bell
+    from src.objects import MarketBell as Bell
 
     player = MagicMock()
     tile = _make_tile()
     bell = Bell(player=player, tile=tile)
 
-    with patch("objects.cprint"):
+    with patch("src.objects.cprint"):
         with patch("builtins.print"):
             with patch("time.sleep"):
-                with patch("objects.functions") as mock_funcs:
+                with patch("src.objects.functions") as mock_funcs:
                     mock_funcs.await_input = MagicMock()
                     bell.ring()
 
@@ -432,7 +432,7 @@ def test_bell_ring_no_event():
 
 def test_bell_ring_with_non_repeat_event():
     """Bell.ring() processes a non-repeat event and clears it."""
-    from objects import MarketBell as Bell
+    from src.objects import MarketBell as Bell
 
     player = MagicMock()
     tile = _make_tile()
@@ -440,10 +440,10 @@ def test_bell_ring_with_non_repeat_event():
     mock_event.repeat = False
     bell = Bell(player=player, tile=tile, event=mock_event)
 
-    with patch("objects.cprint"):
+    with patch("src.objects.cprint"):
         with patch("builtins.print"):
             with patch("time.sleep"):
-                with patch("objects.functions") as mock_funcs:
+                with patch("src.objects.functions") as mock_funcs:
                     mock_funcs.await_input = MagicMock()
                     bell.ring()
 
@@ -453,7 +453,7 @@ def test_bell_ring_with_non_repeat_event():
 
 def test_bell_ring_with_repeat_event():
     """Bell.ring() processes a repeat event and keeps it."""
-    from objects import MarketBell as Bell
+    from src.objects import MarketBell as Bell
 
     player = MagicMock()
     tile = _make_tile()
@@ -461,10 +461,10 @@ def test_bell_ring_with_repeat_event():
     mock_event.repeat = True
     bell = Bell(player=player, tile=tile, event=mock_event)
 
-    with patch("objects.cprint"):
+    with patch("src.objects.cprint"):
         with patch("builtins.print"):
             with patch("time.sleep"):
-                with patch("objects.functions") as mock_funcs:
+                with patch("src.objects.functions") as mock_funcs:
                     mock_funcs.await_input = MagicMock()
                     bell.ring()
 
@@ -474,7 +474,7 @@ def test_bell_ring_with_repeat_event():
 
 def test_bell_use_aliases_ring():
     """Bell.use() calls ring()."""
-    from objects import MarketBell as Bell
+    from src.objects import MarketBell as Bell
 
     player = MagicMock()
     tile = _make_tile()
@@ -491,7 +491,7 @@ def test_bell_use_aliases_ring():
 
 def test_street_lantern_douse_already_dark():
     """StreetLantern.douse() when already dark prints message and returns."""
-    from objects import StreetLantern
+    from src.objects import StreetLantern
 
     player = MagicMock()
     tile = _make_tile()
@@ -506,7 +506,7 @@ def test_street_lantern_douse_already_dark():
 
 def test_street_lantern_douse_with_event():
     """StreetLantern.douse() processes event_off and clears non-repeat event."""
-    from objects import StreetLantern
+    from src.objects import StreetLantern
 
     player = MagicMock()
     tile = _make_tile()
@@ -517,7 +517,7 @@ def test_street_lantern_douse_with_event():
     with patch("builtins.print"):
         with patch("time.sleep"):
             # Actually these don't have time.sleep but functions.await_input
-            with patch("objects.functions") as mock_funcs:
+            with patch("src.objects.functions") as mock_funcs:
                 mock_funcs.await_input = MagicMock()
                 lantern.douse()
 
@@ -533,7 +533,7 @@ def test_street_lantern_douse_with_event():
 
 def test_geode_place_missing_ingredients():
     """GeminateGeode.place() prints missing items when player lacks ingredients."""
-    from objects import GeminateGeode
+    from src.objects import GeminateGeode
 
     player = MagicMock()
     player.inventory = []
@@ -550,7 +550,7 @@ def test_geode_place_missing_ingredients():
 
 def test_geode_place_all_ingredients_present():
     """GeminateGeode.place() solves puzzle when all three fragments are present."""
-    from objects import GeminateGeode
+    from src.objects import GeminateGeode
 
     player = MagicMock()
     tile = _make_tile()
@@ -570,7 +570,7 @@ def test_geode_place_all_ingredients_present():
 
     with patch("builtins.print"):
         with patch("time.sleep"):
-            with patch("objects.functions") as mock_funcs:
+            with patch("src.objects.functions") as mock_funcs:
                 mock_funcs.await_input = MagicMock()
                 geode.place()
 
@@ -581,7 +581,7 @@ def test_geode_place_all_ingredients_present():
 
 def test_geode_insert_alias():
     """GeminateGeode.insert() calls place()."""
-    from objects import GeminateGeode
+    from src.objects import GeminateGeode
 
     player = MagicMock()
     player.inventory = []
@@ -594,7 +594,7 @@ def test_geode_insert_alias():
 
 def test_geode_solve_alias():
     """GeminateGeode.solve() calls place()."""
-    from objects import GeminateGeode
+    from src.objects import GeminateGeode
 
     player = MagicMock()
     player.inventory = []
@@ -607,7 +607,7 @@ def test_geode_solve_alias():
 
 def test_geode_use_alias():
     """GeminateGeode.use() calls place()."""
-    from objects import GeminateGeode
+    from src.objects import GeminateGeode
 
     player = MagicMock()
     player.inventory = []
@@ -620,7 +620,7 @@ def test_geode_use_alias():
 
 def test_geode_examine():
     """GeminateGeode.examine() prints description."""
-    from objects import GeminateGeode
+    from src.objects import GeminateGeode
 
     player = MagicMock()
     player.inventory = []
@@ -640,15 +640,15 @@ def test_geode_examine():
 
 def test_fountain_drink_no_event():
     """Fountain.drink() without event calls await_input."""
-    from objects import Fountain
+    from src.objects import Fountain
 
     player = MagicMock()
     tile = _make_tile()
     fountain = Fountain(player=player, tile=tile)
 
-    with patch("objects.cprint"):
+    with patch("src.objects.cprint"):
         with patch("time.sleep"):
-            with patch("objects.functions") as mock_funcs:
+            with patch("src.objects.functions") as mock_funcs:
                 mock_funcs.await_input = MagicMock()
                 fountain.drink()
 
@@ -657,7 +657,7 @@ def test_fountain_drink_no_event():
 
 def test_fountain_drink_with_non_repeat_event():
     """Fountain.drink() processes and clears non-repeat event."""
-    from objects import Fountain
+    from src.objects import Fountain
 
     player = MagicMock()
     tile = _make_tile()
@@ -665,9 +665,9 @@ def test_fountain_drink_with_non_repeat_event():
     ev.repeat = False
     fountain = Fountain(player=player, tile=tile, event=ev)
 
-    with patch("objects.cprint"):
+    with patch("src.objects.cprint"):
         with patch("time.sleep"):
-            with patch("objects.functions") as mock_funcs:
+            with patch("src.objects.functions") as mock_funcs:
                 mock_funcs.await_input = MagicMock()
                 fountain.drink()
 
@@ -677,14 +677,14 @@ def test_fountain_drink_with_non_repeat_event():
 
 def test_fountain_listen():
     """Fountain.listen() prints and awaits input."""
-    from objects import Fountain
+    from src.objects import Fountain
 
     player = MagicMock()
     tile = _make_tile()
     fountain = Fountain(player=player, tile=tile)
 
     with patch("builtins.print"):
-        with patch("objects.functions") as mock_funcs:
+        with patch("src.objects.functions") as mock_funcs:
             mock_funcs.await_input = MagicMock()
             fountain.listen()
 
@@ -693,14 +693,14 @@ def test_fountain_listen():
 
 def test_fountain_admire():
     """Fountain.admire() prints and awaits input."""
-    from objects import Fountain
+    from src.objects import Fountain
 
     player = MagicMock()
     tile = _make_tile()
     fountain = Fountain(player=player, tile=tile)
 
     with patch("builtins.print"):
-        with patch("objects.functions") as mock_funcs:
+        with patch("src.objects.functions") as mock_funcs:
             mock_funcs.await_input = MagicMock()
             fountain.admire()
 
@@ -709,7 +709,7 @@ def test_fountain_admire():
 
 def test_fountain_use_alias():
     """Fountain.use() aliases drink()."""
-    from objects import Fountain
+    from src.objects import Fountain
 
     player = MagicMock()
     tile = _make_tile()
@@ -726,7 +726,7 @@ def test_fountain_use_alias():
 
 def test_noticeboard_read_first_time():
     """NoticeBoard.read() triggers event on first read."""
-    from objects import NoticeBoard
+    from src.objects import NoticeBoard
 
     player = MagicMock()
     tile = _make_tile()
@@ -736,7 +736,7 @@ def test_noticeboard_read_first_time():
 
     with patch("builtins.print"):
         with patch("time.sleep"):
-            with patch("objects.functions") as mock_funcs:
+            with patch("src.objects.functions") as mock_funcs:
                 mock_funcs.await_input = MagicMock()
                 nb.read()
 
@@ -746,7 +746,7 @@ def test_noticeboard_read_first_time():
 
 def test_noticeboard_read_second_time_no_repeat():
     """NoticeBoard.read() does NOT trigger event a second time."""
-    from objects import NoticeBoard
+    from src.objects import NoticeBoard
 
     player = MagicMock()
     tile = _make_tile()
@@ -757,7 +757,7 @@ def test_noticeboard_read_second_time_no_repeat():
 
     with patch("builtins.print"):
         with patch("time.sleep"):
-            with patch("objects.functions") as mock_funcs:
+            with patch("src.objects.functions") as mock_funcs:
                 mock_funcs.await_input = MagicMock()
                 nb.read()
 
@@ -766,7 +766,7 @@ def test_noticeboard_read_second_time_no_repeat():
 
 def test_noticeboard_use_aliases_read():
     """NoticeBoard.use() calls read()."""
-    from objects import NoticeBoard
+    from src.objects import NoticeBoard
 
     player = MagicMock()
     tile = _make_tile()
@@ -783,14 +783,14 @@ def test_noticeboard_use_aliases_read():
 
 def test_candle_rack_light():
     """PrayerCandleRack.light() increments lit_candles."""
-    from objects import PrayerCandleRack
+    from src.objects import PrayerCandleRack
 
     player = MagicMock()
     tile = _make_tile()
     rack = PrayerCandleRack(player=player, tile=tile, lit_candles=0)
 
     with patch("builtins.print"):
-        with patch("objects.functions") as mock_funcs:
+        with patch("src.objects.functions") as mock_funcs:
             mock_funcs.await_input = MagicMock()
             rack.light()
 
@@ -799,14 +799,14 @@ def test_candle_rack_light():
 
 def test_candle_rack_light_all_lit():
     """PrayerCandleRack.light() does nothing when all 20 candles are lit."""
-    from objects import PrayerCandleRack
+    from src.objects import PrayerCandleRack
 
     player = MagicMock()
     tile = _make_tile()
     rack = PrayerCandleRack(player=player, tile=tile, lit_candles=20)
 
     with patch("builtins.print"):
-        with patch("objects.functions") as mock_funcs:
+        with patch("src.objects.functions") as mock_funcs:
             mock_funcs.await_input = MagicMock()
             rack.light()
 
@@ -815,7 +815,7 @@ def test_candle_rack_light_all_lit():
 
 def test_candle_rack_pray_with_event():
     """PrayerCandleRack.pray() processes and clears non-repeat event."""
-    from objects import PrayerCandleRack
+    from src.objects import PrayerCandleRack
 
     player = MagicMock()
     tile = _make_tile()
@@ -825,7 +825,7 @@ def test_candle_rack_pray_with_event():
 
     with patch("builtins.print"):
         with patch("time.sleep"):
-            with patch("objects.functions") as mock_funcs:
+            with patch("src.objects.functions") as mock_funcs:
                 mock_funcs.await_input = MagicMock()
                 rack.pray()
 
@@ -835,7 +835,7 @@ def test_candle_rack_pray_with_event():
 
 def test_candle_rack_use_alias():
     """PrayerCandleRack.use() calls pray()."""
-    from objects import PrayerCandleRack
+    from src.objects import PrayerCandleRack
 
     player = MagicMock()
     tile = _make_tile()
@@ -852,16 +852,16 @@ def test_candle_rack_use_alias():
 
 def test_market_gong_strike_no_event():
     """MarketGong.strike() without event just awaits input."""
-    from objects import MarketGong
+    from src.objects import MarketGong
 
     player = MagicMock()
     tile = _make_tile()
     gong = MarketGong(player=player, tile=tile)
 
-    with patch("objects.cprint"):
+    with patch("src.objects.cprint"):
         with patch("builtins.print"):
             with patch("time.sleep"):
-                with patch("objects.functions") as mock_funcs:
+                with patch("src.objects.functions") as mock_funcs:
                     mock_funcs.await_input = MagicMock()
                     gong.strike()
 
@@ -870,7 +870,7 @@ def test_market_gong_strike_no_event():
 
 def test_market_gong_strike_with_event():
     """MarketGong.strike() processes non-repeat event and clears it."""
-    from objects import MarketGong
+    from src.objects import MarketGong
 
     player = MagicMock()
     tile = _make_tile()
@@ -878,10 +878,10 @@ def test_market_gong_strike_with_event():
     ev.repeat = False
     gong = MarketGong(player=player, tile=tile, event=ev)
 
-    with patch("objects.cprint"):
+    with patch("src.objects.cprint"):
         with patch("builtins.print"):
             with patch("time.sleep"):
-                with patch("objects.functions") as mock_funcs:
+                with patch("src.objects.functions") as mock_funcs:
                     mock_funcs.await_input = MagicMock()
                     gong.strike()
 
@@ -891,7 +891,7 @@ def test_market_gong_strike_with_event():
 
 def test_market_gong_hit_bang_aliases():
     """MarketGong.hit() and bang() delegate to strike()."""
-    from objects import MarketGong
+    from src.objects import MarketGong
 
     player = MagicMock()
     tile = _make_tile()
@@ -904,7 +904,7 @@ def test_market_gong_hit_bang_aliases():
 
 def test_market_gong_use_alias():
     """MarketGong.use() delegates to strike()."""
-    from objects import MarketGong
+    from src.objects import MarketGong
 
     player = MagicMock()
     tile = _make_tile()
@@ -921,7 +921,7 @@ def test_market_gong_use_alias():
 
 def test_container_start_open_getter():
     """Reading container.start_open returns the _start_open flag."""
-    from objects import Container
+    from src.objects import Container
 
     player = MagicMock()
     tile = _make_tile()
@@ -932,7 +932,7 @@ def test_container_start_open_getter():
 
 def test_container_start_open_getter_false():
     """Reading container.start_open returns False when not opened."""
-    from objects import Container
+    from src.objects import Container
 
     player = MagicMock()
     tile = _make_tile()
@@ -947,7 +947,7 @@ def test_container_start_open_getter_false():
 
 def test_healing_spring_with_repeat_params():
     """HealingSpring with !Event:r sets repeat=True when instantiating event."""
-    from objects import HealingSpring
+    from src.objects import HealingSpring
 
     player = MagicMock()
     tile = _make_tile()
@@ -958,7 +958,7 @@ def test_healing_spring_with_repeat_params():
         captured_kwargs.update(kwargs)
         return mock_event
 
-    with patch("objects.functions") as mock_funcs:
+    with patch("src.objects.functions") as mock_funcs:
         mock_funcs.seek_class = MagicMock(return_value=MagicMock())
         mock_funcs.instantiate_event = capture_instantiate
         spring = HealingSpring(player=player, tile=tile, params=["!HealEvent:r"])
@@ -974,7 +974,7 @@ def test_healing_spring_with_repeat_params():
 
 def test_market_bell_ring_event_repeat_raises_exception():
     """MarketBell.ring() handles exception in repeat check by setting event=None."""
-    from objects import MarketBell
+    from src.objects import MarketBell
 
     player = MagicMock()
     tile = _make_tile()
@@ -990,10 +990,10 @@ def test_market_bell_ring_event_repeat_raises_exception():
     mock_event = BrokenEvent()
     bell = MarketBell(player=player, tile=tile, event=mock_event)
 
-    with patch("objects.cprint"):
+    with patch("src.objects.cprint"):
         with patch("builtins.print"):
             with patch("time.sleep"):
-                with patch("objects.functions") as mock_funcs:
+                with patch("src.objects.functions") as mock_funcs:
                     mock_funcs.await_input = MagicMock()
                     bell.ring()
 
@@ -1008,7 +1008,7 @@ def test_market_bell_ring_event_repeat_raises_exception():
 
 def test_container_start_open_setter_exception_suppressed():
     """start_open setter suppresses exceptions when setting self.locked."""
-    from objects import Container
+    from src.objects import Container
 
     player = MagicMock()
     tile = _make_tile()

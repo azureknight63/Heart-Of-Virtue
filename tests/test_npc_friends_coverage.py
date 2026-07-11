@@ -45,7 +45,7 @@ def _make_player():
 
 class TestGronditeWorkerTalk:
     def test_talk_prints_a_line(self, capsys):
-        from npc._friends import GronditeWorker
+        from src.npc._friends import GronditeWorker
 
         w = GronditeWorker()
         player = _make_player()
@@ -54,7 +54,7 @@ class TestGronditeWorkerTalk:
         assert len(out) > 0
 
     def test_talk_produces_known_line(self):
-        from npc._friends import GronditeWorker
+        from src.npc._friends import GronditeWorker
 
         w = GronditeWorker()
         player = _make_player()
@@ -66,7 +66,7 @@ class TestGronditeWorkerTalk:
             assert len(text) > 0
 
     def test_grondite_worker_instantiation(self):
-        from npc._friends import GronditeWorker
+        from src.npc._friends import GronditeWorker
 
         w = GronditeWorker()
         assert w.name == "Grondite Worker"
@@ -77,7 +77,7 @@ class TestGronditeWorkerTalk:
 
 class TestGronditeElderTalk:
     def test_talk_prints_a_line(self, capsys):
-        from npc._friends import GronditeElder
+        from src.npc._friends import GronditeElder
 
         e = GronditeElder()
         player = _make_player()
@@ -86,7 +86,7 @@ class TestGronditeElderTalk:
         assert len(out) > 0
 
     def test_talk_produces_known_line(self):
-        from npc._friends import GronditeElder
+        from src.npc._friends import GronditeElder
 
         e = GronditeElder()
         player = _make_player()
@@ -97,7 +97,7 @@ class TestGronditeElderTalk:
             assert isinstance(text, str)
 
     def test_grondite_elder_instantiation(self):
-        from npc._friends import GronditeElder
+        from src.npc._friends import GronditeElder
 
         e = GronditeElder()
         assert e.name == "Grondite Elder"
@@ -112,7 +112,7 @@ class TestGronditeElderTalk:
 
 class TestGronditeConclaveElderTalk:
     def test_first_time_talk_prints_intro(self, capsys):
-        from npc._friends import GronditeConclaveElder
+        from src.npc._friends import GronditeConclaveElder
 
         elder = GronditeConclaveElder()
         player = _make_player()
@@ -125,7 +125,7 @@ class TestGronditeConclaveElderTalk:
         assert len(out) > 0
 
     def test_first_time_talk_sets_story_flags(self):
-        from npc._friends import GronditeConclaveElder
+        from src.npc._friends import GronditeConclaveElder
 
         elder = GronditeConclaveElder()
         player = _make_player()
@@ -138,7 +138,7 @@ class TestGronditeConclaveElderTalk:
         assert player.universe.story.get("conclave_elder_disc_acknowledged") == "1"
 
     def test_repeat_talk_prints_reminder_line(self, capsys):
-        from npc._friends import GronditeConclaveElder
+        from src.npc._friends import GronditeConclaveElder
 
         elder = GronditeConclaveElder()
         player = _make_player()
@@ -151,7 +151,7 @@ class TestGronditeConclaveElderTalk:
         assert len(out) > 0
 
     def test_talk_with_no_universe_does_not_crash(self):
-        from npc._friends import GronditeConclaveElder
+        from src.npc._friends import GronditeConclaveElder
 
         elder = GronditeConclaveElder()
         player = Mock()
@@ -161,7 +161,7 @@ class TestGronditeConclaveElderTalk:
             elder.talk(player)
 
     def test_conclave_elder_instantiation(self):
-        from npc._friends import GronditeConclaveElder
+        from src.npc._friends import GronditeConclaveElder
 
         elder = GronditeConclaveElder()
         assert elder.name == "Conclave Elder"
@@ -177,7 +177,7 @@ class TestGronditeConclaveElderTalk:
 class TestMaraGetOptimalRange:
     def _make_mara_with_enemy(self, proximity_dist):
         """Create Mara with a player_ref.combat_list enemy at given proximity."""
-        from npc._friends import Mara
+        from src.npc._friends import Mara
 
         m = Mara()
         m.hp = m.maxhp
@@ -193,7 +193,7 @@ class TestMaraGetOptimalRange:
         return m, enemy
 
     def test_returns_none_with_no_proximity(self):
-        from npc._friends import Mara
+        from src.npc._friends import Mara
 
         mara = Mara()
         if hasattr(mara, "combat_proximity"):
@@ -202,7 +202,7 @@ class TestMaraGetOptimalRange:
         assert result is None
 
     def test_returns_none_with_empty_proximity(self):
-        from npc._friends import Mara
+        from src.npc._friends import Mara
 
         mara = Mara()
         mara.combat_proximity = {}
@@ -210,7 +210,7 @@ class TestMaraGetOptimalRange:
         assert result is None
 
     def test_returns_none_when_no_player_ref(self):
-        from npc._friends import Mara
+        from src.npc._friends import Mara
 
         mara = Mara()
         enemy = Mock()
@@ -252,7 +252,7 @@ class TestMaraGetOptimalRange:
 
     def test_enemy_not_in_proximity_returns_none(self):
         """Enemy in player combat_list but not in proximity dict — returns None."""
-        from npc._friends import Mara
+        from src.npc._friends import Mara
 
         mara = Mara()
         mara.hp = mara.maxhp
@@ -275,7 +275,7 @@ class TestMaraGetOptimalRange:
 
 class TestMaraSelectMove:
     def _make_mara(self):
-        from npc._friends import Mara
+        from src.npc._friends import Mara
 
         m = Mara()
         m.current_move = None
@@ -356,7 +356,7 @@ class TestMaraSelectMove:
             assert mara.current_move is not None
 
     def test_mara_instantiation(self):
-        from npc._friends import Mara
+        from src.npc._friends import Mara
 
         m = Mara()
         assert m.name == "Mara"
@@ -372,7 +372,7 @@ class TestMaraSelectMove:
 
 class TestDevetAndLiss:
     def test_devet_instantiation(self):
-        from npc._friends import Devet
+        from src.npc._friends import Devet
 
         d = Devet()
         assert d.name == "Devet"
@@ -380,7 +380,7 @@ class TestDevetAndLiss:
         assert "talk" in d.keywords
 
     def test_devet_talk_prints_line(self, capsys):
-        from npc._friends import Devet
+        from src.npc._friends import Devet
 
         d = Devet()
         player = _make_player()
@@ -389,7 +389,7 @@ class TestDevetAndLiss:
         assert len(out) > 0
 
     def test_devet_talk_produces_known_line(self):
-        from npc._friends import Devet
+        from src.npc._friends import Devet
 
         d = Devet()
         player = _make_player()
@@ -398,7 +398,7 @@ class TestDevetAndLiss:
             mock_print.assert_called_once()
 
     def test_liss_instantiation(self):
-        from npc._friends import Liss
+        from src.npc._friends import Liss
 
         liss = Liss()
         assert liss.name == "Liss"
@@ -406,7 +406,7 @@ class TestDevetAndLiss:
         assert "talk" in liss.keywords
 
     def test_liss_pronouns_are_feminine(self):
-        from npc._friends import Liss
+        from src.npc._friends import Liss
 
         liss = Liss()
         assert liss.pronouns["personal"] == "she"
@@ -420,21 +420,21 @@ class TestDevetAndLiss:
 
 class TestDevetAndLissAdditional:
     def test_devet_known_moves_exception_falls_back_to_empty_list(self):
-        from npc._friends import Devet
+        from src.npc._friends import Devet
 
-        with patch("moves.NpcIdle", side_effect=RuntimeError("boom")):
+        with patch("src.moves.NpcIdle", side_effect=RuntimeError("boom")):
             d = Devet()
         assert d.known_moves == []
 
     def test_liss_known_moves_exception_falls_back_to_empty_list(self):
-        from npc._friends import Liss
+        from src.npc._friends import Liss
 
-        with patch("moves.NpcIdle", side_effect=RuntimeError("boom")):
+        with patch("src.moves.NpcIdle", side_effect=RuntimeError("boom")):
             liss = Liss()
         assert liss.known_moves == []
 
     def test_liss_talk_prints_a_line(self, capsys):
-        from npc._friends import Liss
+        from src.npc._friends import Liss
 
         liss = Liss()
         player = _make_player()
@@ -443,7 +443,7 @@ class TestDevetAndLissAdditional:
         assert len(out) > 0
 
     def test_liss_talk_produces_known_line(self):
-        from npc._friends import Liss
+        from src.npc._friends import Liss
 
         liss = Liss()
         player = _make_player()
@@ -462,7 +462,7 @@ class TestDevetAndLissAdditional:
 
 class TestMaraWoundedFlavorAndTalk:
     def test_wounded_flavor_returns_a_known_line(self):
-        from npc._friends import Mara
+        from src.npc._friends import Mara
 
         m = Mara()
         result = m.wounded_flavor()
@@ -470,7 +470,7 @@ class TestMaraWoundedFlavorAndTalk:
         assert "Mara" in result
 
     def test_talk_prints_a_line(self, capsys):
-        from npc._friends import Mara
+        from src.npc._friends import Mara
 
         m = Mara()
         player = _make_player()
@@ -479,7 +479,7 @@ class TestMaraWoundedFlavorAndTalk:
         assert len(out) > 0
 
     def test_talk_produces_known_line(self):
-        from npc._friends import Mara
+        from src.npc._friends import Mara
 
         m = Mara()
         player = _make_player()
@@ -509,7 +509,7 @@ class TestMaraSelectMoveWeightBranches:
     """
 
     def _make_mara(self):
-        from npc._friends import Mara
+        from src.npc._friends import Mara
 
         m = Mara()
         m.current_move = None
@@ -582,7 +582,7 @@ class TestMaraSelectMoveWeightBranches:
         mara.player_ref = Mock()
         mara.player_ref.game_config = None
         mara.select_move()
-        from npc_ai_config import NPCAIConfig
+        from src.npc_ai_config import NPCAIConfig
 
         assert isinstance(mara.ai_config, NPCAIConfig)
         assert mara.current_move is not None
@@ -616,7 +616,7 @@ class TestMaraSelectMoveWeightBranches:
 
 class TestGronditePasserby:
     def test_instantiation(self):
-        from npc._friends import GronditePasserby
+        from src.npc._friends import GronditePasserby
 
         g = GronditePasserby()
         assert g.name == "Grondite"
@@ -626,20 +626,20 @@ class TestGronditePasserby:
         assert g.pronouns["personal"] == "he"
 
     def test_known_moves_populated(self):
-        from npc._friends import GronditePasserby
+        from src.npc._friends import GronditePasserby
 
         g = GronditePasserby()
         assert len(g.known_moves) == 1
 
     def test_known_moves_exception_falls_back_to_empty_list(self):
-        from npc._friends import GronditePasserby
+        from src.npc._friends import GronditePasserby
 
-        with patch("moves.NpcIdle", side_effect=RuntimeError("boom")):
+        with patch("src.moves.NpcIdle", side_effect=RuntimeError("boom")):
             g = GronditePasserby()
         assert g.known_moves == []
 
     def test_talk_prints_a_line(self, capsys):
-        from npc._friends import GronditePasserby
+        from src.npc._friends import GronditePasserby
 
         g = GronditePasserby()
         player = _make_player()
@@ -648,7 +648,7 @@ class TestGronditePasserby:
         assert len(out) > 0
 
     def test_talk_produces_known_line(self):
-        from npc._friends import GronditePasserby
+        from src.npc._friends import GronditePasserby
 
         g = GronditePasserby()
         player = _make_player()
@@ -667,23 +667,23 @@ class TestGronditePasserby:
 
 class TestGronditeKnownMovesExceptions:
     def test_grondite_worker_known_moves_exception(self):
-        from npc._friends import GronditeWorker
+        from src.npc._friends import GronditeWorker
 
-        with patch("moves.NpcIdle", side_effect=RuntimeError("boom")):
+        with patch("src.moves.NpcIdle", side_effect=RuntimeError("boom")):
             w = GronditeWorker()
         assert w.known_moves == []
 
     def test_grondite_elder_known_moves_exception(self):
-        from npc._friends import GronditeElder
+        from src.npc._friends import GronditeElder
 
-        with patch("moves.NpcIdle", side_effect=RuntimeError("boom")):
+        with patch("src.moves.NpcIdle", side_effect=RuntimeError("boom")):
             e = GronditeElder()
         assert e.known_moves == []
 
     def test_grondite_conclave_elder_known_moves_exception(self):
-        from npc._friends import GronditeConclaveElder
+        from src.npc._friends import GronditeConclaveElder
 
-        with patch("moves.NpcIdle", side_effect=RuntimeError("boom")):
+        with patch("src.moves.NpcIdle", side_effect=RuntimeError("boom")):
             elder = GronditeConclaveElder()
         assert elder.known_moves == []
 
@@ -696,20 +696,20 @@ class TestGronditeKnownMovesExceptions:
 
 class TestMynxFriendsModule:
     def test_default_name_generated_when_none(self):
-        from npc._friends import Mynx
+        from src.npc._friends import Mynx
 
         m = Mynx()
         assert m.name.startswith("Mynx ")
 
     def test_known_moves_exception_falls_back_to_empty_list(self):
-        from npc._friends import Mynx
+        from src.npc._friends import Mynx
 
-        with patch("moves.NpcIdle", side_effect=RuntimeError("boom")):
+        with patch("src.moves.NpcIdle", side_effect=RuntimeError("boom")):
             m = Mynx(name="MynxTest")
         assert m.known_moves == []
 
     def test_talk_exception_is_caught_and_narrates_confusion(self, capsys):
-        from npc._friends import Mynx
+        from src.npc._friends import Mynx
 
         m = Mynx(name="MynxTest")
         with patch.object(

@@ -3,9 +3,6 @@ import os
 # Ensure project root is on sys.path
 repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.insert(0, repo_root)
-# Also ensure the `src` directory is on sys.path so modules using bare imports (e.g. `from functions import ...`)
-# resolve correctly when running this script standalone.
-sys.path.insert(0, os.path.join(repo_root, 'src'))
 
 from src.player import Player
 import src.functions as functions

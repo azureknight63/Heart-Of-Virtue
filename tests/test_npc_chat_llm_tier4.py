@@ -35,7 +35,7 @@ SRC_DIR = PROJECT_ROOT / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from npc._chat_llm import HumanNPCLLMMixin
+from src.npc._chat_llm import HumanNPCLLMMixin
 
 
 class TestInitChatAttrs:

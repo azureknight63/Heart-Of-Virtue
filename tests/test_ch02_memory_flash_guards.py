@@ -32,7 +32,7 @@ class TestCh02KingSlimeMemoryFlashGuards(unittest.TestCase):
         self.player.inventory = []
 
     def _make_flash(self):
-        from story.ch02 import Ch02KingSlimeMemoryFlash
+        from src.story.ch02 import Ch02KingSlimeMemoryFlash
         flash = Ch02KingSlimeMemoryFlash(player=self.player, tile=self.tile)
         self.tile.events_here.append(flash)
         return flash

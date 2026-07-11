@@ -1,9 +1,9 @@
 import os, sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
 
-from items import AncientRelic, DragonHeartGem, unique_items_spawned
-from npc import Merchant
-from objects import Container
+from src.items import AncientRelic, DragonHeartGem, unique_items_spawned
+from src.npc import Merchant
+from src.objects import Container
 
 class DummyRoom:
     def __init__(self):
@@ -74,7 +74,7 @@ def test_unique_items_deregistered_no_room():
 
 
 # ---------------- New Tests for Expanded _reset_stock_state Coverage ----------------
-from items import CrystalTear  # placed after existing tests to avoid circular import concerns
+from src.items import CrystalTear  # placed after existing tests to avoid circular import concerns
 
 def test_unique_items_deregistered_two_containers():
     """Merchant has two containers each with a different unique item. All should deregister and containers cleared."""

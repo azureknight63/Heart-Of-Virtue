@@ -9,7 +9,7 @@ block in select_move.
 from unittest.mock import MagicMock, patch
 
 from src.npc import NPC
-import moves  # type: ignore
+import src.moves as moves  # type: ignore
 
 
 def _make_npc(**overrides):
@@ -31,7 +31,7 @@ def test_select_move_ai_config_import_error_is_swallowed():
     npc.add_move(moves.NpcAttack(npc), 1)
     npc.player_ref = MagicMock()
     npc.ai_config = None
-    with patch("npc_ai_config.NPCAIConfig", side_effect=ImportError("boom")):
+    with patch("src.npc_ai_config.NPCAIConfig", side_effect=ImportError("boom")):
         npc.select_move()
     # ai_config stays None; select_move still picks something rather than crashing.
     assert npc.ai_config is None

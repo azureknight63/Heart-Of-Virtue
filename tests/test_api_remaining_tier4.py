@@ -31,14 +31,14 @@ from pathlib import Path
 # Ensure src is in path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from api.services.game_service import GameService
-from api.services.session_manager import SessionManager
-from api.services.auth_service import AuthService
-from api.app import create_app
-from player import Player
-from universe import Universe
-from items import Gold, Weapon
-from events import CombatEvent
+from src.api.services.game_service import GameService
+from src.api.services.session_manager import SessionManager
+from src.api.services.auth_service import AuthService
+from src.api.app import create_app
+from src.player import Player
+from src.universe import Universe
+from src.items import Gold, Weapon
+from src.events import CombatEvent
 
 
 class TestVerifyCombatEvent:
@@ -47,10 +47,10 @@ class TestVerifyCombatEvent:
     def test_imports(self):
         """Verify all imports work in verify_combat_event context"""
         # This tests the module's import chain
-        from universe import Universe
-        from player import Player
-        from events import CombatEvent
-        from combat_event_config import CombatEventConfig
+        from src.universe import Universe
+        from src.player import Player
+        from src.events import CombatEvent
+        from src.combat_event_config import CombatEventConfig
 
         assert Universe is not None
         assert Player is not None
@@ -126,7 +126,7 @@ class TestVerifyCombatEvent:
 
     def test_combat_event_in_tile(self):
         """Test CombatEvent detection in tile.events_here"""
-        from events import CombatEvent
+        from src.events import CombatEvent
 
         player = Player()
         universe = Universe(player)
@@ -146,7 +146,7 @@ class TestVerifyCombatEvent:
 
     def test_combat_event_config_structure(self):
         """Test CombatEventConfig structure and attributes"""
-        from combat_event_config import CombatEventConfig
+        from src.combat_event_config import CombatEventConfig
 
         # Create config with test data
         config = CombatEventConfig()

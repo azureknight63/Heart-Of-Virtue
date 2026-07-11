@@ -7,11 +7,11 @@ from unittest.mock import MagicMock, patch
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
 
-from npc import Merchant, MiloCurioDealer, JamboHealsU
-from npc._shop import MerchantShopMixin
-from items import Item, Shortsword, Restorative, Gold, Consumable
-from objects import Container
-from shop_conditions import ValueModifierCondition, RestockWeightBoostCondition, UniqueItemInjectionCondition
+from src.npc import Merchant, MiloCurioDealer, JamboHealsU
+from src.npc._shop import MerchantShopMixin
+from src.items import Item, Shortsword, Restorative, Gold, Consumable
+from src.objects import Container
+from src.shop_conditions import ValueModifierCondition, RestockWeightBoostCondition, UniqueItemInjectionCondition
 
 # Fakes for room/universe/player
 class FakeRoom:
@@ -22,7 +22,7 @@ class FakeRoom:
         self.items_here = []
         self.universe = None
     def spawn_item(self, item_type, amt=1, hidden=False, hfactor=0, merchandise=False):
-        import items as items_module
+        import src.items as items_module
         cls = getattr(items_module, item_type, None)
         if cls is None:
             return None
@@ -137,7 +137,7 @@ def test_reset_stock_state_edge_cases():
     # 1. No current room
     m.inventory = [Shortsword(merchandise=True)]
     m.inventory[0].unique = True
-    import items as items_module
+    import src.items as items_module
     items_module.unique_items_spawned.add('Shortsword')
     
     containers = m._reset_stock_state()
@@ -222,7 +222,7 @@ def test_fill_remaining_stock_edge_cases():
     
     # 4. unique_factories raises Exception
     m.stock_count = 5
-    import items as items_module
+    import src.items as items_module
     orig_factories = getattr(items_module, 'unique_item_factories', None)
     if hasattr(items_module, 'unique_item_factories'):
         del items_module.unique_item_factories
@@ -294,7 +294,7 @@ def test_fill_remaining_stock_eligible_containers_and_failures(monkeypatch):
     room.spawn_item = orig_spawn
 
     # Trigger line 511-512 by spawning an item where getattr/setattr value raises Exception
-    import items as items_module
+    import src.items as items_module
     class BadItem(Item):
         def __init__(self, **kwargs):
             super().__init__(**kwargs)

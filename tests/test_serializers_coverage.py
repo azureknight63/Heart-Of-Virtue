@@ -1802,7 +1802,7 @@ class TestObjectSerializer:
         obj.inventory = [item]
 
         try:
-            from objects import Container as C
+            from src.objects import Container as C
         except ImportError:
             from src.objects import Container as C
 

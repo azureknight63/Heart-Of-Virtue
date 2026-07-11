@@ -19,10 +19,10 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from player import Player
-from objects import Container
-from events import LootEvent
-from items import Restorative, Antidote, Draught
+from src.player import Player
+from src.objects import Container
+from src.events import LootEvent
+from src.items import Restorative, Antidote, Draught
 from src.api.services.game_service import GameService
 
 LOOT_VERBS = ["loot", "check", "view", "examine", "inspect", "peruse"]

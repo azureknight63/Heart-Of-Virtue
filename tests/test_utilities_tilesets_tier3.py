@@ -233,7 +233,7 @@ class TestMapTileEvaluateEvents:
         tile.events_here = [regular_event, spawner_event]
 
         # Mock the isinstance check in evaluate_events
-        from story.effects import NPCSpawnerEvent
+        from src.story.effects import NPCSpawnerEvent
 
         tile.evaluate_events()
         # Both should be checked

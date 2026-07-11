@@ -19,8 +19,8 @@ if 'tkinter' not in sys.modules:
 src_path = Path(__file__).parent.parent / 'src'
 sys.path.insert(0, str(src_path))
 
-from tiles import MapTile
-from story.ch01 import (
+from src.tiles import MapTile
+from src.story.ch01 import (
     Ch01GorranCautionJunction,
     Ch01GorranMarkings,
     Ch01GorranDarkChamber,
@@ -57,7 +57,7 @@ class TestCh01GorranCautionJunction:
     def test_process_executes_without_error(self):
         player, tile = make_player_and_tile()
         ev = Ch01GorranCautionJunction(player=player, tile=tile)
-        with patch('story.ch01.cprint'), patch('story.ch01.time.sleep'):
+        with patch('src.story.ch01.cprint'), patch('src.story.ch01.time.sleep'):
             ev.process()  # should not raise
 
     def test_process_produces_output(self):
@@ -68,8 +68,8 @@ class TestCh01GorranCautionJunction:
         def count_print(*args, **kwargs):
             nonlocal call_count
             call_count += 1
-        with patch('story.ch01.cprint', side_effect=count_print), \
-             patch('story.ch01.time.sleep'):
+        with patch('src.story.ch01.cprint', side_effect=count_print), \
+             patch('src.story.ch01.time.sleep'):
             ev.process()
         assert call_count >= 2
 
@@ -92,7 +92,7 @@ class TestCh01GorranMarkings:
     def test_process_executes_without_error(self):
         player, tile = make_player_and_tile()
         ev = Ch01GorranMarkings(player=player, tile=tile)
-        with patch('story.ch01.cprint'), patch('story.ch01.time.sleep'):
+        with patch('src.story.ch01.cprint'), patch('src.story.ch01.time.sleep'):
             ev.process()
 
     def test_process_produces_output(self):
@@ -102,8 +102,8 @@ class TestCh01GorranMarkings:
         def count_print(*args, **kwargs):
             nonlocal call_count
             call_count += 1
-        with patch('story.ch01.cprint', side_effect=count_print), \
-             patch('story.ch01.time.sleep'):
+        with patch('src.story.ch01.cprint', side_effect=count_print), \
+             patch('src.story.ch01.time.sleep'):
             ev.process()
         assert call_count >= 2
 
@@ -126,7 +126,7 @@ class TestCh01GorranDarkChamber:
     def test_process_executes_without_error(self):
         player, tile = make_player_and_tile()
         ev = Ch01GorranDarkChamber(player=player, tile=tile)
-        with patch('story.ch01.cprint'), patch('story.ch01.time.sleep'):
+        with patch('src.story.ch01.cprint'), patch('src.story.ch01.time.sleep'):
             ev.process()
 
     def test_process_produces_output(self):
@@ -137,8 +137,8 @@ class TestCh01GorranDarkChamber:
         def count_print(*args, **kwargs):
             nonlocal call_count
             call_count += 1
-        with patch('story.ch01.cprint', side_effect=count_print), \
-             patch('story.ch01.time.sleep'):
+        with patch('src.story.ch01.cprint', side_effect=count_print), \
+             patch('src.story.ch01.time.sleep'):
             ev.process()
         assert call_count >= 2
 
@@ -150,6 +150,6 @@ class TestCh01GorranDarkChamber:
         def capture_sleep(t):
             nonlocal total_sleep
             total_sleep += t
-        with patch('story.ch01.cprint'), patch('story.ch01.time.sleep', side_effect=capture_sleep):
+        with patch('src.story.ch01.cprint'), patch('src.story.ch01.time.sleep', side_effect=capture_sleep):
             ev.process()
         assert total_sleep >= 3.0, f"Dark chamber should pause >= 3s total, got {total_sleep}"

@@ -20,11 +20,11 @@ from unittest.mock import Mock, MagicMock, patch, AsyncMock, call
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from api.services.game_service import GameService
-from player import Player
-from universe import Universe
-from items import Gold
-from events import CombatEvent
+from src.api.services.game_service import GameService
+from src.player import Player
+from src.universe import Universe
+from src.items import Gold
+from src.events import CombatEvent
 
 pytestmark = pytest.mark.skip(reason="Tier 4 advanced tests - coverage requirements already met")
 

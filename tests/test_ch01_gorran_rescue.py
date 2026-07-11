@@ -14,9 +14,9 @@ src_path = Path(__file__).parent.parent / 'src'
 sys.path.insert(0, str(src_path))
 
 from unittest.mock import Mock, patch
-from player import Player
-from tiles import MapTile
-from story.ch01 import Ch01PostRumbler3
+from src.player import Player
+from src.tiles import MapTile
+from src.story.ch01 import Ch01PostRumbler3
 
 
 def test_gorran_rescue_updates_battlefield_positions():
@@ -52,9 +52,9 @@ def test_gorran_rescue_updates_battlefield_positions():
     event = Ch01PostRumbler3(player=player, tile=tile)
 
     # Mock the cprint and time.sleep to avoid delays
-    with patch('story.ch01.cprint'), \
-         patch('story.ch01.time.sleep'), \
-         patch('functions.add_enemies_to_combat') as mock_add_enemies:
+    with patch('src.story.ch01.cprint'), \
+         patch('src.story.ch01.time.sleep'), \
+         patch('src.functions.add_enemies_to_combat') as mock_add_enemies:
 
         # Stage 1: show narrative, advance to stage 2
         event.process(user_input=None)
@@ -105,9 +105,9 @@ def test_gorran_rescue_sets_combat_lists():
     event = Ch01PostRumbler3(player=player, tile=tile)
 
     # Mock the cprint and time.sleep to avoid delays
-    with patch('story.ch01.cprint'), \
-         patch('story.ch01.time.sleep'), \
-         patch('functions.add_enemies_to_combat'):
+    with patch('src.story.ch01.cprint'), \
+         patch('src.story.ch01.time.sleep'), \
+         patch('src.functions.add_enemies_to_combat'):
 
         # Stage 1: show narrative, advance to stage 2
         event.process(user_input=None)

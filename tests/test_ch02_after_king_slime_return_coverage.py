@@ -94,7 +94,7 @@ class TestAfterKingSlimeReturnConditions:
         self.tile = _make_tile()
 
     def _make_event(self):
-        from story.ch02 import AfterKingSlimeReturn
+        from src.story.ch02 import AfterKingSlimeReturn
 
         return AfterKingSlimeReturn(player=self.player, tile=self.tile)
 
@@ -346,12 +346,12 @@ class TestAfterDefeatingKingSlimeProcess:
         self.tile = _make_tile()
 
     def _make_event(self):
-        from story.ch02 import AfterDefeatingKingSlime
+        from src.story.ch02 import AfterDefeatingKingSlime
 
         return AfterDefeatingKingSlime(player=self.player, tile=self.tile)
 
-    @patch("story.ch02.time.sleep")
-    @patch("story.ch02.print_slow")
+    @patch("src.story.ch02.time.sleep")
+    @patch("src.story.ch02.print_slow")
     def test_process_already_defeated_returns_early(self, mock_print, mock_sleep):
         self.player.universe.story["king_slime_defeated"] = "1"
         evt = self._make_event()
@@ -363,8 +363,8 @@ class TestAfterDefeatingKingSlimeProcess:
         """Return a minimal pools map dict that _cleanse_pool_tiles won't crash on."""
         return {"name": "grondelith-mineral-pools"}
 
-    @patch("story.ch02.time.sleep")
-    @patch("story.ch02.print_slow")
+    @patch("src.story.ch02.time.sleep")
+    @patch("src.story.ch02.print_slow")
     def test_process_sets_story_flag(self, mock_print, mock_sleep):
         self.player.map = {}
         self.player.universe.maps = [self._make_pools_map()]
@@ -372,8 +372,8 @@ class TestAfterDefeatingKingSlimeProcess:
         evt.process()
         assert self.player.universe.story.get("king_slime_defeated") == "1"
 
-    @patch("story.ch02.time.sleep")
-    @patch("story.ch02.print_slow")
+    @patch("src.story.ch02.time.sleep")
+    @patch("src.story.ch02.print_slow")
     def test_process_spawns_mineral_fragment(self, mock_print, mock_sleep):
         self.player.map = {}
         self.player.universe.maps = [self._make_pools_map()]
@@ -381,8 +381,8 @@ class TestAfterDefeatingKingSlimeProcess:
         evt.process()
         self.tile.spawn_item.assert_called_with("MineralFragment")
 
-    @patch("story.ch02.time.sleep")
-    @patch("story.ch02.print_slow")
+    @patch("src.story.ch02.time.sleep")
+    @patch("src.story.ch02.print_slow")
     def test_process_spawns_tile_description(self, mock_print, mock_sleep):
         self.player.map = {}
         self.player.universe.maps = [self._make_pools_map()]
@@ -392,8 +392,8 @@ class TestAfterDefeatingKingSlimeProcess:
         args = self.tile.spawn_object.call_args
         assert args[0][0] == "TileDescription"
 
-    @patch("story.ch02.time.sleep")
-    @patch("story.ch02.print_slow")
+    @patch("src.story.ch02.time.sleep")
+    @patch("src.story.ch02.print_slow")
     def test_process_removes_event_from_tile(self, mock_print, mock_sleep):
         self.player.map = {}
         self.player.universe.maps = [self._make_pools_map()]
@@ -401,8 +401,8 @@ class TestAfterDefeatingKingSlimeProcess:
         evt.process()
         self.tile.remove_event.assert_called_with(evt.name)
 
-    @patch("story.ch02.time.sleep")
-    @patch("story.ch02.print_slow")
+    @patch("src.story.ch02.time.sleep")
+    @patch("src.story.ch02.print_slow")
     def test_process_with_gorran_in_atrium(self, mock_print, mock_sleep):
         """Gorran found in atrium tile should be moved to arena tile."""
         Gorran = type("Gorran", (), {})
@@ -421,8 +421,8 @@ class TestAfterDefeatingKingSlimeProcess:
         assert gorran.tile == self.tile
         assert gorran in self.tile.npcs_here
 
-    @patch("story.ch02.time.sleep")
-    @patch("story.ch02.print_slow")
+    @patch("src.story.ch02.time.sleep")
+    @patch("src.story.ch02.print_slow")
     def test_process_with_gorran_in_allies_list(self, mock_print, mock_sleep):
         """Gorran found in allies list but not in atrium — should be relocated."""
         Gorran = type("Gorran", (), {})
@@ -440,8 +440,8 @@ class TestAfterDefeatingKingSlimeProcess:
         assert gorran.tile == self.tile
         assert gorran in self.tile.npcs_here
 
-    @patch("story.ch02.time.sleep")
-    @patch("story.ch02.print_slow")
+    @patch("src.story.ch02.time.sleep")
+    @patch("src.story.ch02.print_slow")
     def test_process_no_gorran_anywhere(self, mock_print, mock_sleep):
         """No Gorran anywhere — process should complete without error."""
         self.player.map = {}
@@ -451,15 +451,15 @@ class TestAfterDefeatingKingSlimeProcess:
         evt.process()
         assert self.player.universe.story.get("king_slime_defeated") == "1"
 
-    @patch("story.ch02.time.sleep")
-    @patch("story.ch02.print_slow")
+    @patch("src.story.ch02.time.sleep")
+    @patch("src.story.ch02.print_slow")
     def test_process_queues_memory_flash_event(self, mock_print, mock_sleep):
         """A Ch02KingSlimeMemoryFlash should be queued on the tile."""
         self.player.map = {}
         self.player.universe.maps = [self._make_pools_map()]
         evt = self._make_event()
         evt.process()
-        from story.ch02 import Ch02KingSlimeMemoryFlash
+        from src.story.ch02 import Ch02KingSlimeMemoryFlash
 
         assert any(
             isinstance(e, Ch02KingSlimeMemoryFlash) for e in self.tile.events_here
@@ -477,13 +477,13 @@ class TestCleansPoolTiles:
         self.tile = _make_tile()
 
     def _make_event(self):
-        from story.ch02 import AfterDefeatingKingSlime
+        from src.story.ch02 import AfterDefeatingKingSlime
 
         return AfterDefeatingKingSlime(player=self.player, tile=self.tile)
 
     def test_cleanse_pool_tiles_updates_matching_coords(self):
         """Tiles at known coords should have spawn_object called."""
-        from story.ch02 import AfterDefeatingKingSlime
+        from src.story.ch02 import AfterDefeatingKingSlime
 
         tiles = {}
         for coord in [
@@ -516,7 +516,7 @@ class TestCleansPoolTiles:
 
     def test_cleanse_pool_tiles_skips_missing_coords(self):
         """Coords not in map are silently skipped."""
-        from story.ch02 import AfterDefeatingKingSlime
+        from src.story.ch02 import AfterDefeatingKingSlime
 
         # Only one tile in map
         t = Mock()
@@ -531,7 +531,7 @@ class TestCleansPoolTiles:
 
     def test_cleanse_pool_tiles_fallback_map_when_no_named_map(self):
         """Falls back to passed-in current_map when no named map found."""
-        from story.ch02 import AfterDefeatingKingSlime
+        from src.story.ch02 import AfterDefeatingKingSlime
 
         t = Mock()
         t.spawn_object = Mock()
@@ -544,7 +544,7 @@ class TestCleansPoolTiles:
 
     def test_cleanse_pool_tiles_empty_map_no_crash(self):
         """Empty map should complete without error."""
-        from story.ch02 import AfterDefeatingKingSlime
+        from src.story.ch02 import AfterDefeatingKingSlime
 
         self.player.universe.maps = [{"name": "grondelith-mineral-pools"}]
         evt = self._make_event()
@@ -563,7 +563,7 @@ class TestCh02GorranAtPools:
         self.tile = _make_tile()
 
     def _make_event(self):
-        from story.ch02 import Ch02GorranAtPools
+        from src.story.ch02 import Ch02GorranAtPools
 
         return Ch02GorranAtPools(player=self.player, tile=self.tile)
 

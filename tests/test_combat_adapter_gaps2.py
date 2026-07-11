@@ -877,7 +877,7 @@ class TestNpcTryHealAlly:
         assert result is False
 
     def test_all_friendlies_healthy_returns_false(self):
-        import items as items_module
+        import src.items as items_module
 
         player = _make_player()
         player.hp = 100

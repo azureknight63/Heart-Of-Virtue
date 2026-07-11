@@ -7,8 +7,8 @@ directly.
 
 from unittest.mock import MagicMock, patch
 
-from npc._adjutant import TheAdjutant
-from npc._enemies import Slime
+from src.npc._adjutant import TheAdjutant
+from src.npc._enemies import Slime
 
 
 class MockPlayer:
@@ -49,7 +49,7 @@ def test_adjutant_basic_properties():
 def test_keyword_verbs_narrate_without_menu():
     adj = TheAdjutant()
     player = MockPlayer()
-    with patch("npc._adjutant.narrate") as mock_narrate:
+    with patch("src.npc._adjutant.narrate") as mock_narrate:
         adj.talk(player)
         adj.set(player)
         adj.adjust(player)
@@ -150,7 +150,7 @@ def test_restore_full():
 def test_learn_all_skills_delegates():
     adj = TheAdjutant()
     player = MockPlayer()
-    with patch("functions.learn_all_skills_from_skilltree") as mock_learn:
+    with patch("src.functions.learn_all_skills_from_skilltree") as mock_learn:
         result = adj.learn_all_skills(player)
         assert mock_learn.called
         assert result["success"] is True
@@ -249,7 +249,7 @@ def test_set_combatant_stats():
 # --- clear_room). --------------------------------------------------------
 
 def test_known_moves_exception_falls_back_to_empty_list():
-    with patch("npc._adjutant.moves.NpcIdle", side_effect=RuntimeError("boom")):
+    with patch("src.npc._adjutant.moves.NpcIdle", side_effect=RuntimeError("boom")):
         adj = TheAdjutant()
     assert adj.known_moves == []
 

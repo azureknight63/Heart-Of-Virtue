@@ -10,9 +10,9 @@ import importlib
 
 import pytest
 
-from npc._merchants import Merchant, MiloCurioDealer, JamboHealsU
-from player import Player
-from items import Restorative
+from src.npc._merchants import Merchant, MiloCurioDealer, JamboHealsU
+from src.player import Player
+from src.items import Restorative
 from src.api.serializers.shop_serializer import ShopSerializer
 
 

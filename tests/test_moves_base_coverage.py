@@ -582,7 +582,7 @@ class TestMoveMisc:
         assert move.beat_update(user) is None
 
     def test_can_use_coordinates_false_when_target_lacks_position(self):
-        import positions
+        import src.positions as positions
 
         user = _make_combatant()
         target = _make_combatant(name="Other")
@@ -593,7 +593,7 @@ class TestMoveMisc:
         assert move.can_use_coordinates(user) is False
 
     def test_can_use_coordinates_true_when_target_has_position(self):
-        import positions
+        import src.positions as positions
 
         user = _make_combatant()
         target = _make_combatant(name="Other")
@@ -605,7 +605,7 @@ class TestMoveMisc:
 
     def test_can_use_coordinates_true_when_self_targeted(self):
         """Self-targeted moves (target is user) skip the target-position check."""
-        import positions
+        import src.positions as positions
 
         user = _make_combatant()
         user.combat_position = positions.CombatPosition(x=0, y=0, facing=positions.Direction.N)

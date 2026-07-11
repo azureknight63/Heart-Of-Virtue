@@ -37,7 +37,7 @@ from src.npc._llm import MynxLLMMixin
 from src.npc import NPC, Friend
 from src.player import Player
 from src.items import Item, Gold, Restorative, Draught, Antidote, Rock, Spear, Shortsword
-import moves  # type: ignore
+import src.moves as moves  # type: ignore
 
 
 @pytest.fixture(autouse=True)
@@ -245,7 +245,7 @@ class TestGorran:
         player = MagicMock()
         player.universe = universe
 
-        with patch('functions.seek_class') as mock_seek:
+        with patch('src.functions.seek_class') as mock_seek:
             mock_event = MagicMock()
             mock_seek.return_value = MagicMock(return_value=mock_event)
             gorran.talk(player)
@@ -716,7 +716,7 @@ class TestNPCLootMixin:
         npc.current_room.items_here = []
         npc.inventory = []
 
-        with patch('functions.stack_items_list') as mock_stack:
+        with patch('src.functions.stack_items_list') as mock_stack:
             npc.before_death()
             mock_stack.assert_called_once_with(npc.current_room.items_here)
 
@@ -820,7 +820,7 @@ class TestNPCLootMixin:
         drop_item.name = "Gold"
         npc.current_room.spawn_item = MagicMock(return_value=drop_item)
 
-        with patch('functions.randomize_amount', return_value=50):
+        with patch('src.functions.randomize_amount', return_value=50):
             with patch('builtins.print'):
                 npc.roll_loot()
 
@@ -839,13 +839,13 @@ class TestNPCLootMixin:
         npc.current_room = MagicMock()
         npc.player_ref = None
 
-        with patch('loot_tables.Loot.random_equipment') as mock_gen:
+        with patch('src.loot_tables.Loot.random_equipment') as mock_gen:
             drop_item = MagicMock()
             drop_item.name = "Enchanted Sword"
             mock_gen.return_value = drop_item
             npc.current_room.spawn_item = MagicMock()
 
-            with patch('functions.randomize_amount', return_value=1):
+            with patch('src.functions.randomize_amount', return_value=1):
                 with patch('builtins.print'):
                     npc.roll_loot()
 
@@ -892,7 +892,7 @@ class TestNPCLootMixin:
         drop_item.name = "Gold"
         npc.current_room.spawn_item = MagicMock(return_value=drop_item)
 
-        with patch('functions.randomize_amount', return_value=50):
+        with patch('src.functions.randomize_amount', return_value=50):
             with patch('builtins.print'):
                 npc.roll_loot()
 
@@ -1599,8 +1599,8 @@ class TestIntegration:
         npc.current_room.items_here = []
         npc.inventory = []
 
-        with patch('functions.stack_items_list'):
-            with patch('functions.randomize_amount', return_value=50):
+        with patch('src.functions.stack_items_list'):
+            with patch('src.functions.randomize_amount', return_value=50):
                 with patch('builtins.print'):
                     npc.die()
 
@@ -1687,7 +1687,7 @@ class TestGorranEdgeCases:
         player = MagicMock()
         player.universe = universe
 
-        with patch('functions.seek_class') as mock_seek:
+        with patch('src.functions.seek_class') as mock_seek:
             mock_event = MagicMock()
             mock_seek.return_value = MagicMock(return_value=mock_event)
             with patch('builtins.print'):
@@ -1860,7 +1860,7 @@ class TestLootEdgeCases:
         }
         npc.current_room = MagicMock()
 
-        with patch('functions.randomize_amount', return_value=50):
+        with patch('src.functions.randomize_amount', return_value=50):
             with patch('builtins.print'):
                 npc.roll_loot()
 

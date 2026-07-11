@@ -415,7 +415,7 @@ class TestLoadTilesTxtFormat:
             recorded["repeat"] = repeat
             recorded["params"] = params
 
-        import tiles as tiles_mod
+        import src.tiles as tiles_mod
         monkeypatch.setattr(tiles_mod.MapTile, "spawn_event", fake_spawn_event, raising=False)
         self._write_map(tmp_path, "StartingRoom|!SomeEvent.customparam\t\n")
         monkeypatch.setattr(universe_mod, "RESOURCES_DIR", tmp_path)
@@ -434,7 +434,7 @@ class TestLoadTilesTxtFormat:
         """Lines 462-468: object spawn with >2 p_list entries parses hidden
         marker and non-hidden settings into `params`."""
         import src.universe as universe_mod
-        import tiles as tiles_mod
+        import src.tiles as tiles_mod
 
         recorded = {}
 

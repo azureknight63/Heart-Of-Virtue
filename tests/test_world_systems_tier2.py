@@ -22,10 +22,9 @@ import types
 from pathlib import Path
 from unittest.mock import MagicMock, Mock, patch, PropertyMock, call
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
 
-from universe import Universe, tile_exists
-from api.services.game_service import GameService
+from src.universe import Universe, tile_exists
+from src.api.services.game_service import GameService
 
 
 # ============================================================================

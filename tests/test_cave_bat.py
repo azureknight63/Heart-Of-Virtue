@@ -24,7 +24,7 @@ class FakeRoom:
 
     def spawn_item(self, item_type, amt=1, hidden=False, hfactor=0, merchandise=False):
         # Create an instance of the requested item class from the items module
-        import items as items_module
+        import src.items as items_module
         cls = getattr(items_module, item_type, None)
         if cls is None:
             return None

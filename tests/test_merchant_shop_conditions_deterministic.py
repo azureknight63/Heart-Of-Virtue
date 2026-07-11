@@ -5,9 +5,9 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 's
 import random
 import pytest
 
-from npc import Merchant
-from items import Restorative
-from shop_conditions import ShopCondition, ValueModifierCondition, RestockWeightBoostCondition, UniqueItemInjectionCondition
+from src.npc import Merchant
+from src.items import Restorative
+from src.shop_conditions import ShopCondition, ValueModifierCondition, RestockWeightBoostCondition, UniqueItemInjectionCondition
 
 
 class DummyRoom:

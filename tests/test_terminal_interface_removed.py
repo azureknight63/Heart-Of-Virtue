@@ -13,7 +13,7 @@ helpers that callers and tests still import from it.
 
 import importlib
 
-from player import Player
+from src.player import Player
 
 
 class TestTerminalMenusRemoved:
@@ -40,6 +40,6 @@ class TestTerminalMenusRemoved:
 
     def test_item_take_still_exists(self):
         """The real ground-pickup verb (used by the API) must remain."""
-        from items import Item
+        from src.items import Item
 
         assert hasattr(Item, "take")

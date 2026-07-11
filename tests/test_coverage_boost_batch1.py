@@ -36,7 +36,7 @@ from src.positions import (
     _find_spaced_position,
     _find_clustered_position,
 )
-from player import Player
+from src.player import Player
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -377,7 +377,7 @@ class TestTilesAvailableActionsDebug:
 
     def test_debug_actions_included_when_testing_mode(self):
         tile = self._make_tile()
-        import actions as act
+        import src.actions as act
 
         acts = tile.available_actions()
         action_types = [type(a).__name__ for a in acts]
@@ -549,7 +549,7 @@ class TestPlayerMovementMixin:
         p = _player()
         tile = _mock_tile()
         tile.adjacent_moves.return_value = []
-        with patch("player._movement.cprint") as mock_cp:
+        with patch("src.player._movement.cprint") as mock_cp:
             p.flee(tile)
         mock_cp.assert_called_once()
         assert "nowhere" in mock_cp.call_args[0][0].lower()
@@ -586,7 +586,7 @@ class TestPlayerMovementMixin:
         p.universe.maps = [test_map]
         with (
             patch.object(p, "drop_merchandise_items"),
-            patch("player._movement.tile_exists", return_value=None),
+            patch("src.player._movement.tile_exists", return_value=None),
             patch("builtins.print") as mock_print,
         ):
             p.teleport("test_world", (99, 99))
@@ -674,7 +674,7 @@ class TestPlayerExplorationMixin:
         npc.description = "A fierce goblin."
         p.current_room = _mock_tile()
         p.current_room.npcs_here = [npc]
-        with patch("builtins.print"), patch("functions.await_input"):
+        with patch("builtins.print"), patch("src.functions.await_input"):
             p.view(phrase="goblin")
 
     def test_search_finds_hidden_npc(self):
@@ -769,8 +769,8 @@ class TestPlayerExplorationMixin:
         p = _player()
         p.map = {"name": "test"}
         with (
-            patch("player._exploration.cprint") as mock_cp,
-            patch("functions.await_input"),
+            patch("src.player._exploration.cprint") as mock_cp,
+            patch("src.functions.await_input"),
         ):
             p.view_map()
         mock_cp.assert_called_once()
@@ -792,7 +792,7 @@ class TestPlayerExplorationMixin:
         p.current_room = tile_obj
         p.map = {"name": "test", (1, 1): tile_obj}
 
-        with patch("builtins.print"), patch("functions.await_input"):
+        with patch("builtins.print"), patch("src.functions.await_input"):
             p.view_map()
 
     def test_view_map_with_move_east(self):
@@ -816,7 +816,7 @@ class TestPlayerExplorationMixin:
         p.current_room = tile2
         p.map = {"name": "test", (1, 1): tile1, (2, 1): tile2}
 
-        with patch("builtins.print"), patch("functions.await_input"):
+        with patch("builtins.print"), patch("src.functions.await_input"):
             p.view_map()
 
     def test_view_map_with_move_south(self):
@@ -840,7 +840,7 @@ class TestPlayerExplorationMixin:
         p.current_room = tile2
         p.map = {"name": "test", (1, 1): tile1, (1, 2): tile2}
 
-        with patch("builtins.print"), patch("functions.await_input"):
+        with patch("builtins.print"), patch("src.functions.await_input"):
             p.view_map()
 
     def test_view_map_diagonal_movement(self):
@@ -864,7 +864,7 @@ class TestPlayerExplorationMixin:
         p.current_room = tile2
         p.map = {"name": "test", (1, 1): tile1, (2, 2): tile2}
 
-        with patch("builtins.print"), patch("functions.await_input"):
+        with patch("builtins.print"), patch("src.functions.await_input"):
             p.view_map()
 
     def test_view_map_discovered_not_visited(self):
@@ -892,7 +892,7 @@ class TestPlayerExplorationMixin:
             (2, 1): unvisited_tile,
         }
 
-        with patch("builtins.print"), patch("functions.await_input"):
+        with patch("builtins.print"), patch("src.functions.await_input"):
             p.view_map()
 
 
@@ -1092,7 +1092,7 @@ class TestPlayerLevelingMixin:
         # Ensure skill not already known
         p.known_moves = []
 
-        with patch("player._leveling.cprint"):
+        with patch("src.player._leveling.cprint"):
             result = p.learn_skill(new_skill)
 
         assert new_skill in p.known_moves
@@ -1108,7 +1108,7 @@ class TestPlayerLevelingMixin:
         new_skill = MagicMock()
         new_skill.name = "Basic Strike"
 
-        with patch("player._leveling.cprint"):
+        with patch("src.player._leveling.cprint"):
             result = p.learn_skill(new_skill)
 
         # Not added again
@@ -1155,7 +1155,7 @@ class TestPlayerWorldMixinExtended:
         """Line 19: universe has no maps attribute."""
         p = _player()
         p.universe = MagicMock(spec=[])  # no 'maps' attribute
-        with patch("player._world.cprint") as mock_cp:
+        with patch("src.player._world.cprint") as mock_cp:
             p.refresh_merchants()
         mock_cp.assert_called_once()
 
@@ -1165,7 +1165,7 @@ class TestPlayerWorldMixinExtended:
         m = self._make_merchant("Harold")
         p.universe = self._make_universe_with_merchant(m)
 
-        with patch("player._world.cprint"), patch("time.sleep"):
+        with patch("src.player._world.cprint"), patch("time.sleep"):
             p.refresh_merchants()
 
         assert m._update_called is True
@@ -1176,7 +1176,7 @@ class TestPlayerWorldMixinExtended:
         m = self._make_merchant("Harold")
         p.universe = self._make_universe_with_merchant(m)
 
-        with patch("player._world.cprint"), patch("time.sleep"):
+        with patch("src.player._world.cprint"), patch("time.sleep"):
             p.refresh_merchants(phrase="harold")
 
         assert m._update_called is True
@@ -1187,7 +1187,7 @@ class TestPlayerWorldMixinExtended:
         m = self._make_merchant("Harold")
         p.universe = self._make_universe_with_merchant(m)
 
-        with patch("player._world.cprint") as mock_cp, patch("time.sleep"):
+        with patch("src.player._world.cprint") as mock_cp, patch("time.sleep"):
             p.refresh_merchants(phrase="zzz")
 
         mock_cp.assert_called()
@@ -1200,7 +1200,7 @@ class TestPlayerWorldMixinExtended:
         universe.maps = [{"name": "empty_world"}]
         p.universe = universe
 
-        with patch("player._world.cprint") as mock_cp, patch("time.sleep"):
+        with patch("src.player._world.cprint") as mock_cp, patch("time.sleep"):
             p.refresh_merchants()
 
         mock_cp.assert_called()
@@ -1212,7 +1212,7 @@ class TestPlayerWorldMixinExtended:
         universe.maps = ["not_a_dict", None, 42]
         p.universe = universe
 
-        with patch("player._world.cprint") as mock_cp, patch("time.sleep"):
+        with patch("src.player._world.cprint") as mock_cp, patch("time.sleep"):
             p.refresh_merchants()
 
         mock_cp.assert_called()
@@ -1232,7 +1232,7 @@ class TestPlayerWorldMixinExtended:
         p = _player()
         p.universe = self._make_universe_with_merchant(m)
 
-        with patch("player._world.cprint"), patch("time.sleep"):
+        with patch("src.player._world.cprint"), patch("time.sleep"):
             p.refresh_merchants()  # should not raise
 
     def test_refresh_merchants_update_goods_raises(self):
@@ -1253,7 +1253,7 @@ class TestPlayerWorldMixinExtended:
         p = _player()
         p.universe = self._make_universe_with_merchant(m)
 
-        with patch("player._world.cprint"), patch("time.sleep"):
+        with patch("src.player._world.cprint"), patch("time.sleep"):
             p.refresh_merchants()  # should not raise
 
     def test_refresh_merchants_initialize_shop_called_when_shop_none(self):
@@ -1280,7 +1280,7 @@ class TestPlayerWorldMixinExtended:
         p = _player()
         p.universe = self._make_universe_with_merchant(m)
 
-        with patch("player._world.cprint"), patch("time.sleep"):
+        with patch("src.player._world.cprint"), patch("time.sleep"):
             p.refresh_merchants()
 
         assert m.initialized is True
