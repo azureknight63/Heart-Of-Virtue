@@ -1,6 +1,6 @@
 import React from 'react'
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import NpcChatPanel from './NpcChatPanel'
 
 // Mock the npcChat API
@@ -806,6 +806,129 @@ describe('NpcChatPanel', () => {
     it('colors a wary attitude with the danger color', async () => {
       const badge = await renderWithAttitude('wary')
       expect(badge.style.color).toBe('rgb(255, 68, 68)')
+    })
+  })
+
+  describe('Unmount safety', () => {
+    // These exercise the isMountedRef / endTimeoutRef guards: async callbacks
+    // that resolve (or a scheduled close that fires) after the panel has been
+    // unmounted must not call state setters or onClose.
+    it('does not update state or throw when open() resolves after unmount', async () => {
+      let resolveOpen
+      npcChat.open.mockReturnValue(
+        new Promise((resolve) => {
+          resolveOpen = resolve
+        })
+      )
+
+      const { unmount } = render(
+        <NpcChatPanel npcId={mockNpcId} npcName={mockNpcName} onClose={mockOnClose} />
+      )
+
+      unmount()
+      // Resolve after unmount — the isMountedRef guard should short-circuit
+      // before any setState (no "state update on unmounted component" warning).
+      await act(async () => {
+        resolveOpen(mockOpenResponse)
+      })
+
+      expect(mockOnClose).not.toHaveBeenCalled()
+    })
+
+    it('does not update state when open() rejects after unmount', async () => {
+      let rejectOpen
+      npcChat.open.mockReturnValue(
+        new Promise((_resolve, reject) => {
+          rejectOpen = reject
+        })
+      )
+
+      const { unmount } = render(
+        <NpcChatPanel npcId={mockNpcId} npcName={mockNpcName} onClose={mockOnClose} />
+      )
+
+      unmount()
+      await act(async () => {
+        rejectOpen(new Error('late failure'))
+      })
+
+      expect(mockOnClose).not.toHaveBeenCalled()
+    })
+
+    it('does not update state when respond() resolves after unmount', async () => {
+      let resolveRespond
+      npcChat.respond.mockReturnValue(
+        new Promise((resolve) => {
+          resolveRespond = resolve
+        })
+      )
+
+      const { unmount } = render(
+        <NpcChatPanel npcId={mockNpcId} npcName={mockNpcName} onClose={mockOnClose} />
+      )
+
+      // Wait for the opening to finish so an option is clickable
+      const option = await screen.findByText('Hi there')
+      fireEvent.click(option)
+
+      unmount()
+      // The BaseDialog test mock forwards a bubbled click to onClose, so ignore
+      // any pre-unmount calls — we only care that the post-await guard prevents
+      // further work once unmounted.
+      mockOnClose.mockClear()
+      await act(async () => {
+        resolveRespond({
+          data: {
+            npc_response: 'late reply',
+            jean_options: [],
+            loquacity_current: 1,
+            loquacity_max: 5,
+            conversation_ended: true,
+          },
+        })
+      })
+
+      // Guard at the post-await check returns before scheduling the
+      // end-of-conversation onClose timer.
+      expect(mockOnClose).not.toHaveBeenCalled()
+    })
+
+    it('fires the delayed onClose when the conversation ends while mounted', async () => {
+      vi.useFakeTimers()
+      try {
+        npcChat.respond.mockResolvedValue({
+          data: {
+            npc_response: 'farewell',
+            jean_options: [],
+            loquacity_current: 0,
+            loquacity_max: 5,
+            conversation_ended: true,
+          },
+        })
+
+        render(
+          <NpcChatPanel npcId={mockNpcId} npcName={mockNpcName} onClose={mockOnClose} />
+        )
+
+        // Flush the open() microtask so an option renders (no real time passes).
+        await act(async () => {})
+        const option = screen.getByText('Hi there')
+        // Ignore the BaseDialog mock's bubbled-click onClose; assert on the timer.
+        fireEvent.click(option)
+        await act(async () => {})
+        mockOnClose.mockClear()
+
+        // Conversation ended → a 2s close timer is scheduled; advancing past it
+        // while still mounted invokes onClose (the isMountedRef.current === true
+        // branch of the timer callback).
+        await act(async () => {
+          vi.advanceTimersByTime(2000)
+        })
+
+        expect(mockOnClose).toHaveBeenCalledTimes(1)
+      } finally {
+        vi.useRealTimers()
+      }
     })
   })
 })
