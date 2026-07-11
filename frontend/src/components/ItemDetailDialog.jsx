@@ -1108,11 +1108,20 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
                           const currentPct = Math.min(100, (current / (max || 1)) * 100)
                           const minHeal = effect.range?.[0] ?? effect.power
                           const maxHeal = effect.range?.[1] ?? effect.power
-                          const goldPct = Math.min(missing, effect.power) / (max || 1) * 100
+                          // Projected-gain segment: rendered in the same "positive change" green
+                          // used by DiffChip/status-apply/upgrade elsewhere in this dialog, rather
+                          // than a gold/orange tone that reads too close to the mid-HP bar color
+                          // (#ffaa00) and made it hard to tell current HP from the projected gain.
+                          const gainPct = Math.min(missing, effect.power) / (max || 1) * 100
                           const projectedMin = Math.min(max, current + minHeal)
                           const projectedMax = Math.min(max, current + maxHeal)
                           const willFull = current + minHeal >= max
                           const barColor = isHp ? (currentPct > 50 ? '#44ff88' : currentPct > 25 ? '#ffaa00' : '#ff4444') : '#00ccff'
+                          const gainColor = '#00ff88'
+                          // Neutral white rather than cyan: cyan is already the FAT bar/label
+                          // color (see the "FAT" span below), so a cyan projected-total would
+                          // collide with it for fatigue items even though it reads fine for HP.
+                          const projectedColor = '#ffffff'
                           const healDisplay = minHeal === maxHeal ? `+${minHeal}` : `+${minHeal}–${maxHeal}`
                           const afterDisplay = willFull ? 'full' : `~${projectedMin}${projectedMin !== projectedMax ? `–${projectedMax}` : ''}`
                           return (
@@ -1123,16 +1132,16 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
                                 </span>
                                 <div style={{ flex: 1, height: '4px', backgroundColor: isHp ? 'rgba(255,0,0,0.15)' : 'rgba(0,204,255,0.1)', borderRadius: '2px', overflow: 'hidden', display: 'flex' }}>
                                   <div style={{ width: `${currentPct}%`, height: '100%', backgroundColor: barColor, flexShrink: 0 }} />
-                                  {goldPct > 0 && (
-                                    <div style={{ width: `${goldPct}%`, height: '100%', backgroundColor: '#FFDD00', opacity: 0.9, flexShrink: 0 }} />
+                                  {gainPct > 0 && (
+                                    <div style={{ width: `${gainPct}%`, height: '100%', backgroundColor: gainColor, opacity: 0.9, flexShrink: 0, boxShadow: `0 0 4px ${gainColor}` }} />
                                   )}
                                 </div>
                                 <span style={{ fontSize: '10px', color: '#aaa', fontFamily: 'monospace' }}>{current}/{max}</span>
                               </div>
                               {missing > 0 && (
                                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '6px', marginTop: '2px' }}>
-                                  <span style={{ fontSize: '10px', color: '#FFDD00', fontFamily: 'monospace', fontWeight: 'bold' }}>{healDisplay} {isHp ? 'HP' : 'FAT'}</span>
-                                  <span style={{ fontSize: '10px', color: '#888', fontFamily: 'monospace' }}>→ {afterDisplay}</span>
+                                  <span style={{ fontSize: '10px', color: gainColor, fontFamily: 'monospace', fontWeight: 'bold' }}>{healDisplay} {isHp ? 'HP' : 'FAT'}</span>
+                                  <span style={{ fontSize: '10px', color: projectedColor, fontFamily: 'monospace', fontWeight: 'bold' }}>→ {afterDisplay}</span>
                                 </div>
                               )}
                             </div>
