@@ -272,6 +272,23 @@ class TestBuiltinEndpoints:
         )
         assert resp.status_code == 200
 
+    def test_cors_preflight_echoes_allowlisted_origin(self):
+        resp = self.client.options(
+            "/api/info",
+            headers={"Origin": "http://localhost:3000"},
+        )
+        assert resp.headers.get("Access-Control-Allow-Origin") == "http://localhost:3000"
+
+    def test_cors_preflight_rejects_non_allowlisted_origin(self):
+        """A non-allowlisted Origin must not be echoed back — regression test
+        for issue #262 (preflight handler bypassing CORS_ORIGINS allowlist)."""
+        resp = self.client.options(
+            "/api/info",
+            headers={"Origin": "https://evil.example.com"},
+        )
+        assert resp.status_code == 200
+        assert "Access-Control-Allow-Origin" not in resp.headers
+
 
 # ---------------------------------------------------------------------------
 # TESTING-mode-only endpoints

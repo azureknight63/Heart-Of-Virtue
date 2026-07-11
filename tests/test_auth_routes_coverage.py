@@ -484,6 +484,36 @@ class TestSettings:
             rv = c.put("/auth/settings", json={}, headers=AUTH)
         assert rv.status_code == 400
 
+    def test_put_settings_invalid_timezone_rejected(self, app):
+        """Regression test for issue #262: an unvalidated timezone string
+        must be rejected with 400 rather than persisted."""
+        with app.test_client() as c:
+            rv = c.put(
+                "/auth/settings",
+                json={"timezone": "Not/A_Real_Zone"},
+                headers=AUTH,
+            )
+        assert rv.status_code == 400
+        data = rv.get_json()
+        assert data["success"] is False
+
+    def test_put_settings_valid_timezone_accepted(self, app):
+        with patch(
+            "src.api.routes.auth.auth_service.update_user_timezone",
+            new_callable=AsyncMock,
+            return_value=True,
+        ):
+            with app.test_client() as c:
+                rv = c.put(
+                    "/auth/settings",
+                    json={"timezone": "America/New_York"},
+                    headers=AUTH,
+                )
+        assert rv.status_code == 200
+        data = rv.get_json()
+        assert data["success"] is True
+        assert data["data"]["timezone"] == "America/New_York"
+
     def test_put_settings_update_fails(self, app):
         with patch(
             "src.api.routes.auth.auth_service.update_user_timezone",
