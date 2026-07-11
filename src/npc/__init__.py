@@ -17,7 +17,7 @@ Package layout:
     _eastern_descent.py NomadCamper, NomadScout, NomadTrader — east-bank camp NPCs
 
 All public names are re-exported here so that existing imports of the form
-    from npc import NPC, Slime, Merchant, ...
+    from src.npc import NPC, Slime, Merchant, ...
 continue to work without any changes in calling code.
 """
 

@@ -9,13 +9,13 @@ import copy as _copy
 import logging
 from typing import TYPE_CHECKING, Optional, Union
 
-from functions import stack_inv_items
+from src.functions import stack_inv_items
 
 if TYPE_CHECKING:  # pragma: no cover - typing only, avoids circular imports
-    from player import Player
-    from npc import NPC
-    from objects import Object
-    from items import Item
+    from src.player import Player
+    from src.npc import NPC
+    from src.objects import Object
+    from src.items import Item
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +55,7 @@ def transfer_gold(from_inventory: list, to_inventory: list, amt: int) -> None:
         return None
 
     def _create_new_gold_item(inventory: list) -> object:
-        from items import Gold
+        from src.items import Gold
 
         new_gold = Gold(0)
         inventory.append(new_gold)

@@ -180,7 +180,7 @@ class TestTalusHoundSelectMoveAiConfig:
         hound.player_ref = Mock()
         hound.ai_config = None
 
-        with patch.dict("sys.modules", {"npc_ai_config": None}):
+        with patch.dict("sys.modules", {"src.npc_ai_config": None}):
             # Should not raise
             hound.select_move()
         assert hound.current_move is not None

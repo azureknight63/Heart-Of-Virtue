@@ -4,8 +4,8 @@ All the loot tables for NPCs can be found here. These are called from the npc mo
 
 import inspect
 import random
-import items
-import functions
+import src.items as items
+import src.functions as functions
 from src.narration import narrate
 
 

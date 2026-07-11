@@ -19,8 +19,8 @@ Attributes expected on the host class (provided by NPC.__init__):
 
 import random
 
-import functions  # type: ignore
-import loot_tables  # type: ignore
+import src.functions as functions  # type: ignore
+import src.loot_tables as loot_tables  # type: ignore
 from src.narration import colored, cprint, narrate  # type: ignore
 # Single Loot instance shared across the package via import
 loot = loot_tables.Loot()

@@ -8,9 +8,9 @@ import random
 
 from src.narration import colored, narrate
 
-import actions  # type: ignore
-import functions  # type: ignore
-from universe import tile_exists as tile_exists  # type: ignore
+import src.actions as actions  # type: ignore
+import src.functions as functions  # type: ignore
+from src.universe import tile_exists as tile_exists  # type: ignore
 
 
 class MapTile:
@@ -135,7 +135,7 @@ class MapTile:
         multiple spawners (e.g., mixed friendly and adversarial NPCs) to fire
         simultaneously before combat begins.
         """
-        from story.effects import NPCSpawnerEvent
+        from src.story.effects import NPCSpawnerEvent
 
         # First pass: process all NPCSpawnerEvents
         spawner_events = [
@@ -155,7 +155,7 @@ class MapTile:
 
     def spawn_npc(self, npc_type, hidden=False, hfactor=0, delay=-1):
         try:
-            module = __import__("npc")
+            module = importlib.import_module("src.npc")
         except ModuleNotFoundError:
             module = None
         npc_cls = None
@@ -210,7 +210,7 @@ class MapTile:
         discard enchantments. ``count``/``merchandise`` are still set
         explicitly below regardless of the template's own values.
         """
-        items_mod = importlib.import_module("items")
+        items_mod = importlib.import_module("src.items")
         amt = max(1, int(amt))
         spawned = []
 
@@ -343,7 +343,7 @@ class MapTile:
 
         # Import the object class
         try:
-            obj_cls = getattr(__import__("objects"), obj_type)
+            obj_cls = getattr(importlib.import_module("src.objects"), obj_type)
         except AttributeError:
             narrate(
                 f"### ERR: Unknown object type '{obj_type}' - skipping spawn.",

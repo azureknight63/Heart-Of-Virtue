@@ -108,12 +108,9 @@ class ObjectSerializer:
             return {}
 
         # Check if it's a container and use container serialization if so
-        try:
-            from objects import Container
-        except ImportError:
-            from src.objects import Container
+        from src.objects import Container
 
-        if isinstance(obj, Container) or type(obj).__name__ == "Container":
+        if isinstance(obj, Container):
             return ObjectSerializer.serialize_container(obj)
 
         return ObjectSerializer._serialize_base(obj)

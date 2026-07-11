@@ -9,9 +9,9 @@ citizen classes communicate only through gesture and sound (no human speech).
 import random
 from pathlib import Path
 
-import functions  # type: ignore
-import genericng  # type: ignore
-import moves  # type: ignore
+import src.functions as functions  # type: ignore
+import src.genericng as genericng  # type: ignore
+import src.moves as moves  # type: ignore
 from src.narration import colored, narrate  # type: ignore
 from ._base import Friend
 from ._chat_llm import HumanNPCLLMMixin
@@ -768,7 +768,7 @@ class Mara(HumanNPCLLMMixin, Friend):
             and self.player_ref
         ):
             try:
-                from npc_ai_config import NPCAIConfig
+                from src.npc_ai_config import NPCAIConfig
 
                 self.ai_config = NPCAIConfig(self.player_ref)
             except ImportError:

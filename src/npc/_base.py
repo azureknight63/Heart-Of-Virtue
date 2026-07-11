@@ -12,9 +12,9 @@ The concrete NPC subclasses live in:
     _adjutant.py   — TheAdjutant (combat-testing arena)
 """
 
-import moves  # type: ignore
-from combatant import Combatant  # type: ignore
-from items import Item  # type: ignore
+import src.moves as moves  # type: ignore
+from src.combatant import Combatant  # type: ignore
+from src.items import Item  # type: ignore
 
 from ._combat import NPCCombatMixin
 from ._loot import NPCLootMixin, loot

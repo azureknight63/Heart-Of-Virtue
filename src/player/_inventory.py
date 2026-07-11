@@ -3,10 +3,10 @@
 import random
 import time
 
-import items  # type: ignore
-import functions  # type: ignore
-from functions import stack_inv_items
-from universe import tile_exists as tile_exists
+import src.items as items  # type: ignore
+import src.functions as functions  # type: ignore
+from src.functions import stack_inv_items
+from src.universe import tile_exists as tile_exists
 from src.narration import cprint, narrate
 
 

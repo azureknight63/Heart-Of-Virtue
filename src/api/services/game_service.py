@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 from src.api.constants import ITEM_USE_RANGE
 from src.functions import check_for_combat
-from inventory_utils import get_gold
+from src.inventory_utils import get_gold
 from src.narration import capture_narration, narrate
 
 if TYPE_CHECKING:
@@ -94,14 +94,6 @@ class GameService:
         self, event, include_animations: bool = True
     ) -> List[str]:
         modules = [
-            "functions",
-            "player",
-            "interface",
-            "items",
-            "objects",
-            "events",
-            "effects",
-            "story.effects",
             "src.functions",
             "src.player",
             "src.interface",
@@ -111,7 +103,7 @@ class GameService:
             "src.story.effects",
         ]
         if include_animations:
-            modules.extend(["animations", "src.animations"])
+            modules.append("src.animations")
         if hasattr(event, "__module__"):
             modules.append(event.__module__)
         return modules
@@ -1390,11 +1382,8 @@ class GameService:
             from src.objects import Container
 
             for obj in tile.objects_here:
-                is_container = type(obj).__name__ == "Container" or isinstance(
-                    obj, Container
-                )
                 if (
-                    is_container
+                    isinstance(obj, Container)
                     and getattr(obj, "state", "") == "opened"
                     and hasattr(obj, "inventory")
                 ):
@@ -1453,46 +1442,18 @@ class GameService:
             # call input() (the terminal item/object menus were removed).
             with (
                 capture_narration() as _msgs,
-                patch("functions.await_input", return_value=None),
                 patch("time.sleep", return_value=None),
                 patch("src.functions.await_input", return_value=None),
             ):
 
-                try:
-                    from objects import Container
-                except ImportError:
-                    from src.objects import Container
-                try:
-                    from items import Item
-                except ImportError:
-                    from src.items import Item
-                try:
-                    from inventory_utils import transfer_item
-                except ImportError:
-                    from src.inventory_utils import transfer_item
-                try:
-                    from events import LootEvent
-                except ImportError:
-                    from src.events import LootEvent
+                from src.objects import Container
+                from src.items import Item
+                from src.inventory_utils import transfer_item
+                from src.events import LootEvent
 
-                is_container = type(target).__name__ == "Container" or isinstance(
-                    target, Container
-                )
-                # More robust item check that handles subclasses and module mismatches
-                item_types = [
-                    "Item",
-                    "Weapon",
-                    "Armor",
-                    "Consumable",
-                    "Gold",
-                    "Key",
-                    "Tool",
-                    "Usable",
-                ]
-                is_item = (
-                    type(target).__name__ in item_types
-                    or isinstance(target, Item)
-                    or hasattr(target, "_parent_container")
+                is_container = isinstance(target, Container)
+                is_item = isinstance(target, Item) or hasattr(
+                    target, "_parent_container"
                 )
 
                 if is_container and action in [

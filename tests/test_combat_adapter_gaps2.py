@@ -968,9 +968,10 @@ class TestHandleVictoryBetaEnd:
         player.combat_exp = {}
         player.combat_drops = []
 
-        # Create a tile with AfterDefeatingLurker event
-        lurker_event = MagicMock()
-        lurker_event.__class__.__name__ = "AfterDefeatingLurker"
+        # Create a tile with a real AfterDefeatingLurker event (isinstance-checked)
+        from src.story.ch02 import AfterDefeatingLurker
+
+        lurker_event = AfterDefeatingLurker.__new__(AfterDefeatingLurker)
         player.current_room = MagicMock()
         player.current_room.events_here = [lurker_event]
         player.current_room.npcs_here = []
@@ -991,11 +992,11 @@ class TestHandleVictoryBetaEnd:
         player.combat_exp = {}
         player.combat_drops = []
 
-        lurker_event = MagicMock()
-        lurker_event.__class__.__name__ = "AfterDefeatingLurker"
-        lurker_npc = MagicMock()
-        lurker_npc.__class__.__name__ = "Lurker"
-        lurker_npc.is_alive.return_value = True
+        from src.npc import Lurker
+        from src.story.ch02 import AfterDefeatingLurker
+
+        lurker_event = AfterDefeatingLurker.__new__(AfterDefeatingLurker)
+        lurker_npc = Lurker.__new__(Lurker)
         player.current_room = MagicMock()
         player.current_room.events_here = [lurker_event]
         player.current_room.npcs_here = [lurker_npc]

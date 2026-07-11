@@ -10,7 +10,7 @@ All three communicate in brief, practical terms. None overreach their tier.
 
 import random
 
-import moves  # type: ignore
+import src.moves as moves  # type: ignore
 from ._base import Friend
 from ._chat_llm import HumanNPCLLMMixin
 from src.narration import narrate

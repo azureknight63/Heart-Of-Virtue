@@ -365,7 +365,7 @@ class TestMapTileCoverage:
 
     def test_evaluate_events_calls_spawners_first(self):
         """NPCSpawnerEvents are processed before other events."""
-        from story.effects import NPCSpawnerEvent
+        from src.story.effects import NPCSpawnerEvent
 
         tile, u, m = _make_tile()
 

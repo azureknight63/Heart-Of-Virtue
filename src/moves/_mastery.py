@@ -2,8 +2,8 @@
 
 from src.narration import colored, cprint, narrate
 import random
-import states
-import functions
+import src.states as states
+import src.functions as functions
 from ._base import Move, _ensure_weapon_exp
 
 

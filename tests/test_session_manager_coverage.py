@@ -94,6 +94,25 @@ def _make_player():
     return p
 
 
+def _fake_engine_modules(**fakes):
+    """Bind fake modules so `import src.<name> as m` in the code under test
+    picks them up.
+
+    `import src.x as m` binds `m` via getattr(src, "x") -- the parent package
+    attribute -- falling back to sys.modules["src.x"], so both must be patched.
+    """
+    import contextlib
+
+    stack = contextlib.ExitStack()
+    src_pkg = sys.modules["src"]
+    stack.enter_context(
+        patch.dict(sys.modules, {f"src.{k}": v for k, v in fakes.items()})
+    )
+    for k, v in fakes.items():
+        stack.enter_context(patch.object(src_pkg, k, v, create=True))
+    return stack
+
+
 def _fake_modules(mock_player, mock_universe):
     """Inject lightweight fake src.player / src.universe into sys.modules."""
     player_mod = types.ModuleType("src.player")
@@ -524,7 +543,7 @@ def test_create_items_from_config_found_and_not_found(monkeypatch):
     mgr = _bare_manager(monkeypatch)
     mgr.starting_item_types = ["Gold", "NoSuchItem"]
     fake_mod = _fake_items_module(Gold=_FakeGold)
-    with patch.dict(sys.modules, {"items": fake_mod}):
+    with _fake_engine_modules(items=fake_mod):
         items = mgr._create_items_from_config()
     assert len(items) == 1
     assert isinstance(items[0], _FakeGold)
@@ -534,36 +553,16 @@ def test_create_items_from_config_construction_error_is_caught(monkeypatch):
     mgr = _bare_manager(monkeypatch)
     mgr.starting_item_types = ["Broken"]
     fake_mod = _fake_items_module(Broken=_FakeBrokenInit)
-    with patch.dict(sys.modules, {"items": fake_mod}):
+    with _fake_engine_modules(items=fake_mod):
         items = mgr._create_items_from_config()
     assert items == []
 
 
-def test_create_items_from_config_import_fallback_to_src(monkeypatch):
+
+def test_create_items_from_config_import_error_is_caught(monkeypatch):
     mgr = _bare_manager(monkeypatch)
     mgr.starting_item_types = ["Gold"]
-    fake_mod = _fake_items_module(Gold=_FakeGold)
-    # `from src import items` resolves via getattr(sys.modules["src"], "items")
-    # first (falling back to sys.modules["src.items"] only on AttributeError) —
-    # patch both so the fallback path deterministically picks up the fake.
-    src_pkg = sys.modules["src"]
-    monkeypatch.setattr(src_pkg, "items", fake_mod, raising=False)
-    # Force `import items` to fail (ImportError) so the `from src import items`
-    # fallback path executes and succeeds.
-    with patch.dict(sys.modules, {"items": None, "src.items": fake_mod}):
-        items = mgr._create_items_from_config()
-    assert len(items) == 1
-    assert isinstance(items[0], _FakeGold)
-
-
-def test_create_items_from_config_both_imports_fail(monkeypatch):
-    mgr = _bare_manager(monkeypatch)
-    mgr.starting_item_types = ["Gold"]
-    src_pkg = sys.modules["src"]
-    # Remove any cached "items" attribute so the fallback import is forced to
-    # actually consult sys.modules["src.items"] (which we set to None below).
-    monkeypatch.delattr(src_pkg, "items", raising=False)
-    with patch.dict(sys.modules, {"items": None, "src.items": None}):
+    with patch.dict(sys.modules, {"src.items": None}):
         items = mgr._create_items_from_config()
     assert items == []
 
@@ -653,7 +652,7 @@ def test_apply_starting_equipment_class_not_found(monkeypatch):
     fake_mod = _fake_items_module()
     fake_functions = types.ModuleType("functions")
     fake_functions.refresh_stat_bonuses = MagicMock()
-    with patch.dict(sys.modules, {"items": fake_mod, "functions": fake_functions}):
+    with _fake_engine_modules(items=fake_mod, functions=fake_functions):
         mgr._apply_starting_equipment(player)
     assert player.inventory == []
 
@@ -671,7 +670,7 @@ def test_apply_starting_equipment_equips_weapon_and_unequips_conflict(monkeypatc
     fake_mod = _fake_items_module(Sword=_FakeWeapon)
     fake_functions = types.ModuleType("functions")
     fake_functions.refresh_stat_bonuses = MagicMock()
-    with patch.dict(sys.modules, {"items": fake_mod, "functions": fake_functions}):
+    with _fake_engine_modules(items=fake_mod, functions=fake_functions):
         mgr._apply_starting_equipment(player)
 
     # Existing weapon of the same maintype is unequipped.
@@ -698,7 +697,7 @@ def test_apply_starting_equipment_accessory_skips_conflict_check(monkeypatch):
     fake_mod = _fake_items_module(Ring=_FakeAccessory)
     fake_functions = types.ModuleType("functions")
     fake_functions.refresh_stat_bonuses = MagicMock()
-    with patch.dict(sys.modules, {"items": fake_mod, "functions": fake_functions}):
+    with _fake_engine_modules(items=fake_mod, functions=fake_functions):
         mgr._apply_starting_equipment(player)
     assert len(player.inventory) == 1
     assert player.inventory[0].isequipped is True
@@ -712,7 +711,7 @@ def test_apply_starting_equipment_item_without_isequipped(monkeypatch):
     fake_mod = _fake_items_module(Trinket=_FakeNoIsEquipped)
     fake_functions = types.ModuleType("functions")
     fake_functions.refresh_stat_bonuses = MagicMock()
-    with patch.dict(sys.modules, {"items": fake_mod, "functions": fake_functions}):
+    with _fake_engine_modules(items=fake_mod, functions=fake_functions):
         mgr._apply_starting_equipment(player)
     assert len(player.inventory) == 1
     assert not hasattr(player.inventory[0], "isequipped")
@@ -728,7 +727,7 @@ def test_apply_starting_equipment_invalid_enchantment_level_defaults_to_zero(
     fake_mod = _fake_items_module(Sword=_FakeWeapon)
     fake_functions = types.ModuleType("functions")
     fake_functions.refresh_stat_bonuses = MagicMock()
-    with patch.dict(sys.modules, {"items": fake_mod, "functions": fake_functions}):
+    with _fake_engine_modules(items=fake_mod, functions=fake_functions):
         mgr._apply_starting_equipment(player)
     assert len(player.inventory) == 1
     assert player.inventory[0].enchantment_level == 0
@@ -742,7 +741,7 @@ def test_apply_starting_equipment_construction_error_continues(monkeypatch):
     fake_mod = _fake_items_module(Broken=_FakeBrokenInit, Sword=_FakeWeapon)
     fake_functions = types.ModuleType("functions")
     fake_functions.refresh_stat_bonuses = MagicMock()
-    with patch.dict(sys.modules, {"items": fake_mod, "functions": fake_functions}):
+    with _fake_engine_modules(items=fake_mod, functions=fake_functions):
         mgr._apply_starting_equipment(player)
     # Broken item skipped, Sword still applied.
     assert len(player.inventory) == 1
@@ -757,7 +756,7 @@ def test_apply_starting_equipment_on_equip_error_is_caught(monkeypatch):
     fake_mod = _fake_items_module(Sword=_FakeBrokenOnEquip)
     fake_functions = types.ModuleType("functions")
     fake_functions.refresh_stat_bonuses = MagicMock()
-    with patch.dict(sys.modules, {"items": fake_mod, "functions": fake_functions}):
+    with _fake_engine_modules(items=fake_mod, functions=fake_functions):
         mgr._apply_starting_equipment(player)  # should not raise
     assert len(player.inventory) == 1
 
@@ -770,11 +769,11 @@ def test_apply_starting_equipment_refresh_stat_bonuses_error_is_caught(monkeypat
     fake_mod = _fake_items_module(Sword=_FakeWeapon)
     fake_functions = types.ModuleType("functions")
     fake_functions.refresh_stat_bonuses = MagicMock(side_effect=RuntimeError("boom"))
-    with patch.dict(sys.modules, {"items": fake_mod, "functions": fake_functions}):
+    with _fake_engine_modules(items=fake_mod, functions=fake_functions):
         mgr._apply_starting_equipment(player)  # should not raise
 
 
-def test_apply_starting_equipment_functions_import_fallback(monkeypatch):
+def test_apply_starting_equipment_refreshes_stat_bonuses(monkeypatch):
     mgr = _bare_manager(monkeypatch)
     mgr.starting_equipment = ["Sword"]
     player = MagicMock()
@@ -782,12 +781,7 @@ def test_apply_starting_equipment_functions_import_fallback(monkeypatch):
     fake_mod = _fake_items_module(Sword=_FakeWeapon)
     fake_functions = types.ModuleType("functions")
     fake_functions.refresh_stat_bonuses = MagicMock()
-    src_pkg = sys.modules["src"]
-    monkeypatch.setattr(src_pkg, "functions", fake_functions, raising=False)
-    with patch.dict(
-        sys.modules,
-        {"items": fake_mod, "functions": None, "src.functions": fake_functions},
-    ):
+    with _fake_engine_modules(items=fake_mod, functions=fake_functions):
         mgr._apply_starting_equipment(player)
     fake_functions.refresh_stat_bonuses.assert_called_once_with(player)
 
@@ -797,12 +791,7 @@ def test_apply_starting_equipment_outer_exception_is_caught(monkeypatch):
     mgr.starting_equipment = ["Sword"]
     player = MagicMock()
     player.inventory = []
-    src_pkg = sys.modules["src"]
-    # Remove any cached "items" attribute so the fallback import actually
-    # consults sys.modules["src.items"] (set to None below) instead of
-    # short-circuiting via getattr(src_pkg, "items").
-    monkeypatch.delattr(src_pkg, "items", raising=False)
-    with patch.dict(sys.modules, {"items": None, "src.items": None}):
+    with patch.dict(sys.modules, {"src.items": None}):
         mgr._apply_starting_equipment(player)  # should not raise
     assert player.inventory == []
 
@@ -1013,7 +1002,7 @@ def test_create_player_outer_exception_triggers_full_fallback(monkeypatch):
     player.apply_starting_experience.side_effect = RuntimeError("boom")
 
     fake_mod = _fake_items_module(Gold=_FakeGold)
-    with _fake_modules(player, universe), patch.dict(sys.modules, {"items": fake_mod}):
+    with _fake_modules(player, universe), _fake_engine_modules(items=fake_mod):
         result = mgr._create_player_for_session("erin")
 
     assert isinstance(result, MinimalPlayer)
@@ -1036,7 +1025,7 @@ def test_create_player_applies_starting_gold_and_config_items(monkeypatch):
     player.combat_list_allies = []
 
     fake_mod = _fake_items_module(Gold=_FakeGold)
-    with _fake_modules(player, universe), patch.dict(sys.modules, {"items": fake_mod}):
+    with _fake_modules(player, universe), _fake_engine_modules(items=fake_mod):
         result = mgr._create_player_for_session("frank")
 
     assert result is player
@@ -1044,29 +1033,6 @@ def test_create_player_applies_starting_gold_and_config_items(monkeypatch):
     assert len(player.inventory) == 2
     assert all(isinstance(i, _FakeGold) for i in player.inventory)
 
-
-def test_create_player_starting_gold_import_fallback_to_src(monkeypatch):
-    mgr = _bare_manager(monkeypatch)
-    mgr.starting_gold = 50
-    game_map = {(1, 1): {}, "name": "test-map"}
-    mgr.starting_map_name = "test-map"
-    mgr.start_x, mgr.start_y = 1, 1
-
-    universe = _make_universe([game_map], default=game_map)
-    player = _make_player()
-    player.combat_list_allies = []
-
-    fake_mod = _fake_items_module(Gold=_FakeGold)
-    src_pkg = sys.modules["src"]
-    monkeypatch.setattr(src_pkg, "items", fake_mod, raising=False)
-    with _fake_modules(player, universe), patch.dict(
-        sys.modules, {"items": None, "src.items": fake_mod}
-    ):
-        result = mgr._create_player_for_session("holly")
-
-    assert result is player
-    assert len(player.inventory) == 1
-    assert isinstance(player.inventory[0], _FakeGold)
 
 
 def test_create_player_starting_gold_error_is_caught(monkeypatch):
@@ -1085,39 +1051,13 @@ def test_create_player_starting_gold_error_is_caught(monkeypatch):
             raise RuntimeError("boom")
 
     fake_mod = _fake_items_module(Gold=_BrokenGold)
-    with _fake_modules(player, universe), patch.dict(sys.modules, {"items": fake_mod}):
+    with _fake_modules(player, universe), _fake_engine_modules(items=fake_mod):
         result = mgr._create_player_for_session("grace")
 
     # Error is caught internally; player creation still succeeds.
     assert result is player
     assert player.inventory == []
 
-
-def test_create_player_full_fallback_gold_import_fallback_to_src(monkeypatch):
-    """Outer-fallback path's own gold block: bare `import items` fails, so it
-    falls back to `from src import items` (lines 944-945 in the fallback
-    branch, distinct from the main-path gold block covered elsewhere)."""
-    mgr = _bare_manager(monkeypatch)
-    mgr.game_config = _make_game_config(starting_exp=5)
-    mgr.starting_gold = 10
-    game_map = {(1, 1): {}, "name": "test-map"}
-    mgr.starting_map_name = "test-map"
-    mgr.start_x, mgr.start_y = 1, 1
-
-    universe = _make_universe([game_map], default=game_map)
-    player = _make_player()
-    player.apply_starting_experience.side_effect = RuntimeError("boom")
-
-    fake_mod = _fake_items_module(Gold=_FakeGold)
-    src_pkg = sys.modules["src"]
-    monkeypatch.setattr(src_pkg, "items", fake_mod, raising=False)
-    with _fake_modules(player, universe), patch.dict(
-        sys.modules, {"items": None, "src.items": fake_mod}
-    ):
-        result = mgr._create_player_for_session("iris")
-
-    assert isinstance(result, MinimalPlayer)
-    assert any(isinstance(i, _FakeGold) for i in result.inventory)
 
 
 def test_create_player_full_fallback_gold_error_is_swallowed(monkeypatch):
@@ -1139,7 +1079,7 @@ def test_create_player_full_fallback_gold_error_is_swallowed(monkeypatch):
             raise RuntimeError("gold boom")
 
     fake_mod = _fake_items_module(Gold=_BrokenGold)
-    with _fake_modules(player, universe), patch.dict(sys.modules, {"items": fake_mod}):
+    with _fake_modules(player, universe), _fake_engine_modules(items=fake_mod):
         result = mgr._create_player_for_session("jack")  # should not raise
 
     assert isinstance(result, MinimalPlayer)

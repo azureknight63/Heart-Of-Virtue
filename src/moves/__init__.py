@@ -17,7 +17,7 @@ This package replaces the monolithic src/moves.py with organised submodules:
     _npc.py         NPC-only moves and enemy special abilities
 
 All public names are re-exported here so existing imports of the form
-    import moves          →  moves.Attack(user)
+    import src.moves as moves   →  moves.Attack(user)
     from src.moves import Attack
 continue to work without any changes in calling code.
 """

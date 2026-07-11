@@ -16,8 +16,8 @@ only intended NPC/Friend/Merchant classes can ever be instantiated through the
 debug API.
 """
 
-import functions  # type: ignore
-import moves  # type: ignore
+import src.functions as functions  # type: ignore
+import src.moves as moves  # type: ignore
 
 from ._base import NPC, Friend  # noqa: F401
 from ._enemies import (  # noqa: F401

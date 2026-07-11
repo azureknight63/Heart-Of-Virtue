@@ -349,7 +349,7 @@ def test_spawn_object(basic_tile):
     """Test spawning an object"""
     mock_player = Mock()
 
-    with patch('builtins.__import__') as mock_import:
+    with patch('src.tiles.importlib.import_module') as mock_import:
         mock_objects_module = Mock()
         mock_obj = Mock()
         mock_obj.hidden = False
@@ -368,7 +368,7 @@ def test_spawn_object_hidden(basic_tile):
     """Test spawning a hidden object"""
     mock_player = Mock()
 
-    with patch('builtins.__import__') as mock_import:
+    with patch('src.tiles.importlib.import_module') as mock_import:
         mock_objects_module = Mock()
         mock_obj = Mock()
         mock_obj.hidden = False

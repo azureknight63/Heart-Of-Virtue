@@ -599,7 +599,7 @@ class TestMaraSelectMoveWeightBranches:
         real_import = builtins.__import__
 
         def fake_import(name, *args, **kwargs):
-            if name == "npc_ai_config":
+            if name == "src.npc_ai_config":
                 raise ImportError("simulated missing module")
             return real_import(name, *args, **kwargs)
 

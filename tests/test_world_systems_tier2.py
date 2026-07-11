@@ -323,8 +323,12 @@ class TestDeserializeSavedInstance:
     """Test Universe._deserialize_saved_instance() with mocked modules."""
 
     @pytest.fixture
-    def dummy_modules(self):
-        """Setup dummy modules for deserialization testing."""
+    def dummy_modules(self, monkeypatch):
+        """Attach dummy classes to the canonical engine modules.
+
+        Payloads store bare module names ('items', 'npc'); the deserializer
+        maps them to src.items / src.npc, so the classes must live there.
+        """
         class DummyItem:
             def __init__(self, name="Test", value=0):
                 self.name = name
@@ -335,18 +339,11 @@ class TestDeserializeSavedInstance:
                 self.name = name
                 self.inventory = []
 
-        dummy_items = types.ModuleType('items')
-        dummy_items.DummyItem = DummyItem
-        dummy_npc = types.ModuleType('npc')
-        dummy_npc.DummyNPC = DummyNPC
-
-        sys.modules['items'] = dummy_items
-        sys.modules['npc'] = dummy_npc
-
+        import src.items
+        import src.npc
+        monkeypatch.setattr(src.items, 'DummyItem', DummyItem, raising=False)
+        monkeypatch.setattr(src.npc, 'DummyNPC', DummyNPC, raising=False)
         yield
-
-        del sys.modules['items']
-        del sys.modules['npc']
 
     def test_deserialize_basic_object(self, universe, dummy_modules):
         """Test deserializing a basic object."""

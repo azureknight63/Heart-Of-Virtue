@@ -231,7 +231,7 @@ def animate_to_main_screen(animation, rawtext=""):
         return
 
     # Import here to avoid circular import: functions imports moves, and moves imports animations.
-    from functions import clean_string
+    from src.functions import clean_string
     import sys
 
     text = clean_string(rawtext)

@@ -440,10 +440,10 @@ def test_universe_deserialize_class_type_marker():
 
     payload = {"__class_type__": "items:Gold"}
     result = u._deserialize_saved_instance(payload)
-    # Should return the Gold class itself (not an instance)
-    import items
+    # Should return the canonical Gold class itself (not an instance)
+    import src.items
 
-    assert result is items.Gold
+    assert result is src.items.Gold
 
 
 def test_universe_deserialize_invalid_class_type():

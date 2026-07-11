@@ -5,7 +5,7 @@ Combat states to be used within combat module. May also spill over to the standa
 
 from src.narration import cprint
 import random
-import functions
+import src.functions as functions
 
 
 class State:  # master class for all states

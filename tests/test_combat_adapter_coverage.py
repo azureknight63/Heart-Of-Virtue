@@ -1756,8 +1756,9 @@ class TestHandleVictory:
         player = _make_player()
         player.combat_exp = {}
         player.combat_drops = []
-        lurker_event = MagicMock()
-        lurker_event.__class__.__name__ = "AfterDefeatingLurker"
+        from src.story.ch02 import AfterDefeatingLurker
+
+        lurker_event = AfterDefeatingLurker.__new__(AfterDefeatingLurker)
         player.current_room = MagicMock()
         player.current_room.items_here = []
         player.current_room.events_here = [lurker_event]

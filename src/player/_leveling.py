@@ -2,7 +2,7 @@
 
 import random
 
-from combatant import exp_needed_for_level  # type: ignore
+from src.combatant import exp_needed_for_level  # type: ignore
 from src.narration import cprint
 
 

@@ -28,7 +28,7 @@ import math
 import random
 
 if TYPE_CHECKING:
-    from npc import NPC  # noqa: F401
+    from src.npc import NPC  # noqa: F401
 
 
 class Direction(Enum):

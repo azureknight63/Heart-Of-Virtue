@@ -33,17 +33,16 @@ def _make_player(tile=None):
 
 def _make_tile(has_lurker_event=False, lurker_in_npcs=False):
     """Return a mock tile with the given event/NPC configuration.
-    Class names must match the strings checked in _handle_victory().
+    _handle_victory() isinstance-checks the real classes, so use uninitialized
+    instances of them (heavy constructors skipped via __new__).
     """
+    from src.npc import Lurker
+    from src.story.ch02 import AfterDefeatingLurker
 
-    class AfterDefeatingLurker:
-        pass
-
-    class Lurker:
-        pass
-
-    events_here = [AfterDefeatingLurker()] if has_lurker_event else []
-    npcs_here = [Lurker()] if lurker_in_npcs else []
+    events_here = (
+        [AfterDefeatingLurker.__new__(AfterDefeatingLurker)] if has_lurker_event else []
+    )
+    npcs_here = [Lurker.__new__(Lurker)] if lurker_in_npcs else []
 
     tile = MagicMock()
     tile.events_here = events_here

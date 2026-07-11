@@ -13,10 +13,10 @@ from typing import Dict, List, Any, Optional, TYPE_CHECKING
 from src.api.constants import ITEM_USE_RANGE
 
 if TYPE_CHECKING:
-    from player import Player
-    from npc import NPC
-    from moves import Move
-    from states import State
+    from src.player import Player
+    from src.npc import NPC
+    from src.moves import Move
+    from src.states import State
 
 
 class CombatStateSerializer:
@@ -103,9 +103,11 @@ class CombatStateSerializer:
         Returns:
             Dict with turn data
         """
+        from src.player import Player
+
         return {
             "name": getattr(combatant, "name", "Unknown"),
-            "type": ("player" if combatant.__class__.__name__ == "Player" else "enemy"),
+            "type": ("player" if isinstance(combatant, Player) else "enemy"),
             "available_actions": CombatStateSerializer._get_available_actions(
                 combatant
             ),
@@ -205,7 +207,9 @@ class CombatantSerializer:
         Returns:
             Dict with combatant state
         """
-        is_player = combatant.__class__.__name__ == "Player"
+        from src.player import Player
+
+        is_player = isinstance(combatant, Player)
         is_ally = not is_player and getattr(combatant, "friend", False)
         # Derive in_range from distance to the reference (player). Allies within 5 ft
         # are targetable with healing items; enemies within range are attackable.

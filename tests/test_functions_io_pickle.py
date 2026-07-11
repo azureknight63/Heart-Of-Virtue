@@ -78,9 +78,12 @@ def test_safe_unpickler_placeholder(tmp_path):
     del sys.modules[mod_name]
     del sys.modules['story']
     loaded = functions.load(str(pfile))
-    # Expect placeholder class name pattern
+    # Expect placeholder class name pattern. The unpickler rewrites the bare
+    # 'story.fake_mod' path to the canonical 'src.story.fake_mod' before
+    # resolution, so the placeholder carries the src-prefixed name.
     cls_name = loaded.__class__.__name__
-    assert cls_name.startswith('LegacyMissing_story_fake_mod_GhostClass') or 'LegacyMissing story.fake_mod.GhostClass' in repr(loaded)
+    assert cls_name.startswith('LegacyMissing_src_story_fake_mod_GhostClass') or \
+        'LegacyMissing src.story.fake_mod.GhostClass' in repr(loaded)
     # Placeholder should be hidden per generated attributes
     assert getattr(loaded, 'hidden', True) is True
 

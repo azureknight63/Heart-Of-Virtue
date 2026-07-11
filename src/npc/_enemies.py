@@ -8,8 +8,8 @@ Also includes StatusDummy (arena-only test target) here since it is a
 non-speaking NPC whose primary purpose is combat mechanics validation.
 """
 
-import genericng  # type: ignore
-import moves  # type: ignore
+import src.genericng as genericng  # type: ignore
+import src.moves as moves  # type: ignore
 
 from ._base import NPC
 from ._loot import loot
@@ -317,7 +317,7 @@ class TalusHound(NPC):
             and self.player_ref
         ):
             try:
-                from npc_ai_config import NPCAIConfig
+                from src.npc_ai_config import NPCAIConfig
 
                 self.ai_config = NPCAIConfig(self.player_ref)
             except ImportError:
