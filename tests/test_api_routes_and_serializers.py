@@ -556,7 +556,7 @@ class TestFeedbackHelpers:
             _build_general_body,
             _build_rating_row,
             _create_github_issue,
-            _rate_limit_store,
+            _feedback_limiter,
         )
 
         self._is_rate_limited = _is_rate_limited
@@ -565,7 +565,7 @@ class TestFeedbackHelpers:
         self._build_general_body = _build_general_body
         self._build_rating_row = _build_rating_row
         self._create_github_issue = _create_github_issue
-        self._rate_limit_store = _rate_limit_store
+        self._feedback_limiter = _feedback_limiter
 
     def test_build_bug_body_basic(self):
         fields = {
@@ -661,7 +661,7 @@ class TestFeedbackHelpers:
     def test_rate_limit_triggered_after_10(self):
         sid = "session_rate_test_999"
         # Clear any previous state
-        self._rate_limit_store.pop(sid, None)
+        self._feedback_limiter.clear(sid)
         for _ in range(10):
             self._is_rate_limited(sid)
         assert self._is_rate_limited(sid) is True
@@ -719,10 +719,10 @@ class TestFeedbackRoute:
 
     @pytest.fixture
     def client(self):
-        from src.api.routes.feedback import feedback_bp, _rate_limit_store
+        from src.api.routes.feedback import feedback_bp, _feedback_limiter
 
         # Clear rate limit store to avoid cross-test contamination
-        _rate_limit_store.clear()
+        _feedback_limiter.clear_all()
 
         app = _make_minimal_app([(feedback_bp, "/api/feedback")])
         with app.test_client() as c:

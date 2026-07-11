@@ -1,10 +1,9 @@
 """Authentication routes."""
 
 import logging
-import time
-from collections import defaultdict
 
 from flask import Blueprint, request, jsonify
+from src.api.rate_limiter import RateLimiter
 from src.api.services.auth_service import auth_service
 from functools import wraps
 import asyncio
@@ -14,13 +13,14 @@ auth_bp = Blueprint("auth", __name__)
 logger = logging.getLogger(__name__)
 
 # Simple in-memory login throttle: 10 failed attempts per username+IP per 15
-# minutes. Per-worker (not shared across Gunicorn workers) — adapted from the
-# feedback.py rate limiter (`_is_rate_limited`); sufficient for beta. Only
-# failed (invalid-credential) attempts count, so retries after a typo or a
-# flaky DB call don't lock out a legitimate player.
+# minutes. Per-worker (not shared across Gunicorn workers) — see GitHub issue
+# #284 and `src.api.rate_limiter` for the bounded-store rationale, shared with
+# feedback.py's submission throttle. Only failed (invalid-credential) attempts
+# count, so retries after a typo or a flaky DB call don't lock out a
+# legitimate player.
 _LOGIN_RATE_LIMIT = 10
 _LOGIN_RATE_WINDOW = 900  # 15 minutes
-_login_attempt_store: dict = defaultdict(list)
+_login_limiter = RateLimiter(limit=_LOGIN_RATE_LIMIT, window_seconds=_LOGIN_RATE_WINDOW)
 
 
 def _login_rate_limit_key(username: str) -> str:
@@ -29,19 +29,15 @@ def _login_rate_limit_key(username: str) -> str:
 
 
 def _is_login_rate_limited(key: str) -> bool:
-    now = time.time()
-    cutoff = now - _LOGIN_RATE_WINDOW
-    hits = [t for t in _login_attempt_store[key] if t > cutoff]
-    _login_attempt_store[key] = hits
-    return len(hits) >= _LOGIN_RATE_LIMIT
+    return _login_limiter.is_limited(key)
 
 
 def _record_failed_login(key: str) -> None:
-    _login_attempt_store[key].append(time.time())
+    _login_limiter.record(key)
 
 
 def _clear_login_attempts(key: str) -> None:
-    _login_attempt_store.pop(key, None)
+    _login_limiter.clear(key)
 
 
 def require_auth(f):

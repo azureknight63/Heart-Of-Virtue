@@ -5,12 +5,11 @@ Handles in-game player feedback and creates GitHub issues.
 
 import os
 import re
-import time
 import logging
 import requests
-from collections import defaultdict
 from flask import Blueprint, request, jsonify
 from src.api.middleware.auth import get_session_and_player
+from src.api.rate_limiter import RateLimiter
 
 
 logger = logging.getLogger(__name__)
@@ -39,21 +38,16 @@ MAX_FIELD_LENGTH = 2000
 _MARKDOWN_UNSAFE = re.compile(r"[*_`\[\]()#\\]")
 
 # Simple in-memory rate limiter: 10 submissions per session per hour.
-# Per-worker (not shared across Gunicorn workers) — sufficient for beta.
+# Per-worker (not shared across Gunicorn workers) — see GitHub issue #284 and
+# `src.api.rate_limiter` for the bounded-store rationale, shared with
+# auth.py's login throttle.
 _RATE_LIMIT = 10
 _RATE_WINDOW = 3600  # seconds
-_rate_limit_store: dict = defaultdict(list)
+_feedback_limiter = RateLimiter(limit=_RATE_LIMIT, window_seconds=_RATE_WINDOW)
 
 
 def _is_rate_limited(session_id: str) -> bool:
-    now = time.time()
-    cutoff = now - _RATE_WINDOW
-    hits = [t for t in _rate_limit_store[session_id] if t > cutoff]
-    _rate_limit_store[session_id] = hits
-    if len(hits) >= _RATE_LIMIT:
-        return True
-    _rate_limit_store[session_id].append(now)
-    return False
+    return _feedback_limiter.check_and_record(session_id)
 
 
 def _build_bug_body(fields, attribution):
