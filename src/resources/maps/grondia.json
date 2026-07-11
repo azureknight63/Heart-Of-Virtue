@@ -1789,7 +1789,36 @@
     ],
     "items": [],
     "npcs": [],
-    "objects": []
+    "objects": [
+      {
+        "__class__": "Passageway",
+        "__module__": "objects",
+        "props": {
+          "name": "Eastern Gate",
+          "description": "A wide archway opens eastward, leading out of Grondia toward the Eastern Road.",
+          "idle_message": "An archway leads east toward the Eastern Road.",
+          "hidden": false,
+          "hide_factor": 0,
+          "discovery_message": "a wide archway leading east!",
+          "announce": "An archway leads east toward the Eastern Road.",
+          "keywords": [
+            "enter",
+            "east"
+          ],
+          "events": [],
+          "tile": null,
+          "player": null,
+          "events_before": [],
+          "events_after": [],
+          "teleport_map": "eastern-descent",
+          "teleport_tile": [
+            0,
+            2
+          ],
+          "persist": true
+        }
+      }
+    ]
   },
   "(8, 6)": {
     "id": "tile_8_6",
