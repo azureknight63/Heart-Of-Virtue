@@ -301,10 +301,35 @@ class TestFallbackSuggestions:
             {"name": "Slime", "id": "enemy_2", "hp": 2, "max_hp": 10, "fatigue": 50, "max_fatigue": 50, "status_effects": []},
         ]
         ctx = _base_ctx(enemies=enemies, available_moves=[
-            {"name": "Slash", "category": "Offensive", "available": True, "targeted": True},
+            {
+                "name": "Slash", "category": "Offensive", "available": True, "targeted": True,
+                "viable_targets": [
+                    {"id": "enemy_1", "name": "Bat", "distance": 2},
+                    {"id": "enemy_2", "name": "Slime", "distance": 2},
+                ],
+            },
         ])
         result = strategist._get_fallback_suggestions(ctx, 1)
         assert result[0]["target_id"] == "enemy_2"  # lowest HP% prioritized
+
+    def test_ensure_target_ids_excludes_out_of_range_enemy(self, strategist):
+        """Issue #122 regression: a targeted move should only ever be assigned a
+        target from ITS OWN viable_targets, not the highest-priority enemy across
+        the whole fight (which may be far outside this move's range)."""
+        enemies = [
+            {"name": "Bat", "id": "enemy_1", "hp": 10, "max_hp": 10, "fatigue": 50, "max_fatigue": 50, "status_effects": []},
+            # Slime has the lowest HP% (would normally win priority) but is out of
+            # range for Slash — only Bat is a viable target for this move.
+            {"name": "Slime", "id": "enemy_2", "hp": 2, "max_hp": 10, "fatigue": 50, "max_fatigue": 50, "status_effects": []},
+        ]
+        ctx = _base_ctx(enemies=enemies, available_moves=[
+            {
+                "name": "Slash", "category": "Offensive", "available": True, "targeted": True,
+                "viable_targets": [{"id": "enemy_1", "name": "Bat", "distance": 2}],
+            },
+        ])
+        result = strategist._get_fallback_suggestions(ctx, 1)
+        assert result[0]["target_id"] == "enemy_1"
 
 
 # ---------------------------------------------------------------------------
@@ -649,21 +674,43 @@ class TestEnsureTargetIds:
         ctx = {
             "enemies": [{"name": "Bat", "id": "enemy_1", "hp": 10, "max_hp": 10}],
             "player": {"hp": 100},
-            "available_moves": [{"name": "Slash", "targeted": True}],
+            "available_moves": [
+                {"name": "Slash", "targeted": True,
+                 "viable_targets": [{"id": "enemy_1", "name": "Bat", "distance": 2}]},
+            ],
         }
         suggestions = [{"move_name": "Slash", "target_id": None}]
         strategist._ensure_target_ids(suggestions, ctx)
         assert suggestions[0]["target_id"] == "enemy_1"
 
-    def test_leaves_existing_target_id(self, strategist):
+    def test_leaves_existing_valid_target_id(self, strategist):
         ctx = {
             "enemies": [{"name": "Bat", "id": "enemy_1", "hp": 10, "max_hp": 10}],
             "player": {"hp": 100},
-            "available_moves": [{"name": "Slash", "targeted": True}],
+            "available_moves": [
+                {"name": "Slash", "targeted": True,
+                 "viable_targets": [{"id": "enemy_1", "name": "Bat", "distance": 2}]},
+            ],
+        }
+        suggestions = [{"move_name": "Slash", "target_id": "enemy_1"}]
+        strategist._ensure_target_ids(suggestions, ctx)
+        assert suggestions[0]["target_id"] == "enemy_1"
+
+    def test_replaces_target_id_not_in_moves_viable_targets(self, strategist):
+        """Issue #122: a target_id that isn't one of this move's own viable
+        targets (e.g. leftover from a different move, or an out-of-range
+        enemy) must be replaced, not passed through as-is."""
+        ctx = {
+            "enemies": [{"name": "Bat", "id": "enemy_1", "hp": 10, "max_hp": 10}],
+            "player": {"hp": 100},
+            "available_moves": [
+                {"name": "Slash", "targeted": True,
+                 "viable_targets": [{"id": "enemy_1", "name": "Bat", "distance": 2}]},
+            ],
         }
         suggestions = [{"move_name": "Slash", "target_id": "enemy_custom"}]
         strategist._ensure_target_ids(suggestions, ctx)
-        assert suggestions[0]["target_id"] == "enemy_custom"
+        assert suggestions[0]["target_id"] == "enemy_1"
 
     def test_non_targeted_move_unaffected(self, strategist):
         ctx = {
