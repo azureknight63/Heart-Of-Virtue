@@ -1911,18 +1911,23 @@ class ApiCombatAdapter:
         # in case exp processing or level-up callbacks updated the player's location.
         tile = getattr(self.player, "current_room", None)
         if tile:
-            from src.npc import Lurker
-            from src.story.ch02 import AfterDefeatingLurker
+            # Best-effort: a broken story/npc import must not crash victory
+            # handling for unrelated fights.
+            try:
+                from src.npc import Lurker
+                from src.story.ch02 import AfterDefeatingLurker
 
-            has_lurker_event = any(
-                isinstance(e, AfterDefeatingLurker)
-                for e in getattr(tile, "events_here", [])
-            )
-            lurker_still_present = any(
-                isinstance(n, Lurker) for n in getattr(tile, "npcs_here", [])
-            )
-            if has_lurker_event and not lurker_still_present:
-                self.player.combat_end_summary["beta_end"] = True
+                has_lurker_event = any(
+                    isinstance(e, AfterDefeatingLurker)
+                    for e in getattr(tile, "events_here", [])
+                )
+                lurker_still_present = any(
+                    isinstance(n, Lurker) for n in getattr(tile, "npcs_here", [])
+                )
+                if has_lurker_event and not lurker_still_present:
+                    self.player.combat_end_summary["beta_end"] = True
+            except Exception:
+                pass
 
         # Reset any surviving tile NPCs that still carry aggro/in_combat flags from
         # this encounter.  Enemies that were defeated are already removed from the

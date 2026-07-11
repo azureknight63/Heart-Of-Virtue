@@ -47,3 +47,21 @@ def test_no_bare_local_imports_in_src():
         "bare imports create duplicate module objects with separate classes and "
         "state whenever src/ is on sys.path): " + "; ".join(offenders)
     )
+
+
+def test_legacy_bare_modules_covers_all_src_modules():
+    """functions.LEGACY_BARE_MODULES must not drift behind the src/ tree.
+
+    Persisted data (map JSON __module__/__class_type__, legacy pickles) stores
+    bare module names; canonical_module_name() only rewrites names in that
+    frozenset. A new top-level module missing from it would silently fail to
+    resolve when referenced by map or save data. ('api' is excluded — it never
+    appears in persisted engine data.)
+    """
+    from src.functions import LEGACY_BARE_MODULES
+
+    missing = _LOCAL_MODULES - {"api"} - LEGACY_BARE_MODULES
+    assert not missing, (
+        "Top-level src/ modules missing from functions.LEGACY_BARE_MODULES "
+        f"(persisted bare-name references to them won't resolve): {sorted(missing)}"
+    )

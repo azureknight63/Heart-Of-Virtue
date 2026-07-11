@@ -35,49 +35,19 @@ import sys
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
-# Bootstrap: sys.path + game-engine module shims.
-# Mirrors tools/bug_hunt.py so the engine loads cleanly without pytest.
+# Bootstrap: project root on sys.path. src/ is deliberately NOT added and no
+# bare-name module shims are installed: every local import uses the canonical
+# `src.` path, so a bare-import regression fails loudly here too.
 # ---------------------------------------------------------------------------
 
 ROOT = Path(__file__).resolve().parent.parent
-SRC_DIR = ROOT / "src"
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
-if str(SRC_DIR) not in sys.path:
-    sys.path.insert(1, str(SRC_DIR))
 
 # Silence Mynx LLM calls during harness runs.
 os.environ.setdefault("MYNX_LLM_ENABLED", "0")
 os.environ.setdefault("MYNX_FALLBACK_DELAY", "0")
 os.environ.setdefault("MYNX_LLM_PROVIDER", "none")
-
-# Shim core game-engine modules so bare imports resolve correctly.
-try:
-    import src.functions as _functions_mod
-    sys.modules["functions"] = _functions_mod
-except Exception as _e:
-    print(f"[inquisitor] WARNING: could not shim 'functions': {_e}", file=sys.stderr)
-
-_CORE_MODULES = [
-    "animations", "genericng", "items", "states", "enchant_tables",
-    "objects", "loot_tables", "actions", "tiles", "universe", "positions",
-    "moves", "combatant", "npc", "skilltree", "player",
-]
-for _name in _CORE_MODULES:
-    if _name not in sys.modules:
-        try:
-            _mod = __import__(f"src.{_name}", fromlist=["*"])
-            sys.modules[_name] = _mod
-            sys.modules[f"src.{_name}"] = _mod
-        except Exception:
-            pass
-
-for _name in ("combat", "events", "shop_conditions"):
-    if _name not in sys.modules:
-        try:
-            sys.modules[_name] = __import__(f"src.{_name}", fromlist=["*"])
-        except Exception:
-            pass
 
 # ---------------------------------------------------------------------------
 # Now safe to import project modules.
