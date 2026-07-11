@@ -10,11 +10,9 @@ pytestmark = pytest.mark.skip(reason="Flask app fixture isolation issues when ru
 
 # Setup paths
 ROOT = Path(__file__).resolve().parent.parent
-SRC_DIR = ROOT / "src"
+
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
-if str(SRC_DIR) not in sys.path:
-    sys.path.insert(0, str(SRC_DIR))
 
 # Disable LLM
 os.environ["MYNX_LLM_ENABLED"] = "0"

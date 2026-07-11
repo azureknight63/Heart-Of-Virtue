@@ -9,9 +9,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
-SRC_DIR = ROOT / "src"
-if str(SRC_DIR) not in sys.path:
-    sys.path.insert(0, str(SRC_DIR))
+
 
 import pytest
 
@@ -123,13 +121,6 @@ class TestGameServiceNPC:
             tracking_skill = 0.7
 
         return MockNPC()
-
-
-
-
-
-
-
 
 
     def test_get_active_quests_empty(self, game_service, mock_player):

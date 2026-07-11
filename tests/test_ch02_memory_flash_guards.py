@@ -13,7 +13,6 @@ from unittest.mock import Mock, patch
 import sys
 import os
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 
 # ch02 checks `i.__class__.__name__ == "MineralFragment"` — the class name must match exactly.

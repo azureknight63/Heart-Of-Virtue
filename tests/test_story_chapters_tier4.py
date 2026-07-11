@@ -22,7 +22,6 @@ import os
 import time
 
 # Add src to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from src.story.ch01 import (
     Ch01_Memory_Amelia,

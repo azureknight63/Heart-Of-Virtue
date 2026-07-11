@@ -2,7 +2,6 @@ import sys
 import os
 
 # Add src to python path
-sys.path.append(os.path.join(os.getcwd(), 'src'))
 
 try:
     print("Importing moves...")

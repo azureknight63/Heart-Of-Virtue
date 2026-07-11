@@ -6,11 +6,9 @@ from pathlib import Path
 
 # Setup path - MUST load conftest-style to match test environment
 ROOT = Path(__file__).resolve().parent
-SRC_DIR = ROOT / "src"
+
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
-if str(SRC_DIR) not in sys.path:
-    sys.path.insert(0, str(SRC_DIR))
 
 # Load src modules into sys.modules before importing
 import src.positions

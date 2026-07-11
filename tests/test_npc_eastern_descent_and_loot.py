@@ -14,7 +14,6 @@ from unittest.mock import MagicMock, patch
 from types import SimpleNamespace
 
 # Ensure src is on the path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 
 # ===========================================================================

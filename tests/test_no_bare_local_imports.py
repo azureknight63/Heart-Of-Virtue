@@ -31,6 +31,16 @@ _LOCAL_MODULES = frozenset(
 )
 
 
+def _is_dynamic_import_call(node):
+    """Match importlib.import_module(...) / import_module(...) / __import__(...)."""
+    func = node.func
+    if isinstance(func, ast.Name):
+        return func.id in ("import_module", "__import__")
+    if isinstance(func, ast.Attribute):
+        return func.attr == "import_module"
+    return False
+
+
 def _bare_import_offenders(root, modules):
     offenders = []
     for py in sorted(root.rglob("*.py")):
@@ -53,6 +63,18 @@ def _bare_import_offenders(root, modules):
                     offenders.append(
                         f"{rel}:{node.lineno} from {node.module} import ..."
                     )
+            elif isinstance(node, ast.Call) and _is_dynamic_import_call(node):
+                # Constant-string dynamic imports must be canonical too;
+                # computed names go through functions.canonical_module_name.
+                if node.args and isinstance(node.args[0], ast.Constant):
+                    name = node.args[0].value
+                    if (
+                        isinstance(name, str)
+                        and name.split(".", 1)[0] in modules
+                    ):
+                        offenders.append(
+                            f"{rel}:{node.lineno} import_module({name!r})"
+                        )
     return offenders
 
 
@@ -72,6 +94,30 @@ def test_no_bare_local_imports_in_tests():
         "path — the conftest bare<->src aliasing hook is retired, so a bare "
         "import loads a duplicate module whose classes don't match the "
         "engine's): " + "; ".join(offenders)
+    )
+
+
+def test_no_src_dir_on_sys_path_in_tests():
+    """No test file may put the src/ directory itself on sys.path.
+
+    Doing so makes bare module names importable process-wide for the rest of
+    the pytest run, silently masking bare-import regressions in every test
+    that runs afterwards. Only the project root belongs on sys.path (the
+    conftests handle that).
+    """
+    import re
+
+    pattern = re.compile(r"sys\.path\.(insert|append)\(.*['\"]src['\"]")
+    offenders = []
+    for py in sorted(_TESTS.rglob("*.py")):
+        if py.name == "test_no_bare_local_imports.py":
+            continue
+        for i, line in enumerate(py.read_text(encoding="utf-8").splitlines(), 1):
+            if pattern.search(line):
+                offenders.append(f"{py.relative_to(_ROOT)}:{i}")
+    assert not offenders, (
+        "Test files putting src/ on sys.path (masks bare-import regressions "
+        "for the whole pytest run): " + "; ".join(offenders)
     )
 
 

@@ -12,10 +12,10 @@ from src.player import Player
 
 
 def test_engine_combat_loop_is_gone():
-    # `combat` may resolve to the tests/combat namespace package, but the
-    # engine module's terminal combat() loop and its helper must be gone.
+    # The engine module's terminal combat() loop and its helper must be gone
+    # (src/combat.py is deleted, so ModuleNotFoundError is the expected path).
     try:
-        module = importlib.import_module("combat")
+        module = importlib.import_module("src.combat")
     except ModuleNotFoundError:
         return
     assert not callable(getattr(module, "combat", None))
@@ -29,7 +29,7 @@ def test_player_has_no_terminal_attack():
 
 
 def test_actions_has_no_attack_action():
-    actions = importlib.import_module("actions")
+    actions = importlib.import_module("src.actions")
     assert not hasattr(actions, "Attack")
 
 

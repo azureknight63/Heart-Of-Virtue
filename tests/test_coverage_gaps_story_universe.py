@@ -26,9 +26,6 @@ if "tkinter" not in sys.modules:
     sys.modules["tkinter.ttk"] = MagicMock()
     sys.modules["tkinter.font"] = MagicMock()
 
-src_path = Path(__file__).parent.parent / "src"
-sys.path.insert(0, str(src_path))
-
 
 # ---------------------------------------------------------------------------
 # Shared fixture helpers

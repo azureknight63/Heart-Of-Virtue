@@ -8,7 +8,6 @@ import sys
 import pytest
 from unittest.mock import MagicMock, patch
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
 
 import src.states as states
 from src.states import (

@@ -1,12 +1,6 @@
 import sys
 from pathlib import Path
 
-# Ensure src on path
-ROOT = Path(__file__).resolve().parent.parent
-SRC = ROOT / 'src'
-if str(SRC) not in sys.path:
-    sys.path.insert(0, str(SRC))
-
 from src.npc import Mynx  # noqa
 
 def test_mynx_possessive_preserved():

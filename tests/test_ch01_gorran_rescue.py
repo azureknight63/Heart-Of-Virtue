@@ -10,8 +10,7 @@ import sys
 from pathlib import Path
 
 # Add src to path
-src_path = Path(__file__).parent.parent / 'src'
-sys.path.insert(0, str(src_path))
+
 
 from unittest.mock import Mock, patch
 from src.player import Player
@@ -117,7 +116,6 @@ def test_gorran_rescue_sets_combat_lists():
         # Verify Gorran's combat lists are set correctly
         assert mock_gorran.combat_list == player.combat_list  # Gorran targets enemies
         assert mock_gorran.combat_list_allies == player.combat_list_allies  # Gorran is allied with player
-
 
 
 if __name__ == '__main__':

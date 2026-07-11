@@ -5,7 +5,6 @@ import os
 import pytest
 from unittest.mock import MagicMock, patch
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 import src.items as items
 

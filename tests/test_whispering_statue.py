@@ -5,7 +5,6 @@ import sys
 import os
 
 # Add src to path
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from src.story.effects import WhisperingStatue
 import src.functions as functions

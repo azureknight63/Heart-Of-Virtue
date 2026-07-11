@@ -21,9 +21,6 @@ if "tkinter" not in sys.modules:
     sys.modules["tkinter.ttk"] = MagicMock()
     sys.modules["tkinter.font"] = MagicMock()
 
-src_path = Path(__file__).parent.parent / "src"
-sys.path.insert(0, str(src_path))
-
 
 def _make_move(name, weight=5, fatigue_cost=10, category="Offensive", viable=True):
     """Create a minimal mock move."""

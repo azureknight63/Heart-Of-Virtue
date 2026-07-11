@@ -13,11 +13,9 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 ROOT = Path(__file__).resolve().parent.parent
-SRC_DIR = ROOT / "src"
+
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
-if str(SRC_DIR) not in sys.path:
-    sys.path.insert(1, str(SRC_DIR))
 
 # Direct file load — bypasses src/api/services/__init__.py
 _spec = importlib.util.spec_from_file_location(

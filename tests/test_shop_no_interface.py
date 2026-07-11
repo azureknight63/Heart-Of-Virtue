@@ -54,13 +54,13 @@ class TestMerchantPricingAttributes:
 
 class TestShopInterfaceRemoved:
     def test_interface_module_has_no_shop_classes(self):
-        interface = importlib.import_module("interface")
+        interface = importlib.import_module("src.interface")
         for name in ("ShopInterface", "ShopBuyMenu", "ShopSellMenu"):
             assert not hasattr(interface, name), f"{name} should be deleted"
 
     def test_inventory_helpers_still_reexported(self):
         """get_gold / transfer_item must remain importable from interface."""
-        interface = importlib.import_module("interface")
+        interface = importlib.import_module("src.interface")
         assert hasattr(interface, "get_gold")
         assert hasattr(interface, "transfer_item")
 

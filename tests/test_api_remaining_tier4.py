@@ -29,7 +29,6 @@ from unittest.mock import Mock, MagicMock, patch, call
 from pathlib import Path
 
 # Ensure src is in path
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from src.api.services.game_service import GameService
 from src.api.services.session_manager import SessionManager

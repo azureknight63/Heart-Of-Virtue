@@ -5,7 +5,6 @@ from unittest.mock import MagicMock, patch
 
 # Ensure both project root and src directory are on path for direct module imports
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
 
 from src.story.effects import (
     memory_border, MemoryFlash, Effect, MoveEffect, FlareArrowImpact,

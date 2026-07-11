@@ -1,7 +1,6 @@
 import os, sys
 # Ensure project root and src are on path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
 
 from src.player import Player
 from src.interface import transfer_item

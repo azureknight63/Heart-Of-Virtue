@@ -1,7 +1,6 @@
 import os, sys
 # Ensure both project root and src directory are on path for direct module imports
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
 
 import random
 import types
