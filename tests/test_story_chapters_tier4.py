@@ -22,9 +22,8 @@ import os
 import time
 
 # Add src to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from story.ch01 import (
+from src.story.ch01 import (
     Ch01_Memory_Amelia,
     Ch01DarkGrottoIntro,
     Ch01StartOpenWall,
@@ -42,7 +41,7 @@ from story.ch01 import (
     Ch01GorranFirstWord,
 )
 
-from story.ch02 import (
+from src.story.ch02 import (
     AfterDefeatingLurker,
     BetaTesterBriefing,
     Ch02GuideToCitadel,
@@ -53,7 +52,7 @@ from story.ch02 import (
     AfterKingSlimeReturn,
 )
 
-from story.ch03 import (
+from src.story.ch03 import (
     GorranGestureEvent,
     EasternRoadTurnbackEvent,
     NomadCampSmellEvent,
@@ -236,14 +235,14 @@ class TestCh01StartOpenWall(unittest.TestCase):
 
     def test_start_open_wall_process_opens_exit(self):
         """Test process opens the eastern exit."""
-        import objects as obj_module
+        import src.objects as obj_module
         event = Ch01StartOpenWall(self.player, self.tile)
         wall_depression = Mock()
         wall_depression.name = "Wall Depression"
         self.tile.objects_here = [wall_depression]
 
-        with patch('story.ch01.cprint'):
-            with patch('story.ch01.time.sleep'):
+        with patch('src.story.ch01.cprint'):
+            with patch('src.story.ch01.time.sleep'):
                 event.process()
 
         self.assertNotIn("east", self.tile.block_exit)
@@ -255,8 +254,8 @@ class TestCh01StartOpenWall(unittest.TestCase):
         wall_depression.name = "Wall Depression"
         self.tile.objects_here = [wall_depression]
 
-        with patch('story.ch01.cprint'):
-            with patch('story.ch01.time.sleep'):
+        with patch('src.story.ch01.cprint'):
+            with patch('src.story.ch01.time.sleep'):
                 event.process()
 
         self.assertNotIn(wall_depression, self.tile.objects_here)
@@ -271,10 +270,10 @@ class TestCh01StartOpenWall(unittest.TestCase):
         self.tile.objects_here = [wall_depression, tile_desc]
 
         from unittest.mock import patch
-        import objects as obj_module
-        with patch('story.ch01.cprint'):
-            with patch('story.ch01.time.sleep'):
-                with patch('story.ch01.objects.TileDescription', tile_desc.__class__):
+        import src.objects as obj_module
+        with patch('src.story.ch01.cprint'):
+            with patch('src.story.ch01.time.sleep'):
+                with patch('src.story.ch01.objects.TileDescription', tile_desc.__class__):
                     event.process()
 
     def test_start_open_wall_process_sets_delay(self):
@@ -284,8 +283,8 @@ class TestCh01StartOpenWall(unittest.TestCase):
         wall_depression.name = "Wall Depression"
         self.tile.objects_here = [wall_depression]
 
-        with patch('story.ch01.cprint'):
-            with patch('story.ch01.time.sleep'):
+        with patch('src.story.ch01.cprint'):
+            with patch('src.story.ch01.time.sleep'):
                 event.process()
 
         self.assertEqual(event.delay_duration, 2000)
@@ -334,8 +333,8 @@ class TestCh01BridgeWall(unittest.TestCase):
         wall_depression.name = "Wall Depression"
         self.tile.objects_here = [wall_depression]
 
-        with patch('story.ch01.cprint'):
-            with patch('story.ch01.time.sleep'):
+        with patch('src.story.ch01.cprint'):
+            with patch('src.story.ch01.time.sleep'):
                 event.process()
 
         self.assertNotIn("east", self.tile.block_exit)
@@ -347,8 +346,8 @@ class TestCh01BridgeWall(unittest.TestCase):
         wall_depression.name = "Wall Depression"
         self.tile.objects_here = [wall_depression]
 
-        with patch('story.ch01.cprint'):
-            with patch('story.ch01.time.sleep'):
+        with patch('src.story.ch01.cprint'):
+            with patch('src.story.ch01.time.sleep'):
                 event.process()
 
         self.assertIn("doorway", self.tile.description)
@@ -360,8 +359,8 @@ class TestCh01BridgeWall(unittest.TestCase):
         wall_depression.name = "Wall Depression"
         self.tile.objects_here = [wall_depression]
 
-        with patch('story.ch01.cprint'):
-            with patch('story.ch01.time.sleep'):
+        with patch('src.story.ch01.cprint'):
+            with patch('src.story.ch01.time.sleep'):
                 event.process()
 
         # Wall depression should be removed (after description if it exists)
@@ -454,7 +453,7 @@ class TestCh01ChestRumblerBattle(unittest.TestCase):
         self.player.inventory = []
         self.player.equip_item = Mock()
         with patch('neotermcolor.cprint'):
-            with patch('items.RustedIronMace') as mock_mace:
+            with patch('src.items.RustedIronMace') as mock_mace:
                 event.process(user_input=None)
 
         self.assertTrue(event.needs_input)
@@ -464,8 +463,8 @@ class TestCh01ChestRumblerBattle(unittest.TestCase):
         """Test process second call (with user acknowledgment)."""
         event = Ch01ChestRumblerBattle(self.player, self.tile)
         event.tile.events_here = [event]
-        with patch('story.ch01.cprint'):
-            with patch('story.ch01.time.sleep'):
+        with patch('src.story.ch01.cprint'):
+            with patch('src.story.ch01.time.sleep'):
                 event.process(user_input="continue")
 
         self.tile.spawn_npc.assert_called_once_with("RockRumbler")
@@ -627,7 +626,7 @@ class TestCh01PostRumbler3(unittest.TestCase):
         """Test process method."""
         event = Ch01PostRumbler3(self.player, self.tile, params=None)
         self.player.universe.story = {}
-        with patch('story.ch01.cprint'):
+        with patch('src.story.ch01.cprint'):
             event.process()
 
 

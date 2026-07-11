@@ -6,9 +6,7 @@ from pathlib import Path
 
 # Ensure the project's src directory is on sys.path
 ROOT = Path(__file__).resolve().parent.parent
-SRC_DIR = ROOT / "src"
-if str(SRC_DIR) not in sys.path:
-    sys.path.insert(0, str(SRC_DIR))
+
 
 from src.coordinate_config import CoordinateSystemConfig  # type: ignore
 from src.config_manager import GameConfig  # type: ignore

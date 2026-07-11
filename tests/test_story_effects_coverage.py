@@ -5,15 +5,14 @@ from unittest.mock import MagicMock, patch
 
 # Ensure both project root and src directory are on path for direct module imports
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
 
-from story.effects import (
+from src.story.effects import (
     memory_border, MemoryFlash, Effect, MoveEffect, FlareArrowImpact,
     GoldFromHeaven, Block, MakeKey, Teleport, Shrine, StMichael,
     NPCSpawnerEvent, PulsingGlandEvent
 )
-from items import Item, Shortsword
-import states
+from src.items import Item, Shortsword
+import src.states as states
 
 # Fakes
 class FakeTile:
@@ -62,7 +61,7 @@ class FakeUniverse:
         self.locked_chests = []
 
 def test_memory_border():
-    with patch('animations.animate_to_main_screen') as mock_anim, patch('story.effects.cprint') as mock_cprint:
+    with patch('src.animations.animate_to_main_screen') as mock_anim, patch('src.story.effects.cprint') as mock_cprint:
         # style = top
         memory_border("top")
         assert mock_anim.called
@@ -83,8 +82,8 @@ def test_memory_flash_edge_cases():
 
     # check_conditions() calls pass_conditions_to_process() -> process(user_input=None),
     # which sets needs_input=True. Patch all I/O before calling it.
-    with patch('story.effects.cprint'), patch('story.effects.time.sleep'), \
-            patch('animations.animate_to_main_screen'):
+    with patch('src.story.effects.cprint'), patch('src.story.effects.time.sleep'), \
+            patch('src.animations.animate_to_main_screen'):
 
         # 1. check_conditions / first-pass process (user_input=None)
         ev = MemoryFlash(player, tile, lines, aftermath_text=["Aftermath 1"])
@@ -138,7 +137,7 @@ def test_flare_arrow_impact():
     ev = FlareArrowImpact(player, move)
     
     # Mock functions.inflict
-    with patch('functions.inflict') as mock_inflict:
+    with patch('src.functions.inflict') as mock_inflict:
         ev.process()
         assert mock_inflict.called
         assert isinstance(mock_inflict.call_args[0][0], states.Enflamed)
@@ -221,14 +220,14 @@ def test_st_michael_shrine(capsys):
     assert len(ev.get_input_options()) == 3
     
     # process with user_input = None (CLI presentation path)
-    with patch('story.effects.time.sleep'), patch('story.effects.cprint'):
+    with patch('src.story.effects.time.sleep'), patch('src.story.effects.cprint'):
         ev.process(user_input=None)
         assert ev.needs_input is True
         
     # process with integer user_input
     # Choose option 1
     chosen_weapon_cls = ev.available_choices[1][1]
-    with patch('functions.add_random_enchantments') as mock_enchant, patch('story.effects.cprint'):
+    with patch('src.functions.add_random_enchantments') as mock_enchant, patch('src.story.effects.cprint'):
         ev.process(user_input="1")
         assert ev.needs_input is False
         assert ev.completed is True
@@ -239,14 +238,14 @@ def test_st_michael_shrine(capsys):
     # process with invalid/non-integer user_input (should default to choice 0)
     ev_invalid = StMichael(player, tile)
     chosen_weapon_default = ev_invalid.available_choices[0][1]
-    with patch('functions.add_random_enchantments'), patch('story.effects.cprint'):
+    with patch('src.functions.add_random_enchantments'), patch('src.story.effects.cprint'):
         ev_invalid.process(user_input="invalid")
         assert any(item.name == chosen_weapon_default for item in tile.spawned_items)
         
     # process with out of range index (should default to 0)
     ev_range = StMichael(player, tile)
     chosen_weapon_range = ev_range.available_choices[0][1]
-    with patch('functions.add_random_enchantments'), patch('story.effects.cprint'):
+    with patch('src.functions.add_random_enchantments'), patch('src.story.effects.cprint'):
         ev_range.process(user_input="99")
         assert any(item.name == chosen_weapon_range for item in tile.spawned_items)
 
@@ -266,7 +265,7 @@ def test_npc_spawner_event_class_resolution():
     assert ev3._resolve_npc_class_name() == "bareclass"
     
     # 3. npc_cls as type (NPC subclass)
-    from npc import Slime
+    from src.npc import Slime
     ev4 = NPCSpawnerEvent(player, tile, npc_cls=Slime)
     assert ev4._resolve_npc_class_name() == "Slime"
 
@@ -487,7 +486,7 @@ def test_pulsing_gland_defaults_when_no_npc_cls():
 # ---------------------------------------------------------------------------
 # WhisperingStatue — full coverage (lines 629-728)
 # ---------------------------------------------------------------------------
-from story.effects import WhisperingStatue
+from src.story.effects import WhisperingStatue
 
 
 def test_whispering_statue_correct_answer():
@@ -504,7 +503,7 @@ def test_whispering_statue_correct_answer():
 
     # check_conditions triggers process chain (it calls pass_conditions_to_process)
     # We test process() directly in API mode instead to avoid terminal input()
-    with patch('story.effects.cprint'), patch('story.effects.time.sleep'):
+    with patch('src.story.effects.cprint'), patch('src.story.effects.time.sleep'):
         ev.process(user_input="1")  # correct answer
         assert ev.completed is True
         assert ev.needs_input is False
@@ -521,7 +520,7 @@ def test_whispering_statue_wrong_answer():
     ev = WhisperingStatue(player, tile)
     tile.events_here.append(ev)
 
-    with patch('story.effects.cprint'), patch('story.effects.time.sleep'):
+    with patch('src.story.effects.cprint'), patch('src.story.effects.time.sleep'):
         ev.process(user_input="2")  # wrong answer
         assert ev.completed is True
         # A Slime should have been spawned (wrong answer punishment)
@@ -537,7 +536,7 @@ def test_whispering_statue_empty_choice_defaults():
     ev = WhisperingStatue(player, tile)
     tile.events_here.append(ev)
 
-    with patch('story.effects.cprint'), patch('story.effects.time.sleep'):
+    with patch('src.story.effects.cprint'), patch('src.story.effects.time.sleep'):
         ev.process(user_input="")  # empty → defaults to "1"
         assert ev.completed is True
         assert any(item.name == "Gold" for item in tile.spawned_items)
@@ -551,7 +550,7 @@ def test_whispering_statue_repeat_stays_in_tile():
     ev = WhisperingStatue(player, tile, repeat=True)
     tile.events_here.append(ev)
 
-    with patch('story.effects.cprint'), patch('story.effects.time.sleep'):
+    with patch('src.story.effects.cprint'), patch('src.story.effects.time.sleep'):
         ev.process(user_input="1")
         assert ev in tile.events_here
 
@@ -565,7 +564,7 @@ def test_whispering_statue_check_conditions():
     tile.events_here.append(ev)
 
     # In CLI mode process(user_input=None) calls input() — patch it
-    with patch('story.effects.cprint'), patch('story.effects.time.sleep'), \
+    with patch('src.story.effects.cprint'), patch('src.story.effects.time.sleep'), \
             patch('builtins.input', return_value="1"):
         ev.check_conditions()
         assert ev.completed is True
@@ -582,7 +581,7 @@ def test_st_michael_removes_from_tile_events_here():
     ev = StMichael(player, tile)
     tile.events_here.append(ev)  # <-- ensure ev IS in events_here
 
-    with patch('functions.add_random_enchantments'), patch('story.effects.cprint'):
+    with patch('src.functions.add_random_enchantments'), patch('src.story.effects.cprint'):
         ev.process(user_input="0")
 
     assert ev not in tile.events_here
@@ -652,7 +651,7 @@ def test_whispering_statue_cli_eoferror_fallback():
     ev = WhisperingStatue(player, tile)
     tile.events_here.append(ev)
 
-    with patch('story.effects.cprint'), patch('story.effects.time.sleep'), \
+    with patch('src.story.effects.cprint'), patch('src.story.effects.time.sleep'), \
             patch('builtins.input', side_effect=EOFError):
         ev.process(user_input=None)
         assert ev.completed is True

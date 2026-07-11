@@ -3,15 +3,13 @@ from pathlib import Path
 
 # Ensure src is on path like other tests
 ROOT = Path(__file__).resolve().parent.parent
-SRC_DIR = ROOT / "src"
-if str(SRC_DIR) not in sys.path:
-    sys.path.insert(0, str(SRC_DIR))
+
 
 import random
 import types
 import pytest
 
-import moves
+import src.moves as moves
 from src.npc import CaveBat
 
 
@@ -68,7 +66,7 @@ def test_execute_hit_heals_and_damages(monkeypatch):
     monkeypatch.setattr('random.uniform', lambda a, b: 1.0)
     monkeypatch.setattr('random.randint', lambda a, b: 0)
     # disable parry
-    monkeypatch.setattr('functions.check_parry', lambda target: False)
+    monkeypatch.setattr('src.functions.check_parry', lambda target: False)
 
     bat = CaveBat()
     target = DummyTarget(hp=40, protection=0, finesse=10)
@@ -102,7 +100,7 @@ def test_execute_miss_no_damage_but_fatigue_reduced(monkeypatch):
     monkeypatch.setattr('random.uniform', lambda a, b: 1.0)
     # force miss by returning very high roll
     monkeypatch.setattr('random.randint', lambda a, b: 100)
-    monkeypatch.setattr('functions.check_parry', lambda target: False)
+    monkeypatch.setattr('src.functions.check_parry', lambda target: False)
 
     bat = CaveBat()
     target = DummyTarget(hp=30, protection=0, finesse=10)
@@ -137,7 +135,7 @@ def test_execute_glancing_blows_half_damage_and_smaller_heal(monkeypatch):
     # choose roll such that hit and glancing: hit_chance - roll < 10
     roll_for_glance = max(0, hit_chance - 5)
     monkeypatch.setattr('random.randint', lambda a, b: roll_for_glance)
-    monkeypatch.setattr('functions.check_parry', lambda target: False)
+    monkeypatch.setattr('src.functions.check_parry', lambda target: False)
 
     prev_target_hp = target.hp
     prev_bat_hp = bat.hp

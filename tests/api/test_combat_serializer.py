@@ -12,9 +12,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
-SRC_DIR = ROOT / "src"
-if str(SRC_DIR) not in sys.path:
-    sys.path.insert(0, str(SRC_DIR))
+
 
 import pytest
 
@@ -160,23 +158,26 @@ class TestCombatantSerializer:
         class MockInventory:
             pass
 
-        class Player:
-            name = "Jean"
-            level = 10
-            health = 80
-            max_health = 100
-            damage = 15
-            armor = 5
-            speed = 10
-            accuracy = 85
-            evasion = 5
-            states = []
-            combat_proximity = 0
-            inventory = MockInventory()
-            equipped = {"weapon": None, "body": None}
-            resistances = {"fire": 1.0}
+        # The serializer isinstance-checks the engine Player class, so build
+        # an uninitialized real Player and attach just the attrs it reads.
+        from src.player import Player
 
-        player = Player()
+        player = Player.__new__(Player)
+        player.name = "Jean"
+        player.level = 10
+        player.health = 80
+        player.max_health = 100
+        player.damage = 15
+        player.armor = 5
+        player.speed = 10
+        player.accuracy = 85
+        player.evasion = 5
+        player.states = []
+        player.combat_proximity = 0
+        player.inventory = MockInventory()
+        player.equipped = {"weapon": None, "body": None}
+        player.resistances = {"fire": 1.0}
+
         result = CombatantSerializer.serialize_combatant(player)
 
         assert result["name"] == "Jean"

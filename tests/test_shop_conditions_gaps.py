@@ -46,7 +46,7 @@ def test_restock_weight_boost_skips_non_class_keys_via_exception_guard():
 
 
 def test_inject_unique_items_finds_and_uses_merchant_container():
-    from items import unique_items_spawned
+    from src.items import unique_items_spawned
 
     unique_items_spawned.clear()
 
@@ -77,7 +77,7 @@ def test_inject_unique_items_finds_and_uses_merchant_container():
 def test_inject_unique_items_container_search_exception_falls_back(capsys):
     """If locating a container raises, the except swallows it and falls
     through to the merchant.inventory fallback path rather than crashing."""
-    from items import unique_items_spawned
+    from src.items import unique_items_spawned
 
     unique_items_spawned.clear()
 

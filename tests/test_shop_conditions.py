@@ -1,10 +1,10 @@
-from shop_conditions import (
+from src.shop_conditions import (
     ShopCondition,
     ValueModifierCondition,
     RestockWeightBoostCondition,
     UniqueItemInjectionCondition,
 )
-from items import Item, Weapon
+from src.items import Item, Weapon
 
 
 class DummyItem(Item):
@@ -63,7 +63,7 @@ def test_unique_item_injection_condition():
 
 
 def test_unique_item_injection_no_duplicates():
-    from items import unique_items_spawned
+    from src.items import unique_items_spawned
     unique_items_spawned.clear()
     merchants = [DummyMerchant() for _ in range(4)]  # one more than number of unique items
     conditions = [UniqueItemInjectionCondition(name="", description="") for _ in range(4)]

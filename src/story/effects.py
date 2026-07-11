@@ -8,11 +8,11 @@ from src.narration import cprint, narrate, say, begin_conversation
 import random
 import time
 
-from npc import NPC
-import functions
-import states
-from events import Event
-import animations
+from src.npc import NPC
+import src.functions as functions
+import src.states as states
+from src.events import Event
+import src.animations as animations
 
 
 def memory_border(style="top"):
@@ -605,7 +605,7 @@ class NPCSpawnerEvent(Event):
                 return class_type.split(":", 1)[1].strip()
             return class_type.strip() or None
         try:
-            from npc import NPC  # local import avoids circular on module load
+            from src.npc import NPC  # local import avoids circular on module load
 
             if isinstance(self.npc_cls, type) and issubclass(self.npc_cls, NPC):
                 return self.npc_cls.__name__

@@ -3,8 +3,8 @@
 import random
 import time
 
-import functions  # type: ignore
-from universe import tile_exists as tile_exists
+import src.functions as functions  # type: ignore
+from src.universe import tile_exists as tile_exists
 from src.narration import colored, cprint, narrate
 
 

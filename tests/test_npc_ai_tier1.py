@@ -19,9 +19,7 @@ from pathlib import Path
 
 # Ensure src is on path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-SRC_DIR = PROJECT_ROOT / 'src'
-if str(SRC_DIR) not in sys.path:
-    sys.path.insert(0, str(SRC_DIR))
+
 
 from src.npc import NPC, Friend
 from src.npc._enemies import Slime, RockRumbler, Lurker
@@ -29,7 +27,7 @@ from src.npc._friends import Mynx, Gorran
 from src.player import Player
 from src.states import Poisoned, Enflamed
 from src.items import Item, Weapon
-import moves  # type: ignore
+import src.moves as moves  # type: ignore
 
 
 class TestNPCStateManagement:

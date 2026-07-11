@@ -16,14 +16,12 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch, call
 
 ROOT = Path(__file__).resolve().parent.parent
-SRC_DIR = ROOT / "src"
-if str(SRC_DIR) not in sys.path:
-    sys.path.insert(0, str(SRC_DIR))
+
 
 import pytest
-import items
-import positions
-from moves._ranged import (
+import src.items as items
+import src.positions as positions
+from src.moves._ranged import (
     _crossbow_close_range_penalty,
     ShootBow,
     EagleEye,
@@ -478,9 +476,9 @@ class TestShootBowExecute:
         with (
             patch.object(move, "calculate_hit_chance", return_value=100),
             patch.object(move, "hit"),
-            patch("moves._ranged.functions.check_parry", return_value=False),
-            patch("moves._ranged.random.randint", return_value=50),
-            patch("moves._ranged.random.uniform", return_value=1.0),
+            patch("src.moves._ranged.functions.check_parry", return_value=False),
+            patch("src.moves._ranged.random.randint", return_value=50),
+            patch("src.moves._ranged.random.uniform", return_value=1.0),
         ):
             move.execute(user)
         assert arrow.count == 2
@@ -499,9 +497,9 @@ class TestShootBowExecute:
         with (
             patch.object(move, "calculate_hit_chance", return_value=100),
             patch.object(move, "hit"),
-            patch("moves._ranged.functions.check_parry", return_value=False),
-            patch("moves._ranged.random.randint", return_value=50),
-            patch("moves._ranged.random.uniform", return_value=1.0),
+            patch("src.moves._ranged.functions.check_parry", return_value=False),
+            patch("src.moves._ranged.random.randint", return_value=50),
+            patch("src.moves._ranged.random.uniform", return_value=1.0),
         ):
             move.execute(user)
         assert arrow not in user.inventory
@@ -511,9 +509,9 @@ class TestShootBowExecute:
         with (
             patch.object(move, "calculate_hit_chance", return_value=5),
             patch.object(move, "miss") as mock_miss,
-            patch("moves._ranged.functions.check_parry", return_value=False),
-            patch("moves._ranged.random.randint", return_value=100),
-            patch("moves._ranged.random.uniform", return_value=1.0),
+            patch("src.moves._ranged.functions.check_parry", return_value=False),
+            patch("src.moves._ranged.random.randint", return_value=100),
+            patch("src.moves._ranged.random.uniform", return_value=1.0),
         ):
             move.execute(user)
         mock_miss.assert_called_once()
@@ -523,9 +521,9 @@ class TestShootBowExecute:
         with (
             patch.object(move, "calculate_hit_chance", return_value=100),
             patch.object(move, "parry") as mock_parry,
-            patch("moves._ranged.functions.check_parry", return_value=True),
-            patch("moves._ranged.random.randint", return_value=50),
-            patch("moves._ranged.random.uniform", return_value=1.0),
+            patch("src.moves._ranged.functions.check_parry", return_value=True),
+            patch("src.moves._ranged.random.randint", return_value=50),
+            patch("src.moves._ranged.random.uniform", return_value=1.0),
         ):
             move.execute(user)
         mock_parry.assert_called_once()
@@ -542,9 +540,9 @@ class TestShootBowExecute:
         with (
             patch.object(move, "calculate_hit_chance", return_value=55),
             patch.object(move, "hit") as mock_hit,
-            patch("moves._ranged.functions.check_parry", return_value=False),
-            patch("moves._ranged.random.randint", return_value=50),
-            patch("moves._ranged.random.uniform", return_value=1.0),
+            patch("src.moves._ranged.functions.check_parry", return_value=False),
+            patch("src.moves._ranged.random.randint", return_value=50),
+            patch("src.moves._ranged.random.uniform", return_value=1.0),
         ):
             move.execute(user)
         mock_hit.assert_called_once_with(1, True)
@@ -558,9 +556,9 @@ class TestShootBowExecute:
         with (
             patch.object(move, "calculate_hit_chance", return_value=100),
             patch.object(move, "hit"),
-            patch("moves._ranged.functions.check_parry", return_value=False),
-            patch("moves._ranged.random.randint", return_value=50),
-            patch("moves._ranged.random.uniform", return_value=1.0),
+            patch("src.moves._ranged.functions.check_parry", return_value=False),
+            patch("src.moves._ranged.random.randint", return_value=50),
+            patch("src.moves._ranged.random.uniform", return_value=1.0),
         ):
             move.execute(user)
         exec_effect.process.assert_called_once()
@@ -574,10 +572,10 @@ class TestShootBowExecute:
         with (
             patch.object(move, "calculate_hit_chance", return_value=5),
             patch.object(move, "miss"),
-            patch("moves._ranged.functions.check_parry", return_value=False),
-            patch("moves._ranged.random.randint", return_value=100),
-            patch("moves._ranged.random.uniform", return_value=1.0),
-            patch("moves._ranged.random.random", return_value=0.0),
+            patch("src.moves._ranged.functions.check_parry", return_value=False),
+            patch("src.moves._ranged.random.randint", return_value=100),
+            patch("src.moves._ranged.random.uniform", return_value=1.0),
+            patch("src.moves._ranged.random.random", return_value=0.0),
         ):
             move.execute(user)
         user.current_room.spawn_item.assert_called()
@@ -733,9 +731,9 @@ class TestShootCrossbowExecute:
         with (
             patch.object(move, "viable", return_value=True),
             patch.object(move, "hit") as mock_hit,
-            patch("moves._ranged.functions.check_parry", return_value=False),
-            patch("moves._ranged.random.randint", return_value=50),
-            patch("moves._ranged.random.uniform", return_value=1.0),
+            patch("src.moves._ranged.functions.check_parry", return_value=False),
+            patch("src.moves._ranged.random.randint", return_value=50),
+            patch("src.moves._ranged.random.uniform", return_value=1.0),
         ):
             move.execute(user)
         mock_hit.assert_called_once_with(23, False)
@@ -745,8 +743,8 @@ class TestShootCrossbowExecute:
         with (
             patch.object(move, "viable", return_value=False),
             patch.object(move, "miss") as mock_miss,
-            patch("moves._ranged.random.randint", return_value=50),
-            patch("moves._ranged.random.uniform", return_value=1.0),
+            patch("src.moves._ranged.random.randint", return_value=50),
+            patch("src.moves._ranged.random.uniform", return_value=1.0),
         ):
             move.execute(user)
         mock_miss.assert_called_once()
@@ -758,11 +756,11 @@ class TestShootCrossbowExecute:
         move, user, enemy = self._setup()
         with (
             patch.object(move, "viable", return_value=True),
-            patch("moves._ranged._crossbow_close_range_penalty", return_value=True),
+            patch("src.moves._ranged._crossbow_close_range_penalty", return_value=True),
             patch.object(move, "miss") as mock_miss,
             patch.object(move, "hit") as mock_hit,
-            patch("moves._ranged.random.randint", return_value=60),
-            patch("moves._ranged.random.uniform", return_value=1.0),
+            patch("src.moves._ranged.random.randint", return_value=60),
+            patch("src.moves._ranged.random.uniform", return_value=1.0),
         ):
             move.execute(user)
         mock_miss.assert_called_once()
@@ -776,9 +774,9 @@ class TestShootCrossbowExecute:
         with (
             patch.object(move, "viable", return_value=True),
             patch.object(move, "hit") as mock_hit,
-            patch("moves._ranged.functions.check_parry", return_value=False),
-            patch("moves._ranged.random.randint", return_value=90),
-            patch("moves._ranged.random.uniform", return_value=1.0),
+            patch("src.moves._ranged.functions.check_parry", return_value=False),
+            patch("src.moves._ranged.random.randint", return_value=90),
+            patch("src.moves._ranged.random.uniform", return_value=1.0),
         ):
             move.execute(user)
         mock_hit.assert_called_once_with(11, True)
@@ -790,9 +788,9 @@ class TestShootCrossbowExecute:
         with (
             patch.object(move, "viable", return_value=True),
             patch.object(move, "hit"),
-            patch("moves._ranged.functions.check_parry", return_value=False),
-            patch("moves._ranged.random.randint", return_value=50),
-            patch("moves._ranged.random.uniform", return_value=1.0),
+            patch("src.moves._ranged.functions.check_parry", return_value=False),
+            patch("src.moves._ranged.random.randint", return_value=50),
+            patch("src.moves._ranged.random.uniform", return_value=1.0),
         ):
             move.execute(user)
         assert user.fatigue == 30
@@ -804,9 +802,9 @@ class TestShootCrossbowExecute:
         with (
             patch.object(move, "viable", return_value=True),
             patch.object(move, "hit"),
-            patch("moves._ranged.functions.check_parry", return_value=False),
-            patch("moves._ranged.random.randint", return_value=50),
-            patch("moves._ranged.random.uniform", return_value=1.0),
+            patch("src.moves._ranged.functions.check_parry", return_value=False),
+            patch("src.moves._ranged.random.randint", return_value=50),
+            patch("src.moves._ranged.random.uniform", return_value=1.0),
         ):
             move.execute(user)
         assert user.fatigue == 0
@@ -818,10 +816,10 @@ class TestShootCrossbowExecute:
         with (
             patch.object(move, "viable", return_value=True),
             patch.object(move, "hit"),
-            patch("moves._ranged.functions.check_parry", return_value=False),
-            patch("moves._ranged.random.randint", return_value=50),
-            patch("moves._ranged.random.uniform", return_value=1.0),
-            patch("moves._ranged._ensure_weapon_exp"),
+            patch("src.moves._ranged.functions.check_parry", return_value=False),
+            patch("src.moves._ranged.random.randint", return_value=50),
+            patch("src.moves._ranged.random.uniform", return_value=1.0),
+            patch("src.moves._ranged._ensure_weapon_exp"),
         ):
             move.execute(user)
         assert user.combat_exp["Basic"] == 5
@@ -885,9 +883,9 @@ class TestBroadheadBolt:
         with (
             patch.object(move, "viable", return_value=True),
             patch.object(move, "hit") as mock_hit,
-            patch("moves._ranged.functions.check_parry", return_value=False),
-            patch("moves._ranged.random.randint", return_value=50),
-            patch("moves._ranged.random.uniform", return_value=1.0),
+            patch("src.moves._ranged.functions.check_parry", return_value=False),
+            patch("src.moves._ranged.random.randint", return_value=50),
+            patch("src.moves._ranged.random.uniform", return_value=1.0),
         ):
             move.execute(user)
         mock_hit.assert_called_once_with(49, False)
@@ -947,9 +945,9 @@ class TestAimedShot:
         with (
             patch.object(move, "viable", return_value=True),
             patch.object(move, "hit") as mock_hit,
-            patch("moves._ranged.functions.check_parry", return_value=False),
-            patch("moves._ranged.random.randint", return_value=50),
-            patch("moves._ranged.random.uniform", return_value=1.0),
+            patch("src.moves._ranged.functions.check_parry", return_value=False),
+            patch("src.moves._ranged.random.randint", return_value=50),
+            patch("src.moves._ranged.random.uniform", return_value=1.0),
         ):
             move.execute(user)
         mock_hit.assert_called_once_with(59, False)
@@ -964,8 +962,8 @@ class TestAimedShot:
         with (
             patch.object(move, "viable", return_value=False),
             patch.object(move, "miss") as mock_miss,
-            patch("moves._ranged.random.randint", return_value=50),
-            patch("moves._ranged.random.uniform", return_value=1.0),
+            patch("src.moves._ranged.random.randint", return_value=50),
+            patch("src.moves._ranged.random.uniform", return_value=1.0),
         ):
             move.execute(user)
         mock_miss.assert_called_once()
@@ -998,7 +996,7 @@ class TestPinningBolt:
 
     def test_execute_hit_applies_disoriented(self):
         """On hit: Disoriented state appended to target.states."""
-        import states as states_module
+        import src.states as states_module
 
         user = _make_crossbow_user(finesse=10, intelligence=5)
         enemy = _make_enemy()
@@ -1010,10 +1008,10 @@ class TestPinningBolt:
         with (
             patch.object(move, "viable", return_value=True),
             patch.object(move, "hit"),
-            patch("moves._ranged.functions.check_parry", return_value=False),
-            patch("moves._ranged.random.randint", return_value=50),
-            patch("moves._ranged.random.uniform", return_value=1.0),
-            patch("moves._ranged.states.Disoriented") as mock_disoriented,
+            patch("src.moves._ranged.functions.check_parry", return_value=False),
+            patch("src.moves._ranged.random.randint", return_value=50),
+            patch("src.moves._ranged.random.uniform", return_value=1.0),
+            patch("src.moves._ranged.states.Disoriented") as mock_disoriented,
         ):
             move.execute(user)
         # Disoriented should have been attempted
@@ -1028,7 +1026,7 @@ class TestPinningBolt:
         replace it with a MagicMock (not a valid type).
         We verify no duplicate by checking len(enemy.states) stays at 1.
         """
-        import moves._ranged as ranged_module
+        import src.moves._ranged as ranged_module
 
         user = _make_crossbow_user(finesse=10, intelligence=5)
         enemy = _make_enemy()
@@ -1044,9 +1042,9 @@ class TestPinningBolt:
         with (
             patch.object(move, "viable", return_value=True),
             patch.object(move, "hit"),
-            patch("moves._ranged.functions.check_parry", return_value=False),
-            patch("moves._ranged.random.randint", return_value=50),
-            patch("moves._ranged.random.uniform", return_value=1.0),
+            patch("src.moves._ranged.functions.check_parry", return_value=False),
+            patch("src.moves._ranged.random.randint", return_value=50),
+            patch("src.moves._ranged.random.uniform", return_value=1.0),
         ):
             move.execute(user)
         # No new state should have been added
@@ -1063,8 +1061,8 @@ class TestPinningBolt:
         with (
             patch.object(move, "viable", return_value=False),
             patch.object(move, "miss") as mock_miss,
-            patch("moves._ranged.random.randint", return_value=50),
-            patch("moves._ranged.random.uniform", return_value=1.0),
+            patch("src.moves._ranged.random.randint", return_value=50),
+            patch("src.moves._ranged.random.uniform", return_value=1.0),
         ):
             move.execute(user)
         mock_miss.assert_called_once()
@@ -1150,9 +1148,9 @@ class TestShootBowExecuteEdgeCases:
         with (
             patch.object(move, "calculate_hit_chance", return_value=100),
             patch.object(move, "hit") as mock_hit,
-            patch("moves._ranged.functions.check_parry", return_value=False),
-            patch("moves._ranged.random.randint", return_value=50),
-            patch("moves._ranged.random.uniform", return_value=1.0),
+            patch("src.moves._ranged.functions.check_parry", return_value=False),
+            patch("src.moves._ranged.random.randint", return_value=50),
+            patch("src.moves._ranged.random.uniform", return_value=1.0),
         ):
             move.execute(user)
         mock_hit.assert_called_once_with(0, False)
@@ -1196,9 +1194,9 @@ class TestShootCrossbowExecuteRealPath:
         with (
             patch.object(move, "hit") as mock_hit,
             patch.object(move, "miss") as mock_miss,
-            patch("moves._ranged.functions.check_parry", return_value=False),
-            patch("moves._ranged.random.randint", return_value=50),
-            patch("moves._ranged.random.uniform", return_value=1.0),
+            patch("src.moves._ranged.functions.check_parry", return_value=False),
+            patch("src.moves._ranged.random.randint", return_value=50),
+            patch("src.moves._ranged.random.uniform", return_value=1.0),
         ):
             move.execute(user)
         mock_miss.assert_called_once()
@@ -1219,9 +1217,9 @@ class TestShootCrossbowExecuteRealPath:
         move.mvrange = (6, 40)
         with (
             patch.object(move, "hit") as mock_hit,
-            patch("moves._ranged.functions.check_parry", return_value=False),
-            patch("moves._ranged.random.randint", return_value=90),
-            patch("moves._ranged.random.uniform", return_value=1.0),
+            patch("src.moves._ranged.functions.check_parry", return_value=False),
+            patch("src.moves._ranged.random.randint", return_value=90),
+            patch("src.moves._ranged.random.uniform", return_value=1.0),
         ):
             move.execute(user)
         mock_hit.assert_called_once_with(19, True)
@@ -1234,10 +1232,10 @@ class TestShootCrossbowExecuteRealPath:
         move = ShootCrossbow(user)
         move.target = enemy
         with (
-            patch("moves._ranged.functions.check_parry", return_value=True),
+            patch("src.moves._ranged.functions.check_parry", return_value=True),
             patch.object(move, "parry") as mock_parry,
-            patch("moves._ranged.random.randint", return_value=0),
-            patch("moves._ranged.random.uniform", return_value=1.0),
+            patch("src.moves._ranged.random.randint", return_value=0),
+            patch("src.moves._ranged.random.uniform", return_value=1.0),
         ):
             move.execute(user)
         mock_parry.assert_called_once()
@@ -1283,9 +1281,9 @@ class TestBroadheadBoltExecuteRealPath:
         with (
             patch.object(move, "hit") as mock_hit,
             patch.object(move, "miss") as mock_miss,
-            patch("moves._ranged.functions.check_parry", return_value=False),
-            patch("moves._ranged.random.randint", return_value=50),
-            patch("moves._ranged.random.uniform", return_value=1.0),
+            patch("src.moves._ranged.functions.check_parry", return_value=False),
+            patch("src.moves._ranged.random.randint", return_value=50),
+            patch("src.moves._ranged.random.uniform", return_value=1.0),
         ):
             move.execute(user)
         mock_miss.assert_called_once()
@@ -1303,8 +1301,8 @@ class TestBroadheadBoltExecuteRealPath:
         with (
             patch.object(move, "hit") as mock_hit,
             patch.object(move, "miss") as mock_miss,
-            patch("moves._ranged.random.randint", return_value=50),
-            patch("moves._ranged.random.uniform", return_value=1.0),
+            patch("src.moves._ranged.random.randint", return_value=50),
+            patch("src.moves._ranged.random.uniform", return_value=1.0),
         ):
             move.execute(user)
         mock_miss.assert_called_once()
@@ -1324,9 +1322,9 @@ class TestBroadheadBoltExecuteRealPath:
         move.target = enemy
         with (
             patch.object(move, "hit") as mock_hit,
-            patch("moves._ranged.functions.check_parry", return_value=False),
-            patch("moves._ranged.random.randint", return_value=90),
-            patch("moves._ranged.random.uniform", return_value=1.0),
+            patch("src.moves._ranged.functions.check_parry", return_value=False),
+            patch("src.moves._ranged.random.randint", return_value=90),
+            patch("src.moves._ranged.random.uniform", return_value=1.0),
         ):
             move.execute(user)
         mock_hit.assert_called_once_with(24, True)
@@ -1339,10 +1337,10 @@ class TestBroadheadBoltExecuteRealPath:
         move = BroadheadBolt(user)
         move.target = enemy
         with (
-            patch("moves._ranged.functions.check_parry", return_value=True),
+            patch("src.moves._ranged.functions.check_parry", return_value=True),
             patch.object(move, "parry") as mock_parry,
-            patch("moves._ranged.random.randint", return_value=0),
-            patch("moves._ranged.random.uniform", return_value=1.0),
+            patch("src.moves._ranged.random.randint", return_value=0),
+            patch("src.moves._ranged.random.uniform", return_value=1.0),
         ):
             move.execute(user)
         mock_parry.assert_called_once()
@@ -1356,8 +1354,8 @@ class TestBroadheadBoltExecuteRealPath:
         move.target = enemy
         with (
             patch.object(move, "miss") as mock_miss,
-            patch("moves._ranged.random.randint", return_value=50),
-            patch("moves._ranged.random.uniform", return_value=1.0),
+            patch("src.moves._ranged.random.randint", return_value=50),
+            patch("src.moves._ranged.random.uniform", return_value=1.0),
         ):
             move.execute(user)
         mock_miss.assert_called_once()
@@ -1413,9 +1411,9 @@ class TestAimedShotExecuteRealPath:
         move.target = enemy
         with (
             patch.object(move, "hit") as mock_hit,
-            patch("moves._ranged.functions.check_parry", return_value=False),
-            patch("moves._ranged.random.randint", return_value=50),
-            patch("moves._ranged.random.uniform", return_value=1.0),
+            patch("src.moves._ranged.functions.check_parry", return_value=False),
+            patch("src.moves._ranged.random.randint", return_value=50),
+            patch("src.moves._ranged.random.uniform", return_value=1.0),
         ):
             move.execute(user)
         mock_hit.assert_called_once_with(29, True)
@@ -1435,9 +1433,9 @@ class TestAimedShotExecuteRealPath:
         with (
             patch.object(move, "hit") as mock_hit,
             patch.object(move, "miss") as mock_miss,
-            patch("moves._ranged.functions.check_parry", return_value=False),
-            patch("moves._ranged.random.randint", return_value=50),
-            patch("moves._ranged.random.uniform", return_value=1.0),
+            patch("src.moves._ranged.functions.check_parry", return_value=False),
+            patch("src.moves._ranged.random.randint", return_value=50),
+            patch("src.moves._ranged.random.uniform", return_value=1.0),
         ):
             move.execute(user)
         mock_miss.assert_called_once()
@@ -1457,9 +1455,9 @@ class TestAimedShotExecuteRealPath:
         move.target = enemy
         with (
             patch.object(move, "hit") as mock_hit,
-            patch("moves._ranged.functions.check_parry", return_value=False),
-            patch("moves._ranged.random.randint", return_value=95),
-            patch("moves._ranged.random.uniform", return_value=1.0),
+            patch("src.moves._ranged.functions.check_parry", return_value=False),
+            patch("src.moves._ranged.random.randint", return_value=95),
+            patch("src.moves._ranged.random.uniform", return_value=1.0),
         ):
             move.execute(user)
         mock_hit.assert_called_once_with(29, True)
@@ -1472,10 +1470,10 @@ class TestAimedShotExecuteRealPath:
         move = AimedShot(user)
         move.target = enemy
         with (
-            patch("moves._ranged.functions.check_parry", return_value=True),
+            patch("src.moves._ranged.functions.check_parry", return_value=True),
             patch.object(move, "parry") as mock_parry,
-            patch("moves._ranged.random.randint", return_value=0),
-            patch("moves._ranged.random.uniform", return_value=1.0),
+            patch("src.moves._ranged.random.randint", return_value=0),
+            patch("src.moves._ranged.random.uniform", return_value=1.0),
         ):
             move.execute(user)
         mock_parry.assert_called_once()
@@ -1538,9 +1536,9 @@ class TestPinningBoltExecuteRealPath:
         with (
             patch.object(move, "hit") as mock_hit,
             patch.object(move, "miss") as mock_miss,
-            patch("moves._ranged.functions.check_parry", return_value=False),
-            patch("moves._ranged.random.randint", return_value=50),
-            patch("moves._ranged.random.uniform", return_value=1.0),
+            patch("src.moves._ranged.functions.check_parry", return_value=False),
+            patch("src.moves._ranged.random.randint", return_value=50),
+            patch("src.moves._ranged.random.uniform", return_value=1.0),
         ):
             move.execute(user)
         mock_miss.assert_called_once()
@@ -1562,9 +1560,9 @@ class TestPinningBoltExecuteRealPath:
         with (
             patch.object(move, "hit") as mock_hit,
             patch.object(move, "miss") as mock_miss,
-            patch("moves._ranged.functions.check_parry", return_value=False),
-            patch("moves._ranged.random.randint", return_value=50),
-            patch("moves._ranged.random.uniform", return_value=1.0),
+            patch("src.moves._ranged.functions.check_parry", return_value=False),
+            patch("src.moves._ranged.random.randint", return_value=50),
+            patch("src.moves._ranged.random.uniform", return_value=1.0),
         ):
             move.execute(user)
         mock_miss.assert_called_once()
@@ -1587,9 +1585,9 @@ class TestPinningBoltExecuteRealPath:
         move.target = enemy
         with (
             patch.object(move, "hit") as mock_hit,
-            patch("moves._ranged.functions.check_parry", return_value=False),
-            patch("moves._ranged.random.randint", return_value=90),
-            patch("moves._ranged.random.uniform", return_value=1.0),
+            patch("src.moves._ranged.functions.check_parry", return_value=False),
+            patch("src.moves._ranged.random.randint", return_value=90),
+            patch("src.moves._ranged.random.uniform", return_value=1.0),
         ):
             move.execute(user)
         mock_hit.assert_called_once_with(17, True)
@@ -1605,10 +1603,10 @@ class TestPinningBoltExecuteRealPath:
         move = PinningBolt(user)
         move.target = enemy
         with (
-            patch("moves._ranged.functions.check_parry", return_value=True),
+            patch("src.moves._ranged.functions.check_parry", return_value=True),
             patch.object(move, "parry") as mock_parry,
-            patch("moves._ranged.random.randint", return_value=0),
-            patch("moves._ranged.random.uniform", return_value=1.0),
+            patch("src.moves._ranged.random.randint", return_value=0),
+            patch("src.moves._ranged.random.uniform", return_value=1.0),
         ):
             move.execute(user)
         mock_parry.assert_called_once()
@@ -1641,10 +1639,10 @@ class TestPinningBoltExecuteRealPath:
         move.target = enemy
         with (
             patch.object(move, "hit") as mock_hit,
-            patch("moves._ranged.cprint") as mock_cprint,
-            patch("moves._ranged.functions.check_parry", return_value=False),
-            patch("moves._ranged.random.randint", return_value=0),
-            patch("moves._ranged.random.uniform", return_value=1.0),
+            patch("src.moves._ranged.cprint") as mock_cprint,
+            patch("src.moves._ranged.functions.check_parry", return_value=False),
+            patch("src.moves._ranged.random.randint", return_value=0),
+            patch("src.moves._ranged.random.uniform", return_value=1.0),
         ):
             move.execute(user)  # should not raise despite append() failing
         mock_hit.assert_called_once()

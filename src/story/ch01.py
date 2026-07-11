@@ -14,10 +14,10 @@ from src.narration import (
 import time
 import random
 
-from events import Event
-import objects as objects
-from functions import await_input
-from story.effects import MemoryFlash
+from src.events import Event
+import src.objects as objects
+from src.functions import await_input
+from src.story.effects import MemoryFlash
 
 # Recurring conversation casts, to avoid retyping the same tuple at every stage.
 _JEAN_SOLO = [("Jean", "left", "neutral")]
@@ -359,7 +359,7 @@ class Ch01ChestRumblerBattle(Event):
                 "Apparently, there is also a rusty iron mace in the chest. "
                 "Jean takes it and swings it around gently, testing its balance."
             )
-            import items
+            import src.items as items
 
             mace = items.RustedIronMace()
             self.player.inventory.append(mace)
@@ -456,7 +456,7 @@ class Ch01PostRumbler(
             )
 
             # Add them to combat and reinitialize positions for all combatants
-            from functions import add_enemies_to_combat
+            from src.functions import add_enemies_to_combat
 
             add_enemies_to_combat(self.player, new_enemies)
 
@@ -544,7 +544,7 @@ class Ch01PostRumblerRep(Event):
                 new_enemies.append(npc)
 
             # Add them to combat and reinitialize positions
-            from functions import add_enemies_to_combat
+            from src.functions import add_enemies_to_combat
 
             add_enemies_to_combat(
                 self.player,
@@ -757,7 +757,7 @@ class Ch01PostRumbler3(Event):
             new_enemies.append(rumbler)
 
         # add_enemies_to_combat initializes battlefield positions — don't append to combat_list directly
-        from functions import add_enemies_to_combat
+        from src.functions import add_enemies_to_combat
 
         add_enemies_to_combat(self.player, new_enemies)
 

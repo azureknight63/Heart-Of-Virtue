@@ -101,7 +101,7 @@ class _SlottedEnemy:
 
 class TestAddEnemiesToCombatExceptionPaths:
     def _player_in_combat(self):
-        from player import Player
+        from src.player import Player
 
         p = Player()
         p.combat_list = []
@@ -310,8 +310,8 @@ class TestResetStatsExceptionPaths:
 
 
 def test_refresh_moves_import_failure_leaves_empty_known_moves(monkeypatch):
-    """Lines 480-481, 503: `import moves` failing -> known_moves stays empty."""
-    monkeypatch.setitem(sys.modules, "moves", None)
+    """`import src.moves` failing -> known_moves stays empty."""
+    monkeypatch.setitem(sys.modules, "src.moves", None)
     player = types.SimpleNamespace(known_moves=[])
     functions.refresh_moves(player)
     assert player.known_moves == []
@@ -392,7 +392,7 @@ class _FlakyOnceDescriptor:
 def test_patch_player_integrity_fallback_setattr_retry_succeeds(monkeypatch):
     """Lines 687-690: first setattr raises, fallback retry (factory is list)
     succeeds on the second attempt."""
-    from player import Player
+    from src.player import Player
 
     player = Player()
     monkeypatch.setattr(Player, "combat_log", _FlakyOnceDescriptor(), raising=False)
@@ -403,14 +403,14 @@ def test_patch_player_integrity_fallback_setattr_retry_succeeds(monkeypatch):
 
 
 def test_patch_player_integrity_items_import_failure_and_eq_weapon_fallback(monkeypatch):
-    """Lines 697-698, 700: `import items` failing leaves fists unset; eq_weapon
-    falls back to (still-falsy) fists."""
-    from player import Player
+    """`import src.items` failing leaves fists unset; eq_weapon falls back to
+    (still-falsy) fists."""
+    from src.player import Player
 
     player = Player()
     player.fists = None
     player.eq_weapon = None
-    monkeypatch.setitem(sys.modules, "items", None)
+    monkeypatch.setitem(sys.modules, "src.items", None)
 
     result = functions._patch_player_integrity(player)
     assert result is player

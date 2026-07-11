@@ -6,9 +6,7 @@ from pathlib import Path
 
 # Ensure the project's src directory is on sys.path so imports resolve like other tests
 ROOT = Path(__file__).resolve().parent.parent
-SRC_DIR = ROOT / "src"
-if str(SRC_DIR) not in sys.path:
-    sys.path.insert(0, str(SRC_DIR))
+
 
 import pytest
 from unittest.mock import Mock, patch, MagicMock
@@ -349,7 +347,7 @@ def test_spawn_object(basic_tile):
     """Test spawning an object"""
     mock_player = Mock()
 
-    with patch('builtins.__import__') as mock_import:
+    with patch('src.tiles.importlib.import_module') as mock_import:
         mock_objects_module = Mock()
         mock_obj = Mock()
         mock_obj.hidden = False
@@ -368,7 +366,7 @@ def test_spawn_object_hidden(basic_tile):
     """Test spawning a hidden object"""
     mock_player = Mock()
 
-    with patch('builtins.__import__') as mock_import:
+    with patch('src.tiles.importlib.import_module') as mock_import:
         mock_objects_module = Mock()
         mock_obj = Mock()
         mock_obj.hidden = False

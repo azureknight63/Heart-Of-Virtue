@@ -44,8 +44,14 @@ def _mock_combatant(
     resistances=None,
 ):
     c = MagicMock()
-    c.__class__ = MagicMock()
-    c.__class__.__name__ = "Player" if is_player else "NPC"
+    if is_player:
+        # Serializers isinstance-check the real Player class; assigning it to
+        # __class__ makes the mock pass that check.
+        from src.player import Player
+
+        c.__class__ = Player
+    else:
+        c.__class__ = type("NPC", (), {})
     c.name = name
     c.hp = hp
     c.maxhp = maxhp
@@ -1796,7 +1802,7 @@ class TestObjectSerializer:
         obj.inventory = [item]
 
         try:
-            from objects import Container as C
+            from src.objects import Container as C
         except ImportError:
             from src.objects import Container as C
 
@@ -1810,9 +1816,11 @@ class TestObjectSerializer:
             result = self.ObjectSerializer.serialize(obj)
         assert result.get("is_container") is True
 
-    def test_serialize_container_via_class_name(self):
+    def test_serialize_container_dispatch(self):
+        from src.objects import Container
+
         obj = MagicMock()
-        obj.__class__.__name__ = "Container"
+        obj.__class__ = Container
         obj.name = "Barrel"
         obj.description = "A wooden barrel"
         obj.aliases = []

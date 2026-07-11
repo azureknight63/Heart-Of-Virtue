@@ -117,7 +117,11 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
             try:
                 mod_name, cls_name = spec.rsplit(":", 1)
                 if mod_name and cls_name:
-                    module = __import__(mod_name, fromlist=[cls_name])
+                    # Map data stores bare module names; import the canonical
+                    # src.* module so classes match the running engine's.
+                    module = importlib.import_module(
+                        functions.canonical_module_name(mod_name)
+                    )
                     return getattr(module, cls_name)
             except Exception as e:
                 narrate(f"ERROR: Failed to resolve class type '{spec}': {e}")
@@ -154,7 +158,9 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
         props = {k: recursive_deserialize(v) for k, v in props.items()}
 
         try:
-            module = importlib.import_module(mod_name)
+            # Map data stores bare module names (validated above); import the
+            # canonical src.* module so classes match the running engine's.
+            module = importlib.import_module(functions.canonical_module_name(mod_name))
             cls = getattr(module, cls_name)
             # Try to supply only parameters accepted by __init__ (excluding self)
             try:
@@ -215,11 +221,7 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
             try:
                 tile_cls = functions.seek_class(title, "tilesets", allow_other_modules=False)
             except Exception:
-                try:
-                    tiles_mod = importlib.import_module("tiles")
-                    tile_cls = getattr(tiles_mod, "MapTile")
-                except Exception:
-                    from tiles import MapTile as tile_cls  # fallback
+                from src.tiles import MapTile as tile_cls  # fallback
             tile_instance = tile_cls(self, this_map, x, y)
             # Store tile name from JSON title; only if the class didn't set its own.
             # MapTile.__init__ never sets self.name, so getattr returns None for generic tiles.
@@ -484,16 +486,10 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
                     if tile_name == "":
                         this_map[(x, y)] = None
                     else:
-                        try:
-                            tiles_mod = importlib.import_module("tiles")
-                            this_map[(x, y)] = getattr(tiles_mod, tile_name)(
-                                self, this_map, x, y
-                            )
-                        except Exception:
-                            # legacy fallback
-                            this_map[(x, y)] = getattr(__import__("tiles"), tile_name)(
-                                self, this_map, x, y
-                            )
+                        tiles_mod = importlib.import_module("src.tiles")
+                        this_map[(x, y)] = getattr(tiles_mod, tile_name)(
+                            self, this_map, x, y
+                        )
                 if (
                     tile_name == "StartingRoom"
                 ):  # there can only be one of these in the game

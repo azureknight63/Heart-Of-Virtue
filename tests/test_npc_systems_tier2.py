@@ -29,9 +29,7 @@ from unittest.mock import MagicMock, patch, call, ANY
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-SRC_DIR = PROJECT_ROOT / 'src'
-if str(SRC_DIR) not in sys.path:
-    sys.path.insert(0, str(SRC_DIR))
+
 
 from src.npc import NPC, Friend
 from src.npc._enemies import (
@@ -45,7 +43,7 @@ from src.npc._loot import NPCLootMixin, loot
 from src.player import Player
 from src.states import Poisoned, Enflamed, Slimed
 from src.items import Item, Weapon
-import moves  # type: ignore
+import src.moves as moves  # type: ignore
 
 
 class TestNPCInitialization:
@@ -563,7 +561,7 @@ class TestNPCResistances:
         assert elder.status_resistance_base["slimed"] == 1.0
         assert elder.status_resistance["slimed"] == 1.0
         status = Slimed(elder)
-        from functions import inflict
+        from src.functions import inflict
         assert inflict(status, elder, chance=1.0) is False
 
     def test_king_slime_immune_to_slimed(self):
@@ -572,7 +570,7 @@ class TestNPCResistances:
         assert king.status_resistance_base["slimed"] == 1.0
         assert king.status_resistance["slimed"] == 1.0
         status = Slimed(king)
-        from functions import inflict
+        from src.functions import inflict
         assert inflict(status, king, chance=1.0) is False
 
     def test_status_dummy_zero_resistances(self):

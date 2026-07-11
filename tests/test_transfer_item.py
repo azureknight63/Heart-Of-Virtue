@@ -1,11 +1,10 @@
 import os, sys
 # Ensure project root and src are on path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
 
-from player import Player
-from interface import transfer_item
-from items import Restorative
+from src.player import Player
+from src.interface import transfer_item
+from src.items import Restorative
 
 
 class FakeMerchant:

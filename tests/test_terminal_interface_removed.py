@@ -13,12 +13,12 @@ helpers that callers and tests still import from it.
 
 import importlib
 
-from player import Player
+from src.player import Player
 
 
 class TestTerminalMenusRemoved:
     def test_interface_has_no_menu_classes(self):
-        interface = importlib.import_module("interface")
+        interface = importlib.import_module("src.interface")
         for name in (
             "BaseInterface",
             "InventoryInterface",
@@ -28,7 +28,7 @@ class TestTerminalMenusRemoved:
             assert not hasattr(interface, name), f"{name} should be deleted"
 
     def test_inventory_helpers_still_reexported(self):
-        interface = importlib.import_module("interface")
+        interface = importlib.import_module("src.interface")
         assert hasattr(interface, "get_gold")
         assert hasattr(interface, "transfer_item")
         assert hasattr(interface, "transfer_gold")
@@ -40,6 +40,6 @@ class TestTerminalMenusRemoved:
 
     def test_item_take_still_exists(self):
         """The real ground-pickup verb (used by the API) must remain."""
-        from items import Item
+        from src.items import Item
 
         assert hasattr(Item, "take")

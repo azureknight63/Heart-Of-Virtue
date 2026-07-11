@@ -175,7 +175,7 @@ class InventoryItemSerializer:
             item_data["damage"] = round(getattr(item, "damage", 0))
             item_data["str_mod"] = getattr(item, "str_mod", 0)
             item_data["fin_mod"] = getattr(item, "fin_mod", 0)
-            from items import get_base_damage_type  # local import: see game_service.py precedent
+            from src.items import get_base_damage_type  # local import: see game_service.py precedent
 
             item_data["damage_type"] = get_base_damage_type(item)
 
@@ -405,6 +405,8 @@ class ItemDetailSerializer:
         Returns:
             Dictionary with full item information
         """
+        from src.items import Special
+
         return {
             "name": getattr(item, "name", "Unknown Item"),
             "type": item.__class__.__name__,
@@ -433,8 +435,7 @@ class ItemDetailSerializer:
             "flags": {
                 "merchandise": getattr(item, "merchandise", False),
                 "hidden": getattr(item, "hidden", False),
-                "special": isinstance(item, type)
-                and item.__class__.__name__ == "Special",
+                "special": isinstance(item, Special),
             },
         }
 

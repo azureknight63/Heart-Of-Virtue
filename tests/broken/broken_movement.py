@@ -4,7 +4,6 @@
 import sys
 import json
 from pathlib import Path
-sys.path.insert(0, str(Path.cwd() / 'src'))
 
 from flask import Flask
 from src.api.app import create_app

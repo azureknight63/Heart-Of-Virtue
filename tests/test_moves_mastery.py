@@ -5,13 +5,12 @@ import os
 import pytest
 from unittest.mock import MagicMock, patch
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-import items
+import src.items as items
 
 items.get_all_subtypes()
 
-from moves import (
+from src.moves import (
     Pulverize,
     KillingPrecision,
     LightningAssault,
@@ -20,7 +19,7 @@ from moves import (
     SecretPlans,
     BloodOfMartyrs,
 )
-import states
+import src.states as states
 
 
 # ---------------------------------------------------------------------------
@@ -289,7 +288,7 @@ class TestSecretPlansExecute:
 class TestAbsorptionHook:
 
     def test_absorbed_damage_not_applied_to_hp(self):
-        from moves._base import Move
+        from src.moves._base import Move
 
         absorb_state = MagicMock()
         absorb_state._absorbing = True
@@ -489,7 +488,7 @@ class TestLightningAssaultExecute:
              patch("src.moves._base.colored", side_effect=lambda t, *a, **kw: str(t)), \
              patch("builtins.print"):
             move.execute(player)
-        import states as st
+        import src.states as st
         assert any(isinstance(s, st.Disoriented) for s in inflict_calls)
 
     def test_less_than_three_hits_no_disoriented(self):
@@ -505,7 +504,7 @@ class TestLightningAssaultExecute:
              patch("src.moves._base.colored", side_effect=lambda t, *a, **kw: str(t)), \
              patch("builtins.print"):
             move.execute(player)
-        import states as st
+        import src.states as st
         assert not any(isinstance(s, st.Disoriented) for s in inflict_calls)
 
     def test_parry_in_loop(self):
@@ -560,7 +559,7 @@ class TestWarCryExecute:
              patch("builtins.print"):
             move.execute(player)
         assert len(inflicted) == 2
-        import states as st
+        import src.states as st
         assert all(isinstance(s, st.WarCryStunned) for s, _ in inflicted)
 
     def test_interrupts_winding_move(self):
@@ -618,7 +617,7 @@ class TestBloodOfMartyrsExecute:
                    side_effect=lambda s, t, **kw: applied.append(s) or s), \
              patch("src.moves._base.Move.cast"):
             move.cast()
-        import states as st
+        import src.states as st
         assert any(isinstance(s, st.BloodOfMartyrsState) for s in applied)
 
     def test_execute_zero_absorbed_prints_no_damage_message(self):

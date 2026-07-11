@@ -7,9 +7,6 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parent.parent.parent
-SRC_DIR = ROOT / "src"
-if str(SRC_DIR) not in sys.path:
-    sys.path.insert(0, str(SRC_DIR))
 
 
 def _post_json(client, url, payload, session_id):
@@ -60,8 +57,8 @@ class ReinforcementEvent:
     def process(self, user_input=None):
         if not user_input:
             return
-        from functions import add_enemies_to_combat
-        from npc import CaveBat
+        from src.functions import add_enemies_to_combat
+        from src.npc import CaveBat
 
         new_enemies = [CaveBat(), CaveBat()]
         add_enemies_to_combat(self.player, new_enemies, announcement="Reinforcements arrive!")
@@ -75,7 +72,7 @@ def test_reinforcements_spawn_and_events_surface_during_combat(app, client, auth
     session_id, player, session_manager = authenticated_session
 
     with app.app_context():
-        from npc import CaveBat
+        from src.npc import CaveBat
 
         tile = _ensure_player_room(player)
         enemy = CaveBat()
@@ -176,7 +173,7 @@ def test_move_executes_and_advances_beats_after_reinforcements(app, client, auth
     session_id, player, session_manager = authenticated_session
 
     with app.app_context():
-        from npc import CaveBat
+        from src.npc import CaveBat
 
         tile = _ensure_player_room(player)
         enemy = CaveBat()
@@ -196,7 +193,7 @@ def test_move_executes_and_advances_beats_after_reinforcements(app, client, auth
         enemy.combat_proximity = {player: 2}
 
         # Add reinforcements directly for this test to focus on move progression
-        from functions import add_enemies_to_combat
+        from src.functions import add_enemies_to_combat
         add_enemies_to_combat(player, [CaveBat()])
 
         beat_before = getattr(player, "combat_beat", 0)

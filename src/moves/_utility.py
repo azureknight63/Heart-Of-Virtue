@@ -3,11 +3,11 @@
 from src.narration import colored, cprint, narrate  # noqa: F401
 import random  # noqa: F401
 import math  # noqa: F401
-import states  # noqa: F401
-import functions  # noqa: F401
-import items  # noqa: F401
-import positions  # noqa: F401
-from animations import animate_to_main_screen as animate  # noqa: F401
+import src.states as states  # noqa: F401
+import src.functions as functions  # noqa: F401
+import src.items as items  # noqa: F401
+import src.positions as positions  # noqa: F401
+from src.animations import animate_to_main_screen as animate  # noqa: F401
 from ._base import (
     Move,
     PassiveMove,
@@ -86,7 +86,7 @@ class Check(Move):  # player checks the battlefield (shows enemies, allies, dist
 
     def _generate_api_check_data(self, user):
         """Generate structured combatant data for API mode."""
-        import positions
+        import src.positions as positions
 
         combatants_data = []
 

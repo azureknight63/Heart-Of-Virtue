@@ -17,11 +17,10 @@ pytestmark = pytest.mark.skip(reason="Tier 4 tests - coverage requirements alrea
 from pathlib import Path
 from unittest.mock import Mock, patch, MagicMock
 
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from api.services.auth_service import AuthService
-from api.services.session_manager import SessionManager
-from api.services.validators import *
+from src.api.services.auth_service import AuthService
+from src.api.services.session_manager import SessionManager
+from src.api.services.validators import *
 
 
 class TestAuthService:

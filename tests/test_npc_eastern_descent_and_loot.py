@@ -14,7 +14,6 @@ from unittest.mock import MagicMock, patch
 from types import SimpleNamespace
 
 # Ensure src is on the path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 
 # ===========================================================================
@@ -25,7 +24,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 class TestNomadCamper:
     @pytest.fixture
     def npc(self):
-        from npc._eastern_descent import NomadCamper
+        from src.npc._eastern_descent import NomadCamper
 
         return NomadCamper()
 
@@ -93,7 +92,7 @@ class TestNomadCamper:
 class TestNomadScout:
     @pytest.fixture
     def npc(self):
-        from npc._eastern_descent import NomadScout
+        from src.npc._eastern_descent import NomadScout
 
         return NomadScout()
 
@@ -107,7 +106,7 @@ class TestNomadScout:
         assert npc.aggro is False
 
     def test_awareness_higher_than_camper(self, npc):
-        from npc._eastern_descent import NomadCamper
+        from src.npc._eastern_descent import NomadCamper
 
         camper = NomadCamper()
         assert npc.awareness > camper.awareness
@@ -142,7 +141,7 @@ class TestNomadScout:
 class TestNomadTrader:
     @pytest.fixture
     def npc(self):
-        from npc._eastern_descent import NomadTrader
+        from src.npc._eastern_descent import NomadTrader
 
         return NomadTrader()
 
@@ -189,7 +188,7 @@ class TestNPCLootMixinDie:
 
     def _make_npc(self, has_loot=False, has_inventory=False):
         """Construct a minimal NPC-like object via MagicMock with the mixin."""
-        from npc._loot import NPCLootMixin
+        from src.npc._loot import NPCLootMixin
 
         npc = MagicMock(spec=NPCLootMixin)
         npc.name = "TestNPC"
@@ -209,7 +208,7 @@ class TestNPCLootMixinDie:
         return npc
 
     def test_before_death_calls_drop_inventory(self):
-        from npc._loot import NPCLootMixin
+        from src.npc._loot import NPCLootMixin
 
         npc = MagicMock()
         npc.loot = None
@@ -222,7 +221,7 @@ class TestNPCLootMixinDie:
         npc.drop_inventory.assert_called_once()
 
     def test_before_death_calls_roll_loot_when_loot_present(self):
-        from npc._loot import NPCLootMixin
+        from src.npc._loot import NPCLootMixin
 
         npc = MagicMock()
         npc.loot = {"GoldCoin": {"chance": 100, "qty": "1"}}
@@ -234,7 +233,7 @@ class TestNPCLootMixinDie:
         npc.roll_loot.assert_called_once()
 
     def test_before_death_no_roll_loot_when_no_loot(self):
-        from npc._loot import NPCLootMixin
+        from src.npc._loot import NPCLootMixin
 
         npc = MagicMock()
         npc.loot = None
@@ -246,7 +245,7 @@ class TestNPCLootMixinDie:
         npc.roll_loot.assert_not_called()
 
     def test_before_death_returns_true(self):
-        from npc._loot import NPCLootMixin
+        from src.npc._loot import NPCLootMixin
 
         npc = MagicMock()
         npc.loot = None
@@ -257,7 +256,7 @@ class TestNPCLootMixinDie:
         assert NPCLootMixin.before_death(npc) is True
 
     def test_before_death_stacks_items_on_floor(self):
-        from npc._loot import NPCLootMixin
+        from src.npc._loot import NPCLootMixin
 
         npc = MagicMock()
         npc.loot = None
@@ -265,7 +264,7 @@ class TestNPCLootMixinDie:
         npc.current_room = MagicMock()
         npc.current_room.items_here = []
 
-        with patch("npc._loot.functions") as mock_functions:
+        with patch("src.npc._loot.functions") as mock_functions:
             NPCLootMixin.before_death(npc)
             mock_functions.stack_items_list.assert_called_once_with(
                 npc.current_room.items_here
@@ -276,7 +275,7 @@ class TestNPCLootMixinDropInventory:
     """Tests for NPCLootMixin.drop_inventory()."""
 
     def test_drop_inventory_empty_inventory(self):
-        from npc._loot import NPCLootMixin
+        from src.npc._loot import NPCLootMixin
 
         npc = MagicMock()
         npc.inventory = []
@@ -285,7 +284,7 @@ class TestNPCLootMixinDropInventory:
         assert npc.inventory == []
 
     def test_drop_inventory_clears_inventory_after_run(self):
-        from npc._loot import NPCLootMixin
+        from src.npc._loot import NPCLootMixin
 
         npc = MagicMock()
         item = MagicMock()
@@ -301,7 +300,7 @@ class TestNPCLootMixinDropInventory:
         assert npc.inventory == []
 
     def test_drop_inventory_records_api_drops_when_player_ref(self):
-        from npc._loot import NPCLootMixin
+        from src.npc._loot import NPCLootMixin
 
         npc = MagicMock()
         item = MagicMock()
@@ -327,7 +326,7 @@ class TestNPCLootMixinDropInventory:
 
     def test_drop_inventory_random_chance_can_reduce_quantity(self):
         """When random.random() > 0.6, quantity is reduced on each loop tick."""
-        from npc._loot import NPCLootMixin
+        from src.npc._loot import NPCLootMixin
 
         npc = MagicMock()
         item = MagicMock()
@@ -351,7 +350,7 @@ class TestNPCLootMixinRollLoot:
     """Tests for NPCLootMixin.roll_loot()."""
 
     def test_roll_loot_no_current_room_prints_error(self, capsys):
-        from npc._loot import NPCLootMixin
+        from src.npc._loot import NPCLootMixin
 
         npc = MagicMock()
         npc.name = "TestNPC"
@@ -363,7 +362,7 @@ class TestNPCLootMixinRollLoot:
         assert "ERR" in captured.out or True  # error may go to print or be silenced
 
     def test_roll_loot_successful_drop(self):
-        from npc._loot import NPCLootMixin
+        from src.npc._loot import NPCLootMixin
 
         npc = MagicMock()
         npc.name = "Slime"
@@ -377,14 +376,14 @@ class TestNPCLootMixinRollLoot:
 
         with (
             patch("random.randint", return_value=0),
-            patch("npc._loot.functions.randomize_amount", return_value=1),
+            patch("src.npc._loot.functions.randomize_amount", return_value=1),
         ):
             NPCLootMixin.roll_loot(npc)
 
         npc.current_room.spawn_item.assert_called_once_with("SlimeGoop", 1)
 
     def test_roll_loot_failed_roll_no_drop(self):
-        from npc._loot import NPCLootMixin
+        from src.npc._loot import NPCLootMixin
 
         npc = MagicMock()
         npc.name = "Slime"
@@ -394,7 +393,7 @@ class TestNPCLootMixinRollLoot:
 
         with (
             patch("random.randint", return_value=50),
-            patch("npc._loot.functions.randomize_amount", return_value=1),
+            patch("src.npc._loot.functions.randomize_amount", return_value=1),
         ):
             NPCLootMixin.roll_loot(npc)
 
@@ -402,7 +401,7 @@ class TestNPCLootMixinRollLoot:
 
     def test_roll_loot_only_one_item_drops(self):
         """Even with multiple loot entries all at 100%, only the first winner drops (break)."""
-        from npc._loot import NPCLootMixin
+        from src.npc._loot import NPCLootMixin
 
         npc = MagicMock()
         npc.name = "Dragon"
@@ -420,7 +419,7 @@ class TestNPCLootMixinRollLoot:
         with (
             patch("random.randint", return_value=0),
             patch("random.shuffle"),
-            patch("npc._loot.functions.randomize_amount", return_value=5),
+            patch("src.npc._loot.functions.randomize_amount", return_value=5),
         ):
             NPCLootMixin.roll_loot(npc)
 
@@ -428,7 +427,7 @@ class TestNPCLootMixinRollLoot:
         assert npc.current_room.spawn_item.call_count == 1
 
     def test_roll_loot_records_combat_drop_when_player_has_adapter(self):
-        from npc._loot import NPCLootMixin
+        from src.npc._loot import NPCLootMixin
 
         npc = MagicMock()
         npc.name = "Slime"
@@ -445,7 +444,7 @@ class TestNPCLootMixinRollLoot:
 
         with (
             patch("random.randint", return_value=0),
-            patch("npc._loot.functions.randomize_amount", return_value=1),
+            patch("src.npc._loot.functions.randomize_amount", return_value=1),
         ):
             NPCLootMixin.roll_loot(npc)
 

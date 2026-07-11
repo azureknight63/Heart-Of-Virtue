@@ -14,20 +14,15 @@ import os
 import sys
 from pathlib import Path
 
-# Add project root and src/ to path
+# Add project root to path. src/ is deliberately NOT added: every local import
+# uses the canonical `src.` path, and keeping bare names unimportable makes any
+# regression fail loudly instead of silently duplicating module state.
 ROOT = Path(__file__).resolve().parent
-SRC_DIR = ROOT / "src"
-for p in (str(ROOT), str(SRC_DIR)):
-    if p not in sys.path:
-        sys.path.insert(0, p)
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
-from dotenv import load_dotenv
+from dotenv import load_dotenv  # noqa: E402
 load_dotenv()
-
-# Collapse bare-vs-src module duplication (root and src/ are both on sys.path)
-# BEFORE the app imports any engine module, so `x` and `src.x` stay one object.
-from src.import_sync import install as _install_module_sync  # noqa: E402
-_install_module_sync()
 
 from src.api.app import create_app  # noqa: E402
 from src.api.config import ProductionConfig, DevelopmentConfig  # noqa: E402

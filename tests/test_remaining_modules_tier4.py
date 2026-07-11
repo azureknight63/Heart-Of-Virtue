@@ -26,16 +26,15 @@ import sys
 from io import StringIO
 
 # Set up path for imports
-sys.path.insert(0, str(Path(__file__).parent / '..' / 'src'))
 
 # Import core modules
-from universe import Universe, tile_exists
-from combatant import Combatant, _DEFAULT_RESISTANCE, _DEFAULT_STATUS_RESISTANCE
-from player import Player
-from npc import NPC
-from items import Item, Gold
-from states import State
-import functions
+from src.universe import Universe, tile_exists
+from src.combatant import Combatant, _DEFAULT_RESISTANCE, _DEFAULT_STATUS_RESISTANCE
+from src.player import Player
+from src.npc import NPC
+from src.items import Item, Gold
+from src.states import State
+import src.functions as functions
 
 
 class TestCombatantResistances:
@@ -643,7 +642,7 @@ class TestUniverseEvaluateMapEntrySpawners:
 class TestUniverseBuild:
     """Test Universe.build method."""
 
-    @patch('universe.Universe._load_all_json_maps')
+    @patch('src.universe.Universe._load_all_json_maps')
     def test_build_with_save_data(self, mock_load):
         """Test build with save data uses saved maps."""
         u = Universe()
@@ -657,7 +656,7 @@ class TestUniverseBuild:
         mock_load.assert_not_called()
         assert u.maps == [{'name': 'saved_map'}]
 
-    @patch('universe.Universe._load_all_json_maps')
+    @patch('src.universe.Universe._load_all_json_maps')
     def test_build_without_save_data(self, mock_load):
         """Test build loads JSON maps for new game."""
         u = Universe()
@@ -672,7 +671,7 @@ class TestUniverseBuild:
 
         mock_load.assert_called_once()
 
-    @patch('universe.Universe._load_all_json_maps')
+    @patch('src.universe.Universe._load_all_json_maps')
     def test_build_sets_player(self, mock_load):
         """Test build sets player reference."""
         u = Universe()
@@ -685,7 +684,7 @@ class TestUniverseBuild:
 
         assert u.player is player
 
-    @patch('universe.Universe._load_all_json_maps')
+    @patch('src.universe.Universe._load_all_json_maps')
     def test_build_initializes_configs(self, mock_load):
         """Test build initializes scenario and coordinate configs."""
         u = Universe()
@@ -716,8 +715,8 @@ class TestUniverseJsonMapsRootCandidates:
 class TestUniverseLoadAllJsonMaps:
     """Test Universe._load_all_json_maps method."""
 
-    @patch('universe.Universe._load_single_json_map')
-    @patch('universe.Universe._json_maps_root_candidates')
+    @patch('src.universe.Universe._load_single_json_map')
+    @patch('src.universe.Universe._json_maps_root_candidates')
     def test_load_all_json_maps_empty_dirs(self, mock_candidates, mock_load_single):
         """Test _load_all_json_maps with empty directories."""
         u = Universe()
@@ -730,8 +729,8 @@ class TestUniverseLoadAllJsonMaps:
         assert loaded == 0
         mock_load_single.assert_not_called()
 
-    @patch('universe.Universe._load_single_json_map')
-    @patch('universe.Universe._json_maps_root_candidates')
+    @patch('src.universe.Universe._load_single_json_map')
+    @patch('src.universe.Universe._json_maps_root_candidates')
     def test_load_all_json_maps_exception_handling(self, mock_candidates, mock_load_single):
         """Test _load_all_json_maps continues on exceptions."""
         u = Universe()

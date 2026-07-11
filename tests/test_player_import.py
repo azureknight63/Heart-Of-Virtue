@@ -4,9 +4,8 @@ from pathlib import Path
 
 # Add src to path
 ROOT = Path(__file__).resolve().parent
-SRC_DIR = ROOT / "src"
+
 sys.path.insert(0, str(ROOT))
-sys.path.insert(0, str(SRC_DIR))
 
 try:
     print("Testing Player import...")

@@ -23,11 +23,11 @@ External callers continue to use ``from player import Player`` or
 import random  # noqa: F401
 import time  # noqa: F401
 
-import items  # type: ignore
-import functions  # type: ignore
-import moves  # type: ignore
-import skilltree  # type: ignore
-from combatant import Combatant
+import src.items as items  # type: ignore
+import src.functions as functions  # type: ignore
+import src.moves as moves  # type: ignore
+import src.skilltree as skilltree  # type: ignore
+from src.combatant import Combatant
 
 from ._leveling import PlayerLevelingMixin
 from ._combat import PlayerCombatMixin

@@ -4,11 +4,11 @@ import importlib
 import random
 import math
 from src.narration import colored, cprint, narrate
-import functions
+import src.functions as functions
 from typing import Any, Dict, List, Optional, Tuple, Union, TYPE_CHECKING
 
 if TYPE_CHECKING:  # pragma: no cover - for type checking only
-    from player import Player  # noqa
+    from src.player import Player  # noqa
 
 item_types: Dict[str, Dict[str, Any]] = {
     "weapons": {
@@ -336,7 +336,7 @@ class Item:
                                 # enchantment_level and any other custom attrs
                                 # from the original stack (see inventory_utils
                                 # .transfer_item for the same pattern).
-                                items_mod = importlib.import_module("items")
+                                items_mod = importlib.import_module("src.items")
                                 item_cls = getattr(items_mod, self.__class__.__name__)
                                 new_item = item_cls.__new__(item_cls)
                                 for _k, _v in self.__dict__.items():
@@ -2739,7 +2739,7 @@ class SlimeFlask(Consumable):
             for state in targets:
                 state.on_removal(state.target)
                 player.states.remove(state)
-            import functions as _fn
+            import src.functions as _fn
             _fn.refresh_stat_bonuses(player)
             self.count -= 1
             if self.count <= 0:
@@ -2794,7 +2794,7 @@ class MineralSolvent(Consumable):
             for state in targets:
                 state.on_removal(state.target)
                 player.states.remove(state)
-            import functions as _fn
+            import src.functions as _fn
             _fn.refresh_stat_bonuses(player)
             self.count -= 1
             if self.count <= 0:
@@ -2850,7 +2850,7 @@ class Respite(Consumable):
             player.fatigue = min(player.maxfatigue, player.fatigue + fatigue_restore)
             if fatigue_restore > 0:
                 cprint("{} restored {} fatigue.".format(player.name, fatigue_restore), "green")
-            import functions as _fn
+            import src.functions as _fn
             _fn.refresh_stat_bonuses(player)
             self.count -= 1
             if self.count <= 0:
@@ -2900,7 +2900,7 @@ class Relic(Consumable):
             for state in targets:
                 state.on_removal(state.target)
                 player.states.remove(state)
-            import functions as _fn
+            import src.functions as _fn
             _fn.refresh_stat_bonuses(player)
             self.count -= 1
             if self.count <= 0:

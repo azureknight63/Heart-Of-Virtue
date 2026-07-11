@@ -15,8 +15,8 @@ import random
 from datetime import datetime
 from typing import Dict, Any, List, Optional, TYPE_CHECKING
 
-import positions  # type: ignore
-import moves  # type: ignore
+import src.positions as positions  # type: ignore
+import src.moves as moves  # type: ignore
 from src.api.serializers.combat import (
     CombatStateSerializer,
     CombatantSerializer,
@@ -26,7 +26,7 @@ from ai.combat_strategist import CombatStrategist
 from src.moves._base import select_weighted_target
 
 if TYPE_CHECKING:
-    from player import Player
+    from src.player import Player
 
 # Compiled once at module level for performance
 _ANSI_ESCAPE = re.compile(r"\x1B(?:[@-Z\\_-]|\[[0-?]*[ -/]*[@-~])")
@@ -166,20 +166,12 @@ class ApiCombatAdapter:
         )  # Guards generation counter and result writes
 
         # Suppress terminal animations in API mode.
-        # Must set the flag on both possible module identities: moves.py imports
-        # the bare 'animations' module, while this file lives under 'src.animations'.
-        # They are different sys.modules entries so we set both.
-        for _anim_name in ("animations", "src.animations"):
-            try:
-                import importlib
-                import sys as _sys
+        try:
+            import src.animations as _animations
 
-                _anim_mod = _sys.modules.get(_anim_name) or importlib.import_module(
-                    _anim_name
-                )
-                _anim_mod.set_api_mode(True)
-            except Exception:
-                pass
+            _animations.set_api_mode(True)
+        except Exception:
+            pass
 
     @property
     def awaiting_input(self):
@@ -1484,7 +1476,7 @@ class ApiCombatAdapter:
         True and executes the heal (consuming the item) if a valid target was
         found; returns False so normal move-selection proceeds otherwise.
         """
-        import items as items_module
+        import src.items as items_module
 
         inventory = getattr(npc, "inventory", [])
         consumables = [
@@ -1919,15 +1911,23 @@ class ApiCombatAdapter:
         # in case exp processing or level-up callbacks updated the player's location.
         tile = getattr(self.player, "current_room", None)
         if tile:
-            has_lurker_event = any(
-                e.__class__.__name__ == "AfterDefeatingLurker"
-                for e in getattr(tile, "events_here", [])
-            )
-            lurker_still_present = any(
-                n.__class__.__name__ == "Lurker" for n in getattr(tile, "npcs_here", [])
-            )
-            if has_lurker_event and not lurker_still_present:
-                self.player.combat_end_summary["beta_end"] = True
+            # Best-effort: a broken story/npc import must not crash victory
+            # handling for unrelated fights.
+            try:
+                from src.npc import Lurker
+                from src.story.ch02 import AfterDefeatingLurker
+
+                has_lurker_event = any(
+                    isinstance(e, AfterDefeatingLurker)
+                    for e in getattr(tile, "events_here", [])
+                )
+                lurker_still_present = any(
+                    isinstance(n, Lurker) for n in getattr(tile, "npcs_here", [])
+                )
+                if has_lurker_event and not lurker_still_present:
+                    self.player.combat_end_summary["beta_end"] = True
+            except Exception:
+                pass
 
         # Reset any surviving tile NPCs that still carry aggro/in_combat flags from
         # this encounter.  Enemies that were defeated are already removed from the

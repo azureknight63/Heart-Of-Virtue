@@ -1,4 +1,4 @@
-import moves
+import src.moves as moves
 
 
 class Skilltree:

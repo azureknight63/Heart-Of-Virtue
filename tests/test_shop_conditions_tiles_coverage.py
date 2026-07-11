@@ -14,18 +14,16 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 ROOT = Path(__file__).resolve().parent.parent
-SRC_DIR = ROOT / "src"
-if str(SRC_DIR) not in sys.path:
-    sys.path.insert(0, str(SRC_DIR))
+
 
 import pytest
-from shop_conditions import (
+from src.shop_conditions import (
     ShopCondition,
     ValueModifierCondition,
     RestockWeightBoostCondition,
     UniqueItemInjectionCondition,
 )
-from items import Item, Weapon, Consumable
+from src.items import Item, Weapon, Consumable
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -237,7 +235,7 @@ class TestRestockWeightBoostCondition:
 class TestUniqueItemInjectionCoverage:
     def setup_method(self):
         """Clear spawned set before each test."""
-        from items import unique_items_spawned
+        from src.items import unique_items_spawned
 
         unique_items_spawned.clear()
 
@@ -256,7 +254,7 @@ class TestUniqueItemInjectionCoverage:
             assert getattr(result[0], "unique", False) is True
 
     def test_inject_returns_empty_when_all_spawned(self):
-        from items import unique_items_spawned, unique_item_factories
+        from src.items import unique_items_spawned, unique_item_factories
 
         # Exhaust all factories
         for f in unique_item_factories:
@@ -309,7 +307,7 @@ class TestUniqueItemInjectionCoverage:
 
 
 def _make_universe():
-    from universe import Universe
+    from src.universe import Universe
 
     u = Universe()
     u.testing_mode = False
@@ -321,7 +319,7 @@ def _make_map():
 
 
 def _make_tile(universe=None, game_map=None, x=0, y=0):
-    from tiles import MapTile
+    from src.tiles import MapTile
 
     u = universe or _make_universe()
     m = game_map or _make_map()
@@ -365,7 +363,7 @@ class TestMapTileCoverage:
 
     def test_evaluate_events_calls_spawners_first(self):
         """NPCSpawnerEvents are processed before other events."""
-        from story.effects import NPCSpawnerEvent
+        from src.story.effects import NPCSpawnerEvent
 
         tile, u, m = _make_tile()
 
@@ -484,7 +482,7 @@ class TestMapTileCoverage:
 
     def test_stack_duplicate_items_stacks_matching_items(self):
         """stack_duplicate_items merges matching items with count attribute."""
-        from tiles import MapTile
+        from src.tiles import MapTile
 
         tile, u, m = _make_tile()
 

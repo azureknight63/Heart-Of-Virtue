@@ -9,21 +9,15 @@ from pathlib import Path
 from dotenv import load_dotenv
 load_dotenv()
 
-# Add src to path for proper module imports
+# Add project root to path. src/ is deliberately NOT added: every local import
+# uses the canonical `src.` path, and keeping bare names unimportable makes any
+# regression fail loudly instead of silently duplicating module state.
 ROOT = Path(__file__).resolve().parent.parent
-SRC_DIR = ROOT / "src"
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
-if str(SRC_DIR) not in sys.path:
-    sys.path.insert(0, str(SRC_DIR))
 
-# Collapse bare-vs-src module duplication (root and src/ are both on sys.path)
-# BEFORE the app imports any engine module, so `x` and `src.x` stay one object.
-from src.import_sync import install as _install_module_sync
-_install_module_sync()
-
-from src.api.app import create_app
-from src.api.config import DevelopmentConfig, TestingConfig, ProductionConfig
+from src.api.app import create_app  # noqa: E402
+from src.api.config import DevelopmentConfig, TestingConfig, ProductionConfig  # noqa: E402
 
 
 def main():

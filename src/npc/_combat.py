@@ -18,7 +18,7 @@ Attributes expected on the host class (provided by NPC.__init__):
 
 import random
 
-import moves  # type: ignore
+import src.moves as moves  # type: ignore
 
 
 class NPCCombatMixin:
@@ -56,7 +56,7 @@ class NPCCombatMixin:
             and self.player_ref
         ):
             try:
-                from npc_ai_config import NPCAIConfig
+                from src.npc_ai_config import NPCAIConfig
 
                 self.ai_config = NPCAIConfig(self.player_ref)
             except ImportError:

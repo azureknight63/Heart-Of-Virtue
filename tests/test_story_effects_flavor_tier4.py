@@ -26,7 +26,6 @@ import random
 import time
 
 # Add src to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 
 class TestMemoryBorder(unittest.TestCase):
@@ -34,11 +33,11 @@ class TestMemoryBorder(unittest.TestCase):
 
     def test_memory_border_top_style(self):
         """Test memory_border with 'top' style."""
-        from story import effects
+        from src.story import effects
 
         with patch("builtins.print") as mock_print, patch(
-            "story.effects.cprint"
-        ) as mock_cprint, patch("story.effects.animations.animate_to_main_screen"):
+            "src.story.effects.cprint"
+        ) as mock_cprint, patch("src.story.effects.animations.animate_to_main_screen"):
             effects.memory_border("top")
             # Should call animate and print borders with magenta color
             mock_cprint.assert_called()
@@ -49,19 +48,19 @@ class TestMemoryBorder(unittest.TestCase):
 
     def test_memory_border_bottom_style(self):
         """Test memory_border with 'bottom' style."""
-        from story import effects
+        from src.story import effects
 
         with patch("builtins.print") as mock_print, patch(
-            "story.effects.cprint"
+            "src.story.effects.cprint"
         ) as mock_cprint:
             effects.memory_border("bottom")
             mock_cprint.assert_called()
 
     def test_memory_border_other_style(self):
         """Test memory_border with other style."""
-        from story import effects
+        from src.story import effects
 
-        with patch("story.effects.cprint") as mock_cprint:
+        with patch("src.story.effects.cprint") as mock_cprint:
             effects.memory_border("middle")
             mock_cprint.assert_called()
 
@@ -78,7 +77,7 @@ class TestMemoryFlash(unittest.TestCase):
 
     def test_memory_flash_init(self):
         """Test MemoryFlash initialization."""
-        from story.effects import MemoryFlash
+        from src.story.effects import MemoryFlash
 
         memory_lines = [("Line 1", 0.5), ("Line 2", 0.5)]
         aftermath = ["Aftermath 1"]
@@ -97,7 +96,7 @@ class TestMemoryFlash(unittest.TestCase):
 
     def test_memory_flash_init_no_aftermath(self):
         """Test MemoryFlash with no aftermath text."""
-        from story.effects import MemoryFlash
+        from src.story.effects import MemoryFlash
 
         memory_lines = [("Line 1", 0.5)]
         event = MemoryFlash(
@@ -107,7 +106,7 @@ class TestMemoryFlash(unittest.TestCase):
 
     def test_memory_flash_check_conditions(self):
         """Test MemoryFlash check_conditions always passes."""
-        from story.effects import MemoryFlash
+        from src.story.effects import MemoryFlash
 
         memory_lines = [("Line 1", 0.5)]
         event = MemoryFlash(self.player, self.tile, memory_lines=memory_lines)
@@ -117,7 +116,7 @@ class TestMemoryFlash(unittest.TestCase):
 
     def test_memory_flash_process_first_pass(self):
         """Test MemoryFlash process on first call (no user input)."""
-        from story.effects import MemoryFlash
+        from src.story.effects import MemoryFlash
 
         memory_lines = [("Memory line", 0.5)]
         aftermath = ["Aftermath"]
@@ -130,8 +129,8 @@ class TestMemoryFlash(unittest.TestCase):
         self.tile.events_here = [event]
 
         with patch("builtins.print"), patch(
-            "story.effects.cprint"
-        ), patch("time.sleep"), patch("story.effects.memory_border"):
+            "src.story.effects.cprint"
+        ), patch("time.sleep"), patch("src.story.effects.memory_border"):
             event.process(user_input=None)
 
         # First pass should set needs_input to True
@@ -141,13 +140,13 @@ class TestMemoryFlash(unittest.TestCase):
 
     def test_memory_flash_process_second_pass(self):
         """Test MemoryFlash process on second call (with user input)."""
-        from story.effects import MemoryFlash
+        from src.story.effects import MemoryFlash
 
         memory_lines = [("Memory line", 0.5)]
         event = MemoryFlash(self.player, self.tile, memory_lines=memory_lines)
         self.tile.events_here = [event]
 
-        with patch("builtins.print"), patch("story.effects.cprint"), patch(
+        with patch("builtins.print"), patch("src.story.effects.cprint"), patch(
             "time.sleep"
         ):
             event.process(user_input="continue")
@@ -158,13 +157,13 @@ class TestMemoryFlash(unittest.TestCase):
 
     def test_memory_flash_removal_from_tile_when_not_repeat(self):
         """Test MemoryFlash removes itself from tile when not repeating."""
-        from story.effects import MemoryFlash
+        from src.story.effects import MemoryFlash
 
         memory_lines = [("Line", 0.5)]
         event = MemoryFlash(self.player, self.tile, memory_lines=memory_lines, repeat=False)
         self.tile.events_here = [event]
 
-        with patch("builtins.print"), patch("story.effects.cprint"), patch(
+        with patch("builtins.print"), patch("src.story.effects.cprint"), patch(
             "time.sleep"
         ):
             event.process(user_input="continue")
@@ -173,13 +172,13 @@ class TestMemoryFlash(unittest.TestCase):
 
     def test_memory_flash_not_removed_when_repeat(self):
         """Test MemoryFlash does NOT remove itself when repeating."""
-        from story.effects import MemoryFlash
+        from src.story.effects import MemoryFlash
 
         memory_lines = [("Line", 0.5)]
         event = MemoryFlash(self.player, self.tile, memory_lines=memory_lines, repeat=True)
         self.tile.events_here = [event]
 
-        with patch("builtins.print"), patch("story.effects.cprint"), patch(
+        with patch("builtins.print"), patch("src.story.effects.cprint"), patch(
             "time.sleep"
         ):
             event.process(user_input="continue")
@@ -188,13 +187,13 @@ class TestMemoryFlash(unittest.TestCase):
 
     def test_memory_flash_combat_events_removal(self):
         """Test MemoryFlash removal from combat_events."""
-        from story.effects import MemoryFlash
+        from src.story.effects import MemoryFlash
 
         memory_lines = [("Line", 0.5)]
         event = MemoryFlash(self.player, self.tile, memory_lines=memory_lines, repeat=False)
         self.player.combat_events = [event]
 
-        with patch("builtins.print"), patch("story.effects.cprint"), patch(
+        with patch("builtins.print"), patch("src.story.effects.cprint"), patch(
             "time.sleep"
         ):
             event.process(user_input="continue")
@@ -212,7 +211,7 @@ class TestEffect(unittest.TestCase):
 
     def test_effect_init(self):
         """Test Effect initialization."""
-        from story.effects import Effect
+        from src.story.effects import Effect
 
         effect = Effect("TestEffect", self.player)
         self.assertEqual(effect.name, "TestEffect")
@@ -222,7 +221,7 @@ class TestEffect(unittest.TestCase):
 
     def test_effect_pass_conditions_to_process(self):
         """Test Effect.pass_conditions_to_process calls process."""
-        from story.effects import Effect
+        from src.story.effects import Effect
 
         effect = Effect("TestEffect", self.player)
         with patch.object(effect, "process") as mock_process:
@@ -244,7 +243,7 @@ class TestMoveEffect(unittest.TestCase):
 
     def test_move_effect_init(self):
         """Test MoveEffect initialization."""
-        from story.effects import MoveEffect
+        from src.story.effects import MoveEffect
 
         effect = MoveEffect(
             self.player,
@@ -275,7 +274,7 @@ class TestFlareArrowImpact(unittest.TestCase):
 
     def test_flare_arrow_impact_init(self):
         """Test FlareArrowImpact initialization."""
-        from story.effects import FlareArrowImpact
+        from src.story.effects import FlareArrowImpact
 
         effect = FlareArrowImpact(self.player, self.move)
         self.assertEqual(effect.name, "FlareArrowImpact")
@@ -284,10 +283,10 @@ class TestFlareArrowImpact(unittest.TestCase):
 
     def test_flare_arrow_impact_process(self):
         """Test FlareArrowImpact.process applies status."""
-        from story.effects import FlareArrowImpact
+        from src.story.effects import FlareArrowImpact
 
         effect = FlareArrowImpact(self.player, self.move)
-        with patch("story.effects.functions.inflict") as mock_inflict:
+        with patch("src.story.effects.functions.inflict") as mock_inflict:
             effect.process()
             mock_inflict.assert_called_once()
             call_args = mock_inflict.call_args
@@ -306,7 +305,7 @@ class TestGoldFromHeaven(unittest.TestCase):
 
     def test_gold_from_heaven_init(self):
         """Test GoldFromHeaven initialization."""
-        from story.effects import GoldFromHeaven
+        from src.story.effects import GoldFromHeaven
 
         event = GoldFromHeaven(self.player, self.tile)
         self.assertEqual(event.name, "Gold From Heaven")
@@ -314,7 +313,7 @@ class TestGoldFromHeaven(unittest.TestCase):
 
     def test_gold_from_heaven_check_conditions(self):
         """Test GoldFromHeaven check_conditions always passes."""
-        from story.effects import GoldFromHeaven
+        from src.story.effects import GoldFromHeaven
 
         event = GoldFromHeaven(self.player, self.tile)
         with patch.object(event, "pass_conditions_to_process") as mock_pass:
@@ -323,7 +322,7 @@ class TestGoldFromHeaven(unittest.TestCase):
 
     def test_gold_from_heaven_process(self):
         """Test GoldFromHeaven.process spawns gold."""
-        from story.effects import GoldFromHeaven
+        from src.story.effects import GoldFromHeaven
 
         event = GoldFromHeaven(self.player, self.tile)
         with patch("builtins.print"), patch.object(self.tile, "spawn_item") as mock_spawn:
@@ -342,7 +341,7 @@ class TestBlock(unittest.TestCase):
 
     def test_block_init_no_params(self):
         """Test Block with no params blocks all directions."""
-        from story.effects import Block
+        from src.story.effects import Block
 
         event = Block(self.player, self.tile)
         expected_dirs = [
@@ -359,7 +358,7 @@ class TestBlock(unittest.TestCase):
 
     def test_block_init_with_params(self):
         """Test Block with specific direction params."""
-        from story.effects import Block
+        from src.story.effects import Block
 
         directions = ["north", "south"]
         event = Block(self.player, self.tile, params=directions)
@@ -367,7 +366,7 @@ class TestBlock(unittest.TestCase):
 
     def test_block_process_adds_directions(self):
         """Test Block.process adds directions to tile.block_exit."""
-        from story.effects import Block
+        from src.story.effects import Block
 
         event = Block(self.player, self.tile, params=["north", "south"])
         event.process()
@@ -376,7 +375,7 @@ class TestBlock(unittest.TestCase):
 
     def test_block_process_no_duplicates(self):
         """Test Block doesn't add duplicate directions."""
-        from story.effects import Block
+        from src.story.effects import Block
 
         self.tile.block_exit = ["north"]
         event = Block(self.player, self.tile, params=["north"])
@@ -385,7 +384,7 @@ class TestBlock(unittest.TestCase):
 
     def test_block_all_directions(self):
         """Test Block processes all 8 directions."""
-        from story.effects import Block
+        from src.story.effects import Block
 
         all_dirs = [
             "north",
@@ -417,14 +416,14 @@ class TestMakeKey(unittest.TestCase):
 
     def test_make_key_init(self):
         """Test MakeKey initialization."""
-        from story.effects import MakeKey
+        from src.story.effects import MakeKey
 
         event = MakeKey(self.player, self.tile)
         self.assertEqual(event.name, "MakeKey")
 
     def test_make_key_process_default_values(self):
         """Test MakeKey.process with default values."""
-        from story.effects import MakeKey
+        from src.story.effects import MakeKey
 
         event = MakeKey(self.player, self.tile, params=[])
         event.process()
@@ -433,7 +432,7 @@ class TestMakeKey(unittest.TestCase):
 
     def test_make_key_process_with_alias(self):
         """Test MakeKey.process with chest alias."""
-        from story.effects import MakeKey
+        from src.story.effects import MakeKey
 
         chest_lock = Mock()
         self.player.universe.locked_chests = [(chest_lock, "treasure_chest")]
@@ -443,7 +442,7 @@ class TestMakeKey(unittest.TestCase):
 
     def test_make_key_process_with_custom_name(self):
         """Test MakeKey.process with custom key name."""
-        from story.effects import MakeKey
+        from src.story.effects import MakeKey
 
         event = MakeKey(self.player, self.tile, params=["name=Ornate Key"])
         event.process()
@@ -451,7 +450,7 @@ class TestMakeKey(unittest.TestCase):
 
     def test_make_key_process_with_custom_description(self):
         """Test MakeKey.process with custom description."""
-        from story.effects import MakeKey
+        from src.story.effects import MakeKey
 
         event = MakeKey(self.player, self.tile, params=["desc=An ancient key~"])
         event.process()
@@ -459,7 +458,7 @@ class TestMakeKey(unittest.TestCase):
 
     def test_make_key_process_all_params(self):
         """Test MakeKey.process with all parameters."""
-        from story.effects import MakeKey
+        from src.story.effects import MakeKey
 
         chest_lock = Mock()
         self.player.universe.locked_chests = [(chest_lock, "chest")]
@@ -481,7 +480,7 @@ class TestTeleport(unittest.TestCase):
 
     def test_teleport_init_default_coords(self):
         """Test Teleport initialization with default coordinates."""
-        from story.effects import Teleport
+        from src.story.effects import Teleport
 
         event = Teleport(self.player, self.tile, "target_map")
         self.assertEqual(event.target_map_name, "target_map")
@@ -489,14 +488,14 @@ class TestTeleport(unittest.TestCase):
 
     def test_teleport_init_custom_coords(self):
         """Test Teleport initialization with custom coordinates."""
-        from story.effects import Teleport
+        from src.story.effects import Teleport
 
         event = Teleport(self.player, self.tile, "target_map", (5, 10))
         self.assertEqual(event.target_coordinates, (5, 10))
 
     def test_teleport_check_conditions(self):
         """Test Teleport check_conditions always passes."""
-        from story.effects import Teleport
+        from src.story.effects import Teleport
 
         event = Teleport(self.player, self.tile, "target_map")
         with patch.object(event, "pass_conditions_to_process") as mock_pass:
@@ -505,7 +504,7 @@ class TestTeleport(unittest.TestCase):
 
     def test_teleport_process(self):
         """Test Teleport.process calls player.teleport."""
-        from story.effects import Teleport
+        from src.story.effects import Teleport
 
         event = Teleport(self.player, self.tile, "target_map", (3, 4))
         event.process()
@@ -522,14 +521,14 @@ class TestShrine(unittest.TestCase):
 
     def test_shrine_init(self):
         """Test Shrine initialization."""
-        from story.effects import Shrine
+        from src.story.effects import Shrine
 
         event = Shrine(self.player, self.tile)
         self.assertEqual(event.name, "Shrine")
 
     def test_shrine_check_conditions(self):
         """Test Shrine check_conditions always passes."""
-        from story.effects import Shrine
+        from src.story.effects import Shrine
 
         event = Shrine(self.player, self.tile)
         with patch.object(event, "pass_conditions_to_process") as mock_pass:
@@ -538,7 +537,7 @@ class TestShrine(unittest.TestCase):
 
     def test_shrine_process_is_noop(self):
         """Test Shrine.process does nothing."""
-        from story.effects import Shrine
+        from src.story.effects import Shrine
 
         event = Shrine(self.player, self.tile)
         event.process()  # Should not raise
@@ -554,7 +553,7 @@ class TestStMichael(unittest.TestCase):
 
     def test_st_michael_init(self):
         """Test StMichael initialization."""
-        from story.effects import StMichael
+        from src.story.effects import StMichael
 
         event = StMichael(self.player, self.tile)
         self.assertIn("St Michael", event.name)
@@ -562,7 +561,7 @@ class TestStMichael(unittest.TestCase):
 
     def test_st_michael_generate_weapon_choices(self):
         """Test StMichael generates 3 weapon choices."""
-        from story.effects import StMichael
+        from src.story.effects import StMichael
 
         event = StMichael(self.player, self.tile)
         self.assertEqual(len(event.available_choices), 3)
@@ -570,24 +569,24 @@ class TestStMichael(unittest.TestCase):
 
     def test_st_michael_process_first_pass(self):
         """Test StMichael.process on first call (no input)."""
-        from story.effects import StMichael
+        from src.story.effects import StMichael
 
         event = StMichael(self.player, self.tile)
-        with patch("builtins.print"), patch("story.effects.cprint"), patch("time.sleep"):
+        with patch("builtins.print"), patch("src.story.effects.cprint"), patch("time.sleep"):
             event.process(user_input=None)
         self.assertTrue(event.needs_input)
 
     def test_st_michael_process_valid_selection(self):
         """Test StMichael.process with valid selection."""
-        from story.effects import StMichael
+        from src.story.effects import StMichael
 
         event = StMichael(self.player, self.tile)
         self.tile.events_here = [event]
         spawned_item = Mock()
         self.tile.spawn_item = Mock(return_value=spawned_item)
 
-        with patch("builtins.print"), patch("story.effects.cprint"), patch("time.sleep"), patch(
-            "story.effects.functions.add_random_enchantments"
+        with patch("builtins.print"), patch("src.story.effects.cprint"), patch("time.sleep"), patch(
+            "src.story.effects.functions.add_random_enchantments"
         ):
             event.process(user_input="0")
 
@@ -597,14 +596,14 @@ class TestStMichael(unittest.TestCase):
 
     def test_st_michael_process_invalid_selection(self):
         """Test StMichael.process with invalid selection."""
-        from story.effects import StMichael
+        from src.story.effects import StMichael
 
         event = StMichael(self.player, self.tile)
         self.tile.events_here = [event]
         self.tile.spawn_item = Mock(return_value=Mock())
 
-        with patch("builtins.print"), patch("story.effects.cprint"), patch("time.sleep"), patch(
-            "story.effects.functions.add_random_enchantments"
+        with patch("builtins.print"), patch("src.story.effects.cprint"), patch("time.sleep"), patch(
+            "src.story.effects.functions.add_random_enchantments"
         ):
             event.process(user_input="99")
 
@@ -613,14 +612,14 @@ class TestStMichael(unittest.TestCase):
 
     def test_st_michael_process_non_integer_selection(self):
         """Test StMichael.process with non-integer selection."""
-        from story.effects import StMichael
+        from src.story.effects import StMichael
 
         event = StMichael(self.player, self.tile)
         self.tile.events_here = [event]
         self.tile.spawn_item = Mock(return_value=Mock())
 
-        with patch("builtins.print"), patch("story.effects.cprint"), patch("time.sleep"), patch(
-            "story.effects.functions.add_random_enchantments"
+        with patch("builtins.print"), patch("src.story.effects.cprint"), patch("time.sleep"), patch(
+            "src.story.effects.functions.add_random_enchantments"
         ):
             event.process(user_input="invalid")
 
@@ -629,14 +628,14 @@ class TestStMichael(unittest.TestCase):
 
     def test_st_michael_process_empty_selection(self):
         """Test StMichael.process with empty selection."""
-        from story.effects import StMichael
+        from src.story.effects import StMichael
 
         event = StMichael(self.player, self.tile)
         self.tile.events_here = [event]
         self.tile.spawn_item = Mock(return_value=Mock())
 
-        with patch("builtins.print"), patch("story.effects.cprint"), patch("time.sleep"), patch(
-            "story.effects.functions.add_random_enchantments"
+        with patch("builtins.print"), patch("src.story.effects.cprint"), patch("time.sleep"), patch(
+            "src.story.effects.functions.add_random_enchantments"
         ):
             event.process(user_input="")
 
@@ -644,14 +643,14 @@ class TestStMichael(unittest.TestCase):
 
     def test_st_michael_not_removed_when_repeat(self):
         """Test StMichael stays in tile when repeating."""
-        from story.effects import StMichael
+        from src.story.effects import StMichael
 
         event = StMichael(self.player, self.tile, repeat=True)
         self.tile.events_here = [event]
         self.tile.spawn_item = Mock(return_value=Mock())
 
-        with patch("builtins.print"), patch("story.effects.cprint"), patch("time.sleep"), patch(
-            "story.effects.functions.add_random_enchantments"
+        with patch("builtins.print"), patch("src.story.effects.cprint"), patch("time.sleep"), patch(
+            "src.story.effects.functions.add_random_enchantments"
         ):
             event.process(user_input="0")
 
@@ -672,7 +671,7 @@ class TestNPCSpawnerEvent(unittest.TestCase):
 
     def test_npc_spawner_init_with_string_params(self):
         """Test NPCSpawnerEvent with string class name in params."""
-        from story.effects import NPCSpawnerEvent
+        from src.story.effects import NPCSpawnerEvent
 
         event = NPCSpawnerEvent(self.player, self.tile, params=["Slime", 3])
         self.assertEqual(event.npc_cls, "Slime")
@@ -680,7 +679,7 @@ class TestNPCSpawnerEvent(unittest.TestCase):
 
     def test_npc_spawner_init_with_direct_args(self):
         """Test NPCSpawnerEvent with direct npc_cls and count arguments."""
-        from story.effects import NPCSpawnerEvent
+        from src.story.effects import NPCSpawnerEvent
 
         event = NPCSpawnerEvent(
             self.player, self.tile, npc_cls="Goblin", count=2
@@ -690,7 +689,7 @@ class TestNPCSpawnerEvent(unittest.TestCase):
 
     def test_npc_spawner_init_with_coordinates(self):
         """Test NPCSpawnerEvent with coordinate override."""
-        from story.effects import NPCSpawnerEvent
+        from src.story.effects import NPCSpawnerEvent
 
         target_tile = Mock()
         self.tile.map.__getitem__ = Mock(return_value=target_tile)
@@ -701,7 +700,7 @@ class TestNPCSpawnerEvent(unittest.TestCase):
 
     def test_npc_spawner_resolve_class_name_string(self):
         """Test _resolve_npc_class_name with string."""
-        from story.effects import NPCSpawnerEvent
+        from src.story.effects import NPCSpawnerEvent
 
         event = NPCSpawnerEvent(self.player, self.tile, npc_cls="Slime")
         result = event._resolve_npc_class_name()
@@ -709,7 +708,7 @@ class TestNPCSpawnerEvent(unittest.TestCase):
 
     def test_npc_spawner_resolve_class_name_dict(self):
         """Test _resolve_npc_class_name with deserialized dict."""
-        from story.effects import NPCSpawnerEvent
+        from src.story.effects import NPCSpawnerEvent
 
         event = NPCSpawnerEvent(self.player, self.tile, npc_cls={"__class_type__": "npc:Slime"})
         result = event._resolve_npc_class_name()
@@ -717,7 +716,7 @@ class TestNPCSpawnerEvent(unittest.TestCase):
 
     def test_npc_spawner_resolve_class_name_none(self):
         """Test _resolve_npc_class_name with None."""
-        from story.effects import NPCSpawnerEvent
+        from src.story.effects import NPCSpawnerEvent
 
         event = NPCSpawnerEvent(self.player, self.tile, npc_cls=None)
         result = event._resolve_npc_class_name()
@@ -725,7 +724,7 @@ class TestNPCSpawnerEvent(unittest.TestCase):
 
     def test_npc_spawner_do_spawn(self):
         """Test NPCSpawnerEvent._do_spawn spawns NPCs."""
-        from story.effects import NPCSpawnerEvent
+        from src.story.effects import NPCSpawnerEvent
 
         spawned_mock = Mock()
         self.tile.spawn_npc = Mock(return_value=spawned_mock)
@@ -736,7 +735,7 @@ class TestNPCSpawnerEvent(unittest.TestCase):
 
     def test_npc_spawner_process_first_run(self):
         """Test NPCSpawnerEvent.process on first run."""
-        from story.effects import NPCSpawnerEvent
+        from src.story.effects import NPCSpawnerEvent
 
         self.tile.spawn_npc = Mock(return_value=Mock())
         event = NPCSpawnerEvent(self.player, self.tile, npc_cls="Slime", count=1)
@@ -745,7 +744,7 @@ class TestNPCSpawnerEvent(unittest.TestCase):
 
     def test_npc_spawner_process_no_repeat(self):
         """Test NPCSpawnerEvent.process doesn't repeat when repeat=False."""
-        from story.effects import NPCSpawnerEvent
+        from src.story.effects import NPCSpawnerEvent
 
         self.tile.spawn_npc = Mock(return_value=Mock())
         event = NPCSpawnerEvent(self.player, self.tile, npc_cls="Slime", count=1, repeat=False)
@@ -756,7 +755,7 @@ class TestNPCSpawnerEvent(unittest.TestCase):
 
     def test_npc_spawner_evaluate_for_map_entry(self):
         """Test NPCSpawnerEvent.evaluate_for_map_entry triggers on map entry."""
-        from story.effects import NPCSpawnerEvent
+        from src.story.effects import NPCSpawnerEvent
 
         self.player.map = self.tile.map
         self.tile.spawn_npc = Mock(return_value=Mock())
@@ -766,7 +765,7 @@ class TestNPCSpawnerEvent(unittest.TestCase):
 
     def test_npc_spawner_count_min_one(self):
         """Test NPCSpawnerEvent ensures count is at least 1."""
-        from story.effects import NPCSpawnerEvent
+        from src.story.effects import NPCSpawnerEvent
 
         event = NPCSpawnerEvent(self.player, self.tile, params=["Slime", 0])
         self.assertEqual(event.count, 1)
@@ -783,7 +782,7 @@ class TestPulsingGlandEvent(unittest.TestCase):
 
     def test_pulsing_gland_init(self):
         """Test PulsingGlandEvent initialization."""
-        from story.effects import PulsingGlandEvent
+        from src.story.effects import PulsingGlandEvent
 
         event = PulsingGlandEvent(self.player, self.tile)
         self.assertEqual(event.count, 1)
@@ -791,7 +790,7 @@ class TestPulsingGlandEvent(unittest.TestCase):
 
     def test_pulsing_gland_evaluate_for_map_entry(self):
         """Test PulsingGlandEvent does NOT fire on map entry."""
-        from story.effects import PulsingGlandEvent
+        from src.story.effects import PulsingGlandEvent
 
         event = PulsingGlandEvent(self.player, self.tile)
         event.evaluate_for_map_entry(self.player)
@@ -800,7 +799,7 @@ class TestPulsingGlandEvent(unittest.TestCase):
 
     def test_pulsing_gland_process(self):
         """Test PulsingGlandEvent.process prints message and spawns."""
-        from story.effects import PulsingGlandEvent
+        from src.story.effects import PulsingGlandEvent
 
         event = PulsingGlandEvent(self.player, self.tile)
         with patch("builtins.print"), patch("time.sleep"):
@@ -822,7 +821,7 @@ class TestWhisperingStatue(unittest.TestCase):
 
     def test_whispering_statue_init(self):
         """Test WhisperingStatue initialization."""
-        from story.effects import WhisperingStatue
+        from src.story.effects import WhisperingStatue
 
         event = WhisperingStatue(self.player, self.tile)
         self.assertEqual(event.input_type, "choice")
@@ -830,7 +829,7 @@ class TestWhisperingStatue(unittest.TestCase):
 
     def test_whispering_statue_check_conditions(self):
         """Test WhisperingStatue check_conditions always passes."""
-        from story.effects import WhisperingStatue
+        from src.story.effects import WhisperingStatue
 
         event = WhisperingStatue(self.player, self.tile)
         with patch.object(event, "pass_conditions_to_process") as mock_pass:
@@ -839,12 +838,12 @@ class TestWhisperingStatue(unittest.TestCase):
 
     def test_whispering_statue_process_correct_answer(self):
         """Test WhisperingStatue.process with correct answer (1)."""
-        from story.effects import WhisperingStatue
+        from src.story.effects import WhisperingStatue
 
         event = WhisperingStatue(self.player, self.tile)
         self.tile.events_here = [event]
 
-        with patch("builtins.print"), patch("story.effects.cprint"), patch("time.sleep"):
+        with patch("builtins.print"), patch("src.story.effects.cprint"), patch("time.sleep"):
             event.process(user_input="1")
 
         self.assertTrue(event.completed)
@@ -852,12 +851,12 @@ class TestWhisperingStatue(unittest.TestCase):
 
     def test_whispering_statue_process_wrong_answer(self):
         """Test WhisperingStatue.process with wrong answer."""
-        from story.effects import WhisperingStatue
+        from src.story.effects import WhisperingStatue
 
         event = WhisperingStatue(self.player, self.tile)
         self.tile.events_here = [event]
 
-        with patch("builtins.print"), patch("story.effects.cprint"), patch("time.sleep"):
+        with patch("builtins.print"), patch("src.story.effects.cprint"), patch("time.sleep"):
             event.process(user_input="2")
 
         self.assertTrue(event.completed)
@@ -865,26 +864,26 @@ class TestWhisperingStatue(unittest.TestCase):
 
     def test_whispering_statue_process_wrong_answer_awareness(self):
         """Test WhisperingStatue spawned Slime has high awareness."""
-        from story.effects import WhisperingStatue
+        from src.story.effects import WhisperingStatue
 
         event = WhisperingStatue(self.player, self.tile)
         self.tile.events_here = [event]
         slime = Mock()
         self.tile.spawn_npc = Mock(return_value=slime)
 
-        with patch("builtins.print"), patch("story.effects.cprint"), patch("time.sleep"):
+        with patch("builtins.print"), patch("src.story.effects.cprint"), patch("time.sleep"):
             event.process(user_input="2")
 
         self.assertEqual(slime.awareness, 999)
 
     def test_whispering_statue_process_no_input_cli_mode(self):
         """Test WhisperingStatue.process CLI mode (no input provided)."""
-        from story.effects import WhisperingStatue
+        from src.story.effects import WhisperingStatue
 
         event = WhisperingStatue(self.player, self.tile)
         self.tile.events_here = [event]
 
-        with patch("builtins.print"), patch("story.effects.cprint"), patch("time.sleep"), patch(
+        with patch("builtins.print"), patch("src.story.effects.cprint"), patch("time.sleep"), patch(
             "builtins.input", return_value="1"
         ):
             event.process(user_input=None)
@@ -893,12 +892,12 @@ class TestWhisperingStatue(unittest.TestCase):
 
     def test_whispering_statue_process_empty_string_input(self):
         """Test WhisperingStatue.process with empty string defaults to 1."""
-        from story.effects import WhisperingStatue
+        from src.story.effects import WhisperingStatue
 
         event = WhisperingStatue(self.player, self.tile)
         self.tile.events_here = [event]
 
-        with patch("builtins.print"), patch("story.effects.cprint"), patch("time.sleep"):
+        with patch("builtins.print"), patch("src.story.effects.cprint"), patch("time.sleep"):
             event.process(user_input="")
 
         self.assertTrue(event.completed)
@@ -906,12 +905,12 @@ class TestWhisperingStatue(unittest.TestCase):
 
     def test_whispering_statue_removal_from_tile(self):
         """Test WhisperingStatue removes itself from tile when not repeating."""
-        from story.effects import WhisperingStatue
+        from src.story.effects import WhisperingStatue
 
         event = WhisperingStatue(self.player, self.tile, repeat=False)
         self.tile.events_here = [event]
 
-        with patch("builtins.print"), patch("story.effects.cprint"), patch("time.sleep"):
+        with patch("builtins.print"), patch("src.story.effects.cprint"), patch("time.sleep"):
             event.process(user_input="1")
 
         self.assertNotIn(event, self.tile.events_here)
@@ -927,7 +926,7 @@ class TestGorranFlavorHelpers(unittest.TestCase):
 
     def test_find_gorran_with_ally(self):
         """Test _find_gorran finds Gorran ally."""
-        from story import gorran_flavor
+        from src.story import gorran_flavor
 
         player = Mock()
         gorran = Mock()
@@ -938,7 +937,7 @@ class TestGorranFlavorHelpers(unittest.TestCase):
 
     def test_find_gorran_no_ally(self):
         """Test _find_gorran returns None when no ally."""
-        from story import gorran_flavor
+        from src.story import gorran_flavor
 
         player = Mock()
         player.combat_list_allies = [player]
@@ -947,7 +946,7 @@ class TestGorranFlavorHelpers(unittest.TestCase):
 
     def test_find_gorran_no_allies_list(self):
         """Test _find_gorran handles missing combat_list_allies."""
-        from story import gorran_flavor
+        from src.story import gorran_flavor
 
         player = Mock(spec=[])  # No combat_list_allies attribute
         result = gorran_flavor._find_gorran(player)
@@ -955,7 +954,7 @@ class TestGorranFlavorHelpers(unittest.TestCase):
 
     def test_find_gorran_exception_handling(self):
         """Test _find_gorran handles exceptions gracefully."""
-        from story import gorran_flavor
+        from src.story import gorran_flavor
 
         player = Mock()
         player.combat_list_allies = Mock(side_effect=Exception("Test error"))
@@ -964,7 +963,7 @@ class TestGorranFlavorHelpers(unittest.TestCase):
 
     def test_get_gorran_stage_from_story(self):
         """Test get_gorran_stage retrieves stage."""
-        from story import gorran_flavor
+        from src.story import gorran_flavor
 
         player = Mock()
         player.universe = Mock()
@@ -974,7 +973,7 @@ class TestGorranFlavorHelpers(unittest.TestCase):
 
     def test_get_gorran_stage_missing_defaults_to_zero(self):
         """Test get_gorran_stage defaults to 0 when missing."""
-        from story import gorran_flavor
+        from src.story import gorran_flavor
 
         player = Mock()
         player.universe = Mock()
@@ -984,7 +983,7 @@ class TestGorranFlavorHelpers(unittest.TestCase):
 
     def test_get_gorran_stage_invalid_defaults_to_zero(self):
         """Test get_gorran_stage defaults to 0 on conversion error."""
-        from story import gorran_flavor
+        from src.story import gorran_flavor
 
         player = Mock()
         player.universe = Mock()
@@ -994,7 +993,7 @@ class TestGorranFlavorHelpers(unittest.TestCase):
 
     def test_combat_general_for_stage_0(self):
         """Test _combat_general_for_stage at stage 0."""
-        from story import gorran_flavor
+        from src.story import gorran_flavor
 
         pool = gorran_flavor._combat_general_for_stage(0)
         self.assertGreater(len(pool), 0)
@@ -1003,70 +1002,70 @@ class TestGorranFlavorHelpers(unittest.TestCase):
 
     def test_combat_general_for_stage_2(self):
         """Test _combat_general_for_stage includes stage 2 lines."""
-        from story import gorran_flavor
+        from src.story import gorran_flavor
 
         pool = gorran_flavor._combat_general_for_stage(2)
         self.assertGreater(len(pool), len(gorran_flavor._COMBAT_GENERAL))
 
     def test_combat_general_for_stage_3(self):
         """Test _combat_general_for_stage includes stage 3 lines."""
-        from story import gorran_flavor
+        from src.story import gorran_flavor
 
         pool = gorran_flavor._combat_general_for_stage(3)
         self.assertGreater(len(pool), len(gorran_flavor._combat_general_for_stage(2)))
 
     def test_combat_general_for_stage_4(self):
         """Test _combat_general_for_stage includes stage 4 lines."""
-        from story import gorran_flavor
+        from src.story import gorran_flavor
 
         pool = gorran_flavor._combat_general_for_stage(4)
         self.assertGreater(len(pool), len(gorran_flavor._combat_general_for_stage(3)))
 
     def test_combat_jean_hurt_for_stage_0(self):
         """Test _combat_jean_hurt_for_stage at stage 0."""
-        from story import gorran_flavor
+        from src.story import gorran_flavor
 
         pool = gorran_flavor._combat_jean_hurt_for_stage(0)
         self.assertEqual(len(pool), len(gorran_flavor._COMBAT_JEAN_HURT))
 
     def test_combat_jean_hurt_for_stage_1(self):
         """Test _combat_jean_hurt_for_stage includes stage 1 lines."""
-        from story import gorran_flavor
+        from src.story import gorran_flavor
 
         pool = gorran_flavor._combat_jean_hurt_for_stage(1)
         self.assertGreater(len(pool), len(gorran_flavor._COMBAT_JEAN_HURT))
 
     def test_combat_jean_hurt_for_stage_2(self):
         """Test _combat_jean_hurt_for_stage includes stage 2 lines."""
-        from story import gorran_flavor
+        from src.story import gorran_flavor
 
         pool = gorran_flavor._combat_jean_hurt_for_stage(2)
         self.assertGreater(len(pool), len(gorran_flavor._combat_jean_hurt_for_stage(1)))
 
     def test_explore_for_stage_0(self):
         """Test _explore_for_stage at stage 0."""
-        from story import gorran_flavor
+        from src.story import gorran_flavor
 
         pool = gorran_flavor._explore_for_stage(0)
         self.assertEqual(len(pool), len(gorran_flavor._EXPLORE))
 
     def test_explore_for_stage_2(self):
         """Test _explore_for_stage includes stage 2 lines."""
-        from story import gorran_flavor
+        from src.story import gorran_flavor
 
         pool = gorran_flavor._explore_for_stage(2)
         self.assertGreater(len(pool), len(gorran_flavor._EXPLORE))
 
     def test_explore_for_stage_3(self):
         """Test _explore_for_stage includes stage 3 lines."""
-        from story import gorran_flavor
+        from src.story import gorran_flavor
 
         pool = gorran_flavor._explore_for_stage(3)
         self.assertGreater(len(pool), len(gorran_flavor._explore_for_stage(2)))
 
     def test_explore_for_stage_4(self):
         """Test _explore_for_stage includes stage 4 lines."""
-        from story import gorran_flavor
+        from src.story import gorran_flavor
 
         pool = gorran_flavor._explore_for_stage(4)
         self.assertGreater(len(pool), len(gorran_flavor._explore_for_stage(3)))
@@ -1086,21 +1085,21 @@ class TestMaybeCombatFlavor(unittest.TestCase):
 
     def test_combat_flavor_cooldown_decreases(self):
         """Test maybe_combat_flavor decreases cooldown."""
-        from story import gorran_flavor
+        from src.story import gorran_flavor
 
         result = gorran_flavor.maybe_combat_flavor(self.player, 1, 5)
         self.assertEqual(result, 4)
 
     def test_combat_flavor_cooldown_zero(self):
         """Test maybe_combat_flavor returns 0 when cooldown reaches 0."""
-        from story import gorran_flavor
+        from src.story import gorran_flavor
 
         result = gorran_flavor.maybe_combat_flavor(self.player, 1, 1)
         self.assertEqual(result, 0)
 
     def test_combat_flavor_no_gorran(self):
         """Test maybe_combat_flavor returns 0 when no Gorran."""
-        from story import gorran_flavor
+        from src.story import gorran_flavor
 
         self.player.combat_list_allies = [self.player]
         result = gorran_flavor.maybe_combat_flavor(self.player, 1, 0)
@@ -1108,7 +1107,7 @@ class TestMaybeCombatFlavor(unittest.TestCase):
 
     def test_combat_flavor_random_skip(self):
         """Test maybe_combat_flavor can skip based on random chance."""
-        from story import gorran_flavor
+        from src.story import gorran_flavor
 
         gorran = Mock()
         gorran.name = "Gorran"
@@ -1116,14 +1115,14 @@ class TestMaybeCombatFlavor(unittest.TestCase):
         gorran._prev_hp_for_flavor = 50
         self.player.combat_list_allies = [self.player, gorran]
 
-        with patch("story.gorran_flavor.random.random", return_value=0.99):
+        with patch("src.story.gorran_flavor.random.random", return_value=0.99):
             result = gorran_flavor.maybe_combat_flavor(self.player, 1, 0)
         # Should return 0 when skipped by random
         self.assertEqual(result, 0)
 
     def test_combat_flavor_jean_hurt_triggers(self):
         """Test maybe_combat_flavor triggers when Jean is hurt."""
-        from story import gorran_flavor
+        from src.story import gorran_flavor
 
         self.player.hp = 30  # Below 40% threshold
         gorran = Mock()
@@ -1132,15 +1131,15 @@ class TestMaybeCombatFlavor(unittest.TestCase):
         gorran._prev_hp_for_flavor = 50
         self.player.combat_list_allies = [self.player, gorran]
 
-        with patch("story.gorran_flavor.random.random", return_value=0.1), patch(
+        with patch("src.story.gorran_flavor.random.random", return_value=0.1), patch(
             "builtins.print"
-        ), patch("story.gorran_flavor.colored", return_value=""):
+        ), patch("src.story.gorran_flavor.colored", return_value=""):
             result = gorran_flavor.maybe_combat_flavor(self.player, 1, 0)
         self.assertEqual(result, 4)  # Should return cooldown
 
     def test_combat_flavor_gorran_hurt_triggers(self):
         """Test maybe_combat_flavor triggers when Gorran is hurt."""
-        from story import gorran_flavor
+        from src.story import gorran_flavor
 
         gorran = Mock()
         gorran.name = "Gorran"
@@ -1148,15 +1147,15 @@ class TestMaybeCombatFlavor(unittest.TestCase):
         gorran._prev_hp_for_flavor = 50
         self.player.combat_list_allies = [self.player, gorran]
 
-        with patch("story.gorran_flavor.random.random", return_value=0.1), patch(
+        with patch("src.story.gorran_flavor.random.random", return_value=0.1), patch(
             "builtins.print"
-        ), patch("story.gorran_flavor.colored", return_value=""):
+        ), patch("src.story.gorran_flavor.colored", return_value=""):
             result = gorran_flavor.maybe_combat_flavor(self.player, 1, 0)
         self.assertEqual(result, 4)
 
     def test_combat_flavor_exception_handling(self):
         """Test maybe_combat_flavor handles exceptions gracefully."""
-        from story import gorran_flavor
+        from src.story import gorran_flavor
 
         gorran = Mock()
         gorran.name = "Gorran"
@@ -1168,7 +1167,7 @@ class TestMaybeCombatFlavor(unittest.TestCase):
 
     def test_combat_flavor_gorran_hp_tracking(self):
         """Test maybe_combat_flavor tracks Gorran's previous HP."""
-        from story import gorran_flavor
+        from src.story import gorran_flavor
 
         gorran = Mock()
         gorran.name = "Gorran"
@@ -1176,9 +1175,9 @@ class TestMaybeCombatFlavor(unittest.TestCase):
         gorran._prev_hp_for_flavor = 50
         self.player.combat_list_allies = [self.player, gorran]
 
-        with patch("story.gorran_flavor.random.random", return_value=0.1), patch(
+        with patch("src.story.gorran_flavor.random.random", return_value=0.1), patch(
             "builtins.print"
-        ), patch("story.gorran_flavor.colored", return_value=""):
+        ), patch("src.story.gorran_flavor.colored", return_value=""):
             gorran_flavor.maybe_combat_flavor(self.player, 1, 0)
 
         # Should have set _prev_hp_for_flavor
@@ -1186,16 +1185,16 @@ class TestMaybeCombatFlavor(unittest.TestCase):
 
     def test_combat_flavor_gorran_hp_none(self):
         """Test maybe_combat_flavor handles missing Gorran HP."""
-        from story import gorran_flavor
+        from src.story import gorran_flavor
 
         gorran = Mock()
         gorran.name = "Gorran"
         gorran.hp = None
         self.player.combat_list_allies = [self.player, gorran]
 
-        with patch("story.gorran_flavor.random.random", return_value=0.1), patch(
+        with patch("src.story.gorran_flavor.random.random", return_value=0.1), patch(
             "builtins.print"
-        ), patch("story.gorran_flavor.colored", return_value=""):
+        ), patch("src.story.gorran_flavor.colored", return_value=""):
             result = gorran_flavor.maybe_combat_flavor(self.player, 1, 0)
         # Should still return cooldown
         self.assertEqual(result, 4)
@@ -1215,16 +1214,16 @@ class TestMaybeExploreFlavor(unittest.TestCase):
 
     def test_explore_flavor_skip_dialog(self):
         """Test maybe_explore_flavor returns early when skip_dialog is True."""
-        from story import gorran_flavor
+        from src.story import gorran_flavor
 
         self.player.skip_dialog = True
-        with patch("story.gorran_flavor._find_gorran"):
+        with patch("src.story.gorran_flavor._find_gorran"):
             gorran_flavor.maybe_explore_flavor(self.player)
         # Should not find gorran when skip_dialog
 
     def test_explore_flavor_no_gorran(self):
         """Test maybe_explore_flavor returns when no Gorran."""
-        from story import gorran_flavor
+        from src.story import gorran_flavor
 
         self.player.combat_list_allies = [self.player]
         gorran_flavor.maybe_explore_flavor(self.player)
@@ -1232,7 +1231,7 @@ class TestMaybeExploreFlavor(unittest.TestCase):
 
     def test_explore_flavor_cooldown_not_elapsed(self):
         """Test maybe_explore_flavor respects cooldown."""
-        from story import gorran_flavor
+        from src.story import gorran_flavor
 
         self.player.universe.story = {"gorran_explore_last_tick": "96"}
         gorran = Mock()
@@ -1246,37 +1245,37 @@ class TestMaybeExploreFlavor(unittest.TestCase):
 
     def test_explore_flavor_cooldown_elapsed(self):
         """Test maybe_explore_flavor triggers when cooldown elapsed."""
-        from story import gorran_flavor
+        from src.story import gorran_flavor
 
         self.player.universe.story = {"gorran_explore_last_tick": "90"}
         gorran = Mock()
         gorran.name = "Gorran"
         self.player.combat_list_allies = [self.player, gorran]
 
-        with patch("story.gorran_flavor.random.random", return_value=0.1), patch(
+        with patch("src.story.gorran_flavor.random.random", return_value=0.1), patch(
             "builtins.print"
-        ), patch("story.gorran_flavor.colored", return_value=""):
+        ), patch("src.story.gorran_flavor.colored", return_value=""):
             gorran_flavor.maybe_explore_flavor(self.player)
         # Should have updated story
         self.assertIn("gorran_explore_last_tick", self.player.universe.story)
 
     def test_explore_flavor_random_skip(self):
         """Test maybe_explore_flavor can skip based on random chance."""
-        from story import gorran_flavor
+        from src.story import gorran_flavor
 
         self.player.universe.story = {"gorran_explore_last_tick": "90"}
         gorran = Mock()
         gorran.name = "Gorran"
         self.player.combat_list_allies = [self.player, gorran]
 
-        with patch("story.gorran_flavor.random.random", return_value=0.99):
+        with patch("src.story.gorran_flavor.random.random", return_value=0.99):
             gorran_flavor.maybe_explore_flavor(self.player)
         # Should not change story when skipped by random
         self.assertEqual(self.player.universe.story["gorran_explore_last_tick"], "90")
 
     def test_explore_flavor_invalid_last_tick(self):
         """Test maybe_explore_flavor handles invalid last_tick."""
-        from story import gorran_flavor
+        from src.story import gorran_flavor
 
         self.player.universe.story = {"gorran_explore_last_tick": "invalid"}
         gorran = Mock()
@@ -1284,14 +1283,14 @@ class TestMaybeExploreFlavor(unittest.TestCase):
         self.player.combat_list_allies = [self.player, gorran]
 
         # Should handle gracefully and use -999 as fallback
-        with patch("story.gorran_flavor.random.random", return_value=0.1), patch(
+        with patch("src.story.gorran_flavor.random.random", return_value=0.1), patch(
             "builtins.print"
-        ), patch("story.gorran_flavor.colored", return_value=""):
+        ), patch("src.story.gorran_flavor.colored", return_value=""):
             gorran_flavor.maybe_explore_flavor(self.player)
 
     def test_explore_flavor_exception_handling(self):
         """Test maybe_explore_flavor handles exceptions gracefully."""
-        from story import gorran_flavor
+        from src.story import gorran_flavor
 
         gorran = Mock()
         gorran.name = "Gorran"
@@ -1316,7 +1315,7 @@ class TestGorranFlavorStageProgression(unittest.TestCase):
 
     def test_gorran_stage_0_combat(self):
         """Test stage 0 has only base combat lines (no spoken)."""
-        from story import gorran_flavor
+        from src.story import gorran_flavor
 
         pool = gorran_flavor._combat_general_for_stage(0)
         # All lines should be narrated, no quoted dialogue
@@ -1325,7 +1324,7 @@ class TestGorranFlavorStageProgression(unittest.TestCase):
 
     def test_gorran_stage_1_jean_hurt(self):
         """Test stage 1 adds 'Back' when Jean is hurt."""
-        from story import gorran_flavor
+        from src.story import gorran_flavor
 
         pool = gorran_flavor._combat_jean_hurt_for_stage(1)
         # Should include stage 1 additions
@@ -1333,7 +1332,7 @@ class TestGorranFlavorStageProgression(unittest.TestCase):
 
     def test_gorran_stage_2_general(self):
         """Test stage 2 adds single-word directions."""
-        from story import gorran_flavor
+        from src.story import gorran_flavor
 
         pool = gorran_flavor._combat_general_for_stage(2)
         pool_str = str(pool)
@@ -1342,7 +1341,7 @@ class TestGorranFlavorStageProgression(unittest.TestCase):
 
     def test_gorran_stage_3_phrases(self):
         """Test stage 3 adds short phrases."""
-        from story import gorran_flavor
+        from src.story import gorran_flavor
 
         pool = gorran_flavor._combat_general_for_stage(3)
         pool_str = str(pool)
@@ -1351,7 +1350,7 @@ class TestGorranFlavorStageProgression(unittest.TestCase):
 
     def test_gorran_stage_4_shorthand(self):
         """Test stage 4 adds earned shorthand."""
-        from story import gorran_flavor
+        from src.story import gorran_flavor
 
         pool = gorran_flavor._combat_general_for_stage(4)
         pool_str = str(pool)

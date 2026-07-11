@@ -21,9 +21,6 @@ if "tkinter" not in sys.modules:
     sys.modules["tkinter.ttk"] = MagicMock()
     sys.modules["tkinter.font"] = MagicMock()
 
-src_path = Path(__file__).parent.parent / "src"
-sys.path.insert(0, str(src_path))
-
 
 def _make_move(name, weight=5, fatigue_cost=10, category="Offensive", viable=True):
     """Create a minimal mock move."""
@@ -38,7 +35,7 @@ def _make_move(name, weight=5, fatigue_cost=10, category="Offensive", viable=Tru
 
 def _make_hound():
     """Instantiate a TalusHound and prepare it for select_move testing."""
-    from npc._enemies import TalusHound
+    from src.npc._enemies import TalusHound
 
     hound = TalusHound()
     hound.current_move = None
@@ -53,7 +50,7 @@ def _make_hound():
 
 class TestTalusHoundCountPackMembers:
     def test_no_combat_list_attr_returns_zero(self):
-        from npc._enemies import TalusHound
+        from src.npc._enemies import TalusHound
 
         hound = TalusHound()
         if hasattr(hound, "combat_list"):
@@ -66,7 +63,7 @@ class TestTalusHoundCountPackMembers:
         assert hound._count_pack_members() == 0
 
     def test_counts_other_living_hounds(self):
-        from npc._enemies import TalusHound
+        from src.npc._enemies import TalusHound
 
         hound = _make_hound()
         ally1 = TalusHound()
@@ -77,7 +74,7 @@ class TestTalusHoundCountPackMembers:
         assert hound._count_pack_members() == 2
 
     def test_does_not_count_dead_hounds(self):
-        from npc._enemies import TalusHound
+        from src.npc._enemies import TalusHound
 
         hound = _make_hound()
         dead = TalusHound()
@@ -86,15 +83,15 @@ class TestTalusHoundCountPackMembers:
         assert hound._count_pack_members() == 0
 
     def test_does_not_count_self(self):
-        from npc._enemies import TalusHound
+        from src.npc._enemies import TalusHound
 
         hound = _make_hound()
         hound.combat_list = [hound]
         assert hound._count_pack_members() == 0
 
     def test_does_not_count_non_hound_npcs(self):
-        from npc._enemies import TalusHound
-        from npc._enemies import Slime
+        from src.npc._enemies import TalusHound
+        from src.npc._enemies import Slime
 
         hound = _make_hound()
         slime = Slime()
@@ -134,7 +131,7 @@ class TestTalusHoundSelectMoveSmallPack:
     """Tests for small pack behavior (pack_size == 1)."""
 
     def test_small_pack_sets_current_move(self):
-        from npc._enemies import TalusHound
+        from src.npc._enemies import TalusHound
 
         hound = _make_hound()
         ally = TalusHound()
@@ -149,7 +146,7 @@ class TestTalusHoundSelectMoveLargePack:
     """Tests for large pack behavior (pack_size >= 2)."""
 
     def test_large_pack_sets_current_move(self):
-        from npc._enemies import TalusHound
+        from src.npc._enemies import TalusHound
 
         hound = _make_hound()
         ally1 = TalusHound()
@@ -180,7 +177,7 @@ class TestTalusHoundSelectMoveAiConfig:
         hound.player_ref = Mock()
         hound.ai_config = None
 
-        with patch.dict("sys.modules", {"npc_ai_config": None}):
+        with patch.dict("sys.modules", {"src.npc_ai_config": None}):
             # Should not raise
             hound.select_move()
         assert hound.current_move is not None
@@ -229,7 +226,7 @@ class TestScarpAdder:
     """Basic instantiation and resistance tests for ScarpAdder."""
 
     def test_scarp_adder_instantiation(self):
-        from npc._enemies import ScarpAdder
+        from src.npc._enemies import ScarpAdder
 
         adder = ScarpAdder()
         assert adder.maxhp == 38
@@ -239,14 +236,14 @@ class TestScarpAdder:
         assert adder.resistance_base["slashing"] == 1.1
 
     def test_scarp_adder_has_venom_claw_move(self):
-        from npc._enemies import ScarpAdder
+        from src.npc._enemies import ScarpAdder
 
         adder = ScarpAdder()
         move_names = [m.name for m in adder.known_moves]
         assert "VenomClaw" in move_names
 
     def test_scarp_adder_name_has_prefix(self):
-        from npc._enemies import ScarpAdder
+        from src.npc._enemies import ScarpAdder
 
         adder = ScarpAdder()
         assert adder.name.startswith("Scarp Adder ")
@@ -254,7 +251,7 @@ class TestScarpAdder:
 
 class TestKingSlime:
     def test_king_slime_instantiation(self):
-        from npc._enemies import KingSlime
+        from src.npc._enemies import KingSlime
 
         ks = KingSlime()
         assert ks.maxhp == 400
@@ -262,7 +259,7 @@ class TestKingSlime:
         assert ks.resistance_base["fire"] == 1.5
 
     def test_king_slime_has_tidal_surge(self):
-        from npc._enemies import KingSlime
+        from src.npc._enemies import KingSlime
 
         ks = KingSlime()
         move_names = [m.name for m in ks.known_moves]
@@ -273,7 +270,7 @@ class TestKingSlime:
 
 class TestStatusDummy:
     def test_status_dummy_instantiation(self):
-        from npc._enemies import StatusDummy
+        from src.npc._enemies import StatusDummy
 
         dummy = StatusDummy()
         assert dummy.name == "Pell"

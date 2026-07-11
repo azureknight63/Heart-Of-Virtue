@@ -11,9 +11,9 @@ from typing import Any
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  # only for type hints; avoids runtime circular imports
-    from items import Item
-    from player import Player
-    from tiles import MapTile
+    from src.items import Item
+    from src.player import Player
+    from src.tiles import MapTile
 
 from src.narration import colored, cprint, narrate
 from os import listdir
@@ -173,8 +173,8 @@ def add_enemies_to_combat(player, new_enemies, announcement: str = None):
         new_enemies = [tile.spawn_npc("Goblin") for _ in range(3)]
         add_enemies_to_combat(player, new_enemies)
     """
-    from coordinate_config import CoordinateSystemConfig
-    import positions
+    from src.coordinate_config import CoordinateSystemConfig
+    import src.positions as positions
 
     # Announce the new enemies
     if announcement:
@@ -468,7 +468,7 @@ def check_parry(target):
 def refresh_moves(player):
     """Populate player's known_moves with default move instances (tolerant to import/instantiate errors)."""
     try:
-        import moves as _moves
+        import src.moves as _moves
     except Exception:
         _moves = None
 
@@ -587,37 +587,48 @@ class _MissingLegacyPlaceholder:
         return None
 
 
+# Top-level engine modules that legacy save data and map JSON reference by
+# bare name (the persisted format predates the src.*-only import convention).
+LEGACY_BARE_MODULES = frozenset({
+    "actions", "animations", "combat_event_config", "combatant",
+    "config_manager", "coordinate_config", "enchant_tables", "events",
+    "functions", "genericng", "interface", "inventory_utils", "items",
+    "loot_tables", "moves", "narration", "npc", "npc_ai_config",
+    "objects", "positions", "scenario_config", "shop_conditions",
+    "skilltree", "states", "story", "tiles", "tilesets", "universe",
+    "player",
+})
+
+
+def canonical_module_name(mod_name):
+    """Map a persisted bare engine module path to its canonical src.* path.
+
+    Save files and map JSON store bare module names ('items', 'story.ch01');
+    resolving them as-is would import duplicate bare module objects whose
+    classes don't match the running engine's. Non-engine module paths (e.g.
+    test modules) pass through unchanged.
+    """
+    if mod_name.split(".", 1)[0] in LEGACY_BARE_MODULES:
+        return "src." + mod_name
+    return mod_name
+
+
 class SafeUnpickler(pickle.Unpickler):
     """Unpickler resilient to missing legacy modules/classes.
     Strategy:
-      1. Try normal resolution.
-      2. If fails, attempt module path rewrites (e.g., add 'src.' prefix).
-      3. If still fails, create a benign placeholder class.
+      1. Redirect bare legacy module paths (e.g. 'items', 'story.ch01') to the
+         canonical 'src.*' path so old saves resolve to the running engine's
+         classes instead of loading duplicate bare modules.
+      2. Try normal resolution.
+      3. If that fails, create a benign placeholder class.
     """
 
-    MODULE_REWRITES = [
-        (lambda m: m.startswith("story."), lambda m: "src." + m),
-        (lambda m: m.startswith("tilesets."), lambda m: "src." + m),
-    ]
-
     def find_class(self, module, name):
+        module = canonical_module_name(module)
         try:
             return super().find_class(module, name)
         except (ModuleNotFoundError, AttributeError):
             pass
-        # Attempt rewrites
-        for predicate, rewrite in self.MODULE_REWRITES:
-            try:
-                if predicate(module):
-                    new_mod = rewrite(module)
-                    try:
-                        mod = importlib.import_module(new_mod)
-                        if hasattr(mod, name):
-                            return getattr(mod, name)
-                    except Exception:
-                        pass
-            except Exception:
-                pass
         # As a last resort, synthesize a dummy module + class placeholder
         placeholder_class_name = f"LegacyMissing_{module.replace('.', '_')}_{name}"
         # Create a dynamic class so isinstance checks won't explode (but still benign)
@@ -665,7 +676,7 @@ def _patch_player_integrity(obj: Any):
     This is deliberately conservative: only add missing attrs / lists.
     """
     try:
-        from player import (
+        from src.player import (
             Player,
         )  # local import to avoid circulars at module load
     except Exception:
@@ -683,7 +694,7 @@ def _patch_player_integrity(obj: Any):
     # Ensure Jean has fists weapon for older saves
     if not getattr(obj, "fists", None):
         try:
-            import items as _items
+            import src.items as _items
 
             obj.fists = _items.Fists()
         except Exception:
@@ -865,10 +876,8 @@ def seek_class(classname, package="all", allow_other_modules=True):
 
     if package == "all":
         for package_n in packages:
-            add_modules_for(package_n)
             add_modules_for(f"src.{package_n}")
     elif package in packages:
-        add_modules_for(package)
         add_modules_for(f"src.{package}")
     else:
         raise ValueError(f"Cannot find class '{classname}' after searching '{package}'")
@@ -978,7 +987,7 @@ def add_random_enchantments(item: "Item", count: int) -> None:
     enchantments: list[Any] = [None, None]
 
     # Local import (deferred) to reduce initial import cost & circular risks
-    import enchant_tables as _enchant_tables
+    import src.enchant_tables as _enchant_tables
 
     # Cache enchantment classes by tier to avoid repeated reflection/lookup
     class_by_tier: dict[int, list[type]] = {}
@@ -1231,7 +1240,7 @@ def learn_all_skills_from_skilltree(player: "Player"):
     Learn all skills from the skill tree for the player.
     This is useful for testing and development when learn_all_skills config is enabled.
     """
-    from skilltree import Skilltree  # type: ignore
+    from src.skilltree import Skilltree  # type: ignore
 
     skilltree = Skilltree(player)
     learned_count = 0

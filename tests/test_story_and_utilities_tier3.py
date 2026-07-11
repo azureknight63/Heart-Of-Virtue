@@ -15,7 +15,6 @@ import sys
 import os
 
 # Add src to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 
 class TestVerifyCombatEvent(unittest.TestCase):
@@ -23,8 +22,8 @@ class TestVerifyCombatEvent(unittest.TestCase):
 
     def setUp(self):
         """Set up test fixtures for combat event testing."""
-        from player import Player
-        from universe import Universe
+        from src.player import Player
+        from src.universe import Universe
 
         self.player = Player()
         self.universe = Universe(self.player)
@@ -35,8 +34,8 @@ class TestVerifyCombatEvent(unittest.TestCase):
 
     def test_combat_event_setup_with_attach_universe(self):
         """Test setup when player has attach_universe method."""
-        from player import Player
-        from universe import Universe
+        from src.player import Player
+        from src.universe import Universe
 
         player = Player()
         universe = Universe(player)
@@ -47,7 +46,7 @@ class TestVerifyCombatEvent(unittest.TestCase):
 
     def test_combat_event_setup_without_attach_universe(self):
         """Test setup when player doesn't have attach_universe method."""
-        from universe import Universe
+        from src.universe import Universe
 
         player = Mock(spec=[])
         universe = Universe(Mock())
@@ -101,14 +100,14 @@ class TestVerifyCombatEvent(unittest.TestCase):
 
     def test_combat_event_config_types(self):
         """Test that CombatEvent configs have expected structure."""
-        from combat_event_config import CombatEventConfig
+        from src.combat_event_config import CombatEventConfig
 
         config = CombatEventConfig()
         self.assertIsInstance(config, CombatEventConfig)
 
     def test_combat_event_scenario_type_attribute(self):
         """Test that CombatEventConfig supports scenario_type."""
-        from combat_event_config import CombatEventConfig
+        from src.combat_event_config import CombatEventConfig
 
         config = CombatEventConfig()
         config.scenario_type = "standard"
@@ -116,7 +115,7 @@ class TestVerifyCombatEvent(unittest.TestCase):
 
     def test_combat_event_enemy_list_attribute(self):
         """Test that CombatEventConfig supports enemy_list."""
-        from combat_event_config import CombatEventConfig
+        from src.combat_event_config import CombatEventConfig
 
         config = CombatEventConfig()
         config.enemy_list = [("TestEnemy", 2)]
@@ -129,7 +128,7 @@ class TestCh01MemoryAmelia(unittest.TestCase):
 
     def setUp(self):
         """Set up test fixtures."""
-        from story.ch01 import Ch01_Memory_Amelia
+        from src.story.ch01 import Ch01_Memory_Amelia
 
         self.player = Mock()
         self.player.name = "Jean"
@@ -167,7 +166,7 @@ class TestCh01DarkGrottoIntro(unittest.TestCase):
 
     def setUp(self):
         """Set up test fixtures."""
-        from story.ch01 import Ch01DarkGrottoIntro
+        from src.story.ch01 import Ch01DarkGrottoIntro
 
         self.player = Mock()
         self.player.name = "Jean"
@@ -197,7 +196,7 @@ class TestCh01StartOpenWall(unittest.TestCase):
 
     def setUp(self):
         """Set up test fixtures."""
-        from story.ch01 import Ch01StartOpenWall
+        from src.story.ch01 import Ch01StartOpenWall
 
         self.player = Mock()
         self.player.name = "Jean"
@@ -228,7 +227,7 @@ class TestCh01BridgeWall(unittest.TestCase):
 
     def setUp(self):
         """Set up test fixtures."""
-        from story.ch01 import Ch01BridgeWall
+        from src.story.ch01 import Ch01BridgeWall
 
         self.player = Mock()
         self.player.name = "Jean"
@@ -248,7 +247,7 @@ class TestCh01ChestRumblerBattle(unittest.TestCase):
 
     def setUp(self):
         """Set up test fixtures."""
-        from story.ch01 import Ch01ChestRumblerBattle
+        from src.story.ch01 import Ch01ChestRumblerBattle
 
         self.player = Mock()
         self.player.name = "Jean"
@@ -275,7 +274,7 @@ class TestMemoryFlash(unittest.TestCase):
 
     def setUp(self):
         """Set up test fixtures."""
-        from story.effects import MemoryFlash
+        from src.story.effects import MemoryFlash
 
         self.player = Mock()
         self.tile = Mock()
@@ -304,7 +303,7 @@ class TestGoldFromHeaven(unittest.TestCase):
 
     def setUp(self):
         """Set up test fixtures."""
-        from story.effects import GoldFromHeaven
+        from src.story.effects import GoldFromHeaven
 
         self.player = Mock()
         self.tile = Mock()
@@ -323,7 +322,7 @@ class TestBlock(unittest.TestCase):
 
     def setUp(self):
         """Set up test fixtures."""
-        from story.effects import Block
+        from src.story.effects import Block
 
         self.player = Mock()
         self.tile = Mock()
@@ -351,7 +350,7 @@ class TestMakeKey(unittest.TestCase):
 
     def setUp(self):
         """Set up test fixtures."""
-        from story.effects import MakeKey
+        from src.story.effects import MakeKey
 
         self.player = Mock()
         self.player.universe = Mock()
@@ -371,7 +370,7 @@ class TestTeleport(unittest.TestCase):
 
     def setUp(self):
         """Set up test fixtures."""
-        from story.effects import Teleport
+        from src.story.effects import Teleport
 
         self.player = Mock()
         self.player.teleport = Mock()
@@ -396,7 +395,7 @@ class TestShrine(unittest.TestCase):
 
     def setUp(self):
         """Set up test fixtures."""
-        from story.effects import Shrine
+        from src.story.effects import Shrine
 
         self.player = Mock()
         self.tile = Mock()
@@ -413,7 +412,7 @@ class TestStMichael(unittest.TestCase):
 
     def setUp(self):
         """Set up test fixtures."""
-        from story.effects import StMichael
+        from src.story.effects import StMichael
 
         self.player = Mock()
         self.player.name = "Jean"
@@ -454,7 +453,7 @@ class TestNPCSpawnerEvent(unittest.TestCase):
 
     def setUp(self):
         """Set up test fixtures."""
-        from story.effects import NPCSpawnerEvent
+        from src.story.effects import NPCSpawnerEvent
 
         self.player = Mock()
         self.player.map = Mock()
@@ -503,7 +502,7 @@ class TestPulsingGlandEvent(unittest.TestCase):
 
     def setUp(self):
         """Set up test fixtures."""
-        from story.effects import PulsingGlandEvent
+        from src.story.effects import PulsingGlandEvent
 
         self.player = Mock()
         self.tile = Mock()
@@ -523,7 +522,7 @@ class TestWhisperingStatue(unittest.TestCase):
 
     def setUp(self):
         """Set up test fixtures."""
-        from story.effects import WhisperingStatue
+        from src.story.effects import WhisperingStatue
 
         self.player = Mock()
         self.player.name = "Jean"
@@ -557,7 +556,7 @@ class TestCh01GorranCautionJunction(unittest.TestCase):
 
     def setUp(self):
         """Set up test fixtures."""
-        from story.ch01 import Ch01GorranCautionJunction
+        from src.story.ch01 import Ch01GorranCautionJunction
 
         self.player = Mock()
         self.tile = Mock()
@@ -576,7 +575,7 @@ class TestCh01GorranMarkings(unittest.TestCase):
 
     def setUp(self):
         """Set up test fixtures."""
-        from story.ch01 import Ch01GorranMarkings
+        from src.story.ch01 import Ch01GorranMarkings
 
         self.player = Mock()
         self.tile = Mock()
@@ -595,7 +594,7 @@ class TestCh01GorranDarkChamber(unittest.TestCase):
 
     def setUp(self):
         """Set up test fixtures."""
-        from story.ch01 import Ch01GorranDarkChamber
+        from src.story.ch01 import Ch01GorranDarkChamber
 
         self.player = Mock()
         self.player.universe = Mock()
@@ -616,7 +615,7 @@ class TestCh01GorranFirstWord(unittest.TestCase):
 
     def setUp(self):
         """Set up test fixtures."""
-        from story.ch01 import Ch01GorranFirstWord
+        from src.story.ch01 import Ch01GorranFirstWord
 
         self.player = Mock()
         self.player.skip_dialog = False
@@ -642,7 +641,7 @@ class TestFlareArrowImpact(unittest.TestCase):
 
     def setUp(self):
         """Set up test fixtures."""
-        from story.effects import FlareArrowImpact
+        from src.story.effects import FlareArrowImpact
 
         self.player = Mock()
         self.target = Mock()

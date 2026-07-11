@@ -14,9 +14,6 @@ if "tkinter" not in sys.modules:
     sys.modules["tkinter.ttk"] = MagicMock()
     sys.modules["tkinter.font"] = MagicMock()
 
-src_path = Path(__file__).parent.parent / "src"
-sys.path.insert(0, str(src_path))
-
 
 def _make_room(story=None):
     """Mock room with universe.story attached."""
@@ -38,7 +35,7 @@ def _make_player():
 
 class TestGorranTalk:
     def _make_gorran(self, story=None):
-        from npc._friends import Gorran
+        from src.npc._friends import Gorran
 
         g = Gorran()
         g.current_room = _make_room(story)
@@ -49,7 +46,7 @@ class TestGorranTalk:
         gorran = self._make_gorran({"gorran_first": "0", "gorran_language_stage": "0"})
         player = _make_player()
 
-        with patch("builtins.print"), patch("npc._friends.functions") as mock_funcs:
+        with patch("builtins.print"), patch("src.npc._friends.functions") as mock_funcs:
             mock_event_cls = Mock(return_value=Mock())
             mock_funcs.seek_class = Mock(return_value=mock_event_cls)
             gorran.talk(player)
@@ -62,7 +59,7 @@ class TestGorranTalk:
         gorran = self._make_gorran({"gorran_first": "0", "gorran_language_stage": "0"})
         player = _make_player()
 
-        with patch("builtins.print"), patch("npc._friends.functions") as mock_funcs:
+        with patch("builtins.print"), patch("src.npc._friends.functions") as mock_funcs:
             mock_funcs.seek_class = Mock(return_value=Mock(return_value=Mock()))
             gorran.talk(player)
 
@@ -111,7 +108,7 @@ class TestGorranTalk:
 
     def test_gorran_name_property_returns_rock_man_before_intro(self):
         """Before gorran_first is set, name is 'Rock-Man'."""
-        from npc._friends import Gorran
+        from src.npc._friends import Gorran
 
         g = Gorran()
         g.current_room = _make_room({"gorran_first": "0", "gorran_language_stage": "0"})
@@ -119,7 +116,7 @@ class TestGorranTalk:
 
     def test_gorran_name_property_returns_gorran_after_intro(self):
         """After gorran_first == '1', name is 'Gorran'."""
-        from npc._friends import Gorran
+        from src.npc._friends import Gorran
 
         g = Gorran()
         g.current_room = _make_room({"gorran_first": "1", "gorran_language_stage": "0"})
@@ -127,7 +124,7 @@ class TestGorranTalk:
 
     def test_gorran_name_property_uses_player_ref_when_no_current_room(self):
         """Falls back to player_ref.universe.story if current_room is None."""
-        from npc._friends import Gorran
+        from src.npc._friends import Gorran
 
         g = Gorran()
         g.current_room = None
@@ -139,7 +136,7 @@ class TestGorranTalk:
 
     def test_gorran_name_returns_rock_man_when_no_story_context(self):
         """Without story context, name falls back to stored _name."""
-        from npc._friends import Gorran
+        from src.npc._friends import Gorran
 
         g = Gorran()
         g.current_room = None
@@ -149,7 +146,7 @@ class TestGorranTalk:
 
     def test_gorran_wounded_flavor_returns_string(self):
         """wounded_flavor() returns a non-empty string."""
-        from npc._friends import Gorran
+        from src.npc._friends import Gorran
 
         g = Gorran()
         g.current_room = None

@@ -1,10 +1,11 @@
-"""Guard: production module-sync collapses bare<->src duplication.
+"""Guard: the production import path yields no bare<->src module duplication.
 
-This must run in a SUBPROCESS. In-process, tests/conftest.py installs its own
+This must run in a SUBPROCESS. In-process, tests/conftest.py installs a
 bare<->src aliasing hook, which would mask the very split this guards against.
-The subprocess reproduces the real production entry sequence (root + src/ on
-sys.path, `src.import_sync.install()` before the app loads) and asserts the
-critical API/engine boundary modules resolve to a single object.
+The subprocess reproduces the real production entry sequence (project root on
+sys.path, no sync hook — src/import_sync.py was retired once every local
+import moved to the canonical `src.` path) and asserts the critical API/engine
+boundary modules resolve to a single object.
 """
 
 import subprocess
@@ -36,12 +37,9 @@ _SCRIPT = """
 import sys, pathlib
 root = pathlib.Path(sys.argv[1])
 sys.path.insert(0, str(root))
-sys.path.insert(0, str(root / "src"))
 
-# Reproduce the production entry point: install the sync BEFORE the app loads.
-from src.import_sync import install
-install()
-
+# Reproduce the production entry point (wsgi.py / tools/run_api.py): project
+# root only on sys.path, no import-sync hook.
 # Load the app + exercise a new game so the full engine import graph is pulled
 # in (items, objects, npc, player, story, tiles, ...).
 from src.api.app import create_app  # noqa: F401
@@ -57,8 +55,12 @@ bad = [
     and f"src.{m}" in sys.modules
     and sys.modules[m] is not sys.modules[f"src.{m}"]
 ]
+# A bare copy existing at all (even without a src.* twin) means some code path
+# still imports outside the canonical src.* namespace.
+bare_loaded = [m for m in critical if m in sys.modules and f"src.{m}" not in sys.modules]
 print("DUPLICATED:" + ",".join(bad))
-sys.exit(1 if bad else 0)
+print("BARE_ONLY:" + ",".join(bare_loaded))
+sys.exit(1 if (bad or bare_loaded) else 0)
 """ % _CRITICAL
 
 
@@ -72,7 +74,9 @@ def test_critical_modules_not_duplicated_in_production():
     )
     out = proc.stdout + proc.stderr
     dup_line = next((ln for ln in out.splitlines() if ln.startswith("DUPLICATED:")), "")
+    bare_line = next((ln for ln in out.splitlines() if ln.startswith("BARE_ONLY:")), "")
     assert proc.returncode == 0, (
-        "Critical API/engine modules are duplicated (bare vs src.) in the "
-        f"production import path: {dup_line}\n--- subprocess output ---\n{out}"
+        "Critical API/engine modules are duplicated (bare vs src.) or loaded "
+        f"bare in the production import path: {dup_line} {bare_line}\n"
+        f"--- subprocess output ---\n{out}"
     )

@@ -1,14 +1,14 @@
 from __future__ import annotations
 import random
 import time
-import states
+import src.states as states
 from src.narration import colored, cprint, narrate
 
-import functions as functions
-from player import Player
-from tiles import MapTile
-from events import Event  # noqa; This is used in type hints
-from items import Item  # noqa; This is used in type hints
+import src.functions as functions
+from src.player import Player
+from src.tiles import MapTile
+from src.events import Event  # noqa; This is used in type hints
+from src.items import Item  # noqa; This is used in type hints
 
 #####
 # These are objects that exist on tiles as opposed to items carried by the player
@@ -446,10 +446,7 @@ class Container(Object):
             narrate(f"The {self.nickname} must be opened before you can take items from it.")
             return
 
-        try:
-            from inventory_utils import transfer_item
-        except ImportError:
-            from src.inventory_utils import transfer_item
+        from src.inventory_utils import transfer_item
 
         if not self.inventory:
             narrate(f"The {self.nickname} is already empty.")
@@ -559,7 +556,7 @@ try:
     _ann = Container.__init__.__annotations__.get("allowed_subtypes")  # type: ignore[attr-defined]
     if isinstance(_ann, str):
         # Rebind with concrete evaluated type
-        from items import (
+        from src.items import (
             Item as _Item,
         )  # local import to avoid re-export side effects
 

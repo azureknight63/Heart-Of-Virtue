@@ -8,10 +8,9 @@ import sys
 import pytest
 from unittest.mock import MagicMock, patch
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
 
-import states
-from states import (
+import src.states as states
+from src.states import (
     Enflamed, Slimed, Resonant, Petrified, Hollowed, Fervent, PhoenixRevive
 )
 
@@ -41,7 +40,7 @@ class FakeTarget:
 # Patch functions.refresh_stat_bonuses globally for the whole module
 @pytest.fixture(autouse=True)
 def patch_refresh(monkeypatch):
-    monkeypatch.setattr("functions.refresh_stat_bonuses", MagicMock())
+    monkeypatch.setattr("src.functions.refresh_stat_bonuses", MagicMock())
 
 
 # ---------------------------------------------------------------------------
@@ -57,7 +56,7 @@ def test_enflamed_compound():
     state.steps_max = 0
     state.steps_left = 0
 
-    with patch('states.cprint'):
+    with patch('src.states.cprint'):
         state.compound(target)
 
     # tick *= 1.25 → int(10 * 1.25) = 12
@@ -74,7 +73,7 @@ def test_enflamed_compound_steps_left_cap():
     state.steps_max = 10
     state.steps_left = 100  # already way over; after compound, still over → capped
 
-    with patch('states.cprint'):
+    with patch('src.states.cprint'):
         state.compound(target)
 
     # steps_left should be capped at steps_max
@@ -93,7 +92,7 @@ def test_slimed_on_removal():
     state = Slimed(target)
     original_protection = target.protection
 
-    with patch('states.cprint') as mock_cprint:
+    with patch('src.states.cprint') as mock_cprint:
         state.on_removal(target)
 
     assert target.protection == original_protection
@@ -113,7 +112,7 @@ def test_slimed_compound():
     original_add_fin = state.add_fin
     original_add_protection = state.add_protection
 
-    with patch('states.cprint'):
+    with patch('src.states.cprint'):
         state.compound(target)
 
     # add_fin should decrease
@@ -131,7 +130,7 @@ def test_slimed_compound():
 def test_resonant_on_removal():
     target = FakeTarget()
     state = Resonant(target)
-    with patch('states.cprint') as mock_cprint:
+    with patch('src.states.cprint') as mock_cprint:
         state.on_removal(target)
     assert mock_cprint.called
 
@@ -147,7 +146,7 @@ def test_petrified_effect_fatigue_drain():
     # Force tick to trigger on the execute_on cycle
     state.tick = state.execute_on - 1  # next call makes tick % execute_on == 0
 
-    with patch('states.cprint'):
+    with patch('src.states.cprint'):
         state.effect(target)
 
     # fatigue should have been drained (5% of 100 = 5)
@@ -162,7 +161,7 @@ def test_petrified_effect_zero_drain():
     state = Petrified(target)
     state.tick = state.execute_on - 1
 
-    with patch('states.cprint') as mock_cprint:
+    with patch('src.states.cprint') as mock_cprint:
         state.effect(target)
 
     # drain = int(0 * 0.05) = 0 → the inner "if drain > 0: cprint" is skipped
@@ -185,7 +184,7 @@ def test_petrified_compound():
     original_add_speed = state.add_speed
     original_add_protection = state.add_protection
 
-    with patch('states.cprint'):
+    with patch('src.states.cprint'):
         state.compound(target)
 
     # Both stat penalties deepen
@@ -204,7 +203,7 @@ def test_petrified_compound():
 def test_hollowed_on_removal():
     target = FakeTarget()
     state = Hollowed(target)
-    with patch('states.cprint') as mock_cprint:
+    with patch('src.states.cprint') as mock_cprint:
         state.on_removal(target)
     assert mock_cprint.call_count == 2  # two cprint calls
 
@@ -215,7 +214,7 @@ def test_hollowed_on_removal():
 def test_fervent_on_removal():
     target = FakeTarget()
     state = Fervent(target)
-    with patch('states.cprint') as mock_cprint:
+    with patch('src.states.cprint') as mock_cprint:
         state.on_removal(target)
     assert mock_cprint.called
     assert "fire" in mock_cprint.call_args[0][0].lower() or \
@@ -234,7 +233,7 @@ def test_fervent_compound():
     original_add_str = state.add_str
     original_add_endurance = state.add_endurance
 
-    with patch('states.cprint'):
+    with patch('src.states.cprint'):
         state.compound(target)
 
     # add_str increases

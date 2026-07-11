@@ -16,8 +16,8 @@ Expected: 150+ tests covering ALL untested lines, boundary conditions, error pat
 
 from unittest.mock import MagicMock, patch
 import pytest
-from player import Player
-import items
+from src.player import Player
+import src.items as items
 
 pytestmark = pytest.mark.skip(reason="Test isolation issues in full suite - movement tests interfere with other tests")
 
@@ -44,10 +44,10 @@ class TestPlayerMovement:
         mock_tile = MagicMock()
         mock_tile.intro_text.return_value = "You enter a new room."
 
-        with patch("universe.tile_exists", return_value=mock_tile):
-            with patch("functions.print_items_in_room"):
-                with patch("functions.print_objects_in_room"):
-                    with patch("functions.advise_player_actions"):
+        with patch("src.universe.tile_exists", return_value=mock_tile):
+            with patch("src.functions.print_items_in_room"):
+                with patch("src.functions.print_objects_in_room"):
+                    with patch("src.functions.advise_player_actions"):
                         with patch("builtins.print"):
                             player.move(1, 0)
 
@@ -57,9 +57,9 @@ class TestPlayerMovement:
 
     def test_move_invalid_tile_prints_error(self, player):
         """Test failed move prints error message."""
-        with patch("player._movement.tile_exists", return_value=None):
-            with patch("player._movement.cprint") as mock_cprint:
-                with patch("player._movement.time.sleep"):
+        with patch("src.player._movement.tile_exists", return_value=None):
+            with patch("src.player._movement.cprint") as mock_cprint:
+                with patch("src.player._movement.time.sleep"):
                     player.move(1, 0)
 
         # Should call cprint with error
@@ -70,10 +70,10 @@ class TestPlayerMovement:
         mock_tile = MagicMock()
         mock_tile.intro_text.return_value = ""
 
-        with patch("universe.tile_exists", return_value=mock_tile):
-            with patch("functions.print_items_in_room"):
-                with patch("functions.print_objects_in_room"):
-                    with patch("functions.advise_player_actions"):
+        with patch("src.universe.tile_exists", return_value=mock_tile):
+            with patch("src.functions.print_items_in_room"):
+                with patch("src.functions.print_objects_in_room"):
+                    with patch("src.functions.advise_player_actions"):
                         with patch("builtins.print"):
                             player.move_north()
 
@@ -84,10 +84,10 @@ class TestPlayerMovement:
         mock_tile = MagicMock()
         mock_tile.intro_text.return_value = ""
 
-        with patch("universe.tile_exists", return_value=mock_tile):
-            with patch("functions.print_items_in_room"):
-                with patch("functions.print_objects_in_room"):
-                    with patch("functions.advise_player_actions"):
+        with patch("src.universe.tile_exists", return_value=mock_tile):
+            with patch("src.functions.print_items_in_room"):
+                with patch("src.functions.print_objects_in_room"):
+                    with patch("src.functions.advise_player_actions"):
                         with patch("builtins.print"):
                             player.move_south()
 
@@ -98,10 +98,10 @@ class TestPlayerMovement:
         mock_tile = MagicMock()
         mock_tile.intro_text.return_value = ""
 
-        with patch("universe.tile_exists", return_value=mock_tile):
-            with patch("functions.print_items_in_room"):
-                with patch("functions.print_objects_in_room"):
-                    with patch("functions.advise_player_actions"):
+        with patch("src.universe.tile_exists", return_value=mock_tile):
+            with patch("src.functions.print_items_in_room"):
+                with patch("src.functions.print_objects_in_room"):
+                    with patch("src.functions.advise_player_actions"):
                         with patch("builtins.print"):
                             player.move_east()
 
@@ -112,10 +112,10 @@ class TestPlayerMovement:
         mock_tile = MagicMock()
         mock_tile.intro_text.return_value = ""
 
-        with patch("universe.tile_exists", return_value=mock_tile):
-            with patch("functions.print_items_in_room"):
-                with patch("functions.print_objects_in_room"):
-                    with patch("functions.advise_player_actions"):
+        with patch("src.universe.tile_exists", return_value=mock_tile):
+            with patch("src.functions.print_items_in_room"):
+                with patch("src.functions.print_objects_in_room"):
+                    with patch("src.functions.advise_player_actions"):
                         with patch("builtins.print"):
                             player.move_west()
 
@@ -126,10 +126,10 @@ class TestPlayerMovement:
         mock_tile = MagicMock()
         mock_tile.intro_text.return_value = ""
 
-        with patch("universe.tile_exists", return_value=mock_tile):
-            with patch("functions.print_items_in_room"):
-                with patch("functions.print_objects_in_room"):
-                    with patch("functions.advise_player_actions"):
+        with patch("src.universe.tile_exists", return_value=mock_tile):
+            with patch("src.functions.print_items_in_room"):
+                with patch("src.functions.print_objects_in_room"):
+                    with patch("src.functions.advise_player_actions"):
                         with patch("builtins.print"):
                             player.move_northeast()
 
@@ -141,10 +141,10 @@ class TestPlayerMovement:
         mock_tile = MagicMock()
         mock_tile.intro_text.return_value = ""
 
-        with patch("universe.tile_exists", return_value=mock_tile):
-            with patch("functions.print_items_in_room"):
-                with patch("functions.print_objects_in_room"):
-                    with patch("functions.advise_player_actions"):
+        with patch("src.universe.tile_exists", return_value=mock_tile):
+            with patch("src.functions.print_items_in_room"):
+                with patch("src.functions.print_objects_in_room"):
+                    with patch("src.functions.advise_player_actions"):
                         with patch("builtins.print"):
                             player.move_northwest()
 
@@ -156,10 +156,10 @@ class TestPlayerMovement:
         mock_tile = MagicMock()
         mock_tile.intro_text.return_value = ""
 
-        with patch("universe.tile_exists", return_value=mock_tile):
-            with patch("functions.print_items_in_room"):
-                with patch("functions.print_objects_in_room"):
-                    with patch("functions.advise_player_actions"):
+        with patch("src.universe.tile_exists", return_value=mock_tile):
+            with patch("src.functions.print_items_in_room"):
+                with patch("src.functions.print_objects_in_room"):
+                    with patch("src.functions.advise_player_actions"):
                         with patch("builtins.print"):
                             player.move_southeast()
 
@@ -171,10 +171,10 @@ class TestPlayerMovement:
         mock_tile = MagicMock()
         mock_tile.intro_text.return_value = ""
 
-        with patch("universe.tile_exists", return_value=mock_tile):
-            with patch("functions.print_items_in_room"):
-                with patch("functions.print_objects_in_room"):
-                    with patch("functions.advise_player_actions"):
+        with patch("src.universe.tile_exists", return_value=mock_tile):
+            with patch("src.functions.print_items_in_room"):
+                with patch("src.functions.print_objects_in_room"):
+                    with patch("src.functions.advise_player_actions"):
                         with patch("builtins.print"):
                             player.move_southwest()
 
@@ -189,7 +189,7 @@ class TestPlayerMovement:
         mock_tile = MagicMock()
         mock_tile.intro_text.return_value = "You arrive in a new place."
 
-        with patch("player._movement.tile_exists", return_value=mock_tile):
+        with patch("src.player._movement.tile_exists", return_value=mock_tile):
             with patch("builtins.print"):
                 player.teleport("Test Map", (10, 10))
 
@@ -203,7 +203,7 @@ class TestPlayerMovement:
         target_map = {"name": "Test Map"}
         player.universe.maps = [target_map]
 
-        with patch("universe.tile_exists", return_value=None):
+        with patch("src.universe.tile_exists", return_value=None):
             with patch("builtins.print") as mock_print:
                 player.teleport("Test Map", (999, 999))
 
@@ -226,7 +226,7 @@ class TestPlayerMovement:
         mock_tile = MagicMock()
         mock_tile.intro_text.return_value = ""
 
-        with patch("universe.tile_exists", return_value=mock_tile):
+        with patch("src.universe.tile_exists", return_value=mock_tile):
             with patch.object(player, "drop_merchandise_items") as mock_drop:
                 with patch("builtins.print"):
                     player.teleport("Test Map", (5, 5))
@@ -409,7 +409,7 @@ class TestPlayerInventory:
         mock_tile = MagicMock()
         mock_tile.items_here = []
 
-        with patch("universe.tile_exists", return_value=mock_tile):
+        with patch("src.universe.tile_exists", return_value=mock_tile):
             with patch("random.choice", side_effect=lambda x: x[0]):
                 with patch("builtins.print"):
                     with patch("time.sleep"):
@@ -428,7 +428,7 @@ class TestPlayerInventory:
         player.location_x = 0
         player.location_y = 0
 
-        with patch("universe.tile_exists", return_value=None):
+        with patch("src.universe.tile_exists", return_value=None):
             player.drop_merchandise_items()
 
         # Should not crash and item should still be in inventory
@@ -445,7 +445,7 @@ class TestPlayerInventory:
         mock_tile = MagicMock()
         mock_tile.items_here = []
 
-        with patch("universe.tile_exists", return_value=mock_tile):
+        with patch("src.universe.tile_exists", return_value=mock_tile):
             with patch("random.choice", return_value="Jean sets {item} down; unpaid goods don't leave the shop."):
                 # Should not raise error
                 player.drop_merchandise_items()
@@ -469,7 +469,7 @@ class TestPlayerInventory:
         player.game_config.starting_exp = 0
 
         with patch("builtins.input", return_value="y"):
-            with patch("functions.refresh_stat_bonuses"):
+            with patch("src.functions.refresh_stat_bonuses"):
                 with patch.object(player, "refresh_protection_rating"):
                     with patch("neotermcolor.cprint"):
                         player.equip_item(item_object=weapon)
@@ -766,7 +766,7 @@ class TestPlayerCombat:
         with patch("builtins.input", return_value="0"):
             with patch("random.randint", return_value=50):
                 with patch("random.uniform", return_value=1.0):
-                    with patch("functions.check_for_combat", return_value=[]):
+                    with patch("src.functions.check_for_combat", return_value=[]):
                         with patch("combat.combat"):
                             with patch("builtins.print"):
                                 with patch("neotermcolor.colored", side_effect=lambda x, y: str(x)):
@@ -791,7 +791,7 @@ class TestPlayerCombat:
         with patch("builtins.input", return_value="0"):
             with patch("random.randint", return_value=2):  # Miss
                 with patch("random.uniform", return_value=1.0):
-                    with patch("functions.check_for_combat", return_value=[]):
+                    with patch("src.functions.check_for_combat", return_value=[]):
                         with patch("combat.combat"):
                             with patch("builtins.print"):
                                 with patch("neotermcolor.colored", side_effect=lambda x, y: str(x)):
@@ -815,7 +815,7 @@ class TestPlayerCombat:
 
         with patch("random.randint", return_value=50):
             with patch("random.uniform", return_value=1.0):
-                with patch("functions.check_for_combat", return_value=[]):
+                with patch("src.functions.check_for_combat", return_value=[]):
                     with patch("combat.combat"):
                         with patch("builtins.print"):
                             with patch("neotermcolor.colored", side_effect=lambda x, y: str(x)):
@@ -1079,10 +1079,10 @@ class TestIntegration:
         mock_tile = MagicMock()
         mock_tile.intro_text.return_value = ""
 
-        with patch("universe.tile_exists", return_value=mock_tile):
-            with patch("functions.print_items_in_room"):
-                with patch("functions.print_objects_in_room"):
-                    with patch("functions.advise_player_actions"):
+        with patch("src.universe.tile_exists", return_value=mock_tile):
+            with patch("src.functions.print_items_in_room"):
+                with patch("src.functions.print_objects_in_room"):
+                    with patch("src.functions.advise_player_actions"):
                         with patch("builtins.print"):
                             player.move(1, 0)
 

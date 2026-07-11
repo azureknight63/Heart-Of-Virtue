@@ -26,19 +26,17 @@ from pathlib import Path
 
 # Ensure src is on path
 ROOT = Path(__file__).resolve().parent.parent
-SRC_DIR = ROOT / "src"
-if str(SRC_DIR) not in sys.path:
-    sys.path.insert(0, str(SRC_DIR))
+
 
 import pytest
 import random
 from unittest.mock import Mock, MagicMock, patch
 
 # CRITICAL: Import these modules directly so coverage sees them
-import states
-import combatant
-from moves import Move, PassiveMove
-from moves import (
+import src.states as states
+import src.combatant as combatant
+from src.moves import Move, PassiveMove
+from src.moves import (
     Attack, Dodge, Parry, Advance, Withdraw, StrategicInsight, Check, Wait, Rest, UseItem,
     PowerStrike, Jab, Slash, Backstab, PommelStrike, Thrust,
     KeepAway, Lunge, Impale, BullCharge, TacticalRetreat,
@@ -48,11 +46,11 @@ from moves import (
     Reap, ReapersMark, DeathsHarvest,
     NpcAttack, NpcRest
 )
-from states import (
+from src.states import (
     State, Dodging, Parrying, Poisoned, Enflamed, Clean, Disoriented, Hawkeye,
     Slimed, Resonant, Petrified, Hollowed, Fervent, PhoenixRevive
 )
-from combatant import Combatant
+from src.combatant import Combatant
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -363,7 +361,7 @@ class TestStateBaseClass:
         state.process(fake_player)
         assert state.steps_left == 4
 
-    @patch('states.functions.refresh_stat_bonuses')
+    @patch('src.states.functions.refresh_stat_bonuses')
     def test_state_process_world_removes_when_expired(self, mock_refresh, fake_player):
         """State.process() removes state when steps_left <= 0."""
         fake_player.in_combat = False
@@ -522,13 +520,13 @@ class TestMoveBaseClass:
     def test_passive_move_is_not_viable(self, fake_player):
         """PassiveMove.viable() returns False."""
         # PassiveMove requires name and description
-        from moves._unarmed import IronFist
+        from src.moves._unarmed import IronFist
         move = IronFist(fake_player)
         assert move.viable() is False
 
     def test_passive_move_properties(self, fake_player):
         """PassiveMove has correct properties."""
-        from moves._unarmed import IronFist
+        from src.moves._unarmed import IronFist
         move = IronFist(fake_player)
 
         assert move.name is not None
@@ -881,7 +879,7 @@ class TestMoveEquipping:
 
     def test_passive_moves_not_castable(self, fake_player):
         """Passive moves are not viable for casting."""
-        from moves._unarmed import IronFist  # Passive move
+        from src.moves._unarmed import IronFist  # Passive move
 
         move = IronFist(fake_player)
         assert move.viable() is False

@@ -33,7 +33,7 @@ import random
 from typing import Any, Dict, List, Optional, Sequence, Type
 
 try:
-    from items import Item  # type: ignore
+    from src.items import Item  # type: ignore
 except Exception:  # pragma: no cover - fallback for static analysis
 
     class Item:  # type: ignore
@@ -86,7 +86,7 @@ class ShopCondition:
     ) -> Optional[Type[Item]]:
         if candidates is None:
             try:
-                import items as items_module  # local import to avoid cycles
+                import src.items as items_module  # local import to avoid cycles
 
                 subclasses: List[Type[Item]] = []
                 for _, obj in inspect.getmembers(items_module, inspect.isclass):
@@ -259,7 +259,7 @@ class UniqueItemInjectionCondition(ShopCondition):
 
     def inject_unique_items(self, merchant: Any) -> list[Item]:  # type: ignore[override]
         try:
-            from items import unique_item_factories, unique_items_spawned  # type: ignore
+            from src.items import unique_item_factories, unique_items_spawned  # type: ignore
 
             # Build list of factories whose item class name has not yet spawned
             available_factories = [

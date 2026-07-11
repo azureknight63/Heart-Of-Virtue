@@ -546,11 +546,11 @@ class TestCrusaderOath:
 
 class TestCheckCoordinateMode:
     def _combat_position(self, x=0, y=0, facing=None):
-        import positions
+        import src.positions as positions
         return positions.CombatPosition(x=x, y=y, facing=facing or positions.Direction.N)
 
     def test_prep_dispatches_to_coordinate_display(self):
-        import positions
+        import src.positions as positions
 
         player = _make_player()
         del player._combat_adapter
@@ -578,7 +578,7 @@ class TestCheckCoordinateMode:
         assert mock_cprint.called
 
     def test_display_coordinate_info_shows_ally_positioning_with_enemy_position(self):
-        import positions
+        import src.positions as positions
 
         player = _make_player()
         player.combat_position = self._combat_position()
@@ -652,7 +652,7 @@ class TestCheckApiDataEdgeCases:
         assert data[0]["is_ally"] is True
 
     def test_generate_api_check_data_facing_and_direction(self):
-        import positions
+        import src.positions as positions
 
         player = _make_player()
         player._combat_adapter = MagicMock()
@@ -846,7 +846,7 @@ class TestUtilityAttack:
         assert player.fatigue == 0
 
     def test_execute_updates_facing_when_positions_present(self):
-        import positions
+        import src.positions as positions
 
         player, enemy, move = self._viable_setup()
         player.combat_position = positions.CombatPosition(x=0, y=0, facing=positions.Direction.N)
@@ -900,7 +900,7 @@ class TestCheckDirectionCardinals:
         ],
     )
     def test_direction_from_player(self, dx, dy, expected):
-        import positions
+        import src.positions as positions
 
         player = _make_player()
         player._combat_adapter = MagicMock()
@@ -935,7 +935,7 @@ class TestCheckCoordinateAngleBrackets:
         ],
     )
     def test_display_coordinate_info_angle_brackets(self, enemy_facing, expected_called):
-        import positions
+        import src.positions as positions
 
         player = _make_player()
         player.combat_position = positions.CombatPosition(x=0, y=0, facing=positions.Direction.N)
@@ -955,7 +955,7 @@ class TestCheckCoordinateAngleBrackets:
         ["E", "NE", "W"],
     )
     def test_display_coordinate_info_ally_angle_brackets(self, enemy_facing):
-        import positions
+        import src.positions as positions
 
         player = _make_player()
         player.combat_position = positions.CombatPosition(x=0, y=0, facing=positions.Direction.N)

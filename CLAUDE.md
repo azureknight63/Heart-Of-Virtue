@@ -200,6 +200,8 @@ See `docs/coverage/coverage-dashboard.md` for:
 - Debug statements marked `###DEBUG###` — don't leave new ones in
 - Error handling: try/except with logging; prefer silent recovery over crashing the game loop
 - Do not add type annotations to files that don't already use them heavily
+- **All local imports use the canonical `src.` path** (`from src.items import Item`, `import src.functions as functions`) — including dynamic ones (`importlib.import_module("src.tiles")`) and `patch()` target strings. Never import an engine module by bare name: bare imports create a *duplicate module object* (separate classes, separate module-level state) whenever `src/` lands on `sys.path`, silently breaking `isinstance` checks and registries across the API/engine boundary. Enforced by `tests/test_no_bare_local_imports.py` (static AST scan) and `tests/test_import_sync_production.py` (production-entry subprocess). Persisted data is the one exception: map JSON `__module__` fields and legacy pickles store bare names by contract — resolve them through `functions.canonical_module_name()` (used by `Universe._deserialize_saved_instance` and `SafeUnpickler`).
+- When a test needs to stub an engine module that code imports via `import src.x as m`, patching `sys.modules["src.x"]` is not enough — that import form binds through `getattr(src, "x")`, so patch the `src` package attribute too (see `_fake_engine_modules` in `tests/test_session_manager_coverage.py`). To make a mock pass an engine `isinstance` check, assign the real class to `mock.__class__` or build the instance with `RealClass.__new__(RealClass)`.
 
 ### JavaScript/React
 - camelCase variables/functions, PascalCase components

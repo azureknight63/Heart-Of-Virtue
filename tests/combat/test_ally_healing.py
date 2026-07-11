@@ -104,7 +104,7 @@ def _make_ally(hp=20, maxhp=100):
 
 
 def _run_heal(adapter, npc):
-    with patch("items.Consumable", MagicMock) as mock_cls:
+    with patch("src.items.Consumable", MagicMock) as mock_cls:
         mock_cls.__instancecheck__ = lambda cls, obj: True
         return adapter._npc_try_heal_ally(npc)
 

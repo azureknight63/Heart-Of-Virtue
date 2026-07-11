@@ -9,10 +9,10 @@ backfill, and pickle round-trip.
 import pickle
 from types import SimpleNamespace
 
-import moves
-from npc._base import Friend
-from npc._friends import Gorran
-from npc._progression import CATCH_UP_MULTIPLIER, LEVEL_CAP
+import src.moves as moves
+from src.npc._base import Friend
+from src.npc._friends import Gorran
+from src.npc._progression import CATCH_UP_MULTIPLIER, LEVEL_CAP
 
 
 def _gorran():
@@ -232,15 +232,15 @@ def test_pickle_roundtrip_preserves_progression():
 
 
 def test_combat_knowledge_block_empty_without_profile():
-    from npc._chat_llm import HumanNPCLLMMixin
+    from src.npc._chat_llm import HumanNPCLLMMixin
 
     bare = SimpleNamespace()
     assert HumanNPCLLMMixin._build_combat_knowledge_block(bare) == ""
 
 
 def test_combat_knowledge_block_describes_techniques():
-    from npc._chat_llm import HumanNPCLLMMixin
-    from npc._friends import Mara
+    from src.npc._chat_llm import HumanNPCLLMMixin
+    from src.npc._friends import Mara
 
     mara = Mara()
     mara.sync_level(5)

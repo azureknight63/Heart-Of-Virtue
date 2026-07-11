@@ -20,9 +20,7 @@ import json
 import pytest
 
 ROOT = Path(__file__).resolve().parent.parent.parent
-SRC_DIR = ROOT / "src"
-if str(SRC_DIR) not in sys.path:
-    sys.path.insert(0, str(SRC_DIR))
+
 
 try:
     from src.api.app import create_app
@@ -197,8 +195,6 @@ class TestNPCRoutesTier2:
     def get_auth_header(self, session_id):
         """Get authorization header for session."""
         return {"Authorization": f"Bearer {session_id}"}
-
-
 
 
     def test_npc_get_profile(self, app_and_client):

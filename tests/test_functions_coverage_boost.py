@@ -76,13 +76,11 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch, call
 
 ROOT = Path(__file__).resolve().parent.parent
-SRC_DIR = ROOT / "src"
-if str(SRC_DIR) not in sys.path:
-    sys.path.insert(0, str(SRC_DIR))
+
 
 import pytest
-from player import Player
-import functions
+from src.player import Player
+import src.functions as functions
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -203,7 +201,7 @@ class TestCheckForCombat:
 
     def test_quiet_movement_bonus(self):
         """Line 273-277: Quiet Movement skill boosts finesse_check."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         p.finesse = 100  # high finesse
@@ -277,7 +275,7 @@ class TestAddEnemiesToCombat:
         enemy = MagicMock()
         enemy.in_combat = False
         enemy.combat_proximity = {}
-        with patch("functions.cprint") as mock_cp:
+        with patch("src.functions.cprint") as mock_cp:
             functions.add_enemies_to_combat(p, [enemy], announcement="Reinforcements!")
         mock_cp.assert_called()
 
@@ -351,7 +349,7 @@ class TestAddEnemiesToCombat:
         enemy.default_proximity = 10
 
         with patch(
-            "coordinate_config.CoordinateSystemConfig", side_effect=Exception("fail")
+            "src.coordinate_config.CoordinateSystemConfig", side_effect=Exception("fail")
         ):
             functions.add_enemies_to_combat(p, [enemy])
 
@@ -478,7 +476,7 @@ class TestRefreshMoves:
 
     def test_refresh_moves_skip_instantiate_error(self):
         """Lines 626-632: move classes that fail instantiation are skipped gracefully."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         # Patch one move class to raise on instantiation
@@ -865,7 +863,7 @@ class TestInstantiateEvent:
 
     def test_standard_signature_with_player_tile(self):
         """Lines 1322-1331: event class with player/tile params."""
-        from story.ch01 import Ch01StartOpenWall
+        from src.story.ch01 import Ch01StartOpenWall
 
         p = _player()
         tile = MagicMock()
@@ -997,7 +995,7 @@ class TestCheckrange:
 
 class TestCheckParry:
     def test_parrying_state_detected(self):
-        import states
+        import src.states as states
 
         target = MagicMock()
         parry = states.Parrying(MagicMock())
@@ -1067,7 +1065,7 @@ class TestAddRandomEnchantments:
 
     def test_basic_enchantment_run(self):
         """Lines 1203-1248: add_random_enchantments with real enchant_tables."""
-        import items
+        import src.items as items
 
         sword = items.Shortsword()
         # Should run without crashing
@@ -1076,7 +1074,7 @@ class TestAddRandomEnchantments:
 
     def test_zero_count_no_enchantments(self):
         """Lines 1216-1246: zero count → no enchantments applied."""
-        import items
+        import src.items as items
 
         sword = items.Shortsword()
         functions.add_random_enchantments(sword, 0)
@@ -1084,7 +1082,7 @@ class TestAddRandomEnchantments:
 
     def test_equip_states_merged(self):
         """Lines 1254-1271: equip_states from enchant merged into item.equip_states."""
-        import items
+        import src.items as items
 
         sword = items.Shortsword()
         sword.equip_states = []

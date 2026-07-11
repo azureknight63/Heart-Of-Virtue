@@ -7,9 +7,8 @@ import json
 
 # Setup paths
 ROOT = Path(__file__).resolve().parent
-SRC_DIR = ROOT / "src"
+
 sys.path.insert(0, str(ROOT))
-sys.path.insert(0, str(SRC_DIR))
 
 try:
     from src.api.app import create_app

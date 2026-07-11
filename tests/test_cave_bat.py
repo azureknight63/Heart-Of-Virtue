@@ -4,9 +4,7 @@ from pathlib import Path
 
 # Ensure the project's src directory is on sys.path so absolute imports in src modules resolve.
 ROOT = Path(__file__).resolve().parent.parent
-SRC_DIR = ROOT / "src"
-if str(SRC_DIR) not in sys.path:
-    sys.path.insert(0, str(SRC_DIR))
+
 
 import random
 import pytest
@@ -24,7 +22,7 @@ class FakeRoom:
 
     def spawn_item(self, item_type, amt=1, hidden=False, hfactor=0, merchandise=False):
         # Create an instance of the requested item class from the items module
-        import items as items_module
+        import src.items as items_module
         cls = getattr(items_module, item_type, None)
         if cls is None:
             return None

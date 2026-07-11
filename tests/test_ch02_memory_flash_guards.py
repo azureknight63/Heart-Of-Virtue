@@ -13,7 +13,6 @@ from unittest.mock import Mock, patch
 import sys
 import os
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 
 # ch02 checks `i.__class__.__name__ == "MineralFragment"` — the class name must match exactly.
@@ -32,7 +31,7 @@ class TestCh02KingSlimeMemoryFlashGuards(unittest.TestCase):
         self.player.inventory = []
 
     def _make_flash(self):
-        from story.ch02 import Ch02KingSlimeMemoryFlash
+        from src.story.ch02 import Ch02KingSlimeMemoryFlash
         flash = Ch02KingSlimeMemoryFlash(player=self.player, tile=self.tile)
         self.tile.events_here.append(flash)
         return flash

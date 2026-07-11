@@ -26,9 +26,6 @@ if "tkinter" not in sys.modules:
     sys.modules["tkinter.ttk"] = MagicMock()
     sys.modules["tkinter.font"] = MagicMock()
 
-src_path = Path(__file__).parent.parent / "src"
-sys.path.insert(0, str(src_path))
-
 
 # ---------------------------------------------------------------------------
 # Shared fixture helpers
@@ -100,7 +97,7 @@ class TestCh01DarkGrottoIntro:
     """ch01.py line coverage: Ch01DarkGrottoIntro staged process."""
 
     def setup_method(self):
-        from story.ch01 import Ch01DarkGrottoIntro
+        from src.story.ch01 import Ch01DarkGrottoIntro
 
         self.cls = Ch01DarkGrottoIntro
 
@@ -164,7 +161,7 @@ class TestCh01StartOpenWall:
     """Ch01StartOpenWall — condition checking and process side-effects."""
 
     def setup_method(self):
-        from story.ch01 import Ch01StartOpenWall
+        from src.story.ch01 import Ch01StartOpenWall
 
         self.cls = Ch01StartOpenWall
 
@@ -207,8 +204,8 @@ class TestCh01StartOpenWall:
         ev, player, tile = self._make()
         tile.block_exit = ["east"]
         with (
-            patch("story.ch01.cprint"),
-            patch("story.ch01.time.sleep"),
+            patch("src.story.ch01.cprint"),
+            patch("src.story.ch01.time.sleep"),
         ):
             ev.process()
         assert "east" not in tile.block_exit
@@ -217,8 +214,8 @@ class TestCh01StartOpenWall:
         ev, player, tile = self._make()
         tile.block_exit = ["east"]
         with (
-            patch("story.ch01.cprint"),
-            patch("story.ch01.time.sleep"),
+            patch("src.story.ch01.cprint"),
+            patch("src.story.ch01.time.sleep"),
         ):
             ev.process()
         assert hasattr(ev, "delay_duration")
@@ -234,8 +231,8 @@ class TestCh01StartOpenWall:
         wall.position = True
         tile.objects_here = [wall]
         with (
-            patch("story.ch01.cprint"),
-            patch("story.ch01.time.sleep"),
+            patch("src.story.ch01.cprint"),
+            patch("src.story.ch01.time.sleep"),
         ):
             ev.process()
         assert wall not in tile.objects_here
@@ -245,7 +242,7 @@ class TestCh01BridgeWall:
     """Ch01BridgeWall — mirrors StartOpenWall for the bridge tile."""
 
     def setup_method(self):
-        from story.ch01 import Ch01BridgeWall
+        from src.story.ch01 import Ch01BridgeWall
 
         self.cls = Ch01BridgeWall
 
@@ -273,8 +270,8 @@ class TestCh01BridgeWall:
     def test_process_unblocks_east(self):
         ev, player, tile = self._make()
         with (
-            patch("story.ch01.cprint"),
-            patch("story.ch01.time.sleep"),
+            patch("src.story.ch01.cprint"),
+            patch("src.story.ch01.time.sleep"),
         ):
             ev.process()
         assert "east" not in tile.block_exit
@@ -282,8 +279,8 @@ class TestCh01BridgeWall:
     def test_process_sets_delay_mode(self):
         ev, player, tile = self._make()
         with (
-            patch("story.ch01.cprint"),
-            patch("story.ch01.time.sleep"),
+            patch("src.story.ch01.cprint"),
+            patch("src.story.ch01.time.sleep"),
         ):
             ev.process()
         assert ev.delay_mode == "exploration"
@@ -293,7 +290,7 @@ class TestCh01ChestRumblerBattle:
     """Ch01ChestRumblerBattle — chest detection and staged process."""
 
     def setup_method(self):
-        from story.ch01 import Ch01ChestRumblerBattle
+        from src.story.ch01 import Ch01ChestRumblerBattle
 
         self.cls = Ch01ChestRumblerBattle
 
@@ -353,21 +350,14 @@ class TestCh01ChestRumblerBattle:
         fake_mace.name = "RustedIronMace"
         fake_items = Mock()
         fake_items.RustedIronMace.return_value = fake_mace
-        with (
-            patch("story.ch01.cprint"),
-            patch("builtins.__import__", wraps=__import__) as mock_import,
-        ):
-            import sys as _sys
+        import sys as _sys
 
-            orig_items = _sys.modules.get("items")
-            _sys.modules["items"] = fake_items
-            try:
-                ev.process(user_input=None)
-            finally:
-                if orig_items is None:
-                    _sys.modules.pop("items", None)
-                else:
-                    _sys.modules["items"] = orig_items
+        with (
+            patch("src.story.ch01.cprint"),
+            patch.dict(_sys.modules, {"src.items": fake_items}),
+            patch.object(_sys.modules["src"], "items", fake_items, create=True),
+        ):
+            ev.process(user_input=None)
         assert ev.needs_input is True
         assert ev.input_type == "choice"
 
@@ -378,8 +368,8 @@ class TestCh01ChestRumblerBattle:
         fake_npc = Mock()
         tile.spawn_npc = Mock(return_value=fake_npc)
         with (
-            patch("story.ch01.cprint"),
-            patch("story.ch01.time.sleep"),
+            patch("src.story.ch01.cprint"),
+            patch("src.story.ch01.time.sleep"),
         ):
             ev.process(user_input="continue")
         tile.spawn_npc.assert_called_with("RockRumbler")
@@ -390,7 +380,7 @@ class TestCh01PostRumblerRep:
     """Ch01PostRumblerRep — repeating combat event stages."""
 
     def setup_method(self):
-        from story.ch01 import Ch01PostRumblerRep
+        from src.story.ch01 import Ch01PostRumblerRep
 
         self.cls = Ch01PostRumblerRep
 
@@ -425,7 +415,7 @@ class TestCh01PostRumblerRep:
     def test_stage1_spawns_and_increments_iteration(self):
         ev, player, tile = self._make()
         initial_iteration = ev.iteration
-        with patch("functions.add_enemies_to_combat"):
+        with patch("src.functions.add_enemies_to_combat"):
             ev.process(user_input=None)
         assert ev._announcement_stage == 2
         assert ev.needs_input is True
@@ -433,7 +423,7 @@ class TestCh01PostRumblerRep:
 
     def test_stage2_resets_for_next_trigger(self):
         ev, player, tile = self._make()
-        with patch("functions.add_enemies_to_combat"):
+        with patch("src.functions.add_enemies_to_combat"):
             ev.process(user_input=None)  # stage 1
         ev.process(user_input="continue")  # stage 2
         assert ev.needs_input is False
@@ -444,7 +434,7 @@ class TestCh01PostRumbler2:
     """Ch01PostRumbler2 — low-HP trigger and Gorran intro."""
 
     def setup_method(self):
-        from story.ch01 import Ch01PostRumbler2
+        from src.story.ch01 import Ch01PostRumbler2
 
         self.cls = Ch01PostRumbler2
 
@@ -502,12 +492,12 @@ class TestCh01PostRumbler2:
         tile.npcs_here = [enemy]
         # Make current_room point to the same tile so target_tile keeps proper list
         player.current_room = tile
-        from story.ch01 import Ch01PostRumbler2
+        from src.story.ch01 import Ch01PostRumbler2
         ev = Ch01PostRumbler2(player=player, tile=tile)
         with (
-            patch("story.ch01.cprint"),
-            patch("story.ch01.colored", return_value="x"),
-            patch("story.ch01.time.sleep"),
+            patch("src.story.ch01.cprint"),
+            patch("src.story.ch01.colored", return_value="x"),
+            patch("src.story.ch01.time.sleep"),
         ):
             ev.process()
         assert player.hp == player.maxhp
@@ -521,9 +511,9 @@ class TestCh01PostRumbler2:
         fake_npc = Mock()
         tile.spawn_npc = Mock(return_value=fake_npc)
         with (
-            patch("story.ch01.cprint"),
-            patch("story.ch01.colored", return_value="x"),
-            patch("story.ch01.time.sleep"),
+            patch("src.story.ch01.cprint"),
+            patch("src.story.ch01.colored", return_value="x"),
+            patch("src.story.ch01.time.sleep"),
         ):
             ev.process()
         tile.spawn_npc.assert_called_with("RockRumbler")
@@ -533,7 +523,7 @@ class TestCh01PostRumbler3:
     """Ch01PostRumbler3 — two-stage choice event."""
 
     def setup_method(self):
-        from story.ch01 import Ch01PostRumbler3
+        from src.story.ch01 import Ch01PostRumbler3
 
         self.cls = Ch01PostRumbler3
 
@@ -567,7 +557,7 @@ class TestCh01PostRumbler3:
 
     def test_stage1_sets_needs_input(self):
         ev, player, tile = self._make()
-        with patch("story.ch01.cprint"):
+        with patch("src.story.ch01.cprint"):
             ev.process(user_input=None)
         assert ev.needs_input is True
         assert ev._stage == 2
@@ -580,10 +570,10 @@ class TestCh01PostRumbler3:
         tile.spawn_npc = Mock(return_value=fake_gorran)
         player.combat_events = [ev]
         with (
-            patch("story.ch01.cprint"),
-            patch("story.ch01.time.sleep"),
-            patch("story.ch01.random.randint", return_value=0),
-            patch("functions.add_enemies_to_combat"),
+            patch("src.story.ch01.cprint"),
+            patch("src.story.ch01.time.sleep"),
+            patch("src.story.ch01.random.randint", return_value=0),
+            patch("src.functions.add_enemies_to_combat"),
         ):
             ev.process()  # stage 1
             ev.process(user_input="a")  # stage 2
@@ -595,7 +585,7 @@ class TestAfterTheRumblerFight:
     """AfterTheRumblerFight — fires when combat ends."""
 
     def setup_method(self):
-        from story.ch01 import AfterTheRumblerFight
+        from src.story.ch01 import AfterTheRumblerFight
 
         self.cls = AfterTheRumblerFight
 
@@ -632,8 +622,8 @@ class TestAfterTheRumblerFight:
         player.combat_list_allies = [rock_man]
         tile.npcs_here = [rock_man]
         with (
-            patch("story.ch01.time.sleep"),
-            patch("story.ch01.print"),
+            patch("src.story.ch01.time.sleep"),
+            patch("src.story.ch01.print"),
         ):
             ev.process()
         assert rock_man.name == "Gorran"
@@ -644,7 +634,7 @@ class TestAfterGorranIntro:
     """AfterGorranIntro — guides Jean to Verdette Caverns."""
 
     def setup_method(self):
-        from story.ch01 import AfterGorranIntro
+        from src.story.ch01 import AfterGorranIntro
 
         self.cls = AfterGorranIntro
 
@@ -671,8 +661,8 @@ class TestAfterGorranIntro:
     def test_process_adds_gorran_as_ally(self):
         ev, player, tile, gorran = self._make()
         with (
-            patch("story.ch01.print"),
-            patch("story.ch01.await_input"),
+            patch("src.story.ch01.print"),
+            patch("src.story.ch01.await_input"),
         ):
             ev.process()
         assert gorran in player.combat_list_allies
@@ -681,8 +671,8 @@ class TestAfterGorranIntro:
     def test_process_teleports_player(self):
         ev, player, tile, gorran = self._make()
         with (
-            patch("story.ch01.print"),
-            patch("story.ch01.await_input"),
+            patch("src.story.ch01.print"),
+            patch("src.story.ch01.await_input"),
         ):
             ev.process()
         player.teleport.assert_called_with("verdette-caverns", (2, 1))
@@ -691,8 +681,8 @@ class TestAfterGorranIntro:
         ev, player, tile, gorran = self._make()
         player.in_combat = True
         with (
-            patch("story.ch01.print"),
-            patch("story.ch01.await_input"),
+            patch("src.story.ch01.print"),
+            patch("src.story.ch01.await_input"),
         ):
             ev.process()
         gorran.reset_combat_moves.assert_called()
@@ -702,7 +692,7 @@ class TestCh01GorranFirstWord:
     """Ch01GorranFirstWord — condition guard and skip_dialog path."""
 
     def setup_method(self):
-        from story.ch01 import Ch01GorranFirstWord
+        from src.story.ch01 import Ch01GorranFirstWord
 
         self.cls = Ch01GorranFirstWord
 
@@ -748,9 +738,9 @@ class TestCh01GorranFirstWord:
     def test_full_process_sets_language_stage(self):
         ev, player, tile = self._make(skip_dialog=False)
         with (
-            patch("story.ch01.cprint"),
-            patch("story.ch01.time.sleep"),
-            patch("story.ch01.await_input"),
+            patch("src.story.ch01.cprint"),
+            patch("src.story.ch01.time.sleep"),
+            patch("src.story.ch01.await_input"),
         ):
             ev.process()
         assert player.universe.story["gorran_language_stage"] == "1"
@@ -766,7 +756,7 @@ class TestAfterDefeatingLurker:
     """AfterDefeatingLurker — conditions and pass-through process."""
 
     def setup_method(self):
-        from story.ch02 import AfterDefeatingLurker
+        from src.story.ch02 import AfterDefeatingLurker
 
         self.cls = AfterDefeatingLurker
 
@@ -806,7 +796,7 @@ class TestBetaTesterBriefing:
     """BetaTesterBriefing — three-stage web UI event."""
 
     def setup_method(self):
-        from story.ch02 import BetaTesterBriefing
+        from src.story.ch02 import BetaTesterBriefing
 
         self.cls = BetaTesterBriefing
 
@@ -865,7 +855,7 @@ class TestCh02GuideToCitadel:
     """Ch02GuideToCitadel — multi-stage web UI event, skip_dialog path."""
 
     def setup_method(self):
-        from story.ch02 import Ch02GuideToCitadel
+        from src.story.ch02 import Ch02GuideToCitadel
 
         self.cls = Ch02GuideToCitadel
 
@@ -997,7 +987,7 @@ class TestCh02ArenaEntrance:
     """Ch02ArenaEntrance — king slime present gate and process."""
 
     def setup_method(self):
-        from story.ch02 import Ch02ArenaEntrance
+        from src.story.ch02 import Ch02ArenaEntrance
 
         self.cls = Ch02ArenaEntrance
 
@@ -1046,9 +1036,9 @@ class TestCh02ArenaEntrance:
         ev, player, tile = self._make()
         player.skip_dialog = False
         with (
-            patch("story.ch02.print_slow"),
-            patch("story.ch02.time.sleep"),
-            patch("story.ch02.await_input"),
+            patch("src.story.ch02.print_slow"),
+            patch("src.story.ch02.time.sleep"),
+            patch("src.story.ch02.await_input"),
         ):
             ev.process()
         assert player.universe.story["arena_entered"] == "1"
@@ -1059,7 +1049,7 @@ class TestAfterDefeatingKingSlime:
     """AfterDefeatingKingSlime — post-boss cleanup."""
 
     def setup_method(self):
-        from story.ch02 import AfterDefeatingKingSlime
+        from src.story.ch02 import AfterDefeatingKingSlime
 
         self.cls = AfterDefeatingKingSlime
 
@@ -1100,8 +1090,8 @@ class TestAfterDefeatingKingSlime:
     def test_process_sets_story_flag(self):
         ev, player, tile = self._make()
         with (
-            patch("story.ch02.print_slow"),
-            patch("story.ch02.time.sleep"),
+            patch("src.story.ch02.print_slow"),
+            patch("src.story.ch02.time.sleep"),
         ):
             ev.process()
         assert player.universe.story.get("king_slime_defeated") == "1"
@@ -1109,8 +1099,8 @@ class TestAfterDefeatingKingSlime:
     def test_process_spawns_mineral_fragment(self):
         ev, player, tile = self._make()
         with (
-            patch("story.ch02.print_slow"),
-            patch("story.ch02.time.sleep"),
+            patch("src.story.ch02.print_slow"),
+            patch("src.story.ch02.time.sleep"),
         ):
             ev.process()
         tile.spawn_item.assert_called_with("MineralFragment")
@@ -1118,8 +1108,8 @@ class TestAfterDefeatingKingSlime:
     def test_process_spawns_tile_description(self):
         ev, player, tile = self._make()
         with (
-            patch("story.ch02.print_slow"),
-            patch("story.ch02.time.sleep"),
+            patch("src.story.ch02.print_slow"),
+            patch("src.story.ch02.time.sleep"),
         ):
             ev.process()
         tile.spawn_object.assert_called()
@@ -1132,8 +1122,8 @@ class TestAfterDefeatingKingSlime:
         atrium_tile.npcs_here = [gorran]
         player.map = {(2, 1): atrium_tile}  # process() uses player.map, not universe.current_map
         with (
-            patch("story.ch02.print_slow"),
-            patch("story.ch02.time.sleep"),
+            patch("src.story.ch02.print_slow"),
+            patch("src.story.ch02.time.sleep"),
         ):
             ev.process()
         assert gorran not in atrium_tile.npcs_here
@@ -1148,8 +1138,8 @@ class TestAfterDefeatingKingSlime:
         player.combat_list_allies = [gorran]
         player.universe.current_map.tiles = {}  # no atrium tile
         with (
-            patch("story.ch02.print_slow"),
-            patch("story.ch02.time.sleep"),
+            patch("src.story.ch02.print_slow"),
+            patch("src.story.ch02.time.sleep"),
         ):
             ev.process()
         assert gorran in tile.npcs_here
@@ -1159,7 +1149,7 @@ class TestAfterDefeatingKingSlime_CleanseTiles:
     """_cleanse_pool_tiles method coverage."""
 
     def setup_method(self):
-        from story.ch02 import AfterDefeatingKingSlime
+        from src.story.ch02 import AfterDefeatingKingSlime
 
         self.cls = AfterDefeatingKingSlime
 
@@ -1181,8 +1171,8 @@ class TestAfterDefeatingKingSlime_CleanseTiles:
 
         ev = self.cls(player=player, tile=tile)
         with (
-            patch("story.ch02.print_slow"),
-            patch("story.ch02.time.sleep"),
+            patch("src.story.ch02.print_slow"),
+            patch("src.story.ch02.time.sleep"),
         ):
             ev.process()
 
@@ -1194,7 +1184,7 @@ class TestCh02FragmentReminder:
     """Ch02FragmentReminder — evaluate_for_map_entry rate-limiting."""
 
     def setup_method(self):
-        from story.ch02 import Ch02FragmentReminder
+        from src.story.ch02 import Ch02FragmentReminder
 
         self.cls = Ch02FragmentReminder
 
@@ -1285,8 +1275,8 @@ class TestCh02FragmentReminder:
         player.map = {(5, 5): tile}
         player.map["name"] = "grondia"
         with (
-            patch("story.ch02.print_slow"),
-            patch("story.ch02.time.sleep"),
+            patch("src.story.ch02.print_slow"),
+            patch("src.story.ch02.time.sleep"),
         ):
             ev._remind(player)
         player.teleport.assert_called()
@@ -1296,7 +1286,7 @@ class TestCh02KingSlimeMemoryFlash:
     """Ch02KingSlimeMemoryFlash — check_conditions guard and process."""
 
     def setup_method(self):
-        from story.ch02 import Ch02KingSlimeMemoryFlash
+        from src.story.ch02 import Ch02KingSlimeMemoryFlash
 
         self.cls = Ch02KingSlimeMemoryFlash
 
@@ -1345,13 +1335,13 @@ class TestCh02KingSlimeMemoryFlash:
     def test_process_completion_sets_fired_flag(self):
         ev, player, tile = self._make(has_fragment=True)
         # Patch the parent process to avoid MemoryFlash machinery
-        with patch("story.ch02.MemoryFlash.process"):
+        with patch("src.story.ch02.MemoryFlash.process"):
             ev.process(user_input="continue")
         assert player.universe.story.get("king_slime_flash_fired") == "1"
 
     def test_process_first_pass_no_flag(self):
         ev, player, tile = self._make(has_fragment=True)
-        with patch("story.ch02.MemoryFlash.process"):
+        with patch("src.story.ch02.MemoryFlash.process"):
             ev.process(user_input=None)
         assert "king_slime_flash_fired" not in player.universe.story
 
@@ -1360,7 +1350,7 @@ class TestAfterKingSlimeReturn:
     """AfterKingSlimeReturn — fragment delivery to Votha Krr."""
 
     def setup_method(self):
-        from story.ch02 import AfterKingSlimeReturn
+        from src.story.ch02 import AfterKingSlimeReturn
 
         self.cls = AfterKingSlimeReturn
 
@@ -1413,7 +1403,7 @@ class TestAfterKingSlimeReturn:
 
     def test_process_first_pass_prompts_choice(self):
         ev, player, tile = self._make(has_fragment=True)
-        with patch("story.ch02.print_slow"):
+        with patch("src.story.ch02.print_slow"):
             ev.process(user_input=None)
         assert ev.needs_input is True
         option_values = [o["value"] for o in ev.input_options]
@@ -1423,32 +1413,32 @@ class TestAfterKingSlimeReturn:
 
     def test_process_choice_a_hand_over(self):
         ev, player, tile = self._make(has_fragment=True)
-        with patch("story.ch02.print_slow"):
+        with patch("src.story.ch02.print_slow"):
             self._drive_to_completion(ev, choice="a")
         assert player.universe.story.get("votha_krr_response_given") == "1"
         assert ev.completed is True
 
     def test_process_choice_b_question(self):
         ev, player, tile = self._make(has_fragment=True)
-        with patch("story.ch02.print_slow"):
+        with patch("src.story.ch02.print_slow"):
             self._drive_to_completion(ev, choice="b")
         assert player.universe.story.get("votha_krr_response_given") == "1"
 
     def test_process_choice_c_set_on_throne(self):
         ev, player, tile = self._make(has_fragment=True)
-        with patch("story.ch02.print_slow"):
+        with patch("src.story.ch02.print_slow"):
             self._drive_to_completion(ev, choice="c")
         assert player.universe.story.get("votha_krr_response_given") == "1"
 
     def test_process_numeric_input_0_maps_to_a(self):
         ev, player, tile = self._make(has_fragment=True)
-        with patch("story.ch02.print_slow"):
+        with patch("src.story.ch02.print_slow"):
             self._drive_to_completion(ev, choice="0")
         assert ev.completed is True
 
     def test_process_invalid_defaults_to_a(self):
         ev, player, tile = self._make(has_fragment=True)
-        with patch("story.ch02.print_slow"):
+        with patch("src.story.ch02.print_slow"):
             self._drive_to_completion(ev, choice="zzz")
         assert ev.completed is True
 
@@ -1457,7 +1447,7 @@ class TestAfterKingSlimeReturn:
         frag = Mock()
         frag.__class__.__name__ = "MineralFragment"
         player.inventory = [frag]
-        with patch("story.ch02.print_slow"):
+        with patch("src.story.ch02.print_slow"):
             self._drive_to_completion(ev, choice="a")
         assert frag not in player.inventory
 
@@ -1471,7 +1461,7 @@ class TestGorranGestureEvent:
     """GorranGestureEvent — entry from Grondia."""
 
     def setup_method(self):
-        from story.ch03 import GorranGestureEvent
+        from src.story.ch03 import GorranGestureEvent
 
         self.cls = GorranGestureEvent
 
@@ -1524,9 +1514,9 @@ class TestGorranGestureEvent:
         player.skip_dialog = False
         printed = []
         with (
-            patch("story.ch03.print_slow", side_effect=lambda *a, **kw: printed.append(a)),
-            patch("story.ch03.time.sleep"),
-            patch("story.ch03.print"),
+            patch("src.story.ch03.print_slow", side_effect=lambda *a, **kw: printed.append(a)),
+            patch("src.story.ch03.time.sleep"),
+            patch("src.story.ch03.print"),
         ):
             ev.process()
         assert len(printed) > 0
@@ -1536,7 +1526,7 @@ class TestNomadCampSmellEvent:
     """NomadCampSmellEvent — fires once on first entry to CampEntry."""
 
     def setup_method(self):
-        from story.ch03 import NomadCampSmellEvent
+        from src.story.ch03 import NomadCampSmellEvent
 
         self.cls = NomadCampSmellEvent
 
@@ -1575,8 +1565,8 @@ class TestNomadCampSmellEvent:
         ev, player, tile = self._make()
         player.skip_dialog = False
         with (
-            patch("story.ch03.print_slow") as mock_print,
-            patch("story.ch03.time.sleep"),
+            patch("src.story.ch03.print_slow") as mock_print,
+            patch("src.story.ch03.time.sleep"),
         ):
             ev.process()
         assert mock_print.called
@@ -1592,7 +1582,7 @@ class TestMaraFirstContactEvent:
     """MaraFirstContactEvent — fires once on first entry to RiversEdge."""
 
     def setup_method(self):
-        from story.ch03 import MaraFirstContactEvent
+        from src.story.ch03 import MaraFirstContactEvent
 
         self.cls = MaraFirstContactEvent
 
@@ -1631,9 +1621,9 @@ class TestMaraFirstContactEvent:
         ev, player, tile = self._make()
         player.skip_dialog = False
         with (
-            patch("story.ch03.print_slow") as mock_print,
-            patch("story.ch03.say") as mock_say,
-            patch("story.ch03.time.sleep"),
+            patch("src.story.ch03.print_slow") as mock_print,
+            patch("src.story.ch03.say") as mock_say,
+            patch("src.story.ch03.time.sleep"),
         ):
             ev.process()
         assert mock_print.called
@@ -1650,7 +1640,7 @@ class TestDevetIntroEvent:
     """DevetIntroEvent — fires once on first entry to FireRing."""
 
     def setup_method(self):
-        from story.ch03 import DevetIntroEvent
+        from src.story.ch03 import DevetIntroEvent
 
         self.cls = DevetIntroEvent
 
@@ -1689,8 +1679,8 @@ class TestDevetIntroEvent:
         ev, player, tile = self._make()
         player.skip_dialog = False
         with (
-            patch("story.ch03.print_slow") as mock_print,
-            patch("story.ch03.time.sleep"),
+            patch("src.story.ch03.print_slow") as mock_print,
+            patch("src.story.ch03.time.sleep"),
         ):
             ev.process()
         assert mock_print.called
@@ -1706,7 +1696,7 @@ class TestLissObservingEvent:
     """LissObservingEvent — fires once on first entry to CampFarEdge."""
 
     def setup_method(self):
-        from story.ch03 import LissObservingEvent
+        from src.story.ch03 import LissObservingEvent
 
         self.cls = LissObservingEvent
 
@@ -1745,9 +1735,9 @@ class TestLissObservingEvent:
         ev, player, tile = self._make()
         player.skip_dialog = False
         with (
-            patch("story.ch03.print_slow") as mock_print,
-            patch("story.ch03.say") as mock_say,
-            patch("story.ch03.time.sleep"),
+            patch("src.story.ch03.print_slow") as mock_print,
+            patch("src.story.ch03.say") as mock_say,
+            patch("src.story.ch03.time.sleep"),
         ):
             ev.process()
         assert mock_print.called
@@ -1764,7 +1754,7 @@ class TestEasternRoadTurnbackEvent:
     """EasternRoadTurnbackEvent — always fires, moves player west."""
 
     def setup_method(self):
-        from story.ch03 import EasternRoadTurnbackEvent
+        from src.story.ch03 import EasternRoadTurnbackEvent
 
         self.cls = EasternRoadTurnbackEvent
 
@@ -1789,8 +1779,8 @@ class TestEasternRoadTurnbackEvent:
         west_tile = Mock()
         player.universe.get_tile.return_value = west_tile
         with (
-            patch("story.ch03.print_slow"),
-            patch("story.ch03.time.sleep"),
+            patch("src.story.ch03.print_slow"),
+            patch("src.story.ch03.time.sleep"),
         ):
             ev.process()
         assert player.current_room is west_tile
@@ -1819,7 +1809,7 @@ class TestMaraObservationEvent:
     """
 
     def setup_method(self):
-        from story.ch03 import MaraObservationEvent
+        from src.story.ch03 import MaraObservationEvent
 
         self.cls = MaraObservationEvent
 
@@ -1878,9 +1868,9 @@ class TestMaraObservationEvent:
         player.skip_dialog = False
         # has_mace=False branch
         with (
-            patch("story.ch03.print_slow"),
-            patch("story.ch03.say"),
-            patch("story.ch03.time.sleep"),
+            patch("src.story.ch03.print_slow"),
+            patch("src.story.ch03.say"),
+            patch("src.story.ch03.time.sleep"),
         ):
             ev.process()
         assert player.universe.story.get("nomad_camp_reached") == "1"
@@ -1896,9 +1886,9 @@ class TestMaraObservationEvent:
         mace.subtype = "Bludgeon"
         player.inventory = [mace]
         with (
-            patch("story.ch03.print_slow") as mock_print,
-            patch("story.ch03.say") as mock_say,
-            patch("story.ch03.time.sleep"),
+            patch("src.story.ch03.print_slow") as mock_print,
+            patch("src.story.ch03.say") as mock_say,
+            patch("src.story.ch03.time.sleep"),
         ):
             ev.process()
         mock_say.assert_any_call("That's religious kit.", "Mara", "neutral")
@@ -1925,21 +1915,21 @@ class TestGorranFlavorHelpers:
     """Helper function coverage."""
 
     def test_find_gorran_returns_none_when_no_ally(self):
-        from story.gorran_flavor import _find_gorran
+        from src.story.gorran_flavor import _find_gorran
 
         player = _make_player()
         player.combat_list_allies = []
         assert _find_gorran(player) is None
 
     def test_find_gorran_returns_none_when_only_player(self):
-        from story.gorran_flavor import _find_gorran
+        from src.story.gorran_flavor import _find_gorran
 
         player = _make_player()
         player.combat_list_allies = [player]
         assert _find_gorran(player) is None
 
     def test_find_gorran_returns_gorran_ally(self):
-        from story.gorran_flavor import _find_gorran
+        from src.story.gorran_flavor import _find_gorran
 
         player = _make_player()
         gorran = Mock()
@@ -1948,7 +1938,7 @@ class TestGorranFlavorHelpers:
         assert _find_gorran(player) is gorran
 
     def test_find_gorran_handles_exception(self):
-        from story.gorran_flavor import _find_gorran
+        from src.story.gorran_flavor import _find_gorran
 
         player = Mock()
         player.combat_list_allies = None  # will raise on iteration
@@ -1956,21 +1946,21 @@ class TestGorranFlavorHelpers:
         assert result is None
 
     def test_get_gorran_stage_returns_int(self):
-        from story.gorran_flavor import get_gorran_stage
+        from src.story.gorran_flavor import get_gorran_stage
 
         player = _make_player()
         player.universe.story = {"gorran_language_stage": "3"}
         assert get_gorran_stage(player) == 3
 
     def test_get_gorran_stage_defaults_to_0(self):
-        from story.gorran_flavor import get_gorran_stage
+        from src.story.gorran_flavor import get_gorran_stage
 
         player = _make_player()
         player.universe.story = {}
         assert get_gorran_stage(player) == 0
 
     def test_get_gorran_stage_handles_exception(self):
-        from story.gorran_flavor import get_gorran_stage
+        from src.story.gorran_flavor import get_gorran_stage
 
         player = Mock()
         player.universe = None
@@ -1981,67 +1971,67 @@ class TestGorranCombatPools:
     """Pool construction for all stages."""
 
     def test_combat_general_stage0(self):
-        from story.gorran_flavor import _combat_general_for_stage, _COMBAT_GENERAL
+        from src.story.gorran_flavor import _combat_general_for_stage, _COMBAT_GENERAL
 
         pool = _combat_general_for_stage(0)
         assert pool == list(_COMBAT_GENERAL)
 
     def test_combat_general_stage2_includes_s2(self):
-        from story.gorran_flavor import _combat_general_for_stage, _COMBAT_S2_GENERAL
+        from src.story.gorran_flavor import _combat_general_for_stage, _COMBAT_S2_GENERAL
 
         pool = _combat_general_for_stage(2)
         for line in _COMBAT_S2_GENERAL:
             assert line in pool
 
     def test_combat_general_stage3_includes_s3(self):
-        from story.gorran_flavor import _combat_general_for_stage, _COMBAT_S3_GENERAL
+        from src.story.gorran_flavor import _combat_general_for_stage, _COMBAT_S3_GENERAL
 
         pool = _combat_general_for_stage(3)
         for line in _COMBAT_S3_GENERAL:
             assert line in pool
 
     def test_combat_general_stage4_includes_s4(self):
-        from story.gorran_flavor import _combat_general_for_stage, _COMBAT_S4_GENERAL
+        from src.story.gorran_flavor import _combat_general_for_stage, _COMBAT_S4_GENERAL
 
         pool = _combat_general_for_stage(4)
         for line in _COMBAT_S4_GENERAL:
             assert line in pool
 
     def test_combat_jean_hurt_stage0(self):
-        from story.gorran_flavor import _combat_jean_hurt_for_stage, _COMBAT_JEAN_HURT
+        from src.story.gorran_flavor import _combat_jean_hurt_for_stage, _COMBAT_JEAN_HURT
 
         pool = _combat_jean_hurt_for_stage(0)
         assert pool == list(_COMBAT_JEAN_HURT)
 
     def test_combat_jean_hurt_stage1_includes_s1(self):
-        from story.gorran_flavor import _combat_jean_hurt_for_stage, _COMBAT_S1_JEAN_HURT
+        from src.story.gorran_flavor import _combat_jean_hurt_for_stage, _COMBAT_S1_JEAN_HURT
 
         pool = _combat_jean_hurt_for_stage(1)
         for line in _COMBAT_S1_JEAN_HURT:
             assert line in pool
 
     def test_explore_pool_stage0(self):
-        from story.gorran_flavor import _explore_for_stage, _EXPLORE
+        from src.story.gorran_flavor import _explore_for_stage, _EXPLORE
 
         pool = _explore_for_stage(0)
         assert pool == list(_EXPLORE)
 
     def test_explore_pool_stage2_extends(self):
-        from story.gorran_flavor import _explore_for_stage, _EXPLORE_S2
+        from src.story.gorran_flavor import _explore_for_stage, _EXPLORE_S2
 
         pool = _explore_for_stage(2)
         for line in _EXPLORE_S2:
             assert line in pool
 
     def test_explore_pool_stage3_extends(self):
-        from story.gorran_flavor import _explore_for_stage, _EXPLORE_S3
+        from src.story.gorran_flavor import _explore_for_stage, _EXPLORE_S3
 
         pool = _explore_for_stage(3)
         for line in _EXPLORE_S3:
             assert line in pool
 
     def test_explore_pool_stage4_extends(self):
-        from story.gorran_flavor import _explore_for_stage, _EXPLORE_S4
+        from src.story.gorran_flavor import _explore_for_stage, _EXPLORE_S4
 
         pool = _explore_for_stage(4)
         for line in _EXPLORE_S4:
@@ -2052,7 +2042,7 @@ class TestMaybeCombatFlavor:
     """maybe_combat_flavor public entry point."""
 
     def _make_player_with_gorran(self, stage=0, jean_hp_ratio=0.9, gorran_hp=80):
-        from story.gorran_flavor import _COMBAT_COOLDOWN_BEATS
+        from src.story.gorran_flavor import _COMBAT_COOLDOWN_BEATS
 
         player = _make_player()
         player.hp = int(jean_hp_ratio * 100)
@@ -2066,7 +2056,7 @@ class TestMaybeCombatFlavor:
         return player, gorran
 
     def test_returns_cooldown_decremented(self):
-        from story.gorran_flavor import maybe_combat_flavor
+        from src.story.gorran_flavor import maybe_combat_flavor
 
         player = _make_player()
         player.combat_list_allies = []
@@ -2074,7 +2064,7 @@ class TestMaybeCombatFlavor:
         assert result == 2
 
     def test_returns_zero_when_no_gorran(self):
-        from story.gorran_flavor import maybe_combat_flavor
+        from src.story.gorran_flavor import maybe_combat_flavor
 
         player = _make_player()
         player.combat_list_allies = []
@@ -2082,75 +2072,75 @@ class TestMaybeCombatFlavor:
         assert result == 0
 
     def test_fires_combat_general_when_random_low(self):
-        from story.gorran_flavor import maybe_combat_flavor, _COMBAT_COOLDOWN_BEATS
+        from src.story.gorran_flavor import maybe_combat_flavor, _COMBAT_COOLDOWN_BEATS
 
         player, gorran = self._make_player_with_gorran(stage=0, jean_hp_ratio=0.9)
         with (
-            patch("story.gorran_flavor.random.random", return_value=0.0),
-            patch("story.gorran_flavor.random.choice", return_value="test line"),
-            patch("story.gorran_flavor.print"),
+            patch("src.story.gorran_flavor.random.random", return_value=0.0),
+            patch("src.story.gorran_flavor.random.choice", return_value="test line"),
+            patch("src.story.gorran_flavor.print"),
         ):
             result = maybe_combat_flavor(player, beat=1, cooldown=0)
         assert result == _COMBAT_COOLDOWN_BEATS
 
     def test_fires_jean_hurt_pool_when_hp_low(self):
-        from story.gorran_flavor import maybe_combat_flavor, _COMBAT_JEAN_HURT
+        from src.story.gorran_flavor import maybe_combat_flavor, _COMBAT_JEAN_HURT
 
         player, gorran = self._make_player_with_gorran(stage=0, jean_hp_ratio=0.2)
         chosen = []
         with (
-            patch("story.gorran_flavor.random.random", return_value=0.0),
+            patch("src.story.gorran_flavor.random.random", return_value=0.0),
             patch(
-                "story.gorran_flavor.random.choice",
+                "src.story.gorran_flavor.random.choice",
                 side_effect=lambda pool: (chosen.append(pool), pool[0])[1],
             ),
-            patch("story.gorran_flavor.print"),
+            patch("src.story.gorran_flavor.print"),
         ):
             maybe_combat_flavor(player, beat=1, cooldown=0)
         # Jean hurt pool should have been chosen — it contains _COMBAT_JEAN_HURT lines
         assert any(_COMBAT_JEAN_HURT[0] in pool for pool in chosen)
 
     def test_fires_gorran_hurt_pool_when_gorran_took_hit(self):
-        from story.gorran_flavor import maybe_combat_flavor, _COMBAT_GORRAN_HURT
+        from src.story.gorran_flavor import maybe_combat_flavor, _COMBAT_GORRAN_HURT
 
         player, gorran = self._make_player_with_gorran(stage=0, jean_hp_ratio=0.9)
         gorran._prev_hp_for_flavor = 90  # was higher
         gorran.hp = 70  # took a hit
         chosen_pool = []
         with (
-            patch("story.gorran_flavor.random.random", return_value=0.0),
+            patch("src.story.gorran_flavor.random.random", return_value=0.0),
             patch(
-                "story.gorran_flavor.random.choice",
+                "src.story.gorran_flavor.random.choice",
                 side_effect=lambda pool: (chosen_pool.append(pool), pool[0])[1],
             ),
-            patch("story.gorran_flavor.print"),
+            patch("src.story.gorran_flavor.print"),
         ):
             maybe_combat_flavor(player, beat=1, cooldown=0)
         assert any(pool is _COMBAT_GORRAN_HURT for pool in chosen_pool)
 
     def test_updates_prev_hp_attribute(self):
-        from story.gorran_flavor import maybe_combat_flavor
+        from src.story.gorran_flavor import maybe_combat_flavor
 
         player, gorran = self._make_player_with_gorran(stage=0)
         gorran.hp = 65
         with (
-            patch("story.gorran_flavor.random.random", return_value=0.0),
-            patch("story.gorran_flavor.random.choice", return_value="line"),
-            patch("story.gorran_flavor.print"),
+            patch("src.story.gorran_flavor.random.random", return_value=0.0),
+            patch("src.story.gorran_flavor.random.choice", return_value="line"),
+            patch("src.story.gorran_flavor.print"),
         ):
             maybe_combat_flavor(player, beat=1, cooldown=0)
         assert gorran._prev_hp_for_flavor == 65
 
     def test_skips_when_random_above_threshold(self):
-        from story.gorran_flavor import maybe_combat_flavor
+        from src.story.gorran_flavor import maybe_combat_flavor
 
         player, gorran = self._make_player_with_gorran()
-        with patch("story.gorran_flavor.random.random", return_value=0.99):
+        with patch("src.story.gorran_flavor.random.random", return_value=0.99):
             result = maybe_combat_flavor(player, beat=1, cooldown=0)
         assert result == 0
 
     def test_handles_exception_gracefully(self):
-        from story.gorran_flavor import maybe_combat_flavor
+        from src.story.gorran_flavor import maybe_combat_flavor
 
         player = Mock()
         player.combat_list_allies = None  # raises
@@ -2175,7 +2165,7 @@ class TestMaybeExploreFlavor:
         return player, gorran
 
     def test_skip_dialog_returns_immediately(self):
-        from story.gorran_flavor import maybe_explore_flavor
+        from src.story.gorran_flavor import maybe_explore_flavor
 
         player = _make_player()
         player.skip_dialog = True
@@ -2183,7 +2173,7 @@ class TestMaybeExploreFlavor:
         maybe_explore_flavor(player)  # no error, early return
 
     def test_no_gorran_returns_immediately(self):
-        from story.gorran_flavor import maybe_explore_flavor
+        from src.story.gorran_flavor import maybe_explore_flavor
 
         player = _make_player()
         player.skip_dialog = False
@@ -2191,36 +2181,36 @@ class TestMaybeExploreFlavor:
         maybe_explore_flavor(player)  # no error
 
     def test_cooldown_prevents_fire(self):
-        from story.gorran_flavor import maybe_explore_flavor
+        from src.story.gorran_flavor import maybe_explore_flavor
 
         player, gorran = self._make_player_with_gorran(current_tick=100, last_tick=98)
-        with patch("story.gorran_flavor.random.random", return_value=0.0) as mock_rand:
+        with patch("src.story.gorran_flavor.random.random", return_value=0.0) as mock_rand:
             maybe_explore_flavor(player)
             mock_rand.assert_not_called()
 
     def test_fires_when_ready(self):
-        from story.gorran_flavor import maybe_explore_flavor
+        from src.story.gorran_flavor import maybe_explore_flavor
 
         player, gorran = self._make_player_with_gorran(current_tick=100, last_tick=0)
         with (
-            patch("story.gorran_flavor.random.random", return_value=0.0),
-            patch("story.gorran_flavor.random.choice", return_value="line"),
-            patch("story.gorran_flavor.print"),
+            patch("src.story.gorran_flavor.random.random", return_value=0.0),
+            patch("src.story.gorran_flavor.random.choice", return_value="line"),
+            patch("src.story.gorran_flavor.print"),
         ):
             maybe_explore_flavor(player)
         assert player.universe.story["gorran_explore_last_tick"] == "100"
 
     def test_skips_when_random_above_threshold(self):
-        from story.gorran_flavor import maybe_explore_flavor
+        from src.story.gorran_flavor import maybe_explore_flavor
 
         player, gorran = self._make_player_with_gorran(current_tick=100, last_tick=0)
-        with patch("story.gorran_flavor.random.random", return_value=0.99):
+        with patch("src.story.gorran_flavor.random.random", return_value=0.99):
             maybe_explore_flavor(player)
         # tick was NOT updated to current_tick (100); it stays at its initial value (0)
         assert player.universe.story.get("gorran_explore_last_tick") == "0"
 
     def test_handles_exception_gracefully(self):
-        from story.gorran_flavor import maybe_explore_flavor
+        from src.story.gorran_flavor import maybe_explore_flavor
 
         player = Mock()
         player.skip_dialog = False
@@ -2240,7 +2230,7 @@ class TestUniverseBasics:
     """Universe class init, get_tile, game_tick_events, parse_hidden."""
 
     def _make_universe(self):
-        from universe import Universe
+        from src.universe import Universe
 
         return Universe()
 
@@ -2275,21 +2265,21 @@ class TestUniverseBasics:
         assert result is None
 
     def test_parse_hidden_no_flag(self):
-        from universe import Universe
+        from src.universe import Universe
 
         hidden, hfactor = Universe.parse_hidden("normal_param")
         assert hidden is False
         assert hfactor == 0
 
     def test_parse_hidden_with_h_plus(self):
-        from universe import Universe
+        from src.universe import Universe
 
         hidden, hfactor = Universe.parse_hidden("h+5")
         assert hidden is True
         assert hfactor == 5
 
     def test_parse_hidden_with_h_plus_zero(self):
-        from universe import Universe
+        from src.universe import Universe
 
         hidden, hfactor = Universe.parse_hidden("h+0")
         assert hidden is True
@@ -2326,7 +2316,7 @@ class TestUniverseDeserialize:
     """_deserialize_saved_instance edge cases."""
 
     def _make_universe(self):
-        from universe import Universe
+        from src.universe import Universe
 
         u = Universe()
         u.player = _make_player()
@@ -2346,7 +2336,7 @@ class TestUniverseDeserialize:
         result = u._deserialize_saved_instance(
             {"__class_type__": "tiles:MapTile"}
         )
-        from tiles import MapTile
+        from src.tiles import MapTile
         assert result is MapTile
 
     def test_returns_none_for_invalid_class_type(self):
@@ -2377,7 +2367,7 @@ class TestUniverseDeserialize:
                 "props": {},
             }
         )
-        from tiles import MapTile
+        from src.tiles import MapTile
         assert isinstance(result, MapTile)
 
     def test_returns_none_for_unknown_class(self):
@@ -2405,7 +2395,7 @@ class TestUniverseDeserialize:
             },
         }
         result = u._deserialize_saved_instance(payload)
-        from tiles import MapTile
+        from src.tiles import MapTile
         assert isinstance(result, MapTile)
 
 
@@ -2413,7 +2403,7 @@ class TestUniverseEvaluateMapEntry:
     """_evaluate_map_entry_spawners — event dispatch."""
 
     def _make_universe(self):
-        from universe import Universe
+        from src.universe import Universe
 
         u = Universe()
         u.player = _make_player()
@@ -2486,13 +2476,13 @@ class TestTileExistsFunction:
     """tile_exists module-level helper."""
 
     def test_returns_tile_when_present(self):
-        from universe import tile_exists
+        from src.universe import tile_exists
 
         m = {(1, 2): "tile_obj"}
         assert tile_exists(m, 1, 2) == "tile_obj"
 
     def test_returns_none_when_absent(self):
-        from universe import tile_exists
+        from src.universe import tile_exists
 
         assert tile_exists({}, 0, 0) is None
 
@@ -2516,7 +2506,7 @@ class TestGrondiaTiles:
     """All tile classes in tilesets/grondia.py."""
 
     def _make(self, cls_name):
-        from tilesets import grondia as g
+        from src.tilesets import grondia as g
 
         cls = getattr(g, cls_name)
         u = _make_universe_mock()
@@ -2551,7 +2541,7 @@ class TestGrondiaAllClasses:
 
     @pytest.fixture(autouse=True)
     def _all_classes(self):
-        from tilesets import grondia as g
+        from src.tilesets import grondia as g
         import inspect
 
         self.classes = [
@@ -2588,7 +2578,7 @@ class TestVerdetteCavernTiles:
 
     @pytest.fixture(autouse=True)
     def _all_classes(self):
-        from tilesets import verdette_caverns as vc
+        from src.tilesets import verdette_caverns as vc
         import inspect
 
         self.classes = [
@@ -2620,13 +2610,13 @@ class TestVerdetteCavernTiles:
             t.modify_player(player)
 
     def test_verdette_room_description_content(self):
-        from tilesets.verdette_caverns import VerdetteRoom
+        from src.tilesets.verdette_caverns import VerdetteRoom
 
         t = VerdetteRoom(_make_universe_mock(), _make_map(), 0, 0)
         assert "glow" in t.description.lower() or "cavern" in t.description.lower()
 
     def test_verdette_spring_symbol(self):
-        from tilesets.verdette_caverns import VerdetteSpring
+        from src.tilesets.verdette_caverns import VerdetteSpring
 
         t = VerdetteSpring(_make_universe_mock(), _make_map(), 0, 0)
         assert t.symbol == "~"

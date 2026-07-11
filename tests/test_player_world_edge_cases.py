@@ -12,12 +12,10 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 ROOT = Path(__file__).resolve().parent.parent
-SRC_DIR = ROOT / "src"
-if str(SRC_DIR) not in sys.path:
-    sys.path.insert(0, str(SRC_DIR))
+
 
 import pytest
-from player import Player
+from src.player import Player
 
 
 def _player():
@@ -42,7 +40,7 @@ class TestIsMerchantInstanceEdgeCases:
         universe.maps = [{"name": "test", (0, 0): tile}]
         p.universe = universe
 
-        with patch("player._world.cprint"), patch("time.sleep"):
+        with patch("src.player._world.cprint"), patch("time.sleep"):
             p.refresh_merchants()  # Should not crash
 
     def test_npc_mro_not_callable(self):
@@ -62,7 +60,7 @@ class TestIsMerchantInstanceEdgeCases:
         p.universe = universe
 
         try:
-            with patch("player._world.cprint"), patch("time.sleep"):
+            with patch("src.player._world.cprint"), patch("time.sleep"):
                 p.refresh_merchants()  # Should not crash
         finally:
             # Restore mro
@@ -84,7 +82,7 @@ class TestIsMerchantInstanceEdgeCases:
         universe.maps = [{"name": "test", (0, 0): tile}]
         p.universe = universe
 
-        with patch("player._world.cprint"), patch("time.sleep"):
+        with patch("src.player._world.cprint"), patch("time.sleep"):
             p.refresh_merchants()  # Should not crash
 
     def test_none_tile_skipped(self):
@@ -95,7 +93,7 @@ class TestIsMerchantInstanceEdgeCases:
         universe.maps = [{"name": "test", (0, 0): None}]
         p.universe = universe
 
-        with patch("player._world.cprint") as mock_cp, patch("time.sleep"):
+        with patch("src.player._world.cprint") as mock_cp, patch("time.sleep"):
             p.refresh_merchants()
 
         # No merchants found — cprint may or may not be called depending on implementation
@@ -124,7 +122,7 @@ class TestIsMerchantInstanceEdgeCases:
         universe.maps = [{"name": "test", (0, 0): tile}]
         p.universe = universe
 
-        with patch("player._world.cprint"), patch("time.sleep"):
+        with patch("src.player._world.cprint"), patch("time.sleep"):
             p.refresh_merchants()  # Should not crash
 
     def test_initialize_shop_raises_continues(self):
@@ -153,7 +151,7 @@ class TestIsMerchantInstanceEdgeCases:
         universe.maps = [{"name": "test", (0, 0): tile}]
         p.universe = universe
 
-        with patch("player._world.cprint"), patch("time.sleep"):
+        with patch("src.player._world.cprint"), patch("time.sleep"):
             p.refresh_merchants()
 
         # update_goods should still be called despite initialize_shop failing
@@ -181,5 +179,5 @@ class TestIsMerchantInstanceEdgeCases:
         universe.maps = [{"name": "test", (0, 0): tile}]
         p.universe = universe
 
-        with patch("player._world.cprint"), patch("time.sleep"):
+        with patch("src.player._world.cprint"), patch("time.sleep"):
             p.refresh_merchants()  # Should not raise

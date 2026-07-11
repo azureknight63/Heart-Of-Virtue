@@ -3,10 +3,9 @@
 
 import sys
 from pathlib import Path
-sys.path.insert(0, str(Path.cwd() / 'src'))
 
-from player import Player
-from universe import Universe
+from src.player import Player
+from src.universe import Universe
 
 print('='*70)
 print('Testing Universe Loading for Milestone 2')

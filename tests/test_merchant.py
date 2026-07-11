@@ -1,16 +1,15 @@
 import os, sys
 # Ensure both project root and src directory are on path for direct module imports
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
 
 import random
 import types
 import pytest
 
-from npc import Merchant
-from items import Item, Shortsword, Restorative, Gold
-from shop_conditions import ValueModifierCondition, RestockWeightBoostCondition, UniqueItemInjectionCondition
-from objects import Container
+from src.npc import Merchant
+from src.items import Item, Shortsword, Restorative, Gold
+from src.shop_conditions import ValueModifierCondition, RestockWeightBoostCondition, UniqueItemInjectionCondition
+from src.objects import Container
 
 # ---------- Test Fakes / Helpers ----------
 
@@ -21,7 +20,7 @@ class FakeRoom:
         self.universe = None  # set externally
     def spawn_item(self, item_type, amt=1, hidden=False, hfactor=0, merchandise=False):
         # Dynamically locate class in items module
-        import items as items_module
+        import src.items as items_module
         cls = getattr(items_module, item_type, None)
         if cls is None:
             return None
@@ -125,7 +124,7 @@ def test_maybe_enchant_applies(monkeypatch):
     applied = {}
     def fake_add_random_enchantments(item, points):
         applied['points'] = points
-    monkeypatch.setattr('functions.add_random_enchantments', fake_add_random_enchantments)
+    monkeypatch.setattr('src.functions.add_random_enchantments', fake_add_random_enchantments)
     # Force random.random() to return high value triggering final band
     monkeypatch.setattr('random.random', lambda: 0.99)
     m._maybe_enchant(sword)
@@ -137,9 +136,9 @@ def test_maybe_enchant_probability_bands(monkeypatch):
     Uses specific random rolls with enchantment_rate=1.0 so thresholds are deterministic.
     Threshold logic (rate=1.0): no enchant if roll <=0.6, else bands relative to (roll-0.6).
     """
-    from npc import Merchant
-    from items import Shortsword
-    import functions as functions_module
+    from src.npc import Merchant
+    from src.items import Shortsword
+    import src.functions as functions_module
     scenarios = [
         (0.60, 0),   # exactly threshold: no enchant
         (0.70, 1),   # band <=0.2 -> 1 pt
@@ -191,7 +190,7 @@ def test_fill_remaining_stock_basic(monkeypatch):
     import inspect as inspect_mod
     def fake_getmembers(module, predicate):
         import sys
-        Restorative = sys.modules['items'].Restorative
+        Restorative = sys.modules['src.items'].Restorative
         return [("Restorative", Restorative)]
     # Patch inspect.getmembers globally
     monkeypatch.setattr(inspect_mod, 'getmembers', fake_getmembers)
@@ -207,7 +206,7 @@ def test_fill_remaining_stock_respects_container_capacity(monkeypatch):
     room.objects.append(cont)
     # Restrict candidates
     def fake_getmembers(module, predicate):
-        from items import Restorative
+        from src.items import Restorative
         return [("Restorative", Restorative)]
     monkeypatch.setattr('inspect.getmembers', fake_getmembers)
     monkeypatch.setattr('random.uniform', lambda a,b: a)
@@ -236,7 +235,7 @@ def test_update_shop_conditions_availability_weight(monkeypatch):
     import inspect as inspect_mod
     def fake_getmembers(module, predicate):
         import sys
-        Restorative = sys.modules['items'].Restorative
+        Restorative = sys.modules['src.items'].Restorative
         return [("Restorative", Restorative)]
     # Patch inspect.getmembers globally
     monkeypatch.setattr(inspect_mod, 'getmembers', fake_getmembers)
@@ -293,7 +292,7 @@ def test_update_goods_unique_item_injection(monkeypatch):
     """Force a UniqueItemInjectionCondition and ensure a unique item is injected once.
     Verifies registration in items.unique_items_spawned and placement in container or inventory.
     """
-    from items import unique_item_factories, unique_items_spawned
+    from src.items import unique_item_factories, unique_items_spawned
     # Ensure clean registry
     unique_items_spawned.clear()
     m, room, _ = make_merchant(stock_count=0)
@@ -322,7 +321,7 @@ def test_fill_remaining_stock_empty_candidate_early_return(monkeypatch):
     assert len(m.inventory) == 0
     # Patch inspect.getmembers to only return Item (which is skipped) -> empty candidates
     import inspect as _inspect
-    from items import Item as _Item
+    from src.items import Item as _Item
     def fake_getmembers(module, predicate):
         return [("Item", _Item)]
     monkeypatch.setattr('inspect.getmembers', fake_getmembers)

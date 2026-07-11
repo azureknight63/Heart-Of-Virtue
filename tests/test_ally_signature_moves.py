@@ -4,10 +4,10 @@ Marked Quarry, Twin Fangs) and their skill-schedule grants.
 Kit design: docs/development/ally-progression-design.md (signature notes).
 """
 
-import moves
-import states
-from npc._base import NPC
-from npc._friends import Gorran, Mara
+import src.moves as moves
+import src.states as states
+from src.npc._base import NPC
+from src.npc._friends import Gorran, Mara
 
 
 def _gorran(level=1):
@@ -61,7 +61,7 @@ def test_mara_learns_signatures_at_9_and_12():
 
 
 def test_signature_moves_appear_in_chat_knowledge():
-    from npc._chat_llm import HumanNPCLLMMixin
+    from src.npc._chat_llm import HumanNPCLLMMixin
 
     m = _mara(12)
     block = HumanNPCLLMMixin._build_combat_knowledge_block(m)
@@ -99,7 +99,7 @@ def test_marked_quarry_not_viable_when_already_marked():
 
 
 def test_twin_fangs_hits_harder_against_quarried_target(monkeypatch):
-    monkeypatch.setattr("moves._npc.random.randint", lambda a, b: 0)  # always hit, no glance
+    monkeypatch.setattr("src.moves._npc.random.randint", lambda a, b: 0)  # always hit, no glance
 
     m = _mara(12)
     move = next(mv for mv in m.known_moves if mv.name == "Twin Fangs")
@@ -136,7 +136,7 @@ def test_twin_fangs_viable_only_in_close_range():
 
 
 def test_seismic_slam_hits_all_hostiles_in_radius(monkeypatch):
-    monkeypatch.setattr("moves._npc.random.randint", lambda a, b: 0)  # always hit
+    monkeypatch.setattr("src.moves._npc.random.randint", lambda a, b: 0)  # always hit
 
     g = _gorran(9)
     near = _dummy_enemy()
@@ -166,7 +166,7 @@ def test_seismic_slam_never_hits_the_player(monkeypatch, player):
     combat_proximity dict, and ally.player_ref is never assigned — the
     side check must recognize the player by his missing `friend` attribute,
     not via player_ref, or Gorran's slam friendly-fires Jean."""
-    monkeypatch.setattr("moves._npc.random.randint", lambda a, b: 0)  # always hit
+    monkeypatch.setattr("src.moves._npc.random.randint", lambda a, b: 0)  # always hit
 
     g = _gorran(9)
     assert g.player_ref is None  # the trap this test guards against
@@ -185,7 +185,7 @@ def test_seismic_slam_never_hits_the_player(monkeypatch, player):
 
 
 def test_hostile_to_side_classification(player):
-    from moves._npc import _hostile_to
+    from src.moves._npc import _hostile_to
 
     ally = _gorran(1)  # friend=True
     enemy = _dummy_enemy()  # friend=False

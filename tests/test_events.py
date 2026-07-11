@@ -6,9 +6,7 @@ from unittest.mock import MagicMock, patch
 
 # Ensure the project's src directory is on sys.path
 ROOT = Path(__file__).resolve().parent.parent
-SRC_DIR = ROOT / "src"
-if str(SRC_DIR) not in sys.path:
-    sys.path.insert(0, str(SRC_DIR))
+
 
 import pytest
 
@@ -279,7 +277,7 @@ class TestLootEvent:
         assert event.input_options[3]["value"] == "exit"
 
     @patch('src.narration.cprint')
-    @patch('inventory_utils.transfer_item')
+    @patch('src.inventory_utils.transfer_item')
     def test_loot_event_process_take_all(self, mock_transfer_item, mock_cprint):
         """Test LootEvent process with 'all' input."""
         mock_container = MagicMock()
@@ -303,7 +301,7 @@ class TestLootEvent:
         assert result == {"success": True}
 
     @patch('src.narration.cprint')
-    @patch('inventory_utils.transfer_item')
+    @patch('src.inventory_utils.transfer_item')
     def test_loot_event_process_take_specific_item(self, mock_transfer_item, mock_cprint):
         """Test LootEvent process with specific item index."""
         mock_container = MagicMock()

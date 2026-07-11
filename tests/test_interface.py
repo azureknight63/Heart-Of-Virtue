@@ -7,7 +7,7 @@ covers the surviving public surface: get_gold.
 
 import unittest
 
-import interface  # noqa
+import src.interface as interface  # noqa
 
 
 class DummyItem:

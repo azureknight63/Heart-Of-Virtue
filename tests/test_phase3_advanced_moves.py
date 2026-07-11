@@ -13,9 +13,7 @@ from pathlib import Path
 
 # Ensure the project's src directory is on sys.path so absolute imports in src modules resolve
 ROOT = Path(__file__).resolve().parent.parent
-SRC_DIR = ROOT / "src"
-if str(SRC_DIR) not in sys.path:
-    sys.path.insert(0, str(SRC_DIR))
+
 
 import pytest
 import random
@@ -448,7 +446,7 @@ class TestVertigoSpinMove:
         initial_facing = target_enemy.combat_position.facing
 
         # Mock check_parry to ensure damage lands
-        with patch('functions.check_parry', return_value=False):
+        with patch('src.functions.check_parry', return_value=False):
             spin_move.execute(player)
 
         # Facing may or may not change (random choice)
@@ -461,7 +459,7 @@ class TestVertigoSpinMove:
         initial_states_count = len(target_enemy.states)
 
         # Mock check_parry to ensure status is applied
-        with patch('functions.check_parry', return_value=False):
+        with patch('src.functions.check_parry', return_value=False):
             spin_move.execute(player)
 
         # Disoriented status should be added (or status count increases)

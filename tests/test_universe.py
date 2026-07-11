@@ -1,6 +1,5 @@
 import sys
 import os
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
 
 import pytest
 import types
@@ -8,11 +7,11 @@ import io
 import tempfile
 import shutil
 from pathlib import Path
-import functions
+import src.functions as functions
 
 # TODO: Need to restructure project and imports, otherwise we'll eventually
 # run into problems with the way $PYTHONPATH is set and imports are performed.
-from universe import Universe, tile_exists
+from src.universe import Universe, tile_exists
 
 
 class DummyItem:
@@ -28,17 +27,13 @@ class DummyMerchant:
 
 @pytest.fixture(autouse=True)
 def dummy_modules(monkeypatch):
-    # Create dummy modules for deserialization (without 'src.' prefix as per universe.py implementation)
-    dummy_items = types.ModuleType('items')
-    dummy_items.DummyItem = DummyItem
-    sys.modules['items'] = dummy_items
-    dummy_npc = types.ModuleType('npc')
-    dummy_npc.DummyMerchant = DummyMerchant
-    sys.modules['npc'] = dummy_npc
+    # Payloads store bare module names ('items', 'npc'); the deserializer maps
+    # them to the canonical src.* modules, so attach the dummy classes there.
+    import src.items
+    import src.npc
+    monkeypatch.setattr(src.items, 'DummyItem', DummyItem, raising=False)
+    monkeypatch.setattr(src.npc, 'DummyMerchant', DummyMerchant, raising=False)
     yield
-    # Cleanup
-    del sys.modules['items']
-    del sys.modules['npc']
 
 
 def test_recursive_deserialize_inventory():
@@ -105,7 +100,7 @@ def test_json_maps_root_candidates(tmp_path, monkeypatch):
     maps_dir.mkdir(parents=True)
     utils_maps_dir = tmp_path / 'utils' / 'src' / 'resources' / 'maps'
     utils_maps_dir.mkdir(parents=True)
-    monkeypatch.setattr('universe.RESOURCES_DIR', tmp_path / 'resources')
+    monkeypatch.setattr('src.universe.RESOURCES_DIR', tmp_path / 'resources')
     u = Universe()
     # Patch _json_maps_root_candidates to only return our test dirs
     u._json_maps_root_candidates = lambda: [maps_dir, utils_maps_dir]
@@ -120,7 +115,7 @@ def test_load_all_json_maps(monkeypatch, tmp_path):
     maps_dir.mkdir(parents=True)
     dummy_map = maps_dir / 'testmap.json'
     dummy_map.write_text('{"(0,0)": {"title": "DummyTile", "description": "desc"}}')
-    monkeypatch.setattr('universe.RESOURCES_DIR', tmp_path / 'resources')
+    monkeypatch.setattr('src.universe.RESOURCES_DIR', tmp_path / 'resources')
     u = Universe()
     # Patch _json_maps_root_candidates to only return our test dir
     u._json_maps_root_candidates = lambda: [maps_dir]
@@ -212,7 +207,7 @@ def test_load_tiles(monkeypatch, tmp_path):
     # Create dummy txt file
     txt_path = tmp_path / 'testmap.txt'
     txt_path.write_text('DummyTile\t\n\n')
-    monkeypatch.setattr('universe.RESOURCES_DIR', tmp_path)
+    monkeypatch.setattr('src.universe.RESOURCES_DIR', tmp_path)
     u = Universe()
     u.load_tiles(player=None, mapname='testmap')
     assert u.maps[-1]['name'] == 'testmap'

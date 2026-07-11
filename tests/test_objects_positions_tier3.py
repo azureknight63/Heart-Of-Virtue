@@ -1892,7 +1892,7 @@ class TestMoreContainer:
         item2.description = "Item 2 description"
         container = Container(player=player, tile=tile, start_open=True, inventory=[item1, item2])
         # transfer_item is imported inside the method, so patch it there
-        with patch("inventory_utils.transfer_item"):
+        with patch("src.inventory_utils.transfer_item"):
             container.take_all(player)
             # If we got here without error, the test passed
             assert len(container.inventory) == 0 or len(container.inventory) == 2

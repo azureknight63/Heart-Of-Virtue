@@ -3,7 +3,7 @@
 import random
 import time
 
-import functions  # type: ignore
+import src.functions as functions  # type: ignore
 from src.narration import colored, cprint, narrate
 
 

@@ -10,9 +10,6 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 ROOT = Path(__file__).resolve().parent.parent
-SRC_DIR = ROOT / "src"
-if str(SRC_DIR) not in sys.path:
-    sys.path.insert(0, str(SRC_DIR))
 
 
 # ---------------------------------------------------------------------------
@@ -21,7 +18,7 @@ if str(SRC_DIR) not in sys.path:
 
 
 def test_tile_exists_returns_tile():
-    from universe import tile_exists
+    from src.universe import tile_exists
 
     game_map = {(0, 0): "tile_A", (1, 1): "tile_B"}
     assert tile_exists(game_map, 0, 0) == "tile_A"
@@ -29,7 +26,7 @@ def test_tile_exists_returns_tile():
 
 
 def test_tile_exists_returns_none_for_missing():
-    from universe import tile_exists
+    from src.universe import tile_exists
 
     game_map = {(0, 0): "tile_A"}
     assert tile_exists(game_map, 9, 9) is None
@@ -41,7 +38,7 @@ def test_tile_exists_returns_none_for_missing():
 
 
 def test_universe_init_defaults():
-    from universe import Universe
+    from src.universe import Universe
 
     u = Universe()
     assert u.player is None
@@ -54,14 +51,14 @@ def test_universe_init_defaults():
 
 
 def test_universe_get_tile_no_player():
-    from universe import Universe
+    from src.universe import Universe
 
     u = Universe()
     assert u.get_tile(0, 0) is None
 
 
 def test_universe_get_tile_with_player():
-    from universe import Universe
+    from src.universe import Universe
 
     u = Universe()
     player = MagicMock()
@@ -79,7 +76,7 @@ def test_universe_get_tile_with_player():
 
 def test_universe_build_uses_saved_data():
     """Universe.build uses player.saveuniv / savestat when they exist."""
-    from universe import Universe
+    from src.universe import Universe
 
     u = Universe()
     player = MagicMock()
@@ -102,7 +99,7 @@ def test_universe_build_uses_saved_data():
 
 def test_universe_build_new_game_calls_json_loader():
     """Universe.build calls _load_all_json_maps for a new game."""
-    from universe import Universe
+    from src.universe import Universe
 
     u = Universe()
     player = MagicMock()
@@ -124,7 +121,7 @@ def test_universe_build_new_game_calls_json_loader():
 
 def test_json_maps_root_candidates_returns_existing_dirs(tmp_path):
     """_json_maps_root_candidates returns only existing directories."""
-    from universe import Universe
+    from src.universe import Universe
 
     u = Universe()
     # The method checks two candidate paths; at least the method should not raise
@@ -141,7 +138,7 @@ def test_json_maps_root_candidates_returns_existing_dirs(tmp_path):
 
 def test_game_tick_events_increments_tick():
     """game_tick_events increments game_tick on each call."""
-    from universe import Universe
+    from src.universe import Universe
 
     u = Universe()
     player = MagicMock()
@@ -158,7 +155,7 @@ def test_game_tick_events_increments_tick():
 
 def test_game_tick_events_first_tick():
     """game_tick_events on tick 1 evaluates map-entry spawners."""
-    from universe import Universe
+    from src.universe import Universe
 
     u = Universe()
     player = MagicMock()
@@ -174,7 +171,7 @@ def test_game_tick_events_first_tick():
 
 def test_game_tick_events_merchant_refresh_at_1000():
     """game_tick_events calls player.refresh_merchants at multiples of 1000."""
-    from universe import Universe
+    from src.universe import Universe
 
     u = Universe()
     player = MagicMock()
@@ -190,7 +187,7 @@ def test_game_tick_events_merchant_refresh_at_1000():
 
 def test_game_tick_events_no_refresh_at_non_multiple():
     """game_tick_events does NOT call refresh_merchants at non-multiples of 1000."""
-    from universe import Universe
+    from src.universe import Universe
 
     u = Universe()
     player = MagicMock()
@@ -211,7 +208,7 @@ def test_game_tick_events_no_refresh_at_non_multiple():
 
 def test_evaluate_map_entry_spawners_no_map():
     """_evaluate_map_entry_spawners returns early when player.map is not a dict."""
-    from universe import Universe
+    from src.universe import Universe
 
     u = Universe()
     player = MagicMock()
@@ -224,7 +221,7 @@ def test_evaluate_map_entry_spawners_no_map():
 
 def test_evaluate_map_entry_spawners_skips_non_tuple_keys():
     """_evaluate_map_entry_spawners skips map entries with non-tuple keys."""
-    from universe import Universe
+    from src.universe import Universe
 
     u = Universe()
     player = MagicMock()
@@ -239,7 +236,7 @@ def test_evaluate_map_entry_spawners_skips_non_tuple_keys():
 
 def test_evaluate_map_entry_spawners_calls_evaluate_for_map_entry():
     """_evaluate_map_entry_spawners calls evaluate_for_map_entry on qualifying events."""
-    from universe import Universe
+    from src.universe import Universe
 
     u = Universe()
     player = MagicMock()
@@ -261,7 +258,7 @@ def test_evaluate_map_entry_spawners_calls_evaluate_for_map_entry():
 
 def test_evaluate_map_entry_spawners_skips_run_non_repeat():
     """_evaluate_map_entry_spawners skips events that have run and are non-repeat."""
-    from universe import Universe
+    from src.universe import Universe
 
     u = Universe()
     player = MagicMock()
@@ -283,7 +280,7 @@ def test_evaluate_map_entry_spawners_skips_run_non_repeat():
 
 def test_evaluate_map_entry_spawners_processes_repeat_events():
     """_evaluate_map_entry_spawners re-runs repeat events when process_repeats=True."""
-    from universe import Universe
+    from src.universe import Universe
 
     u = Universe()
     player = MagicMock()
@@ -305,7 +302,7 @@ def test_evaluate_map_entry_spawners_processes_repeat_events():
 
 def test_evaluate_map_entry_spawners_skips_none_tiles():
     """_evaluate_map_entry_spawners skips None tiles without error."""
-    from universe import Universe
+    from src.universe import Universe
 
     u = Universe()
     player = MagicMock()
@@ -318,7 +315,7 @@ def test_evaluate_map_entry_spawners_skips_none_tiles():
 
 def test_evaluate_map_entry_spawners_handles_exception_in_event():
     """_evaluate_map_entry_spawners swallows exceptions from evaluate_for_map_entry."""
-    from universe import Universe
+    from src.universe import Universe
 
     u = Universe()
     player = MagicMock()
@@ -343,7 +340,7 @@ def test_evaluate_map_entry_spawners_handles_exception_in_event():
 
 
 def test_parse_hidden_with_h_plus():
-    from universe import Universe
+    from src.universe import Universe
 
     hidden, hfactor = Universe.parse_hidden("h+5")
     assert hidden is True
@@ -351,7 +348,7 @@ def test_parse_hidden_with_h_plus():
 
 
 def test_parse_hidden_without_marker():
-    from universe import Universe
+    from src.universe import Universe
 
     hidden, hfactor = Universe.parse_hidden("somevalue")
     assert hidden is False
@@ -365,7 +362,7 @@ def test_parse_hidden_without_marker():
 
 def test_universe_build_with_game_config():
     """Universe.build creates ScenarioConfig and CoordinateSystemConfig when game_config exists."""
-    from universe import Universe
+    from src.universe import Universe
 
     u = Universe()
     player = MagicMock()
@@ -374,8 +371,8 @@ def test_universe_build_with_game_config():
     player.game_config = MagicMock()  # non-None
     player.game_config.coordinate_mode = "absolute"
 
-    with patch("universe.ScenarioConfig") as mock_sc:
-        with patch("universe.CoordinateSystemConfig") as mock_cc:
+    with patch("src.universe.ScenarioConfig") as mock_sc:
+        with patch("src.universe.CoordinateSystemConfig") as mock_cc:
             with patch.object(u, "_load_all_json_maps"):
                 u.build(player)
 
@@ -389,7 +386,7 @@ def test_universe_build_with_game_config():
 
 
 def test_universe_story_has_gorran_keys():
-    from universe import Universe
+    from src.universe import Universe
 
     u = Universe()
     assert "gorran_first" in u.story
@@ -405,7 +402,7 @@ def test_universe_story_has_gorran_keys():
 
 def test_universe_full_build_with_real_player():
     """Universe.build with a real Player loads JSON maps and populates self.maps."""
-    from universe import Universe
+    from src.universe import Universe
     from src.player import Player
 
     u = Universe()
@@ -418,7 +415,7 @@ def test_universe_full_build_with_real_player():
 
 def test_universe_full_build_starting_map():
     """Universe.build sets starting_map_default when a map with 'start' in name exists."""
-    from universe import Universe
+    from src.universe import Universe
     from src.player import Player
 
     u = Universe()
@@ -433,22 +430,22 @@ def test_universe_full_build_starting_map():
 
 def test_universe_deserialize_class_type_marker():
     """_deserialize_saved_instance handles __class_type__ markers."""
-    from universe import Universe
+    from src.universe import Universe
 
     u = Universe()
     u.player = MagicMock()
 
     payload = {"__class_type__": "items:Gold"}
     result = u._deserialize_saved_instance(payload)
-    # Should return the Gold class itself (not an instance)
-    import items
+    # Should return the canonical Gold class itself (not an instance)
+    import src.items
 
-    assert result is items.Gold
+    assert result is src.items.Gold
 
 
 def test_universe_deserialize_invalid_class_type():
     """_deserialize_saved_instance returns None for invalid __class_type__."""
-    from universe import Universe
+    from src.universe import Universe
 
     u = Universe()
     u.player = MagicMock()
@@ -460,7 +457,7 @@ def test_universe_deserialize_invalid_class_type():
 
 def test_universe_deserialize_not_dict():
     """_deserialize_saved_instance returns None for non-dict payload."""
-    from universe import Universe
+    from src.universe import Universe
 
     u = Universe()
     u.player = MagicMock()
@@ -472,7 +469,7 @@ def test_universe_deserialize_not_dict():
 
 def test_universe_deserialize_no_class_key():
     """_deserialize_saved_instance returns None when __class__ not in dict."""
-    from universe import Universe
+    from src.universe import Universe
 
     u = Universe()
     u.player = MagicMock()
@@ -484,7 +481,7 @@ def test_universe_deserialize_no_class_key():
 
 def test_universe_deserialize_src_prefix_raises():
     """_deserialize_saved_instance raises ValueError for src. module prefix."""
-    from universe import Universe
+    from src.universe import Universe
     import pytest
 
     u = Universe()
@@ -500,7 +497,7 @@ def test_universe_load_single_json_map_bad_coords():
     import json
     import tempfile
     import os
-    from universe import Universe
+    from src.universe import Universe
     from src.player import Player
 
     # Build a minimal JSON map with some bad coordinate keys

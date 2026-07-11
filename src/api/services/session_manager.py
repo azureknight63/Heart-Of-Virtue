@@ -495,12 +495,7 @@ class SessionManager:
             return items
 
         try:
-            # Try to import items module
-            try:
-                import items as items_module
-            except ImportError:
-                # Try alternate import path
-                from src import items as items_module
+            import src.items as items_module
 
             for item_type in self.starting_item_types:
                 try:
@@ -624,10 +619,7 @@ class SessionManager:
         if not self.starting_equipment:
             return
         try:
-            try:
-                import items as items_module
-            except ImportError:
-                from src import items as items_module
+            import src.items as items_module
 
             for eq_spec in self.starting_equipment:
                 item_class_name, enchantment_level_str = (
@@ -700,10 +692,7 @@ class SessionManager:
                     )
             # Refresh stats and protection once after all starting equipment is equipped
             try:
-                try:
-                    import functions as _functions
-                except ImportError:
-                    from src import functions as _functions
+                import src.functions as _functions
                 _functions.refresh_stat_bonuses(player)
             except Exception as e:
                 print(
@@ -867,10 +856,7 @@ class SessionManager:
             # Apply starting gold
             if self.starting_gold > 0:
                 try:
-                    try:
-                        import items as items_module
-                    except ImportError:
-                        from src import items as items_module
+                    import src.items as items_module
                     if hasattr(player, "inventory") and isinstance(
                         player.inventory, list
                     ):
@@ -942,10 +928,7 @@ class SessionManager:
             # Apply starting gold
             if self.starting_gold > 0:
                 try:
-                    try:
-                        import items as items_module
-                    except ImportError:
-                        from src import items as items_module
+                    import src.items as items_module
                     if hasattr(player, "inventory") and isinstance(
                         player.inventory, list
                     ):

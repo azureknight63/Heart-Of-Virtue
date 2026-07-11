@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import MagicMock, patch
-from npc._loot import NPCLootMixin
+from src.npc._loot import NPCLootMixin
 
 class MockNPC(NPCLootMixin):
     def __init__(self):
@@ -16,7 +16,7 @@ def test_stack_items_list_called():
     # current_room has items_here
     npc.current_room.items_here = [MagicMock()]
     
-    with patch("functions.stack_items_list") as mock_stack:
+    with patch("src.functions.stack_items_list") as mock_stack:
         npc.before_death()
         mock_stack.assert_called_once()
 
@@ -71,8 +71,8 @@ def test_roll_loot_equipment_branches():
 
     with patch("random.shuffle"):
         with patch("random.randint", return_value=50): # success (chance 100 >= 50)
-            with patch("functions.randomize_amount", return_value=1):
-                with patch("npc._loot.loot.random_equipment") as mock_random_eq:
+            with patch("src.functions.randomize_amount", return_value=1):
+                with patch("src.npc._loot.loot.random_equipment") as mock_random_eq:
                     drop = MagicMock()
                     drop.name = "Fine Dagger"
                     mock_random_eq.return_value = drop

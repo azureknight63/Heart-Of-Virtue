@@ -17,12 +17,10 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 ROOT = Path(__file__).resolve().parent.parent
-SRC_DIR = ROOT / "src"
-if str(SRC_DIR) not in sys.path:
-    sys.path.insert(0, str(SRC_DIR))
+
 
 import pytest
-from player import Player
+from src.player import Player
 
 
 def _player():
@@ -98,7 +96,7 @@ class TestNpcAttack:
 
     def test_viable_returns_true_when_in_range(self):
         """Lines 65-66: viable True when target distance within range."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         npc = _make_npc()
@@ -109,7 +107,7 @@ class TestNpcAttack:
 
     def test_viable_returns_false_when_target_out_of_range(self):
         """Line 66: viable False when target too far."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         npc = _make_npc()
@@ -120,7 +118,7 @@ class TestNpcAttack:
 
     def test_viable_no_combat_proximity_returns_false(self):
         """Lines 59-60: viable False when no combat_proximity."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         npc = _make_npc()
@@ -131,7 +129,7 @@ class TestNpcAttack:
 
     def test_viable_no_target_falls_back_to_any(self):
         """Lines 68-70: viable with no specific target falls back to any proximity entry."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         npc = _make_npc()
@@ -144,7 +142,7 @@ class TestNpcAttack:
     def test_evaluate_with_string_user_returns_early(self):
         """Lines 78-85: evaluate() with string user prints error and returns
         without modifying power or stage_beat (early-return branch)."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         npc = _make_npc()
@@ -162,7 +160,7 @@ class TestNpcAttack:
     def test_evaluate_without_damage_attr_returns_early(self):
         """Lines 88-90: evaluate() with no 'damage' attr prints error and returns
         without modifying power or stage_beat (early-return branch)."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         npc = _make_npc()
@@ -179,7 +177,7 @@ class TestNpcAttack:
     def test_execute_hit_scenario(self):
         """Lines 129-167: execute runs the attack flow and applies damage on a
         guaranteed, non-glancing hit."""
-        import moves
+        import src.moves as moves
 
         p = _make_player_target()
         p.finesse = 0  # minimize target finesse so hit_chance is high
@@ -201,7 +199,7 @@ class TestNpcAttack:
     def test_execute_miss_scenario(self):
         """Lines 165-166: execute runs miss path when hit_chance < roll; no
         damage is applied on a miss."""
-        import moves
+        import src.moves as moves
 
         p = _make_player_target()
         p.finesse = 999  # make hit_chance very negative
@@ -219,7 +217,7 @@ class TestNpcAttack:
 
     def test_refresh_announcements(self):
         """Lines 114-127: refresh_announcements updates stage_announce."""
-        import moves
+        import src.moves as moves
 
         p = _make_player_target()
         npc = _make_npc()
@@ -240,7 +238,7 @@ class TestNpcRest:
 
     def test_execute_restores_fatigue(self):
         """Lines 205-212: execute restores fatigue."""
-        import moves
+        import src.moves as moves
 
         npc = _make_npc()
         npc.fatigue = 50
@@ -252,7 +250,7 @@ class TestNpcRest:
 
     def test_execute_caps_fatigue_at_max(self):
         """Line 210-211: fatigue doesn't exceed maxfatigue."""
-        import moves
+        import src.moves as moves
 
         npc = _make_npc()
         npc.fatigue = 195
@@ -264,7 +262,7 @@ class TestNpcRest:
 
     def test_refresh_announcements(self):
         """Lines 197-203: refresh_announcements updates stage_announce."""
-        import moves
+        import src.moves as moves
 
         npc = _make_npc()
         rest = moves.NpcRest(npc)
@@ -282,7 +280,7 @@ class TestNpcIdle:
 
     def test_execute_prints_message(self):
         """Lines 240-241: execute prints idle message."""
-        import moves
+        import src.moves as moves
 
         npc = _make_npc()
         npc.idle_message = " idles about."
@@ -293,7 +291,7 @@ class TestNpcIdle:
 
     def test_refresh_announcements(self):
         """Lines 237-238: refresh_announcements updates stage_announce."""
-        import moves
+        import src.moves as moves
 
         npc = _make_npc()
         npc.idle_message = " stands here."
@@ -312,7 +310,7 @@ class TestTelegraphedSurge:
 
     def test_slime_volley_init(self):
         """Lines 296-298: SlimeVolley instantiates with correct name."""
-        import moves
+        import src.moves as moves
 
         npc = _make_npc()
         npc.target = _make_player_target()
@@ -322,7 +320,7 @@ class TestTelegraphedSurge:
 
     def test_slime_volley_prep_text_in_announce(self):
         """Lines 300-304: prep text includes NPC name."""
-        import moves
+        import src.moves as moves
 
         npc = _make_npc(name="SlimeMonster")
         npc.target = _make_player_target()
@@ -332,7 +330,7 @@ class TestTelegraphedSurge:
 
     def test_tidal_surge_init(self):
         """Lines 332-334: TidalSurge instantiates with correct name."""
-        import moves
+        import src.moves as moves
 
         npc = _make_npc()
         npc.target = _make_player_target()
@@ -342,7 +340,7 @@ class TestTelegraphedSurge:
 
     def test_telegraphed_surge_refresh_announcements(self):
         """Lines 279-283: refresh_announcements uses text methods."""
-        import moves
+        import src.moves as moves
 
         npc = _make_npc(name="Slimer")
         target = _make_player_target()
@@ -355,7 +353,7 @@ class TestTelegraphedSurge:
 
     def test_telegraphed_surge_higher_damage(self):
         """Line 276-277: evaluate multiplies power by the surge's damage multiplier."""
-        import moves
+        import src.moves as moves
 
         npc = _make_npc(damage=10)
         npc.target = _make_player_target()
@@ -376,7 +374,7 @@ class TestGorranClub:
 
     def test_gorranclub_init(self):
         """Lines 358-399: GorranClub instantiates."""
-        import moves
+        import src.moves as moves
 
         npc = _make_npc()
         npc.target = _make_player_target()
@@ -387,7 +385,7 @@ class TestGorranClub:
 
     def test_gorranclub_viable_in_range(self):
         """Lines 401-414: viable when distance within range."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         npc = _make_npc()
@@ -398,7 +396,7 @@ class TestGorranClub:
 
     def test_gorranclub_not_viable_no_proximity(self):
         """Lines 407-408: not viable without combat_proximity."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         npc = _make_npc()
@@ -410,7 +408,7 @@ class TestGorranClub:
     def test_gorranclub_execute(self):
         """Lines 457-495: execute runs the attack flow and applies damage on a
         guaranteed, non-glancing hit."""
-        import moves
+        import src.moves as moves
 
         p = _make_player_target()
         p.finesse = 0
@@ -431,7 +429,7 @@ class TestGorranClub:
 
     def test_gorranclub_refresh_announcements(self):
         """Lines 443-455: refresh_announcements updates stage_announce."""
-        import moves
+        import src.moves as moves
 
         p = _make_player_target()
         p.name = "Jean"
@@ -453,7 +451,7 @@ class TestVenomClaw:
 
     def test_venomclaw_init(self):
         """Lines 498-536: VenomClaw instantiates."""
-        import moves
+        import src.moves as moves
 
         p = _make_player_target()
         npc = _make_npc()
@@ -464,7 +462,7 @@ class TestVenomClaw:
 
     def test_venomclaw_viable_in_range(self):
         """Lines 538-549: viable when target in range."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         npc = _make_npc()
@@ -475,7 +473,7 @@ class TestVenomClaw:
 
     def test_venomclaw_not_viable_no_proximity(self):
         """Lines 539-540: not viable without combat_proximity."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         npc = _make_npc()
@@ -487,7 +485,7 @@ class TestVenomClaw:
     def test_venomclaw_execute(self):
         """Lines 591-631: execute runs venom attack and applies damage on a
         guaranteed, non-glancing hit."""
-        import moves
+        import src.moves as moves
 
         p = _make_player_target()
         p.finesse = 0
@@ -513,7 +511,7 @@ class TestVenomClaw:
 
     def test_venomclaw_refresh_announcements(self):
         """Lines 576-589: refresh_announcements updates stage_announce."""
-        import moves
+        import src.moves as moves
 
         p = _make_player_target()
         p.name = "Jean"
@@ -535,7 +533,7 @@ class TestSpiderBite:
 
     def test_spiderbite_init(self):
         """Lines 634-672: SpiderBite instantiates."""
-        import moves
+        import src.moves as moves
 
         p = _make_player_target()
         npc = _make_npc()
@@ -545,7 +543,7 @@ class TestSpiderBite:
 
     def test_spiderbite_viable(self):
         """Lines 674-688: viable when target in range."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         npc = _make_npc()
@@ -557,7 +555,7 @@ class TestSpiderBite:
     def test_spiderbite_execute(self):
         """Lines 727-770: execute runs spider bite attack and applies damage on a
         guaranteed, non-glancing hit."""
-        import moves
+        import src.moves as moves
 
         p = _make_player_target()
         p.finesse = 0
@@ -583,7 +581,7 @@ class TestSpiderBite:
 
     def test_spiderbite_fatigue_floor(self):
         """Lines 769-770: fatigue cannot go below 0."""
-        import moves
+        import src.moves as moves
 
         p = _make_player_target()
         npc = _make_npc()
@@ -607,7 +605,7 @@ class TestBatBite:
 
     def test_batbite_init(self):
         """BatBite instantiates correctly."""
-        import moves
+        import src.moves as moves
 
         if not hasattr(moves, "BatBite"):
             pytest.skip("BatBite not available")
@@ -620,7 +618,7 @@ class TestBatBite:
     def test_batbite_execute(self):
         """BatBite execute runs without error and deducts its fatigue cost
         regardless of hit/miss outcome."""
-        import moves
+        import src.moves as moves
 
         if not hasattr(moves, "BatBite"):
             pytest.skip("BatBite not available")
@@ -646,7 +644,7 @@ class TestRumbleAttack:
 
     def test_rumble_attack_init(self):
         """RumbleAttack instantiates if available."""
-        import moves
+        import src.moves as moves
 
         if not hasattr(moves, "RumbleAttack"):
             pytest.skip("RumbleAttack not available")
@@ -658,7 +656,7 @@ class TestRumbleAttack:
 
     def test_rumble_attack_execute(self):
         """RumbleAttack execute runs."""
-        import moves
+        import src.moves as moves
 
         if not hasattr(moves, "RumbleAttack"):
             pytest.skip("RumbleAttack not available")
@@ -677,7 +675,7 @@ class TestSlamAttack:
 
     def test_slam_attack_init(self):
         """SlamAttack instantiates if available."""
-        import moves
+        import src.moves as moves
 
         if not hasattr(moves, "SlamAttack"):
             pytest.skip("SlamAttack not available")
@@ -692,42 +690,42 @@ class TestNpcMovesExistInModule:
     """Verify core NPC move classes are importable from moves module."""
 
     def test_npc_attack_exists(self):
-        import moves
+        import src.moves as moves
 
         assert hasattr(moves, "NpcAttack")
 
     def test_npc_rest_exists(self):
-        import moves
+        import src.moves as moves
 
         assert hasattr(moves, "NpcRest")
 
     def test_npc_idle_exists(self):
-        import moves
+        import src.moves as moves
 
         assert hasattr(moves, "NpcIdle")
 
     def test_slime_volley_exists(self):
-        import moves
+        import src.moves as moves
 
         assert hasattr(moves, "SlimeVolley")
 
     def test_tidal_surge_exists(self):
-        import moves
+        import src.moves as moves
 
         assert hasattr(moves, "TidalSurge")
 
     def test_gorran_club_exists(self):
-        import moves
+        import src.moves as moves
 
         assert hasattr(moves, "GorranClub")
 
     def test_venom_claw_exists(self):
-        import moves
+        import src.moves as moves
 
         assert hasattr(moves, "VenomClaw")
 
     def test_spider_bite_exists(self):
-        import moves
+        import src.moves as moves
 
         assert hasattr(moves, "SpiderBite")
 
@@ -742,7 +740,7 @@ class TestBatBiteReal:
 
     def test_batbite_init(self):
         """Lines 773-809: BatBite instantiates with correct name."""
-        import moves
+        import src.moves as moves
 
         p = _make_player_target()
         npc = _make_npc()
@@ -753,7 +751,7 @@ class TestBatBiteReal:
 
     def test_batbite_viable_in_range(self):
         """Lines 811-825: viable when in range."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         npc = _make_npc()
@@ -764,7 +762,7 @@ class TestBatBiteReal:
 
     def test_batbite_not_viable_no_proximity(self):
         """Line 817-818: not viable without combat_proximity."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         npc = _make_npc()
@@ -775,7 +773,7 @@ class TestBatBiteReal:
 
     def test_batbite_execute_heals_user(self):
         """Lines 883-904: execute heals user for half the damage dealt on a hit."""
-        import moves
+        import src.moves as moves
 
         p = _make_player_target()
         p.finesse = 0
@@ -798,7 +796,7 @@ class TestBatBiteReal:
 
     def test_batbite_refresh_announcements(self):
         """BatBite refresh_announcements updates stage_announce."""
-        import moves
+        import src.moves as moves
 
         p = _make_player_target()
         p.name = "Jean"
@@ -820,7 +818,7 @@ class TestMineralSpit:
 
     def test_mineral_spit_init(self):
         """Lines 907-917: MineralSpit instantiates with correct name."""
-        import moves
+        import src.moves as moves
 
         p = _make_player_target()
         npc = _make_npc()
@@ -831,7 +829,7 @@ class TestMineralSpit:
     def test_mineral_spit_execute(self):
         """Lines 936-966: execute runs mineral spit attack, dealing
         power*0.4 minus protection damage on a guaranteed, non-glancing hit."""
-        import moves
+        import src.moves as moves
 
         p = _make_player_target()
         p.finesse = 0
@@ -857,7 +855,7 @@ class TestMineralSpit:
 
     def test_mineral_spit_refresh_announcements(self):
         """Lines 925-934: refresh_announcements updates announce."""
-        import moves
+        import src.moves as moves
 
         p = _make_player_target()
         p.name = "Jean"
@@ -879,7 +877,7 @@ class TestSoulDrain:
 
     def test_soul_drain_init(self):
         """Lines 976-978: SoulDrain instantiates with correct name."""
-        import moves
+        import src.moves as moves
 
         p = _make_player_target()
         npc = _make_npc()
@@ -890,7 +888,7 @@ class TestSoulDrain:
     def test_soul_drain_execute(self):
         """Lines 995-1023: execute runs soul drain attack, dealing power*0.6
         minus protection damage and healing the user on a guaranteed hit."""
-        import moves
+        import src.moves as moves
 
         p = _make_player_target()
         p.finesse = 0
@@ -920,7 +918,7 @@ class TestSoulDrain:
 
     def test_soul_drain_refresh_announcements(self):
         """Lines 980-993: refresh_announcements."""
-        import moves
+        import src.moves as moves
 
         p = _make_player_target()
         p.name = "Jean"
@@ -942,7 +940,7 @@ class TestWailStrike:
 
     def test_wail_strike_init(self):
         """Lines 1033-1036: WailStrike instantiates with correct name."""
-        import moves
+        import src.moves as moves
 
         p = _make_player_target()
         npc = _make_npc()
@@ -953,7 +951,7 @@ class TestWailStrike:
     def test_wail_strike_execute(self):
         """Lines 1053-1079: execute runs wail attack, dealing power*0.7 damage
         while ignoring the target's protection entirely (sonic damage)."""
-        import moves
+        import src.moves as moves
 
         p = _make_player_target()
         p.finesse = 0
@@ -979,7 +977,7 @@ class TestWailStrike:
 
     def test_wail_strike_refresh_announcements(self):
         """Lines 1038-1051: refresh_announcements."""
-        import moves
+        import src.moves as moves
 
         p = _make_player_target()
         p.name = "Jean"
@@ -1003,7 +1001,7 @@ class TestNpcAttackEdgeCases:
 
     def test_evaluate_stat_floor_branches(self):
         """Lines 95, 99, 102: prep/recoil/cooldown floor branches with extreme stats."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         npc = _make_npc(speed=-10, endurance=100)
@@ -1016,7 +1014,7 @@ class TestNpcAttackEdgeCases:
     def test_execute_damage_floored_at_zero(self):
         """Line 155: damage <= 0 floors to 0 when protection swamps power (no hp
         change regardless of whether the roll resolves to a hit or a miss)."""
-        import moves
+        import src.moves as moves
 
         p = _make_player_target()
         p.protection = 99999
@@ -1034,7 +1032,7 @@ class TestNpcAttackEdgeCases:
 
     def test_execute_glancing_blow_deterministic(self):
         """Lines 157-158: glancing blow when hit_chance - roll < 10 halves damage."""
-        import moves
+        import src.moves as moves
 
         p = _make_player_target()
         p.finesse = 50
@@ -1054,7 +1052,7 @@ class TestNpcAttackEdgeCases:
     def test_execute_parry_path(self):
         """Line 162: functions.check_parry True routes to self.parry() instead of
         self.hit() — hp is untouched but the recoil beat count gains +10 stagger."""
-        import moves
+        import src.moves as moves
 
         p = _make_player_target()
         p.finesse = 10
@@ -1068,7 +1066,7 @@ class TestNpcAttackEdgeCases:
         with (
             patch("builtins.print"),
             patch("random.randint", return_value=0),
-            patch("functions.check_parry", return_value=True),
+            patch("src.functions.check_parry", return_value=True),
         ):
             attack.execute(npc)
         assert p.hp == hp_before
@@ -1081,7 +1079,7 @@ class TestTelegraphedSurgeAdvanced:
 
     def test_telegraphed_surge_base_default_texts(self):
         """Lines 262, 265, 268: base TelegraphedSurge default text methods."""
-        import moves
+        import src.moves as moves
 
         npc = _make_npc(name="Wisp")
         target = _make_player_target()
@@ -1096,7 +1094,7 @@ class TestTelegraphedSurgeAdvanced:
 
     def test_slime_volley_hit_inflicts_slimed_on_full_hit(self):
         """Lines 316-319: SlimeVolley.hit applies Slimed status on non-glancing hit."""
-        import moves
+        import src.moves as moves
 
         npc = _make_npc(name="SlimeMonster", damage=20)
         target = _make_player_target()
@@ -1112,7 +1110,7 @@ class TestTelegraphedSurgeAdvanced:
 
     def test_tidal_surge_refresh_announcements_hit_and_recoil_text(self):
         """Lines 343, 349: TidalSurge._hit_text/_recoil_text via refresh_announcements."""
-        import moves
+        import src.moves as moves
 
         npc = _make_npc(name="KingSlime")
         target = _make_player_target()
@@ -1127,7 +1125,7 @@ class TestTelegraphedSurgeAdvanced:
     def test_tidal_surge_hit_inflicts_slimed(self):
         """Lines 352-355: TidalSurge.hit applies Slimed status (chance 0.55,
         attempted regardless of glance)."""
-        import moves
+        import src.moves as moves
 
         npc = _make_npc(name="KingSlime", damage=20)
         target = _make_player_target()
@@ -1147,7 +1145,7 @@ class TestGorranClubEdgeCases:
 
     def test_evaluate_stat_floor_branches(self):
         """Lines 422, 426, 430, 434: prep/recoil/cooldown/fatigue floor branches."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         npc = _make_npc(speed=-10, endurance=100)
@@ -1161,7 +1159,7 @@ class TestGorranClubEdgeCases:
     def test_execute_hit_chance_floor_when_viable(self):
         """Line 477: hit_chance <= 0 floors to 1 (viable True); still resolves
         to a miss against roll=100, so no damage lands."""
-        import moves
+        import src.moves as moves
 
         p = _make_player_target()
         p.finesse = 500
@@ -1179,7 +1177,7 @@ class TestGorranClubEdgeCases:
 
     def test_execute_damage_floored_at_zero(self):
         """Line 483: damage <= 0 floors to 0 when protection swamps power."""
-        import moves
+        import src.moves as moves
 
         p = _make_player_target()
         p.protection = 99999
@@ -1197,7 +1195,7 @@ class TestGorranClubEdgeCases:
 
     def test_execute_glancing_blow_deterministic(self):
         """Lines 485-486: glancing blow branch halves damage."""
-        import moves
+        import src.moves as moves
 
         p = _make_player_target()
         p.finesse = 50
@@ -1217,7 +1215,7 @@ class TestGorranClubEdgeCases:
     def test_execute_parry_path(self):
         """Line 490: functions.check_parry True routes to self.parry() instead of
         self.hit() — hp is untouched but the recoil beat count gains +10 stagger."""
-        import moves
+        import src.moves as moves
 
         p = _make_player_target()
         p.finesse = 10
@@ -1231,7 +1229,7 @@ class TestGorranClubEdgeCases:
         with (
             patch("builtins.print"),
             patch("random.randint", return_value=0),
-            patch("functions.check_parry", return_value=True),
+            patch("src.functions.check_parry", return_value=True),
         ):
             gc.execute(npc)
         assert p.hp == hp_before
@@ -1243,7 +1241,7 @@ class TestVenomClawEdgeCases:
 
     def test_evaluate_stat_floor_branches(self):
         """Lines 557, 561, 564: prep/recoil/cooldown floor branches."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         npc = _make_npc(speed=-10, endurance=100)
@@ -1256,7 +1254,7 @@ class TestVenomClawEdgeCases:
     def test_execute_hit_chance_floor_when_viable(self):
         """Line 611: hit_chance <= 0 floors to 1 (viable True); still resolves
         to a miss against roll=100, so no damage or poison lands."""
-        import moves
+        import src.moves as moves
 
         p = _make_player_target()
         p.finesse = 500
@@ -1276,7 +1274,7 @@ class TestVenomClawEdgeCases:
     def test_execute_not_viable_hit_chance_negative(self):
         """Lines 612-613: viable False sets hit_chance = -1, guaranteeing a miss
         regardless of the roll."""
-        import moves
+        import src.moves as moves
 
         p = _make_player_target()
         npc = _make_npc(damage=20)
@@ -1293,7 +1291,7 @@ class TestVenomClawEdgeCases:
 
     def test_execute_damage_floored_at_zero(self):
         """Line 617: damage <= 0 floors to 0."""
-        import moves
+        import src.moves as moves
 
         p = _make_player_target()
         p.protection = 99999
@@ -1311,7 +1309,7 @@ class TestVenomClawEdgeCases:
 
     def test_execute_glancing_blow_deterministic(self):
         """Lines 619-620: glancing blow branch halves damage."""
-        import moves
+        import src.moves as moves
 
         p = _make_player_target()
         p.finesse = 50
@@ -1337,7 +1335,7 @@ class TestVenomClawEdgeCases:
         """Line 624: functions.check_parry True routes to self.parry() instead of
         self.hit() — hp is untouched, the recoil beat count gains +10 stagger, and
         the poison-infliction branch (only reached via self.hit()) never runs."""
-        import moves
+        import src.moves as moves
 
         p = _make_player_target()
         p.finesse = 10
@@ -1351,7 +1349,7 @@ class TestVenomClawEdgeCases:
         with (
             patch("builtins.print"),
             patch("random.randint", return_value=0),
-            patch("functions.check_parry", return_value=True),
+            patch("src.functions.check_parry", return_value=True),
         ):
             vc.execute(npc)
         assert p.hp == hp_before
@@ -1361,7 +1359,7 @@ class TestVenomClawEdgeCases:
     def test_execute_miss_path(self):
         """Line 630: miss() called when hit_chance < roll; no damage or poison
         applied."""
-        import moves
+        import src.moves as moves
 
         p = _make_player_target()
         p.finesse = 999
@@ -1384,7 +1382,7 @@ class TestSpiderBiteEdgeCases:
 
     def test_viable_no_combat_proximity_returns_false(self):
         """Line 681: viable False without combat_proximity."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         npc = _make_npc()
@@ -1395,7 +1393,7 @@ class TestSpiderBiteEdgeCases:
 
     def test_evaluate_stat_floor_branches(self):
         """Lines 696, 700, 703, 706: prep/recoil/cooldown/fatigue floor branches."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         npc = _make_npc(speed=-10, endurance=100)
@@ -1409,7 +1407,7 @@ class TestSpiderBiteEdgeCases:
     def test_execute_hit_chance_floor_when_viable(self):
         """Line 747: hit_chance <= 0 floors to 1 (viable True); still resolves
         to a miss against roll=100, so no damage or poison lands."""
-        import moves
+        import src.moves as moves
 
         p = _make_player_target()
         p.finesse = 500
@@ -1428,7 +1426,7 @@ class TestSpiderBiteEdgeCases:
 
     def test_execute_damage_floored_at_zero(self):
         """Line 753: damage <= 0 floors to 0."""
-        import moves
+        import src.moves as moves
 
         p = _make_player_target()
         p.protection = 99999
@@ -1446,7 +1444,7 @@ class TestSpiderBiteEdgeCases:
 
     def test_execute_glancing_blow_deterministic(self):
         """Lines 755-756: glancing blow branch halves damage."""
-        import moves
+        import src.moves as moves
 
         p = _make_player_target()
         p.finesse = 50
@@ -1472,7 +1470,7 @@ class TestSpiderBiteEdgeCases:
         """Line 760: functions.check_parry True routes to self.parry() instead of
         self.hit() — hp is untouched, the recoil beat count gains +10 stagger, and
         the poison-infliction branch never runs."""
-        import moves
+        import src.moves as moves
 
         p = _make_player_target()
         p.finesse = 10
@@ -1486,7 +1484,7 @@ class TestSpiderBiteEdgeCases:
         with (
             patch("builtins.print"),
             patch("random.randint", return_value=0),
-            patch("functions.check_parry", return_value=True),
+            patch("src.functions.check_parry", return_value=True),
         ):
             sb.execute(npc)
         assert p.hp == hp_before
@@ -1499,7 +1497,7 @@ class TestBatBiteEdgeCases:
 
     def test_evaluate_stat_floor_branches(self):
         """Lines 833, 837, 840, 843: prep/recoil/cooldown/fatigue floor branches."""
-        import moves
+        import src.moves as moves
 
         p = _player()
         npc = _make_npc(speed=-10, endurance=100)
@@ -1513,7 +1511,7 @@ class TestBatBiteEdgeCases:
     def test_execute_hit_chance_floor_when_viable(self):
         """Line 883: hit_chance <= 0 floors to 1 (viable True); still resolves
         to a miss against roll=100, so no damage or lifesteal heal occurs."""
-        import moves
+        import src.moves as moves
 
         p = _make_player_target()
         p.finesse = 500
@@ -1535,7 +1533,7 @@ class TestBatBiteEdgeCases:
     def test_execute_not_viable_hit_chance_negative(self):
         """Lines 884-885: viable False sets hit_chance = -1, guaranteeing a miss
         regardless of the roll."""
-        import moves
+        import src.moves as moves
 
         p = _make_player_target()
         npc = _make_npc(damage=20)
@@ -1555,7 +1553,7 @@ class TestBatBiteEdgeCases:
 
     def test_execute_damage_floored_at_zero(self):
         """Line 889: damage <= 0 floors to 0; no lifesteal heal follows."""
-        import moves
+        import src.moves as moves
 
         p = _make_player_target()
         p.protection = 99999
@@ -1578,7 +1576,7 @@ class TestBatBiteEdgeCases:
         """Line 896: functions.check_parry True routes to self.parry() instead of
         self.hit() — hp is untouched, the recoil beat count gains +10 stagger, and
         the lifesteal-heal branch (only reached via self.hit()) never runs."""
-        import moves
+        import src.moves as moves
 
         p = _make_player_target()
         p.finesse = 10
@@ -1594,7 +1592,7 @@ class TestBatBiteEdgeCases:
         with (
             patch("builtins.print"),
             patch("random.randint", return_value=0),
-            patch("functions.check_parry", return_value=True),
+            patch("src.functions.check_parry", return_value=True),
         ):
             bb.execute(npc)
         assert p.hp == hp_before
@@ -1608,7 +1606,7 @@ class TestMineralSpitEdgeCases:
     def test_prep_and_hit_text_direct(self):
         """Lines 920, 923: _prep_text/_hit_text overrides (dead unless called directly;
         MineralSpit.refresh_announcements builds its own strings instead of using them)."""
-        import moves
+        import src.moves as moves
 
         npc = _make_npc(name="StoneCreature")
         p = _make_player_target()
@@ -1620,7 +1618,7 @@ class TestMineralSpitEdgeCases:
     def test_execute_hit_chance_floor_when_viable(self):
         """Line 944: hit_chance <= 0 floors to 1 (viable True); still resolves
         to a miss against roll=100 (residue roll also patched to fail)."""
-        import moves
+        import src.moves as moves
 
         p = _make_player_target()
         p.finesse = 500
@@ -1644,7 +1642,7 @@ class TestMineralSpitEdgeCases:
     def test_execute_not_viable_hit_chance_negative(self):
         """Lines 945-946: viable False sets hit_chance = -1, guaranteeing a miss
         regardless of the roll (residue roll also patched to fail)."""
-        import moves
+        import src.moves as moves
 
         p = _make_player_target()
         npc = _make_npc(damage=20)
@@ -1663,7 +1661,7 @@ class TestMineralSpitEdgeCases:
     def test_execute_glancing_blow_deterministic(self):
         """Lines 950-951: glancing blow branch halves the already power-reduced
         mineral-spit damage."""
-        import moves
+        import src.moves as moves
 
         p = _make_player_target()
         p.finesse = 50
@@ -1683,7 +1681,7 @@ class TestMineralSpitEdgeCases:
     def test_execute_parry_path(self):
         """Line 955: functions.check_parry True routes to self.parry() instead of
         self.hit() — hp is untouched and the recoil beat count gains +10 stagger."""
-        import moves
+        import src.moves as moves
 
         p = _make_player_target()
         p.finesse = 10
@@ -1697,7 +1695,7 @@ class TestMineralSpitEdgeCases:
         with (
             patch("builtins.print"),
             patch("random.randint", return_value=0),
-            patch("functions.check_parry", return_value=True),
+            patch("src.functions.check_parry", return_value=True),
         ):
             ms.execute(npc)
         assert p.hp == hp_before
@@ -1706,7 +1704,7 @@ class TestMineralSpitEdgeCases:
     def test_execute_miss_and_residue_chance(self):
         """Lines 961-965: miss branch plus near-miss residue application — a
         low random.random() roll both gates and passes the Petrified inflict."""
-        import moves
+        import src.moves as moves
 
         p = _make_player_target()
         p.finesse = 10
@@ -1732,7 +1730,7 @@ class TestSoulDrainEdgeCases:
     def test_execute_hit_chance_floor_when_viable(self):
         """Line 1003: hit_chance <= 0 floors to 1 (viable True); still resolves
         to a miss against roll=100, so no damage or heal-drain occurs."""
-        import moves
+        import src.moves as moves
 
         p = _make_player_target()
         p.finesse = 500
@@ -1755,7 +1753,7 @@ class TestSoulDrainEdgeCases:
     def test_execute_not_viable_hit_chance_negative(self):
         """Lines 1004-1005: viable False sets hit_chance = -1, guaranteeing a
         miss regardless of the roll."""
-        import moves
+        import src.moves as moves
 
         p = _make_player_target()
         npc = _make_npc(damage=20)
@@ -1777,7 +1775,7 @@ class TestSoulDrainEdgeCases:
     def test_execute_glancing_blow_deterministic(self):
         """Lines 1009-1010: glancing blow branch halves damage and still grants
         a partial heal-drain."""
-        import moves
+        import src.moves as moves
 
         p = _make_player_target()
         p.finesse = 50
@@ -1806,7 +1804,7 @@ class TestSoulDrainEdgeCases:
         """Line 1014: functions.check_parry True routes to self.parry() instead
         of self.hit() — hp is untouched, no heal-drain occurs, and the recoil
         beat count gains +10 stagger."""
-        import moves
+        import src.moves as moves
 
         p = _make_player_target()
         p.finesse = 10
@@ -1823,7 +1821,7 @@ class TestSoulDrainEdgeCases:
         with (
             patch("builtins.print"),
             patch("random.randint", return_value=0),
-            patch("functions.check_parry", return_value=True),
+            patch("src.functions.check_parry", return_value=True),
         ):
             sd.execute(npc)
         assert p.hp == hp_before
@@ -1833,7 +1831,7 @@ class TestSoulDrainEdgeCases:
     def test_execute_miss_path(self):
         """Line 1022: miss() called when hit_chance < roll; no damage or
         heal-drain occurs."""
-        import moves
+        import src.moves as moves
 
         p = _make_player_target()
         p.finesse = 10
@@ -1860,7 +1858,7 @@ class TestWailStrikeEdgeCases:
     def test_execute_hit_chance_floor_when_viable(self):
         """Line 1061: hit_chance <= 0 floors to 1 (viable True); still resolves
         to a miss against roll=100, so no damage lands."""
-        import moves
+        import src.moves as moves
 
         p = _make_player_target()
         p.finesse = 500
@@ -1879,7 +1877,7 @@ class TestWailStrikeEdgeCases:
     def test_execute_not_viable_hit_chance_negative(self):
         """Lines 1062-1063: viable False sets hit_chance = -1, guaranteeing a
         miss regardless of the roll."""
-        import moves
+        import src.moves as moves
 
         p = _make_player_target()
         npc = _make_npc(damage=20)
@@ -1896,7 +1894,7 @@ class TestWailStrikeEdgeCases:
 
     def test_execute_glancing_blow_deterministic(self):
         """Lines 1067-1068: glancing blow branch halves damage."""
-        import moves
+        import src.moves as moves
 
         p = _make_player_target()
         p.finesse = 50
@@ -1917,7 +1915,7 @@ class TestWailStrikeEdgeCases:
         """Line 1072: functions.check_parry True routes to self.parry() instead
         of self.hit() — hp is untouched and the recoil beat count gains +10
         stagger."""
-        import moves
+        import src.moves as moves
 
         p = _make_player_target()
         p.finesse = 10
@@ -1931,7 +1929,7 @@ class TestWailStrikeEdgeCases:
         with (
             patch("builtins.print"),
             patch("random.randint", return_value=0),
-            patch("functions.check_parry", return_value=True),
+            patch("src.functions.check_parry", return_value=True),
         ):
             ws.execute(npc)
         assert p.hp == hp_before
@@ -1939,7 +1937,7 @@ class TestWailStrikeEdgeCases:
 
     def test_execute_miss_path(self):
         """Line 1078: miss() called when hit_chance < roll; no damage lands."""
-        import moves
+        import src.moves as moves
 
         p = _make_player_target()
         p.finesse = 10

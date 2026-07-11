@@ -14,7 +14,7 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 import src.states as states
-import positions
+import src.positions as positions
 from src.moves._polearm import (
     OverheadSmash,
     Sweep,

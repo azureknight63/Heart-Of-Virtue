@@ -10,9 +10,6 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 ROOT = Path(__file__).resolve().parent.parent
-SRC_DIR = ROOT / "src"
-if str(SRC_DIR) not in sys.path:
-    sys.path.insert(0, str(SRC_DIR))
 
 
 # ---------------------------------------------------------------------------
@@ -50,7 +47,7 @@ def _make_equippable(maintype="Weapon", subtype="Sword", name="TestSword"):
 
 def _make_consumable(name="Potion"):
     """Return a mock consumable item."""
-    import items as items_mod
+    import src.items as items_mod
 
     item = MagicMock(spec=items_mod.Consumable)
     item.name = name
@@ -80,7 +77,7 @@ def test_stack_gold_no_gold():
 
 def test_stack_gold_multiple_stacks():
     """stack_gold consolidates multiple Gold items into one."""
-    import items as items_mod
+    import src.items as items_mod
 
     p = _make_player()
     g1 = items_mod.Gold(amt=10)
@@ -107,7 +104,7 @@ def test_drop_merchandise_items_no_tile():
     p.map = {}
     p.location_x = 0
     p.location_y = 0
-    with patch("player._inventory.tile_exists", return_value=None):
+    with patch("src.player._inventory.tile_exists", return_value=None):
         p.drop_merchandise_items()
     # Item should still be in inventory since tile was None
     assert merch in p.inventory
@@ -126,7 +123,7 @@ def test_drop_merchandise_items_with_merch(capsys):
     p.location_y = 0
     tile = MagicMock()
     tile.items_here = []
-    with patch("player._inventory.tile_exists", return_value=tile):
+    with patch("src.player._inventory.tile_exists", return_value=tile):
         with patch("time.sleep"):
             p.drop_merchandise_items()
     assert merch not in p.inventory
@@ -151,7 +148,7 @@ def test_drop_merchandise_items_value_error_ignored():
     p.map = {}
     p.location_x = 0
     p.location_y = 0
-    with patch("player._inventory.tile_exists", return_value=tile):
+    with patch("src.player._inventory.tile_exists", return_value=tile):
         with patch("time.sleep"):
             # Should not raise
             p.drop_merchandise_items()
@@ -174,7 +171,7 @@ def test_equip_item_too_heavy():
     p.inventory = []
     p.current_room.items_here = []
 
-    with patch("player._inventory.cprint") as mock_cprint:
+    with patch("src.player._inventory.cprint") as mock_cprint:
         p.equip_item(item_object=heavy)
 
     mock_cprint.assert_called_once()
@@ -195,7 +192,7 @@ def test_equip_item_too_heavy_returns_to_candidates(capsys):
     # Put item in room so phrase search adds it to candidates
     p.current_room.items_here = [heavy]
 
-    with patch("player._inventory.cprint"):
+    with patch("src.player._inventory.cprint"):
         p.equip_item(phrase="testsword")
 
     # Since it was too heavy and was in candidates, it goes back to the room
@@ -217,8 +214,8 @@ def test_equip_item_from_room():
     p.inventory = []
     p.current_room.items_here = [item]
 
-    with patch("player._inventory.cprint"):
-        with patch("player._inventory.functions") as mock_funcs:
+    with patch("src.player._inventory.cprint"):
+        with patch("src.player._inventory.functions") as mock_funcs:
             mock_funcs.refresh_stat_bonuses = MagicMock()
             p.refresh_protection_rating = MagicMock()
             p.equip_item(item_object=item)
@@ -248,8 +245,8 @@ def test_equip_item_removes_from_parent_container():
     p.inventory = []
     p.current_room.items_here = []
 
-    with patch("player._inventory.cprint"):
-        with patch("player._inventory.functions") as mock_funcs:
+    with patch("src.player._inventory.cprint"):
+        with patch("src.player._inventory.functions") as mock_funcs:
             mock_funcs.refresh_stat_bonuses = MagicMock()
             p.refresh_protection_rating = MagicMock()
             p.equip_item(item_object=item)
@@ -280,8 +277,8 @@ def test_equip_item_testing_mode_with_starting_exp():
     p.skill_exp = {}
     p.inventory = [item]
 
-    with patch("player._inventory.cprint"):
-        with patch("player._inventory.functions") as mock_funcs:
+    with patch("src.player._inventory.cprint"):
+        with patch("src.player._inventory.functions") as mock_funcs:
             mock_funcs.refresh_stat_bonuses = MagicMock()
             p.refresh_protection_rating = MagicMock()
             p.equip_item(item_object=item)
@@ -306,8 +303,8 @@ def test_equip_item_testing_mode_no_starting_exp():
     p.skill_exp = {}
     p.inventory = [item]
 
-    with patch("player._inventory.cprint"):
-        with patch("player._inventory.functions") as mock_funcs:
+    with patch("src.player._inventory.cprint"):
+        with patch("src.player._inventory.functions") as mock_funcs:
             mock_funcs.refresh_stat_bonuses = MagicMock()
             p.refresh_protection_rating = MagicMock()
             p.equip_item(item_object=item)
@@ -329,7 +326,7 @@ def test_equip_item_already_equipped_keep():
     p.inventory = [item]
 
     with patch("builtins.input", return_value="n"):
-        with patch("player._inventory.cprint"):
+        with patch("src.player._inventory.cprint"):
             p.equip_item(item_object=item)
 
     assert item.isequipped is True
@@ -360,8 +357,8 @@ def test_equip_item_accessory_ring_replaces_third():
 
     p.inventory = [ring1, ring2, new_ring]
 
-    with patch("player._inventory.cprint"):
-        with patch("player._inventory.functions") as mock_funcs:
+    with patch("src.player._inventory.cprint"):
+        with patch("src.player._inventory.functions") as mock_funcs:
             mock_funcs.refresh_stat_bonuses = MagicMock()
             p.refresh_protection_rating = MagicMock()
             p.equip_item(item_object=new_ring)
@@ -391,8 +388,8 @@ def test_equip_item_accessory_non_ring_replaces():
 
     p.inventory = [old_neck, new_neck]
 
-    with patch("player._inventory.cprint"):
-        with patch("player._inventory.functions") as mock_funcs:
+    with patch("src.player._inventory.cprint"):
+        with patch("src.player._inventory.functions") as mock_funcs:
             mock_funcs.refresh_stat_bonuses = MagicMock()
             p.refresh_protection_rating = MagicMock()
             p.equip_item(item_object=new_neck)
@@ -459,7 +456,7 @@ def test_use_item_menu_cancel():
     p = _make_player()
     p.inventory = []
     with patch("builtins.input", return_value="x"):
-        with patch("player._inventory.cprint"):
+        with patch("src.player._inventory.cprint"):
             # Should not hang; 'x' exits the loop
             p.use_item(phrase="")
 
@@ -476,7 +473,7 @@ def test_use_item_menu_merchandise_blocked():
     # Input sequence: select 'c' (consumables), then item index 0, then 'x' to exit
     inputs = iter(["c", "0", "x"])
     with patch("builtins.input", side_effect=inputs):
-        with patch("player._inventory.cprint"):
+        with patch("src.player._inventory.cprint"):
             p.use_item(phrase="")
 
     potion.use.assert_not_called()
@@ -492,7 +489,7 @@ def test_use_item_menu_non_integer_input():
 
     inputs = iter(["c", "abc", "x"])
     with patch("builtins.input", side_effect=inputs):
-        with patch("player._inventory.cprint"):
+        with patch("src.player._inventory.cprint"):
             p.use_item(phrase="")
 
     potion.use.assert_not_called()
@@ -515,7 +512,7 @@ def test_use_item_menu_shows_equipped_marker():
     # "c" selects consumables, "abc" is non-integer (loops back), "x" exits
     inputs = iter(["c", "abc", "x"])
     with patch("builtins.input", side_effect=inputs):
-        with patch("player._inventory.cprint"):
+        with patch("src.player._inventory.cprint"):
             with patch("builtins.print"):
                 p.use_item(phrase="")
 
@@ -535,7 +532,7 @@ def test_use_item_menu_shows_preference_marker():
 
     inputs = iter(["c", "abc", "x"])
     with patch("builtins.input", side_effect=inputs):
-        with patch("player._inventory.cprint"):
+        with patch("src.player._inventory.cprint"):
             with patch("builtins.print"):
                 p.use_item(phrase="")
 
@@ -579,7 +576,7 @@ def test_add_items_to_inventory_weight_exceeded():
     heavy.count = 1
     del heavy.count  # no count attribute, test weight without count branch
 
-    with patch("player._inventory.cprint"):
+    with patch("src.player._inventory.cprint"):
         p.add_items_to_inventory([heavy])
 
     assert heavy not in p.inventory
@@ -634,6 +631,6 @@ def test_add_items_to_inventory_stacked_item():
 def test_stack_inv_items_calls_function():
     """stack_inv_items delegates to functions.stack_inv_items."""
     p = _make_player()
-    with patch("player._inventory.stack_inv_items") as mock_stack:
+    with patch("src.player._inventory.stack_inv_items") as mock_stack:
         p.stack_inv_items()
     mock_stack.assert_called_once_with(p)

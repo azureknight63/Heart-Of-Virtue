@@ -25,9 +25,9 @@ import inspect
 import random
 import time
 
-import functions  # type: ignore
-import items as items_module  # type: ignore
-from items import (
+import src.functions as functions  # type: ignore
+import src.items as items_module  # type: ignore
+from src.items import (
     Item,
     Gold,
     Rock,
@@ -43,9 +43,9 @@ from items import (
     Weapon,
     Arrow,
 )
-from objects import Container  # type: ignore
+from src.objects import Container  # type: ignore
 from src.narration import narrate
-from shop_conditions import (  # type: ignore
+from src.shop_conditions import (  # type: ignore
     ValueModifierCondition,
     RestockWeightBoostCondition,
     UniqueItemInjectionCondition,

@@ -28,7 +28,7 @@ Attributes expected on the host class (provided by NPC/Friend.__init__):
 
 import logging
 
-from combatant import exp_needed_for_level  # type: ignore
+from src.combatant import exp_needed_for_level  # type: ignore
 
 logger = logging.getLogger(__name__)
 
@@ -153,7 +153,7 @@ class AllyProgressionMixin:
 
     def _refresh_stats(self):
         """Re-derive live stats from bases + equipment/state bonuses."""
-        import functions  # local import: functions imports npc classes indirectly
+        import src.functions as functions  # local import: functions imports npc classes indirectly
 
         try:
             functions.refresh_stat_bonuses(self)
