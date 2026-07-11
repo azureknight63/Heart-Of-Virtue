@@ -356,6 +356,41 @@ describe('EventDialog', () => {
       expect(document.querySelector('pre')).not.toBeNull();
     });
 
+    it('paces long unstaged narration (issue #123) through ConversationStage instead of one big typewriter block', () => {
+      // Shape matches what GameService._capture_conversation now returns for a
+      // long plain narrate()/cprint() block: multiple in_conversation:false
+      // beats, no speaker, no conversation roster.
+      const longNarrationEvent = {
+        event_id: 'long-narration-1',
+        name: 'Ruined Vault',
+        output_text: 'The vault door groans open.\nDust hangs thick in the air.\nA relic hums on the plinth.',
+        needs_input: false,
+        segments: [
+          { text: 'The vault door groans open.', type: 'narration', in_conversation: false },
+          { text: 'Dust hangs thick in the air.', type: 'narration', in_conversation: false },
+          { text: 'A relic hums on the plinth.', type: 'narration', in_conversation: false },
+        ],
+        conversation: null,
+      };
+      render(<EventDialog event={longNarrationEvent} onClose={mockOnClose} onSubmitInput={mockOnSubmitInput} />);
+
+      // Routed through the staged/paced renderer, not the single-block typewriter.
+      const stage = screen.getByTestId('conversation-stage');
+      expect(stage).toBeDefined();
+      expect(screen.queryByTestId('event-text-container')).toBeNull();
+
+      // Only the first beat is visible until the player advances.
+      act(() => vi.advanceTimersByTime(3000));
+      expect(screen.getByText('The vault door groans open.')).toBeDefined();
+      expect(screen.queryByText('Dust hangs thick in the air.')).toBeNull();
+
+      // Clicking advances one beat at a time, not straight to the end.
+      fireEvent.click(stage);
+      act(() => vi.advanceTimersByTime(3000));
+      expect(screen.getByText('Dust hangs thick in the air.')).toBeDefined();
+      expect(screen.queryByText('A relic hums on the plinth.')).toBeNull();
+    });
+
     it('applies Memory Flash flair when presentation is memory_flash', () => {
       const memEvent = {
         event_id: 'mem-2',

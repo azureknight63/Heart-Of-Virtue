@@ -410,6 +410,135 @@ def test_after_king_slime_return_stage1_produces_staged_conversation(game_servic
     assert any("done well" in s["text"].lower() for s in by_speaker)
 
 
+# --------------------------------------------------------------------------- #
+# Long-narration pacing (issue #123 "Break up event text")
+# --------------------------------------------------------------------------- #
+
+
+def test_short_plain_narration_stays_unchunked(game_service):
+    """A short, unstaged text block yields no segments — unaffected by chunking."""
+    msgs = [
+        {"text": "You step into the chamber.", "type": "narration"},
+        {"text": "Dust motes drift in the light.", "type": "narration"},
+    ]
+    out, segments, conversation = game_service._capture_conversation(msgs, FakePlayer())
+    assert conversation is None
+    assert segments == []
+    assert out == "You step into the chamber.\nDust motes drift in the light."
+
+
+def test_long_plain_narration_is_split_into_paced_segments(game_service):
+    """A long, unstaged text block is chunked into click-to-continue beats."""
+    paragraphs = [
+        "The vault door groans open, revealing a chamber untouched for centuries. "
+        "Dust hangs thick in the stale air, and the only sound is Jean's own breathing.",
+        "Along the walls, faded murals depict a war long since forgotten — armies "
+        "of stone and fire clashing beneath a sky the color of an old bruise.",
+        "At the center of the room, a plinth holds a single artifact, humming "
+        "faintly with a light that seems to pulse in time with Jean's heartbeat.",
+    ]
+    long_text = "\n\n".join(paragraphs)
+    msgs = [{"text": long_text, "type": "narration"}]
+
+    out, segments, conversation = game_service._capture_conversation(msgs, FakePlayer())
+
+    assert conversation is None
+    assert out == long_text
+    assert len(segments) > 1
+    # Every paced beat is plain narration — no speaker, not "in conversation".
+    max_chars = game_service._NARRATION_CHUNK_MAX_CHARS
+    for seg in segments:
+        assert "speaker" not in seg
+        assert seg["in_conversation"] is False
+        assert len(seg["text"]) <= max_chars
+    # Reassembling the beats loses no content — every paragraph survives intact
+    # somewhere in the paced text.
+    reassembled = "\n\n".join(seg["text"] for seg in segments)
+    for para in paragraphs:
+        assert para in reassembled
+
+
+def test_chunking_does_not_affect_staged_dialogue(game_service):
+    """A conversation that happens to be long is left to the existing
+    per-beat (say()) pacing — the plain-text chunker never runs when the
+    event already used a staged feature."""
+    from src.narration import capture_narration, begin_conversation, say
+
+    long_line = "This line is long enough that, in isolation, it would exceed " \
+        "the plain-narration chunk threshold if the chunker ran on it, but it " \
+        "must not be split because the event is already staged via say()." * 3
+
+    with capture_narration() as msgs:
+        begin_conversation([("Jean", "left", "neutral")])
+        say(long_line, "Jean", "neutral")
+
+    out, segments, conversation = game_service._capture_conversation(msgs, FakePlayer())
+
+    assert conversation is not None
+    assert len(segments) == 1
+    assert segments[0]["text"] == long_line
+    assert segments[0]["speaker"] == "Jean"
+    assert segments[0]["in_conversation"] is True
+
+
+class TestChunkNarrationText:
+    """Direct unit tests for GameService._chunk_narration_text."""
+
+    def test_empty_text_returns_no_chunks(self, game_service):
+        assert game_service._chunk_narration_text("") == []
+        assert game_service._chunk_narration_text("   ") == []
+
+    def test_short_text_returns_single_chunk_unchanged(self, game_service):
+        text = "A short sentence."
+        assert game_service._chunk_narration_text(text) == [text]
+
+    def test_long_text_splits_at_paragraph_boundaries(self, game_service):
+        para_a = "A" * 200
+        para_b = "B" * 200
+        para_c = "C" * 200
+        text = f"{para_a}\n\n{para_b}\n\n{para_c}"
+        chunks = game_service._chunk_narration_text(text, max_chars=250)
+        assert len(chunks) >= 2
+        assert all(len(c) <= 250 for c in chunks)
+        # No content lost.
+        assert "".join(chunks).replace("\n\n", "") == para_a + para_b + para_c
+
+    def test_oversized_single_sentence_is_kept_intact(self, game_service):
+        # A single sentence longer than max_chars can't be split further —
+        # pacing is best-effort, never a mid-word truncation.
+        text = "A" * 500 + "."
+        chunks = game_service._chunk_narration_text(text, max_chars=100)
+        assert chunks == [text]
+
+    def test_respects_custom_max_chars(self, game_service):
+        text = " ".join(f"Sentence number {i}." for i in range(30))
+        chunks = game_service._chunk_narration_text(text, max_chars=80)
+        assert len(chunks) > 1
+        assert all(len(c) <= 80 or " " not in c for c in chunks)
+
+    def test_single_newline_joined_messages_split_at_the_newline(self, game_service):
+        """Regression: _capture_conversation joins separate narrate()/cprint()
+        calls with a single "\\n" (not "\\n\\n"), and lines commonly end
+        without terminal [.!?] punctuation (mid-thought, ellipses, em dashes).
+        The chunker must treat those single-newline boundaries as break
+        points rather than relying solely on sentence-ending punctuation —
+        otherwise several such lines glue into one oversized chunk."""
+        lines = [
+            "Jean steps into the ruined hall",
+            "Something stirs in the dark, low and guttural",
+            "The torches gutter as if breathing",
+            'A voice, ancient and hollow, calls out from the shadows: "Who dares?"',
+        ]
+        text = "\n".join(lines)
+        chunks = game_service._chunk_narration_text(text, max_chars=80)
+        assert len(chunks) > 1
+        assert all(len(c) <= 80 for c in chunks)
+        # No line's words are lost or reordered.
+        reassembled = " ".join(chunks)
+        for line in lines:
+            assert line in reassembled.replace("\n\n", " ")
+
+
 def test_memory_chrome_entries_are_dropped(game_service):
     msgs = [
         {"text": "════", "type": "memory_chrome"},
