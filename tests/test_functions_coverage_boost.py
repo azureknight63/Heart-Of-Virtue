@@ -617,11 +617,17 @@ class TestMissingLegacyPlaceholder:
 
 
 class TestSafeUnpickler:
-    """Lines 776-830."""
+    """SafeUnpickler resolution paths (now backed by src.secure_pickle)."""
+
+    @staticmethod
+    def _unpickler():
+        import io
+
+        return functions.SafeUnpickler(io.BytesIO(b""), strict=False)
 
     def test_missing_module_creates_placeholder(self):
-        """Lines 808-830: completely missing module creates dynamic placeholder class."""
-        up = functions.SafeUnpickler.__new__(functions.SafeUnpickler)
+        """Completely missing module creates dynamic placeholder class."""
+        up = self._unpickler()
         cls = up.find_class("totally_nonexistent_module_xyz", "SomeClass")
         assert cls is not None
         # Should be instantiable
@@ -629,15 +635,15 @@ class TestSafeUnpickler:
         assert obj is not None
 
     def test_rewrite_rule_applied(self):
-        """Lines 795-806: rewrite rule tries 'src.' prefix."""
-        up = functions.SafeUnpickler.__new__(functions.SafeUnpickler)
+        """Rewrite rule tries 'src.' prefix."""
+        up = self._unpickler()
         # story module exists, so rewrite should succeed
         cls = up.find_class("story.ch01", "Ch01StartOpenWall")
         assert cls is not None
 
     def test_story_rewrite_unknown_class_falls_back(self):
-        """Lines 800-806: rewrite applied but class not found → placeholder."""
-        up = functions.SafeUnpickler.__new__(functions.SafeUnpickler)
+        """Rewrite applied but class not found → placeholder."""
+        up = self._unpickler()
         cls = up.find_class("story.ch01", "NonExistentEvent99999")
         assert cls is not None
 

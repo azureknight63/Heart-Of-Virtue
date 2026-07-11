@@ -52,6 +52,9 @@ class GameConfig:
     allow_quicksave: bool = True
     auto_load_latest: bool = False
     learn_all_skills: bool = False
+    # Strict save deserialization: unknown classes raise instead of being
+    # replaced with placeholders (see src/secure_pickle.py trust model).
+    strict_unpickle: bool = False
 
     # === [game] section: Story pre-seeding ===
     # Comma-separated list of "flag" or "flag=value" entries to inject into universe.story
@@ -286,6 +289,9 @@ class ConfigManager:
         )
         self.config.learn_all_skills = section.getboolean(
             "learn_all_skills", fallback=False
+        )
+        self.config.strict_unpickle = section.getboolean(
+            "strict_unpickle", fallback=False
         )
 
         # Display

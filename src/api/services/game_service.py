@@ -2790,7 +2790,7 @@ class GameService:
             Save ID
         """
         import uuid
-        import pickle
+        import src.secure_pickle as secure_pickle
         from src.api.db import db
 
         # 1. Enforcement of manual save limit
@@ -2812,7 +2812,9 @@ class GameService:
         # Strip it before serializing; restore immediately after.
         combat_adapter = player.__dict__.pop("_combat_adapter", None)
         try:
-            save_data = pickle.dumps(player, protocol=pickle.HIGHEST_PROTOCOL)
+            # Header-prefixed (magic + version + sha256) so load can detect
+            # tampering/corruption; see src/secure_pickle.py for the format.
+            save_data = secure_pickle.dumps(player)
         finally:
             if combat_adapter is not None:
                 player._combat_adapter = combat_adapter

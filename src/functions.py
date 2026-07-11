@@ -1,9 +1,9 @@
+import logging
 import math
 import os
 import inspect
 import re
 import random
-import pickle
 import importlib
 import pkgutil
 
@@ -15,9 +15,19 @@ if TYPE_CHECKING:  # only for type hints; avoids runtime circular imports
     from src.player import Player
     from src.tiles import MapTile
 
+import src.secure_pickle as secure_pickle
+from src.secure_pickle import (  # noqa: F401 -- re-exported for legacy callers
+    LEGACY_BARE_MODULES,
+    RestrictedUnpicklingError,
+    SafeUnpickler,
+    SaveIntegrityError,
+    canonical_module_name,
+)
 from src.narration import colored, cprint, narrate
 from os import listdir
 from os.path import isfile, join
+
+logger = logging.getLogger(__name__)
 
 """
 This module contains general functions to use throughout the game
@@ -587,73 +597,9 @@ class _MissingLegacyPlaceholder:
         return None
 
 
-# Top-level engine modules that legacy save data and map JSON reference by
-# bare name (the persisted format predates the src.*-only import convention).
-LEGACY_BARE_MODULES = frozenset({
-    "actions", "animations", "combat_event_config", "combatant",
-    "config_manager", "coordinate_config", "enchant_tables", "events",
-    "functions", "genericng", "interface", "inventory_utils", "items",
-    "loot_tables", "moves", "narration", "npc", "npc_ai_config",
-    "objects", "positions", "scenario_config", "shop_conditions",
-    "skilltree", "states", "story", "tiles", "tilesets", "universe",
-    "player",
-})
-
-
-def canonical_module_name(mod_name):
-    """Map a persisted bare engine module path to its canonical src.* path.
-
-    Save files and map JSON store bare module names ('items', 'story.ch01');
-    resolving them as-is would import duplicate bare module objects whose
-    classes don't match the running engine's. Non-engine module paths (e.g.
-    test modules) pass through unchanged.
-    """
-    if mod_name.split(".", 1)[0] in LEGACY_BARE_MODULES:
-        return "src." + mod_name
-    return mod_name
-
-
-class SafeUnpickler(pickle.Unpickler):
-    """Unpickler resilient to missing legacy modules/classes.
-    Strategy:
-      1. Redirect bare legacy module paths (e.g. 'items', 'story.ch01') to the
-         canonical 'src.*' path so old saves resolve to the running engine's
-         classes instead of loading duplicate bare modules.
-      2. Try normal resolution.
-      3. If that fails, create a benign placeholder class.
-    """
-
-    def find_class(self, module, name):
-        module = canonical_module_name(module)
-        try:
-            return super().find_class(module, name)
-        except (ModuleNotFoundError, AttributeError):
-            pass
-        # As a last resort, synthesize a dummy module + class placeholder
-        placeholder_class_name = f"LegacyMissing_{module.replace('.', '_')}_{name}"
-        # Create a dynamic class so isinstance checks won't explode (but still benign)
-        placeholder_cls = type(
-            placeholder_class_name,
-            (object,),
-            {
-                "__doc__": f"Placeholder for missing legacy class {module}.{name}",
-                "__init__": lambda self, *a, **k: None,
-                "__repr__": lambda self: f"<LegacyMissing {module}.{name}>",
-                # Commonly accessed attributes in game logic
-                "name": name,
-                "hidden": True,
-                "announce": "",
-                "idle_message": "",
-                "description": "",
-                "keywords": [],
-                "interactions": [],
-                # Benign no-op methods
-                "process": lambda self, *a, **k: None,
-                "check_conditions": lambda self, *a, **k: None,
-            },
-        )
-        return placeholder_cls
-
+# SafeUnpickler, canonical_module_name, and LEGACY_BARE_MODULES now live in
+# src.secure_pickle (allowlist + strict mode + integrity header); they are
+# re-exported above for the many legacy callers that import them from here.
 
 # ----------------- Legacy / Integrity Helpers -----------------
 
@@ -749,8 +695,13 @@ def _patch_player_integrity(obj: Any):
 
 
 def _safe_pickle_load(fp):
+    """Deserialize a save blob from a binary file object, or None on failure.
+
+    Header-aware (new HOVS-prefixed saves are checksum-verified; legacy raw
+    pickles still load), size-capped, and allowlisted via secure_pickle.
+    """
     try:
-        data = SafeUnpickler(fp).load()
+        data = secure_pickle.load_stream(fp)
 
         # Attempt recursive patch for Player objects nested in simple containers
         def _walk(o):
@@ -762,6 +713,7 @@ def _safe_pickle_load(fp):
 
         return _walk(data)
     except Exception:
+        logger.warning("Save deserialization failed", exc_info=True)
         return None
 
 
@@ -783,12 +735,9 @@ def load(filename):
 
 
 def save(player, filename):  # player is the player object
-    if filename.endswith(".sav"):
-        with open("{}".format(filename), "wb") as f:
-            pickle.dump(player, f, pickle.HIGHEST_PROTOCOL)
-    else:
-        with open("{}.sav".format(filename), "wb") as f:
-            pickle.dump(player, f, pickle.HIGHEST_PROTOCOL)
+    if not filename.endswith(".sav"):
+        filename = "{}.sav".format(filename)
+    secure_pickle.dump_file(player, filename)
 
 
 def saves_list():

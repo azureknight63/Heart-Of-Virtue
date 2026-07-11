@@ -91,6 +91,13 @@ def create_app(config_class=None):
                     starting_equipment = [
                         item.strip() for item in eq_str.split(",") if item.strip()
                     ]
+
+                if parser.has_option("game", "strict_unpickle"):
+                    import src.secure_pickle as secure_pickle
+
+                    secure_pickle.set_strict_mode(
+                        parser.getboolean("game", "strict_unpickle")
+                    )
         except Exception as e:
             print(f"Warning: Could not load config: {e}")
 

@@ -367,7 +367,11 @@ def test_room_print_helpers(capsys):
 
 
 def test_save_and_load_roundtrip(tmp_path):
-    player = DummyPlayer()
+    # Must be an engine class: the hardened unpickler (src.secure_pickle) only
+    # resolves src.* classes, so test-module classes would load as placeholders.
+    import src.items as items
+
+    player = items.Fists()
     filename = 'src/test_temp_save_roundtrip'
     try:
         if os.path.exists(filename + '.sav'):
@@ -376,7 +380,7 @@ def test_save_and_load_roundtrip(tmp_path):
         pass
     functions.save(player, filename)
     loaded = functions.load(filename + '.sav')
-    assert getattr(loaded, '__class__', object()).__name__ == 'DummyPlayer'
+    assert getattr(loaded, '__class__', object()).__name__ == 'Fists'
     try:
         os.remove(filename + '.sav')
     except Exception:
