@@ -179,6 +179,10 @@ class Advance(Move):
         self.fatigue_per_beat = 1
         # Allows allies to be valid targets (e.g. to close distance for healing)
         self.accepts_ally_target = True
+        # SentinelsVigil should punish an advance into spear range once per
+        # use, not once per beat spent inside that range — reset every time
+        # the move is (re)prepped for a fresh use.
+        self._sentinels_vigil_triggered = False
         self.evaluate()
 
     def refresh_announcements(self, user):
@@ -209,7 +213,7 @@ class Advance(Move):
         pass
 
     def prep(self, user):
-        pass
+        self._sentinels_vigil_triggered = False
 
     def beat_update(self, user):
         if self.current_stage == 1:  # Execute stage
@@ -252,8 +256,12 @@ class Advance(Move):
         distance_moved = max(1, (performance - threshold) // 10)
         distance_moved = min(distance_moved, 3)  # Cap per beat
 
-        # Ensure we don't move if we're already at striking distance (approx 3ft or 1 square)
-        if current_distance <= 3:
+        # Ensure we don't move if we're already adjacent. Must match the
+        # adjacency threshold used by viable() (distance > 1 means "not yet
+        # adjacent"); using a larger cutoff here left Advance stuck as a
+        # silent no-op whenever a target sat at distance 2-3 (viable() still
+        # returned True, but every beat_update call bailed out before moving).
+        if current_distance <= 1:
             return
 
         # Collect occupied positions
@@ -287,12 +295,17 @@ class Advance(Move):
         user.combat_proximity[self.target] = int(new_distance)
         if hasattr(self.target, "combat_proximity"):
             self.target.combat_proximity[user] = int(new_distance)
-        if new_distance <= 3:
+        # Fire at most once per Advance use: closing distance can now take
+        # multiple beats to cross the spear's punish range (distance <= 3)
+        # since the adjacency guard above no longer stops movement there.
+        if new_distance <= 3 and not self._sentinels_vigil_triggered:
+            self._sentinels_vigil_triggered = True
             _apply_sentinels_vigil(user, self.target)
 
     def _beat_legacy(self, user):
         """Move one beat's worth in legacy system."""
-        if user.combat_proximity[self.target] <= 3:
+        # Same adjacency threshold as _beat_coordinate_based — see comment there.
+        if user.combat_proximity[self.target] <= 1:
             return
 
         threshold = self.target.speed
@@ -301,10 +314,11 @@ class Advance(Move):
         distance = min(distance, 3)
 
         user.combat_proximity[self.target] -= distance
-        if user.combat_proximity[self.target] < 3:
-            user.combat_proximity[self.target] = 3
+        if user.combat_proximity[self.target] < 1:
+            user.combat_proximity[self.target] = 1
         self.target.combat_proximity[user] = user.combat_proximity[self.target]
-        if user.combat_proximity[self.target] <= 3:
+        if user.combat_proximity[self.target] <= 3 and not self._sentinels_vigil_triggered:
+            self._sentinels_vigil_triggered = True
             _apply_sentinels_vigil(user, self.target)
 
     def execute(self, user):
