@@ -60,7 +60,7 @@ except Exception:
 
 for _n in ["animations", "genericng", "items", "states", "enchant_tables",
            "objects", "loot_tables", "actions", "tiles", "universe", "positions",
-           "moves", "combatant", "npc", "skilltree", "switch", "player"]:
+           "moves", "combatant", "npc", "skilltree", "player"]:
     if _n not in sys.modules:
         try:
             _m = __import__(f"src.{_n}", fromlist=["*"])

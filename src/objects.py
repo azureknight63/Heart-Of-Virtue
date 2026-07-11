@@ -855,7 +855,7 @@ class Passageway(Object):
                 for event in self.events_after:
                     event.process()
             if not self.persist:
-                self.tile.objects.remove(self)
+                self.tile.objects_here.remove(self)
         else:
             narrate(
                 "The passageway is not properly configured. Please contact the developer."

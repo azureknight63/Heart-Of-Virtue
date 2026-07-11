@@ -26,9 +26,21 @@ export default function NpcChatPanel({ npcId, npcName, onClose }) {
   const [latestNpcText, setLatestNpcText] = useState(null)
   const [relationship, setRelationship] = useState(null)
   const retryFnRef = useRef(null)
+  // Guards async setState calls (open/respond) from firing after unmount, and
+  // lets the "conversation ended" auto-close timer be cancelled on unmount.
+  const isMountedRef = useRef(true)
+  const endTimeoutRef = useRef(null)
   const { showTop, showBottom, check, ref: messagesRef } = useScrollIndicators()
 
   useEffect(() => { check() }, [messages, check])
+
+  useEffect(() => {
+    isMountedRef.current = true
+    return () => {
+      isMountedRef.current = false
+      clearTimeout(endTimeoutRef.current)
+    }
+  }, [])
 
   // On mount, open the conversation
   useEffect(() => {
@@ -37,6 +49,7 @@ export default function NpcChatPanel({ npcId, npcName, onClose }) {
         setLoading(true)
         setError(null)
         const response = await npcChat.open(npcId)
+        if (!isMountedRef.current) return
         const data = response.data
 
         setNpcKey(data.npc_key)
@@ -57,12 +70,13 @@ export default function NpcChatPanel({ npcId, npcName, onClose }) {
 
         setPhase('waiting_jean')
       } catch (err) {
+        if (!isMountedRef.current) return
         const errorMsg = err.response?.data?.error || 'Failed to open conversation'
         retryFnRef.current = openConversation
         setError(errorMsg)
         setPhase('ended')
       } finally {
-        setLoading(false)
+        if (isMountedRef.current) setLoading(false)
       }
     }
 
@@ -86,6 +100,7 @@ export default function NpcChatPanel({ npcId, npcName, onClose }) {
 
       // Call the respond endpoint
       const response = await npcChat.respond(npcKey, option.text, option.tone)
+      if (!isMountedRef.current) return
       const data = response.data
 
       // Add NPC response to messages
@@ -108,19 +123,20 @@ export default function NpcChatPanel({ npcId, npcName, onClose }) {
       if (data.conversation_ended) {
         setPhase('ended')
         // Wait 2 seconds before closing
-        setTimeout(() => {
-          onClose()
+        endTimeoutRef.current = setTimeout(() => {
+          if (isMountedRef.current) onClose()
         }, 2000)
       } else {
         setPhase('waiting_jean')
       }
     } catch (err) {
+      if (!isMountedRef.current) return
       const errorMsg = err.response?.data?.error || 'NPC did not respond'
       retryFnRef.current = () => handleOptionClick(option)
       setError(errorMsg)
       setPhase('waiting_jean')
     } finally {
-      setLoading(false)
+      if (isMountedRef.current) setLoading(false)
     }
   }
 

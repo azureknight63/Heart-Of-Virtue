@@ -1985,7 +1985,7 @@ class TestPassagewayShopping:
         player.drop_merchandise_items = Mock()
         player.teleport = Mock()
         tile = Mock()
-        tile.objects = [Mock()]
+        tile.objects_here = [Mock()]
         passage = Passageway(
             player=player,
             tile=tile,
@@ -1993,13 +1993,13 @@ class TestPassagewayShopping:
             teleport_tile=(1, 1),
             persist=False
         )
-        tile.objects.append(passage)
+        tile.objects_here.append(passage)
         with patch("builtins.print"):
             with patch("time.sleep"):
                 with patch("src.objects.functions.await_input"):
                     passage.enter(player)
-        # Should be removed from tile.objects
-        assert passage not in tile.objects
+        # Should be removed from tile.objects_here
+        assert passage not in tile.objects_here
 
 
 class TestGeminateGeode:

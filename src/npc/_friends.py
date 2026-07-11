@@ -795,7 +795,7 @@ class Mara(HumanNPCLLMMixin, Friend):
                     weight += 4  # Actively maintain bow range
                 elif move.name == "Advance":
                     weight -= 2  # Don't advance in bow mode unless necessary
-                elif move.name == "NpcAttack":
+                elif move.name == "NPC_Attack":
                     weight += 1  # Bow strikes when at optimal range
                 elif move.name == "Parry":
                     weight -= 1  # Less relevant when staying at range
@@ -805,7 +805,7 @@ class Mara(HumanNPCLLMMixin, Friend):
                     weight += 3  # Close the distance for dagger work
                 elif move.name == "Withdraw":
                     weight += 1  # Tactical retreat to dodge and reset
-                elif move.name == "NpcAttack":
+                elif move.name == "NPC_Attack":
                     weight += 3  # Aggressive dagger strikes at close range
                 elif move.name == "Parry":
                     weight += 2  # Parrying matters in close quarters
@@ -829,6 +829,18 @@ class Mara(HumanNPCLLMMixin, Friend):
             for m in available_moves
         )
         if not can_attack and self.fatigue < self.maxfatigue:
+            # If an offensive move is already in range (just unaffordable due to
+            # low fatigue), rest to recover rather than uselessly advancing —
+            # Advance floors at distance 3, so an in-range NPC would otherwise
+            # loop Advance (no-op) forever instead of resting. Mirrors the guard
+            # in NPCCombatMixin.select_move.
+            in_attack_range = any(
+                getattr(m, "category", "") == "Offensive" and m.viable()
+                for m in self.known_moves
+            )
+            if in_attack_range:
+                self.current_move = moves.NpcRest(self)
+                return
             can_advance = any(
                 getattr(m, "name", "") == "Advance" for m in available_moves
             )

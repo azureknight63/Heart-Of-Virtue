@@ -465,14 +465,6 @@ def check_parry(target):
     return False
 
 
-def spawn_npc(npc_name, tile):
-    tile.npcs_here.append(npc_name)
-
-
-def spawn_item(item_name, tile):
-    tile.items_here.append(item_name)
-
-
 def refresh_moves(player):
     """Populate player's known_moves with default move instances (tolerant to import/instantiate errors)."""
     try:

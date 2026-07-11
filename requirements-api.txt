@@ -14,6 +14,6 @@ python-engineio==4.12.3
 python-dotenv==1.2.1
 libsql-client==0.3.1
 argon2-cffi==23.1.0
-cryptography==42.0.5
+cryptography==49.0.0
 asgiref==3.11.1
 tzdata>=2024.1

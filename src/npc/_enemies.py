@@ -335,7 +335,7 @@ class TalusHound(NPC):
                     weight += 6  # Significantly boost flanking when pack is present
                 elif move.name == "Advance":
                     weight += 3  # Position for coordinated strikes
-                elif move.name == "NpcAttack":
+                elif move.name == "NPC_Attack":
                     weight += 2  # Basic attacks with pack support
                 elif move.name == "Withdraw":
                     weight -= 2  # Less need to retreat with backup
@@ -381,6 +381,18 @@ class TalusHound(NPC):
             for m in available_moves
         )
         if not can_attack and self.fatigue < self.maxfatigue:
+            # If an offensive move is already in range (just unaffordable due to
+            # low fatigue), rest to recover rather than uselessly advancing —
+            # Advance floors at distance 3, so an in-range NPC would otherwise
+            # loop Advance (no-op) forever instead of resting. Mirrors the guard
+            # in NPCCombatMixin.select_move.
+            in_attack_range = any(
+                getattr(m, "category", "") == "Offensive" and m.viable()
+                for m in self.known_moves
+            )
+            if in_attack_range:
+                self.current_move = moves.NpcRest(self)
+                return
             can_advance = any(
                 getattr(m, "name", "") == "Advance" for m in available_moves
             )

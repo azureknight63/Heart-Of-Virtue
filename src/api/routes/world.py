@@ -62,13 +62,13 @@ def get_current_room():
 
         return jsonify({"success": True, "room": room}), 200
 
-    except Exception as e:
+    except Exception:
         _log.exception("World route exception in get_current_room")
         return (
             jsonify(
                 {
                     "success": False,
-                    "error": str(e),
+                    "error": "An internal error occurred",
                 }
             ),
             500,
@@ -143,12 +143,13 @@ def move_player():
 
         return jsonify({"success": True, **result}), 200
 
-    except Exception as e:
+    except Exception:
+        _log.exception("World route exception in move_player")
         return (
             jsonify(
                 {
                     "success": False,
-                    "error": str(e),
+                    "error": "An internal error occurred",
                 }
             ),
             500,
@@ -238,13 +239,13 @@ def submit_event_input():
 
         return jsonify(result), 200
 
-    except Exception as e:
+    except Exception:
         _log.exception("World route exception in submit_event_input")
         return (
             jsonify(
                 {
                     "success": False,
-                    "error": str(e),
+                    "error": "An internal error occurred",
                 }
             ),
             500,
@@ -329,13 +330,13 @@ def get_tile():
             return jsonify({"success": False, "error": tile["error"]}), 404
 
         return jsonify({"success": True, "tile": tile}), 200
-    except Exception as e:
+    except Exception:
+        _log.exception("World route exception in get_tile")
         return (
             jsonify(
                 {
                     "success": False,
                     "error": "Internal server error",
-                    "message": str(e),
                 }
             ),
             500,
@@ -385,8 +386,9 @@ def get_explored_tiles():
             200,
         )
 
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
+    except Exception:
+        _log.exception("World route exception in get_explored_tiles")
+        return jsonify({"success": False, "error": "An internal error occurred"}), 500
 
 
 @world_bp.route("/world/tiles/batch", methods=["POST"])
@@ -496,13 +498,13 @@ def get_tiles_batch():
 
         return jsonify({"success": True, "tiles": tiles}), 200
 
-    except Exception as e:
+    except Exception:
+        _log.exception("World route exception in get_tiles_batch")
         return (
             jsonify(
                 {
                     "success": False,
                     "error": "Internal server error",
-                    "message": str(e),
                 }
             ),
             500,
@@ -551,13 +553,13 @@ def get_available_commands():
 
         return jsonify({"success": True, **commands_data}), 200
 
-    except Exception as e:
+    except Exception:
+        _log.exception("World route exception in get_available_commands")
         return (
             jsonify(
                 {
                     "success": False,
                     "error": "Internal server error",
-                    "message": str(e),
                 }
             ),
             500,
@@ -638,12 +640,13 @@ def interact_with_target():
 
         return jsonify(result), 200
 
-    except Exception as e:
+    except Exception:
+        _log.exception("World route exception in interact_with_target")
         return (
             jsonify(
                 {
                     "success": False,
-                    "error": str(e),
+                    "error": "An internal error occurred",
                 }
             ),
             500,
@@ -706,12 +709,13 @@ def trigger_room_events():
 
         return jsonify({"success": True, "events": events_triggered}), 200
 
-    except Exception as e:
+    except Exception:
+        _log.exception("World route exception in trigger_room_events")
         return (
             jsonify(
                 {
                     "success": False,
-                    "error": str(e),
+                    "error": "An internal error occurred",
                 }
             ),
             500,
@@ -745,8 +749,9 @@ def get_pending_events():
 
         return jsonify({"success": True, "events": pending_events}), 200
 
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
+    except Exception:
+        _log.exception("World route exception in get_pending_events")
+        return jsonify({"success": False, "error": "An internal error occurred"}), 500
 
 
 @world_bp.route("/world/search", methods=["POST"])
@@ -791,12 +796,13 @@ def search_room():
 
         return jsonify(result), 200
 
-    except Exception as e:
+    except Exception:
+        _log.exception("World route exception in search_room")
         return (
             jsonify(
                 {
                     "success": False,
-                    "error": str(e),
+                    "error": "An internal error occurred",
                 }
             ),
             500,

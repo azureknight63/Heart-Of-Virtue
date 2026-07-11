@@ -5,9 +5,9 @@ retry/fallback logic, request/response parsing (ollama + openrouter, SDK + HTTP)
 failure-tracking, and the Mynx/NpcChat adapters built on GenericLLMClient.
 
 All network access is mocked: `requests.get`/`requests.post` are patched per-test,
-`openai.OpenAI` is monkeypatched away from the local stub when SDK-path coverage is
-needed, and `threading.Thread` is patched where the production code would otherwise
-spawn a real (infinite-loop) background thread.
+`openai.OpenAI` is monkeypatched with fakes for SDK-path coverage, and
+`threading.Thread` is patched where the production code would otherwise spawn a
+real (infinite-loop) background thread.
 """
 import json
 import os
@@ -1094,14 +1094,9 @@ class TestOllamaChat:
 
 
 class TestGetSdkClient:
-    def test_stub_openai_returns_none(self, monkeypatch):
-        monkeypatch.setenv("MYNX_LLM_ENABLED", "0")
-        client = GenericLLMClient()
-        client._openrouter_api_key = "key"
-        # The repo's local `openai` stub sets `_is_stub = True`.
-        assert client._get_sdk_client() is None
-
-    def test_non_stub_openai_returns_instance(self, monkeypatch):
+    def test_real_openai_returns_instance(self, monkeypatch):
+        """`openai` is a pinned hard dependency (requirements.txt), so
+        _get_sdk_client() should return a live SDK client instance."""
         monkeypatch.setenv("MYNX_LLM_ENABLED", "0")
         client = GenericLLMClient()
         client._openrouter_api_key = "key"
@@ -1109,8 +1104,6 @@ class TestGetSdkClient:
         fake_instance = MagicMock()
 
         class FakeOpenAI:
-            _is_stub = False
-
             def __init__(self, base_url, api_key):
                 self.base_url = base_url
                 self.api_key = api_key
@@ -1120,7 +1113,7 @@ class TestGetSdkClient:
             result = client._get_sdk_client()
         assert isinstance(result, FakeOpenAI)
 
-    def test_import_error_returns_none(self, monkeypatch):
+    def test_construction_error_returns_none(self, monkeypatch):
         monkeypatch.setenv("MYNX_LLM_ENABLED", "0")
         client = GenericLLMClient()
         client._openrouter_api_key = "key"
@@ -1131,6 +1124,15 @@ class TestGetSdkClient:
                 raise RuntimeError("cannot construct")
 
         with patch.object(openai_mod, "OpenAI", Boom):
+            assert client._get_sdk_client() is None
+
+    def test_import_error_returns_none(self, monkeypatch):
+        monkeypatch.setenv("MYNX_LLM_ENABLED", "0")
+        client = GenericLLMClient()
+        client._openrouter_api_key = "key"
+        import sys as _sys
+
+        with patch.dict(_sys.modules, {"openai": None}):
             assert client._get_sdk_client() is None
 
 

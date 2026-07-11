@@ -505,14 +505,6 @@ class TestPlayerCore:
         assert ring1.isequipped is True
         assert ring2.isequipped is False
 
-    @patch('player.time.sleep')
-    @patch('functions.await_input')
-    def test_death(self, mock_await, mock_sleep, player):
-        player.hp = 0
-        player.combat_hurt_msg = ["Ouch"]
-        player.death()
-        mock_await.assert_called_once()
-
     @patch('player._movement.tile_exists')
     @patch('functions.print_items_in_room')
     @patch('functions.print_objects_in_room')

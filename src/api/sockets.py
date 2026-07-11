@@ -1,18 +1,7 @@
 """WebSocket event handlers for the Heart of Virtue API."""
 
-import functools
 from flask import request, current_app
 from flask_socketio import emit, join_room, leave_room
-
-
-def authenticated_only(f):
-    @functools.wraps(f)
-    def wrapped(*args, **kwargs):
-        # In a real app, we'd verify the token here
-        # For now, we'll check if the session exists in the session manager
-        return f(*args, **kwargs)
-
-    return wrapped
 
 
 def register_socket_handlers(socketio):

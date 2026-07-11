@@ -134,6 +134,9 @@ class ShootBow(
         if not hasattr(self.user, "combat_proximity"):
             return False
 
+        if not getattr(self.user, "eq_weapon", None):
+            return False
+
         if self.user.eq_weapon.subtype == "Bow":
             has_bow = True
 

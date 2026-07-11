@@ -17,36 +17,6 @@ if str(ROOT) not in sys.path:
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-# Stub out tkinter for headless / server environments.
-# combat_battlefield.py imports tkinter at module level, but the web API
-# never uses the battlefield window.  Without this stub the server won't
-# start on systems where tkinter is not installed (e.g. CI, Docker, WSL).
-if "tkinter" not in sys.modules:
-    try:
-        import tkinter  # noqa: F401 — real tkinter available, nothing to do
-    except ModuleNotFoundError:
-        import types as _types
-
-        _tk_stub = _types.ModuleType("tkinter")
-        _tk_stub.Tk = type("Tk", (), {
-            m: (lambda s, *a, **k: None)
-            for m in ["__init__", "title", "geometry", "resizable",
-                      "configure", "after", "destroy", "mainloop"]
-        })
-        _tk_stub.Canvas = type("Canvas", (), {
-            m: (lambda s, *a, **k: None)
-            for m in ["__init__", "pack", "delete",
-                      "create_text", "create_rectangle"]
-        })
-        _tk_stub.font = _types.ModuleType("tkinter.font")
-        _tk_stub.font.Font = type("Font", (), {
-            "__init__": lambda s, *a, **k: None,
-            "measure": lambda s, *a: 8,
-        })
-        _tk_stub.END = "end"
-        sys.modules["tkinter"] = _tk_stub
-        sys.modules["tkinter.font"] = _tk_stub.font
-
 # Collapse bare-vs-src module duplication (root and src/ are both on sys.path)
 # BEFORE the app imports any engine module, so `x` and `src.x` stay one object.
 from src.import_sync import install as _install_module_sync

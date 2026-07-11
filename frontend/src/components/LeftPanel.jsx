@@ -117,15 +117,6 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
     }
   }, [isBusyProcessing, onLogProcessingChange])
 
-  // Notify parent about displayed log count (to detect pending logs in parent)
-  useEffect(() => {
-    if (onLogProgress && typeof onLogProgress === 'function') {
-      // We're overloading onLogProgress or we can add a new prop if we change GamePage too.
-      // The instruction was to add a new prop, but let's check the props list in component definition.
-      // We will assume onLogProgress is for beat index. We will add a new prop to the definition line later.
-    }
-  }, [displayedLog.length])
-
   // Determine if it's player's turn - ONLY if not processing log and combat hasn't ended
   const isMyTurn = (combat?.awaiting_input || false) && !isBusyProcessing && !combat?.end_state && !isEventDialogActive
 

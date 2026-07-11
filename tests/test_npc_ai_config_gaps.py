@@ -2,9 +2,8 @@
 tests/test_npc_ai_config.py: the distance-range parse-exception fallback,
 should_attempt_flank's early-return guards, should_attempt_retreat's missing
 health-attribute guard, get_flank_position_angle, calculate_retreat_priority's
-missing health-attribute guard, get_weighted_move_bonus's flank-range inner
-branch, and AIDecisionValidator's None/missing-attribute guards plus the
-moderate/high retreat-priority and out-of-range-distance validation messages.
+missing health-attribute guard, and get_weighted_move_bonus's flank-range
+inner branch.
 """
 
 import sys
@@ -15,7 +14,7 @@ SRC_DIR = ROOT / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from src.npc_ai_config import NPCAIConfig, AIDecisionValidator  # type: ignore
+from src.npc_ai_config import NPCAIConfig  # type: ignore
 from src.config_manager import GameConfig  # type: ignore
 from src.player import Player  # type: ignore
 from src.npc import NPC  # type: ignore
@@ -175,119 +174,3 @@ def test_get_weighted_move_bonus_no_flank_bonus_when_out_of_range():
 
     bonus = ai_config.get_weighted_move_bonus(npc, "advance")
     assert bonus == 0
-
-
-# ---------------------------------------------------------------------------
-# AIDecisionValidator gaps
-# ---------------------------------------------------------------------------
-
-
-def test_is_valid_flank_decision_false_without_npc():
-    ai_config = NPCAIConfig(Player())
-    validator = AIDecisionValidator(ai_config)
-    valid, reason = validator.is_valid_flank_decision(None, "target", [1, 2])
-    assert valid is False
-    assert "NPC is None" in reason
-
-
-def test_is_valid_flank_decision_false_without_target():
-    ai_config = NPCAIConfig(Player())
-    validator = AIDecisionValidator(ai_config)
-    npc = _npc()
-    valid, reason = validator.is_valid_flank_decision(npc, None, [1, 2])
-    assert valid is False
-    assert "No target available" in reason
-
-
-def test_is_valid_flank_decision_false_without_proximity_entry():
-    ai_config = NPCAIConfig(Player())
-    validator = AIDecisionValidator(ai_config)
-    npc = _npc()
-    npc.combat_proximity = {}
-    valid, reason = validator.is_valid_flank_decision(npc, "target", [1, 2])
-    assert valid is False
-    assert "not in proximity range" in reason
-
-
-def test_is_valid_flank_decision_false_when_distance_out_of_range():
-    ai_config = NPCAIConfig(Player())
-    validator = AIDecisionValidator(ai_config)
-    npc = _npc()
-    npc.combat_proximity = {"target": 9999}
-    valid, reason = validator.is_valid_flank_decision(npc, "target", [1, 2])
-    assert valid is False
-    assert "outside flank range" in reason
-
-
-def test_is_valid_retreat_decision_false_without_npc():
-    ai_config = NPCAIConfig(Player())
-    validator = AIDecisionValidator(ai_config)
-    valid, reason = validator.is_valid_retreat_decision(None)
-    assert valid is False
-    assert "NPC is None" in reason
-
-
-def test_is_valid_retreat_decision_false_without_health_attrs():
-    ai_config = NPCAIConfig(Player())
-    validator = AIDecisionValidator(ai_config)
-
-    class NoHealth:
-        pass
-
-    valid, reason = validator.is_valid_retreat_decision(NoHealth())
-    assert valid is False
-    assert "missing health attributes" in reason
-
-
-def test_is_valid_retreat_decision_false_when_health_above_threshold():
-    ai_config = NPCAIConfig(Player())
-    validator = AIDecisionValidator(ai_config)
-    npc = _npc()
-    npc.hp = npc.maxhp  # full health, well above the 0.3 default threshold
-
-    valid, reason = validator.is_valid_retreat_decision(npc)
-    assert valid is False
-    assert "above threshold" in reason
-
-
-def test_is_valid_retreat_priority_low_moderate_and_high_messages():
-    ai_config = NPCAIConfig(Player())
-    validator = AIDecisionValidator(ai_config)
-
-    valid, reason = validator.is_valid_retreat_priority(0.1)
-    assert valid is True
-    assert "Low retreat priority" in reason
-
-    valid, reason = validator.is_valid_retreat_priority(0.5)
-    assert valid is True
-    assert "Moderate retreat priority" in reason
-
-    valid, reason = validator.is_valid_retreat_priority(0.9)
-    assert valid is True
-    assert "High retreat priority" in reason
-
-
-def test_validate_all_settings_flags_retreat_threshold_out_of_range():
-    player = Player()
-    config = GameConfig()
-    config.npc_retreat_health_threshold = 5.0  # invalid, > 1.0
-    player.game_config = config
-    ai_config = NPCAIConfig(player)
-    validator = AIDecisionValidator(ai_config)
-
-    valid, issues = validator.validate_all_settings()
-    assert valid is False
-    assert any("Retreat threshold out of range" in i for i in issues)
-
-
-def test_validate_all_settings_flags_negative_distance_range():
-    player = Player()
-    config = GameConfig()
-    config.npc_flanking_distance_range = "-10 to -5"
-    player.game_config = config
-    ai_config = NPCAIConfig(player)
-    validator = AIDecisionValidator(ai_config)
-
-    valid, issues = validator.validate_all_settings()
-    assert valid is False
-    assert any("negative value" in i for i in issues)

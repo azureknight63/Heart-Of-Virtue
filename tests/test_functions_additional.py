@@ -269,15 +269,6 @@ def test_check_parry():
     assert functions.check_parry(target) is False
 
 
-# ---------- spawn_npc / spawn_item ----------
-
-def test_spawn_helpers():
-    tile = types.SimpleNamespace(npcs_here=[], items_here=[])
-    functions.spawn_npc('Enemy', tile)
-    functions.spawn_item('Gem', tile)
-    assert tile.npcs_here == ['Enemy'] and tile.items_here == ['Gem']
-
-
 # ---------- refresh_moves ----------
 
 def test_refresh_moves():

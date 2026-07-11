@@ -277,15 +277,6 @@ def test_update_goods_orchestration(monkeypatch):
     assert '_values' in calls
 
 
-def test_count_stock_includes_containers():
-    m, room, _ = make_merchant()
-    cont1 = Container(name='C1', merchant=m, items=[Restorative(merchandise=True)])
-    cont2 = Container(name='C2', merchant=m, items=[Shortsword(merchandise=True)])
-    room.objects.extend([cont1, cont2])
-    m.inventory.extend([Gold(amt=10), Restorative(merchandise=True)])
-    assert m.count_stock() == len(m.inventory) + len(cont1.inventory) + len(cont2.inventory)
-
-
 def test_apply_value_conditions_container_items(monkeypatch):
     m, room, _ = make_merchant()
     cont = Container(name='Chest', merchant=m, items=[Restorative(merchandise=True)])

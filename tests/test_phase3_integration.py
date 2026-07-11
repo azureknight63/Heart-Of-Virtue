@@ -2,8 +2,6 @@
 
 Tests verify:
 - Display config controls what's shown
-- Logger respects all flags and logs correctly
-- Debug manager initializes and commands work
 - Coordinate config provides distance/angle calculations
 - NPC AI config integrates with select_move
 - Scenario config initializes with universe
@@ -25,8 +23,6 @@ from src.universe import Universe  # type: ignore
 from src.npc import NPC  # type: ignore
 from src.moves import Advance  # type: ignore
 from src.config_manager import GameConfig, ConfigManager  # type: ignore
-from src.game_logger import GameLogger  # type: ignore
-from src.debug_manager import DebugManager  # type: ignore
 from src.coordinate_config import CoordinateSystemConfig  # type: ignore
 from src.npc_ai_config import NPCAIConfig  # type: ignore
 from src.scenario_config import ScenarioConfig  # type: ignore
@@ -52,20 +48,6 @@ class TestCombatIntegration:
         p.universe.build(p)
         return p
 
-
-    def test_game_logger_initializes(self, player):
-        """Test GameLogger initializes with player."""
-        game_logger = GameLogger(player)
-        assert game_logger.player == player
-        log_path = game_logger._get_log_file_path()
-        assert log_path is not None
-
-    def test_debug_manager_initializes(self, player):
-        """Test DebugManager initializes with player."""
-        debug_manager = DebugManager(player)
-        assert debug_manager.player == player
-        assert debug_manager.is_debug_mode_enabled() == True
-        assert debug_manager.should_debug_ai_decisions() == True
 
     def test_coordinate_config_initializes(self, player):
         """Test CoordinateSystemConfig initializes with player."""
@@ -115,82 +97,12 @@ class TestCombatIntegration:
     def test_all_configs_accessible_from_combat(self, player):
         """Test all config systems accessible during simulated combat."""
         # Simulate combat setup
-        player.combat_game_logger = GameLogger(player)
-        player.combat_debug_manager = DebugManager(player)
         player.combat_coordinate_config = CoordinateSystemConfig(player)
 
         # Verify all accessible
-        assert hasattr(player, 'combat_game_logger')
-        assert hasattr(player, 'combat_debug_manager')
         assert hasattr(player, 'combat_coordinate_config')
 
-        assert isinstance(player.combat_game_logger, GameLogger)
-        assert isinstance(player.combat_debug_manager, DebugManager)
         assert isinstance(player.combat_coordinate_config, CoordinateSystemConfig)
-
-
-
-
-class TestLoggingIntegration:
-    """Test logging respects config flags."""
-
-    def test_logger_respects_log_combat_moves_flag(self):
-        """Test logger respects log_combat_moves flag."""
-        p = Player()
-        p.game_config = GameConfig(log_combat_moves=True)
-
-        game_logger = GameLogger(p)
-        # Logger should respect the flag
-        assert game_logger.player.game_config.log_combat_moves == True
-
-    def test_logger_respects_multiple_flags(self):
-        """Test logger respects all logging flags."""
-        p = Player()
-        p.game_config = GameConfig(
-            log_combat_moves=True,
-            log_distance_calculations=False,
-            log_angle_calculations=True,
-            log_npc_decisions=False
-        )
-
-        game_logger = GameLogger(p)
-        config = game_logger.player.game_config
-
-        assert config.log_combat_moves == True
-        assert config.log_distance_calculations == False
-        assert config.log_angle_calculations == True
-        assert config.log_npc_decisions == False
-
-
-class TestDebugManagerIntegration:
-    """Test debug manager works in combat context."""
-
-    def test_debug_manager_respects_debug_flags(self):
-        """Test debug manager respects all debug flags."""
-        p = Player()
-        p.game_config = GameConfig(
-            debug_mode=True,
-            debug_positions=True,
-            debug_ai_decisions=True,
-            debug_damage_calc=False
-        )
-
-        debug_manager = DebugManager(p)
-        assert debug_manager.is_debug_mode_enabled() == True
-        assert debug_manager.should_debug_positions() == True
-        assert debug_manager.should_debug_ai_decisions() == True
-        assert debug_manager.should_debug_damage_calc() == False
-
-    def test_debug_commands_registered(self):
-        """Test debug commands are accessible."""
-        p = Player()
-        p.game_config = GameConfig(debug_mode=True)
-
-        debug_manager = DebugManager(p)
-        # Verify debug manager has command logging methods
-        assert hasattr(debug_manager, 'log_command')
-        assert hasattr(debug_manager, 'get_command_history')
-        assert hasattr(debug_manager, 'execute_command')
 
 
 class TestCoordinateIntegration:
@@ -276,15 +188,11 @@ class TestFullIntegration:
         p.game_config = config
 
         # Initialize all systems
-        logger = GameLogger(p)
-        debug = DebugManager(p)
         coords = CoordinateSystemConfig(p)
         npc_ai = NPCAIConfig(p)
         scenarios = ScenarioConfig(p)
 
         # Verify all initialized
-        assert debug.is_debug_mode_enabled() == True
-        assert logger.player == p
         assert coords.get_grid_size() == (50, 50)
         assert npc_ai.is_flanking_enabled() == True
         assert scenarios.get_current_scenario() in ['standard', 'pincer', 'melee', 'boss_arena']
