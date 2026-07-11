@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
-import apiEndpoints from '../api/endpoints'
+import { useWorldInteract } from '../hooks/useWorldInteract'
 import BaseDialog from './BaseDialog'
 import NpcChatPanel from './NpcChatPanel'
 import GameButton from './GameButton'
@@ -28,20 +28,42 @@ function InteractPanel({
 }) {
     const [targets, setTargets] = useState([])
     const [selectedTarget, setSelectedTarget] = useState(initialTarget || null)
-    const [interactionOutput, setInteractionOutput] = useState(null)
-    const [interactionHistory, setInteractionHistory] = useState([])
     const [showHistory, setShowHistory] = useState(false)
-    const [loading, setLoading] = useState(false)
-    const [isLocked, setIsLocked] = useState(false)
-    const [error, setError] = useState(null)
     const [quantity, setQuantity] = useState(1)
     const [showQuantityInput, setShowQuantityInput] = useState(false)
     const [pendingAction, setPendingAction] = useState(null)
     const [showChatPanel, setShowChatPanel] = useState(false)
-    const [takingAllItems, setTakingAllItems] = useState(false)
-    const [searchLoading, setSearchLoading] = useState(false)
-    const [searchOutput, setSearchOutput] = useState(null)
     const [searchHovered, setSearchHovered] = useState(false)
+
+    const {
+        loading,
+        isLocked,
+        error,
+        interactionOutput,
+        interactionHistory,
+        searchLoading,
+        searchOutput,
+        takingAllItems,
+        search: runSearch,
+        takeAll: runTakeAll,
+        takeOne,
+        interact: runInteract,
+        reset: resetInteraction,
+    } = useWorldInteract({
+        onRefetch,
+        onEventsTriggered,
+        onInteractionComplete,
+        onTypingChange,
+        onClose,
+        onObjectStateUpdate: (objectState) => {
+            setSelectedTarget(prev => prev ? {
+                ...prev,
+                keywords: objectState.keywords ?? prev.keywords,
+                locked: objectState.locked ?? prev.locked,
+                state: objectState.state ?? prev.state,
+            } : prev)
+        },
+    })
 
     // Ref to track if we're currently syncing to prevent infinite loops
     const isSyncingTarget = useRef(false)
@@ -129,40 +151,16 @@ function InteractPanel({
 
     const handleTargetClick = (target) => {
         setSelectedTarget(target)
-        setInteractionOutput(null)
-        setInteractionHistory([])
+        resetInteraction()
         setShowHistory(false)
-        setError(null)
         setShowQuantityInput(false)
         setPendingAction(null)
         setQuantity(1)
-        setIsLocked(false)
         setShowChatPanel(false)
     }
 
     const handleSearch = async () => {
-        if (searchLoading) return
-        setSearchLoading(true)
-        setSearchOutput(null)
-        try {
-            const response = await apiEndpoints.world.search()
-            if (response.data) {
-                const data = response.data
-                if (data.messages && data.messages.length > 0) {
-                    setSearchOutput(data.messages.join(' '))
-                } else {
-                    setSearchOutput('Nothing new found.')
-                }
-                if (onRefetch) onRefetch()
-            } else {
-                setSearchOutput('Search failed.')
-            }
-        } catch (err) {
-            console.error('Search error:', err)
-            setSearchOutput('Search failed.')
-        } finally {
-            setSearchLoading(false)
-        }
+        await runSearch()
     }
 
     const handleTakeAll = async () => {
@@ -171,42 +169,8 @@ function InteractPanel({
         const takeableItems = targets.filter(t => t.type === 'item')
         if (takeableItems.length === 0) return
 
-        setTakingAllItems(true)
-        setInteractionOutput(null)
-        setError(null)
         setShowQuantityInput(false)
-
-        const takenLabels = []
-        for (const item of takeableItems) {
-            try {
-                const response = await apiEndpoints.world.interact(item.id, 'take', item.count)
-                const data = response.data
-
-                if (data.success) {
-                    const label = (item.count > 1) ? `${item.count}× ${item.name}` : item.name
-                    takenLabels.push(label)
-                } else {
-                    // Stop on error
-                    setError(data.error || data.message || 'Failed to take item')
-                    break
-                }
-            } catch (err) {
-                console.error('Take all error:', err)
-                setError('Network error')
-                break
-            }
-        }
-
-        if (takenLabels.length > 0) {
-            const summary = `Jean takes: ${takenLabels.join(', ')}.`
-            setInteractionOutput(summary)
-            if (onTypingChange) onTypingChange(true)
-            setInteractionHistory(prev => [...prev, summary])
-        }
-
-        if (onRefetch) await onRefetch()
-        if (onInteractionComplete) onInteractionComplete()
-        setTakingAllItems(false)
+        await runTakeAll(takeableItems)
     }
 
     const handleActionClick = async (action, qty = null) => {
@@ -240,98 +204,14 @@ function InteractPanel({
             return
         }
 
-        setInteractionOutput(null)
-        setError(null)
-        setLoading(true)
         setShowQuantityInput(false)
-
-        try {
-            const response = await apiEndpoints.world.interact(selectedTarget.id, action, qty)
-            const data = response.data
-
-            if (data.success) {
-                const message = data.message || 'Action completed.'
-                setInteractionOutput(message)
-                if (onTypingChange) onTypingChange(true)
-                setInteractionHistory(prev => [...prev, message])
-
-                // If a teleport occurred, close the dialog immediately
-                if (data.teleported) {
-                    if (onRefetch) await onRefetch()
-                    if (onInteractionComplete) onInteractionComplete()
-                    // Close the dialog after a brief delay to show the message
-                    setTimeout(() => {
-                        onClose()
-                    }, 800)
-                    setLoading(false)
-                    return
-                }
-
-                // Update local object state immediately from the response so action
-                // buttons (e.g. "open" after "unlock") appear without requiring a
-                // back-and-re-select round trip.
-                if (data.object_state) {
-                    setSelectedTarget(prev => prev ? {
-                        ...prev,
-                        keywords: data.object_state.keywords ?? prev.keywords,
-                        locked: data.object_state.locked ?? prev.locked,
-                        state: data.object_state.state ?? prev.state,
-                    } : prev)
-                }
-
-                // Check if this action should lock the panel (e.g. item moved)
-                const lockingActions = ['take', 'pickup', 'drop', 'equip', 'unequip', 'consume']
-                if (lockingActions.some(a => action.toLowerCase().includes(a))) {
-                    const currentCount = parseInt(selectedTarget.count) || 1
-                    const requestedQty = parseInt(qty) || 0
-                    if (requestedQty > 0 && requestedQty < currentCount) {
-                        setIsLocked(false)
-                    } else {
-                        setIsLocked(true)
-                    }
-                }
-
-                if (onRefetch) await onRefetch()
-                if (data.events_triggered && data.events_triggered.length > 0 && onEventsTriggered) {
-                    onEventsTriggered(data.events_triggered)
-                }
-
-                // Check for background events
-                try {
-                    const eventsResponse = await apiEndpoints.world.getEvents()
-                    const eventsData = eventsResponse.data
-                    if (eventsData.success && eventsData.events && eventsData.events.length > 0) {
-                        const eventsWithOutput = eventsData.events.filter(
-                            event => (event.output_text && event.output_text.trim().length > 0) || event.needs_input
-                        )
-                        if (eventsWithOutput.length > 0 && onEventsTriggered) {
-                            onEventsTriggered(eventsWithOutput)
-                        }
-                        if (onRefetch) await onRefetch()
-                    }
-                } catch (eventsErr) {
-                    console.error('Failed to trigger events:', eventsErr)
-                }
-
-                if (onInteractionComplete) onInteractionComplete()
-            } else {
-                setError(data.error || data.message || 'Interaction failed')
-            }
-        } catch (err) {
-            console.error('Interaction error:', err)
-            setError('Network error')
-        } finally {
-            setLoading(false)
-        }
+        await runInteract(selectedTarget, action, qty)
     }
 
     const handleBack = () => {
         setSelectedTarget(null)
-        setInteractionOutput(null)
-        setInteractionHistory([])
+        resetInteraction()
         setShowHistory(false)
-        setError(null)
-        setIsLocked(false)
     }
 
     const getTargetIcon = (type) => {
@@ -595,20 +475,7 @@ function InteractPanel({
                                                 <GameButton
                                                     onClick={async (e) => {
                                                         e.stopPropagation()
-                                                        setLoading(true)
-                                                        try {
-                                                            const response = await apiEndpoints.world.interact(item.id, 'take')
-                                                            if (response.data.success) {
-                                                                setInteractionOutput(response.data.message || `Took ${item.name}`)
-                                                                if (onRefetch) await onRefetch()
-                                                            } else {
-                                                                setError(response.data.error || 'Failed to take item')
-                                                            }
-                                                        } catch (err) {
-                                                            setError('Network error')
-                                                        } finally {
-                                                            setLoading(false)
-                                                        }
+                                                        await takeOne(item.id, item.name)
                                                     }}
                                                     disabled={loading}
                                                     variant="secondary"
