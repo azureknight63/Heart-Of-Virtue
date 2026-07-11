@@ -1,21 +1,8 @@
-"""Tests for world serializers."""
+"""Tests for item/npc/object serializers."""
 
-import sys
-from pathlib import Path
-
-# Ensure the project's src directory is on sys.path
-ROOT = Path(__file__).resolve().parent.parent.parent
-
-
-import pytest
-from src.api.serializers.world import (
-    ItemSerializer,
-    NPCSerializer,
-    ObjectSerializer,
-    EventSerializer,
-    TileSerializer,
-    WorldSerializer,
-)
+from src.api.serializers.item_serializer import ItemSerializer
+from src.api.serializers.npc_serializer import NPCSerializer
+from src.api.serializers.object_serializer import ObjectSerializer
 
 
 class MockItem:
@@ -60,47 +47,6 @@ class MockObject:
         self.action_aliases = []
 
 
-class MockEvent:
-    """Mock event for testing."""
-
-    def __init__(self):
-        self.description = "Test event"
-        self.repeat = False
-        self.triggers = ["on_enter"]
-
-
-class MockTile:
-    """Mock tile for testing."""
-
-    def __init__(self):
-        self.x = 0
-        self.y = 0
-        self.name = "Test Tile"
-        self.description = "A test tile"
-        self.is_passable = True
-        self.items_here = [MockItem()]
-        self.npcs_here = [MockNPC()]
-        self.objects_here = [MockObject()]
-        self.events_here = [MockEvent()]
-        self.exits = {
-            "north": (0, 1),
-            "south": (0, -1),
-            "east": (1, 0),
-            "west": (-1, 0),
-        }
-
-
-class MockPlayer:
-    """Mock player for testing."""
-
-    def __init__(self):
-        self.x = 0
-        self.y = 0
-        self.location_x = 0
-        self.location_y = 0
-        self.name = "Test Player"
-
-
 class TestItemSerializer:
     """Test ItemSerializer."""
 
@@ -117,10 +63,10 @@ class TestItemSerializer:
         assert result["weight"] == 5
         assert result["value"] == 100
 
-    def test_serialize_many_items(self):
+    def test_serialize_list_items(self):
         """Test serializing multiple items."""
         items = [MockItem(), MockItem()]
-        result = ItemSerializer.serialize_many(items)
+        result = ItemSerializer.serialize_list(items)
 
         assert len(result) == 2
         assert all(r["name"] == "Test Item" for r in result)
@@ -147,10 +93,10 @@ class TestNPCSerializer:
         assert result["max_health"] == 100
         assert result["is_hostile"] is False
 
-    def test_serialize_many_npcs(self):
+    def test_serialize_list_npcs(self):
         """Test serializing multiple NPCs."""
         npcs = [MockNPC(), MockNPC()]
-        result = NPCSerializer.serialize_many(npcs)
+        result = NPCSerializer.serialize_list(npcs)
 
         assert len(result) == 2
         assert all(r["name"] == "Test NPC" for r in result)
@@ -177,10 +123,10 @@ class TestObjectSerializer:
         assert result["description"] == "A test object"
         assert result["is_passable"] is False
 
-    def test_serialize_many_objects(self):
+    def test_serialize_list_objects(self):
         """Test serializing multiple objects."""
         objects = [MockObject(), MockObject()]
-        result = ObjectSerializer.serialize_many(objects)
+        result = ObjectSerializer.serialize_list(objects)
 
         assert len(result) == 2
         assert all(r["name"] == "Test Object" for r in result)
@@ -194,132 +140,3 @@ class TestObjectSerializer:
 
         assert result["is_container"] is True
         assert result["is_open"] is True
-
-
-class TestEventSerializer:
-    """Test EventSerializer."""
-
-    def test_serialize_event(self):
-        """Test serializing a single event."""
-        event = MockEvent()
-        result = EventSerializer.serialize(event)
-
-        assert result["type"] == "MockEvent"
-        assert result["description"] == "Test event"
-        assert result["repeat"] is False
-        assert "on_enter" in result["triggers"]
-
-    def test_serialize_many_events(self):
-        """Test serializing multiple events."""
-        events = [MockEvent(), MockEvent()]
-        result = EventSerializer.serialize_many(events)
-
-        assert len(result) == 2
-        assert all(r["type"] == "MockEvent" for r in result)
-
-
-class TestTileSerializer:
-    """Test TileSerializer."""
-
-    def test_serialize_tile(self):
-        """Test serializing a tile with all contents."""
-        tile = MockTile()
-        result = TileSerializer.serialize(tile)
-
-        assert result["x"] == 0
-        assert result["y"] == 0
-        assert result["name"] == "Test Tile"
-        assert result["description"] == "A test tile"
-        assert result["is_passable"] is True
-        assert len(result["items"]) == 1
-        assert len(result["npcs"]) == 1
-        assert len(result["objects"]) == 1
-        assert len(result["events"]) == 1
-        assert "north" in result["exits"]
-        assert "south" in result["exits"]
-        assert "east" in result["exits"]
-        assert "west" in result["exits"]
-
-    def test_serialize_empty_tile(self):
-        """Test serializing a tile with no items/NPCs/objects."""
-        tile = MockTile()
-        tile.items_here = []
-        tile.npcs_here = []
-        tile.objects_here = []
-        tile.events_here = []
-
-        result = TileSerializer.serialize(tile)
-
-        assert len(result["items"]) == 0
-        assert len(result["npcs"]) == 0
-        assert len(result["objects"]) == 0
-        assert len(result["events"]) == 0
-
-    def test_serialize_many_tiles(self):
-        """Test serializing multiple tiles."""
-        tiles = [MockTile(), MockTile()]
-        result = TileSerializer.serialize_many(tiles)
-
-        assert len(result) == 2
-        assert all(r["name"] == "Test Tile" for r in result)
-
-
-class TestWorldSerializer:
-    """Test WorldSerializer."""
-
-    def test_serialize_current_room(self):
-        """Test serializing current room state."""
-        player = MockPlayer()
-        tile = MockTile()
-
-        result = WorldSerializer.serialize_current_room(player, tile)
-
-        assert result["x"] == 0
-        assert result["y"] == 0
-        assert "tile" in result
-        assert result["tile"]["name"] == "Test Tile"
-
-    def test_serialize_movement_result(self):
-        """Test serializing movement result."""
-        player = MockPlayer()
-        player.location_x = 0
-        player.location_y = 1
-        tile = MockTile()
-        tile.x = 0
-        tile.y = 1
-        events = [{"type": "TestEvent", "description": "Something happened"}]
-
-        result = WorldSerializer.serialize_movement_result(
-            player, (0, 0), tile, events
-        )
-
-        assert result["old_position"]["x"] == 0
-        assert result["old_position"]["y"] == 0
-        assert result["new_position"]["x"] == 0
-        assert result["new_position"]["y"] == 1
-        assert "room" in result
-        assert len(result["events_triggered"]) == 1
-
-    def test_serialize_exploration_context(self):
-        """Test serializing exploration context."""
-        player = MockPlayer()
-        current_tile = MockTile()
-        nearby_tiles = {
-            "north": MockTile(),
-            "south": None,
-            "east": MockTile(),
-            "west": None,
-        }
-
-        result = WorldSerializer.serialize_exploration_context(
-            player, current_tile, nearby_tiles
-        )
-
-        assert result["player_position"]["x"] == 0
-        assert result["player_position"]["y"] == 0
-        assert "current_room" in result
-        assert "adjacent_rooms" in result
-        assert "north" in result["adjacent_rooms"]
-        assert "east" in result["adjacent_rooms"]
-        assert "south" not in result["adjacent_rooms"]
-        assert "west" not in result["adjacent_rooms"]

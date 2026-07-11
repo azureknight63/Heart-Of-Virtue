@@ -533,8 +533,7 @@ class GameService:
         map_name = current_map.get("name") if isinstance(current_map, dict) else None
         tile_key = f"{map_name}:{tile.x},{tile.y}"
 
-        # We need to manually serialize to avoid circular dependencies if we used TileSerializer here
-        # (Though TileSerializer is imported at top level, let's keep it simple)
+        # Room data is serialized by hand here rather than via a shared serializer class.
 
         # Calculate exits for this tile
         exits_data = self._calculate_exits(player.universe, tile, tile.x, tile.y)
