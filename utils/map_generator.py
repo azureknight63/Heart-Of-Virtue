@@ -3299,34 +3299,12 @@ def open_property_dialog(
                 except Exception:
                     kwargs[field_name] = raw
 
-        # Apply changes to existing object
+        # Apply changes to existing object. 'items' never appears here for
+        # Container-like objects -- get_editable_params() excludes it
+        # whenever 'inventory' (the real attribute) is also a constructor
+        # param, so there's no second, divergent widget to reconcile.
         for k, v in kwargs.items():
-            # For Container-like objects (has 'inventory' but no 'items' attr),
-            # redirect list edits to inventory; skip None so an unset field
-            # never clobbers existing contents.
-            if (
-                k == "items"
-                and hasattr(existing, "inventory")
-                and not hasattr(existing, "items")
-            ):
-                if isinstance(v, list):
-                    try:
-                        existing.inventory = v
-                    except Exception:
-                        pass
-                # v is None (field unset) – leave inventory untouched
-            else:
-                setattr(existing, k, v)
-        # Sync fallback: objects that legitimately expose both 'items' and
-        # 'inventory' need them kept in step; guard None so an unset field
-        # doesn't wipe existing contents.
-        if "items" in kwargs and hasattr(existing, "inventory"):
-            v = kwargs["items"]
-            if isinstance(v, list):
-                try:
-                    existing.inventory = v
-                except Exception:
-                    pass
+            setattr(existing, k, v)
 
         # Trigger callback to refresh UI if provided
         if callback:
@@ -3718,17 +3696,10 @@ def open_property_dialog(
                     current_value = (
                         getattr(existing, p.name, None) if existing is not None else []
                     )
-                    # If the object uses 'inventory' as its canonical store but exposes
-                    # 'items' as an __init__ alias (e.g. Container), seed the editor
-                    # from 'inventory' so the user sees the real contents and a
-                    # save-without-edits never overwrites them with an empty list.
-                    if (
-                        current_value is None
-                        and p.name == "items"
-                        and existing is not None
-                        and hasattr(existing, "inventory")
-                    ):
-                        current_value = list(getattr(existing, "inventory", []))
+                    # 'items' (Container's legacy inventory alias) never reaches
+                    # this point -- get_editable_params() excludes it whenever
+                    # 'inventory' is also a constructor param, so this widget is
+                    # only ever built for the real, canonical attribute.
                     if current_value is None:
                         current_value = []
                 else:
@@ -3906,6 +3877,19 @@ def get_editable_params(cls):
     sig = inspect.signature(cls.__init__)
     params = [p for p in sig.parameters.values() if p.name != "self"]
     excluded_names = {"player", "tile"}
+    param_names = {p.name for p in params}
+    # 'items' is a legacy/test-only alias accepted by Container-like __init__
+    # signatures that also take 'inventory' (the real, canonical attribute --
+    # 'items' is normalized into 'inventory' at construction time and never
+    # stored on the instance). Editing both as separate property-dialog
+    # widgets created two independently-tracked lists for one underlying
+    # field: the 'items' widget, processed after 'inventory' in constructor-
+    # parameter order, silently overwrote any edit made via the 'inventory'
+    # widget on save (issue #131 -- a container's items vanishing after
+    # opening/closing its properties with no intended edit). Only 'inventory'
+    # is a real editable field.
+    if "items" in param_names and "inventory" in param_names:
+        excluded_names = excluded_names | {"items"}
     editable_params = [p for p in params if p.name not in excluded_names]
     excluded_params = [p for p in params if p.name in excluded_names]
     return editable_params, excluded_params
