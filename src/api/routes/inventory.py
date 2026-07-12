@@ -7,15 +7,9 @@ Provides endpoints for:
 - Currency/stat queries
 """
 
-import contextlib
-import io
 import logging
-import re
-from unittest.mock import patch
 
 from flask import Blueprint, current_app, jsonify, request
-
-from src.api.constants import ITEM_USE_RANGE
 
 from src.api.services.validators import (
     validate_item_index,
@@ -321,38 +315,14 @@ def use_item():
             )
 
         # Find the item
-        item, actual_index = get_item_and_index(player, item_id, item_index)
+        item, _actual_index = get_item_and_index(player, item_id, item_index)
         if item is None:
             return (
                 jsonify({"success": False, "error": "Item not found in inventory"}),
                 400,
             )
 
-        # Check if merchandise - can't use until purchased
-        if getattr(item, "merchandise", False):
-            return (
-                jsonify(
-                    {
-                        "success": False,
-                        "error": f"You must purchase {item.name} before using it",
-                    }
-                ),
-                400,
-            )
-
-        # Check if item is usable
-        if not hasattr(item, "use"):
-            return (
-                jsonify(
-                    {
-                        "success": False,
-                        "error": f"{getattr(item, 'name', 'Item')} cannot be used",
-                    }
-                ),
-                400,
-            )
-
-        # Resolve optional ally target
+        # Resolve optional ally target (transport-layer ID → engine object).
         item_target = player
         if target_id:
             resolved = _resolve_ally_target(player, target_id)
@@ -361,69 +331,13 @@ def use_item():
                     jsonify({"success": False, "error": "Target not found"}),
                     400,
                 )
-            # In combat, enforce 5 ft range
-            if getattr(player, "in_combat", False):
-                dist = player.combat_proximity.get(resolved, 9999)
-                if dist > ITEM_USE_RANGE:
-                    return (
-                        jsonify(
-                            {
-                                "success": False,
-                                "error": f"{resolved.name} is too far away ({int(dist)} ft). Use Advance to close the distance first.",
-                            }
-                        ),
-                        400,
-                    )
             item_target = resolved
 
-        # Capture output from item use
-        f = io.StringIO()
-
-        def mock_cprint(text, *args, **kwargs):
-            f.write(str(text) + "\n")
-
-        def mock_print_slow(text, speed="slow"):
-            f.write(str(text) + "\n")
-
-        with (
-            contextlib.redirect_stdout(f),
-            patch("neotermcolor.cprint", mock_cprint),
-            patch("src.functions.print_slow", mock_print_slow),
-            patch("time.sleep", return_value=None),
-        ):
-            # Call the item's use method
-            item.use(item_target, user=player)
-
-        output = f.getvalue()
-        # Clean up output (remove ANSI codes)
-        ansi_escape = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
-        clean_output = ansi_escape.sub("", output).strip()
-
-        if not clean_output:
-            clean_output = f"{item.name} used"
-
-        # If in combat, add to combat log
-        if getattr(player, "in_combat", False):
-            if hasattr(player, "_combat_adapter"):
-                adapter = player._combat_adapter
-                current_beat = getattr(player, "combat_beat", 0)
-                # Split by lines and add each as a log entry
-                for line in clean_output.split("\n"):
-                    if line.strip():
-                        adapter._add_log_entry(current_beat, line.strip(), "combat")
-            else:
-                # Fallback if adapter not initialized
-                if not hasattr(player, "combat_log"):
-                    player.combat_log = []
-                for line in clean_output.split("\n"):
-                    if line.strip():
-                        player.combat_log.append(
-                            {
-                                "round": getattr(player, "combat_beat", 0),
-                                "message": line.strip(),
-                                "type": "combat",
-                            }
-                        )
+        # Delegate the effect (gating, range check, narration capture, and
+        # combat-log mirroring) to the engine layer.
+        result = current_app.game_service.use_item(player, item, target=item_target)
+        if "error" in result:
+            return jsonify({"success": False, "error": result["error"]}), 400
 
         # Get updated inventory
         inventory_data = InventorySerializer.serialize(player)
@@ -431,13 +345,10 @@ def use_item():
         # Prepare response
         response_data = {
             "success": True,
-            "message": clean_output,
+            "message": result["message"],
+            "messages": result.get("messages", []),
             "inventory": inventory_data,
-            "target_name": (
-                getattr(item_target, "name", None)
-                if item_target is not player
-                else None
-            ),
+            "target_name": result.get("target_name"),
         }
 
         # If in combat, also return updated combat state

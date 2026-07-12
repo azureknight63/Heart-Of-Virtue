@@ -4208,6 +4208,96 @@ class GameService:
             "item_name": getattr(item, "name", None),
         }
 
+    def use_item(
+        self,
+        player: "player_module.Player",
+        item,
+        target=None,
+        user=None,
+    ) -> Dict[str, Any]:
+        """Use an inventory item, delegating the effect to the engine.
+
+        Owns the engine-side mechanics the inventory route used to reimplement
+        inline (see issue #260): merchandise/usability gating, optional ally
+        targeting with combat-range enforcement, narration capture, and
+        mirroring the resulting text into the active combat log. The route keeps
+        only request parsing and response serialization.
+
+        Args:
+            player: The Player performing the use.
+            item: The inventory item object to use.
+            target: Optional combatant the effect targets. Defaults to ``player``.
+            user: The combatant credited as the user. Defaults to ``player``.
+
+        Returns:
+            Dictionary with ``success``/``message``/``messages``/``target_name``
+            or ``error``.
+        """
+        if getattr(item, "merchandise", False):
+            return {"error": f"You must purchase {item.name} before using it"}
+        if not hasattr(item, "use"):
+            return {"error": f"{getattr(item, 'name', 'Item')} cannot be used"}
+
+        if target is None:
+            target = player
+        if user is None:
+            user = player
+
+        # In combat, an ally target must be within reach.
+        if target is not player and getattr(player, "in_combat", False):
+            dist = player.combat_proximity.get(target, 9999)
+            if dist > ITEM_USE_RANGE:
+                return {
+                    "error": (
+                        f"{getattr(target, 'name', 'The target')} is too far away "
+                        f"({int(dist)} ft). Use Advance to close the distance first."
+                    )
+                }
+
+        # ``item.use`` emits through the narration sink; suppress any dramatic
+        # ``time.sleep`` pauses so the request does not block on real time.
+        with capture_narration() as _msgs, patch("time.sleep", return_value=None):
+            item.use(target, user=user)
+
+        messages = self._narration_texts(_msgs)
+        message = "\n".join(messages).strip() or f"{getattr(item, 'name', 'Item')} used"
+
+        # Pass the joined ``message`` (not ``messages``) so the fallback
+        # "{name} used" line is mirrored too; the helper re-splits on newlines.
+        if getattr(player, "in_combat", False):
+            self._log_item_use_to_combat(player, message)
+
+        return {
+            "success": True,
+            "message": message,
+            "messages": messages,
+            "target_name": (
+                getattr(target, "name", None) if target is not player else None
+            ),
+        }
+
+    @staticmethod
+    def _log_item_use_to_combat(player, message) -> None:
+        """Mirror item-use output into the active combat log line-by-line.
+
+        Prefers the combat adapter's deduplicating ``_add_log_entry`` and falls
+        back to appending raw entries when no adapter is attached yet.
+        """
+        current_beat = getattr(player, "combat_beat", 0)
+        adapter = getattr(player, "_combat_adapter", None)
+        for line in str(message).split("\n"):
+            line = line.strip()
+            if not line:
+                continue
+            if adapter is not None:
+                adapter._add_log_entry(current_beat, line, "combat")
+            else:
+                if not hasattr(player, "combat_log"):
+                    player.combat_log = []
+                player.combat_log.append(
+                    {"round": current_beat, "message": line, "type": "combat"}
+                )
+
     def get_combat_state(self, player: "player_module.Player") -> Dict[str, Any]:
         """Get the current combat state.
 
