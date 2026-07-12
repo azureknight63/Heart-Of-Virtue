@@ -791,10 +791,14 @@ class CombatStrategist:
                     new_target_id = self._priority_target_id(scoped_enemies, player_hp)
                 else:
                     # No richer enemy data available to rank by — fall back to the
-                    # nearest of the move's own viable targets.
-                    new_target_id = min(
-                        viable_targets, key=lambda t: t.get("distance", 0)
-                    ).get("id")
+                    # nearest of the move's own viable targets. Same dict guard as
+                    # viable_ids above, in case a non-dict entry ever slips through.
+                    dict_targets = [t for t in viable_targets if isinstance(t, dict)]
+                    new_target_id = (
+                        min(dict_targets, key=lambda t: t.get("distance", 0)).get("id")
+                        if dict_targets
+                        else None
+                    )
                 logger.info(
                     f"DEBUG: Resolving target_id for '{s.get('move_name')}' to "
                     f"in-range target {new_target_id}"

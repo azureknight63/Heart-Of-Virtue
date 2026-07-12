@@ -3503,11 +3503,20 @@ def open_property_dialog(
             all_merchants = {}
 
     # Auto-save function that will be called on every change
-    def auto_save():
-        if not existing_list:
-            return  # Only auto-save for existing objects, not when creating new ones
+    # Sentinel distinguishing "field had no value at snapshot time" from any
+    # real value (including None) when diffing against initial_kwargs below.
+    _UNSET = object()
+    # Snapshot of every field's value as seeded from the primary instance,
+    # captured once after the field-building loop below populates `entries`
+    # (Python resolves this closure's free variable at call time, so it's
+    # fine that auto_save is defined before initial_kwargs is assigned).
+    initial_kwargs: Dict[str, Any] = {}
 
-        kwargs = {}
+    def _collect_kwargs() -> Dict[str, Any]:
+        """Read every field widget's current value. Pure -- no side effects
+        on existing/existing_list; auto_save() is solely responsible for
+        applying the result."""
+        kwargs: Dict[str, Any] = {}
         for field_name, meta in entries.items():
             if meta["type"] == "bool":
                 kwargs[field_name] = meta["get"]()
@@ -3520,27 +3529,40 @@ def open_property_dialog(
                 try:
                     import ast as _ast
 
-                    # Special handling for merchant combobox
                     if meta.get("is_merchant"):
-                        # The value is the merchant's name, map it back to the instance
-                        kwargs[field_name] = all_merchants.get(raw)
-                        # For hierarchical fields, especially class type lists, ensure we update the object's attribute
-                        # If editing existing object(s), assign the list directly to the attribute
-                        for obj in existing_list:
-                            setattr(obj, field_name, raw)
+                        # The combobox value is the merchant's name; store the
+                        # name (not the resolved instance) so it matches what
+                        # get() will report on every subsequent read, and so
+                        # unchanged-field diffing in auto_save() works.
                         kwargs[field_name] = raw
                     else:
                         kwargs[field_name] = _ast.literal_eval(raw)
                 except Exception:
                     kwargs[field_name] = raw
+        return kwargs
+
+    def auto_save():
+        if not existing_list:
+            return  # Only auto-save for existing objects, not when creating new ones
+
+        kwargs = _collect_kwargs()
 
         # Apply changes to every object being edited (a single instance in
         # the normal case, or every instance collected for a bulk edit --
-        # see is_bulk_edit above). 'items' never appears here for
+        # see is_bulk_edit above). Only fields the user actually changed
+        # from their initial (primary-instance-seeded) value are applied --
+        # auto_save reruns on every keystroke across every field, so without
+        # this filter a bulk edit would flatten every selected instance to
+        # the primary instance's values for every field the instant any one
+        # field was touched, not just the field being edited. Harmless no-op
+        # filtering for the single-object case (re-applying an unchanged
+        # value is already a no-op there). 'items' never appears here for
         # Container-like objects -- get_editable_params() excludes it
         # whenever 'inventory' (the real attribute) is also a constructor
         # param, so there's no second, divergent widget to reconcile.
         for k, v in kwargs.items():
+            if v == initial_kwargs.get(k, _UNSET):
+                continue
             for obj in existing_list:
                 setattr(obj, k, v)
 
@@ -4159,6 +4181,21 @@ def open_property_dialog(
             fg="#ecf0f1",
             font=("Helvetica", 12, "italic"),
         ).pack(pady=20)
+
+    if existing_list:
+        # Snapshot every field's seeded (pre-edit) value now that `entries`
+        # is fully populated, for auto_save's unchanged-field filter above.
+        # List-typed values are copied rather than referenced -- hierarchical
+        # fields' "get" callables can return the *same* mutable list object
+        # on every call (e.g. a Container's own .inventory list edited via
+        # the Choose dialog), so without a copy this snapshot would silently
+        # track any later in-place mutation instead of the original state.
+        initial_kwargs.update(
+            {
+                k: (list(v) if isinstance(v, list) else v)
+                for k, v in _collect_kwargs().items()
+            }
+        )
 
     def on_add_save():
         if existing:

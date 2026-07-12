@@ -162,8 +162,8 @@ class TestBulkEditAppliesToEveryInstance:
         is_bulk_edit = len(existing_list) > 1
         assert is_bulk_edit is True
 
-        # auto_save()'s apply loop: for k, v in kwargs.items(): for obj in
-        # existing_list: setattr(obj, k, v)
+        # auto_save()'s (unfiltered-field) apply loop: for k, v in
+        # kwargs.items(): for obj in existing_list: setattr(obj, k, v)
         kwargs = {"locked": True, "hide_factor": 5}
         for k, v in kwargs.items():
             for obj in existing_list:
@@ -172,6 +172,48 @@ class TestBulkEditAppliesToEveryInstance:
         for obj in (c1, c2, c3):
             assert obj.locked is True
             assert obj.hide_factor == 5
+
+    def test_bulk_edit_does_not_flatten_untouched_fields_to_primary_instance(
+        self, map_generator_module
+    ):
+        """Regression test: auto_save() reruns its full kwargs rebuild on
+        every keystroke across every field (it's wired to fire on any single
+        widget's change), and every field is seeded from the primary
+        (first) instance. Without initial_kwargs diffing, editing just
+        `locked` on one of several selected containers with different names
+        would silently flatten every instance's `name` to the primary's the
+        moment ANY field was touched -- not just the field being edited.
+        """
+        from src.objects import Container
+
+        primary = Container(name="remains-a", locked=False)
+        other = Container(name="remains-b", locked=False)
+        existing_list = [primary, other]
+
+        # Snapshot taken once, right after the dialog's fields are built --
+        # mirrors initial_kwargs, seeded entirely from the primary instance.
+        initial_kwargs = {"name": primary.name, "locked": primary.locked}
+
+        # User only ever interacts with the `locked` toggle; `name`'s widget
+        # is never touched, so re-reading it still reports the primary's
+        # (unchanged) seeded value -- exactly what _collect_kwargs() would
+        # return.
+        kwargs = {"name": primary.name, "locked": True}
+
+        _UNSET = object()
+        for k, v in kwargs.items():
+            if v == initial_kwargs.get(k, _UNSET):
+                continue
+            for obj in existing_list:
+                setattr(obj, k, v)
+
+        # The untouched field must NOT have been flattened to the primary's
+        # value on the other instance.
+        assert other.name == "remains-b"
+        assert primary.name == "remains-a"
+        # The field the user actually changed applies to every instance.
+        assert primary.locked is True
+        assert other.locked is True
 
     def test_bulk_candidates_grouped_by_class_across_tiles(self, map_generator_module):
         # Mirrors MapEditor.bulk_edit_selected_tiles's candidate-gathering
