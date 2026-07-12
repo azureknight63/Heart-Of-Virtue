@@ -3221,6 +3221,43 @@ def show_class_type_hierarchy_chooser(
     lb.bind("<Double-Button-1>", on_double)
 
 
+# Human-readable descriptions for property names that recur across many
+# classes (issue #16's "display tooltips for each property" ask). Scoped to
+# the common/generic names shared by most Object/Event/NPC __init__
+# signatures -- there's no per-class documentation source to draw a
+# comprehensive mapping from, so names not covered here fall back to a
+# generic message rather than silently having no tooltip at all.
+_PROPERTY_DESCRIPTIONS: Dict[str, str] = {
+    "name": "Display name shown to the player.",
+    "description": "Prose shown when the player examines/interacts with this.",
+    "idle_message": "Short line shown when the player is on the same tile, before interacting.",
+    "discovery_message": "Line shown the first time the player notices/reveals this.",
+    "hidden": "Whether this starts concealed until discovered (see hide_factor).",
+    "hide_factor": "How hard this is to notice while hidden (higher = harder to find).",
+    "locked": "Whether this starts locked and needs a key/unlock action.",
+    "start_open": "Whether a container starts already open.",
+    "nickname": "Short internal name used in player-facing messages (e.g. 'the container').",
+    "inventory": "Items contained inside (the canonical items list).",
+    "keywords": "Words the player can type/click to interact with this.",
+    "repeat": "Whether this event can fire more than once.",
+    "check_conditions": "Extra logic gating whether this event is eligible to fire.",
+    "teleport_map": "Map file this passage leads to.",
+    "teleport_tile": "Coordinate on the destination map the player arrives at.",
+    "target_map_name": "Map file this coordinate field refers to.",
+    "target_coordinates": "Coordinate on the referenced map.",
+    "merchant": "The Merchant NPC that stocks/prices this shop's inventory.",
+    "allowed_subtypes": "Item base classes this can hold/generate (restricts random stock).",
+    "stock_count": "Maximum number of items this should carry (used for shop restocking).",
+    "events": "Events attached to this that can trigger on interaction/entry.",
+}
+
+_PROPERTY_DESCRIPTION_FALLBACK = "No description available for this property."
+
+
+def _property_description(name: str) -> str:
+    return _PROPERTY_DESCRIPTIONS.get(name, _PROPERTY_DESCRIPTION_FALLBACK)
+
+
 def open_property_dialog(
     parent_dialog_object: tk.Toplevel, cls, existing=None, callback=None
 ):
@@ -3310,6 +3347,29 @@ def open_property_dialog(
         if callback:
             callback(existing)
 
+    # Search/filter box (issue #16): only worth showing once there are enough
+    # properties that finding one by eye is actually a chore.
+    field_containers: Dict[str, tk.Frame] = {}
+    if len(editable_params) > 6:
+        search_frame = tk.Frame(dlg, bg="#2c3e50", padx=14, pady=(10, 0))
+        search_frame.pack(fill="x")
+        tk.Label(
+            search_frame, text="Filter:", bg="#2c3e50", fg="white"
+        ).pack(side="left")
+        search_var = tk.StringVar()
+        search_entry = tk.Entry(search_frame, textvariable=search_var)
+        search_entry.pack(side="left", fill="x", expand=True, padx=(6, 0))
+
+        def _apply_filter(*_):
+            query = search_var.get().strip().lower()
+            for field_name, container_frame in field_containers.items():
+                if not query or query in field_name.lower():
+                    container_frame.grid()
+                else:
+                    container_frame.grid_remove()
+
+        search_var.trace_add("write", _apply_filter)
+
     frm = tk.Frame(dlg, bg="#34495e", padx=14, pady=14)
     frm.pack(fill="both", expand=True)
     if editable_params:
@@ -3357,9 +3417,7 @@ def open_property_dialog(
             col = 0 if col_count == 1 else idx % col_count
             container = tk.Frame(frm, bg="#34495e")
             container.grid(row=row * 2, column=col, sticky="ew", padx=6, pady=(0, 6))
-            tk.Label(
-                container, text=f"{p.name}:", bg="#34495e", fg="white", anchor="w"
-            ).pack(anchor="w")
+            field_containers[p.name] = container
 
             # derive default/existing value
             if existing is not None:
@@ -3380,6 +3438,62 @@ def open_property_dialog(
                     val = p.default
                 else:
                     val = getattr(cls, p.name, "")
+
+            # Highlight properties whose current value has been customized
+            # away from the constructor default (issue #16's "highlight
+            # commonly used properties" ask, read as "properties someone
+            # deliberately set" -- there's no edit-history to draw a true
+            # recency signal from, so a default-vs-current diff is the
+            # closest honest proxy available without new state/plumbing).
+            is_customized = False
+            if p.default is not inspect._empty:
+                try:
+                    is_customized = val != p.default
+                except Exception:
+                    is_customized = False
+            label_fg = "#f1c40f" if is_customized else "white"
+            label_text = f"{p.name}*:" if is_customized else f"{p.name}:"
+            field_label = tk.Label(
+                container, text=label_text, bg="#34495e", fg=label_fg, anchor="w"
+            )
+            field_label.pack(anchor="w")
+
+            # Tooltip (issue #16's "display tooltips for each property" ask).
+            def _make_tooltip_handlers(owner_dlg, description_text):
+                state = {"tip": None}
+
+                def _show(event):
+                    tw = tk.Toplevel(owner_dlg)
+                    tw.wm_overrideredirect(True)
+                    tk.Label(
+                        tw,
+                        text=description_text,
+                        justify="left",
+                        bg="#ffffe0",
+                        fg="black",
+                        bd=1,
+                        relief="solid",
+                        font=("Helvetica", 9),
+                        wraplength=280,
+                    ).pack(ipadx=4, ipady=2)
+                    tw.wm_geometry(f"+{event.x_root + 16}+{event.y_root + 16}")
+                    state["tip"] = tw
+
+                def _hide(_event):
+                    if state["tip"] is not None:
+                        try:
+                            state["tip"].destroy()
+                        except Exception:
+                            pass
+                        state["tip"] = None
+
+                return _show, _hide
+
+            _tip_show, _tip_hide = _make_tooltip_handlers(
+                dlg, _property_description(p.name)
+            )
+            field_label.bind("<Enter>", _tip_show)
+            field_label.bind("<Leave>", _tip_hide)
 
             # --- Class TYPE list detection: list[type[Base]] ---
             try:
