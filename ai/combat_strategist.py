@@ -735,22 +735,79 @@ class CombatStrategist:
 
     def _ensure_target_ids(self, suggestions: List[Dict[str, Any]], context: Dict[str, Any]):
         """
-        Ensure targeted moves have a target_id, auto-filling if missing.
+        Ensure targeted moves resolve to a valid, in-range target_id.
 
-        When multiple enemies are present the default target is the highest-priority
-        one (same ranking as _build_target_priority), not simply enemies[0].
+        Each move's own `viable_targets` (already range-filtered by
+        CombatAdapter._get_available_targets, using that move's mvrange /
+        get_effective_range_max) is the sole source of truth for who it can hit.
+        A missing target_id — or one that isn't among that move's viable
+        targets (e.g. an LLM hallucination) — is replaced with the
+        highest-priority target drawn from that move's own viable set, never
+        from the global enemy list. Fixes issue #122 ("Tactical Advisor
+        targets far enemies"): previously a missing target_id was auto-filled
+        from the highest-priority enemy across the WHOLE fight, which could
+        be out of range for the specific move being suggested.
+
+        A targeted move with zero viable targets is dropped from the results
+        entirely — a move that cannot reach anyone should never be suggested.
         """
-        enemies = context.get("enemies", [])
-        player_hp = (context.get("player") or {}).get("hp") or 1
-        primary_target_id = self._priority_target_id(enemies, player_hp)
-
-        targeted_move_names = {
-            m.get("name") for m in context.get("available_moves", []) if m.get("targeted")
+        enemies_by_id = {
+            e.get("id"): e for e in context.get("enemies", []) if isinstance(e, dict)
         }
+        player_hp = (context.get("player") or {}).get("hp") or 1
+        moves_by_name = {
+            m.get("name"): m
+            for m in context.get("available_moves", [])
+            if isinstance(m, dict)
+        }
+
+        kept: List[Dict[str, Any]] = []
         for s in suggestions:
-            if s.get("move_name") in targeted_move_names and not s.get("target_id"):
-                logger.info(f"DEBUG: Strategist auto-filling missing target_id for '{s.get('move_name')}'")
-                s["target_id"] = primary_target_id
+            move = moves_by_name.get(s.get("move_name"))
+
+            if move is None or not move.get("targeted"):
+                kept.append(s)
+                continue
+
+            viable_targets = move.get("viable_targets") or []
+            viable_ids = {
+                t.get("id") for t in viable_targets if isinstance(t, dict) and t.get("id")
+            }
+
+            if not viable_ids:
+                # Targeted move with nothing in range — cannot be suggested at all.
+                logger.info(
+                    f"DEBUG: Dropping suggestion for '{s.get('move_name')}' — no viable target in range"
+                )
+                continue
+
+            if s.get("target_id") not in viable_ids:
+                # Rank only the enemies THIS move can actually reach — not every
+                # enemy in the fight.
+                scoped_enemies = [
+                    enemies_by_id[i] for i in viable_ids if i in enemies_by_id
+                ]
+                if scoped_enemies:
+                    new_target_id = self._priority_target_id(scoped_enemies, player_hp)
+                else:
+                    # No richer enemy data available to rank by — fall back to the
+                    # nearest of the move's own viable targets. Same dict guard as
+                    # viable_ids above, in case a non-dict entry ever slips through.
+                    dict_targets = [t for t in viable_targets if isinstance(t, dict)]
+                    new_target_id = (
+                        min(dict_targets, key=lambda t: t.get("distance", 0)).get("id")
+                        if dict_targets
+                        else None
+                    )
+                logger.info(
+                    f"DEBUG: Resolving target_id for '{s.get('move_name')}' to "
+                    f"in-range target {new_target_id}"
+                )
+                s["target_id"] = new_target_id
+
+            kept.append(s)
+
+        suggestions[:] = kept
 
     def _priority_target_id(self, enemies: List[Dict[str, Any]], player_hp: int) -> Optional[str]:
         """Return the ID of the highest-priority enemy (matches _build_target_priority ranking)."""

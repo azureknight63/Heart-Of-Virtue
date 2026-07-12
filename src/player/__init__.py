@@ -5,8 +5,8 @@ The Player class is composed from focused mixin modules:
   _leveling.py    — gain_exp, level_up, learn_skill
   _combat.py      — attack, death, heat, move management
   _inventory.py   — equip, use, take, weight, gold stacking
-  _movement.py    — map navigation, teleport, flee, party recall
-  _exploration.py — look, view, search, view_map
+  _movement.py    — teleport, party recall
+  _exploration.py — search, view_map
   _ui.py          — skill menu, status display, HP/FP bars
   _world.py       — merchant refresh
   _debug.py       — cheat/debug commands

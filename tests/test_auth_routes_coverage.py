@@ -277,6 +277,69 @@ class TestLogin:
         assert rv.status_code == 500
 
 
+class TestLoginRateLimitBoundedGrowth:
+    """GitHub issue #284: the login throttle's in-memory store must not grow
+    unboundedly under a spray attack across many distinct username:ip keys."""
+
+    @pytest.fixture(autouse=True)
+    def _isolate_limiter(self):
+        from src.api.routes.auth import _login_limiter
+
+        _login_limiter.clear_all()
+        yield
+        _login_limiter.clear_all()
+
+    @pytest.fixture
+    def app(self):
+        return _make_app()
+
+    def test_many_distinct_failed_logins_stay_bounded(self):
+        from src.api.routes.auth import _login_limiter, _record_failed_login
+
+        # Simulate a spray attack: many distinct username:ip keys (the same
+        # shape `_login_rate_limit_key` produces) each failing login a few
+        # times, well under any single key's own rate limit.
+        for i in range(_login_limiter.max_keys + 500):
+            key = f"attacker{i}:203.0.113.{i % 255}"
+            _record_failed_login(key)
+            assert _login_limiter.size() <= _login_limiter.max_keys
+
+        assert _login_limiter.size() <= _login_limiter.max_keys
+
+    def test_successful_login_clears_failed_attempt_key(self, app):
+        with patch(
+            "src.api.routes.auth.auth_service.authenticate_user",
+            new_callable=AsyncMock,
+            return_value=None,
+        ):
+            with app.test_client() as c:
+                rv = c.post(
+                    "/auth/login",
+                    json={"username": "ClearMeUser", "password": "wrong"},
+                )
+        assert rv.status_code == 401
+
+        from src.api.routes.auth import _login_limiter, _login_rate_limit_key
+
+        with app.test_request_context():
+            key = _login_rate_limit_key("ClearMeUser")
+        assert _login_limiter.size() >= 1
+
+        mock_user = {"id": "user_002", "username": "ClearMeUser", "timezone": "UTC"}
+        with patch(
+            "src.api.routes.auth.auth_service.authenticate_user",
+            new_callable=AsyncMock,
+            return_value=mock_user,
+        ):
+            with app.test_client() as c:
+                rv = c.post(
+                    "/auth/login",
+                    json={"username": "ClearMeUser", "password": "right"},
+                )
+        assert rv.status_code == 200
+        assert _login_limiter.is_limited(key) is False
+
+
 # ===========================================================================
 # POST /auth/logout  (requires @require_auth)
 # ===========================================================================
@@ -420,6 +483,36 @@ class TestSettings:
         with app.test_client() as c:
             rv = c.put("/auth/settings", json={}, headers=AUTH)
         assert rv.status_code == 400
+
+    def test_put_settings_invalid_timezone_rejected(self, app):
+        """Regression test for issue #262: an unvalidated timezone string
+        must be rejected with 400 rather than persisted."""
+        with app.test_client() as c:
+            rv = c.put(
+                "/auth/settings",
+                json={"timezone": "Not/A_Real_Zone"},
+                headers=AUTH,
+            )
+        assert rv.status_code == 400
+        data = rv.get_json()
+        assert data["success"] is False
+
+    def test_put_settings_valid_timezone_accepted(self, app):
+        with patch(
+            "src.api.routes.auth.auth_service.update_user_timezone",
+            new_callable=AsyncMock,
+            return_value=True,
+        ):
+            with app.test_client() as c:
+                rv = c.put(
+                    "/auth/settings",
+                    json={"timezone": "America/New_York"},
+                    headers=AUTH,
+                )
+        assert rv.status_code == 200
+        data = rv.get_json()
+        assert data["success"] is True
+        assert data["data"]["timezone"] == "America/New_York"
 
     def test_put_settings_update_fails(self, app):
         with patch(

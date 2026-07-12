@@ -9,6 +9,7 @@ import sys
 import copy
 import re
 import importlib
+from collections import OrderedDict
 from typing import (
     Any,
     Dict,
@@ -603,6 +604,11 @@ class MapEditor:
             lambda: (self.ensure_add_mode_off(), self.edit_selected_tile()),
             controls_frame,
         )
+        create_button(
+            "Bulk Edit...",
+            lambda: (self.ensure_add_mode_off(), self.bulk_edit_selected_tiles()),
+            controls_frame,
+        )
         create_separator(controls_frame)
 
         create_button(
@@ -799,6 +805,40 @@ class MapEditor:
             )
         else:
             self.set_status("No tile selected to edit.")
+
+    def bulk_edit_selected_tiles(self):
+        """Edit one property set across every matching object on the
+        current multi-tile selection (issue #16's "bulk editing of
+        properties for multiple selected tiles" ask).
+
+        Reuses the existing multi-select mechanism (self.selected_tiles,
+        already populated by ctrl-click/drag-select) rather than adding a
+        new selection UI. Scans every "objects"/"npcs"/"events" bucket
+        across the selected tiles, groups the instances found by class, and
+        -- once the user picks a class -- opens one property dialog whose
+        edits apply to every instance of that class across the whole
+        selection (open_property_dialog's existing_list support).
+        """
+        if len(self.selected_tiles) < 2:
+            self.set_status(
+                "Select 2+ tiles (ctrl-click or drag-select) to bulk edit."
+            )
+            return
+
+        candidates: Dict[type, List[Any]] = {}
+        for pos in self.selected_tiles:
+            tile_data = self.map_data.get(pos)
+            if not tile_data:
+                continue
+            for bucket in ("objects", "npcs", "events", "items"):
+                for inst in tile_data.get(bucket, []) or []:
+                    candidates.setdefault(type(inst), []).append(inst)
+
+        if not candidates:
+            self.set_status("No editable objects found on the selected tiles.")
+            return
+
+        _open_bulk_class_chooser(self.root, candidates, self.draw_map)
 
     def toggle_add_tile_mode(self):
         """
@@ -3221,11 +3261,206 @@ def show_class_type_hierarchy_chooser(
     lb.bind("<Double-Button-1>", on_double)
 
 
+# Human-readable descriptions for property names that recur across many
+# classes (issue #16's "display tooltips for each property" ask). Scoped to
+# the common/generic names shared by most Object/Event/NPC __init__
+# signatures -- there's no per-class documentation source to draw a
+# comprehensive mapping from, so names not covered here fall back to a
+# generic message rather than silently having no tooltip at all.
+_PROPERTY_DESCRIPTIONS: Dict[str, str] = {
+    "name": "Display name shown to the player.",
+    "description": "Prose shown when the player examines/interacts with this.",
+    "idle_message": "Short line shown when the player is on the same tile, before interacting.",
+    "discovery_message": "Line shown the first time the player notices/reveals this.",
+    "hidden": "Whether this starts concealed until discovered (see hide_factor).",
+    "hide_factor": "How hard this is to notice while hidden (higher = harder to find).",
+    "locked": "Whether this starts locked and needs a key/unlock action.",
+    "start_open": "Whether a container starts already open.",
+    "nickname": "Short internal name used in player-facing messages (e.g. 'the container').",
+    "inventory": "Items contained inside (the canonical items list).",
+    "keywords": "Words the player can type/click to interact with this.",
+    "repeat": "Whether this event can fire more than once.",
+    "check_conditions": "Extra logic gating whether this event is eligible to fire.",
+    "teleport_map": "Map file this passage leads to.",
+    "teleport_tile": "Coordinate on the destination map the player arrives at.",
+    "target_map_name": "Map file this coordinate field refers to.",
+    "target_coordinates": "Coordinate on the referenced map.",
+    "merchant": "The Merchant NPC that stocks/prices this shop's inventory.",
+    "allowed_subtypes": "Item base classes this can hold/generate (restricts random stock).",
+    "stock_count": "Maximum number of items this should carry (used for shop restocking).",
+    "events": "Events attached to this that can trigger on interaction/entry.",
+}
+
+_PROPERTY_DESCRIPTION_FALLBACK = "No description available for this property."
+
+
+def _property_description(name: str) -> str:
+    return _PROPERTY_DESCRIPTIONS.get(name, _PROPERTY_DESCRIPTION_FALLBACK)
+
+
+# Fixed thematic buckets for grouping related properties (issue #16's
+# "group related properties together" ask). A name-pattern map rather than
+# per-class config, so it works uniformly across every editable class
+# without needing a group defined for each of the ~100+ distinct property
+# names in this codebase. Order here is also the display order.
+_PROPERTY_GROUPS_ORDER: List[str] = [
+    "Appearance",
+    "State",
+    "Location",
+    "Contents",
+    "Other",
+]
+
+_PROPERTY_GROUP_MAP: Dict[str, str] = {
+    # Appearance
+    "name": "Appearance",
+    "description": "Appearance",
+    "idle_message": "Appearance",
+    "discovery_message": "Appearance",
+    "nickname": "Appearance",
+    # State
+    "hidden": "State",
+    "hide_factor": "State",
+    "locked": "State",
+    "start_open": "State",
+    "repeat": "State",
+    "check_conditions": "State",
+    # Location
+    "teleport_map": "Location",
+    "teleport_tile": "Location",
+    "target_map_name": "Location",
+    "target_coordinates": "Location",
+    # Contents
+    "inventory": "Contents",
+    "items": "Contents",
+    "events": "Contents",
+    "allowed_subtypes": "Contents",
+    "stock_count": "Contents",
+    "merchant": "Contents",
+    "keywords": "Contents",
+}
+
+
+def _property_group(name: str) -> str:
+    return _PROPERTY_GROUP_MAP.get(name, "Other")
+
+
+def _grouped_field_layout(editable_params, col_count: int) -> List[Dict[str, Any]]:
+    """Compute grid placements for the property dialog, grouping params by
+    _property_group() while preserving each group's original relative
+    order, and inserting a header entry before each non-empty group's
+    fields (only when more than one group is actually present -- a single
+    "Other" header for a class whose properties all fall in one bucket
+    would just be noise).
+
+    Pure/tkinter-free by design so the grouping logic is unit-testable
+    without a display, which this module otherwise has no way to exercise.
+
+    Returns a list of entries in placement order:
+      {"kind": "header", "text": group_name, "row": int}
+      {"kind": "field", "param": Parameter, "row": int, "col": int}
+    """
+    groups: "OrderedDict[str, list]" = OrderedDict(
+        (g, []) for g in _PROPERTY_GROUPS_ORDER
+    )
+    for p in editable_params:
+        groups[_property_group(p.name)].append(p)
+    groups = OrderedDict((g, ps) for g, ps in groups.items() if ps)
+    show_headers = len(groups) > 1
+
+    layout: List[Dict[str, Any]] = []
+    next_row = 0
+    for group_name, params in groups.items():
+        if show_headers:
+            layout.append({"kind": "header", "text": group_name, "row": next_row})
+            next_row += 1
+        for local_idx, p in enumerate(params):
+            row = next_row + (local_idx if col_count == 1 else local_idx // col_count)
+            col = 0 if col_count == 1 else local_idx % col_count
+            layout.append({"kind": "field", "param": p, "row": row, "col": col})
+        rows_used = (
+            len(params) if col_count == 1 else -(-len(params) // col_count)
+        )  # ceil division
+        next_row += rows_used
+    return layout
+
+
+def _open_bulk_class_chooser(
+    parent: tk.Tk, candidates: Dict[type, List[Any]], on_save_callback
+):
+    """Let the user pick which class to bulk-edit when a multi-tile
+    selection contains more than one kind of object, then open a single
+    property dialog spanning every instance of that class across the
+    selection (see MapEditor.bulk_edit_selected_tiles)."""
+    if len(candidates) == 1:
+        (cls, instances) = next(iter(candidates.items()))
+        open_property_dialog(
+            parent, cls, existing=instances, callback=lambda _: on_save_callback()
+        )
+        return
+
+    dlg = tk.Toplevel(parent)
+    dlg.title("Bulk Edit — Choose a class")
+    dlg.geometry("360x320")
+    dlg.transient(parent)
+    dlg.grab_set()
+
+    tk.Label(
+        dlg,
+        text="Multiple object types found across the selection.\nChoose which one to bulk edit:",
+        bg="#2c3e50",
+        fg="white",
+        justify="left",
+        wraplength=340,
+    ).pack(fill="x", padx=10, pady=(10, 6))
+
+    lb = tk.Listbox(dlg)
+    lb.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+    ordered_classes = sorted(candidates.keys(), key=lambda c: c.__name__)
+    for cls in ordered_classes:
+        lb.insert(
+            tk.END, f"{cls.__name__} ({len(candidates[cls])} found)"
+        )
+
+    def _on_choose(_event=None):
+        selection = lb.curselection()
+        if not selection:
+            return
+        cls = ordered_classes[selection[0]]
+        dlg.destroy()
+        open_property_dialog(
+            parent, cls, existing=candidates[cls], callback=lambda _: on_save_callback()
+        )
+
+    lb.bind("<Double-Button-1>", _on_choose)
+    tk.Button(dlg, text="Edit Selected Class", command=_on_choose).pack(
+        fill="x", padx=10, pady=(0, 10)
+    )
+
+
 def open_property_dialog(
     parent_dialog_object: tk.Toplevel, cls, existing=None, callback=None
 ):
+    # Bulk-edit support (issue #16): `existing` may be a single instance (the
+    # normal case) or a list of instances of the same class collected across
+    # multiple selected tiles (see MapEditor.bulk_edit_selected_tiles). Field
+    # values below are read from/previewed against the first instance;
+    # auto_save() applies every change to every instance in the list. The
+    # rest of this function reads from `existing` (the primary instance)
+    # exactly as in the single-object case -- only the save path needs to
+    # know about the full list.
+    existing_list = (
+        existing if isinstance(existing, list) else ([existing] if existing is not None else [])
+    )
+    existing = existing_list[0] if existing_list else None
+    is_bulk_edit = len(existing_list) > 1
+
     dlg = tk.Toplevel(parent_dialog_object)
-    dlg.title(f"Properties for {cls.__name__}")
+    dlg.title(
+        f"Properties for {cls.__name__} ({len(existing_list)} selected)"
+        if is_bulk_edit
+        else f"Properties for {cls.__name__}"
+    )
     dlg.geometry("900x550")
     dlg.transient(parent_dialog_object)
     dlg.grab_set()
@@ -3268,11 +3503,20 @@ def open_property_dialog(
             all_merchants = {}
 
     # Auto-save function that will be called on every change
-    def auto_save():
-        if not existing:
-            return  # Only auto-save for existing objects, not when creating new ones
+    # Sentinel distinguishing "field had no value at snapshot time" from any
+    # real value (including None) when diffing against initial_kwargs below.
+    _UNSET = object()
+    # Snapshot of every field's value as seeded from the primary instance,
+    # captured once after the field-building loop below populates `entries`
+    # (Python resolves this closure's free variable at call time, so it's
+    # fine that auto_save is defined before initial_kwargs is assigned).
+    initial_kwargs: Dict[str, Any] = {}
 
-        kwargs = {}
+    def _collect_kwargs() -> Dict[str, Any]:
+        """Read every field widget's current value. Pure -- no side effects
+        on existing/existing_list; auto_save() is solely responsible for
+        applying the result."""
+        kwargs: Dict[str, Any] = {}
         for field_name, meta in entries.items():
             if meta["type"] == "bool":
                 kwargs[field_name] = meta["get"]()
@@ -3285,52 +3529,88 @@ def open_property_dialog(
                 try:
                     import ast as _ast
 
-                    # Special handling for merchant combobox
                     if meta.get("is_merchant"):
-                        # The value is the merchant's name, map it back to the instance
-                        kwargs[field_name] = all_merchants.get(raw)
-                        # For hierarchical fields, especially class type lists, ensure we update the object's attribute
-                        # If editing an existing object, assign the list directly to the attribute
-                        if existing is not None:
-                            setattr(existing, field_name, raw)
+                        # The combobox value is the merchant's name; store the
+                        # name (not the resolved instance) so it matches what
+                        # get() will report on every subsequent read, and so
+                        # unchanged-field diffing in auto_save() works.
                         kwargs[field_name] = raw
                     else:
                         kwargs[field_name] = _ast.literal_eval(raw)
                 except Exception:
                     kwargs[field_name] = raw
+        return kwargs
 
-        # Apply changes to existing object
+    def auto_save():
+        if not existing_list:
+            return  # Only auto-save for existing objects, not when creating new ones
+
+        kwargs = _collect_kwargs()
+
+        # Apply changes to every object being edited (a single instance in
+        # the normal case, or every instance collected for a bulk edit --
+        # see is_bulk_edit above). Only fields the user actually changed
+        # from their initial (primary-instance-seeded) value are applied --
+        # auto_save reruns on every keystroke across every field, so without
+        # this filter a bulk edit would flatten every selected instance to
+        # the primary instance's values for every field the instant any one
+        # field was touched, not just the field being edited. Harmless no-op
+        # filtering for the single-object case (re-applying an unchanged
+        # value is already a no-op there). 'items' never appears here for
+        # Container-like objects -- get_editable_params() excludes it
+        # whenever 'inventory' (the real attribute) is also a constructor
+        # param, so there's no second, divergent widget to reconcile.
         for k, v in kwargs.items():
-            # For Container-like objects (has 'inventory' but no 'items' attr),
-            # redirect list edits to inventory; skip None so an unset field
-            # never clobbers existing contents.
-            if (
-                k == "items"
-                and hasattr(existing, "inventory")
-                and not hasattr(existing, "items")
-            ):
-                if isinstance(v, list):
-                    try:
-                        existing.inventory = v
-                    except Exception:
-                        pass
-                # v is None (field unset) – leave inventory untouched
-            else:
-                setattr(existing, k, v)
-        # Sync fallback: objects that legitimately expose both 'items' and
-        # 'inventory' need them kept in step; guard None so an unset field
-        # doesn't wipe existing contents.
-        if "items" in kwargs and hasattr(existing, "inventory"):
-            v = kwargs["items"]
-            if isinstance(v, list):
-                try:
-                    existing.inventory = v
-                except Exception:
-                    pass
+            if v == initial_kwargs.get(k, _UNSET):
+                continue
+            for obj in existing_list:
+                setattr(obj, k, v)
 
         # Trigger callback to refresh UI if provided
         if callback:
-            callback(existing)
+            callback(existing_list if is_bulk_edit else existing)
+
+    # Search/filter box (issue #16): only worth showing once there are enough
+    # properties that finding one by eye is actually a chore.
+    field_containers: Dict[str, tk.Frame] = {}
+    # Populated once the property loop below runs; declared here (rather than
+    # only inside that loop) so _apply_filter's closure always finds them,
+    # even though it's defined before the loop executes -- Python resolves
+    # enclosing-scope names at call time, not definition time, but only if
+    # the name is assigned somewhere in this function body at all.
+    group_header_widgets: Dict[str, tk.Widget] = {}
+    group_fields: Dict[str, List[str]] = {}
+    if len(editable_params) > 6:
+        search_frame = tk.Frame(dlg, bg="#2c3e50", padx=14, pady=(10, 0))
+        search_frame.pack(fill="x")
+        tk.Label(
+            search_frame, text="Filter:", bg="#2c3e50", fg="white"
+        ).pack(side="left")
+        search_var = tk.StringVar()
+        search_entry = tk.Entry(search_frame, textvariable=search_var)
+        search_entry.pack(side="left", fill="x", expand=True, padx=(6, 0))
+
+        def _apply_filter(*_):
+            query = search_var.get().strip().lower()
+            for field_name, container_frame in field_containers.items():
+                if not query or query in field_name.lower():
+                    container_frame.grid()
+                else:
+                    container_frame.grid_remove()
+            # Hide a group's header too once every field in that group has
+            # been filtered out, so an orphaned "— State —" label doesn't
+            # linger over nothing.
+            for group_name, header_widget in group_header_widgets.items():
+                any_visible = any(
+                    (not query or query in fname.lower())
+                    for fname in group_fields.get(group_name, [])
+                )
+                if any_visible:
+                    header_widget.grid()
+                else:
+                    header_widget.grid_remove()
+
+        search_var.trace_add("write", _apply_filter)
 
     frm = tk.Frame(dlg, bg="#34495e", padx=14, pady=14)
     frm.pack(fill="both", expand=True)
@@ -3374,14 +3654,35 @@ def open_property_dialog(
 
                 var.trace_add("write", _make_cb())
 
-        for idx, p in enumerate(editable_params):
-            row = idx if col_count == 1 else idx // col_count
-            col = 0 if col_count == 1 else idx % col_count
+        for _layout_entry in _grouped_field_layout(editable_params, col_count):
+            if _layout_entry["kind"] == "header":
+                header_lbl = tk.Label(
+                    frm,
+                    text=_layout_entry["text"],
+                    bg="#34495e",
+                    fg="#95a5a6",
+                    font=("Helvetica", 10, "bold"),
+                    anchor="w",
+                )
+                header_lbl.grid(
+                    row=_layout_entry["row"] * 2,
+                    column=0,
+                    columnspan=col_count,
+                    sticky="w",
+                    padx=6,
+                    pady=(10, 2),
+                )
+                group_header_widgets[_layout_entry["text"]] = header_lbl
+                continue
+
+            p = _layout_entry["param"]
+            row = _layout_entry["row"]
+            col = _layout_entry["col"]
+            group_name = _property_group(p.name)
+            group_fields.setdefault(group_name, []).append(p.name)
             container = tk.Frame(frm, bg="#34495e")
             container.grid(row=row * 2, column=col, sticky="ew", padx=6, pady=(0, 6))
-            tk.Label(
-                container, text=f"{p.name}:", bg="#34495e", fg="white", anchor="w"
-            ).pack(anchor="w")
+            field_containers[p.name] = container
 
             # derive default/existing value
             if existing is not None:
@@ -3402,6 +3703,62 @@ def open_property_dialog(
                     val = p.default
                 else:
                     val = getattr(cls, p.name, "")
+
+            # Highlight properties whose current value has been customized
+            # away from the constructor default (issue #16's "highlight
+            # commonly used properties" ask, read as "properties someone
+            # deliberately set" -- there's no edit-history to draw a true
+            # recency signal from, so a default-vs-current diff is the
+            # closest honest proxy available without new state/plumbing).
+            is_customized = False
+            if p.default is not inspect._empty:
+                try:
+                    is_customized = val != p.default
+                except Exception:
+                    is_customized = False
+            label_fg = "#f1c40f" if is_customized else "white"
+            label_text = f"{p.name}*:" if is_customized else f"{p.name}:"
+            field_label = tk.Label(
+                container, text=label_text, bg="#34495e", fg=label_fg, anchor="w"
+            )
+            field_label.pack(anchor="w")
+
+            # Tooltip (issue #16's "display tooltips for each property" ask).
+            def _make_tooltip_handlers(owner_dlg, description_text):
+                state = {"tip": None}
+
+                def _show(event):
+                    tw = tk.Toplevel(owner_dlg)
+                    tw.wm_overrideredirect(True)
+                    tk.Label(
+                        tw,
+                        text=description_text,
+                        justify="left",
+                        bg="#ffffe0",
+                        fg="black",
+                        bd=1,
+                        relief="solid",
+                        font=("Helvetica", 9),
+                        wraplength=280,
+                    ).pack(ipadx=4, ipady=2)
+                    tw.wm_geometry(f"+{event.x_root + 16}+{event.y_root + 16}")
+                    state["tip"] = tw
+
+                def _hide(_event):
+                    if state["tip"] is not None:
+                        try:
+                            state["tip"].destroy()
+                        except Exception:
+                            pass
+                        state["tip"] = None
+
+                return _show, _hide
+
+            _tip_show, _tip_hide = _make_tooltip_handlers(
+                dlg, _property_description(p.name)
+            )
+            field_label.bind("<Enter>", _tip_show)
+            field_label.bind("<Leave>", _tip_hide)
 
             # --- Class TYPE list detection: list[type[Base]] ---
             try:
@@ -3718,17 +4075,10 @@ def open_property_dialog(
                     current_value = (
                         getattr(existing, p.name, None) if existing is not None else []
                     )
-                    # If the object uses 'inventory' as its canonical store but exposes
-                    # 'items' as an __init__ alias (e.g. Container), seed the editor
-                    # from 'inventory' so the user sees the real contents and a
-                    # save-without-edits never overwrites them with an empty list.
-                    if (
-                        current_value is None
-                        and p.name == "items"
-                        and existing is not None
-                        and hasattr(existing, "inventory")
-                    ):
-                        current_value = list(getattr(existing, "inventory", []))
+                    # 'items' (Container's legacy inventory alias) never reaches
+                    # this point -- get_editable_params() excludes it whenever
+                    # 'inventory' is also a constructor param, so this widget is
+                    # only ever built for the real, canonical attribute.
                     if current_value is None:
                         current_value = []
                 else:
@@ -3832,6 +4182,21 @@ def open_property_dialog(
             font=("Helvetica", 12, "italic"),
         ).pack(pady=20)
 
+    if existing_list:
+        # Snapshot every field's seeded (pre-edit) value now that `entries`
+        # is fully populated, for auto_save's unchanged-field filter above.
+        # List-typed values are copied rather than referenced -- hierarchical
+        # fields' "get" callables can return the *same* mutable list object
+        # on every call (e.g. a Container's own .inventory list edited via
+        # the Choose dialog), so without a copy this snapshot would silently
+        # track any later in-place mutation instead of the original state.
+        initial_kwargs.update(
+            {
+                k: (list(v) if isinstance(v, list) else v)
+                for k, v in _collect_kwargs().items()
+            }
+        )
+
     def on_add_save():
         if existing:
             auto_save()
@@ -3906,6 +4271,19 @@ def get_editable_params(cls):
     sig = inspect.signature(cls.__init__)
     params = [p for p in sig.parameters.values() if p.name != "self"]
     excluded_names = {"player", "tile"}
+    param_names = {p.name for p in params}
+    # 'items' is a legacy/test-only alias accepted by Container-like __init__
+    # signatures that also take 'inventory' (the real, canonical attribute --
+    # 'items' is normalized into 'inventory' at construction time and never
+    # stored on the instance). Editing both as separate property-dialog
+    # widgets created two independently-tracked lists for one underlying
+    # field: the 'items' widget, processed after 'inventory' in constructor-
+    # parameter order, silently overwrote any edit made via the 'inventory'
+    # widget on save (issue #131 -- a container's items vanishing after
+    # opening/closing its properties with no intended edit). Only 'inventory'
+    # is a real editable field.
+    if "items" in param_names and "inventory" in param_names:
+        excluded_names = excluded_names | {"items"}
     editable_params = [p for p in params if p.name not in excluded_names]
     excluded_params = [p for p in params if p.name in excluded_names]
     return editable_params, excluded_params

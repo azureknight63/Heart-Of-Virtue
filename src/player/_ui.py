@@ -334,20 +334,6 @@ class PlayerUIMixin:
         """
         return
 
-    def commands(self):
-        """Print all available room actions with their hotkeys."""
-        possible_actions = self.current_room.available_actions()
-        for action in possible_actions:
-            cprint(
-                "{}:{}{}".format(
-                    action.name,
-                    (" " * (20 - (len(action.name) + 2))),
-                    action.hotkey,
-                ),
-                "blue",
-            )
-        functions.await_input()
-
     def show_bars(self, hp=True, fp=True):
         """Show HP and Fatigue bars as coloured block characters."""
         if hp:

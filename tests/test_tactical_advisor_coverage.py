@@ -53,6 +53,12 @@ def _enemy(eid="enemy_1", name="Rat", hp=30, max_hp=30, distance=5, mip=None,
     }
 
 
+def _vt(enemy):
+    """Build a move's viable_targets entry (CombatAdapter._get_available_targets
+    shape) from an _enemy() dict, for tests that exercise _ensure_target_ids."""
+    return {"id": enemy["id"], "name": enemy["name"], "distance": enemy["distance"]}
+
+
 # ---------------------------------------------------------------------------
 # _STATUS_TACTICAL_NOTES_ENEMY — correct implications
 # ---------------------------------------------------------------------------
@@ -291,26 +297,31 @@ class TestPriorityTargetId:
 class TestEnsureTargetIds:
     def test_fills_missing_target_for_targeted_move(self, strategist):
         suggestions = [{"move_name": "Slash", "target_id": None}]
+        e1 = _enemy("e1")
         lethal = _enemy("e_lethal", damage=999, mip=_mip(stage=1, beats_left=1))
-        lethal["id"] = "e_lethal"
         context = {
-            "enemies": [_enemy("e1"), lethal],
+            "enemies": [e1, lethal],
             "player": {"hp": 50},
-            "available_moves": [{"name": "Slash", "targeted": True}],
+            "available_moves": [
+                {"name": "Slash", "targeted": True, "viable_targets": [_vt(e1), _vt(lethal)]}
+            ],
         }
         strategist._ensure_target_ids(suggestions, context)
         # Should pick the lethal charger, not the first enemy
         assert suggestions[0]["target_id"] == "e_lethal"
 
-    def test_does_not_overwrite_existing_target(self, strategist):
-        suggestions = [{"move_name": "Slash", "target_id": "existing_id"}]
+    def test_does_not_overwrite_existing_valid_target(self, strategist):
+        e1 = _enemy("e1")
+        suggestions = [{"move_name": "Slash", "target_id": "e1"}]
         context = {
-            "enemies": [_enemy("e1")],
+            "enemies": [e1],
             "player": {"hp": 100},
-            "available_moves": [{"name": "Slash", "targeted": True}],
+            "available_moves": [
+                {"name": "Slash", "targeted": True, "viable_targets": [_vt(e1)]}
+            ],
         }
         strategist._ensure_target_ids(suggestions, context)
-        assert suggestions[0]["target_id"] == "existing_id"
+        assert suggestions[0]["target_id"] == "e1"
 
     def test_non_targeted_move_stays_none(self, strategist):
         suggestions = [{"move_name": "Dodge", "target_id": None}]
@@ -321,6 +332,39 @@ class TestEnsureTargetIds:
         }
         strategist._ensure_target_ids(suggestions, context)
         assert suggestions[0]["target_id"] is None
+
+    def test_out_of_range_target_id_is_replaced(self, strategist):
+        """Issue #122: a target_id pointing at an enemy outside this move's
+        viable_targets (e.g. picked against another enemy, or hallucinated by
+        the LLM) must be replaced with one of the move's own viable targets —
+        never left pointing at an unreachable enemy."""
+        near = _enemy("e_near", distance=2)
+        far = _enemy("e_far", distance=20)
+        suggestions = [{"move_name": "Slash", "target_id": "e_far"}]
+        context = {
+            "enemies": [near, far],
+            "player": {"hp": 100},
+            # Only e_near is actually in range for Slash.
+            "available_moves": [
+                {"name": "Slash", "targeted": True, "viable_targets": [_vt(near)]}
+            ],
+        }
+        strategist._ensure_target_ids(suggestions, context)
+        assert suggestions[0]["target_id"] == "e_near"
+
+    def test_targeted_move_with_no_viable_targets_is_dropped(self, strategist):
+        """A targeted move that cannot reach any enemy must never be suggested,
+        rather than being suggested with an unreachable target (issue #122)."""
+        suggestions = [{"move_name": "Slash", "target_id": None}]
+        context = {
+            "enemies": [_enemy("e1", distance=20)],
+            "player": {"hp": 100},
+            "available_moves": [
+                {"name": "Slash", "targeted": True, "viable_targets": []}
+            ],
+        }
+        strategist._ensure_target_ids(suggestions, context)
+        assert suggestions == []
 
 
 # ---------------------------------------------------------------------------

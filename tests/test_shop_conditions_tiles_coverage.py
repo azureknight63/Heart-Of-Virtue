@@ -330,14 +330,13 @@ def _make_tile(universe=None, game_map=None, x=0, y=0):
 
 
 class TestMapTileCoverage:
-    def test_available_actions_api_mode_returns_no_moves(self):
-        """In callerIsApi=True mode, adjacent moves are not added."""
+    def test_available_actions_returns_the_default_action_set(self):
+        """Movement is dispatched via GameService.move_player, not Action
+        classes -- available_actions always returns the fixed default set."""
         tile, u, m = _make_tile()
-        actions_list = tile.available_actions(callerIsApi=True, player=None)
-        # Only default moves (Search, Menu, Save) should be present
+        actions_list = tile.available_actions(player=None)
         action_names = [a.__class__.__name__ for a in actions_list]
-        assert "MoveNorth" not in action_names
-        assert "Search" in action_names or len(actions_list) == 3
+        assert action_names == ["Search", "Menu", "Save"]
 
     def test_available_actions_debug_via_game_config(self):
         """Debug actions appear when player.game_config.debug_mode is True."""
@@ -346,7 +345,7 @@ class TestMapTileCoverage:
         player.game_config = MagicMock()
         player.game_config.debug_mode = True
 
-        actions_list = tile.available_actions(callerIsApi=False, player=player)
+        actions_list = tile.available_actions(player=player)
         action_names = [a.__class__.__name__ for a in actions_list]
         assert "Teleport" in action_names
 
@@ -357,7 +356,7 @@ class TestMapTileCoverage:
         # player has no game_config to avoid the first branch
         player = MagicMock(spec=[])  # no game_config
 
-        actions_list = tile.available_actions(callerIsApi=False, player=player)
+        actions_list = tile.available_actions(player=player)
         action_names = [a.__class__.__name__ for a in actions_list]
         assert "Teleport" in action_names
 
@@ -460,18 +459,6 @@ class TestMapTileCoverage:
         event = tile.spawn_event("Ch01GorranFirstWord", player, tile)
         if event:
             assert event in tile.events_here
-
-    def test_adjacent_moves_blocked_direction(self):
-        """Adjacent moves respect block_exit list."""
-        tile, u, m = _make_tile(x=5, y=5)
-        # Place a tile to the north
-        north_tile = MagicMock()
-        m[(5, 4)] = north_tile  # north of (5,5) is (5,4) since y decrements
-        tile.block_exit = ["north"]
-
-        moves = tile.adjacent_moves()
-        action_names = [a.__class__.__name__ for a in moves]
-        assert "MoveNorth" not in action_names
 
     def test_intro_text_returns_colored_description(self):
         """intro_text returns colored description string."""

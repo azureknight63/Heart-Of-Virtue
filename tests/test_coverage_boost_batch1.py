@@ -381,12 +381,13 @@ class TestTilesAvailableActionsDebug:
         action_types = [type(a).__name__ for a in acts]
         assert "Teleport" in action_types
 
-    def test_api_mode_skips_movement_actions(self):
+    def test_available_actions_includes_the_default_action_set(self):
+        # Movement is dispatched via GameService.move_player, not Action
+        # classes -- the directional-move Action subclasses no longer exist.
         tile = self._make_tile()
-        acts = tile.available_actions(callerIsApi=True)
-        # API mode should not include directional movement
+        acts = tile.available_actions()
         action_types = [type(a).__name__ for a in acts]
-        assert "MoveNorth" not in action_types
+        assert {"Search", "Menu", "Save"}.issubset(action_types)
 
 
 # ---------------------------------------------------------------------------
@@ -513,55 +514,7 @@ class TestTilesetsTestChest:
 
 
 class TestPlayerMovementMixin:
-    """Lines 63-69, 73-78, 109, 118-119: do_action with phrase, flee edge cases."""
-
-    def test_do_action_no_phrase(self):
-        """Line 65-66: do_action without phrase calls method directly."""
-        p = _player()
-        p.universe = MagicMock()
-        p.universe.game_tick = 0
-
-        tile = _mock_tile()
-        tile.intro_text.return_value = "Room text"
-
-        mock_map = {"name": "test", (0, 0): tile}
-        p.map = mock_map
-
-        action = MagicMock()
-        action.method.__name__ = "move_north"
-        with patch.object(p, "move_north") as mock_move:
-            p.do_action(action)
-            mock_move.assert_called_once_with()
-
-    def test_do_action_with_phrase(self):
-        """Lines 68-69: do_action with phrase passes phrase to method."""
-        p = _player()
-        action = MagicMock()
-        action.method.__name__ = "search"
-        with patch.object(p, "search") as mock_search:
-            p.do_action(action, phrase="goblin")
-            mock_search.assert_called_once_with("goblin")
-
-    def test_flee_no_available_moves(self):
-        """Lines 73-75: flee prints error when no adjacent moves."""
-        p = _player()
-        tile = _mock_tile()
-        tile.adjacent_moves.return_value = []
-        with patch("src.player._movement.cprint") as mock_cp:
-            p.flee(tile)
-        mock_cp.assert_called_once()
-        assert "nowhere" in mock_cp.call_args[0][0].lower()
-
-    def test_flee_with_available_moves(self):
-        """Lines 77-78: flee executes a random move."""
-        p = _player()
-        tile = _mock_tile()
-        mock_action = MagicMock()
-        mock_action.method.__name__ = "move_north"
-        tile.adjacent_moves.return_value = [mock_action]
-        with patch.object(p, "do_action") as mock_do:
-            p.flee(tile)
-        mock_do.assert_called_once_with(mock_action)
+    """Lines 109, 118-119: teleport/recall_friends edge cases."""
 
     def test_teleport_invalid_map(self):
         """Line 109: teleport prints error for invalid map."""
@@ -642,38 +595,7 @@ class TestPlayerMovementMixin:
 
 
 class TestPlayerExplorationMixin:
-    """Lines 16, 45-47, 90-102, 119, 132-134, 142-152, 170, 182."""
-
-    def test_look_with_target_delegates_to_view(self):
-        """Line 16: look(target) calls view()."""
-        p = _player()
-        with patch.object(p, "view") as mock_view:
-            p.look(target="goblin")
-        mock_view.assert_called_once_with("goblin")
-
-    def test_view_empty_room_phrase_match_nothing(self):
-        """Lines 45-47: view with phrase, no match in empty room."""
-        p = _player()
-        p.current_room = _mock_tile()
-        p.current_room.npcs_here = []
-        p.current_room.items_here = []
-        p.current_room.objects_here = []
-        with patch("builtins.print"):
-            p.view(phrase="goblin")  # should silently find nothing
-
-    def test_view_with_phrase_finds_npc(self):
-        """Lines 48-68: view with phrase matching an NPC."""
-        p = _player()
-        npc = MagicMock()
-        npc.name = "Goblin Warrior"
-        npc.hidden = False
-        npc.announce = "a goblin warrior"
-        npc.idle_message = "stands guard"
-        npc.description = "A fierce goblin."
-        p.current_room = _mock_tile()
-        p.current_room.npcs_here = [npc]
-        with patch("builtins.print"), patch("src.functions.await_input"):
-            p.view(phrase="goblin")
+    """Lines 90-102, 119, 132-134, 142-152, 170, 182."""
 
     def test_search_finds_hidden_npc(self):
         """Lines 83-88: search reveals a hidden NPC."""

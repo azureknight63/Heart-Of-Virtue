@@ -253,6 +253,43 @@ describe('ConversationStage rendering', () => {
         expect(proseDiv.style.fontStyle).toBe('italic')
     })
 
+    it('paces multi-chunk plain narration (no speakers) beat by beat on click', () => {
+        // Mirrors what GameService._chunk_narration_text produces for a long,
+        // unstaged text block: several in_conversation:false beats with no
+        // speaker/cast, advanced one click at a time (issue #123).
+        const pacedSegments = [
+            { text: 'The vault door groans open.', in_conversation: false },
+            { text: 'Dust hangs thick in the stale air.', in_conversation: false },
+            { text: 'A single artifact hums on the plinth.', in_conversation: false },
+        ]
+        const onComplete = vi.fn()
+        render(
+            <ConversationStage segments={pacedSegments} conversation={null} onComplete={onComplete} />
+        )
+        const stage = screen.getByTestId('conversation-stage')
+
+        // Beat 0 typewriter completes; text is visible but later beats are not.
+        act(() => vi.advanceTimersByTime(3000))
+        expect(screen.getByText('The vault door groans open.')).toBeInTheDocument()
+        expect(screen.queryByText('Dust hangs thick in the stale air.')).not.toBeInTheDocument()
+
+        // Click advances to beat 1.
+        fireEvent.click(stage)
+        act(() => vi.advanceTimersByTime(3000))
+        expect(screen.getByText('Dust hangs thick in the stale air.')).toBeInTheDocument()
+        expect(onComplete).not.toHaveBeenCalled()
+
+        // Click advances to beat 2 (final beat).
+        fireEvent.click(stage)
+        act(() => vi.advanceTimersByTime(3000))
+        expect(screen.getByText('A single artifact hums on the plinth.')).toBeInTheDocument()
+        expect(onComplete).not.toHaveBeenCalled()
+
+        // Final click completes the paced sequence.
+        fireEvent.click(stage)
+        expect(onComplete).toHaveBeenCalledTimes(1)
+    })
+
     it('advances on Enter/Space keydown', () => {
         render(
             <ConversationStage

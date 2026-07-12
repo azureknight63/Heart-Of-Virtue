@@ -913,6 +913,22 @@ describe('ItemDetailDialog', () => {
       expect(screen.getByText('+24–36 HP')).toBeInTheDocument();
     });
 
+    it('renders the projected heal gain and total in colors distinct from each other and from the current-HP bar', () => {
+      // Regression test for issue #124: the gain/projected values must be visually
+      // distinguishable from each other and from the mid/low-HP bar shades, not both
+      // rendered in a similar gold/orange tone that made "current" vs. "projected" hard
+      // to tell apart.
+      render(<ItemDetailDialog item={potion} player={playerWithParty} onBack={mockOnBack} />);
+      fireEvent.click(screen.getByText(/Use on/i));
+
+      const gainText = screen.getByText('+24–36 HP');
+      const projectedText = screen.getByText(/→ ~74–86/);
+
+      expect(gainText.style.color).toBe('rgb(0, 255, 136)'); // #00ff88 — same "positive change" green as DiffChip/status-apply elsewhere in this dialog
+      expect(projectedText.style.color).toBe('rgb(255, 255, 255)'); // #ffffff — neutral, distinct from the cyan FAT bar/label and the green gain
+      expect(gainText.style.color).not.toBe(projectedText.style.color);
+    });
+
     it('closes the ally picker via Cancel', () => {
       render(<ItemDetailDialog item={potion} player={playerWithParty} onBack={mockOnBack} />);
       fireEvent.click(screen.getByText(/Use on/i));

@@ -96,57 +96,13 @@ class TestMapTileModifyPlayer:
         assert result is None
 
 
-class TestMapTileAdjacentMoves:
-    """Test MapTile adjacent_moves method."""
-
-    def test_adjacent_moves_all_directions(self):
-        """Test adjacent_moves with all adjacent tiles existing."""
-        universe = Mock()
-        current_map = Mock()
-        tile = __import__("src.tiles", fromlist=["MapTile"]).MapTile(
-            universe, current_map, 5, 5
-        )
-
-        # Mock tile_exists to always return True
-        adjacent_tile = Mock()
-        with patch("src.tiles.tile_exists", return_value=adjacent_tile):
-            moves = tile.adjacent_moves()
-            # Should have 8 moves (all directions)
-            assert len(moves) == 8
-
-    def test_adjacent_moves_blocked_direction(self):
-        """Test adjacent_moves with blocked direction."""
-        universe = Mock()
-        current_map = Mock()
-        tile = __import__("src.tiles", fromlist=["MapTile"]).MapTile(
-            universe, current_map, 5, 5
-        )
-        tile.block_exit = ["east"]
-
-        adjacent_tile = Mock()
-        with patch("src.tiles.tile_exists", return_value=adjacent_tile):
-            moves = tile.adjacent_moves()
-            # Should have 7 moves (one blocked)
-            assert len(moves) == 7
-
-    def test_adjacent_moves_no_adjacent_tiles(self):
-        """Test adjacent_moves when no adjacent tiles exist."""
-        universe = Mock()
-        current_map = Mock()
-        tile = __import__("src.tiles", fromlist=["MapTile"]).MapTile(
-            universe, current_map, 5, 5
-        )
-
-        with patch("src.tiles.tile_exists", return_value=None):
-            moves = tile.adjacent_moves()
-            assert len(moves) == 0
-
-
 class TestMapTileAvailableActions:
     """Test MapTile available_actions method."""
 
-    def test_available_actions_terminal_mode(self):
-        """Test available_actions in terminal mode (callerIsApi=False)."""
+    def test_available_actions_default_set(self):
+        """Movement is dispatched via GameService.move_player, not Action
+        classes -- available_actions always returns the fixed default set
+        (Search, Menu, Save only) outside of debug mode."""
         universe = Mock()
         universe.testing_mode = False
         current_map = Mock()
@@ -154,23 +110,8 @@ class TestMapTileAvailableActions:
             universe, current_map, 0, 0
         )
 
-        with patch("src.tiles.tile_exists", return_value=None):
-            actions_list = tile.available_actions(callerIsApi=False)
-            assert len(actions_list) > 0
-
-    def test_available_actions_api_mode(self):
-        """Test available_actions in API mode (callerIsApi=True)."""
-        universe = Mock()
-        universe.testing_mode = False
-        current_map = Mock()
-        tile = __import__("src.tiles", fromlist=["MapTile"]).MapTile(
-            universe, current_map, 0, 0
-        )
-
-        with patch("src.tiles.tile_exists", return_value=None):
-            actions_list = tile.available_actions(callerIsApi=True)
-            # Should have fewer actions (Search, Menu, Save only in API mode)
-            assert len(actions_list) >= 3
+        actions_list = tile.available_actions()
+        assert len(actions_list) == 3
 
     def test_available_actions_debug_mode_via_player_config(self):
         """Test available_actions includes debug moves when debug_mode enabled."""
@@ -184,10 +125,9 @@ class TestMapTileAvailableActions:
         player.game_config = Mock()
         player.game_config.debug_mode = True
 
-        with patch("src.tiles.tile_exists", return_value=None):
-            actions_list = tile.available_actions(callerIsApi=False, player=player)
-            # Should include debug moves
-            assert len(actions_list) > 14  # More than normal default moves
+        actions_list = tile.available_actions(player=player)
+        # Should include debug moves: 3 default + 7 debug
+        assert len(actions_list) == 10
 
     def test_available_actions_debug_mode_via_universe(self):
         """Test available_actions includes debug moves via universe.testing_mode."""
@@ -198,9 +138,8 @@ class TestMapTileAvailableActions:
             universe, current_map, 0, 0
         )
 
-        with patch("src.tiles.tile_exists", return_value=None):
-            actions_list = tile.available_actions(callerIsApi=False)
-            assert len(actions_list) > 14
+        actions_list = tile.available_actions()
+        assert len(actions_list) == 10
 
 
 class TestMapTileEvaluateEvents:

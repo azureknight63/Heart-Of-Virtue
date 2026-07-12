@@ -1648,3 +1648,68 @@ class TestGetAvailableTargetsPlayerSkip:
         adapter = _make_adapter(player)
         targets = adapter._get_available_targets(move)
         assert targets == []
+
+
+# ---------------------------------------------------------------------------
+# Regression: issue #122 — "Tactical Advisor targets far enemies"
+#
+# refresh_suggestions() must never hand back a suggestion whose target is
+# outside the suggested move's own range. Runs the REAL CombatStrategist
+# (LLM unavailable -> heuristic fallback) end-to-end through
+# _get_available_moves -> _get_available_targets -> _ensure_target_ids, so
+# the fix is exercised the same way production traffic hits it.
+# ---------------------------------------------------------------------------
+
+
+class _UnavailableLLMClient:
+    """Stand-in that forces CombatStrategist onto its heuristic fallback path,
+    with no network access — mirrors test envs where no LLM key is configured."""
+
+    def available(self):
+        return False
+
+    def generate_structured(self, system_prompt, user_prompt):  # pragma: no cover
+        raise AssertionError("LLM should not be called when unavailable")
+
+
+class TestSuggestionsNeverTargetOutOfRangeEnemy:
+    def test_refresh_suggestions_only_targets_in_range_enemy(self):
+        from ai.combat_strategist import CombatStrategist
+
+        # Short-reach melee move: only reaches out to 3ft.
+        melee = _make_move("Slash", viable=True, targeted=True, mvrange=(0, 3))
+
+        player = _make_player()
+        player.known_moves = [melee]
+
+        near_enemy = _make_enemy("Near Goblin", hp=50, maxhp=50)
+        # Far enemy is at critically low HP%, which the priority heuristic (lowest
+        # HP% wins) would normally rank ABOVE a full-health enemy — this is what
+        # makes the regression meaningful: without the fix, the global
+        # highest-priority enemy (far_enemy) gets auto-filled as Slash's target
+        # even though it's nowhere near melee range.
+        far_enemy = _make_enemy("Far Goblin", hp=2, maxhp=50)
+        player.combat_list = [near_enemy, far_enemy]
+        # near_enemy is well within Slash's range; far_enemy is nowhere close.
+        player.combat_proximity = {near_enemy: 2, far_enemy: 25}
+
+        adapter = _make_adapter(player, session_id="sess-122")
+        # Swap in a real strategist (heuristic fallback, no network) instead of
+        # the MagicMock installed by _make_adapter, so _ensure_target_ids'
+        # real per-move range-scoping logic actually runs.
+        adapter.strategist = CombatStrategist(client=_UnavailableLLMClient())
+
+        far_id = f"enemy_{id(far_enemy)}"
+        near_id = f"enemy_{id(near_enemy)}"
+
+        with patch("threading.Thread", side_effect=_run_thread_synchronously):
+            adapter.refresh_suggestions()
+
+        assert player.suggestions_loading is False
+        assert player.suggested_moves, "expected at least one suggestion"
+
+        for suggestion in player.suggested_moves:
+            if suggestion.get("move_name") == "Slash":
+                # The suggestion must never point at the out-of-range enemy.
+                assert suggestion.get("target_id") != far_id
+                assert suggestion.get("target_id") == near_id

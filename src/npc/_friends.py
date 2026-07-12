@@ -112,13 +112,25 @@ class Mynx(MynxLLMMixin, Friend):
             return None
 
     def pet(self, player=None, structured: bool = False):
-        return self.interact_with_player(player, prompt="pet", structured=structured)
+        try:
+            return self.interact_with_player(
+                player, prompt="pet", structured=structured
+            )
+        except Exception:
+            narrate(f"{self.name} tilts its head and makes a confused chitter.")
+            return None
 
     def play(self, player=None, item=None, structured: bool = False):
         prompt = "play"
         if item:
             prompt = f"play with {str(item)}"
-        return self.interact_with_player(player, prompt=prompt, structured=structured)
+        try:
+            return self.interact_with_player(
+                player, prompt=prompt, structured=structured
+            )
+        except Exception:
+            narrate(f"{self.name} tilts its head and makes a confused chitter.")
+            return None
 
 
 class Gorran(Friend):  # The "rock-man" that helps Jean at the beginning of the game.

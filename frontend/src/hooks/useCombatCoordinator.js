@@ -37,9 +37,20 @@ export function useCombatCoordinator({
     const [showDefeatDialog, setShowDefeatDialog] = useState(false)
     const [showLootDialog, setShowLootDialog] = useState(false)
     const [endState, setEndState] = useState(null)
-    const [lastEndStateId, setLastEndStateId] = useState(
-        () => sessionStorage.getItem('hov_last_end_state_id')
-    )
+    // In-memory only (not sessionStorage): this only needs to dedupe repeated
+    // effect runs within the *current* mount while the same end_state is
+    // pending/displayed. Persisting it across reloads was actively harmful —
+    // the backend keeps combat_end_summary (and its id) in the session until
+    // the player resolves it (loads a save / starts over after defeat, or
+    // collects loot after victory), so a page reload before that happens kept
+    // reporting the same id. Recording it as "handled" at *detection* time
+    // (before the 5s delay even elapsed) meant a reload during that window —
+    // or any remount before the dialog was dismissed — permanently suppressed
+    // the defeat/victory dialog for that combat, softlocking the player with
+    // no visible death/victory screen. Resetting on every mount means a
+    // remount simply re-runs the (harmless) delay instead of losing the
+    // dialog forever.
+    const [lastEndStateId, setLastEndStateId] = useState(null)
     // Ref (not state) so the update is visible synchronously to GamePage's effect
     // in the same render cycle where the kill is detected. useState would queue
     // the update for the next render, causing a one-frame flash to exploration mode.
@@ -78,8 +89,9 @@ export function useCombatCoordinator({
             }
             if (!isCombatLogProcessing && !hasPendingLogs && !isBattlefieldAnimating && maybeEnd.id && maybeEnd.id !== lastEndStateId) {
                 // Mark handled immediately so re-renders don't schedule a second timer
+                // within this mount (see the lastEndStateId comment above for why this
+                // is intentionally NOT persisted to sessionStorage).
                 setLastEndStateId(maybeEnd.id)
-                sessionStorage.setItem('hov_last_end_state_id', maybeEnd.id)
 
                 const isVictory = maybeEnd.status === 'victory'
                 endStateTimerRef.current = setTimeout(() => {

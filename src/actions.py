@@ -15,70 +15,6 @@ class Action:
         return "{}: {}".format(self.hotkey, self.name)
 
 
-class MoveNorth(Action):
-    def __init__(self):
-        super().__init__(
-            method=Player.move_north, name="Move north", hotkey=("n", "north")
-        )
-
-
-class MoveSouth(Action):
-    def __init__(self):
-        super().__init__(
-            method=Player.move_south, name="Move south", hotkey=("s", "south")
-        )
-
-
-class MoveEast(Action):
-    def __init__(self):
-        super().__init__(
-            method=Player.move_east, name="Move east", hotkey=("e", "east")
-        )
-
-
-class MoveWest(Action):
-    def __init__(self):
-        super().__init__(
-            method=Player.move_west, name="Move west", hotkey=("w", "west")
-        )
-
-
-class MoveNorthEast(Action):
-    def __init__(self):
-        super().__init__(
-            method=Player.move_northeast,
-            name="Move northeast",
-            hotkey=("ne", "northeast"),
-        )
-
-
-class MoveNorthWest(Action):
-    def __init__(self):
-        super().__init__(
-            method=Player.move_northwest,
-            name="Move northwest",
-            hotkey=("nw", "northwest"),
-        )
-
-
-class MoveSouthEast(Action):
-    def __init__(self):
-        super().__init__(
-            method=Player.move_southeast,
-            name="Move southeast",
-            hotkey=("se", "southeast"),
-        )
-
-
-class MoveSouthWest(Action):
-    def __init__(self):
-        super().__init__(
-            method=Player.move_southwest,
-            name="Move southwest",
-            hotkey=("sw", "southwest"),
-        )
-
-
 class ViewStatus(Action):
     def __init__(self):
         super().__init__(
@@ -86,25 +22,6 @@ class ViewStatus(Action):
             name="View status",
             hotkey=("st", "stat", "status", "char", "character"),
         )
-
-
-class Look(Action):
-    def __init__(self):
-        super().__init__(method=Player.look, name="Look", hotkey=("l", "look"))
-
-
-class ListCommands(Action):
-    def __init__(self):
-        super().__init__(
-            method=Player.commands,
-            name="List Commands",
-            hotkey=("c", "com", "commands", "man", "help", "?"),
-        )
-
-
-class View(Action):
-    def __init__(self):
-        super().__init__(method=Player.view, name="View", hotkey=("v", "view"))
 
 
 class Equip(Action):

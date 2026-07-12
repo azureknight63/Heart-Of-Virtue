@@ -1,6 +1,7 @@
 import os
 import sys
 from pathlib import Path
+from unittest.mock import patch
 
 # Ensure the project's src directory is on sys.path so absolute imports in src modules (e.g., `import genericng`) resolve.
 ROOT = Path(__file__).resolve().parent.parent
@@ -138,3 +139,89 @@ def test_mynx_pet_and_play_methods(capfd):
         f"Expected action to be play-related, got '{action2}'. "
         f"Valid options: {valid_play_actions}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Regression tests for GitHub issue #117: "Mynx LLM response contains error"
+#
+# Root cause: Mynx.talk() wraps interact_with_player() in try/except and
+# degrades to a friendly fallback chitter on any unexpected exception, but
+# Mynx.pet() and Mynx.play() did not have the same guard. Any exception
+# raised inside interact_with_player() (e.g. a narration hiccup, a transient
+# LLM/network error not already caught by the mixin's own internal
+# try/excepts) would propagate uncaught out of pet()/play(), through
+# GameService.interact_with_target()'s broad except handler, and surface to
+# the player as a raw "Error executing action: <message>" string instead of
+# degrading silently like talk() does. This matched the player report of
+# repeatedly clicking Talk, then Pet, then Play and seeing a raw error.
+# ---------------------------------------------------------------------------
+
+
+def _raise_once_narrate(*args, **kwargs):
+    """narrate() stand-in that raises on its *second* call.
+
+    interact_with_player() narrates the player's action line first (e.g.
+    "Jean plays with the mynx.") and then narrates the response text later.
+    Raising on the second call simulates an unexpected failure deep inside
+    the interaction pipeline without preventing the method from being
+    entered at all.
+    """
+    _raise_once_narrate.calls += 1
+    if _raise_once_narrate.calls >= 2:
+        raise RuntimeError("simulated narration failure")
+
+
+@pytest.mark.parametrize("method_name,call", [
+    ("talk", lambda m, p: m.talk(p, prompt="talk")),
+    ("pet", lambda m, p: m.pet(p)),
+    ("play", lambda m, p: m.play(p)),
+])
+def test_mynx_interaction_degrades_gracefully_on_internal_error(method_name, call):
+    """Talk, Pet, and Play must all recover silently from an unexpected
+    exception raised inside interact_with_player(), rather than letting it
+    bubble up to the caller (which the API layer would otherwise surface to
+    the player as a raw error message).
+    """
+    m = Mynx(name="MynxTest")
+    p = DummyPlayer()
+    _raise_once_narrate.calls = 0
+
+    with patch("src.npc._llm.narrate", side_effect=_raise_once_narrate):
+        # Must not raise.
+        result = call(m, p)
+
+    # talk/pet/play all fall back to returning None on internal failure,
+    # mirroring the pre-existing talk() behavior.
+    assert result is None
+
+
+def test_mynx_rapid_talk_pet_play_sequence_never_raises():
+    """Simulates the exact player-reported sequence: clicking Talk, then
+    Pet, then Play in quick succession. None of the three should ever let
+    an internal exception escape to the caller, even if every call hits an
+    unexpected internal failure.
+    """
+    m = Mynx(name="MynxTest")
+    p = DummyPlayer()
+
+    with patch("src.npc._llm.narrate", side_effect=RuntimeError("boom")):
+        # None of these should raise — each should degrade to its fallback
+        # "confused chitter" narration and return None.
+        assert m.talk(p, prompt="talk") is None
+        assert m.pet(p) is None
+        assert m.play(p) is None
+
+
+def test_mynx_pet_and_play_propagate_no_exception_types(capfd):
+    """Sanity check without any forced failure: pet() and play() should
+    behave normally (return a string or dict) when nothing goes wrong,
+    confirming the new try/except doesn't change the happy path.
+    """
+    m = Mynx(name="MynxTest")
+    p = DummyPlayer()
+
+    text = m.pet(p, structured=False)
+    assert isinstance(text, str)
+
+    obj = m.play(p, item="ribbon", structured=True)
+    assert isinstance(obj, dict)

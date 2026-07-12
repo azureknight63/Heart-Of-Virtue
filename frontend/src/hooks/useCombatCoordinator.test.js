@@ -238,6 +238,39 @@ describe('useCombatCoordinator', () => {
             // Should not show again
             expect(result.current.showVictoryDialog).toBe(false)
         })
+
+        // Regression for GitHub issue #116 ("Death scene does not display properly").
+        // The backend keeps combat_end_summary (and its id) in the player's session
+        // until the defeat/victory is explicitly resolved (load save / start over /
+        // collect loot). A page reload — or any remount of GamePage — before that
+        // resolution used to permanently lose the defeat/victory dialog: the "already
+        // handled" id was persisted to sessionStorage at *detection* time (before the
+        // 5s pre-dialog delay even elapsed), so a fresh mount that still saw the same
+        // end_state.id from the backend would skip scheduling the dialog forever,
+        // softlocking the player with no visible death screen.
+        it('still shows the defeat dialog on a fresh mount (simulated reload) after the same unresolved end_state was seen pre-timer', () => {
+            const combat = {
+                end_state: { id: 'defeat-reload-1', status: 'defeat', message: 'You lost!' },
+                log: []
+            }
+
+            // First mount: combat end detected, timer scheduled but not yet fired.
+            const first = renderHook(() =>
+                useCombatCoordinator({ ...defaultParams, combat, inCombat: false })
+            )
+            act(() => vi.advanceTimersByTime(1000)) // 1s into the 5s delay
+            expect(first.result.current.showDefeatDialog).toBe(false)
+            first.unmount() // simulates a page reload/GamePage remount mid-delay
+
+            // Fresh mount (as after a reload): backend still reports the same
+            // unresolved end_state since the player never loaded a save or started over.
+            const second = renderHook(() =>
+                useCombatCoordinator({ ...defaultParams, combat, inCombat: false })
+            )
+            act(() => vi.advanceTimersByTime(5000))
+
+            expect(second.result.current.showDefeatDialog).toBe(true)
+        })
     })
 
     describe('handleSuggestedMoveClick', () => {

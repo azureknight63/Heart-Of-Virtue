@@ -1,4 +1,4 @@
-"""Exploration mixin for Player — look, view, search, and map display."""
+"""Exploration mixin for Player — search and map display."""
 
 import random
 import time
@@ -9,61 +9,6 @@ from src.narration import colored, cprint, narrate
 
 class PlayerExplorationMixin:
     """Room exploration and map display for the Player."""
-
-    def look(self, target=None):
-        """Describe the current room, or delegate to view() if a target is given."""
-        if target is not None:
-            self.view(target)
-        else:
-            narrate(self.current_room.intro_text())
-            narrate()
-            functions.print_items_in_room(self.current_room)
-            functions.print_objects_in_room(self.current_room)
-            functions.advise_player_actions(self)
-
-    def view(self, phrase=""):
-        """Describe a specific entity in the current room by name phrase.
-
-        With no phrase, lists what can be looked at (non-interactive — the web
-        client picks a target and views it by name).
-        """
-        if phrase == "":
-            stuff_here = [
-                thing
-                for thing in (
-                    self.current_room.npcs_here
-                    + self.current_room.items_here
-                    + self.current_room.objects_here
-                )
-                if not thing.hidden and thing.name != "null"
-            ]
-            if stuff_here:
-                narrate("Jean can look at:\n")
-                for thing in stuff_here:
-                    narrate(thing.name)
-            else:
-                narrate("Jean doesn't see anything remarkable here to look at.\n")
-        else:
-            lower_phrase = phrase.lower()
-            for i, thing in enumerate(
-                self.current_room.npcs_here
-                + self.current_room.items_here
-                + self.current_room.objects_here
-            ):
-                if not thing.hidden and thing.name != "null":
-                    announce = ""
-                    idle = ""
-                    if hasattr(thing, "announce"):
-                        announce = thing.announce
-                    if hasattr(thing, "idle_message"):
-                        idle = thing.idle_message
-                    search_item = (
-                        thing.name.lower() + " " + announce.lower() + " " + idle.lower()
-                    )
-                    if lower_phrase in search_item:
-                        narrate(thing.description)
-                        functions.await_input()
-                        break
 
     def search(self):
         """

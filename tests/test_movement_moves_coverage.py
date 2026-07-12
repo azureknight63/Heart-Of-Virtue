@@ -945,8 +945,8 @@ class TestAdvanceRemainingGaps:
             advance.beat_update(p)
         mock_legacy.assert_not_called()
 
-    def test_beat_coordinate_based_returns_when_already_close(self):
-        """Line 250-251: current_distance <= 3 -> no movement."""
+    def test_beat_coordinate_based_returns_when_already_adjacent(self):
+        """Line 255-257: current_distance <= 1 (adjacent) -> no movement."""
         import src.moves as moves
 
         p = _player()
@@ -959,6 +959,67 @@ class TestAdvanceRemainingGaps:
         original_pos = p.combat_position
         advance._beat_coordinate_based(p)
         assert p.combat_position is original_pos
+
+    def test_beat_coordinate_based_moves_closer_from_short_range(self):
+        """Regression for issue #138: coordinate-based movement must not stall
+        for targets at distance 2-3, matching Advance.viable()'s own adjacency
+        threshold (distance > 1 is "not yet adjacent" and should keep moving).
+        """
+        import src.moves as moves
+
+        p = _player()
+        p.combat_position = _make_combat_position(x=0, y=0)
+        enemy = _make_enemy()
+        enemy.combat_position = _make_combat_position(x=3, y=0)  # distance 3
+        p.combat_proximity[enemy] = 3
+        enemy.combat_proximity[p] = 3
+
+        advance = moves.Advance(p)
+        advance.target = enemy
+        with patch("src.moves._movement.random.randint", return_value=30):
+            advance._beat_coordinate_based(p)
+        assert (p.combat_position.x, p.combat_position.y) != (0, 0)
+
+    def test_sentinels_vigil_fires_once_per_advance_use(self):
+        """Companion fix for issue #138: closing distance now takes multiple
+        beats to cross the spear's punish range (distance <= 3) since the
+        adjacency guard no longer halts movement there. Without a per-use
+        guard, _apply_sentinels_vigil could fire on every one of those beats
+        instead of once, dealing extra unintended retaliation damage.
+        """
+        import src.moves as moves
+
+        p = _player()
+        p.combat_position = _make_combat_position(x=0, y=0)
+        p.speed = 20
+        p.hp = 100
+        p.protection = 0
+        enemy = _make_enemy()
+        enemy.combat_position = _make_combat_position(x=5, y=0)
+        enemy.speed = 1
+        vigil = MagicMock()
+        vigil.name = "Sentinel's Vigil"
+        enemy.known_moves = [vigil]
+        weapon = MagicMock()
+        weapon.subtype = "Spear"
+        weapon.damage = 20
+        enemy.eq_weapon = weapon
+        enemy.strength = 10
+        p.combat_proximity[enemy] = 5
+        enemy.combat_proximity[p] = 5
+
+        advance = moves.Advance(p)
+        advance.target = enemy
+        advance.prep(p)
+
+        with patch(
+            "src.moves._movement._apply_sentinels_vigil"
+        ) as mock_vigil, patch(
+            "src.moves._movement.random.randint", return_value=30
+        ), patch("src.moves._movement.cprint"):
+            for _ in range(4):
+                advance._beat_coordinate_based(p)
+        mock_vigil.assert_called_once()
 
     def test_beat_coordinate_based_collects_occupied_positions_and_moves(self):
         """Lines 253-285: occupied-position collection + sentinel's vigil trigger."""
@@ -988,17 +1049,46 @@ class TestAdvanceRemainingGaps:
         # Position should have moved from the origin
         assert (p.combat_position.x, p.combat_position.y) != (0, 0)
 
-    def test_beat_legacy_returns_when_already_close(self):
-        """Line 289-290: distance <= 3 -> no movement."""
+    def test_beat_legacy_returns_when_already_adjacent(self):
+        """Line 295-296: distance <= 1 (adjacent) -> no movement.
+
+        The adjacency threshold here must match Advance.viable()'s own
+        definition of "beyond adjacent" (distance > 1); regression coverage
+        for issue #138 lives in test_beat_legacy_moves_closer_from_short_range
+        below, which pins the bug where this threshold used to be 3 instead
+        of 1, leaving Advance a silent no-op for any target at distance 2-3.
+        """
         import src.moves as moves
 
         p = _player()
         enemy = _make_enemy()
-        p.combat_proximity[enemy] = 2
+        p.combat_proximity[enemy] = 1
         advance = moves.Advance(p)
         advance.target = enemy
         advance._beat_legacy(p)
-        assert p.combat_proximity[enemy] == 2
+        assert p.combat_proximity[enemy] == 1
+
+    def test_beat_legacy_moves_closer_from_short_range(self):
+        """Regression for issue #138: 'Advance does nothing' when a target sits
+        at distance 2 or 3. viable() reports Advance usable for any distance > 1,
+        but the old guard (`<= 3`) plus a floor-at-3 clamp made every beat_update
+        call a no-op in that range, so the move visibly did nothing even though
+        it was selectable and consumed its full stage duration.
+        """
+        import src.moves as moves
+
+        for start_distance in (2, 3):
+            p = _player()
+            enemy = _make_enemy()
+            p.combat_proximity[enemy] = start_distance
+            enemy.combat_proximity[p] = start_distance
+            advance = moves.Advance(p)
+            advance.target = enemy
+            assert advance.viable() is True
+            advance._beat_legacy(p)
+            assert p.combat_proximity[enemy] < start_distance, (
+                f"Advance did not close distance from {start_distance}"
+            )
 
 
 # ---------------------------------------------------------------------------

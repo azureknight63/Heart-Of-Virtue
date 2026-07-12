@@ -71,6 +71,16 @@ class TestErrorHandlers:
 
             abort(500)
 
+        @app.route("/test_500_detail")
+        def test_500_detail():
+            from werkzeug.exceptions import InternalServerError
+
+            # Simulate an internal error whose description carries sensitive
+            # detail (stack/path info) that must never reach the client.
+            raise InternalServerError(
+                description="secret-db-password=hunter2 at /etc/private/config.py"
+            )
+
         @app.route("/test_503")
         def test_503():
             from flask import abort
@@ -136,6 +146,18 @@ class TestErrorHandlers:
         data = response.get_json()
         assert data["success"] is False
         assert "Internal server error" in data["error"]
+
+    def test_500_error_does_not_leak_exception_detail(self, client):
+        """Regression test for issue #262: the 500 handler must return a
+        generic message and never echo str(error) / exception detail."""
+        response = client.get("/test_500_detail")
+        assert response.status_code == 500
+        data = response.get_json()
+        assert data["success"] is False
+        assert data["message"] == "An unexpected error occurred"
+        assert "secret-db-password" not in data["message"]
+        assert "hunter2" not in data["message"]
+        assert "/etc/private/config.py" not in data["message"]
 
     def test_error_contains_message_field(self, client):
         """Test that all error responses contain a message field."""

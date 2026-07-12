@@ -201,6 +201,75 @@ class GameService:
             "transition": op.get("transition", "fade"),
         }
 
+    # Maximum characters per paced narration segment before a plain (unstaged)
+    # text block is split into multiple click-to-continue beats. Mirrors the
+    # pacing staged portrait dialogue already gets for free from advancing one
+    # `say()` beat at a time — see issue #123 ("Break up event text"): long
+    # narrate()/cprint() blocks were rendering as one uncontrollable typewriter
+    # scroll, and finishing the typewriter early revealed the whole wall of
+    # text at once instead of pacing it.
+    _NARRATION_CHUNK_MAX_CHARS = 400
+
+    _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
+
+    @classmethod
+    def _chunk_narration_text(cls, text: str, max_chars: Optional[int] = None) -> List[str]:
+        """Split ``text`` into paced, maximum-sized chunks at paragraph/sentence
+        boundaries.
+
+        Greedily packs paragraphs (``\\n\\n``-separated) and, within an
+        oversized paragraph, sentences, into chunks no longer than
+        ``max_chars`` wherever a boundary allows it. A single sentence longer
+        than ``max_chars`` is kept intact rather than cut mid-word — pacing is
+        best-effort, not a hard truncation.
+
+        Returns ``[text]`` (a single chunk) unchanged when ``text`` already
+        fits within ``max_chars``, so short blocks are never touched. Returns
+        ``[]`` for empty/whitespace-only text.
+        """
+        max_chars = max_chars or cls._NARRATION_CHUNK_MAX_CHARS
+        text = (text or "").strip()
+        if not text:
+            return []
+        if len(text) <= max_chars:
+            return [text]
+
+        # Split on ANY run of newlines, not just blank-line-separated ("\n\n")
+        # paragraphs: _capture_conversation joins separate narrate()/cprint()
+        # calls with a single "\n", and those call boundaries are exactly the
+        # natural pacing points we want to respect. Relying on sentence-ending
+        # punctuation alone to find a boundary misses lines that end without
+        # terminal punctuation (e.g. trailing "...", em dash, or no punctuation
+        # at all), which could otherwise glue multiple messages into one
+        # oversized chunk despite an available newline boundary.
+        paragraphs = [p.strip() for p in re.split(r"\n+", text) if p.strip()] or [text]
+
+        # Flatten to (unit_text, separator_before) pairs so sentence-splits
+        # within the same paragraph rejoin with a space, while distinct
+        # paragraphs rejoin with a blank line.
+        units: List[tuple] = []
+        for p_idx, para in enumerate(paragraphs):
+            para_sep = "\n\n" if p_idx > 0 else ""
+            if len(para) <= max_chars:
+                units.append((para, para_sep))
+                continue
+            sentences = [s.strip() for s in cls._SENTENCE_SPLIT_RE.split(para) if s.strip()] or [para]
+            for s_idx, sentence in enumerate(sentences):
+                units.append((sentence, para_sep if s_idx == 0 else " "))
+
+        chunks: List[str] = []
+        current = ""
+        for unit_text, sep in units:
+            candidate = f"{current}{sep}{unit_text}" if current else unit_text
+            if current and len(candidate) > max_chars:
+                chunks.append(current)
+                current = unit_text
+            else:
+                current = candidate
+        if current:
+            chunks.append(current)
+        return chunks
+
     def _capture_conversation(self, msgs, player=None):
         """Turn captured narration entries into (output_text, segments, conversation).
 
@@ -210,8 +279,11 @@ class GameService:
         opened). ``output_text`` is the flattened plain text kept for the legacy
         renderer, event history, and as a fallback for clients that ignore
         segments. Events that never call the staged helpers yield an empty
-        ``segments`` list and ``None`` conversation, so they render exactly as
-        before.
+        ``segments`` list and ``None`` conversation (short text renders exactly
+        as before); a long unstaged text block is instead split into paced,
+        un-staged (``in_conversation: False``) segments via
+        :meth:`_chunk_narration_text` so it advances beat-by-beat instead of
+        dumping as one uncontrollable typewriter scroll.
         """
         segments: List[Dict[str, Any]] = []
         conversation: Optional[Dict[str, Any]] = None
@@ -299,6 +371,19 @@ class GameService:
             )
         )
         if not staged_used:
+            # Long plain narration (no say()/begin_conversation() staging) still
+            # gets paced: split it into click-to-continue beats the same way
+            # ConversationStage already renders un-staged prose (in_conversation
+            # is False, so no portraits — see ConversationStage.jsx). Short text
+            # yields a single chunk, so segments stays empty and the event
+            # renders through the legacy typewriter path exactly as before.
+            chunks = self._chunk_narration_text(output_text)
+            if len(chunks) > 1:
+                paced_segments = [
+                    {"text": chunk, "type": "narration", "in_conversation": False}
+                    for chunk in chunks
+                ]
+                return output_text, paced_segments, None
             return output_text, [], None
         return output_text, segments, conversation
 
@@ -533,8 +618,7 @@ class GameService:
         map_name = current_map.get("name") if isinstance(current_map, dict) else None
         tile_key = f"{map_name}:{tile.x},{tile.y}"
 
-        # We need to manually serialize to avoid circular dependencies if we used TileSerializer here
-        # (Though TileSerializer is imported at top level, let's keep it simple)
+        # Room data is serialized by hand here rather than via a shared serializer class.
 
         # Calculate exits for this tile
         exits_data = self._calculate_exits(player.universe, tile, tile.x, tile.y)
@@ -2729,9 +2813,7 @@ class GameService:
         current_tile = player.universe.get_tile(player.location_x, player.location_y)
         if current_tile and hasattr(current_tile, "available_actions"):
             try:
-                available_actions = current_tile.available_actions(
-                    callerIsApi=True, player=player
-                )
+                available_actions = current_tile.available_actions(player=player)
                 for action in available_actions:
                     commands.append(
                         {

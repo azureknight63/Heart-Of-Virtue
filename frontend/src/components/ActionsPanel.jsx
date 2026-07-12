@@ -101,12 +101,24 @@ export default function ActionsPanel({ player, location, onClose, onRefetch, onM
   const handleSave = async () => {
     setActionMessage('Saving game...')
     const saveName = `Save_${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}`
-    const response = await apiEndpoints.saves.save(saveName)
 
-    if (response.data && response.data.success) {
-      setTimedMessage(response.data.message || 'Game saved successfully!', 3000)
-    } else {
-      setTimedMessage(response.data?.error || 'Save failed.', 3000)
+    try {
+      const response = await apiEndpoints.saves.save(saveName)
+
+      if (response.data && response.data.success) {
+        setTimedMessage(response.data.message || 'Game saved successfully!', 3000)
+      } else {
+        setTimedMessage(response.data?.error || 'Save failed.', 3000)
+      }
+    } catch (err) {
+      // apiEndpoints.saves.save() rejects for any non-2xx response (403 no
+      // account / save-limit reached, 500 server error, etc). Without this
+      // catch, the rejection bubbles up to handleAction()'s generic handler
+      // and gets replaced with an uninformative "Command failed." toast that
+      // hides the real, often actionable, backend error message (e.g. "Maximum
+      // number of manual saves reached (20)."). Surface it here instead.
+      const backendMessage = err.response?.data?.error
+      setTimedMessage(backendMessage || 'Save failed. Please try again.', 3000)
     }
   }
 
