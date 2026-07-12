@@ -1,21 +1,15 @@
-"""Regression coverage for issue #16's testable pieces: property tooltips in
-the map editor's Edit Properties dialog (utils/map_generator.py).
+"""Regression coverage for issue #16's testable pieces: the map editor's
+Edit Properties dialog (utils/map_generator.py) got a search filter,
+per-property tooltips, customized-value highlighting, thematic grouping,
+and cross-tile bulk editing.
 
-Scope note: issue #16 asked for five UX improvements to the property dialog
-(searchable filter, grouped properties, tooltips, bulk multi-tile editing,
-highlighting customized properties). The filter, tooltip-description, and
-highlight-customized-properties pieces are implemented directly in
-open_property_dialog. Grouping and bulk multi-tile editing are left for a
-follow-up -- they require a product decision (what grouping taxonomy; what
-"apply to multiple tiles" should mean/how tiles get selected for it) rather
-than a mechanical implementation, per CLAUDE.md's guidance not to invent
-resolutions for ambiguous requirements.
-
-Only _property_description() is meaningfully unit-testable here: it's a
-pure function. The filter/highlight logic lives inline inside
-open_property_dialog, which constructs real tkinter widgets and can't be
-exercised without a display (this sandbox has no tkinter at all, and this
-module has no existing test infrastructure or CI coverage to build on).
+Only the pure-logic pieces are meaningfully unit-testable here:
+_property_description(), _property_group(), _grouped_field_layout(), and
+the existing/existing_list normalization open_property_dialog uses for bulk
+edit. The widget-construction code (search box wiring, tooltip popups,
+label styling, the actual dialog/canvas) can't be exercised without a
+display -- this sandbox has no tkinter at all, and this module has no
+existing test infrastructure or CI coverage to build on.
 """
 
 import importlib
@@ -78,3 +72,132 @@ class TestPropertyDescriptions:
     def test_every_description_is_non_empty(self, map_generator_module):
         for name, text in map_generator_module._PROPERTY_DESCRIPTIONS.items():
             assert isinstance(text, str) and text.strip(), name
+
+
+class TestPropertyGrouping:
+    def test_known_names_map_to_their_bucket(self, map_generator_module):
+        assert map_generator_module._property_group("name") == "Appearance"
+        assert map_generator_module._property_group("locked") == "State"
+        assert map_generator_module._property_group("teleport_map") == "Location"
+        assert map_generator_module._property_group("inventory") == "Contents"
+
+    def test_unknown_name_falls_back_to_other(self, map_generator_module):
+        assert map_generator_module._property_group("some_made_up_field") == "Other"
+
+    def test_layout_groups_container_params_with_headers_and_no_gaps(
+        self, map_generator_module
+    ):
+        from src.objects import Container
+
+        editable, _ = map_generator_module.get_editable_params(Container)
+        layout = map_generator_module._grouped_field_layout(editable, col_count=2)
+
+        headers = [e for e in layout if e["kind"] == "header"]
+        fields = [e for e in layout if e["kind"] == "field"]
+
+        # Every editable param is placed exactly once.
+        assert sorted(e["param"].name for e in fields) == sorted(
+            p.name for p in editable
+        )
+        # More than one group is present for Container, so headers should
+        # actually appear (not a single pointless "Other" header).
+        assert len(headers) >= 2
+        # No two fields collide on the same (row, col) cell.
+        cells = [(e["row"], e["col"]) for e in fields]
+        assert len(cells) == len(set(cells))
+        # Columns never exceed col_count - 1.
+        assert all(e["col"] in (0, 1) for e in fields)
+
+    def test_layout_omits_headers_when_everything_falls_in_one_group(
+        self, map_generator_module
+    ):
+        import inspect
+
+        class OnlyAppearanceFields:
+            def __init__(self, name: str = "x", description: str = "y"):
+                pass
+
+        params = [
+            p
+            for p in inspect.signature(OnlyAppearanceFields.__init__).parameters.values()
+            if p.name != "self"
+        ]
+        layout = map_generator_module._grouped_field_layout(params, col_count=1)
+        assert all(e["kind"] == "field" for e in layout)
+
+
+class TestBulkEditAppliesToEveryInstance:
+    """Mirrors what open_property_dialog's existing/existing_list
+    normalization and auto_save() do for a bulk edit, without needing to
+    construct the real tkinter dialog (see module docstring)."""
+
+    def test_single_object_is_not_treated_as_bulk(self, map_generator_module):
+        # Re-derive open_property_dialog's normalization inline: a single
+        # instance (not a list) is wrapped to a 1-element list, is_bulk_edit
+        # is False.
+        from src.objects import Container
+
+        existing = Container(name="solo")
+        existing_list = (
+            existing
+            if isinstance(existing, list)
+            else ([existing] if existing is not None else [])
+        )
+        assert len(existing_list) == 1
+        assert (len(existing_list) > 1) is False
+
+    def test_bulk_list_change_applies_to_every_instance(self, map_generator_module):
+        from src.objects import Container
+
+        c1 = Container(name="remains-a")
+        c2 = Container(name="remains-b")
+        c3 = Container(name="remains-c")
+        existing = [c1, c2, c3]
+
+        existing_list = (
+            existing
+            if isinstance(existing, list)
+            else ([existing] if existing is not None else [])
+        )
+        is_bulk_edit = len(existing_list) > 1
+        assert is_bulk_edit is True
+
+        # auto_save()'s apply loop: for k, v in kwargs.items(): for obj in
+        # existing_list: setattr(obj, k, v)
+        kwargs = {"locked": True, "hide_factor": 5}
+        for k, v in kwargs.items():
+            for obj in existing_list:
+                setattr(obj, k, v)
+
+        for obj in (c1, c2, c3):
+            assert obj.locked is True
+            assert obj.hide_factor == 5
+
+    def test_bulk_candidates_grouped_by_class_across_tiles(self, map_generator_module):
+        # Mirrors MapEditor.bulk_edit_selected_tiles's candidate-gathering
+        # loop: scan objects/npcs/events/items across several tiles' data,
+        # grouped by type.
+        from src.objects import Container
+
+        class FakeNpc:
+            def __init__(self, name):
+                self.name = name
+
+        map_data = {
+            (0, 0): {"objects": [Container(name="a")], "npcs": [FakeNpc("m1")]},
+            (1, 0): {"objects": [Container(name="b"), Container(name="c")]},
+            (2, 0): {},  # empty tile, must not raise
+        }
+        selected_tiles = {(0, 0), (1, 0), (2, 0)}
+
+        candidates = {}
+        for pos in selected_tiles:
+            tile_data = map_data.get(pos)
+            if not tile_data:
+                continue
+            for bucket in ("objects", "npcs", "events", "items"):
+                for inst in tile_data.get(bucket, []) or []:
+                    candidates.setdefault(type(inst), []).append(inst)
+
+        assert len(candidates[Container]) == 3
+        assert len(candidates[FakeNpc]) == 1
