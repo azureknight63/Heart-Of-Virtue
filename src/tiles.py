@@ -10,7 +10,6 @@ from src.narration import colored, narrate
 
 import src.actions as actions  # type: ignore
 import src.functions as functions  # type: ignore
-from src.universe import tile_exists as tile_exists  # type: ignore
 
 
 class MapTile:
@@ -46,58 +45,19 @@ class MapTile:
         """Process actions that change the state of the player."""
         pass
 
-    def adjacent_moves(self):
-        """Returns all move actions for adjacent tiles."""
-        moves = []
-        directions = [
-            ((1, 0), "east", actions.MoveEast),
-            ((-1, 0), "west", actions.MoveWest),
-            ((0, -1), "north", actions.MoveNorth),
-            ((0, 1), "south", actions.MoveSouth),
-            ((1, -1), "northeast", actions.MoveNorthEast),
-            ((-1, -1), "northwest", actions.MoveNorthWest),
-            ((1, 1), "southeast", actions.MoveSouthEast),
-            ((-1, 1), "southwest", actions.MoveSouthWest),
+    def available_actions(self, player=None) -> list[actions.Action]:
+        """Returns all the available actions in this room.
+
+        Movement in the web API is handled directly by ``GameService.move_player``
+        rather than through Action dispatch. The terminal-only action set
+        (directional moves, Look/View/ListCommands) was removed as part of the
+        terminal-mode teardown, so this always returns the API-mode action set.
+        """
+        moves = [
+            actions.Search(),
+            actions.Menu(),
+            actions.Save(),
         ]
-        for (dx, dy), direction, action_cls in directions:
-            if (
-                tile_exists(self.map, self.x + dx, self.y + dy)
-                and direction not in self.block_exit
-            ):
-                moves.append(action_cls())
-                tile = tile_exists(self.map, self.x + dx, self.y + dy)
-                tile.discovered = True
-        return moves
-
-    def available_actions(self, callerIsApi=False, player=None) -> list[actions.Action]:
-        """Returns all the available actions in this room."""
-        moves = []
-
-        if not callerIsApi:
-            moves = (
-                self.adjacent_moves()
-            )  # first, add the available directions in the current room
-            default_moves = [  # these are the default moves available to the player
-                actions.ListCommands(),
-                actions.Look(),
-                actions.View(),
-                actions.Equip(),
-                actions.Use(),
-                actions.Search(),
-                actions.Menu(),
-                actions.Save(),
-                actions.ViewMap(),
-                actions.ViewStatus(),
-            ]
-        else:
-            default_moves = [
-                actions.Search(),
-                actions.Menu(),
-                actions.Save(),
-            ]
-
-        for move in default_moves:
-            moves.append(move)
 
         # Check if debug mode is enabled via player's game_config
         debug_enabled = False

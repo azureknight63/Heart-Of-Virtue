@@ -1,81 +1,11 @@
-"""Movement mixin for Player — map navigation, teleport, flee, and party recall."""
+"""Movement mixin for Player — map navigation, teleport, and party recall."""
 
-import random
-import time
-
-import src.functions as functions  # type: ignore
 from src.universe import tile_exists as tile_exists
-from src.narration import colored, cprint, narrate
+from src.narration import colored, narrate
 
 
 class PlayerMovementMixin:
     """Map navigation and positioning for the Player."""
-
-    def move(self, dx, dy):
-        """Move player by (dx, dy), printing intro text on success or an error on failure."""
-        self.universe.game_tick += 1
-        # Store previous position before moving
-        self.prev_location_x = self.location_x
-        self.prev_location_y = self.location_y
-        self.location_x += dx
-        self.location_y += dy
-        tile = tile_exists(self.map, self.location_x, self.location_y)
-        if tile is None:
-            self.location_x -= dx
-            self.location_y -= dy
-            # Restore previous position if move failed
-            self.prev_location_x = self.location_x
-            self.prev_location_y = self.location_y
-            cprint("{} cannot go that way.".format(self.name), "red")
-            time.sleep(1)
-        else:
-            narrate(tile.intro_text())
-            functions.print_items_in_room(tile)
-            functions.print_objects_in_room(tile)
-            functions.advise_player_actions(self, tile)
-
-    def move_north(self):
-        self.move(dx=0, dy=-1)
-
-    def move_south(self):
-        self.move(dx=0, dy=1)
-
-    def move_east(self):
-        self.move(dx=1, dy=0)
-
-    def move_west(self):
-        self.move(dx=-1, dy=0)
-
-    def move_northeast(self):
-        self.move(dx=1, dy=-1)
-
-    def move_northwest(self):
-        self.move(dx=-1, dy=-1)
-
-    def move_southeast(self):
-        self.move(dx=1, dy=1)
-
-    def move_southwest(self):
-        self.move(dx=-1, dy=1)
-
-    def do_action(self, action, phrase=""):
-        """Dispatch a room Action to the corresponding player method."""
-        action_method = getattr(self, action.method.__name__)
-        if phrase == "":
-            if action_method:
-                action_method()
-        else:
-            if action_method:
-                action_method(phrase)
-
-    def flee(self, tile):
-        """Moves the player randomly to an adjacent tile."""
-        available_moves = tile.adjacent_moves()
-        if not available_moves:
-            cprint("There's nowhere for Jean to run!", "red")
-            return
-        r = random.randint(0, len(available_moves) - 1)
-        self.do_action(available_moves[r])
 
     def teleport(self, target_map: str, target_coordinates: tuple):
         """

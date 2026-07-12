@@ -63,7 +63,6 @@ Targets uncovered lines (76% -> target 90%+):
   1259-1263 — add_random_enchantments equip_states None assignment
   1266-1271 — add_random_enchantments equip_states extend fallback
   1334-1350 — seek_class with specific package / ValueError
-  1407 — advise_player_actions
   1411-1413 — learn_all_skills_from_skilltree
   1420-1421 — learn_all_skills_from_skilltree no new skills
 """

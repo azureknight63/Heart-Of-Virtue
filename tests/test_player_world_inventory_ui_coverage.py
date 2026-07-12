@@ -676,24 +676,6 @@ class TestUIGridCoverage:
         all_args = [str(c) for c in mock_print.call_args_list]
         assert any("None" in a for a in all_args)
 
-    def test_commands_prints_actions(self):
-        """commands() should print available actions."""
-        p = _make_player()
-        action = MagicMock()
-        action.name = "Attack"
-        action.hotkey = "a"
-        p.current_room = MagicMock()
-        p.current_room.available_actions.return_value = [action]
-
-        with (
-            patch("src.player._ui.cprint") as mock_cp,
-            patch("src.player._ui.functions") as mock_fn,
-        ):
-            mock_fn.await_input = MagicMock()
-            p.commands()
-
-        mock_cp.assert_called()
-
     def test_menu_calls_autosave_and_sets_main_menu(self):
         p = _make_player()
         with patch("src.functions.autosave") as mock_save:

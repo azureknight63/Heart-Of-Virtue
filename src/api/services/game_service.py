@@ -2813,9 +2813,7 @@ class GameService:
         current_tile = player.universe.get_tile(player.location_x, player.location_y)
         if current_tile and hasattr(current_tile, "available_actions"):
             try:
-                available_actions = current_tile.available_actions(
-                    callerIsApi=True, player=player
-                )
+                available_actions = current_tile.available_actions(player=player)
                 for action in available_actions:
                     commands.append(
                         {

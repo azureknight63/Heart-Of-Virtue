@@ -90,67 +90,12 @@ def test_block_exit_can_be_set(basic_tile):
     assert "north" in basic_tile.block_exit
 
 
-@patch('src.tiles.tile_exists')
-def test_adjacent_moves_all_directions(mock_tile_exists, basic_tile):
-    """Test adjacent_moves returns all valid directions"""
-    # Mock all adjacent tiles exist
-    mock_adjacent_tile = Mock()
-    mock_adjacent_tile.discovered = False
-    mock_tile_exists.return_value = mock_adjacent_tile
+def test_available_actions_includes_defaults(basic_tile):
+    """Test available_actions includes the default API-mode actions"""
+    actions = basic_tile.available_actions()
 
-    moves = basic_tile.adjacent_moves()
-
-    # Should have 8 directional moves
-    assert len(moves) == 8
-
-
-@patch('src.tiles.tile_exists')
-def test_adjacent_moves_blocked_direction(mock_tile_exists, basic_tile):
-    """Test adjacent_moves respects blocked exits"""
-    mock_adjacent_tile = Mock()
-    mock_adjacent_tile.discovered = False
-    mock_tile_exists.return_value = mock_adjacent_tile
-
-    # Block north exit
-    basic_tile.block_exit.append("north")
-
-    moves = basic_tile.adjacent_moves()
-
-    # Should have 7 moves (8 - 1 blocked)
-    assert len(moves) == 7
-
-
-@patch('src.tiles.tile_exists')
-def test_adjacent_moves_no_tiles(mock_tile_exists, basic_tile):
-    """Test adjacent_moves when no adjacent tiles exist"""
-    mock_tile_exists.return_value = None
-
-    moves = basic_tile.adjacent_moves()
-
-    # Should have no moves
-    assert len(moves) == 0
-
-
-@patch('src.tiles.tile_exists')
-def test_adjacent_moves_marks_discovered(mock_tile_exists, basic_tile):
-    """Test adjacent_moves marks adjacent tiles as discovered"""
-    mock_adjacent_tile = Mock()
-    mock_adjacent_tile.discovered = False
-    mock_tile_exists.return_value = mock_adjacent_tile
-
-    basic_tile.adjacent_moves()
-
-    # Adjacent tile should be marked as discovered
-    assert mock_adjacent_tile.discovered is True
-
-
-def test_available_actions_includes_moves(basic_tile):
-    """Test available_actions includes movement options"""
-    with patch.object(basic_tile, 'adjacent_moves', return_value=[]):
-        actions = basic_tile.available_actions()
-
-        # Should have default actions
-        assert len(actions) > 0
+    # Should have default actions (Search, Menu, Save)
+    assert len(actions) > 0
 
 
 def test_evaluate_events_empty(basic_tile):

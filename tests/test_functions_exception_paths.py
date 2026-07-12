@@ -35,7 +35,6 @@ Targets (line numbers as of this writing):
     1188       stack_items_list: dup is master (same instance twice)
     1192-1194  stack_items_list: count += exception
     1201-1202  stack_items_list: stack_grammar() exception
-    1221       advise_player_actions: room defaults to player.current_room
 
 Deliberately NOT covered (documented, not a bug):
     398-399  refresh_stat_bonuses faith-scaling except: unreachable without a
@@ -734,15 +733,3 @@ def test_stack_items_list_stack_grammar_exception_is_swallowed():
     functions.stack_items_list(lst)
     assert lst[0].count == 3
 
-
-# ---------------------------------------------------------------------------
-# advise_player_actions -- room defaults to player.current_room
-# ---------------------------------------------------------------------------
-
-
-def test_advise_player_actions_defaults_room_to_current_room(capsys):
-    room = types.SimpleNamespace(adjacent_moves=lambda: ["north", "south"])
-    player = types.SimpleNamespace(current_room=room)
-    functions.advise_player_actions(player)  # room=None -> uses player.current_room
-    out = capsys.readouterr().out
-    assert "Choose an action" in out
