@@ -154,7 +154,11 @@ describe('ActionsPanel', () => {
     });
   });
 
-  it('handles action execution error', async () => {
+  it('surfaces a fallback message on Save when the request rejects with no backend detail', async () => {
+    // A rejected promise with no `response` (e.g. a network error, or an axios
+    // error shape without a parsed body) must not fall through to the generic
+    // "Command failed." toast — Save has its own catch that shows a
+    // save-specific fallback instead.
     apiEndpoints.saves.save.mockRejectedValue(new Error('Execution error'));
 
     renderWithRouter(<ActionsPanel onClose={mockOnClose} />);
@@ -163,8 +167,34 @@ describe('ActionsPanel', () => {
     fireEvent.click(screen.getByText(/Save/i));
 
     await waitFor(() => {
-      expect(screen.getByText(/Command failed./i)).toBeDefined();
+      expect(screen.getByText(/Save failed\. Please try again\./i)).toBeDefined();
     });
+  });
+
+  it('surfaces the real backend error message on Save failure instead of a generic "Command failed"', async () => {
+    // Regression test for GitHub issue #115: a non-2xx response from POST /saves
+    // (e.g. 403 "Cloud saves require a registered account." or the 20-manual-save
+    // limit) previously bubbled up as an uncaught axios rejection and was replaced
+    // with an uninformative "Command failed." toast, hiding the actionable reason.
+    const axiosError = new Error('Request failed with status code 403');
+    axiosError.response = {
+      status: 403,
+      data: {
+        success: false,
+        error: 'Maximum number of manual saves reached (20). Please delete an existing save to create a new one.',
+      },
+    };
+    apiEndpoints.saves.save.mockRejectedValue(axiosError);
+
+    renderWithRouter(<ActionsPanel onClose={mockOnClose} />);
+
+    await waitFor(() => screen.getByText(/Save/i));
+    fireEvent.click(screen.getByText(/Save/i));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Maximum number of manual saves reached/i)).toBeDefined();
+    });
+    expect(screen.queryByText(/^Command failed\.$/i)).toBeNull();
   });
 
   it('defaults commands to an empty array when the response has no commands field', async () => {
