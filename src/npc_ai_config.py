@@ -4,7 +4,9 @@ Manages tactical behavior flags for NPCs, including flanking, retreat, and posit
 Provides decision framework that integrates with combat.py AI decision-making.
 """
 
-from typing import Tuple, Optional
+from typing import Tuple, Optional, List
+
+from src import positions
 
 
 class NPCAIConfig:
@@ -135,10 +137,45 @@ class NPCAIConfig:
 
         return health_ratio <= threshold
 
+    def get_current_angle_diff(self, attacker, target) -> Optional[float]:
+        """Angular difference (0-180°) between the attack line and target's facing.
+
+        Uses the coordinate positioning system (``src.positions``). 0° means the
+        attacker is striking the target head-on; 90° is a clean flank; 180° is a
+        strike from directly behind.
+
+        Args:
+            attacker: The unit making the attack
+            target: The unit being attacked
+
+        Returns:
+            The angular difference in degrees, or None when either unit lacks a
+            ``combat_position`` (e.g. legacy proximity-only combat or unit tests).
+        """
+        if not attacker or not target:
+            return None
+
+        a_pos = getattr(attacker, "combat_position", None)
+        t_pos = getattr(target, "combat_position", None)
+        if a_pos is None or t_pos is None:
+            return None
+
+        try:
+            attack_angle = positions.angle_to_target(t_pos, a_pos)
+            return float(positions.attack_angle_difference(attack_angle, t_pos.facing))
+        except (AttributeError, TypeError):
+            return None
+
     def get_flank_position_angle(
         self, attacker, target, ignore_unit: Optional[object] = None
     ) -> Optional[float]:
-        """Calculate optimal flanking angle relative to target and attacker.
+        """Calculate the bearing the attacker should approach from to flank target.
+
+        A target's blind sides sit perpendicular to its facing (facing ± 90°).
+        This returns whichever of those two bearings is closer to the attacker's
+        current position, so the maneuver is the shortest one available. The
+        result is a world-angle (0-360°, 0 = North) usable with the movement
+        helpers in ``src.positions`` (e.g. to steer ``move_to_flank``).
 
         Args:
             attacker: The NPC attempting to flank
@@ -146,7 +183,8 @@ class NPCAIConfig:
             ignore_unit: Optional unit to ignore in calculations (e.g., self)
 
         Returns:
-            Angle in degrees where flank should be attempted, or None if no flank available
+            The approach bearing in degrees, or None if flanking is disabled or
+            either unit lacks positional (``combat_position``) data.
         """
         if not self.is_flanking_enabled():
             return None
@@ -154,13 +192,37 @@ class NPCAIConfig:
         if not attacker or not target:
             return None
 
-        # Ideal flank angle is 90-180 degrees from attacker's line to target
-        # This represents attacking from the side or rear
-        # Would need position/angle tracking to implement fully
-        # For now, return a calculated flank angle
-        ideal_flank = 90.0  # Perpendicular to direct attack line
+        a_pos = getattr(attacker, "combat_position", None)
+        t_pos = getattr(target, "combat_position", None)
+        if a_pos is None or t_pos is None:
+            return None
 
-        return ideal_flank
+        try:
+            return positions.nearest_flank_bearing(a_pos, t_pos)
+        except (AttributeError, TypeError):
+            return None
+
+    def _derive_combat_sides(self, npc) -> Tuple[List, List]:
+        """Split the active combat into (allies, enemies) from the NPC's view.
+
+        Allies are the combatants sharing the NPC's side (including the NPC
+        itself); enemies are the opposing side. Combat rosters live on the
+        player: ``combat_list`` (enemies of the player) and
+        ``combat_list_allies`` (friendly NPCs).
+
+        Returns:
+            (allies, enemies) lists, or ([], []) when no combat context exists.
+        """
+        player = getattr(npc, "player_ref", None) or self.player
+        if player is None:
+            return [], []
+
+        enemy_side = list(getattr(player, "combat_list", []) or [])
+        ally_side = list(getattr(player, "combat_list_allies", []) or [])
+
+        if getattr(npc, "friend", False):
+            return [player] + ally_side, enemy_side
+        return enemy_side, [player] + ally_side
 
     def calculate_retreat_priority(self, npc, enemies: list) -> float:
         """Calculate priority score for retreat (0.0-1.0, higher = more urgent).
@@ -191,6 +253,21 @@ class NPCAIConfig:
         priority = 1.0 - (health_ratio / max(0.001, threshold))
         return min(1.0, max(0.0, priority))
 
+    @staticmethod
+    def _move_is_offensive(npc, move_name: str) -> bool:
+        """Whether the named move is an attack, by the NPC's own move roster.
+
+        Looks the move up on ``npc.known_moves`` and checks its ``category`` so
+        the flank-capitalize bonus applies to every offensive move (PowerStrike,
+        VenomClaw, BatBite, …), not just the generic ``NPC_Attack``. Falls back
+        to the generic attack names when the move object isn't available.
+        """
+        move_l = move_name.lower()
+        for move in getattr(npc, "known_moves", None) or []:
+            if getattr(move, "name", "").lower() == move_l:
+                return getattr(move, "category", "") == "Offensive"
+        return move_l in ("npc_attack", "attack")
+
     def get_weighted_move_bonus(self, npc, move_name: str) -> int:
         """Get bonus weight for a move based on AI config.
 
@@ -203,27 +280,46 @@ class NPCAIConfig:
         """
         bonus = 0
 
+        move_l = move_name.lower()
+
         # Bonus for retreat moves when health is low
         if self.should_attempt_retreat(npc):
-            if move_name.lower() in ["withdraw", "dodge", "parry", "npc_rest"]:
+            if move_l in ["withdraw", "dodge", "parry", "npc_rest"]:
                 bonus += 3
 
         # Bonus for flanking moves when conditions are right
-        if self.is_flanking_enabled() and hasattr(npc, "target") and npc.target:
-            if move_name.lower() in [
-                "advance",
-                "npc_attack",
-                "tactical positioning",
-            ]:
-                # Check if currently in flank range
-                if (
-                    hasattr(npc, "combat_proximity")
-                    and npc.target in npc.combat_proximity
-                ):
-                    distance = npc.combat_proximity[npc.target]
-                    min_range, max_range = self.get_flanking_distance_range()
-                    if min_range <= distance <= max_range:
+        if self.is_flanking_enabled() and getattr(npc, "target", None):
+            target = npc.target
+            angle_diff = self.get_current_angle_diff(npc, target)
+
+            if angle_diff is not None:
+                # Real positional data: steer the NPC by the target's true facing.
+                if angle_diff > self.get_flanking_threshold():
+                    # Already on the target's flank/rear — press the attack to
+                    # cash in the positional damage/accuracy bonus.
+                    if self._move_is_offensive(npc, move_name):
                         bonus += 2
+                else:
+                    # Facing the target head-on. If flanking is worthwhile, reward
+                    # the moves that actually reposition to the target's blind side.
+                    allies, enemies = self._derive_combat_sides(npc)
+                    if self.should_attempt_flank(npc, allies, enemies):
+                        if move_l == "flanking maneuver":
+                            bonus += 3
+                        elif move_l in ["advance", "tactical positioning"]:
+                            bonus += 2
+            else:
+                # No coordinate data (legacy proximity-only combat): fall back to
+                # the distance-band heuristic.
+                if move_l in ["advance", "npc_attack", "tactical positioning"]:
+                    if (
+                        hasattr(npc, "combat_proximity")
+                        and target in npc.combat_proximity
+                    ):
+                        distance = npc.combat_proximity[target]
+                        min_range, max_range = self.get_flanking_distance_range()
+                        if min_range <= distance <= max_range:
+                            bonus += 2
 
         return bonus
 

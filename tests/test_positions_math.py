@@ -34,6 +34,7 @@ from src.positions import (
     move_toward,
     move_away_from,
     move_to_flank,
+    nearest_flank_bearing,
     turn_toward,
     recalculate_proximity_dict,
 )
@@ -398,7 +399,9 @@ class TestMovement:
         # Check that we moved toward target and didn't go crazy far past it
         old_distance = actual_distance
         new_distance = distance_from_coords(result, to_pos)
-        assert new_distance <= old_distance, f"Should not go further from target. Started {old_distance} away, ended {new_distance} away"
+        assert (
+            new_distance <= old_distance
+        ), f"Should not go further from target. Started {old_distance} away, ended {new_distance} away"
 
     def test_move_toward_stops_before_boundary_large_distance(self):
         """Moving toward edge of grid with large distance request."""
@@ -467,7 +470,9 @@ class TestMovement:
         assert new_distance < old_distance, "Should have moved toward target"
         # Should not overshoot - result should be at or near target, not beyond it
         # Due to 8-directional grid, be lenient with tolerance
-        assert new_distance <= old_distance, "Should never be further from target after moving toward it"
+        assert (
+            new_distance <= old_distance
+        ), "Should never be further from target after moving toward it"
 
     def test_move_away_from(self):
         """Test moving away from threat."""
@@ -492,6 +497,40 @@ class TestMovement:
 
         # Should be roughly perpendicular (90° from target's facing)
         assert result.x != flanker.x or result.y != flanker.y
+
+    def test_move_to_flank_produces_genuine_flank(self):
+        """The destination must land on the target's flank/rear, not head-on.
+
+        Regression: the old implementation mixed angle conventions and placed
+        the flanker directly in front of the target (angle_diff 0)."""
+        for facing in (Direction.N, Direction.E, Direction.S, Direction.W):
+            target = CombatPosition(x=25, y=25, facing=facing)
+            for fx, fy in ((25, 10), (40, 25), (25, 40), (10, 25)):
+                flanker = CombatPosition(x=fx, y=fy)
+                dest = move_to_flank(flanker, target, distance=5)
+                approach = attack_angle_difference(
+                    angle_to_target(target, dest), target.facing
+                )
+                assert 45 < approach <= 135, (
+                    f"facing={facing} from=({fx},{fy}) -> ({dest.x},{dest.y}) "
+                    f"angle_diff={approach} is not a flank"
+                )
+
+    def test_move_to_flank_honors_explicit_angle(self):
+        """An explicit flank_angle overrides the automatic nearest-side pick."""
+        target = CombatPosition(x=25, y=25, facing=Direction.N)
+        flanker = CombatPosition(x=25, y=40)
+        # Bearing 90° == due East of the target.
+        dest = move_to_flank(flanker, target, distance=5, flank_angle=90.0)
+        assert dest.x == 30 and dest.y == 25
+
+    def test_nearest_flank_bearing_picks_closer_blind_side(self):
+        """East-side flanker of a north-facing target gets the 90° blind side."""
+        target = CombatPosition(x=25, y=25, facing=Direction.N)
+        east_flanker = CombatPosition(x=40, y=25)
+        west_flanker = CombatPosition(x=10, y=25)
+        assert nearest_flank_bearing(east_flanker, target) == 90.0
+        assert nearest_flank_bearing(west_flanker, target) == 270.0
 
 
 class TestPositionClamping:
@@ -560,10 +599,10 @@ class TestCombatScenarios:
     def test_scenario_structure(self):
         """Verify scenario has required fields."""
         scenario = COMBAT_SCENARIOS["standard"]
-        assert hasattr(scenario, 'scenario_type')
-        assert hasattr(scenario, 'ally_spawn_zone')
-        assert hasattr(scenario, 'enemy_spawn_zones')
-        assert hasattr(scenario, 'formation_type')
+        assert hasattr(scenario, "scenario_type")
+        assert hasattr(scenario, "ally_spawn_zone")
+        assert hasattr(scenario, "enemy_spawn_zones")
+        assert hasattr(scenario, "formation_type")
 
     def test_standard_scenario(self):
         """Test standard scenario has opposite spawning."""
@@ -620,6 +659,7 @@ class TestBackwardCompatibility:
 
     def test_recalculate_proximity_dict_empty(self):
         """Test with empty combatant list."""
+
         class DummyUnit:
             def __init__(self):
                 self.combat_position = None
@@ -630,6 +670,7 @@ class TestBackwardCompatibility:
 
     def test_recalculate_proximity_dict_no_position(self):
         """Test with unit without combat_position."""
+
         class DummyUnit:
             pass
 
@@ -639,6 +680,7 @@ class TestBackwardCompatibility:
 
     def test_recalculate_proximity_dict_single_target(self):
         """Test proximity calculation with single target."""
+
         class DummyUnit:
             def __init__(self, x, y):
                 self.combat_position = CombatPosition(x, y)

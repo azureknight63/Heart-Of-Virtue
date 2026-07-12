@@ -588,38 +588,75 @@ def move_away_constrained(
     return current.copy()
 
 
+def nearest_flank_bearing(current: CombatPosition, target: CombatPosition) -> float:
+    """World-bearing (0-360°) of the target's nearer blind side.
+
+    A target's blind sides sit perpendicular to its facing (facing ± 90°). This
+    returns whichever of the two is angularly closer to ``current``'s bearing
+    from the target, so a flank maneuver from ``current`` takes the shorter path.
+
+    Args:
+        current: The flanker's current position
+        target: The position being flanked (its ``facing`` defines the blind sides)
+
+    Returns:
+        The approach bearing in degrees (same convention as ``angle_to_target``).
+    """
+    facing = target.facing.value
+    current_bearing = angle_to_target(target, current)
+
+    left = (facing + 90) % 360
+    right = (facing - 90) % 360
+
+    def acute(a: float, b: float) -> float:
+        diff = abs(a - b) % 360
+        return diff if diff <= 180 else 360 - diff
+
+    return float(
+        left if acute(current_bearing, left) <= acute(current_bearing, right) else right
+    )
+
+
+def _offset_from_bearing(
+    origin: CombatPosition, bearing: float, distance: int, max_w: int, max_h: int
+) -> Tuple[int, int]:
+    """Clamp-and-return the grid square ``distance`` from ``origin`` at ``bearing``.
+
+    Uses the same convention as ``angle_to_target`` (0°=North/+y, 90°=East/+x),
+    so x is driven by sine and y by cosine.
+    """
+    rad = math.radians(bearing)
+    new_x = max(0, min(max_w, int(round(origin.x + math.sin(rad) * distance))))
+    new_y = max(0, min(max_h, int(round(origin.y + math.cos(rad) * distance))))
+    return new_x, new_y
+
+
 def move_to_flank(
     current: CombatPosition,
     target: CombatPosition,
     distance: int = 3,
     max_w: int = 50,
     max_h: int = 50,
+    flank_angle: Optional[float] = None,
 ) -> CombatPosition:
-    """Move to a flanking position (90° perpendicular to target's facing).
+    """Move to a flanking position perpendicular to the target's facing.
 
     Args:
         current: Starting position
         target: Target position to flank
-        distance: How many squares away from target to position
+        distance: How many squares away from the target to position
         max_w: Grid width limit
         max_h: Grid height limit
+        flank_angle: Explicit approach bearing (degrees). When omitted, the
+            target's nearer blind side is chosen automatically.
 
     Returns:
-        New CombatPosition at flanking angle
+        New CombatPosition at the flanking angle
     """
-    # Calculate perpendicular angle (90° from target's facing)
-    target_facing_angle = target.facing.value
-    flank_angle = (target_facing_angle + 90) % 360
+    if flank_angle is None:
+        flank_angle = nearest_flank_bearing(current, target)
 
-    # Convert to radians and calculate offset
-    flank_rad = math.radians(flank_angle)
-    offset_x = math.cos(flank_rad) * distance
-    offset_y = math.sin(flank_rad) * distance
-
-    # Clamp coordinates before creating the position
-    new_x = max(0, min(max_w, int(round(target.x + offset_x))))
-    new_y = max(0, min(max_h, int(round(target.y + offset_y))))
-
+    new_x, new_y = _offset_from_bearing(target, flank_angle, distance, max_w, max_h)
     return CombatPosition(x=new_x, y=new_y, facing=current.facing)
 
 
@@ -630,24 +667,22 @@ def move_to_flank_constrained(
     occupied: List[CombatPosition],
     max_w: int = 50,
     max_h: int = 50,
+    flank_angle: Optional[float] = None,
 ) -> CombatPosition:
     """Move to flank but avoid occupied squares.
 
-    Tries both left (+90°) and right (-90°) flanking positions.
+    Tries the nearer blind side first, then the opposite side (180° away).
     """
     if not occupied:
-        return move_to_flank(current, target, distance, max_w, max_h)
+        return move_to_flank(current, target, distance, max_w, max_h, flank_angle)
 
-    options = [90, -90]
-    for angle_offset in options:
-        target_facing_angle = target.facing.value
-        flank_angle = (target_facing_angle + angle_offset) % 360
-        flank_rad = math.radians(flank_angle)
-        offset_x = math.cos(flank_rad) * distance
-        offset_y = math.sin(flank_rad) * distance
-
-        new_x = max(0, min(max_w, int(round(target.x + offset_x))))
-        new_y = max(0, min(max_h, int(round(target.y + offset_y))))
+    primary = (
+        flank_angle
+        if flank_angle is not None
+        else nearest_flank_bearing(current, target)
+    )
+    for bearing in (primary, (primary + 180) % 360):
+        new_x, new_y = _offset_from_bearing(target, bearing, distance, max_w, max_h)
 
         has_collision = False
         for occ in occupied:
@@ -1011,6 +1046,8 @@ __all__ = [
     "move_toward",
     "move_away_from",
     "move_to_flank",
+    "move_to_flank_constrained",
+    "nearest_flank_bearing",
     "turn_toward",
     "recalculate_proximity_dict",
     "initialize_combat_positions",

@@ -135,12 +135,11 @@ class Parry(Move):
             self.fatigue_cost = 10
 
         # CounterGuard passive: maintaining a parry with a sword costs less fatigue
-        if (
-            getattr(getattr(self.user, "eq_weapon", None), "subtype", None) == "Sword"
-            and any(
-                getattr(m, "name", "") == "Counter Guard"
-                for m in getattr(self.user, "known_moves", [])
-            )
+        if getattr(
+            getattr(self.user, "eq_weapon", None), "subtype", None
+        ) == "Sword" and any(
+            getattr(m, "name", "") == "Counter Guard"
+            for m in getattr(self.user, "known_moves", [])
         ):
             self.fatigue_cost = max(10, int(self.fatigue_cost * 0.8))
 
@@ -691,8 +690,17 @@ class FlankingManeuver(Move):
         # This uses positions.move_to_flank which is naturally suited for small increments
         # Actually move_to_flank takes a distance. We'll use 1-2 squares per beat.
         distance_moved = random.randint(1, 2)
+        # Let the NPC's tactical AI pick which blind side to approach; falls back
+        # to move_to_flank's own nearest-side default for units without a config.
+        ai_config = getattr(user, "ai_config", None)
+        flank_angle = None
+        if ai_config is not None:
+            flank_angle = ai_config.get_flank_position_angle(user, self.target)
         new_pos = positions.move_to_flank(
-            user.combat_position, self.target.combat_position, distance_moved
+            user.combat_position,
+            self.target.combat_position,
+            distance_moved,
+            flank_angle=flank_angle,
         )
         user.combat_position = new_pos
         user.combat_position.facing = positions.turn_toward(
