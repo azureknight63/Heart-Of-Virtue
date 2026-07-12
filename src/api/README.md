@@ -330,10 +330,8 @@ Global error handlers manage all HTTP errors:
 All request data is validated using helper functions in `services/validators.py`:
 - `validate_required_fields()` - Check required fields present
 - `validate_direction()` - Cardinal directions only
-- `validate_coordinates()` - X/Y bounds checking
-- `validate_item_slot()` - Equipment slot validation
-- `validate_combat_action()` - Legal combat actions
-- And more...
+- `validate_item_index()` - Inventory index bounds checking
+- `validate_npc_id()` - NPC identifier presence/format
 
 ## Next Steps (Phase 2+)
 

@@ -436,6 +436,12 @@ class TestEquipItem:
 
 
 class TestUseItem:
+    """Route-level tests. Engine mechanics (gating, range check, narration
+    capture, combat-log mirroring) live in and are tested against
+    ``GameService.use_item``; here the service is mocked and we verify request
+    parsing, target resolution, delegation, and response shaping.
+    """
+
     def test_missing_item_params_returns_400(self):
         app, _, _, _ = _make_app()
         with app.test_client() as c:
@@ -456,55 +462,8 @@ class TestUseItem:
             )
         assert resp.status_code == 400
 
-    def test_merchandise_returns_400(self):
-        item = _make_item(merchandise=True)
-        item.use = MagicMock()
-        player = _make_player(items=[item])
-        app, _, _, _ = _make_app(player=player)
-        with app.test_client() as c:
-            resp = c.post(
-                "/inventory/use",
-                json={"item_index": 0},
-                headers={"Authorization": AUTH},
-            )
-        assert resp.status_code == 400
-
-    def test_item_not_usable_returns_400(self):
-        item = MagicMock(spec=["name", "merchandise", "isequipped"])
-        item.name = "Stone"
-        item.merchandise = False
-        player = _make_player(items=[item])
-        app, _, _, _ = _make_app(player=player)
-        with app.test_client() as c:
-            resp = c.post(
-                "/inventory/use",
-                json={"item_index": 0},
-                headers={"Authorization": AUTH},
-            )
-        assert resp.status_code == 400
-
-    def test_use_item_success(self):
-        item = _make_item()
-        item.merchandise = False
-        item.use = MagicMock()
-        player = _make_player(items=[item])
-        player.in_combat = False
-        app, _, _, _ = _make_app(player=player)
-        with patch("src.api.routes.inventory.InventorySerializer") as mock_ser:
-            mock_ser.serialize.return_value = {}
-            with app.test_client() as c:
-                resp = c.post(
-                    "/inventory/use",
-                    json={"item_index": 0},
-                    headers={"Authorization": AUTH},
-                )
-        assert resp.status_code == 200
-        assert resp.get_json()["success"] is True
-
     def test_target_not_found_returns_400(self):
         item = _make_item()
-        item.merchandise = False
-        item.use = MagicMock()
         player = _make_player(items=[item])
         player.combat_list_allies = []
         app, _, _, _ = _make_app(player=player)
@@ -516,53 +475,34 @@ class TestUseItem:
             )
         assert resp.status_code == 400
 
-    def test_in_combat_range_check_too_far(self):
+    def test_service_error_returns_400(self):
         item = _make_item()
-        item.merchandise = False
-        item.use = MagicMock()
-        ally = MagicMock()
-        ally.name = "Gorran"
-        ally_id = id(ally)
         player = _make_player(items=[item])
-        player.in_combat = True
-        player.combat_list_allies = [player, ally]
-        player.combat_proximity = {ally: 9999}
         app, _, _, _ = _make_app(player=player)
+        app.game_service.use_item.return_value = {
+            "error": "You must purchase Iron Sword before using it"
+        }
         with app.test_client() as c:
             resp = c.post(
                 "/inventory/use",
-                json={"item_index": 0, "target_id": f"ally_{ally_id}"},
+                json={"item_index": 0},
                 headers={"Authorization": AUTH},
             )
         assert resp.status_code == 400
 
-    def test_in_combat_adds_to_log(self):
+    def test_use_success_delegates_to_service(self):
         item = _make_item()
-        item.merchandise = False
-        item.use = MagicMock()
         player = _make_player(items=[item])
-        player.in_combat = True
-        player.combat_beat = 1
-        player.combat_log = []
-        adapter = MagicMock()
-        adapter._add_log_entry = MagicMock()
-        player._combat_adapter = adapter
+        player.in_combat = False
         app, _, _, _ = _make_app(player=player)
-        mock_ser_cls = MagicMock()
-        mock_ser_cls.serialize.return_value = {}
-        mock_cs_cls = MagicMock()
-        mock_cs_cls.serialize_combat_state.return_value = {}
-        with (
-            patch.dict(
-                "sys.modules",
-                {
-                    "src.api.serializers.combat": MagicMock(
-                        CombatStateSerializer=mock_cs_cls
-                    )
-                },
-            ),
-            patch("src.api.routes.inventory.InventorySerializer", mock_ser_cls),
-        ):
+        app.game_service.use_item.return_value = {
+            "success": True,
+            "message": "Iron Sword used",
+            "messages": ["Iron Sword used"],
+            "target_name": None,
+        }
+        with patch("src.api.routes.inventory.InventorySerializer") as mock_ser:
+            mock_ser.serialize.return_value = {}
             with app.test_client() as c:
                 resp = c.post(
                     "/inventory/use",
@@ -570,84 +510,51 @@ class TestUseItem:
                     headers={"Authorization": AUTH},
                 )
         assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["success"] is True
+        assert body["message"] == "Iron Sword used"
+        app.game_service.use_item.assert_called_once_with(player, item, target=player)
 
-    def test_in_combat_no_adapter_fallback(self):
-        """Uses fallback log path when player has no _combat_adapter attribute."""
+    def test_use_by_item_id_delegates_to_service(self):
         item = _make_item()
-        item.merchandise = False
-        item.use = MagicMock()
         player = _make_player(items=[item])
-        player.in_combat = True
-        player.combat_beat = 1
-        player.combat_log = []
-        # Ensure hasattr(player, '_combat_adapter') returns False by using a spec
-        # that excludes the attribute. We recreate the player as a SimpleNamespace
-        # so attribute presence is explicit.
-        from types import SimpleNamespace
-
-        real_player = SimpleNamespace(
-            name="Jean",
-            hp=100,
-            maxhp=100,
-            gold=50,
-            platinum=5,
-            inventory_list=[item],
-            inventory=[item],
-            combat_list_allies=[],
-            in_combat=True,
-            combat_proximity={},
-            eq_weapon=None,
-            fists=MagicMock(),
-            equipped={},
-            location_x=0,
-            location_y=0,
-            universe=MagicMock(),
-            combat_beat=1,
-            combat_log=[],
-            combat_list=[],
-        )
-        real_player.universe.get_tile.return_value = MagicMock(items_here=[])
-        app, _, _, sm = _make_app(player=real_player)
-        sm.get_player.return_value = real_player
-        mock_ser_cls = MagicMock()
-        mock_ser_cls.serialize.return_value = {}
-        mock_cs_cls = MagicMock()
-        mock_cs_cls.serialize_combat_state.return_value = {}
-        with (
-            patch.dict(
-                "sys.modules",
-                {
-                    "src.api.serializers.combat": MagicMock(
-                        CombatStateSerializer=mock_cs_cls
-                    )
-                },
-            ),
-            patch("src.api.routes.inventory.InventorySerializer", mock_ser_cls),
-        ):
+        player.in_combat = False
+        item_id = str(id(item))
+        app, _, _, _ = _make_app(player=player)
+        app.game_service.use_item.return_value = {
+            "success": True,
+            "message": "used",
+            "messages": [],
+            "target_name": None,
+        }
+        with patch("src.api.routes.inventory.InventorySerializer") as mock_ser:
+            mock_ser.serialize.return_value = {}
             with app.test_client() as c:
                 resp = c.post(
                     "/inventory/use",
-                    json={"item_index": 0},
+                    json={"item_id": item_id},
                     headers={"Authorization": AUTH},
                 )
         assert resp.status_code == 200
+        app.game_service.use_item.assert_called_once_with(player, item, target=player)
 
-
-class TestUseItemAdditionalBranches:
-    def test_use_on_ally_target_in_range_success(self):
-        """Covers line 377: item_target = resolved (ally target within combat range)."""
+    def test_use_on_ally_target_resolves_and_delegates(self):
+        """The route resolves an ``ally_<id>`` target to the engine object and
+        passes it to the service; the service's ``target_name`` is echoed back."""
         item = _make_item()
-        item.merchandise = False
-        item.use = MagicMock()
         ally = MagicMock()
         ally.name = "Gorran"
         ally_id = id(ally)
         player = _make_player(items=[item])
         player.in_combat = True
         player.combat_list_allies = [player, ally]
-        player.combat_proximity = {ally: 3}
-        player._combat_adapter = MagicMock()
         app, _, _, _ = _make_app(player=player)
+        app.game_service.use_item.return_value = {
+            "success": True,
+            "message": "used",
+            "messages": [],
+            "target_name": "Gorran",
+        }
         mock_cs_cls = MagicMock()
         mock_cs_cls.serialize_combat_state.return_value = {}
         with (
@@ -671,72 +578,21 @@ class TestUseItemAdditionalBranches:
         assert resp.status_code == 200
         body = resp.get_json()
         assert body["target_name"] == "Gorran"
-        item.use.assert_called_once_with(ally, user=player)
+        app.game_service.use_item.assert_called_once_with(player, item, target=ally)
 
-    def test_use_captures_legacy_neotermcolor_and_print_slow_output(self):
-        """Covers lines 383/386: legacy cprint/print_slow output capture paths."""
-        import neotermcolor
-        import src.functions as functions_mod
-
+    def test_in_combat_response_includes_combat_state(self):
         item = _make_item()
-        item.merchandise = False
-
-        def _use(target, user=None):
-            neotermcolor.cprint("Legacy cprint line", "green")
-            functions_mod.print_slow("Legacy print_slow line")
-
-        item.use = _use
         player = _make_player(items=[item])
+        player.in_combat = True
         app, _, _, _ = _make_app(player=player)
-        with patch("src.api.routes.inventory.InventorySerializer") as mock_ser:
-            mock_ser.serialize.return_value = {}
-            with app.test_client() as c:
-                resp = c.post(
-                    "/inventory/use",
-                    json={"item_index": 0},
-                    headers={"Authorization": AUTH},
-                )
-        assert resp.status_code == 200
-        message = resp.get_json()["message"]
-        assert "Legacy cprint line" in message
-        assert "Legacy print_slow line" in message
-
-    def test_in_combat_fallback_creates_missing_combat_log(self):
-        """Covers line 418: player has no combat_log attribute at all yet."""
-        from types import SimpleNamespace
-
-        item = _make_item()
-        item.merchandise = False
-        item.use = MagicMock()
-
-        real_player = SimpleNamespace(
-            name="Jean",
-            hp=100,
-            maxhp=100,
-            gold=50,
-            platinum=5,
-            inventory_list=[item],
-            inventory=[item],
-            combat_list_allies=[],
-            in_combat=True,
-            combat_proximity={},
-            eq_weapon=None,
-            fists=MagicMock(),
-            equipped={},
-            location_x=0,
-            location_y=0,
-            universe=MagicMock(),
-            combat_beat=1,
-            combat_list=[],
-        )
-        real_player.universe.get_tile.return_value = MagicMock(items_here=[])
-        assert not hasattr(real_player, "combat_log")
-        assert not hasattr(real_player, "_combat_adapter")
-
-        app, _, _, sm = _make_app(player=real_player)
-        sm.get_player.return_value = real_player
+        app.game_service.use_item.return_value = {
+            "success": True,
+            "message": "used",
+            "messages": [],
+            "target_name": None,
+        }
         mock_cs_cls = MagicMock()
-        mock_cs_cls.serialize_combat_state.return_value = {}
+        mock_cs_cls.serialize_combat_state.return_value = {"round": 0}
         with (
             patch.dict(
                 "sys.modules",
@@ -756,15 +612,13 @@ class TestUseItemAdditionalBranches:
                     headers={"Authorization": AUTH},
                 )
         assert resp.status_code == 200
-        assert hasattr(real_player, "combat_log")
-        assert len(real_player.combat_log) >= 1
+        assert "combat_state" in resp.get_json()
 
-    def test_use_item_exception_returns_500(self):
+    def test_service_exception_returns_500(self):
         item = _make_item()
-        item.merchandise = False
-        item.use = MagicMock(side_effect=RuntimeError("use blew up"))
         player = _make_player(items=[item])
         app, _, _, _ = _make_app(player=player)
+        app.game_service.use_item.side_effect = RuntimeError("use blew up")
         with app.test_client() as c:
             resp = c.post(
                 "/inventory/use",

@@ -2025,6 +2025,125 @@ class TestEquipUnequipDropExtra:
 
 
 # ============================================================================
+# use_item — merchandise/usability gating, ally targeting, narration + log
+# ============================================================================
+
+
+class TestUseItem:
+    def test_merchandise_rejected(self, game_service, mock_player):
+        item = MagicMock()
+        item.merchandise = True
+        item.name = "Fancy Potion"
+        result = game_service.use_item(mock_player, item)
+        assert "purchase" in result["error"]
+
+    def test_not_usable_rejected(self, game_service, mock_player):
+        item = MagicMock(spec=["name", "merchandise"])
+        item.name = "Rock"
+        item.merchandise = False
+        result = game_service.use_item(mock_player, item)
+        assert "cannot be used" in result["error"]
+
+    def test_self_use_captures_narration(self, game_service, mock_player):
+        from src.narration import narrate
+
+        mock_player.in_combat = False
+        item = MagicMock()
+        item.merchandise = False
+        item.name = "Potion"
+        item.use = lambda target, user=None: narrate("Jean recovered 10 HP!")
+        result = game_service.use_item(mock_player, item)
+        assert result["success"] is True
+        assert "Jean recovered 10 HP!" in result["message"]
+        assert "Jean recovered 10 HP!" in result["messages"]
+        assert result["target_name"] is None
+
+    def test_silent_use_falls_back_to_default_message(self, game_service, mock_player):
+        mock_player.in_combat = False
+        item = MagicMock()
+        item.merchandise = False
+        item.name = "Mystery Cube"
+        item.use = MagicMock()  # emits no narration
+        result = game_service.use_item(mock_player, item)
+        assert result["message"] == "Mystery Cube used"
+        item.use.assert_called_once_with(mock_player, user=mock_player)
+
+    def test_ally_target_in_range_succeeds(self, game_service, mock_player):
+        mock_player.in_combat = True
+        ally = MagicMock()
+        ally.name = "Gorran"
+        mock_player.combat_proximity = {ally: 3}
+        item = MagicMock()
+        item.merchandise = False
+        item.name = "Potion"
+        item.use = MagicMock()
+        result = game_service.use_item(mock_player, item, target=ally)
+        assert result["success"] is True
+        assert result["target_name"] == "Gorran"
+        item.use.assert_called_once_with(ally, user=mock_player)
+
+    def test_ally_target_out_of_range_rejected(self, game_service, mock_player):
+        mock_player.in_combat = True
+        ally = MagicMock()
+        ally.name = "Gorran"
+        mock_player.combat_proximity = {ally: 9999}
+        item = MagicMock()
+        item.merchandise = False
+        item.name = "Potion"
+        item.use = MagicMock()
+        result = game_service.use_item(mock_player, item, target=ally)
+        assert "too far away" in result["error"]
+        item.use.assert_not_called()
+
+    def test_in_combat_logs_via_adapter(self, game_service, mock_player):
+        from src.narration import narrate
+
+        mock_player.in_combat = True
+        mock_player.combat_beat = 2
+        adapter = MagicMock()
+        mock_player._combat_adapter = adapter
+        item = MagicMock()
+        item.merchandise = False
+        item.name = "Bomb"
+        item.use = lambda target, user=None: narrate("Boom!")
+        result = game_service.use_item(mock_player, item)
+        assert result["success"] is True
+        adapter._add_log_entry.assert_called_once_with(2, "Boom!", "combat")
+
+    def test_in_combat_creates_missing_combat_log_without_adapter(self, game_service):
+        from types import SimpleNamespace
+        from src.narration import narrate
+
+        player = SimpleNamespace(
+            name="Jean", in_combat=True, combat_beat=4, combat_proximity={}
+        )
+        item = MagicMock()
+        item.merchandise = False
+        item.name = "Bomb"
+        item.use = lambda target, user=None: narrate("Kaboom!")
+        result = game_service.use_item(player, item)
+        assert result["success"] is True
+        assert hasattr(player, "combat_log")
+        assert any(entry["message"] == "Kaboom!" for entry in player.combat_log)
+
+    def test_time_sleep_is_suppressed(self, game_service, mock_player):
+        """A use that sleeps must not block: ``time.sleep`` is patched out."""
+        import time
+
+        mock_player.in_combat = False
+        item = MagicMock()
+        item.merchandise = False
+        item.name = "Slow Draught"
+
+        def _use(target, user=None):
+            time.sleep(999)  # would hang if not patched
+
+        item.use = _use
+        result = game_service.use_item(mock_player, item)
+        assert result["success"] is True
+
+
+# ============================================================================
 # Small tail methods
 # ============================================================================
 
