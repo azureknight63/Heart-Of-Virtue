@@ -588,6 +588,18 @@ def move_away_constrained(
     return current.copy()
 
 
+def _acute_angle(a: float, b: float) -> float:
+    """Acute separation (0-180°) between two bearings."""
+    diff = abs(a - b) % 360
+    return diff if diff <= 180 else 360 - diff
+
+
+def _flank_blind_sides(target: CombatPosition) -> Tuple[float, float]:
+    """The target's two blind-side bearings, perpendicular to its facing."""
+    facing = target.facing.value
+    return (facing + 90) % 360, (facing - 90) % 360
+
+
 def nearest_flank_bearing(current: CombatPosition, target: CombatPosition) -> float:
     """World-bearing (0-360°) of the target's nearer blind side.
 
@@ -602,18 +614,13 @@ def nearest_flank_bearing(current: CombatPosition, target: CombatPosition) -> fl
     Returns:
         The approach bearing in degrees (same convention as ``angle_to_target``).
     """
-    facing = target.facing.value
     current_bearing = angle_to_target(target, current)
-
-    left = (facing + 90) % 360
-    right = (facing - 90) % 360
-
-    def acute(a: float, b: float) -> float:
-        diff = abs(a - b) % 360
-        return diff if diff <= 180 else 360 - diff
+    left, right = _flank_blind_sides(target)
 
     return float(
-        left if acute(current_bearing, left) <= acute(current_bearing, right) else right
+        left
+        if _acute_angle(current_bearing, left) <= _acute_angle(current_bearing, right)
+        else right
     )
 
 
@@ -671,17 +678,23 @@ def move_to_flank_constrained(
 ) -> CombatPosition:
     """Move to flank but avoid occupied squares.
 
-    Tries the nearer blind side first, then the opposite side (180° away).
+    Tries the target's two blind sides (facing ± 90°), the one nearer the
+    requested approach bearing first. The candidates are always genuine flanks,
+    so a blocked primary never falls back to a head-on position.
     """
     if not occupied:
         return move_to_flank(current, target, distance, max_w, max_h, flank_angle)
 
-    primary = (
+    preferred = (
         flank_angle
         if flank_angle is not None
         else nearest_flank_bearing(current, target)
     )
-    for bearing in (primary, (primary + 180) % 360):
+    left, right = _flank_blind_sides(target)
+    ordered = sorted(
+        (left, right), key=lambda bearing: _acute_angle(preferred, bearing)
+    )
+    for bearing in ordered:
         new_x, new_y = _offset_from_bearing(target, bearing, distance, max_w, max_h)
 
         has_collision = False

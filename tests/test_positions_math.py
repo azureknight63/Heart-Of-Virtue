@@ -34,6 +34,7 @@ from src.positions import (
     move_toward,
     move_away_from,
     move_to_flank,
+    move_to_flank_constrained,
     nearest_flank_bearing,
     turn_toward,
     recalculate_proximity_dict,
@@ -502,8 +503,9 @@ class TestMovement:
         """The destination must land on the target's flank/rear, not head-on.
 
         Regression: the old implementation mixed angle conventions and placed
-        the flanker directly in front of the target (angle_diff 0)."""
-        for facing in (Direction.N, Direction.E, Direction.S, Direction.W):
+        the flanker directly in front of the target (angle_diff 0). Covers all
+        eight facings, including diagonals."""
+        for facing in Direction:
             target = CombatPosition(x=25, y=25, facing=facing)
             for fx, fy in ((25, 10), (40, 25), (25, 40), (10, 25)):
                 flanker = CombatPosition(x=fx, y=fy)
@@ -531,6 +533,31 @@ class TestMovement:
         west_flanker = CombatPosition(x=10, y=25)
         assert nearest_flank_bearing(east_flanker, target) == 90.0
         assert nearest_flank_bearing(west_flanker, target) == 270.0
+
+    def test_nearest_flank_bearing_diagonal_facing(self):
+        """Blind sides of an NE-facing target are its two perpendiculars (SE/NW)."""
+        target = CombatPosition(x=25, y=25, facing=Direction.NE)  # facing 45°
+        # Blind sides are 135° (bearing to +x,-y) and 315° (bearing to -x,+y).
+        se_flanker = CombatPosition(x=40, y=10)  # bearing 135° from target
+        nw_flanker = CombatPosition(x=10, y=40)  # bearing 315° from target
+        assert nearest_flank_bearing(se_flanker, target) == 135.0
+        assert nearest_flank_bearing(nw_flanker, target) == 315.0
+
+    def test_move_to_flank_constrained_fallback_stays_a_flank(self):
+        """When the nearer blind side is blocked, the fallback is the *other*
+        blind side — never a head-on square, even if given an off-axis angle."""
+        target = CombatPosition(x=25, y=25, facing=Direction.N)
+        flanker = CombatPosition(x=40, y=25)
+        # Block the East blind side (30,25); pass a rear bearing to try to trick
+        # the fallback into going head-on.
+        occupied = [CombatPosition(x=30, y=25)]
+        dest = move_to_flank_constrained(
+            flanker, target, distance=5, occupied=occupied, flank_angle=180.0
+        )
+        approach = attack_angle_difference(angle_to_target(target, dest), target.facing)
+        assert (
+            45 < approach <= 135
+        ), f"fallback ({dest.x},{dest.y}) angle_diff={approach} is not a flank"
 
 
 class TestPositionClamping:
