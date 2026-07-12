@@ -304,6 +304,101 @@ def test_npc_ai_config_get_weighted_move_bonus_retreat():
     assert attack_bonus >= 0
 
 
+def test_npc_ai_config_weighted_bonus_rewards_attack_when_already_flanking():
+    """With real positions, an NPC on the target's flank is nudged to attack."""
+    from src.positions import CombatPosition, Direction
+
+    player = Player()
+    config = GameConfig()
+    config.npc_flanking_enabled = True
+    player.game_config = config
+    ai_config = NPCAIConfig(player)
+
+    npc = NPC("Flanker", "Test", damage=10, aggro=True, exp_award=0, maxhp=100)
+    target = NPC("Prey", "Test", damage=10, aggro=True, exp_award=0, maxhp=100)
+    # Target faces North; attacker strikes from due East -> 90° flank (> threshold).
+    target.combat_position = CombatPosition(x=25, y=25, facing=Direction.N)
+    npc.combat_position = CombatPosition(x=45, y=25, facing=Direction.W)
+    npc.target = target
+
+    assert ai_config.get_weighted_move_bonus(npc, "NPC_Attack") == 2
+    # Repositioning is not rewarded once already flanking.
+    assert ai_config.get_weighted_move_bonus(npc, "Flanking Maneuver") == 0
+
+
+def test_npc_ai_config_flank_capitalize_applies_to_special_attacks():
+    """The already-flanking bonus rewards any offensive move, not just NPC_Attack."""
+    from types import SimpleNamespace
+    from src.positions import CombatPosition, Direction
+
+    player = Player()
+    config = GameConfig()
+    config.npc_flanking_enabled = True
+    player.game_config = config
+    ai_config = NPCAIConfig(player)
+
+    npc = NPC("Biter", "Test", damage=10, aggro=True, exp_award=0, maxhp=100)
+    target = NPC("Prey", "Test", damage=10, aggro=True, exp_award=0, maxhp=100)
+    target.combat_position = CombatPosition(x=25, y=25, facing=Direction.N)
+    npc.combat_position = CombatPosition(x=45, y=25, facing=Direction.W)
+    npc.target = target
+    # NPC knows a bespoke offensive move (not named NPC_Attack).
+    npc.known_moves.append(SimpleNamespace(name="VenomClaw", category="Offensive"))
+    npc.known_moves.append(SimpleNamespace(name="Guard Up", category="Defensive"))
+
+    assert ai_config.get_weighted_move_bonus(npc, "VenomClaw") == 2
+    assert ai_config.get_weighted_move_bonus(npc, "Guard Up") == 0
+
+
+def test_npc_ai_config_weighted_bonus_rewards_repositioning_when_head_on():
+    """Head-on with pack support, the NPC is steered toward a flanking move."""
+    from src.positions import CombatPosition, Direction
+
+    player = Player()
+    config = GameConfig()
+    config.npc_flanking_enabled = True
+    config.npc_flanking_distance_range = "20 to 40"
+    player.game_config = config
+    ai_config = NPCAIConfig(player)
+
+    npc = NPC("Flanker", "Test", damage=10, aggro=True, exp_award=0, maxhp=100)
+    ally = NPC("PackMate", "Test", damage=10, aggro=True, exp_award=0, maxhp=100)
+    target = NPC("Prey", "Test", damage=10, aggro=True, exp_award=0, maxhp=100)
+
+    # Attacker due North of a North-facing target -> 0° (head-on), at flank range.
+    target.combat_position = CombatPosition(x=25, y=25, facing=Direction.N)
+    npc.combat_position = CombatPosition(x=25, y=50, facing=Direction.S)
+    npc.target = target
+    npc.combat_proximity = {target: 25}
+
+    # Two allies on the NPC's side satisfy should_attempt_flank's support check.
+    player.combat_list = [npc, ally]
+    player.combat_list_allies = []
+
+    assert ai_config.get_weighted_move_bonus(npc, "Flanking Maneuver") == 3
+    assert ai_config.get_weighted_move_bonus(npc, "Advance") == 2
+    # Without pack support, repositioning is not rewarded.
+    player.combat_list = [npc]
+    assert ai_config.get_weighted_move_bonus(npc, "Flanking Maneuver") == 0
+
+
+def test_npc_ai_config_weighted_bonus_falls_back_to_distance_bands():
+    """With no coordinate data, the legacy distance-band heuristic still fires."""
+    player = Player()
+    config = GameConfig()
+    config.npc_flanking_enabled = True
+    config.npc_flanking_distance_range = "20 to 40"
+    player.game_config = config
+    ai_config = NPCAIConfig(player)
+
+    npc = NPC("Flanker", "Test", damage=10, aggro=True, exp_award=0, maxhp=100)
+    target = NPC("Prey", "Test", damage=10, aggro=True, exp_award=0, maxhp=100)
+    npc.target = target
+    npc.combat_proximity = {target: 30}  # In range, no combat_position set
+
+    assert ai_config.get_weighted_move_bonus(npc, "Advance") == 2
+
+
 def test_npc_ai_config_get_ai_config_summary():
     """Test AI configuration summary generation."""
     player = Player()

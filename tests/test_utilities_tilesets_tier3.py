@@ -13,7 +13,10 @@ NOTE: Skipped in CI due to test suite size. Runs locally for full validation.
 """
 
 import pytest
-pytestmark = pytest.mark.skip(reason="Tier 3 advanced tests - skipped in CI for timeout. Run locally for full validation.")
+
+pytestmark = pytest.mark.skip(
+    reason="Tier 3 advanced tests - skipped in CI for timeout. Run locally for full validation."
+)
 from unittest.mock import Mock, MagicMock, patch
 from dataclasses import dataclass
 
@@ -437,9 +440,7 @@ class TestMapTileSpawnObject:
         obj_cls.return_value = obj_instance
 
         with patch("builtins.__import__", return_value=Mock(ObjectType=obj_cls)):
-            obj = tile.spawn_object(
-                "ObjectType", player, tile, hidden=True, hfactor=40
-            )
+            obj = tile.spawn_object("ObjectType", player, tile, hidden=True, hfactor=40)
             assert obj.hidden is True
             assert obj.hide_factor == 40
 
@@ -751,7 +752,9 @@ class TestGrondiaTileset:
         assert tile.x == 2
         assert tile.y == 2
         assert tile.symbol == "#"
-        assert "crystal" in tile.description.lower() or "room" in tile.description.lower()
+        assert (
+            "crystal" in tile.description.lower() or "room" in tile.description.lower()
+        )
 
     def test_grondia_arcology_tile(self):
         """Test GrondiaArcology tile initialization."""
@@ -881,9 +884,9 @@ class TestVerdetteCavernsTileset:
         try:
             tile = tile_cls(universe, current_map, 0, 0)
             assert tile is not None
-            assert isinstance(tile, __import__(
-                "src.tiles", fromlist=["MapTile"]
-            ).MapTile)
+            assert isinstance(
+                tile, __import__("src.tiles", fromlist=["MapTile"]).MapTile
+            )
         except Exception:
             # Some tiles may have special init requirements
             pass
@@ -1257,9 +1260,7 @@ class TestShopConditionBase:
         """Test ShopCondition initialization."""
         from src.shop_conditions import ShopCondition
 
-        condition = ShopCondition(
-            name="Test Condition", description="A test condition"
-        )
+        condition = ShopCondition(name="Test Condition", description="A test condition")
         assert condition.name == "Test Condition"
         assert condition.description == "A test condition"
         assert condition.metadata == {}
@@ -1316,9 +1317,7 @@ class TestValueModifierCondition:
         class TestItem:
             pass
 
-        condition = ValueModifierCondition(
-            multiplier=1.5, target_class=TestItem
-        )
+        condition = ValueModifierCondition(multiplier=1.5, target_class=TestItem)
         assert condition.multiplier == 1.5
         assert condition.target_class is TestItem
 
@@ -1329,9 +1328,7 @@ class TestValueModifierCondition:
         class TestItem:
             pass
 
-        condition = ValueModifierCondition(
-            multiplier=2.0, target_class=TestItem
-        )
+        condition = ValueModifierCondition(multiplier=2.0, target_class=TestItem)
         item = Mock(spec=TestItem)
         price = condition.apply_to_price(item, 50.0)
         assert price == 100.0
@@ -1346,9 +1343,7 @@ class TestValueModifierCondition:
         class OtherItem:
             pass
 
-        condition = ValueModifierCondition(
-            multiplier=2.0, target_class=TestItem
-        )
+        condition = ValueModifierCondition(multiplier=2.0, target_class=TestItem)
         item = Mock(spec=OtherItem)
         price = condition.apply_to_price(item, 50.0)
         assert price == 50.0
@@ -1360,9 +1355,7 @@ class TestValueModifierCondition:
         class TestItem:
             pass
 
-        condition = ValueModifierCondition(
-            multiplier=2.0, target_class=TestItem
-        )
+        condition = ValueModifierCondition(multiplier=2.0, target_class=TestItem)
         item = Mock(spec=TestItem)
         item.unique = True
         price = condition.apply_to_price(item, 50.0)
@@ -1375,9 +1368,7 @@ class TestValueModifierCondition:
         class TestItem:
             pass
 
-        condition = ValueModifierCondition(
-            multiplier=1.5, target_class=TestItem
-        )
+        condition = ValueModifierCondition(multiplier=1.5, target_class=TestItem)
         item = Mock(spec=TestItem)
         assert condition.applies(item) is True
 
@@ -1438,7 +1429,8 @@ class TestUniqueItemInjectionCondition:
         merchant = Mock()
 
         with patch.dict(
-            "sys.modules", {"items": Mock(unique_item_factories=[], unique_items_spawned=set())}
+            "sys.modules",
+            {"items": Mock(unique_item_factories=[], unique_items_spawned=set())},
         ):
             # Mock the import
             with patch("builtins.__import__", side_effect=ImportError):
@@ -1672,13 +1664,31 @@ class TestNPCAIConfig:
         result = config.get_flank_position_angle(Mock(), Mock())
         assert result is None
 
-    def test_get_flank_position_angle(self):
-        """Test get_flank_position_angle."""
+    def test_get_flank_position_angle_none_without_positions(self):
+        """Without real coordinate data, no genuine flank angle exists."""
         from src.npc_ai_config import NPCAIConfig
 
         player = Mock(spec=[])
         config = NPCAIConfig(player)
-        result = config.get_flank_position_angle(Mock(), Mock())
+        attacker = Mock()
+        attacker.combat_position = None
+        target = Mock()
+        target.combat_position = None
+        result = config.get_flank_position_angle(attacker, target)
+        assert result is None
+
+    def test_get_flank_position_angle_real_bearing(self):
+        """With real positions, a perpendicular blind-side bearing is returned."""
+        from src.npc_ai_config import NPCAIConfig
+        from src.positions import CombatPosition, Direction
+
+        player = Mock(spec=[])
+        config = NPCAIConfig(player)
+        attacker = Mock()
+        target = Mock()
+        target.combat_position = CombatPosition(x=25, y=25, facing=Direction.N)
+        attacker.combat_position = CombatPosition(x=35, y=25, facing=Direction.W)
+        result = config.get_flank_position_angle(attacker, target)
         assert result == 90.0
 
     def test_calculate_retreat_priority_no_retreat_needed(self):

@@ -123,13 +123,53 @@ def test_get_flank_position_angle_missing_attacker_or_target_returns_none():
     assert ai_config.get_flank_position_angle(npc, None) is None
 
 
-def test_get_flank_position_angle_returns_ideal_angle():
+def test_get_flank_position_angle_returns_none_without_positions():
+    """With no coordinate data (combat_position None) there is no real angle
+    to compute, so the method reports None instead of a stubbed constant."""
     player = Player()
     ai_config = NPCAIConfig(player)
     npc = _npc()
     target = _npc()
 
-    assert ai_config.get_flank_position_angle(npc, target, ignore_unit=None) == 90.0
+    assert ai_config.get_flank_position_angle(npc, target, ignore_unit=None) is None
+
+
+def test_get_flank_position_angle_computes_real_bearing():
+    """With real positions, the returned bearing is one of the target's two
+    perpendicular blind-sides, chosen nearest the attacker."""
+    from src.positions import CombatPosition, Direction
+
+    player = Player()
+    ai_config = NPCAIConfig(player)
+    npc = _npc()
+    target = _npc()
+
+    # Target faces North (0°); attacker sits due East of it.
+    target.combat_position = CombatPosition(x=25, y=25, facing=Direction.N)
+    npc.combat_position = CombatPosition(x=35, y=25, facing=Direction.W)
+
+    # East blind-side (90°) is nearer than the West blind-side (270°).
+    assert ai_config.get_flank_position_angle(npc, target) == 90.0
+
+
+def test_get_current_angle_diff_none_without_positions():
+    player = Player()
+    ai_config = NPCAIConfig(player)
+    assert ai_config.get_current_angle_diff(_npc(), _npc()) is None
+
+
+def test_get_current_angle_diff_flank_is_ninety_degrees():
+    """Attacking a north-facing target from due East is a 90° (clean flank)."""
+    from src.positions import CombatPosition, Direction
+
+    player = Player()
+    ai_config = NPCAIConfig(player)
+    npc = _npc()
+    target = _npc()
+    target.combat_position = CombatPosition(x=25, y=25, facing=Direction.N)
+    npc.combat_position = CombatPosition(x=35, y=25, facing=Direction.W)
+
+    assert ai_config.get_current_angle_diff(npc, target) == 90.0
 
 
 def test_calculate_retreat_priority_false_without_health_attrs():
