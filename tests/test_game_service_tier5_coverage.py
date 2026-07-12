@@ -2110,6 +2110,28 @@ class TestUseItem:
         assert result["success"] is True
         adapter._add_log_entry.assert_called_once_with(2, "Boom!", "combat")
 
+    def test_in_combat_logs_each_narration_line_separately(self, game_service, mock_player):
+        from src.narration import narrate
+
+        mock_player.in_combat = True
+        mock_player.combat_beat = 5
+        adapter = MagicMock()
+        mock_player._combat_adapter = adapter
+
+        def _use(target, user=None):
+            narrate("Line one")
+            narrate("Line two")
+
+        item = MagicMock()
+        item.merchandise = False
+        item.name = "Twin Vial"
+        item.use = _use
+        result = game_service.use_item(mock_player, item)
+        assert result["success"] is True
+        assert adapter._add_log_entry.call_count == 2
+        adapter._add_log_entry.assert_any_call(5, "Line one", "combat")
+        adapter._add_log_entry.assert_any_call(5, "Line two", "combat")
+
     def test_in_combat_creates_missing_combat_log_without_adapter(self, game_service):
         from types import SimpleNamespace
         from src.narration import narrate

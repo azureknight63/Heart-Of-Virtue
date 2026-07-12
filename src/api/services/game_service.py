@@ -4262,6 +4262,8 @@ class GameService:
         messages = self._narration_texts(_msgs)
         message = "\n".join(messages).strip() or f"{getattr(item, 'name', 'Item')} used"
 
+        # Pass the joined ``message`` (not ``messages``) so the fallback
+        # "{name} used" line is mirrored too; the helper re-splits on newlines.
         if getattr(player, "in_combat", False):
             self._log_item_use_to_combat(player, message)
 
