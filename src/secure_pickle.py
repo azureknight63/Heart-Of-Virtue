@@ -32,10 +32,13 @@ legacy import only.
 
 import io
 import os
+import struct
+import hashlib
 import pickle
 import logging
 import importlib
 import pkgutil
+from collections import Counter
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +52,16 @@ DEFAULT_MAX_SAVE_BYTES = 5 * 1024 * 1024
 # single, testable control surface reachable from any entry point.
 STRICT_ENV_VAR = "HOV_STRICT_UNPICKLE"
 
+# --- Integrity header (issue #13, Phase 2) ---------------------------------
+# New saves are prefixed with a small header so tampering / truncation is
+# detected before unpickling: [4 bytes magic][1 byte version][32 bytes sha256].
+# Old headerless saves are still accepted (detected by the absent magic) and
+# loaded as legacy format.
+HEADER_MAGIC = b"HOVS"
+HEADER_VERSION = 1
+_HEADER_STRUCT = struct.Struct(">4sB32s")  # magic, version, sha256 digest
+HEADER_SIZE = _HEADER_STRUCT.size  # 37 bytes
+
 
 class RestrictedUnpicklingError(pickle.UnpicklingError):
     """Raised in strict mode when a class is not on the allow-list."""
@@ -56,6 +69,10 @@ class RestrictedUnpicklingError(pickle.UnpicklingError):
 
 class SaveTooLargeError(Exception):
     """Raised when a save payload exceeds the configured size cap."""
+
+
+class SaveIntegrityError(Exception):
+    """Raised when a save's integrity header fails validation (tampering)."""
 
 
 # ---------------------------------------------------------------------------
@@ -68,13 +85,14 @@ class SaveTooLargeError(Exception):
 # rewrite as an explicit membership test (not a lambda predicate) means the set
 # of paths we will silently redirect is auditable at a glance.
 LEGACY_BARE_MODULES = frozenset({
+    "_unpickle_worker",
     "actions", "animations", "combat_event_config", "combatant",
     "config_manager", "coordinate_config", "enchant_tables", "events",
     "functions", "genericng", "interface", "inventory_utils", "items",
     "loot_tables", "moves", "narration", "npc", "npc_ai_config",
-    "objects", "positions", "scenario_config", "secure_pickle",
-    "shop_conditions", "skilltree", "states", "story", "tiles",
-    "tilesets", "universe", "player",
+    "objects", "positions", "save_format", "scenario_config",
+    "secure_pickle", "shop_conditions", "skilltree", "states", "story",
+    "tiles", "tilesets", "universe", "player",
 })
 
 
@@ -95,16 +113,11 @@ def canonical_module_name(mod_name):
 # Allow-list derivation (auto-generated from the engine to prevent drift)
 # ---------------------------------------------------------------------------
 
-# Top-level engine modules whose classes may legitimately appear in a save.
-_ALLOWLIST_MODULES = (
-    "src.items", "src.npc", "src.states", "src.objects", "src.player",
-    "src.tiles", "src.universe", "src.combatant", "src.events",
-    "src.actions", "src.functions", "src.narration",
-)
-
-# Engine packages whose submodules also contribute classes (e.g. story chapters,
-# per-weapon move modules). ``_collect_package`` also collects the package root.
-_ALLOWLIST_PACKAGES = ("src.story", "src.moves")
+# Engine modules deliberately excluded from allow-list derivation: they hold no
+# persistable classes and pull no weight into a save graph. Everything else in
+# LEGACY_BARE_MODULES is introspected, so the allow-list can't drift behind a
+# newly added engine module (the same set that gates canonical rewrites).
+_ALLOWLIST_EXCLUDE = frozenset({"_unpickle_worker", "save_format", "secure_pickle"})
 
 # Known-safe stdlib globals that pickle's reconstruction machinery references
 # for ordinary object graphs. These resolve fine but are not "engine" classes,
@@ -121,7 +134,8 @@ _allowlist_cache = None
 
 
 def _collect_module(mod_name, allowed):
-    """Add every class object reachable from ``mod_name`` to ``allowed``."""
+    """Add every class object reachable from ``mod_name`` (and, for packages,
+    its immediate submodules) to ``allowed``."""
     try:
         mod = importlib.import_module(mod_name)
     except Exception:  # pragma: no cover - defensive; missing optional module
@@ -130,32 +144,24 @@ def _collect_module(mod_name, allowed):
     for obj in vars(mod).values():
         if isinstance(obj, type):
             allowed.add((obj.__module__, obj.__name__))
-
-
-def _collect_package(pkg_name, allowed):
-    """Add classes from a package and each of its immediate submodules."""
-    try:
-        pkg = importlib.import_module(pkg_name)
-    except Exception:  # pragma: no cover - defensive
-        logger.debug("Allow-list: could not import package %s", pkg_name)
-        return
-    _collect_module(pkg_name, allowed)
-    for info in pkgutil.iter_modules(getattr(pkg, "__path__", [])):
-        _collect_module(f"{pkg_name}.{info.name}", allowed)
+    for info in pkgutil.iter_modules(getattr(mod, "__path__", [])):
+        _collect_module(f"{mod_name}.{info.name}", allowed)
 
 
 def _build_allowlist():
     """Introspect the engine modules and return the set of allowed classes.
 
+    The module set is derived from ``LEGACY_BARE_MODULES`` (the canonical list of
+    engine top-level modules) so a newly added module is covered automatically.
     Each entry is a ``(module, name)`` tuple keyed on the class's real
     ``__module__`` (which is what pickle stores), so canonical rewrites line up
     with allow-list membership.
     """
     allowed = set(_SAFE_STDLIB)
-    for mod_name in _ALLOWLIST_MODULES:
-        _collect_module(mod_name, allowed)
-    for pkg_name in _ALLOWLIST_PACKAGES:
-        _collect_package(pkg_name, allowed)
+    for bare in LEGACY_BARE_MODULES:
+        if bare in _ALLOWLIST_EXCLUDE:
+            continue
+        _collect_module("src." + bare, allowed)
     return allowed
 
 
@@ -176,6 +182,32 @@ def strict_mode_enabled():
     return os.environ.get(STRICT_ENV_VAR, "").strip().lower() in (
         "1", "true", "yes", "on",
     )
+
+
+# Curated set of ``(module, name)`` for classes that have been *removed* from
+# the engine but may still appear in old saves. In strict mode these are the
+# only classes allowed to fall back to a placeholder; every other unresolved
+# class is rejected. It is empty today (no classes have been formally
+# deprecated yet); add entries here as classes are retired so legacy saves keep
+# loading under strict mode without re-opening the door to arbitrary names.
+LEGACY_ALLOWED_MISSING = frozenset()
+
+
+# --- Telemetry (dev-only, issue #13 Phase 4) -------------------------------
+# Cumulative counters across all loads in this process, so a dev can measure
+# progress eliminating legacy classes. Cheap to maintain; read via
+# get_telemetry() / reset via reset_telemetry().
+_TELEMETRY = Counter()
+
+
+def get_telemetry():
+    """Return a snapshot dict of cumulative unpickler event counts."""
+    return dict(_TELEMETRY)
+
+
+def reset_telemetry():
+    """Zero the telemetry counters (test/dev helper)."""
+    _TELEMETRY.clear()
 
 
 # ---------------------------------------------------------------------------
@@ -232,6 +264,7 @@ class SafeUnpickler(pickle.Unpickler):
             events = []
             self.events = events
         events.append(event)
+        _TELEMETRY[kind] += 1
         if kind == "rejected":
             logger.warning("SafeUnpickler rejected %s.%s", module, name)
         else:
@@ -269,8 +302,9 @@ class SafeUnpickler(pickle.Unpickler):
                 )
             return cls
 
-        # Unresolved class.
-        if strict:
+        # Unresolved class. In strict mode only curated, formally-deprecated
+        # classes may fall back to a placeholder; everything else is rejected.
+        if strict and (module, name) not in LEGACY_ALLOWED_MISSING:
             self._record("rejected", module, name)
             raise RestrictedUnpicklingError(
                 f"Class {module}.{name} could not be resolved and strict "
@@ -280,9 +314,53 @@ class SafeUnpickler(pickle.Unpickler):
         return self._make_placeholder(module, name)
 
 
+# ---------------------------------------------------------------------------
+# Integrity header (magic + version + checksum) for tamper detection
+# ---------------------------------------------------------------------------
+
+def add_integrity_header(payload):
+    """Prefix a pickle ``payload`` (bytes) with a magic/version/sha256 header."""
+    digest = hashlib.sha256(payload).digest()
+    return _HEADER_STRUCT.pack(HEADER_MAGIC, HEADER_VERSION, digest) + payload
+
+
+def has_integrity_header(data):
+    """Return True if ``data`` begins with the save magic bytes."""
+    return len(data) >= 4 and data[:4] == HEADER_MAGIC
+
+
+def verify_and_strip_header(data):
+    """Return the pickle payload from ``data``, validating the header if present.
+
+    Headerless data (legacy saves) is returned unchanged. When the magic is
+    present the version and sha256 digest are checked; a mismatch or truncated
+    header raises :class:`SaveIntegrityError`.
+    """
+    if not has_integrity_header(data):
+        return data  # legacy headerless save
+    if len(data) < HEADER_SIZE:
+        raise SaveIntegrityError("Save header is truncated")
+    _magic, version, digest = _HEADER_STRUCT.unpack(data[:HEADER_SIZE])
+    if version != HEADER_VERSION:
+        raise SaveIntegrityError(
+            f"Unsupported save header version {version} (expected {HEADER_VERSION})"
+        )
+    payload = data[HEADER_SIZE:]
+    if hashlib.sha256(payload).digest() != digest:
+        raise SaveIntegrityError("Save checksum mismatch (file tampered or corrupt)")
+    return payload
+
+
+def serialize_for_save(obj, *, protocol=pickle.HIGHEST_PROTOCOL):
+    """Pickle ``obj`` and wrap it in the integrity header for a new save."""
+    return add_integrity_header(pickle.dumps(obj, protocol))
+
+
 def safe_pickle_load(fp, *, strict=None, max_bytes=DEFAULT_MAX_SAVE_BYTES,
                      events=None):
     """Deserialize a save payload with size capping and gated class resolution.
+
+    Accepts both new header-wrapped saves and legacy headerless pickles.
 
     Args:
         fp: A binary file-like object positioned at the start of the payload.
@@ -292,6 +370,7 @@ def safe_pickle_load(fp, *, strict=None, max_bytes=DEFAULT_MAX_SAVE_BYTES,
 
     Raises:
         SaveTooLargeError: The payload exceeds ``max_bytes``.
+        SaveIntegrityError: The integrity header failed validation.
         RestrictedUnpicklingError: Strict mode rejected a class.
         pickle.UnpicklingError / EOFError: Corrupt payload.
     """
@@ -300,4 +379,79 @@ def safe_pickle_load(fp, *, strict=None, max_bytes=DEFAULT_MAX_SAVE_BYTES,
         raise SaveTooLargeError(
             f"Save payload of {len(raw)} bytes exceeds the {max_bytes}-byte cap"
         )
-    return SafeUnpickler(io.BytesIO(raw), strict=strict, events=events).load()
+    payload = verify_and_strip_header(raw)
+    return SafeUnpickler(io.BytesIO(payload), strict=strict, events=events).load()
+
+
+# ---------------------------------------------------------------------------
+# Sandboxed legacy unpickling (issue #13, Phase 4 -- optional hardening)
+# ---------------------------------------------------------------------------
+
+# Default wall-clock budget for the sandbox worker. A save of uncertain
+# provenance that spins or bloats is killed after this many seconds.
+DEFAULT_SANDBOX_TIMEOUT = 15
+
+
+class SandboxError(Exception):
+    """Raised when the sandboxed unpickle worker fails or times out."""
+
+
+def load_in_subprocess(data, *, timeout=DEFAULT_SANDBOX_TIMEOUT, strict=True):
+    """Unpickle ``data`` in an isolated child process and return v2 data.
+
+    The child (``src._unpickle_worker``) does the actual unpickling, so any code
+    the pickle executes runs in a disposable process, and converts the result to
+    the data-only schema. The parent only ever parses primitive JSON. The child
+    is killed if it exceeds ``timeout`` seconds.
+
+    Args:
+        data: Raw save bytes (header-wrapped or legacy headerless).
+        timeout: Seconds before the worker is terminated.
+        strict: Run the worker with strict allow-list enforcement (default on,
+            since this path exists for untrusted input).
+
+    Returns:
+        The data-only (v2) dict produced by the worker.
+
+    Raises:
+        SandboxError: The worker timed out, crashed, or produced no output.
+    """
+    import sys
+    import json
+    import subprocess
+
+    env = dict(os.environ)
+    if strict:
+        env[STRICT_ENV_VAR] = "1"
+    else:
+        env.pop(STRICT_ENV_VAR, None)
+
+    # Run from the project root so `-m src._unpickle_worker` resolves regardless
+    # of the parent's cwd (this file is at <root>/src/secure_pickle.py).
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    try:
+        proc = subprocess.run(
+            [sys.executable, "-m", "src._unpickle_worker"],
+            input=data,
+            capture_output=True,
+            timeout=timeout,
+            env=env,
+            cwd=project_root,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise SandboxError(
+            f"Sandboxed unpickle exceeded {timeout}s and was terminated"
+        ) from exc
+
+    if proc.returncode != 0:
+        stderr = proc.stderr.decode("utf-8", "replace").strip()
+        raise SandboxError(
+            f"Sandboxed unpickle worker failed (exit {proc.returncode}): {stderr}"
+        )
+    out = proc.stdout.decode("utf-8", "replace").strip()
+    if not out:
+        raise SandboxError("Sandboxed unpickle worker produced no output")
+    try:
+        return json.loads(out)
+    except json.JSONDecodeError as exc:
+        raise SandboxError("Sandboxed unpickle worker returned invalid JSON") from exc

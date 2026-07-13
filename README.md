@@ -164,12 +164,14 @@ npm run dev
 > are only safe as **trusted local artifacts belonging to the player who
 > created them** — never load a `.sav` obtained from an untrusted source.
 >
-> Deserialization is hardened by `src/secure_pickle.py` (allow-list of engine
-> classes, opt-in strict mode via the `HOV_STRICT_UNPICKLE` environment
-> variable, size cap, and structured event logging). A data-only (JSON) save
-> format that removes the pickle exec risk entirely is planned — see
-> [`SECURITY.md`](SECURITY.md) and issue #13 for the full trust model and
-> migration roadmap. The pickle format will be reduced to legacy import only.
+> Deserialization is hardened by `src/secure_pickle.py`: an allow-list of engine
+> classes, opt-in strict mode (`HOV_STRICT_UNPICKLE`), a size cap, a
+> magic-bytes + sha256 integrity header on new saves, structured event logging,
+> and an optional sandboxed-subprocess loader. A data-only (JSON) save format
+> that removes the pickle exec risk entirely exists in prototype behind the
+> `HOV_SAVE_V2` flag (`src/save_format.py`) — see [`SECURITY.md`](SECURITY.md)
+> and issue #13 for the full trust model and migration roadmap. The pickle
+> format will be reduced to legacy import only.
 
 ## Contributing
 1. Fork / create a feature branch

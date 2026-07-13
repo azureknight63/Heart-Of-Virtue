@@ -1,0 +1,1858 @@
+{
+  "classes": [
+    {
+      "module": "asciimatics.effects",
+      "name": "Cycle"
+    },
+    {
+      "module": "asciimatics.effects",
+      "name": "Print"
+    },
+    {
+      "module": "asciimatics.effects",
+      "name": "Stars"
+    },
+    {
+      "module": "asciimatics.exceptions",
+      "name": "ResizeScreenError"
+    },
+    {
+      "module": "asciimatics.renderers.figlettext",
+      "name": "FigletText"
+    },
+    {
+      "module": "asciimatics.renderers.images",
+      "name": "ColourImageFile"
+    },
+    {
+      "module": "asciimatics.renderers.images",
+      "name": "ImageFile"
+    },
+    {
+      "module": "asciimatics.renderers.speechbubble",
+      "name": "SpeechBubble"
+    },
+    {
+      "module": "asciimatics.scene",
+      "name": "Scene"
+    },
+    {
+      "module": "asciimatics.screen",
+      "name": "Screen"
+    },
+    {
+      "module": "builtins",
+      "name": "bytearray"
+    },
+    {
+      "module": "builtins",
+      "name": "complex"
+    },
+    {
+      "module": "builtins",
+      "name": "dict"
+    },
+    {
+      "module": "builtins",
+      "name": "frozenset"
+    },
+    {
+      "module": "builtins",
+      "name": "list"
+    },
+    {
+      "module": "builtins",
+      "name": "object"
+    },
+    {
+      "module": "builtins",
+      "name": "set"
+    },
+    {
+      "module": "builtins",
+      "name": "tuple"
+    },
+    {
+      "module": "collections",
+      "name": "OrderedDict"
+    },
+    {
+      "module": "collections",
+      "name": "defaultdict"
+    },
+    {
+      "module": "copyreg",
+      "name": "__newobj__"
+    },
+    {
+      "module": "copyreg",
+      "name": "_reconstructor"
+    },
+    {
+      "module": "enum",
+      "name": "Enum"
+    },
+    {
+      "module": "pathlib",
+      "name": "Path"
+    },
+    {
+      "module": "src.actions",
+      "name": "Action"
+    },
+    {
+      "module": "src.actions",
+      "name": "Alter"
+    },
+    {
+      "module": "src.actions",
+      "name": "Equip"
+    },
+    {
+      "module": "src.actions",
+      "name": "Menu"
+    },
+    {
+      "module": "src.actions",
+      "name": "RefreshMerchants"
+    },
+    {
+      "module": "src.actions",
+      "name": "Save"
+    },
+    {
+      "module": "src.actions",
+      "name": "Search"
+    },
+    {
+      "module": "src.actions",
+      "name": "Showvar"
+    },
+    {
+      "module": "src.actions",
+      "name": "SpawnObj"
+    },
+    {
+      "module": "src.actions",
+      "name": "Supersaiyan"
+    },
+    {
+      "module": "src.actions",
+      "name": "Teleport"
+    },
+    {
+      "module": "src.actions",
+      "name": "TestEvent"
+    },
+    {
+      "module": "src.actions",
+      "name": "Use"
+    },
+    {
+      "module": "src.actions",
+      "name": "ViewMap"
+    },
+    {
+      "module": "src.actions",
+      "name": "ViewStatus"
+    },
+    {
+      "module": "src.combat_event_config",
+      "name": "CombatEventConfig"
+    },
+    {
+      "module": "src.combatant",
+      "name": "Combatant"
+    },
+    {
+      "module": "src.config_manager",
+      "name": "ConfigManager"
+    },
+    {
+      "module": "src.config_manager",
+      "name": "GameConfig"
+    },
+    {
+      "module": "src.coordinate_config",
+      "name": "CoordinateSystemConfig"
+    },
+    {
+      "module": "src.enchant_tables",
+      "name": "Balanced"
+    },
+    {
+      "module": "src.enchant_tables",
+      "name": "Bulwark"
+    },
+    {
+      "module": "src.enchant_tables",
+      "name": "Dirty"
+    },
+    {
+      "module": "src.enchant_tables",
+      "name": "Dousing"
+    },
+    {
+      "module": "src.enchant_tables",
+      "name": "Earthen"
+    },
+    {
+      "module": "src.enchant_tables",
+      "name": "Edgebound"
+    },
+    {
+      "module": "src.enchant_tables",
+      "name": "Enchantment"
+    },
+    {
+      "module": "src.enchant_tables",
+      "name": "Encrusted"
+    },
+    {
+      "module": "src.enchant_tables",
+      "name": "Flaming"
+    },
+    {
+      "module": "src.enchant_tables",
+      "name": "Hollow"
+    },
+    {
+      "module": "src.enchant_tables",
+      "name": "Icy"
+    },
+    {
+      "module": "src.enchant_tables",
+      "name": "Needleproof"
+    },
+    {
+      "module": "src.enchant_tables",
+      "name": "OfCharms"
+    },
+    {
+      "module": "src.enchant_tables",
+      "name": "OfGrit"
+    },
+    {
+      "module": "src.enchant_tables",
+      "name": "OfHealth"
+    },
+    {
+      "module": "src.enchant_tables",
+      "name": "OfInsight"
+    },
+    {
+      "module": "src.enchant_tables",
+      "name": "OfPerseverance"
+    },
+    {
+      "module": "src.enchant_tables",
+      "name": "OfRelief"
+    },
+    {
+      "module": "src.enchant_tables",
+      "name": "OfSupplication"
+    },
+    {
+      "module": "src.enchant_tables",
+      "name": "OfTempo"
+    },
+    {
+      "module": "src.enchant_tables",
+      "name": "OfThePhoenix"
+    },
+    {
+      "module": "src.enchant_tables",
+      "name": "OfVigor"
+    },
+    {
+      "module": "src.enchant_tables",
+      "name": "Plated"
+    },
+    {
+      "module": "src.enchant_tables",
+      "name": "Poisonous"
+    },
+    {
+      "module": "src.enchant_tables",
+      "name": "Polished"
+    },
+    {
+      "module": "src.enchant_tables",
+      "name": "Pure"
+    },
+    {
+      "module": "src.enchant_tables",
+      "name": "Purifying"
+    },
+    {
+      "module": "src.enchant_tables",
+      "name": "Radiant"
+    },
+    {
+      "module": "src.enchant_tables",
+      "name": "Reinforced"
+    },
+    {
+      "module": "src.enchant_tables",
+      "name": "Sharp"
+    },
+    {
+      "module": "src.enchant_tables",
+      "name": "Shocking"
+    },
+    {
+      "module": "src.enchant_tables",
+      "name": "Spiritual"
+    },
+    {
+      "module": "src.enchant_tables",
+      "name": "Studded"
+    },
+    {
+      "module": "src.enchant_tables",
+      "name": "Umbral"
+    },
+    {
+      "module": "src.enchant_tables",
+      "name": "Weighted"
+    },
+    {
+      "module": "src.events",
+      "name": "CombatEvent"
+    },
+    {
+      "module": "src.events",
+      "name": "Event"
+    },
+    {
+      "module": "src.events",
+      "name": "LootEvent"
+    },
+    {
+      "module": "src.functions",
+      "name": "_MissingLegacyPlaceholder"
+    },
+    {
+      "module": "src.items",
+      "name": "Accessory"
+    },
+    {
+      "module": "src.items",
+      "name": "AmberStone"
+    },
+    {
+      "module": "src.items",
+      "name": "AncientRelic"
+    },
+    {
+      "module": "src.items",
+      "name": "Antidote"
+    },
+    {
+      "module": "src.items",
+      "name": "Armor"
+    },
+    {
+      "module": "src.items",
+      "name": "Arrow"
+    },
+    {
+      "module": "src.items",
+      "name": "AzuriteGem"
+    },
+    {
+      "module": "src.items",
+      "name": "Baselard"
+    },
+    {
+      "module": "src.items",
+      "name": "Battleaxe"
+    },
+    {
+      "module": "src.items",
+      "name": "Bitterroot"
+    },
+    {
+      "module": "src.items",
+      "name": "Book"
+    },
+    {
+      "module": "src.items",
+      "name": "Boots"
+    },
+    {
+      "module": "src.items",
+      "name": "ChainCoif"
+    },
+    {
+      "module": "src.items",
+      "name": "ChainGauntlets"
+    },
+    {
+      "module": "src.items",
+      "name": "ChainSabaton"
+    },
+    {
+      "module": "src.items",
+      "name": "ChainmailShirt"
+    },
+    {
+      "module": "src.items",
+      "name": "ClothBoots"
+    },
+    {
+      "module": "src.items",
+      "name": "ClothHood"
+    },
+    {
+      "module": "src.items",
+      "name": "ClothMitts"
+    },
+    {
+      "module": "src.items",
+      "name": "Commodity"
+    },
+    {
+      "module": "src.items",
+      "name": "CompactOfSilence"
+    },
+    {
+      "module": "src.items",
+      "name": "ConclaveSignalStone"
+    },
+    {
+      "module": "src.items",
+      "name": "Consumable"
+    },
+    {
+      "module": "src.items",
+      "name": "Crossbow"
+    },
+    {
+      "module": "src.items",
+      "name": "CrystalTear"
+    },
+    {
+      "module": "src.items",
+      "name": "Crystals"
+    },
+    {
+      "module": "src.items",
+      "name": "Dagger"
+    },
+    {
+      "module": "src.items",
+      "name": "DissentingRecord"
+    },
+    {
+      "module": "src.items",
+      "name": "DragonHeartGem"
+    },
+    {
+      "module": "src.items",
+      "name": "Draught"
+    },
+    {
+      "module": "src.items",
+      "name": "DriedCrystalSap"
+    },
+    {
+      "module": "src.items",
+      "name": "DullMedallion"
+    },
+    {
+      "module": "src.items",
+      "name": "ElderWritOfCleansing"
+    },
+    {
+      "module": "src.items",
+      "name": "EnchantedGolemitePauldron"
+    },
+    {
+      "module": "src.items",
+      "name": "Epee"
+    },
+    {
+      "module": "src.items",
+      "name": "FabricariumCompactSeal"
+    },
+    {
+      "module": "src.items",
+      "name": "FabricariumRejectionShard"
+    },
+    {
+      "module": "src.items",
+      "name": "Fists"
+    },
+    {
+      "module": "src.items",
+      "name": "FlareArrow"
+    },
+    {
+      "module": "src.items",
+      "name": "GlassArrow"
+    },
+    {
+      "module": "src.items",
+      "name": "Gloves"
+    },
+    {
+      "module": "src.items",
+      "name": "Gold"
+    },
+    {
+      "module": "src.items",
+      "name": "GoldBracelet"
+    },
+    {
+      "module": "src.items",
+      "name": "GoldChain"
+    },
+    {
+      "module": "src.items",
+      "name": "GoldRing"
+    },
+    {
+      "module": "src.items",
+      "name": "GronditeAlloyBracer"
+    },
+    {
+      "module": "src.items",
+      "name": "GronditeMarkToken"
+    },
+    {
+      "module": "src.items",
+      "name": "Halberd"
+    },
+    {
+      "module": "src.items",
+      "name": "Hammer"
+    },
+    {
+      "module": "src.items",
+      "name": "HardenedEarPlug"
+    },
+    {
+      "module": "src.items",
+      "name": "HeartkeeperNote"
+    },
+    {
+      "module": "src.items",
+      "name": "Helm"
+    },
+    {
+      "module": "src.items",
+      "name": "HunterHood"
+    },
+    {
+      "module": "src.items",
+      "name": "IronArrow"
+    },
+    {
+      "module": "src.items",
+      "name": "IronCuirass"
+    },
+    {
+      "module": "src.items",
+      "name": "IronGauntlets"
+    },
+    {
+      "module": "src.items",
+      "name": "IronGreaves"
+    },
+    {
+      "module": "src.items",
+      "name": "IronHelm"
+    },
+    {
+      "module": "src.items",
+      "name": "IronRation"
+    },
+    {
+      "module": "src.items",
+      "name": "Item"
+    },
+    {
+      "module": "src.items",
+      "name": "JeanWeddingBand"
+    },
+    {
+      "module": "src.items",
+      "name": "Key"
+    },
+    {
+      "module": "src.items",
+      "name": "LeatherArmor"
+    },
+    {
+      "module": "src.items",
+      "name": "LeatherBoots"
+    },
+    {
+      "module": "src.items",
+      "name": "LeatherCap"
+    },
+    {
+      "module": "src.items",
+      "name": "LeatherGloves"
+    },
+    {
+      "module": "src.items",
+      "name": "Longbow"
+    },
+    {
+      "module": "src.items",
+      "name": "Longsword"
+    },
+    {
+      "module": "src.items",
+      "name": "Mace"
+    },
+    {
+      "module": "src.items",
+      "name": "MerchantJournalFragment"
+    },
+    {
+      "module": "src.items",
+      "name": "MineralFragment"
+    },
+    {
+      "module": "src.items",
+      "name": "MineralPowder"
+    },
+    {
+      "module": "src.items",
+      "name": "MineralSolvent"
+    },
+    {
+      "module": "src.items",
+      "name": "PaddedBoots"
+    },
+    {
+      "module": "src.items",
+      "name": "PaddedCap"
+    },
+    {
+      "module": "src.items",
+      "name": "PaddedGloves"
+    },
+    {
+      "module": "src.items",
+      "name": "PaddedJerkin"
+    },
+    {
+      "module": "src.items",
+      "name": "PaleGreyFragment"
+    },
+    {
+      "module": "src.items",
+      "name": "Pickaxe"
+    },
+    {
+      "module": "src.items",
+      "name": "Pole"
+    },
+    {
+      "module": "src.items",
+      "name": "QualityReport117K"
+    },
+    {
+      "module": "src.items",
+      "name": "QuiltedVest"
+    },
+    {
+      "module": "src.items",
+      "name": "Relic"
+    },
+    {
+      "module": "src.items",
+      "name": "Respite"
+    },
+    {
+      "module": "src.items",
+      "name": "Restorative"
+    },
+    {
+      "module": "src.items",
+      "name": "Rock"
+    },
+    {
+      "module": "src.items",
+      "name": "RustedDagger"
+    },
+    {
+      "module": "src.items",
+      "name": "RustedIronMace"
+    },
+    {
+      "module": "src.items",
+      "name": "Scythe"
+    },
+    {
+      "module": "src.items",
+      "name": "Shortbow"
+    },
+    {
+      "module": "src.items",
+      "name": "Shortsword"
+    },
+    {
+      "module": "src.items",
+      "name": "SilverBracelet"
+    },
+    {
+      "module": "src.items",
+      "name": "SilverChain"
+    },
+    {
+      "module": "src.items",
+      "name": "SilverRing"
+    },
+    {
+      "module": "src.items",
+      "name": "SlimeFlask"
+    },
+    {
+      "module": "src.items",
+      "name": "Spear"
+    },
+    {
+      "module": "src.items",
+      "name": "Special"
+    },
+    {
+      "module": "src.items",
+      "name": "StuddedBoots"
+    },
+    {
+      "module": "src.items",
+      "name": "StuddedGloves"
+    },
+    {
+      "module": "src.items",
+      "name": "StuddedLeather"
+    },
+    {
+      "module": "src.items",
+      "name": "StuddedSkullcap"
+    },
+    {
+      "module": "src.items",
+      "name": "TatteredCloth"
+    },
+    {
+      "module": "src.items",
+      "name": "Weapon"
+    },
+    {
+      "module": "src.items",
+      "name": "WoodenArrow"
+    },
+    {
+      "module": "src.loot_tables",
+      "name": "Loot"
+    },
+    {
+      "module": "src.moves._base",
+      "name": "Move"
+    },
+    {
+      "module": "src.moves._base",
+      "name": "PassiveMove"
+    },
+    {
+      "module": "src.moves._dagger",
+      "name": "Backstab"
+    },
+    {
+      "module": "src.moves._dagger",
+      "name": "FeintAndPivot"
+    },
+    {
+      "module": "src.moves._dagger",
+      "name": "ShadowStep"
+    },
+    {
+      "module": "src.moves._dagger",
+      "name": "Slash"
+    },
+    {
+      "module": "src.moves._mastery",
+      "name": "BloodOfMartyrs"
+    },
+    {
+      "module": "src.moves._mastery",
+      "name": "Ironhide"
+    },
+    {
+      "module": "src.moves._mastery",
+      "name": "KillingPrecision"
+    },
+    {
+      "module": "src.moves._mastery",
+      "name": "LightningAssault"
+    },
+    {
+      "module": "src.moves._mastery",
+      "name": "Pulverize"
+    },
+    {
+      "module": "src.moves._mastery",
+      "name": "SecretPlans"
+    },
+    {
+      "module": "src.moves._mastery",
+      "name": "WarCry"
+    },
+    {
+      "module": "src.moves._movement",
+      "name": "Advance"
+    },
+    {
+      "module": "src.moves._movement",
+      "name": "BullCharge"
+    },
+    {
+      "module": "src.moves._movement",
+      "name": "Dodge"
+    },
+    {
+      "module": "src.moves._movement",
+      "name": "FlankingManeuver"
+    },
+    {
+      "module": "src.moves._movement",
+      "name": "Parry"
+    },
+    {
+      "module": "src.moves._movement",
+      "name": "QuickSwap"
+    },
+    {
+      "module": "src.moves._movement",
+      "name": "QuietMovement"
+    },
+    {
+      "module": "src.moves._movement",
+      "name": "TacticalPositioning"
+    },
+    {
+      "module": "src.moves._movement",
+      "name": "TacticalRetreat"
+    },
+    {
+      "module": "src.moves._movement",
+      "name": "Turn"
+    },
+    {
+      "module": "src.moves._movement",
+      "name": "Withdraw"
+    },
+    {
+      "module": "src.moves._npc",
+      "name": "BatBite"
+    },
+    {
+      "module": "src.moves._npc",
+      "name": "GorranClub"
+    },
+    {
+      "module": "src.moves._npc",
+      "name": "MarkedQuarry"
+    },
+    {
+      "module": "src.moves._npc",
+      "name": "MineralSpit"
+    },
+    {
+      "module": "src.moves._npc",
+      "name": "NpcAttack"
+    },
+    {
+      "module": "src.moves._npc",
+      "name": "NpcIdle"
+    },
+    {
+      "module": "src.moves._npc",
+      "name": "NpcRest"
+    },
+    {
+      "module": "src.moves._npc",
+      "name": "SeismicSlam"
+    },
+    {
+      "module": "src.moves._npc",
+      "name": "SlimeVolley"
+    },
+    {
+      "module": "src.moves._npc",
+      "name": "SoulDrain"
+    },
+    {
+      "module": "src.moves._npc",
+      "name": "SpiderBite"
+    },
+    {
+      "module": "src.moves._npc",
+      "name": "StoneBulwark"
+    },
+    {
+      "module": "src.moves._npc",
+      "name": "TelegraphedSurge"
+    },
+    {
+      "module": "src.moves._npc",
+      "name": "TidalSurge"
+    },
+    {
+      "module": "src.moves._npc",
+      "name": "TwinFangs"
+    },
+    {
+      "module": "src.moves._npc",
+      "name": "VenomClaw"
+    },
+    {
+      "module": "src.moves._npc",
+      "name": "WailStrike"
+    },
+    {
+      "module": "src.moves._pick",
+      "name": "ChipAway"
+    },
+    {
+      "module": "src.moves._pick",
+      "name": "ExploitWeakness"
+    },
+    {
+      "module": "src.moves._pick",
+      "name": "Stupefy"
+    },
+    {
+      "module": "src.moves._pick",
+      "name": "WorkTheGap"
+    },
+    {
+      "module": "src.moves._polearm",
+      "name": "BracePosition"
+    },
+    {
+      "module": "src.moves._polearm",
+      "name": "HalberdSpin"
+    },
+    {
+      "module": "src.moves._polearm",
+      "name": "OverheadSmash"
+    },
+    {
+      "module": "src.moves._polearm",
+      "name": "ReachMastery"
+    },
+    {
+      "module": "src.moves._polearm",
+      "name": "Sweep"
+    },
+    {
+      "module": "src.moves._ranged",
+      "name": "AimedShot"
+    },
+    {
+      "module": "src.moves._ranged",
+      "name": "BroadheadBolt"
+    },
+    {
+      "module": "src.moves._ranged",
+      "name": "EagleEye"
+    },
+    {
+      "module": "src.moves._ranged",
+      "name": "MarksmanEye"
+    },
+    {
+      "module": "src.moves._ranged",
+      "name": "PinningBolt"
+    },
+    {
+      "module": "src.moves._ranged",
+      "name": "QuickReload"
+    },
+    {
+      "module": "src.moves._ranged",
+      "name": "ShootBow"
+    },
+    {
+      "module": "src.moves._ranged",
+      "name": "ShootCrossbow"
+    },
+    {
+      "module": "src.moves._scythe",
+      "name": "DeathsHarvest"
+    },
+    {
+      "module": "src.moves._scythe",
+      "name": "GrimPersistence"
+    },
+    {
+      "module": "src.moves._scythe",
+      "name": "HauntingPresence"
+    },
+    {
+      "module": "src.moves._scythe",
+      "name": "Reap"
+    },
+    {
+      "module": "src.moves._scythe",
+      "name": "ReapersMark"
+    },
+    {
+      "module": "src.moves._spear",
+      "name": "ArmorPierce"
+    },
+    {
+      "module": "src.moves._spear",
+      "name": "Impale"
+    },
+    {
+      "module": "src.moves._spear",
+      "name": "KeepAway"
+    },
+    {
+      "module": "src.moves._spear",
+      "name": "Lunge"
+    },
+    {
+      "module": "src.moves._spear",
+      "name": "SentinelsVigil"
+    },
+    {
+      "module": "src.moves._sword",
+      "name": "BladeMastery"
+    },
+    {
+      "module": "src.moves._sword",
+      "name": "CounterGuard"
+    },
+    {
+      "module": "src.moves._sword",
+      "name": "DisarmingSlash"
+    },
+    {
+      "module": "src.moves._sword",
+      "name": "PommelStrike"
+    },
+    {
+      "module": "src.moves._sword",
+      "name": "Riposte"
+    },
+    {
+      "module": "src.moves._sword",
+      "name": "Thrust"
+    },
+    {
+      "module": "src.moves._sword",
+      "name": "VertigoSpin"
+    },
+    {
+      "module": "src.moves._sword",
+      "name": "WhirlAttack"
+    },
+    {
+      "module": "src.moves._unarmed",
+      "name": "CleaveInstinct"
+    },
+    {
+      "module": "src.moves._unarmed",
+      "name": "HeavyHanded"
+    },
+    {
+      "module": "src.moves._unarmed",
+      "name": "IronFist"
+    },
+    {
+      "module": "src.moves._unarmed",
+      "name": "Jab"
+    },
+    {
+      "module": "src.moves._unarmed",
+      "name": "PowerStrike"
+    },
+    {
+      "module": "src.moves._utility",
+      "name": "Attack"
+    },
+    {
+      "module": "src.moves._utility",
+      "name": "Check"
+    },
+    {
+      "module": "src.moves._utility",
+      "name": "CrusaderOath"
+    },
+    {
+      "module": "src.moves._utility",
+      "name": "MasterTactician"
+    },
+    {
+      "module": "src.moves._utility",
+      "name": "Rest"
+    },
+    {
+      "module": "src.moves._utility",
+      "name": "StrategicInsight"
+    },
+    {
+      "module": "src.moves._utility",
+      "name": "UseItem"
+    },
+    {
+      "module": "src.moves._utility",
+      "name": "Wait"
+    },
+    {
+      "module": "src.narration",
+      "name": "capture_narration"
+    },
+    {
+      "module": "src.npc._adjutant",
+      "name": "TheAdjutant"
+    },
+    {
+      "module": "src.npc._base",
+      "name": "Friend"
+    },
+    {
+      "module": "src.npc._base",
+      "name": "NPC"
+    },
+    {
+      "module": "src.npc._chat_llm",
+      "name": "HumanNPCLLMMixin"
+    },
+    {
+      "module": "src.npc._combat",
+      "name": "NPCCombatMixin"
+    },
+    {
+      "module": "src.npc._eastern_descent",
+      "name": "NomadCamper"
+    },
+    {
+      "module": "src.npc._eastern_descent",
+      "name": "NomadScout"
+    },
+    {
+      "module": "src.npc._eastern_descent",
+      "name": "NomadTrader"
+    },
+    {
+      "module": "src.npc._enemies",
+      "name": "CaveBat"
+    },
+    {
+      "module": "src.npc._enemies",
+      "name": "CorruptedStoneCreature"
+    },
+    {
+      "module": "src.npc._enemies",
+      "name": "ElderSlime"
+    },
+    {
+      "module": "src.npc._enemies",
+      "name": "GiantSpider"
+    },
+    {
+      "module": "src.npc._enemies",
+      "name": "KingSlime"
+    },
+    {
+      "module": "src.npc._enemies",
+      "name": "Lurker"
+    },
+    {
+      "module": "src.npc._enemies",
+      "name": "RockRumbler"
+    },
+    {
+      "module": "src.npc._enemies",
+      "name": "ScarpAdder"
+    },
+    {
+      "module": "src.npc._enemies",
+      "name": "Slime"
+    },
+    {
+      "module": "src.npc._enemies",
+      "name": "StatusDummy"
+    },
+    {
+      "module": "src.npc._enemies",
+      "name": "TalusHound"
+    },
+    {
+      "module": "src.npc._enemies",
+      "name": "Testexp"
+    },
+    {
+      "module": "src.npc._friends",
+      "name": "Devet"
+    },
+    {
+      "module": "src.npc._friends",
+      "name": "Gorran"
+    },
+    {
+      "module": "src.npc._friends",
+      "name": "GronditeConclaveElder"
+    },
+    {
+      "module": "src.npc._friends",
+      "name": "GronditeElder"
+    },
+    {
+      "module": "src.npc._friends",
+      "name": "GronditePasserby"
+    },
+    {
+      "module": "src.npc._friends",
+      "name": "GronditeWorker"
+    },
+    {
+      "module": "src.npc._friends",
+      "name": "Liss"
+    },
+    {
+      "module": "src.npc._friends",
+      "name": "Mara"
+    },
+    {
+      "module": "src.npc._friends",
+      "name": "Mynx"
+    },
+    {
+      "module": "src.npc._llm",
+      "name": "MynxLLMMixin"
+    },
+    {
+      "module": "src.npc._loot",
+      "name": "NPCLootMixin"
+    },
+    {
+      "module": "src.npc._merchants",
+      "name": "JamboHealsU"
+    },
+    {
+      "module": "src.npc._merchants",
+      "name": "Merchant"
+    },
+    {
+      "module": "src.npc._merchants",
+      "name": "MiloCurioDealer"
+    },
+    {
+      "module": "src.npc._progression",
+      "name": "AllyProgressionMixin"
+    },
+    {
+      "module": "src.npc._shop",
+      "name": "MerchantShopMixin"
+    },
+    {
+      "module": "src.npc_ai_config",
+      "name": "NPCAIConfig"
+    },
+    {
+      "module": "src.objects",
+      "name": "Container"
+    },
+    {
+      "module": "src.objects",
+      "name": "Crate"
+    },
+    {
+      "module": "src.objects",
+      "name": "Fountain"
+    },
+    {
+      "module": "src.objects",
+      "name": "GeminateGeode"
+    },
+    {
+      "module": "src.objects",
+      "name": "HealingSpring"
+    },
+    {
+      "module": "src.objects",
+      "name": "MarketBell"
+    },
+    {
+      "module": "src.objects",
+      "name": "MarketGong"
+    },
+    {
+      "module": "src.objects",
+      "name": "NoticeBoard"
+    },
+    {
+      "module": "src.objects",
+      "name": "Object"
+    },
+    {
+      "module": "src.objects",
+      "name": "Passageway"
+    },
+    {
+      "module": "src.objects",
+      "name": "PrayerCandleRack"
+    },
+    {
+      "module": "src.objects",
+      "name": "Shelf"
+    },
+    {
+      "module": "src.objects",
+      "name": "Shrine"
+    },
+    {
+      "module": "src.objects",
+      "name": "StreetLantern"
+    },
+    {
+      "module": "src.objects",
+      "name": "TileDescription"
+    },
+    {
+      "module": "src.objects",
+      "name": "WallInscription"
+    },
+    {
+      "module": "src.objects",
+      "name": "WallSwitch"
+    },
+    {
+      "module": "src.player",
+      "name": "Player"
+    },
+    {
+      "module": "src.player._combat",
+      "name": "PlayerCombatMixin"
+    },
+    {
+      "module": "src.player._debug",
+      "name": "PlayerDebugMixin"
+    },
+    {
+      "module": "src.player._exploration",
+      "name": "PlayerExplorationMixin"
+    },
+    {
+      "module": "src.player._inventory",
+      "name": "PlayerInventoryMixin"
+    },
+    {
+      "module": "src.player._leveling",
+      "name": "PlayerLevelingMixin"
+    },
+    {
+      "module": "src.player._movement",
+      "name": "PlayerMovementMixin"
+    },
+    {
+      "module": "src.player._ui",
+      "name": "PlayerUIMixin"
+    },
+    {
+      "module": "src.player._world",
+      "name": "PlayerWorldMixin"
+    },
+    {
+      "module": "src.positions",
+      "name": "CombatPosition"
+    },
+    {
+      "module": "src.positions",
+      "name": "CombatScenario"
+    },
+    {
+      "module": "src.positions",
+      "name": "Direction"
+    },
+    {
+      "module": "src.scenario_config",
+      "name": "ScenarioConfig"
+    },
+    {
+      "module": "src.scenario_config",
+      "name": "ScenarioType"
+    },
+    {
+      "module": "src.secure_pickle",
+      "name": "RestrictedUnpicklingError"
+    },
+    {
+      "module": "src.secure_pickle",
+      "name": "SafeUnpickler"
+    },
+    {
+      "module": "src.secure_pickle",
+      "name": "SaveIntegrityError"
+    },
+    {
+      "module": "src.secure_pickle",
+      "name": "SaveTooLargeError"
+    },
+    {
+      "module": "src.shop_conditions",
+      "name": "RestockWeightBoostCondition"
+    },
+    {
+      "module": "src.shop_conditions",
+      "name": "ShopCondition"
+    },
+    {
+      "module": "src.shop_conditions",
+      "name": "UniqueItemInjectionCondition"
+    },
+    {
+      "module": "src.shop_conditions",
+      "name": "ValueModifierCondition"
+    },
+    {
+      "module": "src.skilltree",
+      "name": "Skilltree"
+    },
+    {
+      "module": "src.states",
+      "name": "BloodOfMartyrsState"
+    },
+    {
+      "module": "src.states",
+      "name": "Clean"
+    },
+    {
+      "module": "src.states",
+      "name": "Disoriented"
+    },
+    {
+      "module": "src.states",
+      "name": "Dodging"
+    },
+    {
+      "module": "src.states",
+      "name": "Enflamed"
+    },
+    {
+      "module": "src.states",
+      "name": "Fervent"
+    },
+    {
+      "module": "src.states",
+      "name": "Hawkeye"
+    },
+    {
+      "module": "src.states",
+      "name": "Hollowed"
+    },
+    {
+      "module": "src.states",
+      "name": "Parrying"
+    },
+    {
+      "module": "src.states",
+      "name": "Petrified"
+    },
+    {
+      "module": "src.states",
+      "name": "PhoenixRevive"
+    },
+    {
+      "module": "src.states",
+      "name": "Poisoned"
+    },
+    {
+      "module": "src.states",
+      "name": "Quarried"
+    },
+    {
+      "module": "src.states",
+      "name": "Resonant"
+    },
+    {
+      "module": "src.states",
+      "name": "SecretPlansState"
+    },
+    {
+      "module": "src.states",
+      "name": "Slimed"
+    },
+    {
+      "module": "src.states",
+      "name": "Staggered"
+    },
+    {
+      "module": "src.states",
+      "name": "State"
+    },
+    {
+      "module": "src.states",
+      "name": "StoneBulwarkState"
+    },
+    {
+      "module": "src.states",
+      "name": "WarCryStunned"
+    },
+    {
+      "module": "src.story.ch01",
+      "name": "AfterGorranIntro"
+    },
+    {
+      "module": "src.story.ch01",
+      "name": "AfterTheRumblerFight"
+    },
+    {
+      "module": "src.story.ch01",
+      "name": "Ch01BridgeWall"
+    },
+    {
+      "module": "src.story.ch01",
+      "name": "Ch01ChestRumblerBattle"
+    },
+    {
+      "module": "src.story.ch01",
+      "name": "Ch01DarkGrottoIntro"
+    },
+    {
+      "module": "src.story.ch01",
+      "name": "Ch01GorranCautionJunction"
+    },
+    {
+      "module": "src.story.ch01",
+      "name": "Ch01GorranDarkChamber"
+    },
+    {
+      "module": "src.story.ch01",
+      "name": "Ch01GorranFirstWord"
+    },
+    {
+      "module": "src.story.ch01",
+      "name": "Ch01GorranMarkings"
+    },
+    {
+      "module": "src.story.ch01",
+      "name": "Ch01PostRumbler"
+    },
+    {
+      "module": "src.story.ch01",
+      "name": "Ch01PostRumbler2"
+    },
+    {
+      "module": "src.story.ch01",
+      "name": "Ch01PostRumbler3"
+    },
+    {
+      "module": "src.story.ch01",
+      "name": "Ch01PostRumblerRep"
+    },
+    {
+      "module": "src.story.ch01",
+      "name": "Ch01StartOpenWall"
+    },
+    {
+      "module": "src.story.ch01",
+      "name": "Ch01_Memory_Amelia"
+    },
+    {
+      "module": "src.story.ch02",
+      "name": "AfterDefeatingKingSlime"
+    },
+    {
+      "module": "src.story.ch02",
+      "name": "AfterDefeatingLurker"
+    },
+    {
+      "module": "src.story.ch02",
+      "name": "AfterKingSlimeReturn"
+    },
+    {
+      "module": "src.story.ch02",
+      "name": "BetaTesterBriefing"
+    },
+    {
+      "module": "src.story.ch02",
+      "name": "Ch02ArenaEntrance"
+    },
+    {
+      "module": "src.story.ch02",
+      "name": "Ch02FragmentReminder"
+    },
+    {
+      "module": "src.story.ch02",
+      "name": "Ch02GorranAtPools"
+    },
+    {
+      "module": "src.story.ch02",
+      "name": "Ch02GuideToCitadel"
+    },
+    {
+      "module": "src.story.ch02",
+      "name": "Ch02KingSlimeMemoryFlash"
+    },
+    {
+      "module": "src.story.ch03",
+      "name": "DevetIntroEvent"
+    },
+    {
+      "module": "src.story.ch03",
+      "name": "EasternRoadTurnbackEvent"
+    },
+    {
+      "module": "src.story.ch03",
+      "name": "GorranGestureEvent"
+    },
+    {
+      "module": "src.story.ch03",
+      "name": "LissObservingEvent"
+    },
+    {
+      "module": "src.story.ch03",
+      "name": "MaraFirstContactEvent"
+    },
+    {
+      "module": "src.story.ch03",
+      "name": "MaraObservationEvent"
+    },
+    {
+      "module": "src.story.ch03",
+      "name": "NomadCampSmellEvent"
+    },
+    {
+      "module": "src.story.effects",
+      "name": "Block"
+    },
+    {
+      "module": "src.story.effects",
+      "name": "Effect"
+    },
+    {
+      "module": "src.story.effects",
+      "name": "FlareArrowImpact"
+    },
+    {
+      "module": "src.story.effects",
+      "name": "GoldFromHeaven"
+    },
+    {
+      "module": "src.story.effects",
+      "name": "MakeKey"
+    },
+    {
+      "module": "src.story.effects",
+      "name": "MemoryFlash"
+    },
+    {
+      "module": "src.story.effects",
+      "name": "MoveEffect"
+    },
+    {
+      "module": "src.story.effects",
+      "name": "NPCSpawnerEvent"
+    },
+    {
+      "module": "src.story.effects",
+      "name": "PulsingGlandEvent"
+    },
+    {
+      "module": "src.story.effects",
+      "name": "Shrine"
+    },
+    {
+      "module": "src.story.effects",
+      "name": "StMichael"
+    },
+    {
+      "module": "src.story.effects",
+      "name": "Teleport"
+    },
+    {
+      "module": "src.story.effects",
+      "name": "WhisperingStatue"
+    },
+    {
+      "module": "src.tiles",
+      "name": "MapTile"
+    },
+    {
+      "module": "src.tilesets.dark_grotto",
+      "name": "EmptyCave"
+    },
+    {
+      "module": "src.tilesets.dark_grotto",
+      "name": "StartingRoom"
+    },
+    {
+      "module": "src.tilesets.general",
+      "name": "BlankTile"
+    },
+    {
+      "module": "src.tilesets.general",
+      "name": "Boundary"
+    },
+    {
+      "module": "src.tilesets.grondelith_mineral_pools",
+      "name": "GrondelithAlcove"
+    },
+    {
+      "module": "src.tilesets.grondelith_mineral_pools",
+      "name": "GrondelithApproach"
+    },
+    {
+      "module": "src.tilesets.grondelith_mineral_pools",
+      "name": "GrondelithArena"
+    },
+    {
+      "module": "src.tilesets.grondelith_mineral_pools",
+      "name": "GrondelithAtrium"
+    },
+    {
+      "module": "src.tilesets.grondelith_mineral_pools",
+      "name": "GrondelithChannelEntry"
+    },
+    {
+      "module": "src.tilesets.grondelith_mineral_pools",
+      "name": "GrondelithChannelNorth"
+    },
+    {
+      "module": "src.tilesets.grondelith_mineral_pools",
+      "name": "GrondelithCrevice"
+    },
+    {
+      "module": "src.tilesets.grondelith_mineral_pools",
+      "name": "GrondelithDeepEast"
+    },
+    {
+      "module": "src.tilesets.grondelith_mineral_pools",
+      "name": "GrondelithDeepPocket"
+    },
+    {
+      "module": "src.tilesets.grondelith_mineral_pools",
+      "name": "GrondelithDeepWest"
+    },
+    {
+      "module": "src.tilesets.grondelith_mineral_pools",
+      "name": "GrondelithEntry"
+    },
+    {
+      "module": "src.tilesets.grondelith_mineral_pools",
+      "name": "GrondelithFloodedPass"
+    },
+    {
+      "module": "src.tilesets.grondelith_mineral_pools",
+      "name": "GrondelithGrotto"
+    },
+    {
+      "module": "src.tilesets.grondelith_mineral_pools",
+      "name": "GrondelithHighBasin"
+    },
+    {
+      "module": "src.tilesets.grondelith_mineral_pools",
+      "name": "GrondelithNarrowPass"
+    },
+    {
+      "module": "src.tilesets.grondelith_mineral_pools",
+      "name": "GrondelithNorthPocket"
+    },
+    {
+      "module": "src.tilesets.grondelith_mineral_pools",
+      "name": "GrondelithPoolEast"
+    },
+    {
+      "module": "src.tilesets.grondelith_mineral_pools",
+      "name": "GrondelithRitualChamber"
+    },
+    {
+      "module": "src.tilesets.grondia",
+      "name": "GrondelithMineralPoolsEntrance"
+    },
+    {
+      "module": "src.tilesets.grondia",
+      "name": "GrondiaAntechamber"
+    },
+    {
+      "module": "src.tilesets.grondia",
+      "name": "GrondiaArcology"
+    },
+    {
+      "module": "src.tilesets.grondia",
+      "name": "GrondiaCitadel"
+    },
+    {
+      "module": "src.tilesets.grondia",
+      "name": "GrondiaConclave"
+    },
+    {
+      "module": "src.tilesets.grondia",
+      "name": "GrondiaEcumerium"
+    },
+    {
+      "module": "src.tilesets.grondia",
+      "name": "GrondiaFabricarium"
+    },
+    {
+      "module": "src.tilesets.grondia",
+      "name": "GrondiaGateEast"
+    },
+    {
+      "module": "src.tilesets.grondia",
+      "name": "GrondiaGateSouth"
+    },
+    {
+      "module": "src.tilesets.grondia",
+      "name": "GrondiaGateWest"
+    },
+    {
+      "module": "src.tilesets.grondia",
+      "name": "GrondiaPassage"
+    },
+    {
+      "module": "src.tilesets.grondia",
+      "name": "GrondiaResidences"
+    },
+    {
+      "module": "src.tilesets.test_chest",
+      "name": "ChestRoom"
+    },
+    {
+      "module": "src.tilesets.verdette_caverns",
+      "name": "VerdetteRoom"
+    },
+    {
+      "module": "src.tilesets.verdette_caverns",
+      "name": "VerdetteRoom2"
+    },
+    {
+      "module": "src.tilesets.verdette_caverns",
+      "name": "VerdetteRoom3"
+    },
+    {
+      "module": "src.tilesets.verdette_caverns",
+      "name": "VerdetteRoom4"
+    },
+    {
+      "module": "src.tilesets.verdette_caverns",
+      "name": "VerdetteRoom5"
+    },
+    {
+      "module": "src.tilesets.verdette_caverns",
+      "name": "VerdetteSpring"
+    },
+    {
+      "module": "src.universe",
+      "name": "Universe"
+    },
+    {
+      "module": "typing",
+      "name": "Any"
+    }
+  ],
+  "count": 463,
+  "header_version": 1
+}

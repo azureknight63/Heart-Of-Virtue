@@ -3,7 +3,6 @@ import os
 import inspect
 import re
 import random
-import pickle
 import importlib
 import pkgutil
 
@@ -597,7 +596,9 @@ from src.secure_pickle import (  # noqa: E402,F401  (public re-exports)
     SafeUnpickler,
     RestrictedUnpicklingError,
     SaveTooLargeError,
+    SaveIntegrityError,
     safe_pickle_load,
+    serialize_for_save,
     DEFAULT_MAX_SAVE_BYTES,
 )
 
@@ -723,6 +724,7 @@ def load(filename):
             data = _safe_pickle_load(f)
             if data is None:
                 raise RuntimeError(f"Failed to load save: {filename}")
+            _maybe_convert_to_v2(data, filename)
             return data
     except FileNotFoundError:
         raise
@@ -731,17 +733,38 @@ def load(filename):
         raise RuntimeError(f"Corrupt or incompatible save '{filename}': {e}") from e
 
 
+def _maybe_convert_to_v2(data, filename):
+    """One-shot migration: write a data-only v2 sidecar after a pickle load.
+
+    Feature-flagged via HOV_SAVE_V2 (off by default). Best-effort and never
+    fatal to the load -- a Player loaded from the trusted pickle is converted to
+    the safe JSON format alongside the original .sav (issue #13, Phase 3).
+    """
+    try:
+        from src.save_format import save_v2_enabled, convert_pickle_save_to_v2
+        from src.player import Player
+
+        if not save_v2_enabled() or not isinstance(data, Player):
+            return
+        sidecar = re.sub(r"\.sav$", "", filename) + ".v2.json"
+        convert_pickle_save_to_v2(data, sidecar)
+    except Exception:
+        # Migration is opportunistic; a failure must not break loading.
+        pass
+
+
 def save(player, filename):  # player is the player object
-    # TODO(security, issue #13): saves are written as raw pickle. Loading a
-    # pickle executes arbitrary code by design, so these files are only safe as
-    # trusted local artifacts (see SECURITY.md). Phase 3 replaces this with a
-    # data-only (JSON) format; pickle should then be legacy-import only.
-    if filename.endswith(".sav"):
-        with open("{}".format(filename), "wb") as f:
-            pickle.dump(player, f, pickle.HIGHEST_PROTOCOL)
-    else:
-        with open("{}.sav".format(filename), "wb") as f:
-            pickle.dump(player, f, pickle.HIGHEST_PROTOCOL)
+    # TODO(security, issue #13): saves are written as pickle (now wrapped in an
+    # integrity header for tamper detection). Loading a pickle executes
+    # arbitrary code by design, so these files are only safe as trusted local
+    # artifacts (see SECURITY.md). Phase 3's data-only (JSON) format
+    # (src.save_format) is the eventual replacement; pickle becomes legacy-import
+    # only. serialize_for_save() prepends the HOVS magic/version/sha256 header;
+    # the loader validates it and still accepts old headerless saves.
+    if not filename.endswith(".sav"):
+        filename = "{}.sav".format(filename)
+    with open(filename, "wb") as f:
+        f.write(serialize_for_save(player))
 
 
 def saves_list():
