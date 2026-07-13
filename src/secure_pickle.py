@@ -119,15 +119,29 @@ def canonical_module_name(mod_name):
 # newly added engine module (the same set that gates canonical rewrites).
 _ALLOWLIST_EXCLUDE = frozenset({"_unpickle_worker", "save_format", "secure_pickle"})
 
-# Known-safe stdlib globals that pickle's reconstruction machinery references
-# for ordinary object graphs. These resolve fine but are not "engine" classes,
-# so they must be allow-listed explicitly for strict mode to accept real saves.
+# Known-safe stdlib globals that pickle's reconstruction machinery -- and the
+# ordinary data objects engine instances embed (compiled regexes, config
+# parsers, dates) -- reference. These are benign data/reconstruction helpers,
+# NOT the RCE gadgets strict mode exists to block (os.system, eval, subprocess).
+# They resolve fine but aren't "engine" classes, so they're allow-listed here.
+# Extend this set (guided by the save fuzzer) when a genuine save embeds a new
+# stdlib type; never add callables with side effects.
 _SAFE_STDLIB = frozenset({
     ("builtins", "object"), ("builtins", "set"), ("builtins", "frozenset"),
     ("builtins", "list"), ("builtins", "dict"), ("builtins", "tuple"),
     ("builtins", "bytearray"), ("builtins", "complex"),
     ("copyreg", "_reconstructor"), ("copyreg", "__newobj__"),
     ("collections", "OrderedDict"), ("collections", "defaultdict"),
+    ("re", "_compile"), ("re", "compile"), ("re", "Pattern"),
+    ("configparser", "ConfigParser"), ("configparser", "ConverterMapping"),
+    ("configparser", "SectionProxy"),
+    ("datetime", "datetime"), ("datetime", "date"), ("datetime", "time"),
+    ("datetime", "timedelta"),
+    ("decimal", "Decimal"), ("uuid", "UUID"),
+    # functools.partial is safe here: any callable it wraps is itself a pickle
+    # global that goes through find_class, so partial(os.system, ...) is still
+    # blocked by the os.system rejection.
+    ("functools", "partial"),
 })
 
 _allowlist_cache = None
@@ -166,15 +180,39 @@ def _build_allowlist():
 
 
 def get_allowlist():
-    """Return the cached class allow-list, building it on first use."""
+    """Return the cached engine **class inventory**, building it on first use.
+
+    This is the concrete set of engine classes (a ``(module, name)`` set) used
+    for the drift manifest and by tooling/tests. Strict-mode *enforcement* is
+    the broader engine-module rule in :func:`_is_allowed` (which also admits
+    engine functions/methods, not just classes) -- this inventory documents the
+    class surface, it is not the sole gate.
+    """
     global _allowlist_cache
     if _allowlist_cache is None:
         _allowlist_cache = _build_allowlist()
     return _allowlist_cache
 
 
+def _is_engine_module(module):
+    """True if ``module`` is an engine module (``src.<name>[...]`` where
+    ``<name>`` is one of the canonical engine top-level modules).
+
+    Pickle references engine classes *and* functions/methods (e.g. an
+    ``actions.Save`` command holds ``src.player._ui.PlayerUIMixin.save``); all
+    are trusted because they live in engine code. ``os``, ``subprocess``,
+    ``builtins.eval`` and friends are not engine modules, so the classic pickle
+    RCE gadgets remain blocked.
+    """
+    if not module.startswith("src."):
+        return False
+    parts = module.split(".")
+    return len(parts) >= 2 and parts[1] in LEGACY_BARE_MODULES
+
+
 def _is_allowed(module, name):
-    return (module, name) in get_allowlist()
+    """Strict-mode gate: engine-module globals + a curated safe-stdlib set."""
+    return _is_engine_module(module) or (module, name) in _SAFE_STDLIB
 
 
 def strict_mode_enabled():
@@ -291,7 +329,12 @@ class SafeUnpickler(pickle.Unpickler):
 
         try:
             cls = super().find_class(module, name)
-        except (ModuleNotFoundError, AttributeError):
+        except (ImportError, AttributeError, ValueError, TypeError):
+            # ImportError/ModuleNotFoundError: module gone. AttributeError: name
+            # gone. ValueError/TypeError: a malformed module path from a crafted
+            # pickle (e.g. empty components) -- treat all as "unresolved" so we
+            # reject (strict) or placeholder (legacy) instead of propagating a
+            # raw resolution error out of the loader.
             cls = None
 
         if cls is not None:
@@ -390,25 +433,45 @@ def safe_pickle_load(fp, *, strict=None, max_bytes=DEFAULT_MAX_SAVE_BYTES,
 # Default wall-clock budget for the sandbox worker. A save of uncertain
 # provenance that spins or bloats is killed after this many seconds.
 DEFAULT_SANDBOX_TIMEOUT = 15
+# Default address-space cap for the sandbox worker (POSIX only). A crafted
+# pickle opcode can declare a huge allocation; bounding the child's memory turns
+# that allocation-DoS into a clean worker failure instead of parent OOM. This
+# caps *virtual* address space (RLIMIT_AS), which runs well ahead of real usage
+# once the interpreter + engine are imported, so it is set generously (2 GiB) --
+# low enough to stop a multi-GiB allocation, high enough not to fail normal
+# imports on hosts whose allocator reserves large virtual mappings.
+DEFAULT_SANDBOX_MEMORY_BYTES = 2 * 1024 * 1024 * 1024
 
 
 class SandboxError(Exception):
     """Raised when the sandboxed unpickle worker fails or times out."""
 
 
-def load_in_subprocess(data, *, timeout=DEFAULT_SANDBOX_TIMEOUT, strict=True):
+def _rlimit_preexec(memory_bytes):
+    """Build a preexec_fn that caps the child's address space (POSIX only)."""
+    def _apply():  # pragma: no cover - runs only in the forked child
+        import resource
+        resource.setrlimit(resource.RLIMIT_AS, (memory_bytes, memory_bytes))
+    return _apply
+
+
+def load_in_subprocess(data, *, timeout=DEFAULT_SANDBOX_TIMEOUT, strict=True,
+                       memory_bytes=DEFAULT_SANDBOX_MEMORY_BYTES):
     """Unpickle ``data`` in an isolated child process and return v2 data.
 
     The child (``src._unpickle_worker``) does the actual unpickling, so any code
     the pickle executes runs in a disposable process, and converts the result to
     the data-only schema. The parent only ever parses primitive JSON. The child
-    is killed if it exceeds ``timeout`` seconds.
+    is killed if it exceeds ``timeout`` seconds, and (on POSIX) is capped to
+    ``memory_bytes`` of address space so an allocation-DoS can't OOM the host.
 
     Args:
         data: Raw save bytes (header-wrapped or legacy headerless).
         timeout: Seconds before the worker is terminated.
         strict: Run the worker with strict allow-list enforcement (default on,
             since this path exists for untrusted input).
+        memory_bytes: Child address-space cap in bytes (POSIX only; ``None``
+            disables the cap).
 
     Returns:
         The data-only (v2) dict produced by the worker.
@@ -426,6 +489,11 @@ def load_in_subprocess(data, *, timeout=DEFAULT_SANDBOX_TIMEOUT, strict=True):
     else:
         env.pop(STRICT_ENV_VAR, None)
 
+    # RLIMIT_AS via preexec_fn is POSIX-only; skip the cap elsewhere.
+    preexec = None
+    if memory_bytes is not None and os.name == "posix":
+        preexec = _rlimit_preexec(memory_bytes)
+
     # Run from the project root so `-m src._unpickle_worker` resolves regardless
     # of the parent's cwd (this file is at <root>/src/secure_pickle.py).
     project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -437,6 +505,7 @@ def load_in_subprocess(data, *, timeout=DEFAULT_SANDBOX_TIMEOUT, strict=True):
             timeout=timeout,
             env=env,
             cwd=project_root,
+            preexec_fn=preexec,
         )
     except subprocess.TimeoutExpired as exc:
         raise SandboxError(

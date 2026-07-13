@@ -81,6 +81,18 @@
       "name": "defaultdict"
     },
     {
+      "module": "configparser",
+      "name": "ConfigParser"
+    },
+    {
+      "module": "configparser",
+      "name": "ConverterMapping"
+    },
+    {
+      "module": "configparser",
+      "name": "SectionProxy"
+    },
+    {
       "module": "copyreg",
       "name": "__newobj__"
     },
@@ -89,12 +101,48 @@
       "name": "_reconstructor"
     },
     {
+      "module": "datetime",
+      "name": "date"
+    },
+    {
+      "module": "datetime",
+      "name": "datetime"
+    },
+    {
+      "module": "datetime",
+      "name": "time"
+    },
+    {
+      "module": "datetime",
+      "name": "timedelta"
+    },
+    {
+      "module": "decimal",
+      "name": "Decimal"
+    },
+    {
       "module": "enum",
       "name": "Enum"
     },
     {
+      "module": "functools",
+      "name": "partial"
+    },
+    {
       "module": "pathlib",
       "name": "Path"
+    },
+    {
+      "module": "re",
+      "name": "Pattern"
+    },
+    {
+      "module": "re",
+      "name": "_compile"
+    },
+    {
+      "module": "re",
+      "name": "compile"
     },
     {
       "module": "src.actions",
@@ -1851,8 +1899,12 @@
     {
       "module": "typing",
       "name": "Any"
+    },
+    {
+      "module": "uuid",
+      "name": "UUID"
     }
   ],
-  "count": 463,
+  "count": 476,
   "header_version": 1
 }
