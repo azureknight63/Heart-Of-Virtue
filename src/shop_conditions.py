@@ -1,12 +1,18 @@
 """Shop condition system.
 
-Defines a small hierarchy of condition classes that can influence merchant
+Defines a small hierarchy of condition classes that influence merchant
 behavior: pricing, restock weighting, and unique inventory injections.
 
-These classes are currently standalone and can be wired into merchant /
-restock logic by invoking their hook methods at the appropriate points in
-existing NPC / merchant code (e.g. when computing sale price, when building
-restock candidate pools, or after merchant creation to inject unique stock).
+All three hooks are wired into `MerchantShopMixin` (src/npc/_shop.py) and run
+live during normal play: `Merchant._update_shop_conditions()` re-rolls a
+fresh set of conditions on every restock (`update_goods()`, which fires on
+first shop access and every 1000 game ticks), and the rolled conditions are
+then invoked from `_apply_value_conditions()` (`apply_to_price`),
+`_fill_remaining_stock()` (`adjust_restock_weights`), and `update_goods()`
+(`inject_unique_items`). Note the `shop_conditions` block persisted in map
+JSON is not read back on load — `_update_shop_conditions()` unconditionally
+replaces it, so conditions are never authored statically; they are always
+re-rolled at runtime.
 
 Hook method contract (all optional to implement in subclasses):
 

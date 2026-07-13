@@ -14,6 +14,13 @@ class DummyRoom:
         self.objects = []
         self.universe = None
 
+    def spawn_item(self, item_type, amt=1, hidden=False, hfactor=0, merchandise=False):
+        import src.items as items_module
+        cls = getattr(items_module, item_type, None)
+        if cls is None:
+            return None
+        return cls(merchandise=merchandise)
+
 class DummyUniverse:
     def __init__(self, rooms):
         self.map = rooms
@@ -78,3 +85,57 @@ def test_update_shop_conditions_deterministic_value_stack(monkeypatch):
     # Sanity: multipliers recorded in order
     multipliers = [c.multiplier for c in m.shop_conditions['value']]
     assert multipliers == [1.5, 1.2, 0.8]
+
+
+def test_restock_weight_boost_exercised_end_to_end_via_update_goods(monkeypatch):
+    """Confirm RestockWeightBoostCondition.adjust_restock_weights is actually invoked by
+    the live restock path (update_goods -> _fill_remaining_stock), not just callable in
+    isolation, and that its boost measurably skews which class gets stocked.
+
+    A condition instance produced the normal way (no explicit target_class, so it goes
+    through random_item_base_class like _update_shop_conditions really constructs it)
+    is injected in place of the dice roll, then update_goods() is run unmodified end to
+    end: reset -> fill -> value/unique application -> gold. The spy subclass records the
+    weight_map it receives from the real merchant fill loop to prove the wiring, and a
+    heavily skewed weight is used to make the resulting stock deterministic.
+    """
+    m = make_merchant()
+    m.stock_count = 1
+    m.specialties = []
+    m.always_stock = None
+
+    captured = {}
+
+    class SpyCondition(RestockWeightBoostCondition):
+        def adjust_restock_weights(self, weight_map):
+            super().adjust_restock_weights(weight_map)
+            captured['weight_map'] = dict(weight_map)
+
+    # target_class left unset so the constructor exercises random_item_base_class,
+    # exactly as _update_shop_conditions does; pin its result to Restorative here.
+    monkeypatch.setattr(ShopCondition, 'random_item_base_class', staticmethod(lambda candidates=None: Restorative))
+    cond = SpyCondition(weight_multiplier=1000.0)
+    assert cond.target_class is Restorative
+
+    # Bypass the dice roll (already covered by the value-stack test above) and inject
+    # the boosted condition directly into the slot _fill_remaining_stock reads from.
+    monkeypatch.setattr(
+        m, '_update_shop_conditions',
+        lambda: setattr(m, 'shop_conditions', {'value': [], 'availability': [cond], 'unique': []}),
+    )
+
+    # Pick the midpoint of the weighted range: Restorative's 1000x boost dwarfs every
+    # other candidate's baseline weight of 1.0, so its slice covers the vast majority
+    # of the cumulative range regardless of dict iteration order.
+    monkeypatch.setattr(random, 'uniform', lambda a, b: b * 0.5)
+
+    m.update_goods()
+
+    assert 'weight_map' in captured, "adjust_restock_weights was never invoked by update_goods()'s restock path"
+    assert captured['weight_map'][Restorative] == pytest.approx(1000.0)
+
+    non_gold = [i for i in m.inventory if getattr(i, 'name', None) != 'Gold']
+    assert len(non_gold) == 1
+    assert isinstance(non_gold[0], Restorative), (
+        f"Expected the weight-boosted class to be stocked, got {type(non_gold[0])}"
+    )
