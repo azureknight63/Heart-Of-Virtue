@@ -157,6 +157,20 @@ cd frontend
 npm run dev
 ```
 
+## Save Files & Security
+
+> **Deprecation notice:** the current `.sav` / cloud save format is Python
+> **pickle**. Loading a pickle executes arbitrary code by design, so save files
+> are only safe as **trusted local artifacts belonging to the player who
+> created them** — never load a `.sav` obtained from an untrusted source.
+>
+> Deserialization is hardened by `src/secure_pickle.py` (allow-list of engine
+> classes, opt-in strict mode via the `HOV_STRICT_UNPICKLE` environment
+> variable, size cap, and structured event logging). A data-only (JSON) save
+> format that removes the pickle exec risk entirely is planned — see
+> [`SECURITY.md`](SECURITY.md) and issue #13 for the full trust model and
+> migration roadmap. The pickle format will be reduced to legacy import only.
+
 ## Contributing
 1. Fork / create a feature branch
 2. Add tests for new behavior
