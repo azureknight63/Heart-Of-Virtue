@@ -2872,7 +2872,7 @@ class GameService:
             Save ID
         """
         import uuid
-        import pickle
+        from src.secure_pickle import serialize_for_save
         from src.api.db import db
 
         # 1. Enforcement of manual save limit
@@ -2894,7 +2894,10 @@ class GameService:
         # Strip it before serializing; restore immediately after.
         combat_adapter = player.__dict__.pop("_combat_adapter", None)
         try:
-            save_data = pickle.dumps(player, protocol=pickle.HIGHEST_PROTOCOL)
+            # serialize_for_save wraps the pickle in the HOVS integrity header
+            # (magic + version + sha256); load_game validates it on the way back
+            # in and still accepts older headerless saves.
+            save_data = serialize_for_save(player)
         finally:
             if combat_adapter is not None:
                 player._combat_adapter = combat_adapter

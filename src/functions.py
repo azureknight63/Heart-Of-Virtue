@@ -3,7 +3,6 @@ import os
 import inspect
 import re
 import random
-import pickle
 import importlib
 import pkgutil
 
@@ -586,72 +585,22 @@ class _MissingLegacyPlaceholder:
         return None
 
 
-# Top-level engine modules that legacy save data and map JSON reference by
-# bare name (the persisted format predates the src.*-only import convention).
-LEGACY_BARE_MODULES = frozenset({
-    "actions", "animations", "combat_event_config", "combatant",
-    "config_manager", "coordinate_config", "enchant_tables", "events",
-    "functions", "genericng", "interface", "inventory_utils", "items",
-    "loot_tables", "moves", "narration", "npc", "npc_ai_config",
-    "objects", "positions", "scenario_config", "shop_conditions",
-    "skilltree", "states", "story", "tiles", "tilesets", "universe",
-    "player",
-})
-
-
-def canonical_module_name(mod_name):
-    """Map a persisted bare engine module path to its canonical src.* path.
-
-    Save files and map JSON store bare module names ('items', 'story.ch01');
-    resolving them as-is would import duplicate bare module objects whose
-    classes don't match the running engine's. Non-engine module paths (e.g.
-    test modules) pass through unchanged.
-    """
-    if mod_name.split(".", 1)[0] in LEGACY_BARE_MODULES:
-        return "src." + mod_name
-    return mod_name
-
-
-class SafeUnpickler(pickle.Unpickler):
-    """Unpickler resilient to missing legacy modules/classes.
-    Strategy:
-      1. Redirect bare legacy module paths (e.g. 'items', 'story.ch01') to the
-         canonical 'src.*' path so old saves resolve to the running engine's
-         classes instead of loading duplicate bare modules.
-      2. Try normal resolution.
-      3. If that fails, create a benign placeholder class.
-    """
-
-    def find_class(self, module, name):
-        module = canonical_module_name(module)
-        try:
-            return super().find_class(module, name)
-        except (ModuleNotFoundError, AttributeError):
-            pass
-        # As a last resort, synthesize a dummy module + class placeholder
-        placeholder_class_name = f"LegacyMissing_{module.replace('.', '_')}_{name}"
-        # Create a dynamic class so isinstance checks won't explode (but still benign)
-        placeholder_cls = type(
-            placeholder_class_name,
-            (object,),
-            {
-                "__doc__": f"Placeholder for missing legacy class {module}.{name}",
-                "__init__": lambda self, *a, **k: None,
-                "__repr__": lambda self: f"<LegacyMissing {module}.{name}>",
-                # Commonly accessed attributes in game logic
-                "name": name,
-                "hidden": True,
-                "announce": "",
-                "idle_message": "",
-                "description": "",
-                "keywords": [],
-                "interactions": [],
-                # Benign no-op methods
-                "process": lambda self, *a, **k: None,
-                "check_conditions": lambda self, *a, **k: None,
-            },
-        )
-        return placeholder_cls
+# Save deserialization (allow-list, strict mode, size cap, event logging) lives
+# in src.secure_pickle. These names are re-exported for backward compatibility:
+# universe.py / tiles.py resolve legacy module paths via
+# ``functions.canonical_module_name``, and existing tests reference
+# ``functions.SafeUnpickler`` / ``functions.LEGACY_BARE_MODULES`` directly.
+from src.secure_pickle import (  # noqa: E402,F401  (public re-exports)
+    LEGACY_BARE_MODULES,
+    canonical_module_name,
+    SafeUnpickler,
+    RestrictedUnpicklingError,
+    SaveTooLargeError,
+    SaveIntegrityError,
+    safe_pickle_load,
+    serialize_for_save,
+    DEFAULT_MAX_SAVE_BYTES,
+)
 
 
 # ----------------- Legacy / Integrity Helpers -----------------
@@ -749,7 +698,9 @@ def _patch_player_integrity(obj: Any):
 
 def _safe_pickle_load(fp):
     try:
-        data = SafeUnpickler(fp).load()
+        # safe_pickle_load enforces the size cap and applies the allow-list /
+        # strict-mode gating from src.secure_pickle before unpickling.
+        data = safe_pickle_load(fp)
 
         # Attempt recursive patch for Player objects nested in simple containers
         def _walk(o):
@@ -773,6 +724,7 @@ def load(filename):
             data = _safe_pickle_load(f)
             if data is None:
                 raise RuntimeError(f"Failed to load save: {filename}")
+            _maybe_convert_to_v2(data, filename)
             return data
     except FileNotFoundError:
         raise
@@ -781,13 +733,38 @@ def load(filename):
         raise RuntimeError(f"Corrupt or incompatible save '{filename}': {e}") from e
 
 
+def _maybe_convert_to_v2(data, filename):
+    """One-shot migration: write a data-only v2 sidecar after a pickle load.
+
+    Feature-flagged via HOV_SAVE_V2 (off by default). Best-effort and never
+    fatal to the load -- a Player loaded from the trusted pickle is converted to
+    the safe JSON format alongside the original .sav (issue #13, Phase 3).
+    """
+    try:
+        from src.save_format import save_v2_enabled, convert_pickle_save_to_v2
+        from src.player import Player
+
+        if not save_v2_enabled() or not isinstance(data, Player):
+            return
+        sidecar = re.sub(r"\.sav$", "", filename) + ".v2.json"
+        convert_pickle_save_to_v2(data, sidecar)
+    except Exception:
+        # Migration is opportunistic; a failure must not break loading.
+        pass
+
+
 def save(player, filename):  # player is the player object
-    if filename.endswith(".sav"):
-        with open("{}".format(filename), "wb") as f:
-            pickle.dump(player, f, pickle.HIGHEST_PROTOCOL)
-    else:
-        with open("{}.sav".format(filename), "wb") as f:
-            pickle.dump(player, f, pickle.HIGHEST_PROTOCOL)
+    # TODO(security, issue #13): saves are written as pickle (now wrapped in an
+    # integrity header for tamper detection). Loading a pickle executes
+    # arbitrary code by design, so these files are only safe as trusted local
+    # artifacts (see SECURITY.md). Phase 3's data-only (JSON) format
+    # (src.save_format) is the eventual replacement; pickle becomes legacy-import
+    # only. serialize_for_save() prepends the HOVS magic/version/sha256 header;
+    # the loader validates it and still accepts old headerless saves.
+    if not filename.endswith(".sav"):
+        filename = "{}.sav".format(filename)
+    with open(filename, "wb") as f:
+        f.write(serialize_for_save(player))
 
 
 def saves_list():
