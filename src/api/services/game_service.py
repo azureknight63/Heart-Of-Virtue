@@ -79,16 +79,32 @@ class GameService:
 
     @staticmethod
     def _serialize_active_states(combatant: Any) -> List[Dict[str, Any]]:
-        """Serialize a combatant's non-hidden active status effects."""
-        return [
-            {
-                "name": s.name,
-                "status_type": getattr(s, "statustype", "generic"),
-                "beats_left": getattr(s, "beats_left", 0),
-            }
-            for s in getattr(combatant, "states", [])
-            if not getattr(s, "hidden", False)
-        ]
+        """Serialize a combatant's non-hidden active status effects.
+
+        Tolerates a degraded/legacy combatant whose ``states`` is missing, None,
+        or a wrong type, and entries that are not real ``State`` objects — a
+        corrupt save must not 500 the request (issue #295). Fields are coerced to
+        JSON-safe primitives.
+        """
+        states = getattr(combatant, "states", None)
+        if not isinstance(states, (list, tuple)):
+            return []
+        result = []
+        for s in states:
+            try:
+                if getattr(s, "hidden", False):
+                    continue
+                beats = getattr(s, "beats_left", 0)
+                if not isinstance(beats, (int, float)) or isinstance(beats, bool):
+                    beats = 0
+                result.append({
+                    "name": str(getattr(s, "name", "Unknown")),
+                    "status_type": str(getattr(s, "statustype", "generic")),
+                    "beats_left": beats,
+                })
+            except Exception:  # noqa: BLE001 - skip an unserializable state
+                continue
+        return result
 
     def _get_event_target_modules(
         self, event, include_animations: bool = True
