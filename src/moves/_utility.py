@@ -515,7 +515,7 @@ class Attack(Move):  # basic attack function, always uses equipped weapon, playe
         roll = random.randint(0, 100)
         damage = (
             (
-                (self.power * self.target.resistance[self.base_damage_type])
+                (self.power * self.target.get_resistance(self.base_damage_type))
                 - self.target.protection
             )
             * player.heat

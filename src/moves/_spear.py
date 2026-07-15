@@ -102,7 +102,7 @@ class KeepAway(Move):
         roll = random.randint(0, 100)
         damage = (
             (
-                (self.power * self.target.resistance[self.base_damage_type])
+                (self.power * self.target.get_resistance(self.base_damage_type))
                 - self.target.protection
             )
             * player.heat
@@ -297,7 +297,7 @@ class Lunge(Move):
         roll = random.randint(0, 100)
         damage = (
             (
-                (self.power * self.target.resistance[self.base_damage_type])
+                (self.power * self.target.get_resistance(self.base_damage_type))
                 - self.target.protection
             )
             * player.heat
@@ -420,7 +420,7 @@ class Impale(Move):
         effective_prot = self.target.protection * 0.4
         damage = (
             (
-                (self.power * self.target.resistance[self.base_damage_type])
+                (self.power * self.target.get_resistance(self.base_damage_type))
                 - effective_prot
             )
             * player.heat
@@ -553,7 +553,7 @@ class ArmorPierce(Move):
 
         # Ignore protection entirely
         damage = (
-            (self.power * self.target.resistance[self.base_damage_type]) * player.heat
+            (self.power * self.target.get_resistance(self.base_damage_type)) * player.heat
         ) * random.uniform(0.8, 1.2)
         damage = max(0, damage)
         if hit_chance >= roll and hit_chance - roll < 10:

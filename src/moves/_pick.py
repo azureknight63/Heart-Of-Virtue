@@ -111,7 +111,7 @@ class ChipAway(Move):
             roll = random.randint(0, 100)
             damage = (
                 (
-                    (sub_power * self.target.resistance[self.base_damage_type])
+                    (sub_power * self.target.get_resistance(self.base_damage_type))
                     - self.target.protection
                 )
                 * user.heat
@@ -231,7 +231,7 @@ class ExploitWeakness(Move):
         roll = random.randint(0, 100)
         damage = (
             (
-                (self.power * self.target.resistance[self.base_damage_type])
+                (self.power * self.target.get_resistance(self.base_damage_type))
                 - self.target.protection
             )
             * player.heat
@@ -364,7 +364,7 @@ class Stupefy(Move):
         roll = random.randint(0, 100)
         damage = (
             (
-                (self.power * self.target.resistance[self.base_damage_type])
+                (self.power * self.target.get_resistance(self.base_damage_type))
                 - self.target.protection
             )
             * player.heat

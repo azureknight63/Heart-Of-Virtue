@@ -358,6 +358,17 @@ class Move:  # master class for all moves
             self.user.change_heat(0.75)
 
     def hit(self, damage, glance):
+        # Defense-in-depth (issue #296): damage reaches HP here from many move
+        # execute() paths. Coerce it to a finite, integral value so a NaN/inf
+        # (e.g. from an exotic resistance/heat product) can never poison hp, and
+        # clamp hp to [0, maxhp] afterward via the shared Combatant guard.
+        try:
+            damage = float(damage)
+        except (TypeError, ValueError):
+            damage = 0
+        if not math.isfinite(damage):
+            damage = 0
+        damage = int(damage)
         if damage > 0:
             if glance:
                 narrate(
@@ -384,6 +395,8 @@ class Move:  # master class for all moves
                     damage = 0
                     break
             self.target.hp -= damage
+            if hasattr(self.target, "clamp_hp"):
+                self.target.clamp_hp()
             if self.user.name == "Jean":
                 self.user.change_heat(1.25)
                 _ensure_weapon_exp(self.user)
@@ -592,7 +605,7 @@ class Move:  # master class for all moves
         roll = random.randint(0, 100)
         damage = (
             (
-                (power * self.target.resistance[base_damage_type])
+                (power * self.target.get_resistance(base_damage_type))
                 - self.target.protection
             )
             * player.heat
