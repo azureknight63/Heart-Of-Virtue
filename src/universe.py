@@ -1,6 +1,7 @@
 __author__ = "Alex Egbert"
 
 import src.functions as functions
+import src.secure_pickle as secure_pickle
 import json
 import inspect
 import importlib
@@ -11,6 +12,12 @@ from src.coordinate_config import CoordinateSystemConfig
 from src.narration import narrate
 
 RESOURCES_DIR: Final = Path(__file__).parent / "resources"
+
+# Depth cap for map-instance deserialization. Map JSON is attacker-influenceable
+# (map files can be hand-edited or shipped by third parties), so a deeply nested
+# or recursion-bomb ``props`` graph must not blow the Python stack. Real maps
+# nest only a handful of levels; this leaves generous headroom.
+MAX_DESERIALIZE_DEPTH: Final = 100
 
 
 def tile_exists(map_to_check, x, y):
@@ -108,8 +115,29 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
                     narrate(f"ERROR: Failed to load map from {jf}: {e}")
         return loaded
 
-    def _deserialize_saved_instance(self, payload):
+    @staticmethod
+    def _deserialize_class_allowed(mod_name, cls_name):
+        """Gate a map-JSON ``module:class`` reference against the engine trust
+        boundary shared with pickle deserialization (``src.secure_pickle``).
+
+        Map JSON is attacker-influenceable, so a hostile ``__module__`` /
+        ``__class_type__`` must not let the loader import an arbitrary module or
+        resolve a dangerous global (``os.system``, ``subprocess.Popen``, ...).
+        Only engine modules and a curated safe-stdlib set are permitted; the same
+        gate that guards save-file unpickling. ``mod_name`` is the *canonical*
+        (``src.*``) module path.
+        """
+        if not isinstance(mod_name, str) or not isinstance(cls_name, str):
+            return False
+        return secure_pickle._is_allowed(mod_name, cls_name)
+
+    def _deserialize_saved_instance(self, payload, _depth=0):
         """Deserialize an instance saved by map_generator (class+module+props). Returns object or None."""
+        # Depth-bound the recursion so a nested/cyclic-looking props graph in a
+        # hostile map cannot overflow the Python stack (returns None instead).
+        if _depth > MAX_DESERIALIZE_DEPTH:
+            narrate("ERROR: map deserialization exceeded maximum nesting depth")
+            return None
         # Recursively deserialize nested objects in props, events, etc.
         # Support class-type markers emitted by the map editor (e.g. {'__class_type__': 'items:Item'})
         if isinstance(payload, dict) and "__class_type__" in payload:
@@ -119,9 +147,13 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
                 if mod_name and cls_name:
                     # Map data stores bare module names; import the canonical
                     # src.* module so classes match the running engine's.
-                    module = importlib.import_module(
-                        functions.canonical_module_name(mod_name)
-                    )
+                    canonical = functions.canonical_module_name(mod_name)
+                    if not self._deserialize_class_allowed(canonical, cls_name):
+                        narrate(
+                            f"ERROR: refusing to resolve non-engine class type '{spec}'"
+                        )
+                        return None
+                    module = importlib.import_module(canonical)
                     return getattr(module, cls_name)
             except Exception as e:
                 narrate(f"ERROR: Failed to resolve class type '{spec}': {e}")
@@ -135,32 +167,54 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
 
         if not mod_name or not isinstance(mod_name, str):
             return None
+        if not cls_name or not isinstance(cls_name, str):
+            return None
+        if not isinstance(props, dict):
+            return None
 
         # Throw error if mod name has improper format; 'src.' prefix should not be present.
         if mod_name.startswith("src."):
             raise ValueError(f"Invalid module name format: {mod_name}")
 
-        def recursive_deserialize(value):
+        # Gate against the shared engine trust boundary before importing anything.
+        # A hostile __module__ (os, subprocess, a malformed dotted path, ...) is
+        # rejected here rather than reaching importlib/getattr.
+        canonical = functions.canonical_module_name(mod_name)
+        if not self._deserialize_class_allowed(canonical, cls_name):
+            narrate(
+                f"ERROR: refusing to deserialize non-engine class "
+                f"'{mod_name}.{cls_name}'"
+            )
+            return None
+
+        def recursive_deserialize(value, depth):
+            if depth > MAX_DESERIALIZE_DEPTH:
+                return None
             if isinstance(value, dict):
                 if "__class__" in value and "__module__" in value:
-                    return self._deserialize_saved_instance(value)
+                    return self._deserialize_saved_instance(value, _depth=depth + 1)
                 elif "__class_type__" in value:
-                    return self._deserialize_saved_instance(value)
+                    return self._deserialize_saved_instance(value, _depth=depth + 1)
                 else:
                     # Recursively check all dict values
-                    return {k: recursive_deserialize(v) for k, v in value.items()}
+                    return {
+                        k: recursive_deserialize(v, depth + 1)
+                        for k, v in value.items()
+                    }
             elif isinstance(value, list):
-                return [recursive_deserialize(v) for v in value]
+                return [recursive_deserialize(v, depth + 1) for v in value]
             else:
                 return value
 
         # Recursively deserialize all props
-        props = {k: recursive_deserialize(v) for k, v in props.items()}
+        props = {
+            k: recursive_deserialize(v, _depth + 1) for k, v in props.items()
+        }
 
         try:
-            # Map data stores bare module names (validated above); import the
-            # canonical src.* module so classes match the running engine's.
-            module = importlib.import_module(functions.canonical_module_name(mod_name))
+            # Map data stores bare module names (validated + gated above); import
+            # the canonical src.* module so classes match the running engine's.
+            module = importlib.import_module(canonical)
             cls = getattr(module, cls_name)
             # Try to supply only parameters accepted by __init__ (excluding self)
             try:
