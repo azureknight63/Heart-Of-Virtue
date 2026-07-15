@@ -4,10 +4,51 @@ Loads and parses game configuration from INI files.
 Provides structured access to all game settings.
 """
 
+import math
 import configparser
 from pathlib import Path
 from dataclasses import dataclass, field
 from typing import List, Tuple
+
+
+def _safe_get(section, key, fallback):
+    """``section.get`` that never raises -- degrades to ``fallback``."""
+    try:
+        return section.get(key, fallback=fallback)
+    except (configparser.Error, ValueError, TypeError):
+        return fallback
+
+
+def _safe_getboolean(section, key, fallback):
+    """``section.getboolean`` that never raises -- degrades to ``fallback``."""
+    try:
+        return section.getboolean(key, fallback=fallback)
+    except (configparser.Error, ValueError, TypeError):
+        return fallback
+
+
+def _safe_getint(section, key, fallback):
+    """``section.getint`` that never raises -- degrades to ``fallback``."""
+    try:
+        return section.getint(key, fallback=fallback)
+    except (configparser.Error, ValueError, TypeError):
+        return fallback
+
+
+def _safe_getfloat(section, key, fallback):
+    """``section.getfloat`` that never raises and never yields inf/nan.
+
+    Malformed, overflowing, or non-finite (``inf``/``nan``) values all
+    degrade to ``fallback`` -- a config-driven float feeding a game
+    calculation should never poison downstream math with a non-finite value.
+    """
+    try:
+        value = section.getfloat(key, fallback=fallback)
+    except (configparser.Error, ValueError, TypeError, OverflowError):
+        return fallback
+    if not isinstance(value, (int, float)) or not math.isfinite(value):
+        return fallback
+    return value
 
 
 @dataclass
@@ -150,12 +191,22 @@ class ConfigManager:
             config_file: Path to INI configuration file
         """
         self.config_file = config_file
-        # Allow inline comments with semicolon and hash
-        self.parser = configparser.ConfigParser(inline_comment_prefixes=(";", "#"))
+        # Allow inline comments with semicolon and hash. Interpolation is
+        # disabled -- config values are opaque strings, not templates, and a
+        # stray "%" (very plausible in free-text fields) must not raise.
+        # strict=False lets duplicate keys/sections merge (last value wins)
+        # instead of treating the whole file as unparseable.
+        self.parser = configparser.ConfigParser(
+            inline_comment_prefixes=(";", "#"), interpolation=None, strict=False
+        )
         self.config = GameConfig()
 
     def load(self) -> GameConfig:
         """Load configuration from INI file.
+
+        Never raises: any unreadable or malformed INI file (bad encoding,
+        missing section headers, syntax errors, etc.) degrades to the
+        default ``GameConfig()`` rather than propagating an exception.
 
         Returns:
             GameConfig object with all parsed settings
@@ -166,11 +217,29 @@ class ConfigManager:
             # Return defaults if file doesn't exist
             return self.config
 
-        self.parser.read(self.config_file)
-        self._parse_game_section()
-        self._parse_development_section()
-        self._parse_combat_testing_section()
-        self._parse_testing_locations_section()
+        try:
+            self.parser.read(self.config_file, encoding="utf-8")
+        except (configparser.Error, UnicodeDecodeError, OSError, ValueError):
+            # Malformed/unreadable INI (bad encoding, duplicate headers,
+            # missing section headers, etc.): the parser may hold a partial,
+            # inconsistent state, so start clean and fall back to defaults
+            # rather than parse a half-populated config.
+            self.parser = configparser.ConfigParser(
+                inline_comment_prefixes=(";", "#"), interpolation=None, strict=False
+            )
+            return self.config
+
+        try:
+            self._parse_game_section()
+            self._parse_development_section()
+            self._parse_combat_testing_section()
+            self._parse_testing_locations_section()
+        except Exception:
+            # Belt-and-suspenders: every individual field read is already
+            # guarded (see _safe_get*), so this should be unreachable. Never
+            # let a config bug crash the caller -- fall back to whatever
+            # fields were already populated (defaults for the rest).
+            pass
 
         return self.config
 
@@ -182,14 +251,14 @@ class ConfigManager:
         section = self.parser["game"]
 
         # Base settings
-        self.config.testmode = section.getboolean("testmode", fallback=False)
-        self.config.skipdialog = section.getboolean("skipdialog", fallback=False)
-        self.config.skipintro = section.getboolean("skipintro", fallback=False)
-        self.config.startmap = section.get("startmap", fallback="default")
+        self.config.testmode = _safe_getboolean(section, "testmode", False)
+        self.config.skipdialog = _safe_getboolean(section, "skipdialog", False)
+        self.config.skipintro = _safe_getboolean(section, "skipintro", False)
+        self.config.startmap = _safe_get(section, "startmap", "default")
 
         # Parse startposition as tuple
         try:
-            pos_str = section.get("startposition", fallback="0, 0")
+            pos_str = _safe_get(section, "startposition", "0, 0")
             # Remove parentheses if present
             pos_str = pos_str.strip("() ")
             x, y = map(int, pos_str.split(","))
@@ -198,15 +267,15 @@ class ConfigManager:
             self.config.startposition = (0, 0)
 
         # Graphics
-        self.config.use_colour = section.getboolean("use_colour", fallback=True)
-        self.config.enable_animations = section.getboolean(
-            "enable_animations", fallback=True
+        self.config.use_colour = _safe_getboolean(section, "use_colour", True)
+        self.config.enable_animations = _safe_getboolean(
+            section, "enable_animations", True
         )
-        self.config.animation_speed = section.getfloat("animation_speed", fallback=1.0)
-        self.config.starting_exp = section.getint("starting_exp", fallback=0)
+        self.config.animation_speed = _safe_getfloat(section, "animation_speed", 1.0)
+        self.config.starting_exp = _safe_getint(section, "starting_exp", 0)
 
         # Story flag pre-seeding: parse comma-separated "flag" or "flag=value" tokens
-        raw_flags = section.get("starting_story_flags", fallback="")
+        raw_flags = _safe_get(section, "starting_story_flags", "")
         parsed_flags: List[str] = []
         if raw_flags.strip():
             for token in raw_flags.split(","):
@@ -216,7 +285,7 @@ class ConfigManager:
         self.config.starting_story_flags = parsed_flags
 
         # Starting party members: parse comma-separated NPC class names
-        raw_party = section.get("starting_party_members", fallback="")
+        raw_party = _safe_get(section, "starting_party_members", "")
         parsed_party: List[str] = []
         if raw_party.strip():
             for token in raw_party.split(","):
@@ -226,124 +295,118 @@ class ConfigManager:
         self.config.starting_party_members = parsed_party
 
         # Debug settings
-        self.config.debug_mode = section.getboolean("debug_mode", fallback=False)
-        self.config.debug_positions = section.getboolean(
-            "debug_positions", fallback=False
+        self.config.debug_mode = _safe_getboolean(section, "debug_mode", False)
+        self.config.debug_positions = _safe_getboolean(
+            section, "debug_positions", False
         )
-        self.config.debug_movement = section.getboolean(
-            "debug_movement", fallback=False
+        self.config.debug_movement = _safe_getboolean(section, "debug_movement", False)
+        self.config.debug_damage_calc = _safe_getboolean(
+            section, "debug_damage_calc", False
         )
-        self.config.debug_damage_calc = section.getboolean(
-            "debug_damage_calc", fallback=False
+        self.config.debug_accuracy = _safe_getboolean(section, "debug_accuracy", False)
+        self.config.debug_ai_decisions = _safe_getboolean(
+            section, "debug_ai_decisions", False
         )
-        self.config.debug_accuracy = section.getboolean(
-            "debug_accuracy", fallback=False
-        )
-        self.config.debug_ai_decisions = section.getboolean(
-            "debug_ai_decisions", fallback=False
-        )
-        self.config.debug_npc_positions = section.getboolean(
-            "debug_npc_positions", fallback=False
+        self.config.debug_npc_positions = _safe_getboolean(
+            section, "debug_npc_positions", False
         )
 
         # Coordinate system (format: "50, 50" in INI)
         try:
-            grid_str = section.get("coordinate_grid_size", fallback="50, 50")
+            grid_str = _safe_get(section, "coordinate_grid_size", "50, 50")
             w, h = map(int, grid_str.split(","))
+            if w <= 0 or h <= 0:
+                # A non-positive grid dimension is nonsensical (would break
+                # any bounds/modulo math downstream) -- fall back to default.
+                raise ValueError("non-positive grid dimension")
             self.config.coordinate_grid_size = (w, h)
         except (ValueError, AttributeError):
             self.config.coordinate_grid_size = (50, 50)
 
         # Combat settings
-        self.config.enable_new_combat_moves = section.getboolean(
-            "enable_new_combat_moves", fallback=True
+        self.config.enable_new_combat_moves = _safe_getboolean(
+            section, "enable_new_combat_moves", True
         )
-        self.config.enable_flanking_mechanics = section.getboolean(
-            "enable_flanking_mechanics", fallback=True
+        self.config.enable_flanking_mechanics = _safe_getboolean(
+            section, "enable_flanking_mechanics", True
         )
-        self.config.enable_tactical_positioning = section.getboolean(
-            "enable_tactical_positioning", fallback=True
+        self.config.enable_tactical_positioning = _safe_getboolean(
+            section, "enable_tactical_positioning", True
         )
 
         # NPC AI
-        self.config.npc_flanking_enabled = section.getboolean(
-            "npc_flanking_enabled", fallback=True
+        self.config.npc_flanking_enabled = _safe_getboolean(
+            section, "npc_flanking_enabled", True
         )
-        self.config.npc_tactical_retreat = section.getboolean(
-            "npc_tactical_retreat", fallback=True
+        self.config.npc_tactical_retreat = _safe_getboolean(
+            section, "npc_tactical_retreat", True
         )
-        self.config.ai_difficulty = section.getint("ai_difficulty", fallback=3)
+        self.config.ai_difficulty = _safe_getint(section, "ai_difficulty", 3)
 
         # Save/Load
-        self.config.autosave_enabled = section.getboolean(
-            "autosave_enabled", fallback=False
+        self.config.autosave_enabled = _safe_getboolean(
+            section, "autosave_enabled", False
         )
-        self.config.allow_quicksave = section.getboolean(
-            "allow_quicksave", fallback=True
+        self.config.allow_quicksave = _safe_getboolean(section, "allow_quicksave", True)
+        self.config.auto_load_latest = _safe_getboolean(
+            section, "auto_load_latest", False
         )
-        self.config.auto_load_latest = section.getboolean(
-            "auto_load_latest", fallback=False
-        )
-        self.config.learn_all_skills = section.getboolean(
-            "learn_all_skills", fallback=False
+        self.config.learn_all_skills = _safe_getboolean(
+            section, "learn_all_skills", False
         )
 
         # Display
-        self.config.show_combat_distance = section.getboolean(
-            "show_combat_distance", fallback=True
+        self.config.show_combat_distance = _safe_getboolean(
+            section, "show_combat_distance", True
         )
-        self.config.show_unit_positions = section.getboolean(
-            "show_unit_positions", fallback=True
+        self.config.show_unit_positions = _safe_getboolean(
+            section, "show_unit_positions", True
         )
-        self.config.show_facing_directions = section.getboolean(
-            "show_facing_directions", fallback=True
+        self.config.show_facing_directions = _safe_getboolean(
+            section, "show_facing_directions", True
         )
-        self.config.show_damage_modifiers = section.getboolean(
-            "show_damage_modifiers", fallback=True
+        self.config.show_damage_modifiers = _safe_getboolean(
+            section, "show_damage_modifiers", True
         )
-        self.config.show_accuracy_modifiers = section.getboolean(
-            "show_accuracy_modifiers", fallback=True
+        self.config.show_accuracy_modifiers = _safe_getboolean(
+            section, "show_accuracy_modifiers", True
         )
 
         # Logging
-        self.config.log_combat_moves = section.getboolean(
-            "log_combat_moves", fallback=True
+        self.config.log_combat_moves = _safe_getboolean(
+            section, "log_combat_moves", True
         )
-        self.config.log_distance_calculations = section.getboolean(
-            "log_distance_calculations", fallback=True
+        self.config.log_distance_calculations = _safe_getboolean(
+            section, "log_distance_calculations", True
         )
-        self.config.log_angle_calculations = section.getboolean(
-            "log_angle_calculations", fallback=True
+        self.config.log_angle_calculations = _safe_getboolean(
+            section, "log_angle_calculations", True
         )
-        self.config.log_npc_decisions = section.getboolean(
-            "log_npc_decisions", fallback=True
+        self.config.log_npc_decisions = _safe_getboolean(
+            section, "log_npc_decisions", True
         )
-        self.config.log_file = section.get("log_file", fallback="combat.log")
+        self.config.log_file = _safe_get(section, "log_file", "combat.log")
 
         # Scenarios
-        self.config.test_scenario = section.get("test_scenario", fallback="standard")
-        self.config.max_enemies_standard = section.getint(
-            "max_enemies_standard", fallback=3
+        self.config.test_scenario = _safe_get(section, "test_scenario", "standard")
+        self.config.max_enemies_standard = _safe_getint(
+            section, "max_enemies_standard", 3
         )
-        self.config.max_enemies_pincer = section.getint(
-            "max_enemies_pincer", fallback=4
-        )
-        self.config.max_enemies_melee = section.getint("max_enemies_melee", fallback=6)
-        self.config.max_enemies_boss = section.getint("max_enemies_boss", fallback=1)
+        self.config.max_enemies_pincer = _safe_getint(section, "max_enemies_pincer", 4)
+        self.config.max_enemies_melee = _safe_getint(section, "max_enemies_melee", 6)
+        self.config.max_enemies_boss = _safe_getint(section, "max_enemies_boss", 1)
 
         # Performance monitoring
-        self.config.monitor_bps = section.getboolean("monitor_bps", fallback=False)
-        self.config.log_performance = section.getboolean(
-            "log_performance", fallback=False
+        self.config.monitor_bps = _safe_getboolean(section, "monitor_bps", False)
+        self.config.log_performance = _safe_getboolean(
+            section, "log_performance", False
         )
-        self.config.show_full_grid = section.getboolean(
-            "show_full_grid", fallback=False
+        self.config.show_full_grid = _safe_getboolean(section, "show_full_grid", False)
+        self.config.grid_display_interval = _safe_getint(
+            section, "grid_display_interval", 1
         )
-        self.config.grid_display_interval = section.getint(
-            "grid_display_interval", fallback=1
-        )
-        self.config.show_coordinate_display = section.getboolean(
-            "show_coordinate_display", fallback=True
+        self.config.show_coordinate_display = _safe_getboolean(
+            section, "show_coordinate_display", True
         )
 
     def _parse_development_section(self) -> None:
@@ -352,14 +415,12 @@ class ConfigManager:
             return
 
         section = self.parser["development"]
-        self.config.enable_hot_reload = section.getboolean(
-            "enable_hot_reload", fallback=False
+        self.config.enable_hot_reload = _safe_getboolean(
+            section, "enable_hot_reload", False
         )
-        self.config.show_all_items = section.getboolean(
-            "show_all_items", fallback=False
-        )
-        self.config.god_mode = section.getboolean("god_mode", fallback=False)
-        self.config.skip_combat = section.getboolean("skip_combat", fallback=False)
+        self.config.show_all_items = _safe_getboolean(section, "show_all_items", False)
+        self.config.god_mode = _safe_getboolean(section, "god_mode", False)
+        self.config.skip_combat = _safe_getboolean(section, "skip_combat", False)
 
     def _parse_combat_testing_section(self) -> None:
         """Parse [combat_testing] section settings."""
@@ -367,47 +428,47 @@ class ConfigManager:
             return
 
         section = self.parser["combat_testing"]
-        self.config.enable_scenario_rotation = section.getboolean(
-            "enable_scenario_rotation", fallback=False
+        self.config.enable_scenario_rotation = _safe_getboolean(
+            section, "enable_scenario_rotation", False
         )
-        self.config.current_scenario = section.get(
-            "current_scenario", fallback="standard"
+        self.config.current_scenario = _safe_get(
+            section, "current_scenario", "standard"
         )
-        self.config.starting_difficulty = section.getint(
-            "starting_difficulty", fallback=3
+        self.config.starting_difficulty = _safe_getint(
+            section, "starting_difficulty", 3
         )
-        self.config.difficulty_scaling = section.getfloat(
-            "difficulty_scaling", fallback=0.5
+        self.config.difficulty_scaling = _safe_getfloat(
+            section, "difficulty_scaling", 0.5
         )
-        self.config.max_rounds_before_auto_victory = section.getint(
-            "max_rounds_before_auto_victory", fallback=50
+        self.config.max_rounds_before_auto_victory = _safe_getint(
+            section, "max_rounds_before_auto_victory", 50
         )
-        self.config.npc_decision_delay = section.getfloat(
-            "npc_decision_delay", fallback=0.5
+        self.config.npc_decision_delay = _safe_getfloat(
+            section, "npc_decision_delay", 0.5
         )
-        self.config.npc_flanking_threshold = section.getfloat(
-            "npc_flanking_threshold", fallback=45.0
+        self.config.npc_flanking_threshold = _safe_getfloat(
+            section, "npc_flanking_threshold", 45.0
         )
-        self.config.npc_retreat_health_threshold = section.getfloat(
-            "npc_retreat_health_threshold", fallback=0.3
+        self.config.npc_retreat_health_threshold = _safe_getfloat(
+            section, "npc_retreat_health_threshold", 0.3
         )
-        self.config.npc_flanking_distance_range = section.get(
-            "npc_flanking_distance_range", fallback="20.0 to 40.0"
+        self.config.npc_flanking_distance_range = _safe_get(
+            section, "npc_flanking_distance_range", "20.0 to 40.0"
         )
-        self.config.validate_grid_bounds = section.getboolean(
-            "validate_grid_bounds", fallback=True
+        self.config.validate_grid_bounds = _safe_getboolean(
+            section, "validate_grid_bounds", True
         )
-        self.config.validate_distance_calc = section.getboolean(
-            "validate_distance_calc", fallback=True
+        self.config.validate_distance_calc = _safe_getboolean(
+            section, "validate_distance_calc", True
         )
-        self.config.validate_angle_calc = section.getboolean(
-            "validate_angle_calc", fallback=True
+        self.config.validate_angle_calc = _safe_getboolean(
+            section, "validate_angle_calc", True
         )
-        self.config.validate_modifier_calc = section.getboolean(
-            "validate_modifier_calc", fallback=True
+        self.config.validate_modifier_calc = _safe_getboolean(
+            section, "validate_modifier_calc", True
         )
-        self.config.validate_npc_formations = section.getboolean(
-            "validate_npc_formations", fallback=True
+        self.config.validate_npc_formations = _safe_getboolean(
+            section, "validate_npc_formations", True
         )
 
     def _parse_testing_locations_section(self) -> None:
@@ -418,29 +479,29 @@ class ConfigManager:
         section = self.parser["testing_locations"]
 
         # Standard formation
-        self.config.standard_player_x = section.getint("standard_player_x", fallback=25)
-        self.config.standard_player_y = section.getint("standard_player_y", fallback=10)
-        self.config.standard_enemy_x = section.getint("standard_enemy_x", fallback=25)
-        self.config.standard_enemy_y = section.getint("standard_enemy_y", fallback=40)
+        self.config.standard_player_x = _safe_getint(section, "standard_player_x", 25)
+        self.config.standard_player_y = _safe_getint(section, "standard_player_y", 10)
+        self.config.standard_enemy_x = _safe_getint(section, "standard_enemy_x", 25)
+        self.config.standard_enemy_y = _safe_getint(section, "standard_enemy_y", 40)
 
         # Pincer formation
-        self.config.pincer_player_x = section.getint("pincer_player_x", fallback=25)
-        self.config.pincer_player_y = section.getint("pincer_player_y", fallback=25)
-        self.config.pincer_enemy1_x = section.getint("pincer_enemy1_x", fallback=10)
-        self.config.pincer_enemy1_y = section.getint("pincer_enemy1_y", fallback=25)
-        self.config.pincer_enemy2_x = section.getint("pincer_enemy2_x", fallback=40)
-        self.config.pincer_enemy2_y = section.getint("pincer_enemy2_y", fallback=25)
+        self.config.pincer_player_x = _safe_getint(section, "pincer_player_x", 25)
+        self.config.pincer_player_y = _safe_getint(section, "pincer_player_y", 25)
+        self.config.pincer_enemy1_x = _safe_getint(section, "pincer_enemy1_x", 10)
+        self.config.pincer_enemy1_y = _safe_getint(section, "pincer_enemy1_y", 25)
+        self.config.pincer_enemy2_x = _safe_getint(section, "pincer_enemy2_x", 40)
+        self.config.pincer_enemy2_y = _safe_getint(section, "pincer_enemy2_y", 25)
 
         # Melee
-        self.config.melee_center_x = section.getint("melee_center_x", fallback=25)
-        self.config.melee_center_y = section.getint("melee_center_y", fallback=25)
-        self.config.melee_spread_radius = section.getint(
-            "melee_spread_radius", fallback=5
+        self.config.melee_center_x = _safe_getint(section, "melee_center_x", 25)
+        self.config.melee_center_y = _safe_getint(section, "melee_center_y", 25)
+        self.config.melee_spread_radius = _safe_getint(
+            section, "melee_spread_radius", 5
         )
 
         # Boss arena
-        self.config.boss_arena_x = section.getint("boss_arena_x", fallback=25)
-        self.config.boss_arena_y = section.getint("boss_arena_y", fallback=25)
-        self.config.boss_start_distance = section.getint(
-            "boss_start_distance", fallback=30
+        self.config.boss_arena_x = _safe_getint(section, "boss_arena_x", 25)
+        self.config.boss_arena_y = _safe_getint(section, "boss_arena_y", 25)
+        self.config.boss_start_distance = _safe_getint(
+            section, "boss_start_distance", 30
         )
