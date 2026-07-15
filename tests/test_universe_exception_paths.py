@@ -145,9 +145,11 @@ class _BrokenEvent:
 
 
 def test_event_reinit_and_attr_synthesis_both_fail_gracefully(monkeypatch, tmp_path):
-    mod = types.ModuleType("fake_broken_events_mod_xyz")
-    mod.BrokenEvent = _BrokenEvent
-    monkeypatch.setitem(sys.modules, "fake_broken_events_mod_xyz", mod)
+    # Attach the fake class to a real engine module so the map-deserialization
+    # allow-list gate (issue #290) accepts it; a standalone sys.modules entry is
+    # (correctly) refused as a non-engine module.
+    import src.events as _events_mod
+    monkeypatch.setattr(_events_mod, "BrokenEvent", _BrokenEvent, raising=False)
 
     u = Universe()
     player = _player()
@@ -163,7 +165,7 @@ def test_event_reinit_and_attr_synthesis_both_fail_gracefully(monkeypatch, tmp_p
                     "events": [
                         {
                             "__class__": "BrokenEvent",
-                            "__module__": "fake_broken_events_mod_xyz",
+                            "__module__": "events",
                             "props": {},
                         }
                     ],
@@ -194,9 +196,10 @@ class _EventWithReadOnlyTile:
 
 
 def test_event_tile_assignment_exception_hits_outer_except(monkeypatch, tmp_path):
-    mod = types.ModuleType("fake_readonly_tile_event_mod")
-    mod.EventWithReadOnlyTile = _EventWithReadOnlyTile
-    monkeypatch.setitem(sys.modules, "fake_readonly_tile_event_mod", mod)
+    import src.events as _events_mod
+    monkeypatch.setattr(
+        _events_mod, "EventWithReadOnlyTile", _EventWithReadOnlyTile, raising=False
+    )
 
     u = Universe()
     player = _player()
@@ -212,7 +215,7 @@ def test_event_tile_assignment_exception_hits_outer_except(monkeypatch, tmp_path
                     "events": [
                         {
                             "__class__": "EventWithReadOnlyTile",
-                            "__module__": "fake_readonly_tile_event_mod",
+                            "__module__": "events",
                             "props": {},
                         }
                     ],
@@ -244,9 +247,10 @@ class _ItemReadOnlyTile:
 def test_item_player_assigned_and_tile_assignment_exception_swallowed(
     monkeypatch, tmp_path
 ):
-    mod = types.ModuleType("fake_item_readonly_tile_mod")
-    mod.ItemReadOnlyTile = _ItemReadOnlyTile
-    monkeypatch.setitem(sys.modules, "fake_item_readonly_tile_mod", mod)
+    import src.items as _items_mod
+    monkeypatch.setattr(
+        _items_mod, "ItemReadOnlyTile", _ItemReadOnlyTile, raising=False
+    )
 
     u = Universe()
     player = _player()
@@ -262,7 +266,7 @@ def test_item_player_assigned_and_tile_assignment_exception_swallowed(
                     "items": [
                         {
                             "__class__": "ItemReadOnlyTile",
-                            "__module__": "fake_item_readonly_tile_mod",
+                            "__module__": "items",
                             "props": {},
                         }
                     ],
@@ -294,9 +298,8 @@ class _NpcReadOnlyTile:
 def test_npc_player_current_room_assigned_and_tile_exception_swallowed(
     monkeypatch, tmp_path
 ):
-    mod = types.ModuleType("fake_npc_readonly_tile_mod")
-    mod.NpcReadOnlyTile = _NpcReadOnlyTile
-    monkeypatch.setitem(sys.modules, "fake_npc_readonly_tile_mod", mod)
+    import src.npc as _npc_mod
+    monkeypatch.setattr(_npc_mod, "NpcReadOnlyTile", _NpcReadOnlyTile, raising=False)
 
     u = Universe()
     player = _player()
@@ -312,7 +315,7 @@ def test_npc_player_current_room_assigned_and_tile_exception_swallowed(
                     "npcs": [
                         {
                             "__class__": "NpcReadOnlyTile",
-                            "__module__": "fake_npc_readonly_tile_mod",
+                            "__module__": "npc",
                             "props": {},
                         }
                     ],
@@ -343,9 +346,10 @@ class _ObjectReadOnlyTile:
 
 
 def test_object_tile_assignment_exception_swallowed(monkeypatch, tmp_path):
-    mod = types.ModuleType("fake_object_readonly_tile_mod")
-    mod.ObjectReadOnlyTile = _ObjectReadOnlyTile
-    monkeypatch.setitem(sys.modules, "fake_object_readonly_tile_mod", mod)
+    import src.objects as _objects_mod
+    monkeypatch.setattr(
+        _objects_mod, "ObjectReadOnlyTile", _ObjectReadOnlyTile, raising=False
+    )
 
     u = Universe()
     player = _player()
@@ -361,7 +365,7 @@ def test_object_tile_assignment_exception_swallowed(monkeypatch, tmp_path):
                     "objects": [
                         {
                             "__class__": "ObjectReadOnlyTile",
-                            "__module__": "fake_object_readonly_tile_mod",
+                            "__module__": "objects",
                             "props": {},
                         }
                     ],
