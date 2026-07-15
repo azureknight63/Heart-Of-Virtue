@@ -459,8 +459,10 @@ class BloodOfMartyrs(Move):
             for enemy in list(getattr(player, "combat_list", [])):
                 if enemy.is_alive():
                     # Pure damage — bypasses protection and resistance scaling (pure type, resist=1.0)
-                    pure_damage = int(detonation * enemy.resistance.get("pure", 1.0))
+                    pure_damage = int(detonation * functions.combat_resistance(enemy, "pure"))
                     enemy.hp -= pure_damage
+                    if hasattr(enemy, "clamp_hp"):
+                        enemy.clamp_hp()
                     cprint(f"  {enemy.name} takes {pure_damage} damage!", "red")
         player.combat_exp["Basic"] += 5
         player.fatigue = max(0, player.fatigue - self.fatigue_cost)

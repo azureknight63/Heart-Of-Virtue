@@ -14,6 +14,9 @@ Usage (in each subclass __init__):
 """
 
 
+import math
+
+
 def exp_needed_for_level(level, intelligence):
     """Exp required to advance from `level` to the next.
 
@@ -119,5 +122,69 @@ class Combatant:
         return [move for move in self.known_moves if move.viable()]
 
     def get_hp_pcnt(self):
-        """Return remaining HP as a decimal fraction (0.0–1.0)."""
-        return float(self.hp) / float(self.maxhp)
+        """Return remaining HP as a decimal fraction (0.0–1.0).
+
+        Guards against maxhp <= 0 (fuzzer/extreme-stat case) so the divide
+        never raises ZeroDivisionError in the combat loop.
+        """
+        maxhp = getattr(self, "maxhp", 0)
+        try:
+            maxhp = float(maxhp)
+        except (TypeError, ValueError):
+            return 0.0
+        if not math.isfinite(maxhp) or maxhp <= 0:
+            return 0.0
+        return float(self.hp) / maxhp
+
+    # ── Numeric guards (issue #296 hardening) ─────────────────────────────────
+    # A missing resistance key (direct dict indexing) and non-finite values
+    # (NaN/inf) were both confirmed to crash the combat damage path — the former
+    # with KeyError, the latter with a ValueError inside int(damage). These
+    # helpers are the single, shared choke point that keeps damage finite and
+    # HP bounded for both Player and NPC (never duplicated in subclasses).
+
+    def get_resistance(self, damage_type, default=1.0):
+        """Return a sanitized damage-resistance multiplier for `damage_type`.
+
+        Thin wrapper over :func:`functions.combat_resistance` (the single shared
+        implementation the combat damage path also calls directly, so the
+        sanitization is defined once): resolves a missing key to the base-dict
+        value or `default` and coerces a non-finite value (NaN/inf) to `default`.
+        """
+        import src.functions as functions
+        return functions.combat_resistance(self, damage_type, default)
+
+    def get_status_resistance(self, status_type, default=0.0):
+        """Return a sanitized status-resistance fraction, clamped to [0.0, 1.0].
+
+        Thin wrapper over :func:`functions.combat_status_resistance`. A missing
+        key falls back to `default`; NaN/inf/out-of-range values are coerced into
+        [0, 1] so the resulting application chance stays sane.
+        """
+        import src.functions as functions
+        return functions.combat_status_resistance(self, status_type, default)
+
+    def clamp_hp(self):
+        """Clamp ``hp`` into [0, maxhp], coercing non-finite hp/maxhp to 0.
+
+        Combat damage and heal paths mutate ``hp`` directly; calling this right
+        after such a mutation keeps the HP-never-NaN/inf and HP-in-[0, maxhp]
+        invariants without every call site repeating the bounds logic. Returns
+        the clamped hp.
+        """
+        maxhp = getattr(self, "maxhp", 0)
+        try:
+            maxhp = float(maxhp)
+            if not math.isfinite(maxhp) or maxhp < 0:
+                maxhp = 0.0
+        except (TypeError, ValueError):
+            maxhp = 0.0
+        hp = getattr(self, "hp", 0)
+        try:
+            hp = float(hp)
+        except (TypeError, ValueError):
+            hp = 0.0
+        if not math.isfinite(hp):
+            hp = 0.0
+        self.hp = int(max(0.0, min(hp, maxhp)))
+        return self.hp

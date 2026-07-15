@@ -1223,3 +1223,55 @@ def learn_all_skills_from_skilltree(player: "Player"):
         cprint(f"[Config] Learned {learned_count} skills from skill tree.", "cyan")
 
     return learned_count
+
+
+def combat_resistance(target, damage_type, default=1.0):
+    """Return a sanitized damage-resistance multiplier for `target`.
+
+    The single, shared choke point the combat damage path uses instead of
+    indexing ``target.resistance[damage_type]`` directly. It reads the target's
+    ``resistance`` dict (falling back to ``resistance_base``) and coerces a
+    missing key or a non-finite value (NaN/inf, confirmed to crash ``int(damage)``
+    in issue #296) to `default`. Magnitude is intentionally NOT clamped — a
+    multiplier may be negative (damage heals) or > 1 (vulnerability); only
+    finiteness is enforced. Tolerates degraded/mock targets (a missing dict
+    yields `default`) so it never raises in the combat loop.
+    """
+    resist = getattr(target, "resistance", None)
+    if isinstance(resist, dict) and damage_type in resist:
+        value = resist[damage_type]
+    else:
+        base = getattr(target, "resistance_base", None)
+        if isinstance(base, dict) and damage_type in base:
+            value = base[damage_type]
+        else:
+            return float(default)
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        return float(default)
+    if not math.isfinite(value):
+        return float(default)
+    return value
+
+
+def combat_status_resistance(target, status_type, default=0.0):
+    """Return a sanitized status-resistance fraction for `target`, in [0, 1].
+
+    Consumed as ``1 - resistance`` by status application. A missing key falls
+    back to `default` (matching the historical ``.get(..., 0.0)``); NaN/inf and
+    out-of-range values are coerced into [0, 1] so the application chance stays
+    sane. Tolerates degraded/mock targets without raising.
+    """
+    resist = getattr(target, "status_resistance", None)
+    if isinstance(resist, dict) and status_type in resist:
+        value = resist[status_type]
+    else:
+        value = default
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        value = float(default)
+    if not math.isfinite(value):
+        value = float(default)
+    return min(1.0, max(0.0, value))
