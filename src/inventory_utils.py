@@ -70,12 +70,23 @@ def transfer_gold(from_inventory: list, to_inventory: list, amt: int) -> None:
         gold_item_from = _create_new_gold_item(from_inventory)
 
     if gold_item_from and gold_item_to:
-        gold_item_from.amt -= amt
-        gold_item_to.amt += amt
-        if gold_item_from.amt < 0:
-            gold_item_from.amt = 0
-        if gold_item_to.amt < 0:
-            gold_item_to.amt = 0
+        # Clamp the transfer to what the source actually holds, so gold is never
+        # created by an over-transfer nor destroyed, and neither side can go
+        # negative (issue #297). All callers pass a positive, pre-validated
+        # amount, so this only guards against misuse/degraded state.
+        try:
+            amt = int(amt)
+        except (TypeError, ValueError):
+            amt = 0
+        from_amt = getattr(gold_item_from, "amt", 0)
+        if not isinstance(from_amt, (int, float)):
+            from_amt = 0
+        amt = max(0, min(amt, int(from_amt)))
+        gold_item_from.amt = int(from_amt) - amt
+        to_amt = getattr(gold_item_to, "amt", 0)
+        if not isinstance(to_amt, (int, float)):
+            to_amt = 0
+        gold_item_to.amt = int(to_amt) + amt
 
         # Sync count and update description
         for item in [gold_item_from, gold_item_to]:
@@ -174,6 +185,24 @@ def transfer_item(
             getattr(item, "name", "Unknown"),
         )
         return
+
+    # If the item is equipped on the source, unequip it before it leaves the
+    # inventory so the source's eq_weapon / equipment slots never dangle to a
+    # removed item and its stat bonuses are cleanly reverted (issue #297).
+    # Only non-stackable equippables are ever equipped, so this always applies
+    # to the whole object being moved.
+    if getattr(item, "isequipped", False):
+        if hasattr(source, "unequip_item") and callable(source.unequip_item):
+            try:
+                source.unequip_item(item_object=item)
+            except Exception:  # noqa: BLE001 - best-effort; fall through to reset
+                pass
+        try:
+            item.isequipped = False
+        except Exception:  # noqa: BLE001
+            pass
+        if getattr(source, "eq_weapon", None) is item:
+            source.eq_weapon = getattr(source, "fists", None)
 
     # Handle stackable items
     if hasattr(item, "count") and getattr(item, "count", 0) > 1:
