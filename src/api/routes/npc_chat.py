@@ -36,7 +36,9 @@ def _string_field(data, key, default=""):
     The result is whitespace-stripped so downstream "required" checks still
     reject empty/whitespace input with a 400.
     """
-    value = data.get(key, default)
+    # A JSON body can parse to a non-object (string/number/list); guard so
+    # ``.get`` is only called on a dict, otherwise treat the field as missing.
+    value = data.get(key, default) if isinstance(data, dict) else default
     if not isinstance(value, str):
         value = default
     return value[:_MAX_FIELD_LEN].strip()

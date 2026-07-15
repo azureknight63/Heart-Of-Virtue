@@ -62,6 +62,10 @@ def _hostile_field(rng):
 
 
 def _hostile_body(rng, keys):
+    # 20% of the time send a non-object top-level body (string/number/list/bool/
+    # null) — these must be treated as missing fields, never crash ``.get``.
+    if rng.random() < 0.2:
+        return rng.choice(["north", 5, -1, [1, 2], True, None, 3.14, "x" * 9000])
     body = {}
     for k in keys:
         if rng.random() < 0.85:
