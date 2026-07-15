@@ -605,7 +605,7 @@ class Move:  # master class for all moves
         roll = random.randint(0, 100)
         damage = (
             (
-                (power * self.target.get_resistance(base_damage_type))
+                (power * functions.combat_resistance(self.target, base_damage_type))
                 - self.target.protection
             )
             * player.heat

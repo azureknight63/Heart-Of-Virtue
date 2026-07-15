@@ -298,7 +298,7 @@ class DeathsHarvest(Move):
         roll = random.randint(0, 100)
         damage = (
             (
-                (self.power * self.target.get_resistance(self.base_damage_type))
+                (self.power * functions.combat_resistance(self.target, self.base_damage_type))
                 - self.target.protection
             )
             * player.heat

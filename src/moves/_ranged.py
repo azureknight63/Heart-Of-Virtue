@@ -265,7 +265,7 @@ class ShootBow(
         self.power += self.user.finesse * self.user.eq_weapon.fin_mod
         damage = (
             (
-                (self.power * self.target.get_resistance(self.base_damage_type))
+                (self.power * functions.combat_resistance(self.target, self.base_damage_type))
                 - self.target.protection
             )
             * player.heat
@@ -448,7 +448,7 @@ class ShootCrossbow(Move):
         roll = random.randint(0, 100)
         damage = (
             (
-                (self.power * self.target.get_resistance(self.base_damage_type))
+                (self.power * functions.combat_resistance(self.target, self.base_damage_type))
                 - self.target.protection
             )
             * player.heat
@@ -594,7 +594,7 @@ class BroadheadBolt(Move):
         roll = random.randint(0, 100)
         damage = (
             (
-                (self.power * self.target.get_resistance(self.base_damage_type))
+                (self.power * functions.combat_resistance(self.target, self.base_damage_type))
                 - self.target.protection
             )
             * player.heat
@@ -749,7 +749,7 @@ class AimedShot(Move):
         roll = random.randint(0, 100)
         damage = (
             (
-                (self.power * self.target.get_resistance(self.base_damage_type))
+                (self.power * functions.combat_resistance(self.target, self.base_damage_type))
                 - self.target.protection
             )
             * player.heat
@@ -898,7 +898,7 @@ class PinningBolt(Move):
         roll = random.randint(0, 100)
         damage = (
             (
-                (self.power * self.target.get_resistance(self.base_damage_type))
+                (self.power * functions.combat_resistance(self.target, self.base_damage_type))
                 - self.target.protection
             )
             * player.heat

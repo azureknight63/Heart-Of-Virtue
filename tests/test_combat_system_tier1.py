@@ -477,13 +477,15 @@ class TestEdgeCases:
     """Test edge cases and boundary conditions."""
 
     def test_zero_max_hp_prevents_crash(self):
-        """Test that zero maxhp causes ZeroDivisionError (known limitation)."""
+        """Zero maxhp yields 0.0 instead of crashing (issue #296 hardening).
+
+        Previously ``get_hp_pcnt`` divided by ``maxhp`` unguarded and raised
+        ZeroDivisionError; the combat loop now degrades to 0.0 for a
+        non-positive maxhp so an extreme/degraded combatant never crashes it.
+        """
         combatant = CombatantForTesting(name="DeadInside", hp=0, maxhp=0)
         assert combatant.maxhp == 0
-        # get_hp_pcnt will raise ZeroDivisionError with zero maxhp
-        # This is a known edge case — in practice, maxhp should never be 0
-        with pytest.raises(ZeroDivisionError):
-            combatant.get_hp_pcnt()
+        assert combatant.get_hp_pcnt() == 0.0
 
     def test_negative_hp_overkill(self, basic_combatant):
         """Test that overkill damage (hp < 0) is handled correctly."""

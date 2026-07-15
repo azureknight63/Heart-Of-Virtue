@@ -459,7 +459,7 @@ class BloodOfMartyrs(Move):
             for enemy in list(getattr(player, "combat_list", [])):
                 if enemy.is_alive():
                     # Pure damage — bypasses protection and resistance scaling (pure type, resist=1.0)
-                    pure_damage = int(detonation * enemy.get_resistance("pure"))
+                    pure_damage = int(detonation * functions.combat_resistance(enemy, "pure"))
                     enemy.hp -= pure_damage
                     if hasattr(enemy, "clamp_hp"):
                         enemy.clamp_hp()

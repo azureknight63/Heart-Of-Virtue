@@ -146,49 +146,23 @@ class Combatant:
     def get_resistance(self, damage_type, default=1.0):
         """Return a sanitized damage-resistance multiplier for `damage_type`.
 
-        Resolves a missing key to the base-dict value (or `default`) and coerces
-        a non-finite value (NaN/inf) to `default`. The magnitude is intentionally
-        NOT clamped — a multiplier may be negative (damage heals) or > 1
-        (vulnerability); only finiteness is enforced so downstream int(damage)
-        can never blow up.
+        Thin wrapper over :func:`functions.combat_resistance` (the single shared
+        implementation the combat damage path also calls directly, so the
+        sanitization is defined once): resolves a missing key to the base-dict
+        value or `default` and coerces a non-finite value (NaN/inf) to `default`.
         """
-        resist = getattr(self, "resistance", None)
-        if isinstance(resist, dict) and damage_type in resist:
-            value = resist[damage_type]
-        else:
-            base = getattr(self, "resistance_base", None)
-            if isinstance(base, dict) and damage_type in base:
-                value = base[damage_type]
-            else:
-                value = default
-        try:
-            value = float(value)
-        except (TypeError, ValueError):
-            return float(default)
-        if not math.isfinite(value):
-            return float(default)
-        return value
+        import src.functions as functions
+        return functions.combat_resistance(self, damage_type, default)
 
     def get_status_resistance(self, status_type, default=0.0):
         """Return a sanitized status-resistance fraction, clamped to [0.0, 1.0].
 
-        Consumed as ``1 - resistance`` by :func:`functions.inflict`. A missing
-        key falls back to `default` (matching the historical ``.get(..., 0.0)``);
-        NaN/inf/out-of-range values are coerced into [0, 1] so the resulting
-        application chance stays sane.
+        Thin wrapper over :func:`functions.combat_status_resistance`. A missing
+        key falls back to `default`; NaN/inf/out-of-range values are coerced into
+        [0, 1] so the resulting application chance stays sane.
         """
-        resist = getattr(self, "status_resistance", None)
-        if isinstance(resist, dict) and status_type in resist:
-            value = resist[status_type]
-        else:
-            value = default
-        try:
-            value = float(value)
-        except (TypeError, ValueError):
-            value = float(default)
-        if not math.isfinite(value):
-            value = float(default)
-        return min(1.0, max(0.0, value))
+        import src.functions as functions
+        return functions.combat_status_resistance(self, status_type, default)
 
     def clamp_hp(self):
         """Clamp ``hp`` into [0, maxhp], coercing non-finite hp/maxhp to 0.
