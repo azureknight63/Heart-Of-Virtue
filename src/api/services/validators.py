@@ -93,3 +93,81 @@ def validate_npc_id(npc_id: str) -> Tuple[bool, Optional[str]]:
     if len(npc_id) > 100:
         return False, "NPC ID must be 100 characters or less"
     return True, None
+
+
+def ensure_dict(value: Any) -> Dict[str, Any]:
+    """Return ``value`` if it is a dict, otherwise an empty dict.
+
+    A JSON request body can legitimately parse to a list, string, or number
+    (e.g. ``[1, 2]`` or ``"hi"``). Route handlers that then call ``.get()`` or
+    use ``in`` on it would raise ``AttributeError``/``TypeError`` and surface as
+    an HTTP 500. Coercing a non-object body to ``{}`` funnels it into the normal
+    missing-field path (a structured 4xx) instead.
+
+    Args:
+        value: The parsed JSON body (possibly ``None`` or a non-object).
+
+    Returns:
+        The value unchanged when it is a dict, else an empty dict.
+    """
+    return value if isinstance(value, dict) else {}
+
+
+def validate_string_field(
+    value: Any,
+    field_name: str,
+    *,
+    max_length: Optional[int] = None,
+    allow_empty: bool = False,
+) -> Tuple[bool, Optional[str]]:
+    """Validate that a request field is a (optionally non-empty, bounded) string.
+
+    Guards the many route handlers that call ``.strip()``/``.lower()`` on a
+    request value: a non-string (int, list, dict, null) would otherwise raise
+    ``AttributeError`` and surface as an HTTP 500. Returning a structured error
+    lets the caller reply with a 4xx instead.
+
+    Args:
+        value: The raw value pulled from the request body/query.
+        field_name: Human-readable name used in the error message.
+        max_length: Optional maximum length (characters).
+        allow_empty: When False, a blank/whitespace-only string is rejected.
+
+    Returns:
+        Tuple of (is_valid, error_message).
+    """
+    if not isinstance(value, str):
+        return False, f"{field_name} must be a string"
+    if not allow_empty and not value.strip():
+        return False, f"{field_name} is required"
+    if max_length is not None and len(value) > max_length:
+        return False, f"{field_name} must be {max_length} characters or less"
+    return True, None
+
+
+def coerce_optional_index(
+    value: Any, field_name: str = "item_index"
+) -> Tuple[Optional[int], Optional[str]]:
+    """Coerce an optional numeric index to ``int`` without crashing.
+
+    ``None`` passes through untouched (the field was omitted). A value that
+    cannot be interpreted as an integer (e.g. ``"abc"``, a list) yields a
+    structured error instead of letting a later comparison raise ``TypeError``.
+    Booleans are rejected explicitly — ``True``/``False`` are ``int`` subclasses
+    but never a meaningful inventory index.
+
+    Args:
+        value: The raw value from the request body.
+        field_name: Human-readable name used in the error message.
+
+    Returns:
+        Tuple of (index_or_None, error_message).
+    """
+    if value is None:
+        return None, None
+    if isinstance(value, bool):
+        return None, f"{field_name} must be an integer"
+    try:
+        return int(value), None
+    except (ValueError, TypeError):
+        return None, f"{field_name} must be an integer"

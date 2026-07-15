@@ -196,8 +196,12 @@ def submit_feedback():
     username = _MARKDOWN_UNSAFE.sub("", getattr(session, "username", "Unknown Player"))
 
     data = request.get_json(silent=True) or {}
-    feedback_type = data.get("type", "").lower()
-    title = (data.get("title") or "").strip()
+    if not isinstance(data, dict):
+        data = {}
+    raw_type = data.get("type", "")
+    feedback_type = raw_type.lower() if isinstance(raw_type, str) else ""
+    raw_title = data.get("title") or ""
+    title = raw_title.strip() if isinstance(raw_title, str) else ""
     anonymous = bool(data.get("anonymous", False))
     fields = data.get("fields") or {}
     if not isinstance(fields, dict):

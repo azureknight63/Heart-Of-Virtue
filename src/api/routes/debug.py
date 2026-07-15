@@ -33,7 +33,11 @@ def _run(operation):
     _sm, _session, player, error = get_session_and_player()
     if error:
         return error
-    body = request.get_json(silent=True) or {}
+    # Coerce a non-object body (list/string/number/bool) to {}. ``or {}`` only
+    # catches falsy values, so a truthy non-dict body would reach ``body.get``
+    # / ``body[...]`` and surface as a 500 instead of a structured 400.
+    raw_body = request.get_json(silent=True)
+    body = raw_body if isinstance(raw_body, dict) else {}
     try:
         result = operation(_adjutant(), player, body)
         return jsonify(result), 200

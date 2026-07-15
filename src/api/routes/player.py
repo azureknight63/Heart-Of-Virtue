@@ -5,6 +5,7 @@ import logging
 from flask import Blueprint, request, jsonify
 from src.api.serializers.inventory import InventorySerializer
 from src.api.middleware.auth import get_session_and_player
+from src.api.services.validators import ensure_dict
 
 player_bp = Blueprint("player", __name__)
 _log = logging.getLogger(__name__)
@@ -278,7 +279,7 @@ def learn_skill():
                 500,
             )
 
-        data = request.get_json()
+        data = ensure_dict(request.get_json(silent=True))
         if not data or "skill_name" not in data or "category" not in data:
             return (
                 jsonify(
@@ -335,7 +336,7 @@ def allocate_level_up_points():
         if error:
             return error[0], error[1]
 
-        data = request.get_json() or {}
+        data = ensure_dict(request.get_json(silent=True))
         attribute = data.get("attribute")
         amount = data.get("amount")
 
