@@ -55,7 +55,7 @@ def receive_browser_logs():
     }
     """
     try:
-        data = request.get_json()
+        data = request.get_json(silent=True)
 
         if not data or "logs" not in data:
             return jsonify({"error": "No logs provided"}), 400
@@ -179,7 +179,7 @@ def cleanup_logs():
     """
     _require_testing()
     try:
-        data = request.get_json() if request.is_json else {}
+        data = request.get_json(silent=True) if request.is_json else {}
 
         # Create cleanup manager with custom settings if provided
         retention_days = data.get("retention_days", cleanup_manager.retention_days)

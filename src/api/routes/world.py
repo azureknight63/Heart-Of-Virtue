@@ -5,7 +5,7 @@ import logging
 from flask import Blueprint, request, jsonify
 
 from src.api.middleware.auth import get_session_and_player
-from src.api.services.validators import validate_direction
+from src.api.services.validators import validate_direction, validate_string_field
 
 world_bp = Blueprint("world", __name__)
 _log = logging.getLogger(__name__)
@@ -100,7 +100,7 @@ def move_player():
         if error:
             return error[0], error[1]
 
-        data = request.get_json()
+        data = request.get_json(silent=True)
         if not data or "direction" not in data:
             return (
                 jsonify(
@@ -111,6 +111,10 @@ def move_player():
                 ),
                 400,
             )
+
+        is_valid, dir_error = validate_string_field(data["direction"], "direction")
+        if not is_valid:
+            return jsonify({"success": False, "error": dir_error}), 400
 
         direction = data["direction"].lower()
 
@@ -181,7 +185,7 @@ def submit_event_input():
         if error:
             return error[0], error[1]
 
-        data = request.get_json()
+        data = request.get_json(silent=True)
         if not data or "event_id" not in data or "user_input" not in data:
             return (
                 jsonify(
@@ -428,7 +432,7 @@ def get_tiles_batch():
         if error:
             return error[0], error[1]
 
-        data = request.get_json()
+        data = request.get_json(silent=True)
         if not data or "coordinates" not in data:
             return (
                 jsonify(
@@ -593,7 +597,7 @@ def interact_with_target():
         if error:
             return error[0], error[1]
 
-        data = request.get_json()
+        data = request.get_json(silent=True)
         if not data or "target_id" not in data or "action" not in data:
             return (
                 jsonify(

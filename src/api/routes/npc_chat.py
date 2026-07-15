@@ -10,6 +10,7 @@ Provides REST API endpoints for:
 
 from flask import Blueprint, request, jsonify, current_app
 from src.api.middleware.auth import get_session_and_player
+from src.api.services.validators import validate_string_field, ensure_dict
 
 npc_chat_bp = Blueprint("npc_chat", __name__)
 
@@ -33,13 +34,14 @@ def npc_chat_open():
 
     # Get request body
     try:
-        data = request.get_json() or {}
+        data = ensure_dict(request.get_json(silent=True))
     except Exception:
         return jsonify({"success": False, "error": "Invalid JSON"}), 400
 
-    npc_id = data.get("npc_id", "").strip()
-    if not npc_id:
-        return jsonify({"success": False, "error": "npc_id is required"}), 400
+    is_valid, err = validate_string_field(data.get("npc_id", ""), "npc_id")
+    if not is_valid:
+        return jsonify({"success": False, "error": err}), 400
+    npc_id = data["npc_id"].strip()
 
     # Call game service
     result = current_app.game_service.npc_chat_open(player, npc_id)
@@ -72,18 +74,22 @@ def npc_chat_respond():
 
     # Get request body
     try:
-        data = request.get_json() or {}
+        data = ensure_dict(request.get_json(silent=True))
     except Exception:
         return jsonify({"success": False, "error": "Invalid JSON"}), 400
 
-    npc_key = data.get("npc_key", "").strip()
-    jean_text = data.get("jean_text", "").strip()
-    jean_tone = data.get("jean_tone", "direct").strip()
+    is_valid, err = validate_string_field(data.get("npc_key", ""), "npc_key")
+    if not is_valid:
+        return jsonify({"success": False, "error": err}), 400
+    is_valid, err = validate_string_field(data.get("jean_text", ""), "jean_text")
+    if not is_valid:
+        return jsonify({"success": False, "error": err}), 400
 
-    if not npc_key:
-        return jsonify({"success": False, "error": "npc_key is required"}), 400
-    if not jean_text:
-        return jsonify({"success": False, "error": "jean_text is required"}), 400
+    npc_key = data["npc_key"].strip()
+    jean_text = data["jean_text"].strip()
+    # jean_tone is optional; ignore a non-string value and fall back to default.
+    raw_tone = data.get("jean_tone", "direct")
+    jean_tone = raw_tone.strip() if isinstance(raw_tone, str) and raw_tone.strip() else "direct"
 
     # Call game service
     result = current_app.game_service.npc_chat_respond(
@@ -116,13 +122,14 @@ def npc_chat_end():
 
     # Get request body
     try:
-        data = request.get_json() or {}
+        data = ensure_dict(request.get_json(silent=True))
     except Exception:
         return jsonify({"success": False, "error": "Invalid JSON"}), 400
 
-    npc_key = data.get("npc_key", "").strip()
-    if not npc_key:
-        return jsonify({"success": False, "error": "npc_key is required"}), 400
+    is_valid, err = validate_string_field(data.get("npc_key", ""), "npc_key")
+    if not is_valid:
+        return jsonify({"success": False, "error": err}), 400
+    npc_key = data["npc_key"].strip()
 
     # Call game service
     result = current_app.game_service.npc_chat_end(player, npc_key)

@@ -4,6 +4,7 @@ import logging
 from flask import Blueprint, request, jsonify
 
 from src.api.middleware.auth import get_session_and_player
+from src.api.services.validators import ensure_dict
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +37,7 @@ def start_combat():
         if error:
             return error
 
-        data = request.get_json()
+        data = request.get_json(silent=True)
         if not data or "enemy_id" not in data:
             return (
                 jsonify(
@@ -102,7 +103,7 @@ def execute_move():
         if error:
             return error
 
-        data = request.get_json()
+        data = request.get_json(silent=True)
         if not data or "move_type" not in data:
             return (
                 jsonify(
@@ -200,7 +201,7 @@ def toggle_suggestions_pause():
 
         from flask import current_app
 
-        data = request.get_json() or {}
+        data = ensure_dict(request.get_json(silent=True))
         paused = bool(data.get("paused", False))
         current_app.game_service.set_suggestions_paused(player, paused)
         return jsonify({"success": True, "paused": paused}), 200
@@ -234,7 +235,7 @@ def collect_loot():
         if error:
             return error
 
-        data = request.get_json() or {}
+        data = ensure_dict(request.get_json(silent=True))
         item_names = data.get("item_names", [])
         if not isinstance(item_names, list):
             return (

@@ -136,10 +136,10 @@ async def register():
         }
     """
     try:
-        data = request.get_json()
+        data = request.get_json(silent=True)
 
         if (
-            not data
+            not isinstance(data, dict)
             or "username" not in data
             or "password" not in data
             or "email" not in data
@@ -150,6 +150,20 @@ async def register():
                         "success": False,
                         "error": "validation_error",
                         "message": "Missing username, password, or email",
+                    }
+                ),
+                400,
+            )
+
+        if not all(
+            isinstance(data[k], str) for k in ("username", "password", "email")
+        ):
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "error": "validation_error",
+                        "message": "username, password, and email must be strings",
                     }
                 ),
                 400,
@@ -262,15 +276,29 @@ async def login():
         }
     """
     try:
-        data = request.get_json()
+        data = request.get_json(silent=True)
 
-        if not data or "username" not in data or "password" not in data:
+        if not isinstance(data, dict) or "username" not in data or "password" not in data:
             return (
                 jsonify(
                     {
                         "success": False,
                         "error": "validation_error",
                         "message": "Missing username or password",
+                    }
+                ),
+                400,
+            )
+
+        if not isinstance(data["username"], str) or not isinstance(
+            data["password"], str
+        ):
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "error": "validation_error",
+                        "message": "username and password must be strings",
                     }
                 ),
                 400,

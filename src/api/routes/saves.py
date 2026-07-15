@@ -62,7 +62,7 @@ async def create_save():
                 403,
             )
 
-        data = request.get_json()
+        data = request.get_json(silent=True)
         if not data or ("name" not in data and "is_autosave" not in data):
             return (
                 jsonify({"success": False, "error": "Missing save name or type"}),
