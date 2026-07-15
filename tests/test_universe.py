@@ -135,9 +135,15 @@ def test_deserialize_saved_instance_edge_cases():
     assert u._deserialize_saved_instance({}) is None
     # Missing __class__
     assert u._deserialize_saved_instance({'__module__': 'items', 'props': {}}) is None
-    # Builtins
+    # Non-engine builtins are now rejected by the shared allow-list gate (a bare
+    # ``builtins.int`` is not an engine class), so the loader returns None.
     payload = {'__class__': 'int', '__module__': 'builtins', 'props': {'x': 5}}
-    assert u._deserialize_saved_instance(payload) is not None
+    assert u._deserialize_saved_instance(payload) is None
+    # An engine class (attached to src.items by the dummy_modules fixture) still
+    # resolves through the gate.
+    payload = {'__class__': 'DummyItem', '__module__': 'items',
+               'props': {'name': 'Gate', 'value': 1}}
+    assert isinstance(u._deserialize_saved_instance(payload), DummyItem)
     # Nested dicts/lists
     payload = {
         '__class__': 'DummyMerchant',

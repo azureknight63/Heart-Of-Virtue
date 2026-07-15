@@ -67,24 +67,19 @@ class TestDeserializeInventorySkip:
     def test_skips_empty_inventory_prop(self):
         """An object with non-empty inventory should not have it overwritten
         by an empty list from JSON props."""
-        import types
+        import src.objects as objects_mod
 
-        # Create a fake class with non-empty inventory
-        mod = types.ModuleType("fake_inv_mod")
-
+        # Attach the fake class to a real engine module so it clears the shared
+        # allow-list gate (map JSON only trusts engine modules).
         class FakeObj:
             def __init__(self):
                 self.inventory = ["existing_item"]
 
-        mod.FakeObj = FakeObj
-        import sys
-
-        sys.modules["fake_inv_mod"] = mod
-
+        setattr(objects_mod, "FakeObj", FakeObj)
         try:
             payload = {
                 "__class__": "FakeObj",
-                "__module__": "fake_inv_mod",
+                "__module__": "objects",
                 "props": {"inventory": []},
             }
             u = self._universe()
@@ -93,7 +88,7 @@ class TestDeserializeInventorySkip:
             assert inst is not None
             assert inst.inventory == ["existing_item"]
         finally:
-            del sys.modules["fake_inv_mod"]
+            delattr(objects_mod, "FakeObj")
 
     def test_non_dict_payload_returns_none(self):
         u = self._universe()
@@ -117,25 +112,19 @@ class TestDeserializeInventorySkip:
 
     def test_class_type_marker_returns_class(self):
         """__class_type__ payloads return the class object, not an instance."""
-        import types
-
-        mod = types.ModuleType("cls_type_mod")
+        import src.items as items_mod
 
         class MyClass:
             pass
 
-        mod.MyClass = MyClass
-        import sys
-
-        sys.modules["cls_type_mod"] = mod
-
+        setattr(items_mod, "MyClass", MyClass)
         try:
-            payload = {"__class_type__": "cls_type_mod:MyClass"}
+            payload = {"__class_type__": "items:MyClass"}
             u = self._universe()
             result = u._deserialize_saved_instance(payload)
             assert result is MyClass
         finally:
-            del sys.modules["cls_type_mod"]
+            delattr(items_mod, "MyClass")
 
     def test_class_type_marker_bad_spec_returns_none(self):
         u = self._universe()
@@ -147,9 +136,7 @@ class TestDeserializeInventorySkip:
 
     def test_recursive_deserialize_nested_dict(self):
         """Nested dicts with __class__ keys are recursively deserialized."""
-        import types
-
-        mod = types.ModuleType("rec_mod")
+        import src.npc as npc_mod
 
         class Outer:
             def __init__(self):
@@ -159,20 +146,16 @@ class TestDeserializeInventorySkip:
             def __init__(self):
                 self.value = 0
 
-        mod.Outer = Outer
-        mod.Inner = Inner
-        import sys
-
-        sys.modules["rec_mod"] = mod
-
+        setattr(npc_mod, "Outer", Outer)
+        setattr(npc_mod, "Inner", Inner)
         try:
             payload = {
                 "__class__": "Outer",
-                "__module__": "rec_mod",
+                "__module__": "npc",
                 "props": {
                     "inner": {
                         "__class__": "Inner",
-                        "__module__": "rec_mod",
+                        "__module__": "npc",
                         "props": {"value": 99},
                     }
                 },
@@ -183,7 +166,8 @@ class TestDeserializeInventorySkip:
             assert inst.inner is not None
             assert inst.inner.value == 99
         finally:
-            del sys.modules["rec_mod"]
+            delattr(npc_mod, "Outer")
+            delattr(npc_mod, "Inner")
 
 
 # ---------------------------------------------------------------------------
@@ -331,17 +315,13 @@ class TestLoadSingleJsonMap:
         """Items from JSON are deserialized and placed in tile.items_here."""
         import types
 
-        mod = types.ModuleType("item_mod")
+        import src.items as items_mod
 
         class SimpleItem:
             def __init__(self):
                 self.name = "Test Item"
 
-        mod.SimpleItem = SimpleItem
-        import sys
-
-        sys.modules["item_mod"] = mod
-
+        setattr(items_mod, "SimpleItem", SimpleItem)
         try:
             u = self._universe_with_player()
             raw = {
@@ -351,7 +331,7 @@ class TestLoadSingleJsonMap:
                     "items": [
                         {
                             "__class__": "SimpleItem",
-                            "__module__": "item_mod",
+                            "__module__": "items",
                             "props": {},
                         }
                     ],
@@ -366,24 +346,20 @@ class TestLoadSingleJsonMap:
             assert len(tile.items_here) == 1
             assert tile.items_here[0].__class__.__name__ == "SimpleItem"
         finally:
-            del sys.modules["item_mod"]
+            delattr(items_mod, "SimpleItem")
 
     def test_npcs_loaded_into_tile(self):
         """NPCs from JSON are deserialized and placed in tile.npcs_here."""
         import types
 
-        mod = types.ModuleType("npc_test_mod")
+        import src.npc as npc_mod
 
         class SimpleNPC:
             def __init__(self):
                 self.name = "Test NPC"
                 self.current_room = None
 
-        mod.SimpleNPC = SimpleNPC
-        import sys
-
-        sys.modules["npc_test_mod"] = mod
-
+        setattr(npc_mod, "SimpleNPC", SimpleNPC)
         try:
             u = self._universe_with_player()
             raw = {
@@ -393,7 +369,7 @@ class TestLoadSingleJsonMap:
                     "npcs": [
                         {
                             "__class__": "SimpleNPC",
-                            "__module__": "npc_test_mod",
+                            "__module__": "npc",
                             "props": {},
                         }
                     ],
@@ -407,24 +383,20 @@ class TestLoadSingleJsonMap:
             tile = loaded.get((1, 0))
             assert len(tile.npcs_here) == 1
         finally:
-            del sys.modules["npc_test_mod"]
+            delattr(npc_mod, "SimpleNPC")
 
     def test_objects_loaded_into_tile(self):
         """Objects from JSON are deserialized and placed in tile.objects_here."""
         import types
 
-        mod = types.ModuleType("obj_test_mod")
+        import src.objects as objects_mod
 
         class SimpleObject:
             def __init__(self):
                 self.name = "Test Object"
                 self.tile = None
 
-        mod.SimpleObject = SimpleObject
-        import sys
-
-        sys.modules["obj_test_mod"] = mod
-
+        setattr(objects_mod, "SimpleObject", SimpleObject)
         try:
             u = self._universe_with_player()
             raw = {
@@ -434,7 +406,7 @@ class TestLoadSingleJsonMap:
                     "objects": [
                         {
                             "__class__": "SimpleObject",
-                            "__module__": "obj_test_mod",
+                            "__module__": "objects",
                             "props": {},
                         }
                     ],
@@ -448,7 +420,7 @@ class TestLoadSingleJsonMap:
             tile = loaded.get((0, 1))
             assert len(tile.objects_here) == 1
         finally:
-            del sys.modules["obj_test_mod"]
+            delattr(objects_mod, "SimpleObject")
 
 
 # ---------------------------------------------------------------------------
