@@ -476,6 +476,9 @@ class ApiCombatAdapter:
             Updated combat state
         """
 
+        if not isinstance(command, dict):
+            return {"error": "Invalid command: expected an object"}
+
         if not self.awaiting_input:
             return {"error": "Not awaiting input"}
 
@@ -624,6 +627,11 @@ class ApiCombatAdapter:
 
         if self.input_type != "move_selection":
             return {"error": "Not expecting move selection"}
+
+        # Reject non-integer indices (bool included — bool is an int subclass and
+        # would otherwise slip through as 0/1, corrupting pending_move_index).
+        if not isinstance(move_index, int) or isinstance(move_index, bool):
+            return {"error": "Invalid move index"}
 
         # Use all known moves, not just viable ones
         all_moves = self.player.known_moves
