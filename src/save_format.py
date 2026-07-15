@@ -22,6 +22,7 @@ top-level keys.
 import io
 import os
 import json
+import math
 import logging
 
 logger = logging.getLogger(__name__)
@@ -69,9 +70,86 @@ _PLAYER_STATS = (
     "charisma", "intelligence", "faith",
 )
 
+# Scalar keys that must remain strings (everything else in _PLAYER_SCALARS is
+# numeric). A hostile non-string value for these is rejected, not coerced.
+_STRING_SCALARS = frozenset({"name"})
+
+# Per-key numeric floors applied when restoring. Anything below clamps up; the
+# default floor is 0 so no restored scalar can go negative (HP/level/stats etc).
+# level/maxhp/maxfatigue floor at 1 to avoid a dead-on-arrival or divide-by-zero
+# player state.
+_SCALAR_FLOORS = {
+    "level": 1,
+    "maxhp": 1,
+    "maxfatigue": 1,
+}
+
+# Defensive ceiling applied to every restored numeric scalar/stat. A save that
+# smuggles an astronomically large value (overflow probe) is clamped rather than
+# allowed to poison downstream arithmetic. Chosen well above any legitimate game
+# value while still finite.
+_SCALAR_CEILING = 10 ** 12
+
+# The only stat keys apply_data_to_player will write. A save carrying unexpected
+# stat keys (attribute-injection probe) has those keys ignored rather than
+# blindly ``setattr``'d onto the player object.
+_ALLOWED_STAT_KEYS = frozenset(
+    list(_PLAYER_STATS) + [f"{s}_base" for s in _PLAYER_STATS]
+)
+
 
 class SaveSchemaError(Exception):
     """Raised when a data-only save fails schema validation."""
+
+
+def _coerce_finite_number(value, template):
+    """Coerce ``value`` to the numeric type implied by ``template``.
+
+    Returns a finite ``int``/``float`` on success, or ``None`` when ``value``
+    cannot be represented as a finite number of that type (NaN/inf, a bool, a
+    non-numeric string, ``None``, a container, etc.). Booleans are rejected
+    deliberately: ``True``/``False`` are ints in Python but are never a valid
+    stat/scalar value in a save.
+    """
+    if isinstance(value, bool):
+        return None
+    want_float = isinstance(template, float)
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(number):
+        return None
+    if want_float:
+        return number
+    # Integer template: truncate a finite float toward zero.
+    return int(number)
+
+
+def _clamp_number(key, number):
+    """Clamp ``number`` into ``key``'s valid [floor, ceiling] domain."""
+    floor = _SCALAR_FLOORS.get(key, 0)
+    if number < floor:
+        return floor
+    if number > _SCALAR_CEILING:
+        return _SCALAR_CEILING
+    return number
+
+
+def _sanitize_scalar(key, value, template, current):
+    """Return a clean value to store for ``key``, or ``current`` to reject.
+
+    String scalars must be strings; numeric scalars are coerced to a finite
+    number and clamped into their valid domain. A value that cannot be made
+    clean is rejected by returning ``current`` (the player's existing value),
+    guaranteeing the attribute is never left NaN/None/negative/wrong-type.
+    """
+    if key in _STRING_SCALARS:
+        return value if isinstance(value, str) else current
+    number = _coerce_finite_number(value, template)
+    if number is None:
+        return current
+    return _clamp_number(key, number)
 
 
 def save_v2_enabled():
@@ -204,8 +282,17 @@ def dumps_v2(player, *, indent=2):
 
 
 def loads_v2(text, *, strict=False):
-    """Parse and validate a v2 JSON string, returning the data dict."""
-    return validate_save_data(json.loads(text), strict=strict)
+    """Parse and validate a v2 JSON string, returning the data dict.
+
+    Invalid JSON (and non-string input) is reported as a ``SaveSchemaError`` so
+    every malformed save surfaces through a single, catchable error type rather
+    than leaking a raw ``json.JSONDecodeError``/``TypeError`` to callers.
+    """
+    try:
+        data = json.loads(text)
+    except (ValueError, TypeError) as exc:
+        raise SaveSchemaError(f"Save is not valid JSON: {exc}") from exc
+    return validate_save_data(data, strict=strict)
 
 
 def write_v2_file(player, path):
@@ -229,14 +316,30 @@ def apply_data_to_player(player, data, *, strict=False):
     that the prototype captures. Inventory objects, the world/tile graph, and
     combat state are NOT reconstructed here (they still require the pickle path).
     Returns the mutated ``player``.
+
+    Hostile/garbage values are handled defensively (the document is untrusted
+    JSON): numeric scalars/stats are **coerced to a finite number and clamped**
+    into their valid domain (non-negative, level/maxhp/maxfatigue >= 1, capped
+    at ``_SCALAR_CEILING``); values that cannot be made clean -- NaN/inf,
+    non-numeric strings, ``None``, wrong types -- are **rejected**, leaving the
+    player's prior value untouched. Unexpected stat keys are ignored. This
+    guarantees the player is never left in a NaN/negative-HP/None-stat state.
     """
     validate_save_data(data, strict=strict)
     p = data["player"]
-    for key in _PLAYER_SCALARS:
+    for key, template in _PLAYER_SCALARS.items():
         if key in p:
-            setattr(player, key, p[key])
-    for stat, value in (p.get("stats") or {}).items():
-        setattr(player, stat, value)
+            current = getattr(player, key, template)
+            setattr(player, key, _sanitize_scalar(key, p[key], template, current))
+    stats = p.get("stats")
+    if isinstance(stats, dict):
+        for stat, value in stats.items():
+            if stat not in _ALLOWED_STAT_KEYS:
+                continue
+            number = _coerce_finite_number(value, 0)
+            if number is None:
+                continue
+            setattr(player, stat, _clamp_number(stat, number))
     if isinstance(p.get("preferences"), dict):
         player.preferences = dict(p["preferences"])
 
