@@ -279,7 +279,7 @@ def learn_skill():
                 500,
             )
 
-        data = request.get_json(silent=True)
+        data = ensure_dict(request.get_json(silent=True))
         if not data or "skill_name" not in data or "category" not in data:
             return (
                 jsonify(

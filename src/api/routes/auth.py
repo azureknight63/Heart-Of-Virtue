@@ -536,8 +536,8 @@ async def settings():
             )
 
         elif request.method == "PUT":
-            data = request.get_json()
-            if not data or "timezone" not in data:
+            data = request.get_json(silent=True)
+            if not isinstance(data, dict) or "timezone" not in data:
                 return jsonify({"success": False, "error": "Missing timezone"}), 400
 
             timezone = data["timezone"]

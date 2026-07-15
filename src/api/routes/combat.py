@@ -37,7 +37,7 @@ def start_combat():
         if error:
             return error
 
-        data = request.get_json(silent=True)
+        data = ensure_dict(request.get_json(silent=True))
         if not data or "enemy_id" not in data:
             return (
                 jsonify(
@@ -103,7 +103,7 @@ def execute_move():
         if error:
             return error
 
-        data = request.get_json(silent=True)
+        data = ensure_dict(request.get_json(silent=True))
         if not data or "move_type" not in data:
             return (
                 jsonify(

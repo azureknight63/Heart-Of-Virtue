@@ -63,7 +63,9 @@ async def create_save():
             )
 
         data = request.get_json(silent=True)
-        if not data or ("name" not in data and "is_autosave" not in data):
+        if not isinstance(data, dict) or (
+            "name" not in data and "is_autosave" not in data
+        ):
             return (
                 jsonify({"success": False, "error": "Missing save name or type"}),
                 400,
