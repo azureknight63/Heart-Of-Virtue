@@ -1,0 +1,1584 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RPG Sprite Sheet Splitter - Optimized</title>
+    <style>
+        :root {
+            --bg-color: #1e1e24;
+            --panel-bg: #2a2a32;
+            --accent-color: #00ffcc; /* High contrast neon cyan for tools */
+            --btn-color: #4f46e5;
+            --btn-hover: #6366f1;
+            --text-color: #f3f4f6;
+            --border-color: #3f3f46;
+        }
+
+        body {
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 20px;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 24px;
+        }
+
+        h1 { margin: 0 0 8px 0; font-size: 1.8rem; }
+        h3 { margin-top: 0; }
+
+        .container {
+            display: grid;
+            grid-template-columns: 320px 1fr;
+            gap: 20px;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        @media (max-width: 900px) {
+            .container { grid-template-columns: 1fr; }
+            .panel { position: static; max-height: 70vh; }
+        }
+
+        .panel {
+            background-color: var(--panel-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 20px;
+            max-height: calc(100vh - 150px);
+            box-sizing: border-box;
+            overflow-y: auto;
+            position: sticky;
+            top: 20px;
+        }
+
+        .panel::-webkit-scrollbar { width: 8px; }
+        .panel::-webkit-scrollbar-track { background: #18181b; border-radius: 4px; }
+        .panel::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 4px; }
+        .panel::-webkit-scrollbar-thumb:hover { background: var(--btn-color); }
+
+        .control-group { margin-bottom: 16px; }
+
+        label {
+            display: block;
+            font-size: 0.85rem;
+            font-weight: 600;
+            margin-bottom: 6px;
+            color: #a1a1aa;
+        }
+
+        input[type="number"], input[type="file"] {
+            width: 100%;
+            padding: 8px;
+            background-color: #18181b;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            color: white;
+            box-sizing: border-box;
+        }
+
+        input[type="range"] {
+            width: 100%;
+            accent-color: var(--btn-color);
+        }
+
+        .range-val {
+            float: right;
+            font-weight: bold;
+            color: var(--accent-color);
+        }
+
+        button {
+            width: 100%;
+            background-color: var(--btn-color);
+            color: white;
+            border: none;
+            padding: 12px;
+            border-radius: 4px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background 0.2s;
+            margin-top: 10px;
+        }
+
+        button:hover { background-color: var(--btn-hover); }
+        button:disabled {
+            background-color: #3f3f46;
+            cursor: not-allowed;
+            color: #a1a1aa;
+        }
+
+        .btn-auto {
+            background-color: transparent;
+            border: 1px solid var(--accent-color);
+            color: var(--accent-color);
+        }
+        .btn-auto:hover { background-color: rgba(0, 255, 204, 0.1); }
+        .btn-auto:disabled {
+            border-color: var(--border-color);
+            color: #a1a1aa;
+            background-color: transparent;
+        }
+
+        #autoStatus {
+            font-size: 0.78rem;
+            color: #a1a1aa;
+            margin-top: 8px;
+            min-height: 2.2em;
+            line-height: 1.4;
+        }
+
+        .workspace {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .canvas-container {
+            position: relative;
+            overflow: auto;
+            background-color: #18181b;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 10px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 300px;
+        }
+
+        canvas {
+            max-width: 100%;
+            height: auto;
+            display: block;
+        }
+
+        .output-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+            gap: 16px;
+            background-color: var(--panel-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 20px;
+        }
+
+        .output-card {
+            background: #18181b;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 8px;
+            text-align: center;
+        }
+
+        .output-card img {
+            width: 100%;
+            height: auto;
+            border-radius: 4px;
+            background-color: #000;
+        }
+
+        .output-card span {
+            display: block;
+            margin-top: 8px;
+            font-size: 0.8rem;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: #a1a1aa;
+        }
+
+        details.emotion-menu {
+            margin-bottom: 16px;
+        }
+
+        details.emotion-menu summary {
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 0.85rem;
+            padding: 10px 12px;
+            border-radius: 4px;
+            background-color: #18181b;
+            border: 1px solid var(--border-color);
+            list-style: none;
+            user-select: none;
+        }
+
+        details.emotion-menu summary::-webkit-details-marker { display: none; }
+        details.emotion-menu summary::before { content: '\25B8  '; color: var(--accent-color); }
+        details.emotion-menu[open] summary::before { content: '\25BE  '; }
+
+        .emotion-list {
+            margin-top: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .emotion-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 8px;
+            background-color: #18181b;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            cursor: grab;
+        }
+
+        .emotion-item.dragging { opacity: 0.4; }
+
+        .emotion-item input[type="checkbox"] { width: auto; }
+
+        .drag-handle {
+            color: #71717a;
+            font-size: 1rem;
+            line-height: 1;
+        }
+
+        .emotion-label {
+            flex: 1;
+            font-size: 0.85rem;
+        }
+
+        .slider-row {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .slider-row input[type="range"] {
+            flex: 1;
+            width: auto;
+        }
+
+        .rocker-btn {
+            width: 26px;
+            height: 26px;
+            min-width: 26px;
+            padding: 0;
+            margin: 0;
+            font-size: 1rem;
+            line-height: 1;
+            font-weight: bold;
+            background-color: #18181b;
+            border: 1px solid var(--border-color);
+            color: var(--text-color);
+            border-radius: 4px;
+            cursor: pointer;
+            flex-shrink: 0;
+        }
+
+        .rocker-btn:hover { background-color: #27272a; border-color: var(--accent-color); color: var(--accent-color); }
+        .rocker-btn:active { background-color: #3f3f46; }
+
+        .padding-mode-row {
+            display: flex;
+            gap: 16px;
+            margin-top: 4px;
+        }
+
+        .padding-mode-row label {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-weight: 400;
+            color: var(--text-color);
+            margin-bottom: 0;
+        }
+
+        .padding-mode-row input[type="radio"] { width: auto; }
+
+        .btn-secondary {
+            background-color: transparent;
+            border: 1px solid var(--border-color);
+            color: var(--text-color);
+        }
+        .btn-secondary:hover { background-color: #3f3f46; }
+        .btn-secondary:disabled {
+            border-color: var(--border-color);
+            color: #a1a1aa;
+            background-color: transparent;
+        }
+
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.7);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            padding: 20px;
+        }
+
+        .modal-overlay[hidden] { display: none; }
+
+        .modal {
+            background-color: var(--panel-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 20px;
+            max-width: 90vw;
+            max-height: 90vh;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .modal h3 { margin: 0; }
+
+        .modal-hint {
+            font-size: 0.85rem;
+            color: #a1a1aa;
+            margin: 0;
+        }
+
+        .modal-image-wrap {
+            position: relative;
+            display: inline-block;
+            max-width: 80vw;
+            max-height: 55vh;
+            overflow: hidden;
+            cursor: crosshair;
+            border: 1px solid var(--border-color);
+            line-height: 0;
+        }
+
+        .modal-image-wrap img {
+            display: block;
+            max-width: 80vw;
+            max-height: 55vh;
+            width: auto;
+            height: auto;
+            user-select: none;
+            pointer-events: none;
+        }
+
+        .modal-selector {
+            position: absolute;
+            border: 2px solid var(--accent-color);
+            background: rgba(0, 255, 204, 0.15);
+            pointer-events: none;
+            display: none;
+        }
+
+        .modal-actions {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+        }
+
+        .modal-actions button {
+            width: auto;
+            margin-top: 0;
+            padding: 10px 16px;
+        }
+    </style>
+</head>
+<body>
+
+<header>
+    <h1>RPG Character Sheet Splitter</h1>
+    <p>Slice your expression sheet into perfect 328x468 standalone dialogue portraits.</p>
+</header>
+
+<div class="container">
+    <div class="panel">
+        <div class="control-group">
+            <label for="imageLoader">1. Upload Expression Sheet</label>
+            <input type="file" id="imageLoader" accept="image/*">
+        </div>
+
+        <hr style="border: 0; border-top: 1px solid var(--border-color); margin: 20px 0;">
+
+        <details class="emotion-menu" id="emotionMenu">
+            <summary>Emotion Categories</summary>
+            <div class="emotion-list" id="emotionList"></div>
+        </details>
+
+        <hr style="border: 0; border-top: 1px solid var(--border-color); margin: 20px 0;">
+
+        <h3>Grid Calibration</h3>
+
+        <button id="autoFitBtn" class="btn-auto" disabled>AUTO</button>
+        <div id="autoStatus"></div>
+
+        <div class="control-group">
+            <label for="offsetX">X Offset (Left) <span class="range-val" id="offsetXVal">25px</span></label>
+            <input type="range" id="offsetX" min="0" max="200" value="25">
+        </div>
+
+        <div class="control-group">
+            <label for="offsetY">Y Offset (Top) <span class="range-val" id="offsetYVal">15px</span></label>
+            <input type="range" id="offsetY" min="0" max="200" value="15">
+        </div>
+
+        <div class="control-group">
+            <label for="gapX">Horizontal Gap <span class="range-val" id="gapXVal">28px</span></label>
+            <input type="range" id="gapX" min="0" max="100" value="28">
+        </div>
+
+        <div class="control-group">
+            <label for="gapY">Vertical Gap <span class="range-val" id="gapYVal">70px</span></label>
+            <input type="range" id="gapY" min="0" max="200" value="70">
+        </div>
+
+        <div class="control-group">
+            <label for="scaleX">X Scale <span class="range-val" id="scaleXVal">100% (328px)</span></label>
+            <input type="range" id="scaleX" min="25" max="400" value="100">
+        </div>
+
+        <div class="control-group">
+            <label for="scaleY">Y Scale <span class="range-val" id="scaleYVal">100% (468px)</span></label>
+            <input type="range" id="scaleY" min="25" max="400" value="100">
+        </div>
+
+        <div class="control-group" style="margin-top: 8px;">
+            <label style="display: flex; align-items: center; gap: 6px; font-weight: normal; color: var(--text-color); cursor: pointer;">
+                <input type="checkbox" id="enableRowScale">
+                Advanced: Row-Specific Y Scales
+            </label>
+            <div id="rowScaleContainer" style="display: none; margin-top: 10px; padding: 10px; background: rgba(0,0,0,0.2); border-radius: 4px; border: 1px solid var(--border-color); flex-direction: column; gap: 10px;">
+                <!-- Row scale sliders will be generated here -->
+            </div>
+        </div>
+
+        <hr style="border: 0; border-top: 1px solid var(--border-color); margin: 20px 0;">
+
+        <h3>Background Padding</h3>
+
+        <div class="control-group">
+            <label>Padding Type</label>
+            <div class="padding-mode-row">
+                <label>
+                    <input type="radio" name="paddingMode" id="paddingModeAlpha" value="alpha" checked>
+                    Alpha (Transparent)
+                </label>
+                <label>
+                    <input type="radio" name="paddingMode" id="paddingModePainted" value="painted">
+                    Painted (Sampled)
+                </label>
+            </div>
+            <button type="button" id="openSampleDialogBtn" class="btn-secondary" disabled>Advanced: Pick Sample Manually…</button>
+        </div>
+
+        <div class="control-group">
+            <label for="padTop">Top Padding <span class="range-val" id="padTopVal">0px</span></label>
+            <input type="range" id="padTop" min="0" max="150" value="0">
+        </div>
+
+        <div class="control-group">
+            <label for="padRight">Right Padding <span class="range-val" id="padRightVal">0px</span></label>
+            <input type="range" id="padRight" min="0" max="150" value="0">
+        </div>
+
+        <div class="control-group">
+            <label for="padBottom">Bottom Padding <span class="range-val" id="padBottomVal">0px</span></label>
+            <input type="range" id="padBottom" min="0" max="150" value="0">
+        </div>
+
+        <div class="control-group">
+            <label for="padLeft">Left Padding <span class="range-val" id="padLeftVal">0px</span></label>
+            <input type="range" id="padLeft" min="0" max="150" value="0">
+        </div>
+
+        <hr style="border: 0; border-top: 1px solid var(--border-color); margin: 20px 0;">
+
+        <div class="control-group">
+            <label>Target Dimensions</label>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                <div>
+                    <span style="font-size: 0.75rem; color:#a1a1aa;">Width</span>
+                    <input type="number" id="targetW" value="328" disabled>
+                </div>
+                <div>
+                    <span style="font-size: 0.75rem; color:#a1a1aa;">Height</span>
+                    <input type="number" id="targetH" value="468" disabled>
+                </div>
+            </div>
+        </div>
+
+        <button id="downloadAllBtn" disabled>Download All Panels</button>
+    </div>
+
+    <div class="workspace">
+        <div class="canvas-container">
+            <div id="placeholderText" style="color: #71717a;">Upload an image to begin positioning the slicing grid...</div>
+            <canvas id="canvasPreview"></canvas>
+        </div>
+
+        <h3>Generated Previews (328x468)</h3>
+        <div class="output-grid" id="outputGrid"></div>
+    </div>
+</div>
+
+<div class="modal-overlay" id="sampleDialogOverlay" hidden>
+    <div class="modal">
+        <h3>Pick Background Sample</h3>
+        <p class="modal-hint">Click a clean patch of background in the image below, then confirm.</p>
+        <div class="modal-image-wrap" id="modalImageWrap">
+            <img id="modalSheetImg" alt="Uploaded sheet">
+            <div class="modal-selector" id="modalSelector"></div>
+        </div>
+        <div class="control-group">
+            <label for="sampleSize">Sample Size <span class="range-val" id="sampleSizeVal">48px</span></label>
+            <input type="range" id="sampleSize" min="16" max="96" value="48">
+        </div>
+        <div class="modal-actions">
+            <button type="button" id="sampleDialogCancel" class="btn-secondary">Cancel</button>
+            <button type="button" id="sampleDialogApply">Use This Sample</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    const imageLoader = document.getElementById('imageLoader');
+    const canvas = document.getElementById('canvasPreview');
+    const ctx = canvas.getContext('2d');
+    const outputGrid = document.getElementById('outputGrid');
+    const downloadAllBtn = document.getElementById('downloadAllBtn');
+    const placeholderText = document.getElementById('placeholderText');
+    const autoFitBtn = document.getElementById('autoFitBtn');
+    const autoStatus = document.getElementById('autoStatus');
+    const emotionList = document.getElementById('emotionList');
+
+    const offsetXInput = document.getElementById('offsetX');
+    const offsetYInput = document.getElementById('offsetY');
+    const gapXInput = document.getElementById('gapX');
+    const gapYInput = document.getElementById('gapY');
+    const scaleXInput = document.getElementById('scaleX');
+    const scaleYInput = document.getElementById('scaleY');
+    const padTopInput = document.getElementById('padTop');
+    const padRightInput = document.getElementById('padRight');
+    const padBottomInput = document.getElementById('padBottom');
+    const padLeftInput = document.getElementById('padLeft');
+
+    const openSampleDialogBtn = document.getElementById('openSampleDialogBtn');
+    const sampleDialogOverlay = document.getElementById('sampleDialogOverlay');
+    const modalImageWrap = document.getElementById('modalImageWrap');
+    const modalSheetImg = document.getElementById('modalSheetImg');
+    const modalSelector = document.getElementById('modalSelector');
+    const sampleSizeInput = document.getElementById('sampleSize');
+    const sampleDialogCancel = document.getElementById('sampleDialogCancel');
+    const sampleDialogApply = document.getElementById('sampleDialogApply');
+
+    const targetW = 328;
+    const targetH = 468;
+
+    // Background sample used for "painted" padding fill - populated by autoFit() whenever
+    // it successfully reads the image (independent of whether bbox detection itself
+    // succeeds), since the corner sample is computed before that check. bgTextureTile is
+    // a small real patch of background pixels (tiled as a repeating pattern) so grain/paper
+    // texture carries into the fill; bgSampleRGB is the flat-color fallback if no tile
+    // could be captured (e.g. transparent background).
+    let bgSampleRGB = null;
+    let bgTextureTile = null;
+
+    // Filename of the currently loaded sheet, used as the LocalStorage key for
+    // remembering per-file slider/padding settings. Null until a file is loaded.
+    let currentFileName = null;
+    const SETTINGS_STORAGE_PREFIX = 'portraitSplitter:settings:';
+
+    // Master emotion list. Order reflects grid slot order; `selected` controls inclusion.
+    let emotionState = [
+        "neutral", "happy", "sad", "angry",
+        "concerned", "skeptical", "surprised", "curious"
+    ].map(id => ({ id, label: id, selected: true }));
+
+    let img = new Image();
+    let imageLoaded = false;
+
+    // Create an off-screen canvas reusable for generating crops cleanly
+    const cropCanvas = document.createElement('canvas');
+    cropCanvas.width = targetW;
+    cropCanvas.height = targetH;
+    const cropCtx = cropCanvas.getContext('2d');
+
+    function clamp(v, min, max) {
+        return Math.min(max, Math.max(min, v));
+    }
+
+    function getActiveEmotions() {
+        return emotionState.filter(e => e.selected);
+    }
+
+    // Lays active emotions out row-major, preferring 2 rows (matches the original 4x2 sheet)
+    // and growing columns as needed. Not a strict rectangle when count is odd - trailing
+    // slots are simply left unfilled, which is fine since boxes are positioned per-item.
+    function computeLayout(n) {
+        if (n <= 0) return { cols: 0, rows: 0 };
+        const rows = n === 1 ? 1 : 2;
+        const cols = Math.ceil(n / rows);
+        return { cols, rows };
+    }
+
+    function getCellSize() {
+        const scaleX = parseInt(scaleXInput.value) || 100;
+        const scaleY = parseInt(scaleYInput.value) || 100;
+        return {
+            w: targetW * 100 / scaleX,
+            h: targetH * 100 / scaleY
+        };
+    }
+
+    // 1. Initialize UI Elements Once (called whenever the active emotion set changes)
+    function setupPreviewDOM() {
+        outputGrid.innerHTML = '';
+        getActiveEmotions().forEach((emotion, index) => {
+            const card = document.createElement('div');
+            card.className = 'output-card';
+
+            const resultImg = document.createElement('img');
+            resultImg.id = `preview-${index}`;
+            // Placeholder base64 dot so it doesn't show broken image iconography
+            resultImg.src = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
+
+            const label = document.createElement('span');
+            label.innerText = emotion.label;
+
+            card.appendChild(resultImg);
+            card.appendChild(label);
+            outputGrid.appendChild(card);
+        });
+    }
+
+    function renderEmotionMenu() {
+        emotionList.innerHTML = '';
+        emotionState.forEach((e, idx) => {
+            const item = document.createElement('div');
+            item.className = 'emotion-item';
+            item.draggable = true;
+            item.dataset.index = idx;
+
+            const handle = document.createElement('span');
+            handle.className = 'drag-handle';
+            handle.innerText = '⠿';
+
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.checked = e.selected;
+            checkbox.addEventListener('change', () => {
+                e.selected = checkbox.checked;
+                onEmotionsChanged();
+            });
+
+            const label = document.createElement('span');
+            label.className = 'emotion-label';
+            label.innerText = e.label;
+
+            item.appendChild(handle);
+            item.appendChild(checkbox);
+            item.appendChild(label);
+
+            item.addEventListener('dragstart', handleDragStart);
+            item.addEventListener('dragover', handleDragOver);
+            item.addEventListener('drop', handleDrop);
+            item.addEventListener('dragend', handleDragEnd);
+
+            emotionList.appendChild(item);
+        });
+    }
+
+    let dragSrcIndex = null;
+    function handleDragStart(e) {
+        dragSrcIndex = parseInt(this.dataset.index);
+        this.classList.add('dragging');
+        e.dataTransfer.effectAllowed = 'move';
+    }
+    function handleDragOver(e) {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        return false;
+    }
+    function handleDrop(e) {
+        e.stopPropagation();
+        const targetIndex = parseInt(this.dataset.index);
+        if (dragSrcIndex === null || dragSrcIndex === targetIndex) return false;
+        const [moved] = emotionState.splice(dragSrcIndex, 1);
+        emotionState.splice(targetIndex, 0, moved);
+        dragSrcIndex = null;
+        renderEmotionMenu();
+        onEmotionsChanged();
+        return false;
+    }
+    function handleDragEnd() {
+        this.classList.remove('dragging');
+    }
+
+    function onEmotionsChanged() {
+        downloadAllBtn.disabled = !imageLoaded || getActiveEmotions().length === 0;
+        if (!imageLoaded) return;
+        setupPreviewDOM();
+        updateRowScaleUI();
+        updateGrid();
+    }
+
+    renderEmotionMenu();
+
+    imageLoader.addEventListener('change', handleImage, false);
+    autoFitBtn.addEventListener('click', () => { if (imageLoaded) autoFit(); });
+
+    document.getElementById('enableRowScale').addEventListener('change', () => {
+        updateRowScaleUI();
+        if (imageLoaded) {
+            updateGrid();
+            saveSettingsForCurrentFile();
+        }
+    });
+
+    const allSliderInputs = [
+        offsetXInput, offsetYInput, gapXInput, gapYInput, scaleXInput, scaleYInput,
+        padTopInput, padRightInput, padBottomInput, padLeftInput
+    ];
+
+    allSliderInputs.forEach(input => {
+        input.addEventListener('input', () => {
+            syncAllLabels();
+            if (imageLoaded) {
+                updateGrid();
+                saveSettingsForCurrentFile();
+            }
+        });
+    });
+
+    document.querySelectorAll('input[name="paddingMode"]').forEach(radio => {
+        radio.addEventListener('change', () => {
+            if (imageLoaded) {
+                updateGrid();
+                saveSettingsForCurrentFile();
+            }
+        });
+    });
+
+    // Persists slider + padding-mode settings to LocalStorage keyed by the uploaded
+    // file's name, so re-uploading the same sheet later restores the calibration
+    // instead of starting from scratch. Wrapped defensively since LocalStorage can
+    // throw (private browsing, quota, disabled storage) - a failed save shouldn't
+    // break the tool.
+    function collectCurrentSettings() {
+        const settings = {
+            offsetX: offsetXInput.value,
+            offsetY: offsetYInput.value,
+            gapX: gapXInput.value,
+            gapY: gapYInput.value,
+            scaleX: scaleXInput.value,
+            scaleY: scaleYInput.value,
+            padTop: padTopInput.value,
+            padRight: padRightInput.value,
+            padBottom: padBottomInput.value,
+            padLeft: padLeftInput.value,
+            paddingMode: getPaddingMode(),
+            enableRowScale: document.getElementById('enableRowScale').checked
+        };
+        const active = getActiveEmotions();
+        const { rows } = computeLayout(active.length);
+        for (let r = 0; r < rows; r++) {
+            const slider = document.getElementById(`scaleYRow${r}`);
+            if (slider) {
+                settings[`scaleYRow${r}`] = slider.value;
+            }
+        }
+        return settings;
+    }
+
+    function saveSettingsForCurrentFile() {
+        if (!currentFileName) return;
+        try {
+            localStorage.setItem(SETTINGS_STORAGE_PREFIX + currentFileName, JSON.stringify(collectCurrentSettings()));
+        } catch (err) {
+            console.error('Could not save settings to LocalStorage:', err);
+        }
+    }
+
+    function loadSettingsForFile(filename) {
+        try {
+            const raw = localStorage.getItem(SETTINGS_STORAGE_PREFIX + filename);
+            return raw ? JSON.parse(raw) : null;
+        } catch (err) {
+            console.error('Could not read saved settings from LocalStorage:', err);
+            return null;
+        }
+    }
+
+    function applySettings(settings) {
+        offsetXInput.value = settings.offsetX;
+        offsetYInput.value = settings.offsetY;
+        gapXInput.value = settings.gapX;
+        gapYInput.value = settings.gapY;
+        scaleXInput.value = settings.scaleX;
+        scaleYInput.value = settings.scaleY;
+        padTopInput.value = settings.padTop;
+        padRightInput.value = settings.padRight;
+        padBottomInput.value = settings.padBottom;
+        padLeftInput.value = settings.padLeft;
+        const modeInput = document.getElementById(settings.paddingMode === 'painted' ? 'paddingModePainted' : 'paddingModeAlpha');
+        if (modeInput) modeInput.checked = true;
+
+        const enableRowScaleCheckbox = document.getElementById('enableRowScale');
+        if (enableRowScaleCheckbox) {
+            enableRowScaleCheckbox.checked = !!settings.enableRowScale;
+        }
+        updateRowScaleUI();
+
+        const active = getActiveEmotions();
+        const { rows } = computeLayout(active.length);
+        for (let r = 0; r < rows; r++) {
+            const slider = document.getElementById(`scaleYRow${r}`);
+            if (slider && settings[`scaleYRow${r}`] !== undefined) {
+                slider.value = settings[`scaleYRow${r}`];
+                const targetHVal = Math.round(targetH * 100 / slider.value);
+                document.getElementById(`scaleYRow${r}Val`).innerText = `${slider.value}% (${targetHVal}px)`;
+            }
+        }
+
+        syncAllLabels();
+    }
+
+    function getCellHeightForRow(r) {
+        const checkbox = document.getElementById('enableRowScale');
+        if (checkbox && checkbox.checked) {
+            const slider = document.getElementById(`scaleYRow${r}`);
+            if (slider) {
+                const sY = parseInt(slider.value) || 100;
+                return targetH * 100 / sY;
+            }
+        }
+        const globalScaleY = parseInt(scaleYInput.value) || 100;
+        return targetH * 100 / globalScaleY;
+    }
+
+    function updateRowScaleUI() {
+        const checkbox = document.getElementById('enableRowScale');
+        const container = document.getElementById('rowScaleContainer');
+        if (!checkbox || !container) return;
+
+        if (!checkbox.checked) {
+            container.style.display = 'none';
+            return;
+        }
+
+        container.style.display = 'flex';
+        const active = getActiveEmotions();
+        const { rows } = computeLayout(active.length);
+
+        const existingValues = [];
+        for (let r = 0; r < rows; r++) {
+            const existing = document.getElementById(`scaleYRow${r}`);
+            existingValues.push(existing ? existing.value : scaleYInput.value);
+        }
+
+        container.innerHTML = '';
+        for (let r = 0; r < rows; r++) {
+            const group = document.createElement('div');
+            group.className = 'control-group';
+            group.style.marginBottom = '8px';
+
+            const val = existingValues[r] || scaleYInput.value;
+            const targetHVal = Math.round(targetH * 100 / val);
+            group.innerHTML = `
+                <label for="scaleYRow${r}">Row ${r + 1} Y Scale <span class="range-val" id="scaleYRow${r}Val">${val}% (${targetHVal}px)</span></label>
+                <input type="range" id="scaleYRow${r}" min="25" max="400" value="${val}">
+            `;
+            container.appendChild(group);
+
+            const input = group.querySelector('input');
+            input.addEventListener('input', () => {
+                const currentVal = input.value;
+                document.getElementById(`scaleYRow${r}Val`).innerText = `${currentVal}% (${Math.round(targetH * 100 / currentVal)}px)`;
+                if (imageLoaded) {
+                    updateGrid();
+                    saveSettingsForCurrentFile();
+                }
+            });
+        }
+    }
+
+    function syncAllLabels() {
+        document.getElementById('offsetXVal').innerText = `${offsetXInput.value}px`;
+        document.getElementById('offsetYVal').innerText = `${offsetYInput.value}px`;
+        document.getElementById('gapXVal').innerText = `${gapXInput.value}px`;
+        document.getElementById('gapYVal').innerText = `${gapYInput.value}px`;
+        const { w, h } = getCellSize();
+        document.getElementById('scaleXVal').innerText = `${scaleXInput.value}% (${Math.round(w)}px)`;
+        document.getElementById('scaleYVal').innerText = `${scaleYInput.value}% (${Math.round(h)}px)`;
+        document.getElementById('padTopVal').innerText = `${padTopInput.value}px`;
+        document.getElementById('padRightVal').innerText = `${padRightInput.value}px`;
+        document.getElementById('padBottomVal').innerText = `${padBottomInput.value}px`;
+        document.getElementById('padLeftVal').innerText = `${padLeftInput.value}px`;
+    }
+
+    // Wraps a range input with -/+ "rocker" buttons for precise single-step adjustment.
+    // Buttons dispatch a real 'input' event so they reuse the same listeners as dragging.
+    function addRockers(input, step) {
+        const row = document.createElement('div');
+        row.className = 'slider-row';
+        input.parentNode.insertBefore(row, input);
+
+        const dec = document.createElement('button');
+        dec.type = 'button';
+        dec.className = 'rocker-btn';
+        dec.innerText = '−';
+        dec.setAttribute('aria-label', `Decrease ${input.id}`);
+
+        const inc = document.createElement('button');
+        inc.type = 'button';
+        inc.className = 'rocker-btn';
+        inc.innerText = '+';
+        inc.setAttribute('aria-label', `Increase ${input.id}`);
+
+        row.appendChild(dec);
+        row.appendChild(input);
+        row.appendChild(inc);
+
+        function nudge(delta) {
+            const min = parseFloat(input.min);
+            const max = parseFloat(input.max);
+            input.value = clamp((parseFloat(input.value) || 0) + delta, min, max);
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+
+        dec.addEventListener('click', () => nudge(-step));
+        inc.addEventListener('click', () => nudge(step));
+    }
+
+    allSliderInputs.forEach(input => addRockers(input, 1));
+
+    function setAutoStatus(msg) {
+        autoStatus.innerText = msg;
+    }
+
+    function handleImage(e) {
+        const file = e.target.files[0];
+        currentFileName = file.name;
+        const reader = new FileReader();
+        reader.onload = function(event) {
+            img.onload = function() {
+                placeholderText.style.display = 'none';
+                canvas.width = img.width;
+                canvas.height = img.height;
+
+                offsetXInput.max = img.width;
+                offsetYInput.max = img.height;
+                gapXInput.max = Math.floor(img.width / 2);
+                gapYInput.max = Math.floor(img.height / 2);
+
+                setupPreviewDOM();
+                imageLoaded = true;
+                autoFitBtn.disabled = false;
+                openSampleDialogBtn.disabled = false;
+                downloadAllBtn.disabled = getActiveEmotions().length === 0;
+
+                const savedSettings = loadSettingsForFile(currentFileName);
+                if (savedSettings) {
+                    applySettings(savedSettings);
+                    updateGrid();
+                    setAutoStatus(`Restored saved settings for "${currentFileName}".`);
+                } else {
+                    autoFit();
+                }
+            }
+            img.src = event.target.result;
+        }
+        reader.readAsDataURL(e.target.files[0]);
+    }
+
+    // --- Advanced: manual background sample picker ---
+    // Lets the user click a specific spot on the sheet to use as the "Painted" padding
+    // fill, overriding whatever auto-fit picked. Click position is tracked in the
+    // dialog's displayed (CSS pixel) space, then converted to source-image pixel space
+    // using the ratio between the image's natural size and its rendered size.
+    let manualSamplePos = null;
+
+    function openSampleDialog() {
+        if (!imageLoaded) return;
+        modalSheetImg.src = img.src;
+        manualSamplePos = null;
+        modalSelector.style.display = 'none';
+        sampleDialogOverlay.hidden = false;
+    }
+
+    function closeSampleDialog() {
+        sampleDialogOverlay.hidden = true;
+    }
+
+    openSampleDialogBtn.addEventListener('click', openSampleDialog);
+    sampleDialogCancel.addEventListener('click', closeSampleDialog);
+
+    sampleSizeInput.addEventListener('input', () => {
+        document.getElementById('sampleSizeVal').innerText = `${sampleSizeInput.value}px`;
+    });
+    addRockers(sampleSizeInput, 1);
+
+    modalImageWrap.addEventListener('click', (e) => {
+        const rect = modalSheetImg.getBoundingClientRect();
+        const clickX = e.clientX - rect.left;
+        const clickY = e.clientY - rect.top;
+        if (clickX < 0 || clickY < 0 || clickX > rect.width || clickY > rect.height) return;
+
+        const scaleRatio = img.naturalWidth / rect.width;
+        const size = parseInt(sampleSizeInput.value) || 48;
+        const displaySize = size / scaleRatio;
+
+        const dispLeft = clamp(clickX - displaySize / 2, 0, Math.max(0, rect.width - displaySize));
+        const dispTop = clamp(clickY - displaySize / 2, 0, Math.max(0, rect.height - displaySize));
+
+        modalSelector.style.left = `${dispLeft}px`;
+        modalSelector.style.top = `${dispTop}px`;
+        modalSelector.style.width = `${displaySize}px`;
+        modalSelector.style.height = `${displaySize}px`;
+        modalSelector.style.display = 'block';
+
+        manualSamplePos = {
+            x: clamp(Math.round(dispLeft * scaleRatio), 0, Math.max(0, img.naturalWidth - size)),
+            y: clamp(Math.round(dispTop * scaleRatio), 0, Math.max(0, img.naturalHeight - size)),
+            size
+        };
+    });
+
+    sampleDialogApply.addEventListener('click', () => {
+        if (!manualSamplePos) {
+            setAutoStatus('Click a spot on the image first to choose a sample.');
+            return;
+        }
+        const { x, y, size } = manualSamplePos;
+        bgTextureTile = captureTile(img, x, y, size);
+
+        const d = bgTextureTile.getContext('2d').getImageData(0, 0, size, size).data;
+        let rs = 0, gs = 0, bs = 0, n = 0;
+        for (let i = 0; i < d.length; i += 4) { rs += d[i]; gs += d[i + 1]; bs += d[i + 2]; n++; }
+        bgSampleRGB = [rs / n, gs / n, bs / n];
+
+        document.getElementById('paddingModePainted').checked = true;
+        closeSampleDialog();
+        updateGrid();
+        saveSettingsForCurrentFile();
+        setAutoStatus('Custom background sample applied.');
+    });
+
+    function getPaddingMode() {
+        const checked = document.querySelector('input[name="paddingMode"]:checked');
+        return checked ? checked.value : 'alpha';
+    }
+
+    // Renders one crop into targetCtx, insetting the scaled source content by the
+    // per-side padding sliders. "Alpha" leaves the border transparent; "Painted" fills
+    // it with the background sampled by the last auto-fit run (or a manual pick), and
+    // feathers the image's own edges into that fill wherever a pad is present so the
+    // transition isn't a hard rectangular cut.
+    function renderCropInto(box, targetCtx) {
+        const padTop = parseInt(padTopInput.value) || 0;
+        const padRight = parseInt(padRightInput.value) || 0;
+        const padBottom = parseInt(padBottomInput.value) || 0;
+        const padLeft = parseInt(padLeftInput.value) || 0;
+        const painted = getPaddingMode() === 'painted';
+
+        targetCtx.clearRect(0, 0, targetW, targetH);
+
+        if (painted) {
+            if (bgTextureTile) {
+                // Tiling a real sampled patch (rather than a flat average) carries the
+                // paper grain/noise into the fill instead of leaving a smooth block.
+                targetCtx.fillStyle = targetCtx.createPattern(bgTextureTile, 'repeat');
+            } else {
+                const [r, g, b] = bgSampleRGB || [40, 40, 40];
+                targetCtx.fillStyle = `rgb(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)})`;
+            }
+            targetCtx.fillRect(0, 0, targetW, targetH);
+        }
+
+        const drawW = Math.max(1, targetW - padLeft - padRight);
+        const drawH = Math.max(1, targetH - padTop - padBottom);
+        const hasPad = padTop > 0 || padRight > 0 || padBottom > 0 || padLeft > 0;
+
+        if (painted && hasPad) {
+            const off = document.createElement('canvas');
+            off.width = drawW;
+            off.height = drawH;
+            off.getContext('2d').drawImage(img, box.x, box.y, box.w, box.h, 0, 0, drawW, drawH);
+            featherEdges(off, featherWidth(padTop), featherWidth(padRight), featherWidth(padBottom), featherWidth(padLeft));
+            targetCtx.drawImage(off, padLeft, padTop);
+        } else {
+            targetCtx.drawImage(img, box.x, box.y, box.w, box.h, padLeft, padTop, drawW, drawH);
+        }
+    }
+
+    // Half the pad's width, clamped to a sensible range - wide enough to read as a
+    // blend rather than a line, capped so a huge pad doesn't eat too much of the photo.
+    function featherWidth(padSize) {
+        return padSize > 0 ? clamp(Math.round(padSize * 0.5), 4, 40) : 0;
+    }
+
+    // Fades canvas alpha toward transparent near each edge that has a nonzero feather
+    // width (0 = that edge stays a hard cut, e.g. no pad on that side). The two axis
+    // fades multiply together so corners taper smoothly instead of meeting at a bevel.
+    function featherEdges(canvas, fTop, fRight, fBottom, fLeft) {
+        if (fTop <= 0 && fRight <= 0 && fBottom <= 0 && fLeft <= 0) return;
+        const w = canvas.width, h = canvas.height;
+        const cctx = canvas.getContext('2d');
+        const imageData = cctx.getImageData(0, 0, w, h);
+        const d = imageData.data;
+
+        for (let y = 0; y < h; y++) {
+            let vFade = 1;
+            if (fTop > 0 && y < fTop) vFade = y / fTop;
+            if (fBottom > 0 && y >= h - fBottom) vFade = Math.min(vFade, (h - 1 - y) / fBottom);
+            for (let x = 0; x < w; x++) {
+                let hFade = 1;
+                if (fLeft > 0 && x < fLeft) hFade = x / fLeft;
+                if (fRight > 0 && x >= w - fRight) hFade = Math.min(hFade, (w - 1 - x) / fRight);
+                const fade = clamp(vFade * hFade, 0, 1);
+                if (fade < 1) {
+                    const idx = (y * w + x) * 4 + 3;
+                    d[idx] = Math.round(d[idx] * fade);
+                }
+            }
+        }
+
+        cctx.putImageData(imageData, 0, 0);
+    }
+
+    function calculateBoxCoords() {
+        const ox = parseInt(offsetXInput.value);
+        const oy = parseInt(offsetYInput.value);
+        const gx = parseInt(gapXInput.value);
+        const gy = parseInt(gapYInput.value);
+        const { w: cellW } = getCellSize();
+        const active = getActiveEmotions();
+        const { cols } = computeLayout(active.length);
+
+        // Pre-calculate heights and Y offsets for each row
+        const rowHeights = [];
+        const rowYOffsets = [];
+        let currentY = oy;
+        const { rows } = computeLayout(active.length);
+        for (let r = 0; r < rows; r++) {
+            const h = getCellHeightForRow(r);
+            rowHeights.push(h);
+            rowYOffsets.push(currentY);
+            currentY += h + gy;
+        }
+
+        return active.map((emotion, index) => {
+            const r = Math.floor(index / cols);
+            const c = index % cols;
+            return {
+                x: ox + c * (cellW + gx),
+                y: rowYOffsets[r],
+                w: cellW,
+                h: rowHeights[r],
+                emotion: emotion.id
+            };
+        });
+    }
+
+    function updateGrid() {
+        if (!imageLoaded) return;
+
+        // Draw background layout image
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0);
+
+        const boxes = calculateBoxCoords();
+
+        boxes.forEach((box, index) => {
+            // Draw overlay bounding box on main viewport - using high contrast Neon Cyan
+            ctx.strokeStyle = '#00ffcc';
+            ctx.lineWidth = 3;
+            ctx.strokeRect(box.x, box.y, box.w, box.h);
+
+            ctx.fillStyle = 'rgba(0, 255, 204, 0.08)';
+            ctx.fillRect(box.x, box.y, box.w, box.h);
+
+            // Fast crop via reusing single offscreen canvas context (source box size can
+            // differ from the target output size - drawImage handles the up/downscale)
+            renderCropInto(box, cropCtx);
+
+            // Dom Update strictly targets the source attribute instead of ripping out nodes
+            const imgElement = document.getElementById(`preview-${index}`);
+            if (imgElement) {
+                imgElement.src = cropCanvas.toDataURL('image/png');
+            }
+        });
+    }
+
+    downloadAllBtn.addEventListener('click', () => {
+        const boxes = calculateBoxCoords();
+
+        boxes.forEach((box, index) => {
+            renderCropInto(box, cropCtx);
+
+            const link = document.createElement('a');
+            link.download = `${box.emotion}.png`;
+            link.href = cropCanvas.toDataURL('image/png');
+
+            setTimeout(() => {
+                link.click();
+            }, index * 200);
+        });
+    });
+
+    // --- Auto-fit ---
+    // Detects the bounding box of non-background content in the sheet, then derives an
+    // offset/scale grid assuming the active emotions fill that box in row-major order.
+    // Runs a bounded 3-pass refinement (tightening stride + search region each pass) and
+    // gives up rather than iterating indefinitely, since sheet layouts vary too much to
+    // guarantee convergence.
+    function detectBBoxInRegion(w, h, isBackground, region, stride) {
+        let minX = region.x1, minY = region.y1, maxX = region.x0, maxY = region.y0, found = false;
+        for (let y = region.y0; y < region.y1; y += stride) {
+            for (let x = region.x0; x < region.x1; x += stride) {
+                if (!isBackground(x, y)) {
+                    found = true;
+                    if (x < minX) minX = x;
+                    if (x > maxX) maxX = x;
+                    if (y < minY) minY = y;
+                    if (y > maxY) maxY = y;
+                }
+            }
+        }
+        return found ? { x: minX, y: minY, w: maxX - minX, h: maxY - minY } : null;
+    }
+
+    function autoFit() {
+        if (!imageLoaded) return;
+        setAutoStatus('Auto-fitting...');
+
+        const active = getActiveEmotions();
+        if (active.length === 0) {
+            setAutoStatus('Select at least one emotion category to auto-fit.');
+            updateGrid();
+            return;
+        }
+
+        try {
+            runAutoFit(active);
+        } catch (err) {
+            console.error('Auto-fit failed:', err);
+            setAutoStatus(`Auto-fit hit an error (${err.message}) — adjust sliders manually.`);
+            updateGrid();
+        }
+    }
+
+    function runAutoFit(active) {
+        const w = img.width, h = img.height;
+        const scanCanvas = document.createElement('canvas');
+        scanCanvas.width = w;
+        scanCanvas.height = h;
+        const sctx = scanCanvas.getContext('2d');
+        sctx.drawImage(img, 0, 0);
+        const data = sctx.getImageData(0, 0, w, h).data;
+
+        function pixelAt(x, y) {
+            const i = (y * w + x) * 4;
+            return [data[i], data[i + 1], data[i + 2], data[i + 3]];
+        }
+
+        // Average a small patch instead of a single pixel so paper grain/noise in a
+        // textured background doesn't skew the reference off a single outlier pixel.
+        function patchAvg(x0, y0) {
+            let r = 0, g = 0, b = 0, a = 0, n = 0;
+            for (let dy = 0; dy < 6; dy++) {
+                for (let dx = 0; dx < 6; dx++) {
+                    const [pr, pg, pb, pa] = pixelAt(clamp(x0 + dx, 0, w - 1), clamp(y0 + dy, 0, h - 1));
+                    r += pr; g += pg; b += pb; a += pa; n++;
+                }
+            }
+            return [r / n, g / n, b / n, a / n];
+        }
+
+        const corners = [patchAvg(0, 0), patchAvg(w - 6, 0), patchAvg(0, h - 6), patchAvg(w - 6, h - 6)];
+        const avgAlpha = corners.reduce((s, c) => s + c[3], 0) / 4;
+        const useAlpha = avgAlpha < 10;
+        const bg = [
+            corners.reduce((s, c) => s + c[0], 0) / 4,
+            corners.reduce((s, c) => s + c[1], 0) / 4,
+            corners.reduce((s, c) => s + c[2], 0) / 4
+        ];
+        // Feeds the "Painted" padding fill mode, independent of whether bbox detection
+        // below succeeds - a useful background sample exists even if the grid doesn't.
+        bgSampleRGB = useAlpha ? null : bg;
+        // Textured/painted backgrounds have real pixel-to-pixel grain (observed ~45 on real
+        // assets), while actual portrait content (skin, hair, linework) differs by 100+.
+        // 65 sits safely between the two so grain isn't mistaken for content.
+        const COLOR_THRESHOLD = 65;
+
+        function isBackground(x, y) {
+            const [r, g, b, a] = pixelAt(x, y);
+            if (a < 10) return true;
+            if (useAlpha) return false;
+            return (Math.abs(r - bg[0]) + Math.abs(g - bg[1]) + Math.abs(b - bg[2])) < COLOR_THRESHOLD;
+        }
+
+        let region = { x0: 0, y0: 0, x1: w, y1: h };
+        let bbox = null;
+        const strides = [
+            Math.max(1, Math.floor(Math.max(w, h) / 400)),
+            Math.max(1, Math.floor(Math.max(w, h) / 1200)),
+            1
+        ];
+
+        for (let pass = 0; pass < 3; pass++) {
+            const found = detectBBoxInRegion(w, h, isBackground, region, strides[pass]);
+            if (!found) { bbox = null; break; }
+            bbox = found;
+            const padX = Math.max(4, Math.round(bbox.w * 0.05));
+            const padY = Math.max(4, Math.round(bbox.h * 0.05));
+            region = {
+                x0: Math.max(0, bbox.x - padX),
+                y0: Math.max(0, bbox.y - padY),
+                x1: Math.min(w, bbox.x + bbox.w + padX),
+                y1: Math.min(h, bbox.y + bbox.h + padY)
+            };
+        }
+
+        if (!bbox || bbox.w < 20 || bbox.h < 20) {
+            setAutoStatus("Couldn't confidently find image borders — adjust sliders manually.");
+            updateGrid();
+            return;
+        }
+
+        // Filter out text labels beneath character portraits (usually very short vertical segments of content)
+        const rowDensities = [];
+        const threshold = bbox.w * 0.02; // 2% of bounding box width
+        for (let y = bbox.y; y < bbox.y + bbox.h; y++) {
+            let nonBgCount = 0;
+            for (let x = bbox.x; x < bbox.x + bbox.w; x++) {
+                if (!isBackground(x, y)) {
+                    nonBgCount++;
+                }
+            }
+            rowDensities.push(nonBgCount);
+        }
+
+        const segments = [];
+        let inSegment = false;
+        let startY = 0;
+        for (let i = 0; i < rowDensities.length; i++) {
+            const hasContent = rowDensities[i] >= threshold;
+            if (hasContent && !inSegment) {
+                inSegment = true;
+                startY = bbox.y + i;
+            } else if (!hasContent && inSegment) {
+                inSegment = false;
+                segments.push({ y: startY, h: (bbox.y + i) - startY });
+            }
+        }
+        if (inSegment) {
+            segments.push({ y: startY, h: (bbox.y + rowDensities.length) - startY });
+        }
+
+        // Portraits should be at least 100px tall, filter out shorter segments (like label text)
+        const portraitSegments = segments.filter(seg => seg.h >= 100);
+        
+        let cellH = 0;
+        let detectedGy = parseInt(gapYInput.value) || 0;
+
+        if (portraitSegments.length > 0) {
+            cellH = portraitSegments.reduce((sum, s) => sum + s.h, 0) / portraitSegments.length;
+            if (portraitSegments.length > 1) {
+                let sumGaps = 0;
+                for (let i = 0; i < portraitSegments.length - 1; i++) {
+                    sumGaps += portraitSegments[i+1].y - (portraitSegments[i].y + portraitSegments[i].h);
+                }
+                detectedGy = sumGaps / (portraitSegments.length - 1);
+            }
+            const newMinY = portraitSegments[0].y;
+            const newMaxY = portraitSegments[portraitSegments.length - 1].y + portraitSegments[portraitSegments.length - 1].h;
+            bbox.h = newMaxY - newMinY;
+            bbox.y = newMinY;
+        } else {
+            const { rows } = computeLayout(active.length);
+            cellH = (bbox.h - (rows - 1) * detectedGy) / rows;
+        }
+
+        // Horizontal column detection
+        const colDensities = [];
+        const colThreshold = bbox.h * 0.02; // 2% of the portrait vertical span
+        for (let x = bbox.x; x < bbox.x + bbox.w; x++) {
+            let nonBgCount = 0;
+            for (let y = bbox.y; y < bbox.y + bbox.h; y++) {
+                if (!isBackground(x, y)) {
+                    nonBgCount++;
+                }
+            }
+            colDensities.push(nonBgCount);
+        }
+
+        const xSegments = [];
+        let inXSegment = false;
+        let startX = 0;
+        for (let i = 0; i < colDensities.length; i++) {
+            const hasContent = colDensities[i] >= colThreshold;
+            if (hasContent && !inXSegment) {
+                inXSegment = true;
+                startX = bbox.x + i;
+            } else if (!hasContent && inXSegment) {
+                inXSegment = false;
+                xSegments.push({ x: startX, w: (bbox.x + i) - startX });
+            }
+        }
+        if (inXSegment) {
+            xSegments.push({ x: startX, w: (bbox.x + colDensities.length) - startX });
+        }
+
+        const portraitCols = xSegments.filter(seg => seg.w >= 50);
+        let cellW = 0;
+        let detectedGx = parseInt(gapXInput.value) || 0;
+
+        if (portraitCols.length > 0) {
+            cellW = portraitCols.reduce((sum, s) => sum + s.w, 0) / portraitCols.length;
+            if (portraitCols.length > 1) {
+                let sumGaps = 0;
+                for (let i = 0; i < portraitCols.length - 1; i++) {
+                    sumGaps += portraitCols[i+1].x - (portraitCols[i].x + portraitCols[i].w);
+                }
+                detectedGx = sumGaps / (portraitCols.length - 1);
+            }
+            bbox.x = portraitCols[0].x;
+            bbox.w = (portraitCols[portraitCols.length - 1].x + portraitCols[portraitCols.length - 1].w) - portraitCols[0].x;
+        } else {
+            const { cols } = computeLayout(active.length);
+            cellW = (bbox.w - (cols - 1) * detectedGx) / cols;
+        }
+
+        if (!(cellW > 10 && cellH > 10 && cellW <= w && cellH <= h)) {
+            setAutoStatus("Couldn't derive a sensible grid from this image — adjust sliders manually.");
+            updateGrid();
+            return;
+        }
+
+        offsetXInput.max = Math.max(parseInt(offsetXInput.max) || 0, w);
+        offsetYInput.max = Math.max(parseInt(offsetYInput.max) || 0, h);
+        gapXInput.max = Math.max(parseInt(gapXInput.max) || 0, w);
+        gapYInput.max = Math.max(parseInt(gapYInput.max) || 0, h);
+
+        offsetXInput.value = Math.round(bbox.x);
+        offsetYInput.value = Math.round(bbox.y);
+        gapXInput.value = Math.round(detectedGx);
+        gapYInput.value = Math.round(detectedGy);
+        scaleXInput.value = clamp(Math.round((targetW / cellW) * 100), parseInt(scaleXInput.min), parseInt(scaleXInput.max));
+        scaleYInput.value = clamp(Math.round((targetH / cellH) * 100), parseInt(scaleYInput.min), parseInt(scaleYInput.max));
+
+        const enableRowScaleCheckbox = document.getElementById('enableRowScale');
+        if (enableRowScaleCheckbox) {
+            if (portraitSegments.length > 1) {
+                enableRowScaleCheckbox.checked = true;
+                updateRowScaleUI();
+                for (let r = 0; r < portraitSegments.length; r++) {
+                    const slider = document.getElementById(`scaleYRow${r}`);
+                    if (slider) {
+                        const calculatedScale = clamp(Math.round((targetH / portraitSegments[r].h) * 100), parseInt(slider.min), parseInt(slider.max));
+                        slider.value = calculatedScale;
+                        const targetHVal = Math.round(targetH * 100 / calculatedScale);
+                        document.getElementById(`scaleYRow${r}Val`).innerText = `${calculatedScale}% (${targetHVal}px)`;
+                    }
+                }
+            } else {
+                enableRowScaleCheckbox.checked = false;
+                updateRowScaleUI();
+            }
+        }
+
+        // scaleX/scaleY above independently describe how much each axis of the detected
+        // cell needs to grow to fill the target - which, on its own, stretches the image
+        // non-uniformly whenever the cell's aspect ratio doesn't match 328:468. Instead of
+        // stretching, scale uniformly (the smaller of the two factors, so neither axis
+        // overflows) and push whatever's left over into symmetric padding on the shorter
+        // axis - the crop source (cellW/cellH via scaleX/scaleY) is unchanged, only how
+        // much of the target canvas it's drawn into shrinks to preserve its shape.
+        const uniformScale = Math.min(targetW / cellW, targetH / cellH);
+        const letterboxX = Math.round(Math.max(0, targetW - cellW * uniformScale) / 2);
+        const letterboxY = Math.round(Math.max(0, targetH - cellH * uniformScale) / 2);
+        padLeftInput.value = clamp(letterboxX, parseInt(padLeftInput.min), parseInt(padLeftInput.max));
+        padRightInput.value = clamp(letterboxX, parseInt(padRightInput.min), parseInt(padRightInput.max));
+        padTopInput.value = clamp(letterboxY, parseInt(padTopInput.min), parseInt(padTopInput.max));
+        padBottomInput.value = clamp(letterboxY, parseInt(padBottomInput.min), parseInt(padBottomInput.max));
+
+        // Now that the grid geometry is known, capture a real background patch for the
+        // "Painted" fill. Sheet-level decorative borders (a repeating tick/dot motif,
+        // etc.) often run only along the outer edge, so a naive corner sample can catch
+        // a fragment of that border and tile it as an obvious repeating artifact.
+        bgTextureTile = useAlpha ? null : findBackgroundTile(scanCanvas, w, h, bbox, cellW, cellH, detectedGx, detectedGy);
+
+        syncAllLabels();
+        updateGrid();
+        setAutoStatus('Auto-fit applied (padding used to preserve aspect ratio) — fine-tune sliders if needed.');
+    }
+
+    // Tries several candidate spots for a clean background sample - the inter-cell gaps
+    // first (least likely to touch any outer decorative border), then the four sheet
+    // corners - and returns whichever has the lowest internal color variance. Returns
+    // null if nothing found is plausibly pure background, so callers fall back to a
+    // flat average-color fill instead of tiling a fragment of real artwork.
+    const TILE_VARIANCE_LIMIT = 65;
+
+    function captureTile(sourceCanvas, x, y, size) {
+        const tile = document.createElement('canvas');
+        tile.width = size;
+        tile.height = size;
+        tile.getContext('2d').drawImage(sourceCanvas, x, y, size, size, 0, 0, size, size);
+        return tile;
+    }
+
+    function tileMaxDeviation(tileCanvas) {
+        const d = tileCanvas.getContext('2d').getImageData(0, 0, tileCanvas.width, tileCanvas.height).data;
+        let rs = 0, gs = 0, bs = 0, n = 0;
+        for (let i = 0; i < d.length; i += 4) { rs += d[i]; gs += d[i + 1]; bs += d[i + 2]; n++; }
+        const mr = rs / n, mg = gs / n, mb = bs / n;
+        let maxDist = 0;
+        for (let i = 0; i < d.length; i += 4) {
+            const dist = Math.abs(d[i] - mr) + Math.abs(d[i + 1] - mg) + Math.abs(d[i + 2] - mb);
+            if (dist > maxDist) maxDist = dist;
+        }
+        return maxDist;
+    }
+
+    function findBackgroundTile(sourceCanvas, w, h, bbox, cellW, cellH, gx, gy) {
+        const maxSize = 48;
+        const candidates = [];
+
+        if (gx >= 12) {
+            const size = clamp(Math.floor(gx * 0.7), 8, maxSize);
+            candidates.push([
+                clamp(Math.round(bbox.x + cellW + gx / 2 - size / 2), 0, w - size),
+                clamp(Math.round(bbox.y + cellH / 2 - size / 2), 0, h - size),
+                size
+            ]);
+        }
+        if (gy >= 12) {
+            const size = clamp(Math.floor(gy * 0.7), 8, maxSize);
+            candidates.push([
+                clamp(Math.round(bbox.x + cellW / 2 - size / 2), 0, w - size),
+                clamp(Math.round(bbox.y + cellH + gy / 2 - size / 2), 0, h - size),
+                size
+            ]);
+        }
+
+        const cornerSize = Math.max(8, Math.min(maxSize, w, h));
+        candidates.push([0, 0, cornerSize]);
+        candidates.push([w - cornerSize, 0, cornerSize]);
+        candidates.push([0, h - cornerSize, cornerSize]);
+        candidates.push([w - cornerSize, h - cornerSize, cornerSize]);
+
+        let best = null;
+        let bestDeviation = Infinity;
+        for (const [x, y, size] of candidates) {
+            const tile = captureTile(sourceCanvas, x, y, size);
+            const deviation = tileMaxDeviation(tile);
+            if (deviation < bestDeviation) {
+                bestDeviation = deviation;
+                best = tile;
+            }
+        }
+
+        return bestDeviation < TILE_VARIANCE_LIMIT ? best : null;
+    }
+</script>
+</body>
+</html>
