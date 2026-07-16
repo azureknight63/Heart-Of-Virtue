@@ -13,6 +13,8 @@ from flask import Blueprint, current_app, jsonify, request
 
 from src.api.services.validators import (
     validate_item_index,
+    coerce_optional_index,
+    ensure_dict,
 )
 from src.api.serializers.inventory import (
     EquipmentSerializer,
@@ -156,7 +158,7 @@ def drop_item():
         return error
 
     try:
-        data = request.get_json() or {}
+        data = ensure_dict(request.get_json(silent=True))
 
         # Get item ID or index from request
         item_id = data.get("item_id")
@@ -167,6 +169,12 @@ def drop_item():
                 jsonify({"success": False, "error": "Missing item_id or item_index"}),
                 400,
             )
+
+        # Coerce a supplied index to int so a non-numeric value yields a 400
+        # instead of a downstream TypeError (HTTP 500) in get_item_and_index.
+        item_index, idx_error = coerce_optional_index(item_index)
+        if idx_error:
+            return jsonify({"success": False, "error": idx_error}), 400
 
         # Find the item
         item_to_drop, _actual_index = get_item_and_index(player, item_id, item_index)
@@ -237,7 +245,7 @@ def equip_item():
         return error
 
     try:
-        data = request.get_json() or {}
+        data = ensure_dict(request.get_json(silent=True))
 
         # Get item ID or index from request
         item_id = data.get("item_id")
@@ -248,6 +256,12 @@ def equip_item():
                 jsonify({"success": False, "error": "Missing item_id or item_index"}),
                 400,
             )
+
+        # Coerce a supplied index to int so a non-numeric value yields a 400
+        # instead of a downstream TypeError (HTTP 500) in get_item_and_index.
+        item_index, idx_error = coerce_optional_index(item_index)
+        if idx_error:
+            return jsonify({"success": False, "error": idx_error}), 400
 
         # Find the item
         item, _actual_index = get_item_and_index(player, item_id, item_index)
@@ -301,7 +315,7 @@ def use_item():
         return error
 
     try:
-        data = request.get_json() or {}
+        data = ensure_dict(request.get_json(silent=True))
 
         # Get item ID or index from request
         item_id = data.get("item_id")
@@ -313,6 +327,12 @@ def use_item():
                 jsonify({"success": False, "error": "Missing item_id or item_index"}),
                 400,
             )
+
+        # Coerce a supplied index to int so a non-numeric value yields a 400
+        # instead of a downstream TypeError (HTTP 500) in get_item_and_index.
+        item_index, idx_error = coerce_optional_index(item_index)
+        if idx_error:
+            return jsonify({"success": False, "error": idx_error}), 400
 
         # Find the item
         item, _actual_index = get_item_and_index(player, item_id, item_index)
@@ -387,7 +407,7 @@ def unequip_item():
         return error
 
     try:
-        data = request.get_json() or {}
+        data = ensure_dict(request.get_json(silent=True))
 
         item_id = data.get("item_id")
         item_index = data.get("item_index")
@@ -397,6 +417,12 @@ def unequip_item():
                 jsonify({"success": False, "error": "Missing item_id or item_index"}),
                 400,
             )
+
+        # Coerce a supplied index to int so a non-numeric value yields a 400
+        # instead of a downstream TypeError (HTTP 500) in get_item_and_index.
+        item_index, idx_error = coerce_optional_index(item_index)
+        if idx_error:
+            return jsonify({"success": False, "error": idx_error}), 400
 
         # Find the item
         item, _actual_index = get_item_and_index(player, item_id, item_index)

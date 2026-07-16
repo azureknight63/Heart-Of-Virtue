@@ -13,6 +13,36 @@ from src.api.middleware.auth import get_session_and_player
 
 npc_chat_bp = Blueprint("npc_chat", __name__)
 
+# Upper bound on any single free-text / identifier field accepted from the
+# client. Both streams here are untrusted (player free-text and NPC keys), so
+# a pathological multi-megabyte payload is truncated to this length rather than
+# forwarded verbatim into the LLM prompt or NPC lookup. Chosen generously so
+# no legitimate dialogue line is ever clipped.
+_MAX_FIELD_LEN = 4000
+
+
+def _string_field(data, key, default=""):
+    """Safely extract a stripped string field from an untrusted JSON body.
+
+    ``request.get_json()`` can yield any JSON type for a given key, so calling
+    ``.strip()`` on the raw value 500s when the client sends a number, list,
+    object, or bool. This coerces defensively:
+
+    - a missing key yields ``default``;
+    - a non-string value is treated as *missing* (returns ``default``) rather
+      than crashing — an invalid type is not a valid identifier or message;
+    - an oversized string is truncated to :data:`_MAX_FIELD_LEN`.
+
+    The result is whitespace-stripped so downstream "required" checks still
+    reject empty/whitespace input with a 400.
+    """
+    # A JSON body can parse to a non-object (string/number/list); guard so
+    # ``.get`` is only called on a dict, otherwise treat the field as missing.
+    value = data.get(key, default) if isinstance(data, dict) else default
+    if not isinstance(value, str):
+        value = default
+    return value[:_MAX_FIELD_LEN].strip()
+
 
 @npc_chat_bp.route("/open", methods=["POST"])
 def npc_chat_open():
@@ -37,7 +67,7 @@ def npc_chat_open():
     except Exception:
         return jsonify({"success": False, "error": "Invalid JSON"}), 400
 
-    npc_id = data.get("npc_id", "").strip()
+    npc_id = _string_field(data, "npc_id")
     if not npc_id:
         return jsonify({"success": False, "error": "npc_id is required"}), 400
 
@@ -76,9 +106,9 @@ def npc_chat_respond():
     except Exception:
         return jsonify({"success": False, "error": "Invalid JSON"}), 400
 
-    npc_key = data.get("npc_key", "").strip()
-    jean_text = data.get("jean_text", "").strip()
-    jean_tone = data.get("jean_tone", "direct").strip()
+    npc_key = _string_field(data, "npc_key")
+    jean_text = _string_field(data, "jean_text")
+    jean_tone = _string_field(data, "jean_tone", "direct") or "direct"
 
     if not npc_key:
         return jsonify({"success": False, "error": "npc_key is required"}), 400
@@ -120,7 +150,7 @@ def npc_chat_end():
     except Exception:
         return jsonify({"success": False, "error": "Invalid JSON"}), 400
 
-    npc_key = data.get("npc_key", "").strip()
+    npc_key = _string_field(data, "npc_key")
     if not npc_key:
         return jsonify({"success": False, "error": "npc_key is required"}), 400
 
@@ -149,7 +179,9 @@ def npc_chat_history(npc_key):
     if error:
         return error
 
-    npc_key = npc_key.strip()
+    # npc_key arrives as a URL path segment (always a str); still bound its
+    # length so a pathological identifier can't be forwarded verbatim.
+    npc_key = (npc_key or "")[:_MAX_FIELD_LEN].strip()
     if not npc_key:
         return jsonify({"success": False, "error": "npc_key is required"}), 400
 

@@ -55,13 +55,15 @@ def receive_browser_logs():
     }
     """
     try:
-        data = request.get_json()
+        data = request.get_json(silent=True)
 
-        if not data or "logs" not in data:
+        # A non-object body (string/number/list/null/bool) has no "logs"; treat
+        # it as a bad request rather than letting ``in``/``.get`` raise a 500.
+        if not isinstance(data, dict) or "logs" not in data:
             return jsonify({"error": "No logs provided"}), 400
 
         logs = data.get("logs", [])
-        session_id = data.get("session_id", "unknown")
+        session_id = str(data.get("session_id", "unknown"))
 
         if not logs:
             return jsonify({"message": "No logs to write"}), 200
@@ -142,26 +144,42 @@ def list_browser_log_files():
         return jsonify({"error": "Failed to list log files"}), 500
 
 
+def _resolve_log_file(filename):
+    """Resolve an attacker-supplied log filename to a path inside LOGS_DIR.
+
+    Returns ``(path, None)`` for a real, in-directory log file, or
+    ``(None, (response, status))`` describing a structured 4xx for a hostile
+    name: directory-traversal segments (``.``/``..``), an over-long name (a
+    filesystem ``ENAMETOOLONG`` would otherwise surface as a 500), or a name
+    that does not resolve to a regular file. Never raises.
+    """
+    safe_filename = os.path.basename(filename or "")
+    if not safe_filename or safe_filename in (".", "..") or len(safe_filename) > 255:
+        return None, (jsonify({"error": "Invalid log filename"}), 400)
+    log_filepath = LOGS_DIR / safe_filename
+    try:
+        is_file = log_filepath.is_file()
+    except OSError:
+        return None, (jsonify({"error": "Invalid log filename"}), 400)
+    if not is_file:
+        return None, (jsonify({"error": "Log file not found"}), 404)
+    return log_filepath, None
+
+
 @logs_bp.route("/browser/files/<filename>", methods=["GET"])
 def get_browser_log_file(filename):
     """
     Retrieve the contents of a specific browser log file
     """
     _require_testing()
+    log_filepath, error = _resolve_log_file(filename)
+    if error:
+        return error
     try:
-        # Sanitize filename to prevent directory traversal
-        safe_filename = os.path.basename(filename)
-        log_filepath = LOGS_DIR / safe_filename
-
-        if not log_filepath.exists():
-            return jsonify({"error": "Log file not found"}), 404
-
         with open(log_filepath, "r", encoding="utf-8") as f:
             content = f.read()
-
-        return jsonify({"filename": safe_filename, "content": content}), 200
-
-    except Exception as e:
+        return jsonify({"filename": log_filepath.name, "content": content}), 200
+    except OSError as e:
         print(f"Error reading browser log file: {str(e)}")
         return jsonify({"error": "Failed to read log file"}), 500
 
@@ -179,13 +197,28 @@ def cleanup_logs():
     """
     _require_testing()
     try:
-        data = request.get_json() if request.is_json else {}
+        raw = request.get_json(silent=True)
+        # A JSON body can parse to any type (string, number, list, null); coerce
+        # a non-object to {} so the .get() calls below never crash with a 500.
+        data = raw if isinstance(raw, dict) else {}
 
-        # Create cleanup manager with custom settings if provided
-        retention_days = data.get("retention_days", cleanup_manager.retention_days)
-        max_size_mb = data.get(
-            "max_size_mb", cleanup_manager.max_size_bytes / (1024 * 1024)
-        )
+        # Create cleanup manager with custom settings if provided. Hostile
+        # non-numeric overrides fall back to the manager's defaults rather than
+        # propagating a TypeError into LogCleanupManager.
+        try:
+            retention_days = int(
+                data.get("retention_days", cleanup_manager.retention_days)
+            )
+        except (TypeError, ValueError):
+            retention_days = cleanup_manager.retention_days
+        try:
+            max_size_mb = float(
+                data.get(
+                    "max_size_mb", cleanup_manager.max_size_bytes / (1024 * 1024)
+                )
+            )
+        except (TypeError, ValueError):
+            max_size_mb = cleanup_manager.max_size_bytes / (1024 * 1024)
 
         temp_manager = LogCleanupManager(
             LOGS_DIR, retention_days=retention_days, max_size_mb=max_size_mb
@@ -232,27 +265,21 @@ def delete_browser_log_file(filename):
     Delete a specific browser log file
     """
     _require_testing()
+    log_filepath, error = _resolve_log_file(filename)
+    if error:
+        return error
     try:
-        # Sanitize filename to prevent directory traversal
-        safe_filename = os.path.basename(filename)
-        log_filepath = LOGS_DIR / safe_filename
-
-        if not log_filepath.exists():
-            return jsonify({"error": "Log file not found"}), 404
-
         file_size = log_filepath.stat().st_size
         log_filepath.unlink()
-
         return (
             jsonify(
                 {
-                    "message": f"Successfully deleted {safe_filename}",
+                    "message": f"Successfully deleted {log_filepath.name}",
                     "deleted_size": file_size,
                 }
             ),
             200,
         )
-
-    except Exception as e:
+    except OSError as e:
         print(f"Error deleting browser log file: {str(e)}")
         return jsonify({"error": "Failed to delete log file"}), 500

@@ -87,7 +87,7 @@ def buy_item():
         return error
 
     try:
-        data = request.get_json() or {}
+        data = request.get_json(silent=True) or {}
         is_valid, error_msg = validate_required_fields(data, ["npc_id", "item_id"])
         if not is_valid:
             return jsonify({"success": False, "error": error_msg}), 400
@@ -136,7 +136,7 @@ def sell_item():
         return error
 
     try:
-        data = request.get_json() or {}
+        data = request.get_json(silent=True) or {}
         is_valid, error_msg = validate_required_fields(data, ["npc_id", "item_id"])
         if not is_valid:
             return jsonify({"success": False, "error": error_msg}), 400
@@ -187,7 +187,7 @@ def buyback_item():
         return error
 
     try:
-        data = request.get_json() or {}
+        data = request.get_json(silent=True) or {}
         is_valid, error_msg = validate_required_fields(data, ["npc_id", "item_id"])
         if not is_valid:
             return jsonify({"success": False, "error": error_msg}), 400

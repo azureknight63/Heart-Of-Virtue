@@ -61,8 +61,11 @@ class TestTransferGold:
 
         from_gold = [i for i in from_inv if isinstance(i, Gold)][0]
         to_gold = [i for i in to_inv if isinstance(i, Gold)][0]
+        # A Gold item is created in each inventory. The source held nothing, so
+        # the transfer is clamped to 0 — gold is never created from thin air
+        # (issue #297 conservation fix).
         assert from_gold.amt == 0
-        assert to_gold.amt == 50
+        assert to_gold.amt == 0
 
     def test_moves_amount_between_existing_gold_items(self):
         from_gold = Gold(amt=100)
@@ -75,20 +78,23 @@ class TestTransferGold:
         assert from_gold.amt == 70
         assert to_gold.amt == 40
 
-    def test_clamps_negative_from_amount_to_zero(self):
+    def test_clamps_transfer_to_available_source_amount(self):
         from_gold = Gold(amt=5)
         to_gold = Gold(amt=0)
         from_inv = [from_gold]
         to_inv = [to_gold]
 
+        # Over-transfer: only the 5 actually held moves; gold is conserved and
+        # the source never goes negative (issue #297).
         transfer_gold(from_inv, to_inv, 20)
 
         assert from_gold.amt == 0
-        assert to_gold.amt == 20
+        assert to_gold.amt == 5
 
-    def test_negative_amount_clamps_recipient_to_zero(self):
-        """Covers line 78: a negative transfer can drive the recipient's
-        amount below zero, which must be clamped back to 0."""
+    def test_negative_amount_is_a_noop(self):
+        """A negative transfer amount is clamped to 0 — it is a no-op, not a
+        reverse transfer, so gold is conserved and neither side goes negative
+        (issue #297)."""
         from_gold = Gold(amt=5)
         to_gold = Gold(amt=10)
         from_inv = [from_gold]
@@ -96,8 +102,8 @@ class TestTransferGold:
 
         transfer_gold(from_inv, to_inv, -50)
 
-        assert from_gold.amt == 55
-        assert to_gold.amt == 0
+        assert from_gold.amt == 5
+        assert to_gold.amt == 10
 
     def test_syncs_count_and_calls_stack_grammar(self):
         from_gold = Gold(amt=10)

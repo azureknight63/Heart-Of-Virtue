@@ -1,6 +1,37 @@
 """Serializers for shop/merchant state exposed to the web API."""
 
+import math
 from typing import Any, Dict, List
+
+
+def _effective_modifier(merchant: Any, player: Any, attr: str, base_default: float,
+                        sign: int) -> float:
+    """Compute ``base * (1 + sign * price_mod)`` as a finite float, defensively.
+
+    Shared by the buy/sell modifier helpers. A degraded merchant/player (missing
+    or wrong-type ``buy_modifier``/``sell_modifier``/``reputation``) falls back
+    to a sane finite base rather than raising or returning a non-numeric value —
+    these feed downstream price arithmetic, so they must always be a float
+    (issue #295).
+    """
+    from src.api.serializers.reputation import NPCRelationshipSerializer
+
+    base = getattr(merchant, attr, base_default)
+    try:
+        base = float(base)
+    except (TypeError, ValueError):
+        base = base_default
+    if not math.isfinite(base):
+        base = base_default
+    try:
+        rep_map = getattr(player, "reputation", {})
+        reputation = rep_map.get(getattr(merchant, "name", ""), 0) \
+            if isinstance(rep_map, dict) else 0
+        price_mod = float(NPCRelationshipSerializer.get_price_modifier(reputation))
+        result = base * (1 + sign * price_mod)
+        return result if math.isfinite(result) else base
+    except Exception:  # noqa: BLE001 - reputation math must never break pricing
+        return base
 
 
 def _get_gold(inventory: list) -> int:
@@ -70,13 +101,7 @@ class ShopSerializer:
         by serialize_state and GameService.shop_buy so displayed and charged
         prices always match.
         """
-        from src.api.serializers.reputation import NPCRelationshipSerializer
-
-        base = getattr(merchant, "buy_modifier", 1.0)
-        reputation = getattr(player, "reputation", {}).get(
-            getattr(merchant, "name", ""), 0
-        )
-        return base * (1 - NPCRelationshipSerializer.get_price_modifier(reputation))
+        return _effective_modifier(merchant, player, "buy_modifier", 1.0, sign=-1)
 
     @staticmethod
     def get_effective_sell_modifier(merchant: Any, player: Any) -> float:
@@ -86,13 +111,7 @@ class ShopSerializer:
         serialize_state and GameService.shop_sell so displayed and paid
         prices always match.
         """
-        from src.api.serializers.reputation import NPCRelationshipSerializer
-
-        base = getattr(merchant, "sell_modifier", 0.5)
-        reputation = getattr(player, "reputation", {}).get(
-            getattr(merchant, "name", ""), 0
-        )
-        return base * (1 + NPCRelationshipSerializer.get_price_modifier(reputation))
+        return _effective_modifier(merchant, player, "sell_modifier", 0.5, sign=1)
 
     @staticmethod
     def flush_stale_buyback(merchant: Any, current_game_tick: int) -> None:
