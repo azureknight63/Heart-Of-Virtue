@@ -20,7 +20,10 @@ individual serializers free of repetitive per-field getattr/try guards.
 """
 
 import functools
+import logging
 import math
+
+logger = logging.getLogger(__name__)
 
 _MAX_DEPTH = 40
 
@@ -58,6 +61,16 @@ def _wrap(name, fn):
         try:
             return json_safe(fn(*args, **kwargs))
         except Exception:  # noqa: BLE001 - contract: a serializer never raises
+            # Never propagate, but stay observable: a real serializer regression
+            # (vs a merely degraded object) would otherwise silently return an
+            # empty result in production. Log with the traceback so it's
+            # diagnosable.
+            logger.warning(
+                "serializer %s failed; returning empty %s",
+                getattr(fn, "__qualname__", name),
+                "list" if fallback_list else "dict",
+                exc_info=True,
+            )
             return [] if fallback_list else {}
 
     return wrapper
