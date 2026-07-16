@@ -388,13 +388,6 @@ class Ch02GuideToCitadel(
                     "Votha Krr was quiet a moment. When he spoke again, his voice was the same — "
                     "unhurried, without urgency, as if what he described had already been decided."
                 )
-                say(
-                    "The Grondelith Pools to the southwest. Slimes have found them. They consume "
-                    "the minerals our people require. The corruption is lethal to our kind — we "
-                    "cannot clear them ourselves.",
-                    "Votha Krr",
-                    "neutral",
-                )
                 narrate("He watched Jean's face. Jean wasn't showing much.")
                 say("It would not kill you the same way.", "Votha Krr", "neutral")
                 say("Is it centralized? Or spread through the whole system?", "Jean", "neutral")

@@ -87,8 +87,8 @@ class EasternRoadTurnbackEvent(Event):
             )
             time.sleep(1.5)
             print_slow(
-                "Then Gorran's boots scraped gravel behind him, and whatever the feeling was, "
-                "it passed.\n"
+                "Then the grind of Gorran's step on the gravel behind him, and whatever the "
+                "feeling was, it passed.\n"
             )
             time.sleep(1)
             begin_conversation([("Jean", "left", "neutral")])
