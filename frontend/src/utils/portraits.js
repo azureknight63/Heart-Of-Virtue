@@ -24,7 +24,7 @@ export function assetPath(path) {
 
 export const PLACEHOLDER_PORTRAIT = assetPath('/assets/portraits/_placeholder.png')
 
-export const EMOTIONS = ['neutral', 'happy', 'sad', 'angry', 'surprised', 'skeptical']
+export const EMOTIONS = ['neutral', 'happy', 'sad', 'angry', 'surprised', 'skeptical', 'concerned', 'curious']
 
 /** Normalize a speaker id/name into a filesystem-safe folder slug. */
 export function speakerSlug(speaker) {

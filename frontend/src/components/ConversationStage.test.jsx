@@ -1,6 +1,8 @@
 import { render, screen, fireEvent, act } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import ConversationStage, { computeStage } from './ConversationStage'
+import { portraitUrl } from '../utils/portraits'
+import { portraitManifestPairs } from '../test/portraitManifest'
 
 const CAST = [
     { id: 'Jean', name: 'Jean', side: 'left', emotion: 'neutral' },
@@ -398,4 +400,38 @@ describe('ConversationStage rendering', () => {
         act(() => fireEvent.click(stage)) // last beat complete -> onComplete
         expect(onComplete).toHaveBeenCalledTimes(1)
     })
+})
+
+describe('ConversationStage renders every portrait/expression that exists on disk', () => {
+    beforeEach(() => vi.useFakeTimers())
+    afterEach(() => vi.useRealTimers())
+
+    it.each(portraitManifestPairs())(
+        '%s speaking with emotion "%s" renders the matching portrait image',
+        (character, expression) => {
+            const segments = [
+                {
+                    text: `${character} says something.`,
+                    speaker: character,
+                    emotion: expression,
+                    in_conversation: true,
+                },
+            ]
+            const cast = [{ id: character, name: character, side: 'left', emotion: expression }]
+            render(
+                <ConversationStage
+                    segments={segments}
+                    conversation={{ cast }}
+                    onComplete={vi.fn()}
+                />
+            )
+            act(() => vi.advanceTimersByTime(5000))
+
+            const img = screen.getByAltText(new RegExp(`${character} \\(${expression}\\)`, 'i'))
+            expect(img).toBeInTheDocument()
+            expect(img.getAttribute('src')).toBe(portraitUrl(character, expression))
+            expect(img.dataset.emotion).toBe(expression)
+            expect(img.dataset.speakerSlug).toBe(character)
+        }
+    )
 })

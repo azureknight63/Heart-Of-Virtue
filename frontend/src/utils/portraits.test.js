@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { portraitUrl, assetPath, speakerSlug, normalizeEmotion, handlePortraitError, PLACEHOLDER_PORTRAIT } from './portraits'
+import { portraitUrl, assetPath, speakerSlug, normalizeEmotion, handlePortraitError, PLACEHOLDER_PORTRAIT, EMOTIONS } from './portraits'
+import { scanPortraitManifest, portraitManifestPairs } from '../test/portraitManifest'
 
 // Regression: ISSUE-001 — staged-conversation portraits used root-absolute
 // /assets/... paths, which 404 under the app's Vite base (/games/HeartOfVirtue/),
@@ -124,5 +125,54 @@ describe('portrait asset path resolution', () => {
 
         expect(img.dataset.fallback).toBe('placeholder')
         expect(img.src).toContain('_placeholder.png')
+    })
+})
+
+describe('portrait manifest (every expression that actually exists on disk)', () => {
+    afterEach(() => vi.unstubAllEnvs())
+
+    const manifest = scanPortraitManifest()
+    const characters = Object.keys(manifest)
+    const pairs = portraitManifestPairs()
+
+    it('found the known cast directories on disk', () => {
+        // Sanity check that the scan itself is wired up correctly — if this
+        // starts failing, the manifest scan is broken, not the art.
+        expect(characters).toEqual(expect.arrayContaining(['jean', 'liss', 'mara', 'devet', 'gorran']))
+    })
+
+    it('jean, liss, mara, and devet ship the full 8-expression set', () => {
+        for (const character of ['jean', 'liss', 'mara', 'devet']) {
+            expect(manifest[character]).toEqual(
+                expect.arrayContaining([
+                    'angry', 'concerned', 'curious', 'happy', 'neutral', 'sad', 'skeptical', 'surprised',
+                ])
+            )
+        }
+    })
+
+    it('gorran currently only ships a partial set (documents the known rollout gap)', () => {
+        expect(manifest.gorran).toEqual(['angry', 'neutral'])
+    })
+
+    it.each(pairs)(
+        '%s/%s.png resolves through portraitUrl() without being coerced to a different emotion',
+        (character, expression) => {
+            vi.stubEnv('BASE_URL', '/')
+            // Regression guard: EMOTIONS previously omitted 'concerned'/'curious',
+            // so art that existed on disk for jean/liss/mara/devet silently
+            // rendered as 'neutral' instead. This must hold for every file found.
+            expect(normalizeEmotion(expression)).toBe(expression)
+            expect(portraitUrl(character, expression)).toBe(
+                `/assets/portraits/${character}/${expression}.png`
+            )
+        }
+    )
+
+    it('every expression found on disk is part of the known EMOTIONS vocabulary', () => {
+        const onDisk = new Set(characters.flatMap((c) => manifest[c]))
+        for (const expression of onDisk) {
+            expect(EMOTIONS).toContain(expression)
+        }
     })
 })

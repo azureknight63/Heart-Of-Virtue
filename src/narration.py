@@ -102,7 +102,7 @@ def emit(text="", color=None, **meta):
 # affects plain ``narrate``/``cprint`` output, so untagged events render as before.
 
 #: The fixed portrait emotion vocabulary. Unknown values normalize to "neutral".
-EMOTIONS = ("neutral", "happy", "sad", "angry", "surprised", "skeptical")
+EMOTIONS = ("neutral", "happy", "sad", "angry", "surprised", "skeptical", "concerned", "curious")
 
 
 def _norm_emotion(emotion):
