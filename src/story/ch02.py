@@ -214,12 +214,18 @@ class Ch02GuideToCitadel(
             )
             narrate(
                 "As they walked through the Citadel, Jean was struck by the sheer scale of the "
-                "place. The halls were vast and echoed with the sound of their footsteps. The "
-                "walls were adorned with intricate carvings and murals, depicting scenes from "
-                "Grondia's history much like the ones on the walls outside."
+                "place. The halls were vast and echoed with the sound of their footsteps."
             )
             say(
-                "Jean's first thought was not of the carvings. It was the air — steady, "
+                "The ceiling ran up into darkness the way the roof of a nave runs up into "
+                "candle-smoke, and a hand had half-lifted toward his brow before he thought "
+                "about it. He let the old gesture finish. It steadied him.",
+                "Jean",
+                "neutral",
+                thought=True,
+            )
+            say(
+                "Then the air reached him, and the carvings lost him entirely — steady, "
                 "slow-moving, cool at his feet and perceptibly warmer at his shoulders. "
                 "Convection, working the way it's supposed to, on a scale he had never "
                 "encountered. He wanted to find where it rose.",
@@ -397,7 +403,12 @@ class Ch02GuideToCitadel(
                     "Votha Krr",
                     "neutral",
                 )
-                say("Wait — 'your kind.' There are others here like me?", "Jean", "surprised")
+                say(
+                    "Wait — you said it wouldn't kill me the same way. There are others here "
+                    "like me?",
+                    "Jean",
+                    "surprised",
+                )
                 say(
                     "We have known your kind before. Traded with them. Fought alongside them.",
                     "Votha Krr",

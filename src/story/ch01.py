@@ -881,6 +881,13 @@ class AfterGorranIntro(Event):
             "neutral",
             thought=True,
         )
+        say(
+            "His thumb moved once against the side of his finger — feeling for the first bead "
+            "of a string that wasn't there. An old habit. He didn't notice he'd done it.",
+            "Jean",
+            "neutral",
+            thought=True,
+        )
         narrate("Then, with trepidation, he follows.")
         await_input()
         for gorran in self.tile.npcs_here:
