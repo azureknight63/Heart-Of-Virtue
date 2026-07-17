@@ -397,7 +397,7 @@ class Ch02GuideToCitadel(
                 )
                 narrate("He watched Jean's face. Jean wasn't showing much.")
                 say("It would not kill you the same way.", "Votha Krr", "neutral")
-                say("Is it centralized? Or spread through the whole system?", "Jean", "neutral")
+                say("Is it centralized? Or spread through the whole system?", "Jean", "curious")
                 say(
                     "There is a heart to it. One great slime at the center. Remove it, and the "
                     "rest will follow.",
@@ -411,7 +411,7 @@ class Ch02GuideToCitadel(
                     "neutral",
                 )
                 narrate("He paused, searching for the word with the patience of stone finding water.")
-                say("Humans.", "Votha Krr", "neutral")
+                say("Humans.", "Votha Krr", "curious")
                 narrate("The word rumbled from him like a landslide, reverberating into Jean's chest.")
                 say(
                     "Jean was quiet, but his mind was already moving — tracing the shape of the "
@@ -467,7 +467,7 @@ class Ch02GuideToCitadel(
             say(
                 "And when you return — perhaps we will speak again of where you are going.",
                 "Votha Krr",
-                "neutral",
+                "curious",
             )
             narrate("He said it the same way he'd said it the first time. Like a door left open.")
             self.input_prompt = ""
@@ -1018,7 +1018,7 @@ class Ch02KingSlimeMemoryFlash(MemoryFlash):
             (
                 "And where something warm should have been, in Jean's arms —",
                 2.0,
-                {"speaker": "Jean", "emotion": "sad", "thought": True},
+                {"speaker": "Jean", "emotion": "concerned", "thought": True},
             ),
             ("emptiness.", 3.0, {"speaker": "Jean", "emotion": "sad", "thought": True}),
         ]
@@ -1114,7 +1114,7 @@ class AfterKingSlimeReturn(Event):
                 "Votha Krr rose from his throne as Jean entered. His deep-set eyes took in the "
                 "bleeding finger, the fragment in Jean's hand, and Jean's expression — all at once."
             )
-            say("The pools are clean, little one. You have done well.", "Votha Krr", "neutral")
+            say("The pools are clean, little one. You have done well.", "Votha Krr", "happy")
             narrate(
                 "Jean still held the mineral fragment. The cut on his finger had stopped "
                 "bleeding but hadn't stopped hurting."
@@ -1140,7 +1140,7 @@ class AfterKingSlimeReturn(Event):
             if _frag_choice == "a":
                 narrate("Jean held it out. Votha took it from his hand.")
             elif _frag_choice == "b":
-                say("What is this thing, exactly?", "Jean", "neutral")
+                say("What is this thing, exactly?", "Jean", "curious")
                 say(
                     "A memory, made stone. The mineral pools do not merely hold water — they "
                     "record what passes through them. Light, creature, time. This fragment "
