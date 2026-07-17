@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useApi'
+import { useMobile } from '../hooks/useMobile'
 import { colors, spacing } from '../styles/theme'
 import GameButton from '../components/GameButton'
 import GamePanel from '../components/GamePanel'
@@ -84,6 +85,7 @@ export default function LoginPage() {
   const [showTos, setShowTos] = useState(false)
   const navigate = useNavigate()
   const { login, register } = useAuth()
+  const isMobile = useMobile()
   useEmbers()
 
   const handleSubmit = async (e) => {
@@ -140,10 +142,15 @@ export default function LoginPage() {
         pointerEvents: 'none',
         zIndex: 1,
       }} />
+      {!isMobile && (
+        <ChangelogPanel style={{ position: 'fixed', top: spacing.xl, right: spacing.xl, zIndex: 10 }} />
+      )}
       <div style={{ width: '100%', maxWidth: '28rem', position: 'relative', zIndex: 3 }}>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: spacing.sm }}>
-          <ChangelogPanel />
-        </div>
+        {isMobile && (
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: spacing.sm }}>
+            <ChangelogPanel />
+          </div>
+        )}
         <GamePanel padding="xxl" borderVariant="success" className="animate-fade-in">
           <div style={{ textAlign: 'center', marginBottom: spacing.xxl }}>
             <GameText variant="primary" size="xxl" weight="bold" as="h1" style={{ textAlign: 'center', marginBottom: spacing.xs }}>

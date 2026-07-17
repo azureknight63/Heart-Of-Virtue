@@ -2,12 +2,12 @@ import { useState } from 'react'
 import { colors, fonts, spacing, shadows, accessibility } from '../styles/theme'
 import { CHANGELOG } from '../data/changelog'
 
-export default function ChangelogPanel({ defaultOpen = false }) {
+export default function ChangelogPanel({ defaultOpen = false, style = {} }) {
   const [isOpen, setIsOpen] = useState(defaultOpen)
   const latest = CHANGELOG[0]
 
   return (
-    <div style={{ position: 'relative', display: 'inline-block' }}>
+    <div style={{ position: 'relative', display: 'inline-block', ...style }}>
       <button
         type="button"
         onClick={() => setIsOpen((o) => !o)}
