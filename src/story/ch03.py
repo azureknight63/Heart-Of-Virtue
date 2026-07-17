@@ -288,7 +288,7 @@ class LissObservingEvent(Event):
             say(
                 "Does the Golemite sleep? He doesn't look like he's sleeping. But I think he might be.",
                 "Liss",
-                "neutral",
+                "curious",
             )
             time.sleep(0.5)
             print_slow(

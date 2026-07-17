@@ -1,6 +1,6 @@
 """Inventory and equipment checks."""
 
-from typing import List, Optional
+from typing import List
 
 from .base import Scenario
 from ..client import GameClient
@@ -86,13 +86,9 @@ class InventoryScenario(Scenario):
                 "/api/status", "GET", "Player status object", resp,
             )
 
-        # Pickup non-existent item — should 400/404, not 500 ----------------
-        body = {"item_id": "harness_nonexistent_item"}
-        resp = client.post("/api/inventory/pickup", json=body)
-        bug = self._check_no_crash(resp, "/api/inventory/pickup", "POST",
-                                   "Pickup unknown item_id", request_body=body)
-        if bug:
-            bugs.append(bug)
+        # Note: item pickup does NOT go through a dedicated /api/inventory/pickup
+        # or /api/inventory/take route (neither exists) — it goes through
+        # /api/world/interact (see the WorldScenario for that coverage).
 
         # Equip non-existent item — should 400/404, not 500 -----------------
         body = {"item_id": "harness_nonexistent_item", "slot": "weapon"}

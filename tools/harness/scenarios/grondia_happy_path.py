@@ -84,10 +84,10 @@ class GroniaHappyPathScenario(Scenario):
 
             current_location = None
             for direction, expected_loc in move_sequence:
-                resp = client.post(f"/api/world/move", json={"direction": direction})
+                resp = client.post("/api/world/move", json={"direction": direction})
 
                 move_bug = self._check_no_crash(
-                    resp, f"/api/world/move", "POST",
+                    resp, "/api/world/move", "POST",
                     f"Move {direction}"
                 )
                 if move_bug:
@@ -96,17 +96,17 @@ class GroniaHappyPathScenario(Scenario):
 
                 if resp.status_code == 200:
                     data = client.parse(resp)
-                    # Try multiple possible keys
-                    if "location" in data:
-                        current_location = data["location"]
-                    elif "player" in data and "location" in data["player"]:
-                        current_location = data["player"]["location"]
+                    # /api/world/move returns {"new_position": {"x", "y"}, "room": {...}, ...}
+                    # — there is no "location" string field anywhere in the contract.
+                    pos = data.get("new_position") or data.get("room", {})
+                    if "x" in pos and "y" in pos:
+                        current_location = f"{pos['x']},{pos['y']}"
                     else:
-                        # If location not in response, try to fetch it
-                        view_resp = client.get("/api/world/view")
-                        if view_resp.status_code == 200:
-                            view_data = client.parse(view_resp)
-                            current_location = view_data.get("player", {}).get("location", "UNKNOWN")
+                        # Fall back to the real current-room endpoint.
+                        room_resp = client.get("/api/world")
+                        if room_resp.status_code == 200:
+                            room = client.parse(room_resp).get("room", {})
+                            current_location = f"{room.get('x', '?')},{room.get('y', '?')}"
 
                     print(f"  Moved {direction} -> {current_location}")
                     if current_location == expected_loc:
@@ -133,30 +133,31 @@ class GroniaHappyPathScenario(Scenario):
         print("\n[STEP 3] Check for Votha Krr on current tile...")
 
         try:
-            resp = client.get("/api/world/view")
+            resp = client.get("/api/world")
             view_bug = self._check_no_crash(
-                resp, "/api/world/view", "GET",
-                "Fetch tile view"
+                resp, "/api/world", "GET",
+                "Fetch current room"
             )
             if view_bug:
                 bugs.append(view_bug)
             else:
                 data = client.parse(resp)
-                npcs = data.get("tile", {}).get("npcs", [])
+                room = data.get("room", {})
+                npcs = room.get("npcs", [])
                 npc_names = [n.get("name", "UNKNOWN") for n in npcs]
+                current_loc = f"{room.get('x', '?')},{room.get('y', '?')}"
                 print(f"  NPCs on tile: {npc_names}")
-                print(f"  (Current location: {data.get('player', {}).get('location', 'UNKNOWN')})")
+                print(f"  (Current location: {current_loc})")
 
                 votha_found = any("votha" in n.lower() for n in npc_names)
                 if not votha_found and len(npc_names) == 0:
                     # Only bug if no NPCs on tile AND we're at the right location
-                    current_loc = data.get("player", {}).get("location")
-                    if current_loc in ["6,5", "(6,5)", "6, 5"]:
+                    if current_loc == "6,5":
                         bugs.append(self._bug(
                             title="Votha Krr not found on tile (6,5)",
                             severity=BugSeverity.MEDIUM,
-                            category=BugCategory.MISSING_ENTITY,
-                            endpoint="/api/world/view",
+                            category=BugCategory.WRONG_RESPONSE,
+                            endpoint="/api/world",
                             method="GET",
                             expected="Votha Krr present on tile (6,5)",
                             actual=f"No NPCs on tile. Found: {npc_names}",
@@ -168,9 +169,9 @@ class GroniaHappyPathScenario(Scenario):
                 title="NPC lookup crash",
                 severity=BugSeverity.HIGH,
                 category=BugCategory.CRASH,
-                endpoint="/api/world/view",
+                endpoint="/api/world",
                 method="GET",
-                expected="Fetch tile view",
+                expected="Fetch current room",
                 actual=f"Exception: {e}",
             ))
 
@@ -181,31 +182,31 @@ class GroniaHappyPathScenario(Scenario):
 
         try:
             # Check if jambos_shop map exists in universe
-            resp = client.get("/api/world/view")
+            resp = client.get("/api/world")
             if resp.status_code >= 500:
                 bugs.append(self._bug(
-                    title="Maps query crash via /api/world/view",
+                    title="Room query crash via /api/world",
                     severity=BugSeverity.MEDIUM,
                     category=BugCategory.CRASH,
-                    endpoint="/api/world/view",
+                    endpoint="/api/world",
                     method="GET",
-                    expected="Fetch available maps",
+                    expected="Fetch current room",
                     actual=f"Server error {resp.status_code}",
                     response=resp,
                 ))
             elif resp.status_code == 200:
                 data = client.parse(resp)
                 # Maps info may be in the response
-                print(f"  [Shop verification deferred - see /api/world/view for available exits/maps]")
+                print("  [Shop verification deferred - see /api/world for available exits/maps]")
 
         except Exception as e:
             bugs.append(self._bug(
                 title="Maps lookup crash",
                 severity=BugSeverity.MEDIUM,
                 category=BugCategory.CRASH,
-                endpoint="/api/world/maps",
+                endpoint="/api/world",
                 method="GET",
-                expected="Fetch maps list",
+                expected="Fetch current room",
                 actual=f"Exception: {e}",
             ))
 
@@ -215,7 +216,7 @@ class GroniaHappyPathScenario(Scenario):
         print("\n[STEP 5] Verify mineral pools map exists...")
 
         try:
-            print(f"  [Mineral pools verification deferred - requires map traversal]")
+            print("  [Mineral pools verification deferred - requires map traversal]")
 
         except Exception as e:
             bugs.append(self._bug(
@@ -234,38 +235,32 @@ class GroniaHappyPathScenario(Scenario):
         print("\n[STEP 6] Verify King Slime exists...")
 
         try:
-            # Try to list NPCs (if endpoint exists) or check maps for King Slime location
-            resp = client.get("/api/world/npcs")
-            if resp.status_code == 404:
-                print("  [/api/world/npcs not available - skipping]")
-            elif resp.status_code >= 500:
-                bugs.append(self._bug(
-                    title="NPC listing crash",
-                    severity=BugSeverity.MEDIUM,
-                    category=BugCategory.CRASH,
-                    endpoint="/api/world/npcs",
-                    method="GET",
-                    expected="Fetch NPC list",
-                    actual=f"Server error: {resp.status_code}",
-                    response=resp,
-                ))
-            else:
+            # There is no standalone NPC-listing endpoint — NPCs are only
+            # visible per-room via /api/world's room.npcs. Without navigating
+            # all the way to King Slime's tile (deferred, see STEP 5), this
+            # check only verifies the current room's NPCs are well-formed.
+            resp = client.get("/api/world")
+            bug = self._check_no_crash(
+                resp, "/api/world", "GET", "Fetch current room (King Slime check)"
+            )
+            if bug:
+                bugs.append(bug)
+            elif resp.status_code == 200:
                 data = client.parse(resp)
-                npcs = data.get("npcs", [])
-                npc_names = [n.get("name", "") for n in npcs]
+                room = data.get("room", {})
+                npcs = room.get("npcs", [])
+                npc_names = [n.get("name", "") for n in npcs if isinstance(n, dict)]
 
-                king_slime_found = any("king" in n.lower() and "slime" in n.lower() for n in npc_names)
-                if not king_slime_found:
-                    bugs.append(self._bug(
-                        title="King Slime not found in NPC list",
-                        severity=BugSeverity.LOW,
-                        category=BugCategory.MISSING_ENTITY,
-                        endpoint="/api/world/npcs",
-                        method="GET",
-                        expected="King Slime present",
-                        actual=f"NPCs found: {npc_names}",
-                        response=resp,
-                    ))
+                king_slime_found = any(
+                    "king" in n.lower() and "slime" in n.lower() for n in npc_names
+                )
+                if king_slime_found:
+                    print("  King Slime found on current tile.")
+                else:
+                    print(
+                        "  [King Slime presence not verified - requires navigation to "
+                        "the mineral pools tile, deferred in this scenario]"
+                    )
 
         except Exception as e:
             print(f"  [NPC lookup exception - {e} - skipping]")

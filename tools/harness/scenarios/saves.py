@@ -83,6 +83,15 @@ class SavesScenario(Scenario):
         if bug:
             bugs.append(bug)
 
+        # DELETE /api/saves/bad_id — must not 500 (same no-cloud-auth path) --
+        resp = client._client.delete(
+            "/api/saves/harness_bad_id", headers=client._auth_headers()
+        )
+        bug = self._check_no_crash(resp, "/api/saves/harness_bad_id", "DELETE",
+                                   "Delete save with invalid ID")
+        if bug:
+            bugs.append(bug)
+
         # POST /api/game/new — does NOT require cloud auth ------------------
         resp = client.post("/api/game/new")
         bug = self._check_status(resp, 200, "/api/game/new", "POST", "New game")
