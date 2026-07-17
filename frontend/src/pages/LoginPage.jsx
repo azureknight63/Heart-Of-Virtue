@@ -141,6 +141,9 @@ export default function LoginPage() {
         zIndex: 1,
       }} />
       <div style={{ width: '100%', maxWidth: '28rem', position: 'relative', zIndex: 3 }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: spacing.sm }}>
+          <ChangelogPanel />
+        </div>
         <GamePanel padding="xxl" borderVariant="success" className="animate-fade-in">
           <div style={{ textAlign: 'center', marginBottom: spacing.xxl }}>
             <GameText variant="primary" size="xxl" weight="bold" as="h1" style={{ textAlign: 'center', marginBottom: spacing.xs }}>
@@ -381,9 +384,6 @@ export default function LoginPage() {
           >
             Nexus Fidei
           </a>
-          <div style={{ marginTop: spacing.sm, width: '100%', display: 'flex', justifyContent: 'center' }}>
-            <ChangelogPanel />
-          </div>
         </div>
       </div>
 

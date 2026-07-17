@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { colors, fonts, spacing, accessibility } from '../styles/theme'
+import { colors, fonts, spacing, shadows, accessibility } from '../styles/theme'
 import { CHANGELOG } from '../data/changelog'
 
 export default function ChangelogPanel({ defaultOpen = false }) {
@@ -7,7 +7,7 @@ export default function ChangelogPanel({ defaultOpen = false }) {
   const latest = CHANGELOG[0]
 
   return (
-    <div style={{ width: '100%', maxWidth: '20rem' }}>
+    <div style={{ position: 'relative', display: 'inline-block' }}>
       <button
         type="button"
         onClick={() => setIsOpen((o) => !o)}
@@ -15,17 +15,17 @@ export default function ChangelogPanel({ defaultOpen = false }) {
         style={{
           display: 'flex',
           alignItems: 'center',
-          justifyContent: 'center',
           gap: spacing.xs,
-          width: '100%',
           minHeight: accessibility.touchTarget,
-          background: 'none',
-          border: 'none',
+          background: colors.bg.panelLight,
+          border: `1px solid ${colors.border.light}`,
+          borderRadius: '0.25rem',
           color: colors.text.dim,
           cursor: 'pointer',
           fontFamily: fonts.main,
           fontSize: '11px',
-          padding: 0,
+          padding: `4px ${spacing.sm}`,
+          whiteSpace: 'nowrap',
           transition: 'color 0.2s',
         }}
         onMouseEnter={(e) => (e.currentTarget.style.color = colors.text.muted)}
@@ -47,14 +47,22 @@ export default function ChangelogPanel({ defaultOpen = false }) {
       {isOpen && (
         <div
           style={{
-            marginTop: spacing.xs,
-            maxHeight: '220px',
+            position: 'absolute',
+            top: 'calc(100% + 6px)',
+            right: 0,
+            width: '22rem',
+            maxWidth: '90vw',
+            maxHeight: '80vh',
             overflowY: 'auto',
+            scrollbarWidth: 'thin',
+            scrollbarColor: `${colors.secondary} rgba(0, 0, 0, 0.3)`,
             textAlign: 'left',
             padding: spacing.md,
-            backgroundColor: colors.bg.panel,
-            border: `1px solid ${colors.border.light}`,
+            backgroundColor: colors.bg.main,
+            border: `1px solid ${colors.border.success}`,
             borderRadius: '0.25rem',
+            boxShadow: shadows.main,
+            zIndex: 20,
           }}
         >
           {CHANGELOG.map((entry) => (
