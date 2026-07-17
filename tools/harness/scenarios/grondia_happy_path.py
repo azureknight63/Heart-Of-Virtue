@@ -156,7 +156,7 @@ class GroniaHappyPathScenario(Scenario):
                         bugs.append(self._bug(
                             title="Votha Krr not found on tile (6,5)",
                             severity=BugSeverity.MEDIUM,
-                            category=BugCategory.MISSING_ENTITY,
+                            category=BugCategory.WRONG_RESPONSE,
                             endpoint="/api/world",
                             method="GET",
                             expected="Votha Krr present on tile (6,5)",

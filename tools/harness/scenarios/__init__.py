@@ -13,6 +13,8 @@ from .combat_edge import CombatEdgeScenario
 from .inventory_actions import InventoryActionsScenario
 from .ch01_events import Ch01EventsScenario
 from .ch01_wrong_choice import Ch01WrongChoiceScenario
+from .ch02_events import Ch02EventsScenario
+from .ch03_events import Ch03EventsScenario
 from .grondia_happy_path import GroniaHappyPathScenario
 from .ally_progression import AllyProgressionScenario
 from .shop import ShopScenario
@@ -35,6 +37,8 @@ _ALL_SCENARIOS = [
     InventoryActionsScenario(),
     Ch01EventsScenario(),
     Ch01WrongChoiceScenario(),
+    Ch02EventsScenario(),
+    Ch03EventsScenario(),
     GroniaHappyPathScenario(),
     AllyProgressionScenario(),
     ShopScenario(),
