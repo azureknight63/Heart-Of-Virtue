@@ -98,7 +98,7 @@ class Ch01_Memory_Amelia(MemoryFlash):
             (
                 '"Promise me it\'ll be fine. Promise me."',
                 2,
-                {"speaker": "Amelia", "emotion": "sad"},
+                {"speaker": "Amelia", "emotion": "concerned"},
             ),
             (
                 '"You worry too much, dear."',
@@ -117,11 +117,11 @@ class Ch01_Memory_Amelia(MemoryFlash):
                 1.5,
                 {
                     "speaker": "Jean",
-                    "emotion": "sad",
+                    "emotion": "neutral",
                     "exit": [{"id": "Amelia", "transition": "fade", "span": 3}],
                 },
             ),
-            ("...some promises...", 1.5, {"speaker": "Jean", "emotion": "sad"}),
+            ("...some promises...", 1.5, {"speaker": "Jean", "emotion": "concerned"}),
             ("...promises...", 2, {"speaker": "Jean", "emotion": "sad"}),
         ]
 
@@ -136,7 +136,7 @@ class Ch01_Memory_Amelia(MemoryFlash):
             "",
             (
                 "Someone's voice. A ring. The weight of something he cannot name.",
-                {"reactions": {"Jean": "sad"}},
+                {"reactions": {"Jean": "concerned"}},
             ),
             "",
             (
@@ -146,7 +146,7 @@ class Ch01_Memory_Amelia(MemoryFlash):
             "There's a draft here — coming from the east, faint but constant.",
             "Something about tracing it to its source steadies him.",
             "",
-            ("Not now. Keep moving.", {"speaker": "Jean", "emotion": "neutral"}),
+            ("Not now. Keep moving.", {"speaker": "Jean", "emotion": "angry"}),
         ]
 
         super().__init__(
@@ -1058,7 +1058,7 @@ class Ch01GorranFirstWord(Event):
         say(
             "Stop.",
             "Gorran",
-            "neutral",
+            "concerned",
             enter=enter_op("Gorran", side=None),
         )
 
