@@ -37,6 +37,19 @@ os.environ.setdefault("MYNX_LLM_ENABLED", "0")
 os.environ.setdefault("MYNX_FALLBACK_DELAY", "0")
 os.environ.setdefault("MYNX_LLM_PROVIDER", "none")
 
+# Never let the harness file real GitHub issues. src/api/routes/feedback.py's
+# _create_github_issue() only checks os.environ["GITHUB_TOKEN"] directly (no
+# TESTING-mode guard — that's intentional, so pytest can mock requests.post
+# at the network boundary and still exercise the real success path). If a
+# real token is present — e.g. from the repo's own .env file, which
+# src/api/db.py loads via load_dotenv() the moment create_app() is imported
+# below — the `feedback` scenario's well-formed submission actually succeeds
+# and spams the real tracker. Set (not pop) to an empty string: dotenv's
+# default override=False only skips keys already *present* in os.environ
+# regardless of value, so popping here would just let load_dotenv() refill it
+# moments later during the create_app() import chain, silently undoing this.
+os.environ["GITHUB_TOKEN"] = ""
+
 # ---------------------------------------------------------------------------
 # Now safe to import project modules.
 # ---------------------------------------------------------------------------

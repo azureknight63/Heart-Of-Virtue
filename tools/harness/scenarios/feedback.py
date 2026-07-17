@@ -23,6 +23,27 @@ class FeedbackScenario(Scenario):
     def run(self, client: GameClient) -> List[BugReport]:
         bugs = []
 
+        def check_real_crash(resp, label, request_body=None):
+            """Flag only a literal 500 — 503 ('service not configured', the
+            expected outcome whenever GITHUB_TOKEN is absent) is not a crash
+            for this endpoint. _check_no_crash's blanket 5xx-is-a-crash rule
+            doesn't fit here since 503 is this route's own documented, correct
+            degraded-mode response (src/api/routes/feedback.py:250).
+            """
+            if resp.status_code != 500:
+                return None
+            return self._bug(
+                title=f"{label}: server crash (HTTP 500)",
+                severity=BugSeverity.HIGH,
+                category=BugCategory.CRASH,
+                endpoint="/api/feedback/issue",
+                method="POST",
+                expected="No unhandled exception (503 for 'not configured' is fine)",
+                actual="HTTP 500",
+                response=resp,
+                request_body=request_body,
+            )
+
         # Missing body entirely -----------------------------------------------
         resp = client.post("/api/feedback/issue", json={})
         bug = self._check_rejected(
@@ -78,10 +99,7 @@ class FeedbackScenario(Scenario):
         # Malformed 'fields' (not an object), must not 500 -----------------------
         body = {"type": "general", "title": "Harness test", "fields": "not-an-object"}
         resp = client.post("/api/feedback/issue", json=body)
-        bug = self._check_no_crash(
-            resp, "/api/feedback/issue", "POST", "Malformed 'fields' (string, not dict)",
-            request_body=body,
-        )
+        bug = check_real_crash(resp, "Malformed 'fields' (string, not dict)", body)
         if bug:
             bugs.append(bug)
 
@@ -99,10 +117,7 @@ class FeedbackScenario(Scenario):
             },
         }
         resp = client.post("/api/feedback/issue", json=body)
-        bug = self._check_no_crash(
-            resp, "/api/feedback/issue", "POST", "Well-formed bug report submission",
-            request_body=body,
-        )
+        bug = check_real_crash(resp, "Well-formed bug report submission", body)
         if bug:
             bugs.append(bug)
         elif resp.status_code not in (200, 201, 503):
