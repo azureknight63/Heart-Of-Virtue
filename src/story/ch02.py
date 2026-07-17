@@ -395,7 +395,11 @@ class Ch02GuideToCitadel(
                     "unhurried, without urgency, as if what he described had already been decided."
                 )
                 narrate("He watched Jean's face. Jean wasn't showing much.")
-                say("It would not kill you the same way.", "Votha Krr", "neutral")
+                say(
+                    "The slimes would not kill you the way they kill us. That is why I ask.",
+                    "Votha Krr",
+                    "neutral",
+                )
                 say("Is it centralized? Or spread through the whole system?", "Jean", "neutral")
                 say(
                     "There is a heart to it. One great slime at the center. Remove it, and the "
