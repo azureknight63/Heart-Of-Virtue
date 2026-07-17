@@ -1,6 +1,6 @@
 """Combat loop checks — start, execute moves, status, log."""
 
-from typing import List, Optional, Tuple
+from typing import List, Tuple
 
 from .base import Scenario
 from ..client import GameClient
@@ -91,10 +91,12 @@ class CombatScenario(Scenario):
             if ended:
                 break
 
-        # Combat log --------------------------------------------------------
-        resp = client.get("/api/combat/log")
+        # Combat log ----------------------------------------------------------
+        # There is no standalone /api/combat/log route — the log is embedded
+        # in the /api/combat/status response (see combat_adapter.py:2208).
+        resp = client.get("/api/combat/status")
         bug = self._check_status(
-            resp, 200, "/api/combat/log", "GET", "Get combat log"
+            resp, 200, "/api/combat/status", "GET", "Get combat status (for log)"
         )
         if bug:
             bugs.append(bug)
@@ -102,14 +104,14 @@ class CombatScenario(Scenario):
             data = client.parse(resp)
             bugs += self._check_fields(
                 data, ["success", "log"],
-                "/api/combat/log", "GET", "Combat log", resp,
+                "/api/combat/status", "GET", "Combat status log field", resp,
             )
             if not isinstance(data.get("log"), list):
                 bugs.append(self._bug(
-                    title="Combat log: 'log' field is not a list",
+                    title="Combat status: 'log' field is not a list",
                     severity=BugSeverity.MEDIUM,
                     category=BugCategory.WRONG_RESPONSE,
-                    endpoint="/api/combat/log",
+                    endpoint="/api/combat/status",
                     method="GET",
                     expected='"log" is a JSON array',
                     actual=f'"log" is {type(data.get("log")).__name__}',
@@ -200,19 +202,26 @@ class CombatScenario(Scenario):
         )
         return bugs, bool(data.get("combat_active"))
 
-    def _get_available_options(self, client: GameClient) -> List[dict]:
-        """Return the current available_options list from combat status."""
+    def _get_battle_state(self, client: GameClient) -> dict:
+        """Return the current battle_state dict from combat status."""
         resp = client.get("/api/combat/status")
         if resp.status_code != 200:
-            return []
+            return {}
         data = client.parse(resp)
-        battle = data.get("battle_state", {})
-        return battle.get("available_options", [])
+        return data.get("battle_state", {})
 
     def _execute_best_move(self, client: GameClient, round_num: int) -> Tuple[List[BugReport], bool]:
         """Pick and execute the best available move for Jean's turn.
 
-        Priority:
+        ``available_options`` changes shape depending on ``input_type``
+        (see combat_adapter.py: _handle_move_selection/_handle_target_selection/
+        _handle_direction_selection/_handle_number_selection):
+          - "move_selection"      -> list[dict] (the normal move menu)
+          - "target_selection"    -> list[dict] (viable targets)
+          - "direction_selection" -> list[str]  (e.g. ["north", ...])
+          - "number_input"        -> dict with "min"/"max"/"default"
+
+        Priority for the normal move menu:
         1. First available offensive move with viable targets (attack range).
         2. Advance toward a target if no offensive move is in range.
         3. Wait as a safe fallback.
@@ -220,7 +229,47 @@ class CombatScenario(Scenario):
         Returns (bugs, combat_ended).
         """
         bugs = []
-        options = self._get_available_options(client)
+        battle = self._get_battle_state(client)
+        options = battle.get("available_options", [])
+        input_type = battle.get("input_type", "move_selection")
+
+        # Sub-stage prompts: a previously selected move may be awaiting a
+        # direction, a target, or a numeric value before it executes.
+        if input_type == "direction_selection":
+            direction = options[0] if isinstance(options, list) and options else "north"
+            body = {"move_type": "direction", "direction": direction}
+            return self._post_move(client, body, round_num)
+
+        if input_type == "number_input":
+            default = options.get("default", 5) if isinstance(options, dict) else 5
+            body = {"move_type": "number", "move_id": str(default)}
+            return self._post_move(client, body, round_num)
+
+        if input_type == "target_selection":
+            targets = [o for o in options if isinstance(o, dict) and o.get("id")]
+            if not targets:
+                return bugs, False
+            body = {"move_type": "target", "target_id": targets[0]["id"]}
+            return self._post_move(client, body, round_num)
+
+        # Normal move-selection menu — options should be a list of dicts.
+        # A non-dict entry here means the server sent input_type="move_selection"
+        # (or "target_selection") but available_options doesn't match that shape
+        # (e.g. leftover direction/number strings) — a real API contract
+        # violation. Report it instead of silently dropping it, or the harness
+        # loses the ability to catch this class of bug entirely.
+        clean_options = [o for o in options if isinstance(o, dict)]
+        if len(clean_options) != len(options):
+            bugs.append(self._bug(
+                title=f"available_options contains non-dict entries for input_type={input_type!r}",
+                severity=BugSeverity.HIGH,
+                category=BugCategory.WRONG_RESPONSE,
+                endpoint="/api/combat/status",
+                method="GET",
+                expected="available_options is list[dict] when input_type is move_selection/target_selection",
+                actual=f"options={options!r}",
+            ))
+        options = clean_options
 
         move_index = None
         target_id = None
@@ -260,6 +309,13 @@ class CombatScenario(Scenario):
         if target_id:
             body["target_id"] = target_id
 
+        return self._post_move(client, body, round_num)
+
+    def _post_move(
+        self, client: GameClient, body: dict, round_num: int
+    ) -> Tuple[List[BugReport], bool]:
+        """POST /api/combat/move with the given body and interpret the result."""
+        bugs = []
         resp = client.post("/api/combat/move", json=body)
         bug = self._check_status(
             resp, 200, "/api/combat/move", "POST",

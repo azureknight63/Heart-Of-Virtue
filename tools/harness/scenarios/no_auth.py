@@ -19,9 +19,8 @@ _PROTECTED = [
     ("GET",  "/api/inventory"),         # inventory_bp
     ("GET",  "/api/equipment"),         # inventory_bp
     ("GET",  "/api/combat/status"),     # combat_bp
-    ("GET",  "/api/combat/log"),        # combat_bp
     ("GET",  "/api/auth/validate"),     # auth_bp
-    ("GET",  "/api/npc/probe/state"),   # npc_bp
+    ("POST", "/api/npc/chat/open"),     # npc_chat_bp
 ]
 
 

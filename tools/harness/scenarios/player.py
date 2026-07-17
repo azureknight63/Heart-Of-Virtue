@@ -4,7 +4,7 @@ from typing import List
 
 from .base import Scenario
 from ..client import GameClient
-from ..reporter import BugReport, BugSeverity
+from ..reporter import BugReport
 
 
 class PlayerScenario(Scenario):
@@ -68,6 +68,26 @@ class PlayerScenario(Scenario):
         resp = client.post("/api/skills/learn", json=body)
         bug = self._check_no_crash(resp, "/api/skills/learn", "POST",
                                    "Learn unknown skill", request_body=body)
+        if bug:
+            bugs.append(bug)
+
+        # POST /api/level-up/allocate — no pending points, should not 500 ---
+        # Jean starts with no unspent attribute points, so this is expected to
+        # fail gracefully (400 "no points to allocate" or similar), never 500.
+        body = {"attribute": "strength_base", "amount": 1}
+        resp = client.post("/api/level-up/allocate", json=body)
+        bug = self._check_no_crash(resp, "/api/level-up/allocate", "POST",
+                                   "Allocate level-up point with none pending",
+                                   request_body=body)
+        if bug:
+            bugs.append(bug)
+
+        # POST /api/level-up/allocate — bad attribute name, must not 500 -----
+        body = {"attribute": "harness_nonexistent_attribute", "amount": 1}
+        resp = client.post("/api/level-up/allocate", json=body)
+        bug = self._check_no_crash(resp, "/api/level-up/allocate", "POST",
+                                   "Allocate level-up point with unknown attribute",
+                                   request_body=body)
         if bug:
             bugs.append(bug)
 

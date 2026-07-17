@@ -11,7 +11,7 @@ from typing import List
 
 from .base import Scenario
 from ..client import GameClient
-from ..reporter import BugReport, BugSeverity
+from ..reporter import BugReport
 
 _BAD_ITEM = "harness_nonexistent_item_99"
 _BAD_SLOT = "harness_nonexistent_slot"
@@ -69,14 +69,9 @@ class InventoryActionsScenario(Scenario):
         if bug:
             bugs.append(bug)
 
-        # POST /api/inventory/take — bad item_id ---------------------------
-        body = {"item_id": _BAD_ITEM}
-        resp = client.post("/api/inventory/take", json=body)
-        bug = self._check_no_crash(resp, "/api/inventory/take", "POST",
-                                   f"Take unknown item '{_BAD_ITEM}'",
-                                   request_body=body)
-        if bug:
-            bugs.append(bug)
+        # Note: there is no /api/inventory/take route — item pickup goes
+        # through /api/world/interact (Item.take() / interact_with_target),
+        # covered in the WorldScenario instead.
 
         # POST /api/inventory/drop — bad item_id ---------------------------
         body = {"item_id": _BAD_ITEM}

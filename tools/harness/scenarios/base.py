@@ -138,6 +138,37 @@ class Scenario(ABC):
             response_body=body,
         )
 
+    def _check_rejected(
+        self,
+        response,
+        endpoint: str,
+        method: str,
+        title: str,
+        expected: str,
+        allowed: tuple = (400, 422),
+        severity: BugSeverity = BugSeverity.LOW,
+        request_body: dict = None,
+    ) -> Optional[BugReport]:
+        """Return a BugReport if a bad/missing-input request wasn't rejected.
+
+        Use this for "missing required field" probes where the endpoint must
+        respond with one of ``allowed`` (typically 400/422) rather than
+        silently accepting the request or crashing.
+        """
+        if response.status_code in allowed:
+            return None
+        return self._bug(
+            title=title,
+            severity=severity,
+            category=BugCategory.WRONG_RESPONSE,
+            endpoint=endpoint,
+            method=method,
+            expected=expected,
+            actual=f"HTTP {response.status_code}",
+            response=response,
+            request_body=request_body,
+        )
+
     def _check_fields(
         self,
         data: dict,
