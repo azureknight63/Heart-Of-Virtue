@@ -214,12 +214,18 @@ class Ch02GuideToCitadel(
             )
             narrate(
                 "As they walked through the Citadel, Jean was struck by the sheer scale of the "
-                "place. The halls were vast and echoed with the sound of their footsteps. The "
-                "walls were adorned with intricate carvings and murals, depicting scenes from "
-                "Grondia's history much like the ones on the walls outside."
+                "place. The halls were vast and echoed with the sound of their footsteps."
             )
             say(
-                "Jean's first thought was not of the carvings. It was the air — steady, "
+                "The ceiling ran up into darkness the way the roof of a nave runs up into "
+                "candle-smoke, and a hand had half-lifted toward his brow before he thought "
+                "about it. He let the old gesture finish. It steadied him.",
+                "Jean",
+                "neutral",
+                thought=True,
+            )
+            say(
+                "Then the air reached him, and the carvings lost him entirely — steady, "
                 "slow-moving, cool at his feet and perceptibly warmer at his shoulders. "
                 "Convection, working the way it's supposed to, on a scale he had never "
                 "encountered. He wanted to find where it rose.",
@@ -388,15 +394,12 @@ class Ch02GuideToCitadel(
                     "Votha Krr was quiet a moment. When he spoke again, his voice was the same — "
                     "unhurried, without urgency, as if what he described had already been decided."
                 )
+                narrate("He watched Jean's face. Jean wasn't showing much.")
                 say(
-                    "The Grondelith Pools to the southwest. Slimes have found them. They consume "
-                    "the minerals our people require. The corruption is lethal to our kind — we "
-                    "cannot clear them ourselves.",
+                    "The slimes would not kill you the way they kill us. That is why I ask.",
                     "Votha Krr",
                     "neutral",
                 )
-                narrate("He watched Jean's face. Jean wasn't showing much.")
-                say("It would not kill you the same way.", "Votha Krr", "neutral")
                 say("Is it centralized? Or spread through the whole system?", "Jean", "curious")
                 say(
                     "There is a heart to it. One great slime at the center. Remove it, and the "
@@ -404,7 +407,12 @@ class Ch02GuideToCitadel(
                     "Votha Krr",
                     "neutral",
                 )
-                say("Wait — 'your kind.' There are others here like me?", "Jean", "surprised")
+                say(
+                    "Wait — you said it wouldn't kill me the same way. There are others here "
+                    "like me?",
+                    "Jean",
+                    "surprised",
+                )
                 say(
                     "We have known your kind before. Traded with them. Fought alongside them.",
                     "Votha Krr",
