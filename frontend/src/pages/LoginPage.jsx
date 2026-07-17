@@ -7,6 +7,7 @@ import GamePanel from '../components/GamePanel'
 import GameInput from '../components/GameInput'
 import GameText from '../components/GameText'
 import TermsOfServiceModal from '../components/TermsOfServiceModal'
+import ChangelogPanel from '../components/ChangelogPanel'
 
 function useEmbers() {
   useEffect(() => {
@@ -380,6 +381,9 @@ export default function LoginPage() {
           >
             Nexus Fidei
           </a>
+          <div style={{ marginTop: spacing.sm, width: '100%', display: 'flex', justifyContent: 'center' }}>
+            <ChangelogPanel />
+          </div>
         </div>
       </div>
 

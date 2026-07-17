@@ -217,6 +217,14 @@ describe('LoginPage', () => {
         expect(mockNavigate).toHaveBeenCalledWith('/landing');
     });
 
+    it('renders a collapsed changelog panel that expands on click', () => {
+        renderLoginPage();
+        const changelogBtn = screen.getByText(/^Changelog \(v/i);
+        expect(screen.queryByText(/Mobile support/i)).toBeNull();
+        fireEvent.click(changelogBtn);
+        expect(screen.getByText(/Mobile support/i)).toBeInTheDocument();
+    });
+
     it('clears a prior error when switching from login to register', async () => {
         mockLogin.mockRejectedValue({ response: { status: 401 } });
         renderLoginPage();
