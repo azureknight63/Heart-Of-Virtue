@@ -512,12 +512,7 @@ class GameService:
             "southwest": (-1, 1),
         }
 
-        exits = {}
-
         # Get blocked exits from tile
-        blocked = getattr(tile, "block_exit", [])
-
-        # Check each direction
         blocked = getattr(tile, "block_exit", [])
 
         exits = {}
@@ -3617,7 +3612,7 @@ class GameService:
         """Return the merchant NPC on the player's current tile, or None."""
         tile = player.universe.get_tile(player.location_x, player.location_y)
         for npc in getattr(tile, "npcs_here", []):
-            if str(id(npc)) == npc_id and hasattr(npc, "shop"):
+            if str(id(npc)) == npc_id and hasattr(npc, "buy_modifier"):
                 return npc
         return None
 
