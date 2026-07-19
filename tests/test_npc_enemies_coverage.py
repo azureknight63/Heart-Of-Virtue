@@ -41,7 +41,7 @@ def _make_hound():
     hound.current_move = None
     hound.fatigue = 50
     hound.maxfatigue = 100
-    hound.combat_list = []
+    hound.combat_list_allies = []
     # Remove ai_config attribute so the lazy-init path can be tested
     if hasattr(hound, "ai_config"):
         del hound.ai_config
@@ -53,13 +53,13 @@ class TestTalusHoundCountPackMembers:
         from src.npc._enemies import TalusHound
 
         hound = TalusHound()
-        if hasattr(hound, "combat_list"):
-            del hound.combat_list
+        if hasattr(hound, "combat_list_allies"):
+            del hound.combat_list_allies
         assert hound._count_pack_members() == 0
 
     def test_empty_combat_list_returns_zero(self):
         hound = _make_hound()
-        hound.combat_list = []
+        hound.combat_list_allies = []
         assert hound._count_pack_members() == 0
 
     def test_counts_other_living_hounds(self):
@@ -70,7 +70,7 @@ class TestTalusHoundCountPackMembers:
         ally1.is_alive = lambda: True
         ally2 = TalusHound()
         ally2.is_alive = lambda: True
-        hound.combat_list = [hound, ally1, ally2]
+        hound.combat_list_allies = [hound, ally1, ally2]
         assert hound._count_pack_members() == 2
 
     def test_does_not_count_dead_hounds(self):
@@ -79,14 +79,14 @@ class TestTalusHoundCountPackMembers:
         hound = _make_hound()
         dead = TalusHound()
         dead.is_alive = lambda: False
-        hound.combat_list = [hound, dead]
+        hound.combat_list_allies = [hound, dead]
         assert hound._count_pack_members() == 0
 
     def test_does_not_count_self(self):
         from src.npc._enemies import TalusHound
 
         hound = _make_hound()
-        hound.combat_list = [hound]
+        hound.combat_list_allies = [hound]
         assert hound._count_pack_members() == 0
 
     def test_does_not_count_non_hound_npcs(self):
@@ -95,7 +95,7 @@ class TestTalusHoundCountPackMembers:
 
         hound = _make_hound()
         slime = Slime()
-        hound.combat_list = [hound, slime]
+        hound.combat_list_allies = [hound, slime]
         assert hound._count_pack_members() == 0
 
 
@@ -104,7 +104,7 @@ class TestTalusHoundSelectMoveSolo:
 
     def test_select_move_returns_a_move_solo(self):
         hound = _make_hound()
-        hound.combat_list = []
+        hound.combat_list_allies = []
         hound.select_move()
         assert hound.current_move is not None
 
@@ -112,7 +112,7 @@ class TestTalusHoundSelectMoveSolo:
         """When all moves exceed fatigue or aren't viable, NpcRest is selected."""
         hound = _make_hound()
         hound.fatigue = 0
-        hound.combat_list = []
+        hound.combat_list_allies = []
         # All moves have cost > fatigue so can_attack == False
         # and no Advance move, so NpcRest fallback triggers
         hound.select_move()
@@ -120,7 +120,7 @@ class TestTalusHoundSelectMoveSolo:
 
     def test_solo_sets_current_move(self):
         hound = _make_hound()
-        hound.combat_list = []
+        hound.combat_list_allies = []
         hound.current_move = None
         hound.select_move()
         # The hound must end up with some move assigned
@@ -136,7 +136,7 @@ class TestTalusHoundSelectMoveSmallPack:
         hound = _make_hound()
         ally = TalusHound()
         ally.is_alive = lambda: True
-        hound.combat_list = [hound, ally]
+        hound.combat_list_allies = [hound, ally]
         assert hound._count_pack_members() == 1
         hound.select_move()
         assert hound.current_move is not None
@@ -153,7 +153,7 @@ class TestTalusHoundSelectMoveLargePack:
         ally1.is_alive = lambda: True
         ally2 = TalusHound()
         ally2.is_alive = lambda: True
-        hound.combat_list = [hound, ally1, ally2]
+        hound.combat_list_allies = [hound, ally1, ally2]
         assert hound._count_pack_members() == 2
         hound.select_move()
         assert hound.current_move is not None
