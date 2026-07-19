@@ -133,6 +133,43 @@ def _build_general_body(fields, attribution):
     return body
 
 
+_STRING_FIELD_KEYS_BY_TYPE = {
+    "bug": ("steps", "expected", "actual", "severity"),
+    "feature": ("description", "use_case"),
+    "general": ("message",),
+}
+
+
+def _validate_fields_for_type(feedback_type, fields):
+    """Validate the types of values inside the ``fields`` payload.
+
+    ``submit_feedback`` only checks that ``fields`` itself is a dict. The
+    ``_build_*_body`` helpers then call ``.strip()``/``.lower()``/``.get()``
+    on specific entries assuming they are strings (or, for ``ratings``, a
+    dict) — a wrong-typed value (e.g. ``{"steps": 123}`` or
+    ``{"ratings": "nope"}``) would raise ``AttributeError`` deep in the
+    builder and surface as a 500. Reject it here as a 400 instead.
+
+    Args:
+        feedback_type: One of "bug", "feature", "general".
+        fields: The ``fields`` dict from the request body.
+
+    Returns:
+        An error message string, or ``None`` if all present values type-check.
+    """
+    for key in _STRING_FIELD_KEYS_BY_TYPE.get(feedback_type, ()):
+        value = fields.get(key)
+        if value is not None and not isinstance(value, str):
+            return f"fields.{key} must be a string"
+
+    if feedback_type == "general":
+        ratings = fields.get("ratings")
+        if ratings is not None and not isinstance(ratings, dict):
+            return "fields.ratings must be an object"
+
+    return None
+
+
 def _create_github_issue(title, body, labels):
     """POST to GitHub Issues API. Returns (issue_url, error_message)."""
     token = os.environ.get("GITHUB_TOKEN")
@@ -229,6 +266,10 @@ def submit_feedback():
         k: (v[:MAX_FIELD_LENGTH] if isinstance(v, str) else v)
         for k, v in fields.items()
     }
+
+    field_type_error = _validate_fields_for_type(feedback_type, fields)
+    if field_type_error:
+        return jsonify({"success": False, "error": field_type_error}), 400
 
     attribution = (
         "Submitted anonymously via in-game feedback"

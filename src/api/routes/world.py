@@ -204,6 +204,19 @@ def submit_event_input():
         event_id = data["event_id"]
         user_input = data["user_input"]
 
+        # event_id is used as a dict key (unhashable types like a list would
+        # raise TypeError) and user_input is later .strip()'d — validate both
+        # are strings here so bad input surfaces as a 400, not a 500.
+        is_valid, event_id_error = validate_string_field(event_id, "event_id")
+        if not is_valid:
+            return jsonify({"success": False, "error": event_id_error}), 400
+
+        is_valid, user_input_error = validate_string_field(
+            user_input, "user_input", allow_empty=True
+        )
+        if not is_valid:
+            return jsonify({"success": False, "error": user_input_error}), 400
+
         # Sanitize user input
         from src.api.utils.input_sanitizer import sanitize_event_input
 
@@ -615,6 +628,14 @@ def interact_with_target():
 
         target_id = data["target_id"]
         action = data["action"]
+
+        # GameService.interact_with_target calls action.lower() before its own
+        # try/except, so a non-string action (e.g. null, 123) would raise
+        # AttributeError and surface as a 500. Validate here instead.
+        is_valid, action_error = validate_string_field(action, "action")
+        if not is_valid:
+            return jsonify({"success": False, "error": action_error}), 400
+
         quantity = data.get("quantity")
 
         from flask import current_app

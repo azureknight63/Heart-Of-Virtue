@@ -372,6 +372,49 @@ class TestSubmitEventInput:
                 )
         assert rv.status_code == 500
 
+    def test_non_string_user_input_returns_400(self, client):
+        # Regression for #400: sanitize_event_input calls user_input.strip();
+        # a non-string (e.g. int) must be rejected in-route as a 400,
+        # never reach the sanitizer.
+        rv = client.post(
+            "/world/events/input",
+            json={"event_id": "e1", "user_input": 123},
+            headers=AUTH,
+        )
+        assert rv.status_code == 400
+        data = rv.get_json()
+        assert data["success"] is False
+
+    def test_null_user_input_returns_400(self, client):
+        rv = client.post(
+            "/world/events/input",
+            json={"event_id": "e1", "user_input": None},
+            headers=AUTH,
+        )
+        assert rv.status_code == 400
+
+    def test_list_event_id_returns_400(self, client):
+        # Regression for #400: sanitize_event_input does
+        # `event_id not in session_data["pending_events"]`, which raises
+        # TypeError for an unhashable event_id (e.g. a list). Must be
+        # rejected in-route as a 400 instead.
+        rv = client.post(
+            "/world/events/input",
+            json={"event_id": ["not", "hashable"], "user_input": "go"},
+            headers=AUTH,
+        )
+        assert rv.status_code == 400
+        data = rv.get_json()
+        assert data["success"] is False
+
+    def test_non_string_event_id_returns_400(self, client):
+        rv = client.post(
+            "/world/events/input",
+            json={"event_id": 123, "user_input": "go"},
+            headers=AUTH,
+        )
+        assert rv.status_code == 400
+
 
 # ===========================================================================
 # GET /world/tile  — get_tile
@@ -633,6 +676,39 @@ class TestInteractWithTarget:
         rv = client.post(
             "/world/interact",
             json={"target_id": "chest_01"},
+            headers=AUTH,
+        )
+        assert rv.status_code == 400
+
+    def test_null_action_returns_400(self, client):
+        # Regression for #399: action=null used to reach
+        # GameService.interact_with_target and blow up on action.lower()
+        # (AttributeError -> 500). It must be rejected as a 400 in-route.
+        rv = client.post(
+            "/world/interact",
+            json={"target_id": "chest_01", "action": None},
+            headers=AUTH,
+        )
+        assert rv.status_code == 400
+        data = rv.get_json()
+        assert data["success"] is False
+
+    def test_non_string_action_returns_400(self, client):
+        # Regression for #399: a non-string action (e.g. int) must not
+        # reach the service layer's action.lower() call.
+        rv = client.post(
+            "/world/interact",
+            json={"target_id": "chest_01", "action": 123},
+            headers=AUTH,
+        )
+        assert rv.status_code == 400
+        data = rv.get_json()
+        assert data["success"] is False
+
+    def test_empty_string_action_returns_400(self, client):
+        rv = client.post(
+            "/world/interact",
+            json={"target_id": "chest_01", "action": ""},
             headers=AUTH,
         )
         assert rv.status_code == 400
