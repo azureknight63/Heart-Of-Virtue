@@ -6,10 +6,6 @@ import pytest
 from unittest.mock import MagicMock, patch
 
 
-import src.items as items
-
-items.get_all_subtypes()
-
 from src.moves import (
     Pulverize,
     KillingPrecision,
