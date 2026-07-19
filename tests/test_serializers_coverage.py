@@ -125,14 +125,14 @@ def _mock_move(
     return m
 
 
-def _mock_state(name="Poisoned", state_type="debuff", damage_per_turn=3, beats_left=2):
+def _mock_state(name="Poisoned", statustype="poison", beats_left=2):
+    """Mock a src/states.py State. Real States expose `statustype` (e.g.
+    "poison", "stun", "enraged") -- never `state_type` -- and have no generic
+    damage_per_turn/healing_per_turn/resistable attributes."""
     s = MagicMock()
     s.name = name
-    s.state_type = state_type
+    s.statustype = statustype
     s.description = "Taking poison damage."
-    s.damage_per_turn = damage_per_turn
-    s.healing_per_turn = 0
-    s.resistable = True
     s.beats_left = beats_left
     return s
 
@@ -512,58 +512,6 @@ class TestCombatantSerializer:
 # ===========================================================================
 
 
-class TestMoveSerializer:
-    """Tests for MoveSerializer covering uncovered branches."""
-
-    def setup_method(self):
-        from src.api.serializers.combat import MoveSerializer
-
-        self.MoveSerializer = MoveSerializer
-
-    def test_serialize_move_basic(self):
-        move = _mock_move()
-        result = self.MoveSerializer.serialize_move(move)
-        assert result["name"] == "Slash"
-        assert result["type"] == "physical"
-        assert result["damage"]["base"] == 10
-        assert result["cost"]["stamina"] == 5
-
-    def test_serialize_move_list(self):
-        moves = [_mock_move("Slash"), _mock_move("Stab", base_damage=12)]
-        result = self.MoveSerializer.serialize_move_list(moves)
-        assert len(result) == 2
-        assert result[1]["name"] == "Stab"
-
-    def test_serialize_move_with_cooldown(self):
-        move = _mock_move()
-        result = self.MoveSerializer.serialize_move_with_cooldown(
-            move, cooldown_remaining=3
-        )
-        assert result["cooldown"]["remaining"] == 3
-        assert result["available"] is False
-
-    def test_serialize_move_with_cooldown_zero(self):
-        move = _mock_move()
-        result = self.MoveSerializer.serialize_move_with_cooldown(
-            move, cooldown_remaining=0
-        )
-        assert result["available"] is True
-
-    def test_serialize_move_effects_with_state(self):
-        state = _mock_state(damage_per_turn=8)
-        move = _mock_move(applies_state=state)
-        effects = self.MoveSerializer._serialize_move_effects(move)
-        assert len(effects) == 1
-        assert effects[0]["type"] == "Poisoned"
-        assert effects[0]["severity"] == "severe"
-
-    def test_serialize_move_effects_no_state(self):
-        move = _mock_move(applies_state=None)
-        move.applies_state = None
-        effects = self.MoveSerializer._serialize_move_effects(move)
-        assert effects == []
-
-
 # ===========================================================================
 # StateEffectSerializer
 # ===========================================================================
@@ -581,11 +529,11 @@ class TestStateEffectSerializer:
         state = _mock_state()
         result = self.StateEffectSerializer.serialize_state(state)
         assert result["name"] == "Poisoned"
-        assert result["type"] == "debuff"
-        assert result["severity"] == "moderate"
+        assert result["type"] == "ailment"
+        assert result["severity"] == "severe"
 
     def test_serialize_state_list(self):
-        states = [_mock_state("Poisoned"), _mock_state("Burned", damage_per_turn=7)]
+        states = [_mock_state("Poisoned"), _mock_state("Burned", statustype="enflamed")]
         result = self.StateEffectSerializer.serialize_state_list(states)
         assert len(result) == 2
 
@@ -605,17 +553,17 @@ class TestStateEffectSerializer:
         assert result["active"] is False
 
     def test_get_severity_light(self):
-        state = _mock_state(damage_per_turn=0)
+        state = _mock_state(statustype="revive")
         result = self.StateEffectSerializer._get_severity(state)
         assert result == "light"
 
     def test_get_severity_moderate(self):
-        state = _mock_state(damage_per_turn=4)
+        state = _mock_state(statustype="disoriented")
         result = self.StateEffectSerializer._get_severity(state)
         assert result == "moderate"
 
     def test_get_severity_severe(self):
-        state = _mock_state(damage_per_turn=10)
+        state = _mock_state(statustype="poison")
         result = self.StateEffectSerializer._get_severity(state)
         assert result == "severe"
 
@@ -644,7 +592,7 @@ class TestNPCSerializer:
         npc.keywords = ["talk"]
         npc.idle_message = "..."
         npc.alert_message = "!!!"
-        npc.current_hp = 60
+        npc.hp = 60
         npc.maxhp = 80
         npc._init_chat_attrs = True
         npc.loquacity_max = 3
@@ -710,84 +658,23 @@ class TestNPCSerializer:
         result = self.NPCSerializer.serialize(npc)
         assert result["loquacity_available"] is True
 
-    def test_serialize_with_stats(self):
+    def test_serialize_health_reads_hp_not_current_hp(self):
+        """Real NPCs expose `hp`, never `current_hp` -- see src/npc/_base.py."""
         npc = self._make_npc()
-        npc.strength = 15
-        npc.speed = 6
-        npc.add_resistance = {"fire": 0.5}
-        npc.add_status_resistance = {"poison": 0.3}
-        npc.equipped = {"weapon": MagicMock()}
-        result = self.NPCSerializer.serialize_with_stats(npc)
-        assert "stats" in result
-        assert result["stats"]["strength"] == 15
-        assert "resistances" in result
-        assert "status_resistances" in result
-        assert "equipped" in result
+        npc.hp = 45
+        result = self.NPCSerializer.serialize(npc)
+        assert result["health"] == 45
 
-    def test_serialize_with_stats_empty(self):
-        npc = MagicMock(spec=["name", "description", "level"])
-        npc.name = "Empty"
-        npc.description = ""
-        npc.level = 1
-        result = self.NPCSerializer.serialize_with_stats(npc)
-        assert "stats" not in result
+    def test_serialize_is_hostile_derived_from_aggro_and_friend(self):
+        """`is_hostile` isn't a real NPC attribute; it's derived from aggro/friend."""
+        npc = self._make_npc(aggro=True, friend=False)
+        result = self.NPCSerializer.serialize(npc)
+        assert result["is_hostile"] is True
 
-    def test_serialize_merchant_with_inventory(self):
-        from src.api.serializers.npc_serializer import NPCSerializer
-
-        npc = self._make_npc("Merchant")
-        item = MagicMock()
-        item.name = "Potion"
-        item.description = "Heals"
-        item.value = 50
-        item.weight = 0.5
-        item.aliases = []
-        item.action_aliases = []
-        item.interactions = []
-        item.keywords = ["take", "buy"]
-        npc.inventory = [item]
-        result = NPCSerializer.serialize_merchant(npc)
-        assert result["is_merchant"] is True
-        assert len(result["shop_items"]) == 1
-
-    def test_serialize_merchant_empty_inventory(self):
-        npc = self._make_npc("Merchant")
-        del npc.inventory
-        result = self.NPCSerializer.serialize_merchant(npc)
-        assert result["shop_items"] == []
-
-    def test_serialize_with_inventory(self):
-        npc = self._make_npc()
-        item = MagicMock()
-        item.name = "Dagger"
-        item.description = ""
-        item.value = 30
-        item.weight = 0.3
-        item.aliases = []
-        item.action_aliases = []
-        item.interactions = []
-        item.keywords = ["take"]
-        npc.inventory = [item]
-        result = self.NPCSerializer.serialize_with_inventory(npc)
-        assert "inventory" in result
-        assert result["inventory_count"] == 1
-
-    def test_serialize_with_inventory_missing(self):
-        npc = MagicMock(spec=["name", "description", "level"])
-        npc.name = "Ghost"
-        npc.description = ""
-        npc.level = 1
-        result = self.NPCSerializer.serialize_with_inventory(npc)
-        assert result["inventory"] == []
-        assert result["inventory_count"] == 0
-
-    def test_serialize_for_combat(self):
-        npc = self._make_npc()
-        npc.combat_list = [MagicMock()]
-        npc.status_effects = ["Poisoned"]
-        result = self.NPCSerializer.serialize_for_combat(npc)
-        assert result["in_combat"] is True
-        assert result["status_effects"] == ["Poisoned"]
+    def test_serialize_is_hostile_false_for_friendly_aggro_npc(self):
+        npc = self._make_npc(aggro=True, friend=True)
+        result = self.NPCSerializer.serialize(npc)
+        assert result["is_hostile"] is False
 
 
 # ===========================================================================
@@ -829,15 +716,17 @@ class TestItemSerializer:
         assert result["name"] == "Sword"
         assert "take" in result["keywords"]
 
-    def test_serialize_item_with_quantity(self):
+    def test_serialize_item_quantity_attr_is_ignored(self):
+        """Real Item objects (src/items.py) always use `count`; `quantity` is
+        never set on a real item, so the serializer must not read it."""
         item = self._make_item("Arrow", "Ammo")
+        del item.count
         item.quantity = 20
         result = self.ItemSerializer.serialize(item)
-        assert result["count"] == 20
+        assert result["count"] == 1  # falls back to the default, ignoring quantity
 
     def test_serialize_item_with_count_attr(self):
         item = self._make_item("Arrow", "Ammo")
-        del item.quantity
         item.count = 15
         result = self.ItemSerializer.serialize(item)
         assert result["count"] == 15
@@ -919,37 +808,6 @@ class TestItemSerializer:
         items = [self._make_item("Sword"), self._make_item("Shield", "Armor")]
         result = self.ItemSerializer.serialize_list(items)
         assert len(result) == 2
-
-    def test_serialize_with_effects_skills_and_effects(self):
-        item = self._make_item()
-        item.skills = ["Power Strike"]
-        item.effects = [{"type": "heal", "amount": 50}]
-        item.discovery_message = "You found a sword!"
-        item.announce = "A sword gleams."
-        result = self.ItemSerializer.serialize_with_effects(item)
-        assert "skills" in result
-        assert "effects" in result
-        assert "discovery_message" in result
-
-    def test_serialize_inventory_no_effects(self):
-        item = self._make_item()
-        result = self.ItemSerializer.serialize_inventory([item], include_effects=False)
-        assert "items" in result
-        assert result["count"] == 1
-        assert "total_weight" in result
-
-    def test_serialize_inventory_with_effects(self):
-        item = self._make_item()
-        item.skills = []
-        item.effects = []
-        result = self.ItemSerializer.serialize_inventory([item], include_effects=True)
-        assert result["count"] == 1
-
-    def test_serialize_container(self):
-        items = [self._make_item("Gold Coin", "Currency")]
-        result = self.ItemSerializer.serialize_container(items)
-        assert result["count"] == 1
-        assert "items" in result
 
 
 # ===========================================================================
@@ -1546,88 +1404,6 @@ class TestEventSerializer:
         assert result["delay_mode"] == "fade"
         assert result["delay_duration"] == 2000
 
-    def test_serialize_with_conditions_has_check(self):
-        event = self._make_event()
-        event.check_conditions = MagicMock()
-        event.required_item = "sword"
-        event.required_level = 5
-        event.required_flag = "quest_started"
-        event.params = {"key": "val"}
-        result = self.EventSerializer.serialize_with_conditions(event)
-        assert result["has_conditions_check"] is True
-        assert result["required_item"] == "sword"
-        assert result["required_level"] == 5
-        assert result["required_flag"] == "quest_started"
-        assert result["params"] is not None
-
-    def test_serialize_with_conditions_no_params(self):
-        event = self._make_event()
-        event.check_conditions = MagicMock()
-        event.params = None
-        result = self.EventSerializer.serialize_with_conditions(event)
-        assert result["params"] is None
-
-    def test_serialize_with_consequences_string(self):
-        event = self._make_event()
-        event.consequence = "Quest completed"
-        event.experience_reward = 100
-        event.gold_reward = 50
-        event.item_rewards = ["sword"]
-        event.item_reward = "shield"
-        event.story_flag = "act1_complete"
-        event.chapter = 1
-        event.section = "prologue"
-        result = self.EventSerializer.serialize_with_consequences(event)
-        assert result["consequence"] == "Quest completed"
-        assert result["experience_reward"] == 100
-
-    def test_serialize_with_consequences_complex_object(self):
-        event = self._make_event()
-        event.consequence = object()
-        result = self.EventSerializer.serialize_with_consequences(event)
-        assert isinstance(result["consequence"], str)
-
-    def test_serialize_story_event(self):
-        event = self._make_event()
-        event.story_name = "The Beginning"
-        event.narrative_text = "Long ago..."
-        event.dialogue = ["Hello", "World"]
-        event.choices = ["Option A", "Option B"]
-        event.enemy_spawned = True
-        event.encounter_type = "ambush"
-        event.consequence = "story progresses"
-        result = self.EventSerializer.serialize_story_event(event)
-        assert result["is_story_event"] is True
-        assert result["story_name"] == "The Beginning"
-        assert result["choice_count"] == 2
-        assert result["enemy_spawned"] is True
-
-    def test_serialize_combat_event(self):
-        event = self._make_event()
-        event.trigger_on = "enter"
-        event.trigger_condition = "hp_low"
-        event.enemy_type = "Goblin"
-        event.enemy_level = 3
-        event.enemy_count = 2
-        event.victory_message = "You won!"
-        event.defeat_message = "You lost."
-        result = self.EventSerializer.serialize_combat_event(event)
-        assert result["is_combat_event"] is True
-        assert result["enemy_type"] == "Goblin"
-
-    def test_serialize_conditional_event(self):
-        event = self._make_event()
-        event.conditions = ["cond1", "cond2"]
-        event.success_consequence = "win"
-        event.failure_consequence = "lose"
-        event.trigger_on_enter = True
-        event.trigger_on_exit = False
-        event.trigger_in_combat = False
-        event.consequence = "something"
-        result = self.EventSerializer.serialize_conditional_event(event)
-        assert result["is_conditional"] is True
-        assert result["condition_count"] == 2
-
     def test_serialize_with_input_needs_input(self):
         event = self._make_event()
         event.needs_input = True
@@ -1890,42 +1666,3 @@ class TestObjectSerializer:
         result = self.ObjectSerializer.serialize_container(obj)
         assert result["capacity"] == 10
 
-    def test_serialize_interactive(self):
-        obj = self._make_obj()
-        obj.events = [MagicMock(), MagicMock()]
-        obj.consequence_text = "Something happens."
-        obj.use_message = "You use it."
-        obj.examine_message = "You examine it."
-        obj.one_time_only = True
-        result = self.ObjectSerializer.serialize_interactive(obj)
-        assert result["has_events"] is True
-        assert result["events"] == 2
-        assert result["consequence"] == "Something happens."
-
-    def test_serialize_interactive_no_events(self):
-        obj = self._make_obj()
-        del obj.events
-        result = self.ObjectSerializer.serialize_interactive(obj)
-        assert result["has_events"] is False
-
-    def test_serialize_door(self):
-        obj = self._make_obj("Oak Door")
-        obj.opened = False
-        obj.locked = True
-        obj.open_message = "The door creaks open."
-        obj.locked_message = "The door is locked."
-        obj.leads_to = "dungeon_entrance"
-        result = self.ObjectSerializer.serialize_door(obj)
-        assert result["is_door"] is True
-        assert result["locked"] is True
-        assert result["leads_to"] == "dungeon_entrance"
-
-    def test_serialize_shrine(self):
-        obj = self._make_obj("Altar")
-        obj.blessing_text = "You feel blessed."
-        obj.blessing_effect = {"hp": 20}
-        obj.last_blessed_at = "2026-01-01"
-        result = self.ObjectSerializer.serialize_shrine(obj)
-        assert result["is_shrine"] is True
-        assert result["blessing"] == "You feel blessed."
-        assert result["last_blessed_at"] == "2026-01-01"

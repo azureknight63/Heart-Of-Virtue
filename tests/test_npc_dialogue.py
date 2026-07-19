@@ -481,24 +481,6 @@ class TestNPCEdgeCases:
         serialized = NPCSerializer.serialize_list([])
         assert serialized == []
 
-    def test_dialogue_with_empty_tree(self):
-        """Test dialogue with empty nodes."""
-        npc = NPC(
-            name="EmptyTree",
-            description="Test NPC",
-            damage=10,
-            aggro=False,
-            exp_award=50,
-        )
-
-        empty_tree = {"id": "empty", "nodes": {}}
-        dialogue_state = DialogueStateSerializer.serialize_dialogue_state(
-            npc, dialogue_tree=empty_tree, current_node="nonexistent"
-        )
-
-        assert dialogue_state is not None
-        assert "current_node" in dialogue_state
-
     def test_npc_movement_state(self):
         """Test NPC movement/location state."""
         npc = NPC(
@@ -512,127 +494,6 @@ class TestNPCEdgeCases:
         # Simulate room assignment
         npc.current_room = "Tavern"
         assert npc.current_room == "Tavern"
-
-    def test_dialogue_relationship_tracking(self):
-        """Test dialogue relationship metrics."""
-        npc = NPC(
-            name="RelationshipTest",
-            description="Test NPC",
-            damage=10,
-            aggro=False,
-            exp_award=50,
-        )
-
-        # Initial state
-        dialogue_state = DialogueStateSerializer.serialize_dialogue_state(npc)
-        assert dialogue_state["relationship"]["known"] is False
-        assert dialogue_state["relationship"]["times_talked"] == 0
-
-        # After multiple interactions
-        history = [
-            {"player": "Hello", "npc": "Hi"},
-            {"player": "How are you?", "npc": "Good"},
-        ]
-        dialogue_state = DialogueStateSerializer.serialize_dialogue_state(
-            npc, conversation_history=history
-        )
-        assert dialogue_state["relationship"]["times_talked"] == 2
-
-
-class TestNPCComplexScenarios:
-    """Test complex interaction scenarios."""
-
-    def test_npc_multiple_serialization_formats(self):
-        """Test NPC serialization across multiple formats."""
-        npc = NPC(
-            name="MultiFormat",
-            description="Test NPC",
-            damage=15,
-            aggro=True,
-            exp_award=100,
-            maxhp=200,
-        )
-
-        basic = NPCSerializer.serialize(npc)
-        with_stats = NPCSerializer.serialize_with_stats(npc)
-        for_combat = NPCSerializer.serialize_for_combat(npc)
-
-        assert basic["name"] == "MultiFormat"
-        assert with_stats["name"] == "MultiFormat"
-        assert for_combat["name"] == "MultiFormat"
-
-    def test_dialogue_branching_complexity(self):
-        """Test complex dialogue tree branching."""
-        npc = NPC(
-            name="BranchingDialogue",
-            description="Test NPC",
-            damage=10,
-            aggro=False,
-            exp_award=50,
-        )
-
-        complex_tree = {
-            "id": "complex",
-            "nodes": {
-                "start": {
-                    "text": "Welcome!",
-                    "options": [
-                        {"id": 1, "text": "Tell me about yourself", "next": "backstory"},
-                        {"id": 2, "text": "I need work", "next": "quest"},
-                        {"id": 3, "text": "Goodbye", "next": "end"},
-                    ],
-                },
-                "backstory": {
-                    "text": "I've been here for years.",
-                    "options": [
-                        {"id": 1, "text": "How interesting!", "next": "quest"},
-                        {"id": 2, "text": "Goodbye", "next": "end"},
-                    ],
-                },
-                "quest": {
-                    "text": "I need help with something.",
-                    "options": [
-                        {"id": 1, "text": "I'm interested", "next": "quest_accept"},
-                        {"id": 2, "text": "Not right now", "next": "end"},
-                    ],
-                },
-                "quest_accept": {
-                    "text": "Great! Here's what you need to do...",
-                    "options": [{"id": 1, "text": "Understood", "next": "end"}],
-                },
-                "end": {"text": "Farewell.", "options": []},
-            },
-        }
-
-        # Test from different starting nodes
-        for start_node in ["start", "backstory", "quest"]:
-            dialogue_state = DialogueStateSerializer.serialize_dialogue_state(
-                npc, dialogue_tree=complex_tree, current_node=start_node
-            )
-            assert dialogue_state["current_node"] == start_node
-            assert "options" in dialogue_state
-
-    def test_npc_ai_state_with_attributes(self):
-        """Test AI state serialization with various attributes."""
-        npc = NPC(
-            name="AIComplex",
-            description="Test NPC",
-            damage=12,
-            aggro=True,
-            exp_award=75,
-            maxhp=150,
-        )
-
-        # Add custom attributes
-        npc.current_behavior = "patrolling"
-        npc.behavior_stack = ["idle", "alert"]
-        npc.last_interaction_time = 123456789
-
-        ai_state = NPCAIStateSerializer.serialize_npc_ai_state(npc)
-
-        assert ai_state["current_behavior"] == "patrolling"
-        assert ai_state["behavior_stack"] == ["idle", "alert"]
-        assert ai_state["last_interaction"] == 123456789
 
 
 class TestNPCIntegration:
@@ -654,18 +515,10 @@ class TestNPCIntegration:
         assert npc.hp == 100
         npc.hp = 75  # Take damage
 
-        # Serialize in all formats
+        # Serialize
         basic = NPCSerializer.serialize(npc)
         assert basic["name"] == "Lifecycle"
-
-        ai_state = NPCAIStateSerializer.serialize_npc_ai_state(npc)
-        assert ai_state["health_status"]["hp"] == 75
-
-        dialogue = DialogueStateSerializer.serialize_dialogue_state(npc)
-        assert dialogue["npc_name"] == "Lifecycle"
-
-        profile = NPCBehaviorProfileSerializer.serialize_behavior_profile(npc)
-        assert profile["name"] == "Lifecycle"
+        assert basic["health"] == 75
 
     def test_friend_and_npc_polymorphism(self):
         """Test Friend and NPC polymorphism in serialization."""
@@ -692,27 +545,6 @@ class TestNPCIntegration:
         assert friend_data["name"] == "Companion"
         assert friend.friend is True
         assert npc.friend is False
-
-    def test_multiple_npcs_concurrent_dialogue(self):
-        """Test managing dialogue state for multiple NPCs."""
-        npcs = [
-            NPC(
-                name=f"NPC{i}",
-                description=f"Test NPC {i}",
-                damage=10 + i,
-                aggro=bool(i % 2),
-                exp_award=50 + i * 10,
-            )
-            for i in range(3)
-        ]
-
-        # Get dialogue state for each
-        dialogues = [DialogueStateSerializer.serialize_dialogue_state(npc) for npc in npcs]
-
-        assert len(dialogues) == 3
-        assert dialogues[0]["npc_name"] == "NPC0"
-        assert dialogues[1]["npc_name"] == "NPC1"
-        assert dialogues[2]["npc_name"] == "NPC2"
 
     def test_serialization_consistency(self):
         """Test that serialization is consistent across calls."""

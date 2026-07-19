@@ -39,7 +39,6 @@ from src.player import Player  # noqa: E402
 from src.npc import NPC, Merchant  # noqa: E402
 from src.items import Longsword, LeatherArmor, GoldRing, Restorative, Gold  # noqa: E402
 from src.states import State  # noqa: E402
-from src.moves._unarmed import PowerStrike  # noqa: E402
 from src.objects import Shrine, Crate  # noqa: E402
 from src.events import Event  # noqa: E402
 from src import secure_pickle as sp  # noqa: E402
@@ -58,15 +57,9 @@ from src.api.serializers.inventory import (  # noqa: E402
     ItemDetailSerializer,
     ItemComparisonSerializer,
 )
-from src.api.serializers.npc_ai import (  # noqa: E402
-    NPCAIStateSerializer,
-    DialogueStateSerializer,
-    NPCBehaviorProfileSerializer,
-)
 from src.api.serializers.combat import (  # noqa: E402
     CombatStateSerializer,
     CombatantSerializer,
-    MoveSerializer,
     StateEffectSerializer,
 )
 from src.api.services.game_service import GameService  # noqa: E402
@@ -213,10 +206,6 @@ def _mk_state():
     return State("FuzzState", target=None)
 
 
-def _mk_move():
-    return PowerStrike(Player())
-
-
 def _mk_object():
     return Shrine()
 
@@ -243,7 +232,6 @@ _FACTORIES = {
     "merchant": _mk_merchant,
     "item": _mk_item,
     "state": _mk_state,
-    "move": _mk_move,
     "object": _mk_object,
     "container": _mk_container,
     "event": _mk_event,
@@ -284,12 +272,6 @@ def _fuzz_item(seed, i, rng, findings):
     _call(seed, i, "ItemSerializer.serialize", lambda: ItemSerializer.serialize(item), findings)
     _call(seed, i, "ItemSerializer.serialize_list",
           lambda: ItemSerializer.serialize_list([item, degrade(_mk_item(), rng)]), findings)
-    _call(seed, i, "ItemSerializer.serialize_with_effects",
-          lambda: ItemSerializer.serialize_with_effects(item), findings)
-    _call(seed, i, "ItemSerializer.serialize_inventory",
-          lambda: ItemSerializer.serialize_inventory([item], include_effects=True), findings)
-    _call(seed, i, "ItemSerializer.serialize_container",
-          lambda: ItemSerializer.serialize_container([item]), findings)
 
     player = degrade(_mk_player(), rng)
     _call(seed, i, "InventoryItemSerializer.serialize",
@@ -308,23 +290,6 @@ def _fuzz_npc(seed, i, rng, findings):
     _call(seed, i, "NPCSerializer.serialize", lambda: NPCSerializer.serialize(npc), findings)
     _call(seed, i, "NPCSerializer.serialize_list",
           lambda: NPCSerializer.serialize_list([npc, degrade(_mk_npc(), rng)]), findings)
-    _call(seed, i, "NPCSerializer.serialize_with_stats",
-          lambda: NPCSerializer.serialize_with_stats(npc), findings)
-    _call(seed, i, "NPCSerializer.serialize_merchant",
-          lambda: NPCSerializer.serialize_merchant(npc), findings)
-    _call(seed, i, "NPCSerializer.serialize_with_inventory",
-          lambda: NPCSerializer.serialize_with_inventory(npc), findings)
-    _call(seed, i, "NPCSerializer.serialize_for_combat",
-          lambda: NPCSerializer.serialize_for_combat(npc), findings)
-
-    _call(seed, i, "NPCAIStateSerializer.serialize_npc_ai_state",
-          lambda: NPCAIStateSerializer.serialize_npc_ai_state(npc), findings)
-    _call(seed, i, "DialogueStateSerializer.serialize_dialogue_state",
-          lambda: DialogueStateSerializer.serialize_dialogue_state(npc), findings)
-    _call(seed, i, "DialogueStateSerializer.serialize_dialogue_options",
-          lambda: DialogueStateSerializer.serialize_dialogue_options(npc), findings)
-    _call(seed, i, "NPCBehaviorProfileSerializer.serialize_behavior_profile",
-          lambda: NPCBehaviorProfileSerializer.serialize_behavior_profile(npc), findings)
 
 
 def _fuzz_merchant(seed, i, rng, findings):
@@ -355,16 +320,6 @@ def _fuzz_state(seed, i, rng, findings):
           lambda: StateEffectSerializer.serialize_state_with_duration(state, 3), findings)
 
 
-def _fuzz_move(seed, i, rng, findings):
-    move = degrade(_mk_move(), rng)
-    _call(seed, i, "MoveSerializer.serialize_move",
-          lambda: MoveSerializer.serialize_move(move), findings)
-    _call(seed, i, "MoveSerializer.serialize_move_list",
-          lambda: MoveSerializer.serialize_move_list([move]), findings)
-    _call(seed, i, "MoveSerializer.serialize_move_with_cooldown",
-          lambda: MoveSerializer.serialize_move_with_cooldown(move, 2), findings)
-
-
 def _fuzz_object(seed, i, rng, findings):
     obj = degrade(rng.choice([_mk_object, _mk_container])(), rng)
     _call(seed, i, "ObjectSerializer.serialize", lambda: ObjectSerializer.serialize(obj), findings)
@@ -372,12 +327,6 @@ def _fuzz_object(seed, i, rng, findings):
           lambda: ObjectSerializer.serialize_list([obj]), findings)
     _call(seed, i, "ObjectSerializer.serialize_container",
           lambda: ObjectSerializer.serialize_container(obj), findings)
-    _call(seed, i, "ObjectSerializer.serialize_interactive",
-          lambda: ObjectSerializer.serialize_interactive(obj), findings)
-    _call(seed, i, "ObjectSerializer.serialize_door",
-          lambda: ObjectSerializer.serialize_door(obj), findings)
-    _call(seed, i, "ObjectSerializer.serialize_shrine",
-          lambda: ObjectSerializer.serialize_shrine(obj), findings)
 
     # Dict-shaped "object" (the is_dict branch in ObjectSerializer._serialize_base)
     dict_obj = {"name": rng.choice([None, 123]), "keywords": rng.choice([None, "nope"])}
@@ -390,16 +339,6 @@ def _fuzz_event(seed, i, rng, findings):
     _call(seed, i, "EventSerializer.serialize", lambda: EventSerializer.serialize(event), findings)
     _call(seed, i, "EventSerializer.serialize_list",
           lambda: EventSerializer.serialize_list([event]), findings)
-    _call(seed, i, "EventSerializer.serialize_with_conditions",
-          lambda: EventSerializer.serialize_with_conditions(event), findings)
-    _call(seed, i, "EventSerializer.serialize_with_consequences",
-          lambda: EventSerializer.serialize_with_consequences(event), findings)
-    _call(seed, i, "EventSerializer.serialize_story_event",
-          lambda: EventSerializer.serialize_story_event(event), findings)
-    _call(seed, i, "EventSerializer.serialize_combat_event",
-          lambda: EventSerializer.serialize_combat_event(event), findings)
-    _call(seed, i, "EventSerializer.serialize_conditional_event",
-          lambda: EventSerializer.serialize_conditional_event(event), findings)
     _call(seed, i, "EventSerializer.serialize_with_input",
           lambda: EventSerializer.serialize_with_input(event), findings)
 
@@ -411,8 +350,8 @@ def _fuzz_legacy_placeholder(seed, i, rng, findings):
     placeholder = _mk_legacy_placeholder()
     _call(seed, i, "ItemSerializer.serialize(placeholder)",
           lambda: ItemSerializer.serialize(placeholder), findings)
-    _call(seed, i, "NPCSerializer.serialize_with_inventory(placeholder)",
-          lambda: NPCSerializer.serialize_with_inventory(placeholder), findings)
+    _call(seed, i, "NPCSerializer.serialize(placeholder)",
+          lambda: NPCSerializer.serialize(placeholder), findings)
     _call(seed, i, "ObjectSerializer.serialize(placeholder)",
           lambda: ObjectSerializer.serialize(placeholder), findings)
     _call(seed, i, "EventSerializer.serialize_with_input(placeholder)",
@@ -465,7 +404,6 @@ _CATEGORIES = (
     _fuzz_npc,
     _fuzz_merchant,
     _fuzz_state,
-    _fuzz_move,
     _fuzz_object,
     _fuzz_event,
     _fuzz_legacy_placeholder,

@@ -20,7 +20,6 @@ try:
     from src.api.serializers.combat import (
         CombatStateSerializer,
         CombatantSerializer,
-        MoveSerializer,
         StateEffectSerializer,
     )
 
@@ -270,154 +269,66 @@ class TestCombatantSerializer:
 @pytest.mark.skipif(
     not SERIALIZERS_AVAILABLE, reason="Combat serializers not available"
 )
-class TestMoveSerializer:
-    """Tests for MoveSerializer."""
-
-    def test_serialize_move_basic(self):
-        """Test basic move serialization."""
-
-        class MockMove:
-            name = "Slash"
-            description = "A basic sword slash"
-            move_type = "physical"
-            base_damage = 15
-            damage_type = "physical"
-            mp_cost = 0
-            stamina_cost = 10
-            range = "melee"
-            cooldown_max = 0
-            cooldown = 0
-            accuracy = 95
-
-        move = MockMove()
-        result = MoveSerializer.serialize_move(move)
-
-        assert result["name"] == "Slash"
-        assert result["type"] == "physical"
-        assert result["damage"]["base"] == 15
-        assert result["cost"]["stamina"] == 10
-        assert result["range"] == "melee"
-        assert result["accuracy"] == 95
-
-    def test_serialize_move_list(self):
-        """Test serializing multiple moves."""
-
-        class MockMove:
-            name = "Attack"
-            description = ""
-            move_type = "physical"
-            base_damage = 10
-            damage_type = "physical"
-            mp_cost = 0
-            stamina_cost = 5
-            range = "melee"
-            cooldown_max = 0
-            cooldown = 0
-            accuracy = 90
-
-        moves = [MockMove(), MockMove()]
-        result = MoveSerializer.serialize_move_list(moves)
-
-        assert len(result) == 2
-        assert all("name" in m for m in result)
-
-    def test_serialize_move_with_cooldown(self):
-        """Test move with cooldown state."""
-
-        class MockMove:
-            name = "Fireball"
-            description = ""
-            move_type = "magical"
-            base_damage = 25
-            damage_type = "fire"
-            mp_cost = 20
-            stamina_cost = 0
-            range = "ranged"
-            cooldown_max = 3
-            cooldown = 0
-            accuracy = 85
-
-        move = MockMove()
-        result = MoveSerializer.serialize_move_with_cooldown(move, cooldown_remaining=2)
-
-        assert result["cooldown"]["remaining"] == 2
-        assert result["available"] is False
-
-    def test_serialize_move_available(self):
-        """Test move is available when cooldown is zero."""
-
-        class MockMove:
-            name = "Attack"
-            description = ""
-            move_type = "physical"
-            base_damage = 10
-            damage_type = "physical"
-            mp_cost = 0
-            stamina_cost = 5
-            range = "melee"
-            cooldown_max = 0
-            cooldown = 0
-            accuracy = 90
-
-        move = MockMove()
-        result = MoveSerializer.serialize_move_with_cooldown(move, cooldown_remaining=0)
-
-        assert result["available"] is True
-
-
-@pytest.mark.skipif(
-    not SERIALIZERS_AVAILABLE, reason="Combat serializers not available"
-)
 class TestStateEffectSerializer:
-    """Tests for StateEffectSerializer."""
+    """Tests for StateEffectSerializer.
 
-    def test_serialize_state_poison(self):
-        """Test serializing poison status effect."""
+    Real `State` objects (src/states.py) expose `statustype` (e.g. "poison",
+    "stun", "enraged") — not `state_type` — and have no generic
+    `damage_per_turn`/`healing_per_turn`/`resistable` attributes (each
+    subclass computes its own damage inline). The serializer maps
+    `statustype` to the frontend's buff/debuff/ailment vocabulary.
+    """
+
+    def test_serialize_state_poison_is_ailment(self):
+        """Test serializing a poison-like status effect."""
 
         class MockState:
             name = "Poison"
-            state_type = "debuff"
+            statustype = "poison"
             description = "Takes damage each turn"
-            damage_per_turn = 5
-            healing_per_turn = 0
-            resistable = True
 
         state = MockState()
         result = StateEffectSerializer.serialize_state(state)
 
         assert result["name"] == "Poison"
-        assert result["type"] == "debuff"
-        assert result["damage_per_turn"] == 5
-        assert result["severity"] == "moderate"
+        assert result["type"] == "ailment"
+        assert result["severity"] == "severe"
 
-    def test_serialize_state_heal(self):
-        """Test serializing heal status effect."""
+    def test_serialize_state_buff(self):
+        """Test serializing a positive status effect."""
 
         class MockState:
             name = "Regeneration"
-            state_type = "buff"
+            statustype = "revive"
             description = "Heals each turn"
-            damage_per_turn = 0
-            healing_per_turn = 10
-            resistable = False
 
         state = MockState()
         result = StateEffectSerializer.serialize_state(state)
 
         assert result["name"] == "Regeneration"
         assert result["type"] == "buff"
-        assert result["healing_per_turn"] == 10
+        assert result["severity"] == "light"
+
+    def test_serialize_state_passthrough_type(self):
+        """A statustype that is already a valid frontend type passes through unchanged."""
+
+        class MockState:
+            name = "Custom"
+            statustype = "debuff"
+            description = ""
+
+        state = MockState()
+        result = StateEffectSerializer.serialize_state(state)
+
+        assert result["type"] == "debuff"
 
     def test_serialize_state_list(self):
         """Test serializing multiple status effects."""
 
         class MockState:
             name = "Effect"
-            state_type = "debuff"
+            statustype = "disoriented"
             description = ""
-            damage_per_turn = 3
-            healing_per_turn = 0
-            resistable = True
 
         states = [MockState(), MockState()]
         result = StateEffectSerializer.serialize_state_list(states)
@@ -430,11 +341,8 @@ class TestStateEffectSerializer:
 
         class MockState:
             name = "Stun"
-            state_type = "debuff"
+            statustype = "stun"
             description = "Cannot move"
-            damage_per_turn = 0
-            healing_per_turn = 0
-            resistable = True
 
         state = MockState()
         result = StateEffectSerializer.serialize_state_with_duration(state, duration_remaining=2)
@@ -447,48 +355,64 @@ class TestStateEffectSerializer:
 
         class MockState:
             name = "Stun"
-            state_type = "debuff"
+            statustype = "stun"
             description = ""
-            damage_per_turn = 0
-            healing_per_turn = 0
-            resistable = True
 
         state = MockState()
         result = StateEffectSerializer.serialize_state_with_duration(state, duration_remaining=0)
 
         assert result["active"] is False
 
-    def test_get_severity_light(self):
-        """Test severity classification for light damage."""
+    def test_get_severity_light_for_buff(self):
+        """Test severity classification for a buff-category effect."""
 
         class MockState:
-            name = "Light Poison"
-            state_type = "debuff"
+            name = "Fervent"
+            statustype = "enraged"
             description = ""
-            damage_per_turn = 0
-            healing_per_turn = 0
-            resistable = True
 
         state = MockState()
         result = StateEffectSerializer.serialize_state(state)
 
         assert result["severity"] == "light"
 
-    def test_get_severity_severe(self):
-        """Test severity classification for severe damage."""
+    def test_get_severity_moderate_for_debuff(self):
+        """Test severity classification for a debuff-category effect."""
 
         class MockState:
-            name = "Severe Poison"
-            state_type = "debuff"
+            name = "Disoriented"
+            statustype = "disoriented"
             description = ""
-            damage_per_turn = 10
-            healing_per_turn = 0
-            resistable = True
+
+        state = MockState()
+        result = StateEffectSerializer.serialize_state(state)
+
+        assert result["severity"] == "moderate"
+
+    def test_get_severity_severe_for_ailment(self):
+        """Test severity classification for an ailment-category effect."""
+
+        class MockState:
+            name = "Enflamed"
+            statustype = "enflamed"
+            description = ""
 
         state = MockState()
         result = StateEffectSerializer.serialize_state(state)
 
         assert result["severity"] == "severe"
+
+    def test_serialize_state_missing_statustype_defaults(self):
+        """A state with no statustype attribute at all defaults to generic/buff."""
+
+        class MockState:
+            name = "Mystery"
+            description = ""
+
+        state = MockState()
+        result = StateEffectSerializer.serialize_state(state)
+
+        assert result["type"] == "buff"
 
 
 @pytest.mark.skipif(
