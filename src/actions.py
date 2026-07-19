@@ -15,29 +15,6 @@ class Action:
         return "{}: {}".format(self.hotkey, self.name)
 
 
-class ViewStatus(Action):
-    def __init__(self):
-        super().__init__(
-            method=Player.print_status,
-            name="View status",
-            hotkey=("st", "stat", "status", "char", "character"),
-        )
-
-
-class Equip(Action):
-    def __init__(self):
-        super().__init__(
-            method=Player.equip_item,
-            name="Change Equipment",
-            hotkey=("q", "equip"),
-        )
-
-
-class Use(Action):
-    def __init__(self):
-        super().__init__(method=Player.use_item, name="Use Item", hotkey=("u", "use"))
-
-
 class Search(Action):
     def __init__(self):
         super().__init__(
