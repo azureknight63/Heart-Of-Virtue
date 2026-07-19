@@ -31,13 +31,7 @@ class MynxLLMMixin:
 
     # ── Precompiled regex (class-level; shared across all instances) ───────────
     _re_whitespace = re.compile(r"\s+")
-    _re_sentence_split = re.compile(r"[.!?]")
-    _re_capitalized_token = re.compile(r"^[A-Z][A-Za-z\-']+$")
     _re_disallowed_name_token = re.compile(r"\b([A-Z][A-Za-z\-]+)('s)?\b")
-    _re_self_actions = re.compile(
-        r"\b(batting|pawing|swatting|tapping) at (?:{name}|{pronoun})\b",
-        re.IGNORECASE,
-    )
     _re_duplicate_pronoun_template = r"\b({p})\s+\1\b"
     _gendered_pronouns = re.compile(r"\b(he|him|his|she|her|hers)\b", re.IGNORECASE)
 
@@ -99,13 +93,23 @@ class MynxLLMMixin:
 
     # ── LLM adapter (lazy-loaded via importlib) ────────────────────────────────
 
+    # Sentinel distinguishing "known unavailable" from "not yet attempted".
+    # Mirrors HumanNPCLLMMixin._ADAPTER_FAILED in _chat_llm.py: once we've
+    # determined the adapter is disabled/unreachable/unavailable, stick with
+    # that outcome for the lifetime of this instance instead of re-running the
+    # module reload + live availability probe (up to several network round
+    # trips) on every single Mynx interaction.
+    _ADAPTER_FAILED = object()
+
     def _get_llm_adapter(self):
         """Return a live MynxLLMAdapter, or None if LLM is disabled / unavailable."""
+        if self._llm_adapter is self._ADAPTER_FAILED:
+            return None
         if self._llm_adapter is not None:
             return self._llm_adapter
         _debug = os.getenv("MYNX_LLM_DEBUG", "0") in ("1", "true", "True")
         if os.getenv("MYNX_LLM_ENABLED", "0") not in ("1", "true", "True"):
-            self._llm_adapter = None
+            self._llm_adapter = self._ADAPTER_FAILED
             if _debug:
                 narrate(
                     "[MYNX_LLM_DEBUG] Adapter disabled: set MYNX_LLM_ENABLED=1 to enable."
@@ -115,7 +119,7 @@ class MynxLLMMixin:
             root = Path(__file__).resolve().parent.parent.parent
             adapter_path = root / "ai" / "llm_client.py"
             if not adapter_path.exists():
-                self._llm_adapter = None
+                self._llm_adapter = self._ADAPTER_FAILED
                 if _debug:
                     narrate(
                         f"[MYNX_LLM_DEBUG] llm_client.py not found at {adapter_path}."
@@ -125,7 +129,7 @@ class MynxLLMMixin:
                 "ai.llm_client", str(adapter_path)
             )
             if not (spec and spec.loader):
-                self._llm_adapter = None
+                self._llm_adapter = self._ADAPTER_FAILED
                 if _debug:
                     narrate(
                         "[MYNX_LLM_DEBUG] Failed to create module spec for llm_client."
@@ -135,7 +139,7 @@ class MynxLLMMixin:
             spec.loader.exec_module(mod)
             Adapter = getattr(mod, "MynxLLMAdapter", None)
             if Adapter is None:
-                self._llm_adapter = None
+                self._llm_adapter = self._ADAPTER_FAILED
                 if _debug:
                     narrate(
                         "[MYNX_LLM_DEBUG] MynxLLMAdapter class not found in llm_client module."
@@ -163,12 +167,12 @@ class MynxLLMMixin:
                         )
                     except Exception:
                         pass
-                self._llm_adapter = None
+                self._llm_adapter = self._ADAPTER_FAILED
         except Exception as e:
-            self._llm_adapter = None
+            self._llm_adapter = self._ADAPTER_FAILED
             if _debug:
                 narrate(f"[MYNX_LLM_DEBUG] Exception loading adapter: {e}")
-        return self._llm_adapter
+        return None if self._llm_adapter is self._ADAPTER_FAILED else self._llm_adapter
 
     # ── Text sanitisation ──────────────────────────────────────────────────────
 
@@ -512,7 +516,7 @@ class MynxLLMMixin:
             raw = text.strip()
             if not raw:
                 return None
-            if '"' in raw or ("'" in raw and (" says " in raw or raw.count('"') >= 2)):
+            if '"' in raw or ("'" in raw and " says " in raw):
                 return None
             sentences = [s.strip() for s in re.split(r"[.!?]", raw) if s.strip()]
             if not sentences:
