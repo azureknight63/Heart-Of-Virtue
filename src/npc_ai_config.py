@@ -248,7 +248,7 @@ class NPCAIConfig:
             return 0.0  # No retreat needed
 
         # Scale priority between threshold and 0 HP
-        # At threshold: 0.3, priority = ~0.3
+        # At threshold: priority = 0.0
         # At 0 HP: priority = 1.0
         priority = 1.0 - (health_ratio / max(0.001, threshold))
         return min(1.0, max(0.0, priority))
