@@ -440,13 +440,17 @@ class TestKillingPrecisionExecute:
         assert target.hp < 100
 
     def test_execute_boosts_heat(self):
+        # Regression test for #416: KillingPrecision must rely solely on the
+        # built-in heat multiplier applied by Move.hit() (1.25x for the
+        # player) and must NOT apply a redundant extra change_heat(1.5) call,
+        # which previously compounded to 1.875x.
         player, target, move = self._setup()
         with patch("src.moves._mastery.random.uniform", return_value=1.0), \
              patch("src.moves._mastery.functions.check_parry", return_value=False), \
              patch("src.moves._base.colored", side_effect=lambda t, *a, **kw: str(t)), \
              patch("builtins.print"):
             move.execute(player)
-        player.change_heat.assert_any_call(1.5)
+        player.change_heat.assert_called_once_with(1.25)
 
     def test_execute_parry_path(self):
         player, target, move = self._setup()
