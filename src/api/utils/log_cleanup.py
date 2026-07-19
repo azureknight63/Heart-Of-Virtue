@@ -13,6 +13,13 @@ logger = logging.getLogger(__name__)
 class LogCleanupManager:
     """Manages cleanup of old browser log files."""
 
+    # Lower bounds to guard against pathological/malicious config: a negative
+    # retention_days pushes the cutoff into the future and deletes every log
+    # immediately; a zero-or-negative max_size_mb has the same effect for
+    # size-based cleanup.
+    MIN_RETENTION_DAYS = 1
+    MIN_MAX_SIZE_MB = 1
+
     def __init__(self, logs_dir, retention_days=7, max_size_mb=100):
         """
         Initialize the log cleanup manager.
@@ -23,6 +30,23 @@ class LogCleanupManager:
             max_size_mb: Maximum total size of logs in MB (default: 100)
         """
         self.logs_dir = Path(logs_dir)
+
+        if retention_days is None or retention_days < self.MIN_RETENTION_DAYS:
+            logger.warning(
+                "Invalid retention_days=%r; clamping to minimum %d",
+                retention_days,
+                self.MIN_RETENTION_DAYS,
+            )
+            retention_days = self.MIN_RETENTION_DAYS
+
+        if max_size_mb is None or max_size_mb < self.MIN_MAX_SIZE_MB:
+            logger.warning(
+                "Invalid max_size_mb=%r; clamping to minimum %d",
+                max_size_mb,
+                self.MIN_MAX_SIZE_MB,
+            )
+            max_size_mb = self.MIN_MAX_SIZE_MB
+
         self.retention_days = retention_days
         self.max_size_bytes = max_size_mb * 1024 * 1024
 

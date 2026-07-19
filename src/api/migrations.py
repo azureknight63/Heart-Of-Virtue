@@ -1,5 +1,8 @@
 import asyncio
+import logging
 from src.api.db import db
+
+logger = logging.getLogger(__name__)
 
 
 async def init_db():
@@ -50,8 +53,21 @@ async def init_db():
         for stmt in backfill:
             try:
                 await db.execute(stmt)
-            except Exception:
-                pass
+            except Exception as e:
+                # SQLite/libsql reports pre-existing columns as a duplicate-column
+                # error; that case is expected on every run after the first and
+                # should be swallowed silently. Anything else is a genuine
+                # migration failure and must not be hidden, or it will only
+                # resurface later as an opaque 500 in the saves routes.
+                message = str(e).lower()
+                if "duplicate column" in message or "already exists" in message:
+                    pass
+                else:
+                    logger.error(
+                        "Backfill migration statement failed: %s | statement=%s",
+                        e,
+                        stmt,
+                    )
 
         print("Database initialized successfully.")
     except Exception as e:
