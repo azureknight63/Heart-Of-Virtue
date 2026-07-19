@@ -164,4 +164,3 @@ class ObjectSerializer:
             obj_data["capacity"] = obj.capacity
 
         return obj_data
-
