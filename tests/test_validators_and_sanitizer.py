@@ -125,6 +125,18 @@ class TestValidateItemIndex:
         ok, err = validate_item_index("abc", 5)
         assert ok is False
 
+    def test_bool_true_rejected(self):
+        # bool is an int subclass (True == 1) but is never a meaningful
+        # inventory index; must be rejected like coerce_optional_index does.
+        ok, err = validate_item_index(True, 5)
+        assert ok is False
+        assert err is not None
+
+    def test_bool_false_rejected(self):
+        ok, err = validate_item_index(False, 5)
+        assert ok is False
+        assert err is not None
+
 
 # ---------------------------------------------------------------------------
 # validate_npc_id
@@ -226,25 +238,29 @@ class TestSanitizeEventInput:
         assert err is not None
 
     def test_number_below_min(self):
-        session = self._session_with_event("e1", "number", min_value=5)
+        # Bounds are produced by EventSerializer.serialize_with_input as
+        # input_min/input_max — use the same keys the sanitizer reads.
+        session = self._session_with_event("e1", "number", input_min=5)
         sanitized, err = sanitize_event_input("3", session, "e1")
         assert err is not None
         assert "5" in err
 
     def test_number_above_max(self):
-        session = self._session_with_event("e1", "number", max_value=10)
+        session = self._session_with_event("e1", "number", input_max=10)
         sanitized, err = sanitize_event_input("15", session, "e1")
         assert err is not None
         assert "10" in err
 
     def test_number_within_bounds(self):
-        session = self._session_with_event("e1", "number", min_value=1, max_value=10)
+        session = self._session_with_event(
+            "e1", "number", input_min=1, input_max=10
+        )
         sanitized, err = sanitize_event_input("7", session, "e1")
         assert err is None
         assert sanitized == "7"
 
     def test_number_at_boundary(self):
-        session = self._session_with_event("e1", "number", min_value=1, max_value=5)
+        session = self._session_with_event("e1", "number", input_min=1, input_max=5)
         s, err = sanitize_event_input("5", session, "e1")
         assert err is None
 

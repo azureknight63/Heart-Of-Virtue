@@ -5,6 +5,16 @@ from cryptography.fernet import Fernet
 from typing import Optional, Dict, Any
 from src.api.db import db
 
+# Static dummy Argon2 hash used to equalize timing when a username lookup
+# misses. Verifying against this constant hash costs roughly the same as
+# verifying a real one, so an attacker can't distinguish "unknown username"
+# from "wrong password" by measuring response time (username-enumeration
+# side-channel). The password behind this hash is never used for anything.
+_DUMMY_PASSWORD_HASH = (
+    "$argon2id$v=19$m=65536,t=3,p=4$dn4DipiMg0kHqj/17Tq8lA$"
+    "7KbniMDtZdj7bd8jcqYNPc4AUaZL3Wb7k3WpG2rg18g"
+)
+
 
 class AuthService:
     def __init__(self):
@@ -61,6 +71,14 @@ class AuthService:
         result = await db.execute(sql, [username])
 
         if not result.rows:
+            # Username not found: still run a full Argon2 verify against a
+            # static dummy hash so this path takes comparable time to the
+            # "username exists" path below. Without this, response timing
+            # alone would let an attacker enumerate valid usernames.
+            try:
+                self.ph.verify(_DUMMY_PASSWORD_HASH, password)
+            except Exception:
+                pass
             return None
 
         user = result.rows[0]
