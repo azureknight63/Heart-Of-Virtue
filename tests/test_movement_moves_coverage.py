@@ -1342,14 +1342,25 @@ class TestFlankingManeuverRemainingGaps:
 
 class TestTacticalPositioningRemainingGaps:
     def test_prep_defaults_distance_to_max_range(self):
-        """Line 796-797: distance defaults to mvrange[1] when unset."""
+        """distance defaults to mvrange[1] only when truly unset (None)."""
         import src.moves as moves
 
         p = _player()
         tp = moves.TacticalPositioning(p)
-        tp.distance = 0  # falsy -> should default
+        tp.distance = None  # unset -> should default
         tp.prep(p)
         assert tp.distance == tp.mvrange[1]
+
+    def test_prep_preserves_explicit_zero_distance(self):
+        """Bug #369: an explicit point-blank distance of 0 is a valid value and
+        must not be overridden to max range by prep()."""
+        import src.moves as moves
+
+        p = _player()
+        tp = moves.TacticalPositioning(p)
+        tp.distance = 0  # explicit point-blank -> must be preserved
+        tp.prep(p)
+        assert tp.distance == 0
 
     def test_beat_update_returns_when_target_dead(self):
         """Lines 801-803: dead target -> early return."""
