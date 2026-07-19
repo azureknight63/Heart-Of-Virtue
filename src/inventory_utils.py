@@ -134,7 +134,7 @@ def transfer_item(
             return getattr(ent, "name", None) == "Jean"
 
         def is_merchant(ent):
-            return hasattr(ent, "shop")
+            return hasattr(ent, "shop_name")
 
         def is_merchant_container(ent):
             return hasattr(ent, "merchant") and bool(getattr(ent, "merchant", ""))

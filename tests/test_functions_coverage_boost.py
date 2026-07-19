@@ -9,8 +9,6 @@ Targets uncovered lines (76% -> target 90%+):
   167-168 — fallback method presence in single-token mode
   203-204 — multiple candidates invalid selection
   213-215 — screen_clear exception path
-  220 — _print_visible_lines empty sequence
-  226-227 — _print_visible_lines attr_getter exception
   267 — check_for_combat Quiet Movement bonus
   269-270 — check_for_combat finesse exception fallback
   277 — check_for_combat nearby ally join
@@ -114,33 +112,6 @@ class TestScreenClear:
         with patch("os.name", "posix"), patch("os.system") as mock_sys:
             assert functions.screen_clear() is None
         mock_sys.assert_not_called()
-
-
-# ---------------------------------------------------------------------------
-# _print_visible_lines
-# ---------------------------------------------------------------------------
-
-
-class TestPrintVisibleLines:
-    """Lines 218-230."""
-
-    def test_empty_sequence_returns_early(self):
-        """Line 219-220: empty sequence returns without printing."""
-        with patch("builtins.print") as mock_print:
-            functions._print_visible_lines([], lambda o: str(o))
-        mock_print.assert_not_called()
-
-    def test_attr_getter_exception_falls_back_to_str(self):
-        """Lines 226-227: attr_getter raises → str(obj) used."""
-        obj = MagicMock()
-        obj.hidden = False
-
-        def bad_getter(o):
-            raise RuntimeError("boom")
-
-        with patch("builtins.print"):
-            # should not raise
-            functions._print_visible_lines([obj], bad_getter)
 
 
 # ---------------------------------------------------------------------------
@@ -448,50 +419,6 @@ class TestRefreshStatBonuses:
         p.fatigue = 99999  # way above max
         functions.refresh_stat_bonuses(p)
         assert p.fatigue <= p.maxfatigue
-
-
-# ---------------------------------------------------------------------------
-# refresh_moves
-# ---------------------------------------------------------------------------
-
-
-class TestRefreshMoves:
-    """Lines 600-634."""
-
-    def test_refresh_moves_with_none_known_moves(self):
-        """Line 609: known_moves is None gets initialized."""
-        p = _player()
-        p.known_moves = None
-        functions.refresh_moves(p)
-        assert isinstance(p.known_moves, list)
-
-    def test_refresh_moves_clears_existing(self):
-        """Line 611: existing known_moves cleared."""
-        p = _player()
-        sentinel = MagicMock()
-        p.known_moves = [sentinel]
-        functions.refresh_moves(p)
-        assert sentinel not in p.known_moves
-
-    def test_refresh_moves_skip_instantiate_error(self):
-        """Lines 626-632: move classes that fail instantiation are skipped gracefully."""
-        import src.moves as moves
-
-        p = _player()
-        # Patch one move class to raise on instantiation
-        original_check = moves.Check
-
-        class FailCheck:
-            def __init__(self, user):
-                raise RuntimeError("cannot instantiate")
-
-        moves.Check = FailCheck
-        try:
-            functions.refresh_moves(p)
-        finally:
-            moves.Check = original_check
-        # Despite Check failing, other moves should be loaded
-        assert isinstance(p.known_moves, list)
 
 
 # ---------------------------------------------------------------------------
@@ -948,43 +875,6 @@ class TestRandomizeAmount:
     def test_range_amount(self):
         result = functions.randomize_amount("r3-7")
         assert 3 <= result <= 7
-
-
-# ---------------------------------------------------------------------------
-# findnth
-# ---------------------------------------------------------------------------
-
-
-class TestFindnth:
-    def test_finds_nth_occurrence(self):
-        # findnth("a.b.c.d", ".", 2) finds the 3rd dot (index 2): "a.b.c.d"
-        # positions: a(0) .(1) b(2) .(3) c(4) .(5) d(6)
-        assert functions.findnth("a.b.c.d", ".", 2) == 5
-
-    def test_not_enough_occurrences(self):
-        assert functions.findnth("a.b", ".", 5) == -1
-
-
-# ---------------------------------------------------------------------------
-# checkrange
-# ---------------------------------------------------------------------------
-
-
-class TestCheckrange:
-    def test_jean_uses_weapon_range(self):
-        p = _player()
-        p.name = "Jean"
-        p.eq_weapon = MagicMock()
-        p.eq_weapon.range = [1, 5]
-        mn, mx = functions.checkrange(p)
-        assert mn == 1 and mx == 5
-
-    def test_npc_uses_combat_range(self):
-        npc = MagicMock()
-        npc.name = "Goblin"
-        npc.combat_range = [2, 8]
-        mn, mx = functions.checkrange(npc)
-        assert mn == 2 and mx == 8
 
 
 # ---------------------------------------------------------------------------

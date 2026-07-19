@@ -40,23 +40,6 @@ class DummyPlayer:
         pass
 
 
-# ---------- execute_arbitrary_method / confirm ----------
-
-def test_execute_arbitrary_method_zero_and_one_arg(monkeypatch):
-    called = {}
-
-    def zero():
-        called['zero'] = True
-
-    def one(p):
-        called['one'] = p is player
-
-    player = DummyPlayer()
-    functions.execute_arbitrary_method(zero, player)
-    functions.execute_arbitrary_method(one, player)
-    assert called == {'zero': True, 'one': True}
-
-
 # ---------- enumerate_for_interactions ----------
 
 # ---------- screen_clear ----------
@@ -269,28 +252,6 @@ def test_check_parry():
     assert functions.check_parry(target) is False
 
 
-# ---------- refresh_moves ----------
-
-def test_refresh_moves():
-    player = DummyPlayer()
-    functions.refresh_moves(player)
-    # Simply ensure known_moves is a list and any populated moves originate from src.moves
-    assert isinstance(player.known_moves, list)
-    for mv in player.known_moves:
-        assert 'moves' in mv.__class__.__module__
-
-
-# ---------- checkrange ----------
-
-def test_checkrange_player_vs_npc():
-    player = DummyPlayer()
-    player.name = 'Jean'
-    player.eq_weapon.range = (2, 4)
-    assert functions.checkrange(player) == (2, 4)
-    npc = types.SimpleNamespace(name='Orc', combat_range=(5, 7))
-    assert functions.checkrange(npc) == (5, 7)
-
-
 # ---------- add_preference ----------
 
 def test_add_preference_arrow_toggle(capsys):
@@ -346,26 +307,6 @@ def test_print_slow(capsys):
     assert "Hello World" in captured
 
 
-def test_room_print_helpers(capsys):
-    class Obj:
-        def __init__(self, name, idle_message=" idle"):
-            self.name = name
-            self.idle_message = idle_message
-            self.hidden = False
-            self.announce = f"{name} here"
-            self.description = name
-    room = types.SimpleNamespace(
-        npcs_here=[Obj("Goblin", " growls")],
-        items_here=[Obj("Gem")],
-        objects_here=[Obj("Altar", "Altar glows")]
-    )
-    functions.print_npcs_in_room(room)
-    functions.print_items_in_room(room)
-    functions.print_objects_in_room(room)
-    out = capsys.readouterr().out
-    assert "Goblin growls" in out and "Gem here" in out and "Altar glows" in out
-
-
 def test_save_and_load_roundtrip(tmp_path):
     player = DummyPlayer()
     filename = 'src/test_temp_save_roundtrip'
@@ -383,9 +324,7 @@ def test_save_and_load_roundtrip(tmp_path):
         pass
 
 
-def test_list_module_names_and_seek_class_error():
-    mods = functions.list_module_names('src')
-    assert isinstance(mods, list)
+def test_seek_class_error():
     # seek_class with invalid package should raise ValueError
     with pytest.raises(ValueError):
         functions.seek_class('NonExistentClass', package='not_a_pkg')

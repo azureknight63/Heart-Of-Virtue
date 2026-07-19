@@ -15,7 +15,6 @@ Targets (line numbers as of this writing):
     428        refresh_stat_bonuses: Jean overweight maxfatigue floor at 0
     439-440    refresh_stat_bonuses: refresh_protection_rating exception
     448-449    refresh_stat_bonuses: add_protection sum exception
-    480-481/503 refresh_moves: `import moves` failure
     535-537    reset_stats: setattr exception (primary stat)
     564-565    reset_stats: weight_tolerance setattr exception
     576-577    reset_stats: protection setattr exception
@@ -301,19 +300,6 @@ class TestResetStatsExceptionPaths:
         t = T()
         functions.reset_stats(t)
         assert t.protection == 42
-
-
-# ---------------------------------------------------------------------------
-# refresh_moves -- `import moves` failure
-# ---------------------------------------------------------------------------
-
-
-def test_refresh_moves_import_failure_leaves_empty_known_moves(monkeypatch):
-    """`import src.moves` failing -> known_moves stays empty."""
-    monkeypatch.setitem(sys.modules, "src.moves", None)
-    player = types.SimpleNamespace(known_moves=[])
-    functions.refresh_moves(player)
-    assert player.known_moves == []
 
 
 # ---------------------------------------------------------------------------

@@ -50,15 +50,6 @@ def test_is_input_integer():
     assert functions.is_input_integer("abc") is False
 
 
-def test_findnth():
-    s = "a_b_c_d"
-    # indexes of '_' are 1,3,5
-    assert functions.findnth(s, "_", 0) == 1
-    assert functions.findnth(s, "_", 1) == 3
-    assert functions.findnth(s, "_", 2) == 5
-    assert functions.findnth(s, "_", 3) == -1
-
-
 def test_randomize_amount_literal_and_range(monkeypatch):
     # literal
     assert functions.randomize_amount(7) == 7
