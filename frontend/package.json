@@ -33,6 +33,7 @@
   },
   "scripts": {
     "dev": "vite",
+    "prebuild": "node scripts/check-changelog-freshness.mjs",
     "build": "vite build",
     "preview": "vite preview",
     "lint": "eslint src --ext .jsx,.js",
