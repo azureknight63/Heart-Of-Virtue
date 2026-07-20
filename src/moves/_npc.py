@@ -66,8 +66,10 @@ class NpcAttack(Move):  # basic attack function, NPCs only
         target = getattr(self.user, "target", None)
         if target is not None and target in self.user.combat_proximity:
             return range_min <= self.user.combat_proximity[target] <= range_max
-        # Fallback: no target set yet, check any proximity entry
-        for enemy, distance in self.user.combat_proximity.items():
+        # Fallback: no target set yet — check any in-range hostile. Iterating
+        # _hostiles_in_proximity (filtered by combat_list, the opposing side)
+        # skips allied combatants that also appear in combat_proximity.
+        for enemy, distance in self._hostiles_in_proximity():
             if range_min <= distance <= range_max:
                 return True
         return False
@@ -427,8 +429,10 @@ class GorranClub(Move):  # Gorran's special club attack! Massive damage, long re
         target = getattr(self.user, "target", None)
         if target is not None and target in self.user.combat_proximity:
             return range_min < self.user.combat_proximity[target] < range_max
-        # Fallback: no target set yet, check any proximity entry
-        for enemy, distance in self.user.combat_proximity.items():
+        # Fallback: no target set yet — check any in-range hostile. Iterating
+        # _hostiles_in_proximity (filtered by combat_list, the opposing side)
+        # skips allied combatants that also appear in combat_proximity.
+        for enemy, distance in self._hostiles_in_proximity():
             if range_min < distance < range_max:
                 return True
         return False
@@ -569,8 +573,10 @@ class VenomClaw(Move):  # Poisonous attack
         target = getattr(self.user, "target", None)
         if target is not None and target in self.user.combat_proximity:
             return range_min < self.user.combat_proximity[target] < range_max
-        # Fallback: no target set yet, check any proximity entry
-        for enemy, distance in self.user.combat_proximity.items():
+        # Fallback: no target set yet — check any in-range hostile. Iterating
+        # _hostiles_in_proximity (filtered by combat_list, the opposing side)
+        # skips allied combatants that also appear in combat_proximity.
+        for enemy, distance in self._hostiles_in_proximity():
             if range_min < distance < range_max:
                 return True
         return False
@@ -715,8 +721,10 @@ class SpiderBite(Move):  # Poisonous attack
         target = getattr(self.user, "target", None)
         if target is not None and target in self.user.combat_proximity:
             return range_min < self.user.combat_proximity[target] < range_max
-        # Fallback: no target set yet, check any proximity entry
-        for enemy, distance in self.user.combat_proximity.items():
+        # Fallback: no target set yet — check any in-range hostile. Iterating
+        # _hostiles_in_proximity (filtered by combat_list, the opposing side)
+        # skips allied combatants that also appear in combat_proximity.
+        for enemy, distance in self._hostiles_in_proximity():
             if range_min < distance < range_max:
                 return True
         return False
@@ -859,8 +867,10 @@ class BatBite(Move):  # Vampiric / life-draining bite for bat-type NPCs
         target = getattr(self.user, "target", None)
         if target is not None and target in self.user.combat_proximity:
             return range_min < self.user.combat_proximity[target] < range_max
-        # Fallback: no target set yet, check any proximity entry
-        for enemy, distance in self.user.combat_proximity.items():
+        # Fallback: no target set yet — check any in-range hostile. Iterating
+        # _hostiles_in_proximity (filtered by combat_list, the opposing side)
+        # skips allied combatants that also appear in combat_proximity.
+        for enemy, distance in self._hostiles_in_proximity():
             if range_min < distance < range_max:
                 return True
         return False

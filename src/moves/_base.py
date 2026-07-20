@@ -478,6 +478,25 @@ class Move:  # master class for all moves
             viability = True
         return viability
 
+    def _hostiles_in_proximity(self):
+        """Yield ``(combatant, distance)`` for hostile entries in the user's
+        ``combat_proximity``.
+
+        ``combat_list`` holds the opposing side for any combatant (for the
+        player, its enemies; for an enemy NPC, the player and allies — see the
+        combat adapter's side assignment), so an entry absent from it is a
+        same-side ally and must not make an attack look viable. Only a
+        populated ``combat_list`` is trusted to filter: when it is missing or
+        empty (combat not yet wired up, or a degraded/mock user) the side is
+        unknown, so every proximity entry is yielded rather than none.
+        """
+        proximity = getattr(self.user, "combat_proximity", None) or {}
+        hostiles = getattr(self.user, "combat_list", None)
+        for combatant, distance in proximity.items():
+            if hostiles and combatant not in hostiles:
+                continue
+            yield combatant, distance
+
     def standard_evaluate_attack(
         self,
         base_power,

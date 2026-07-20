@@ -492,9 +492,10 @@ class BullCharge(Move):
             return 3 <= distance <= 20
         # Fallback: the combat adapter assigns self.target only after viability
         # filtering, so for the player's own move list self.target is unset (or
-        # still defaulted to self.user) at this point. Scan for any in-range
-        # hostile instead of always reporting not viable.
-        for enemy, distance in self.user.combat_proximity.items():
+        # still defaulted to self.user) at this point. Scan for an in-range
+        # hostile via _hostiles_in_proximity (combat_list is the opposing side,
+        # so allied combatants in proximity are skipped).
+        for enemy, distance in self._hostiles_in_proximity():
             if 3 <= distance <= 20:
                 return True
         return False
@@ -694,9 +695,10 @@ class FlankingManeuver(Move):
             return 3 <= distance <= 15
         # Fallback: the combat adapter assigns self.target only after viability
         # filtering, so for the player's own move list self.target is unset (or
-        # still defaulted to self.user) at this point. Scan for any in-range
-        # hostile instead of always reporting not viable.
-        for enemy, distance in self.user.combat_proximity.items():
+        # still defaulted to self.user) at this point. Scan for an in-range
+        # hostile via _hostiles_in_proximity (combat_list is the opposing side,
+        # so allied combatants in proximity are skipped).
+        for enemy, distance in self._hostiles_in_proximity():
             if 3 <= distance <= 15:
                 return True
         return False

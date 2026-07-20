@@ -128,16 +128,33 @@ class TestNpcAttack:
         assert attack.viable() is False
 
     def test_viable_no_target_falls_back_to_any(self):
-        """Lines 68-70: viable with no specific target falls back to any proximity entry."""
+        """With no specific target, viable() falls back to scanning hostiles
+        in proximity (combat_list is the opposing side)."""
         import src.moves as moves
 
         p = _player()
         npc = _make_npc()
         npc.target = None
         npc.combat_proximity[p] = 2
+        npc.combat_list = [p]  # p is the NPC's hostile (opposing side)
         attack = moves.NpcAttack(npc)
         attack.target = None
         assert attack.viable() is True
+
+    def test_viable_no_target_excludes_allies(self):
+        """Regression (#348 fallback): with no target, an in-range *ally*
+        (a combatant absent from combat_list) must not make the move viable."""
+        import src.moves as moves
+
+        p = _player()
+        ally = _make_npc(name="AlliedNpc")
+        npc = _make_npc()
+        npc.target = None
+        npc.combat_proximity[ally] = 2  # ally in range
+        npc.combat_list = [p]           # only p is hostile; ally is not
+        attack = moves.NpcAttack(npc)
+        attack.target = None
+        assert attack.viable() is False
 
     def test_evaluate_with_string_user_returns_early(self):
         """Lines 78-85: evaluate() with string user prints error and returns
