@@ -1342,18 +1342,30 @@ class TestFlankingManeuverRemainingGaps:
 
 class TestTacticalPositioningRemainingGaps:
     def test_prep_defaults_distance_to_max_range(self):
-        """distance defaults to mvrange[1] only when truly unset (None)."""
+        """distance=None (never set by the adapter) defaults to mvrange[1]."""
         import src.moves as moves
 
         p = _player()
         tp = moves.TacticalPositioning(p)
-        tp.distance = None  # unset -> should default
+        tp.distance = None
         tp.prep(p)
         assert tp.distance == tp.mvrange[1]
 
+    def test_prep_preserves_explicit_nonzero_distance(self):
+        """An explicit in-range distance is preserved, not overridden to max."""
+        import src.moves as moves
+
+        p = _player()
+        tp = moves.TacticalPositioning(p)
+        tp.distance = 5
+        tp.prep(p)
+        assert tp.distance == 5
+
     def test_prep_preserves_explicit_zero_distance(self):
         """Bug #369: an explicit point-blank distance of 0 is a valid value and
-        must not be overridden to max range by prep()."""
+        must not be overridden to max range by prep() (the falsy-zero bug where
+        `if not self.distance` treated the explicit 0 as unset).
+        """
         import src.moves as moves
 
         p = _player()
