@@ -787,7 +787,7 @@ class TacticalPositioning(Move):
             user=user,
             category="Maneuver",
         )
-        self.distance = 0
+        self.distance = None
         self.target_dist_final = None
         self.fatigue_per_beat = 1
         self.needs_distance_input = True
@@ -803,7 +803,7 @@ class TacticalPositioning(Move):
         # Distance is provided by the combat adapter before this stage runs
         # (needs_distance_input -> number_input -> self.distance). Default to the
         # max range when unset; no terminal prompt.
-        if not self.distance:
+        if self.distance is None:
             self.distance = self.mvrange[1]
         self.target_dist_final = None  # Reset for execution
 
