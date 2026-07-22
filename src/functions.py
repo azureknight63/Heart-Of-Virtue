@@ -45,17 +45,6 @@ def print_slow(text, speed="slow"):
     narrate(text)
 
 
-def execute_arbitrary_method(method, player):
-    """
-    Checks the number of parameters required by a method and executes accordingly
-    """
-    number_of_params = len(inspect.signature(method).parameters)
-    if number_of_params == 0:
-        method()
-    else:
-        method(player)
-
-
 def screen_clear():
     """No-op retained for compatibility.
 
@@ -63,41 +52,6 @@ def screen_clear():
     display surface. Kept so existing callers don't need to change.
     """
     return None
-
-
-def _print_visible_lines(seq, attr_getter):
-    if not seq:
-        return
-    lines = []
-    for obj in seq:
-        if not getattr(obj, "hidden", False):
-            try:
-                lines.append(attr_getter(obj))
-            except Exception:
-                lines.append(str(obj))
-    if lines:
-        narrate("\n".join(lines))
-        narrate()
-
-
-def print_npcs_in_room(room):
-    _print_visible_lines(
-        getattr(room, "npcs_here", []),
-        lambda o: f"{getattr(o, 'name', '')}{getattr(o, 'idle_message', '')}",
-    )
-
-
-def print_items_in_room(room):
-    _print_visible_lines(
-        getattr(room, "items_here", []), lambda o: getattr(o, "announce", "")
-    )
-
-
-def print_objects_in_room(room):
-    _print_visible_lines(
-        getattr(room, "objects_here", []),
-        lambda o: getattr(o, "idle_message", ""),
-    )
 
 
 def check_for_combat(
@@ -463,44 +417,6 @@ def check_parry(target):
     return False
 
 
-def refresh_moves(player):
-    """Populate player's known_moves with default move instances (tolerant to import/instantiate errors)."""
-    try:
-        import src.moves as _moves
-    except Exception:
-        _moves = None
-
-    # Ensure known_moves exists and start fresh
-    if not hasattr(player, "known_moves") or player.known_moves is None:
-        player.known_moves = []
-    else:
-        player.known_moves.clear()
-
-    default_moves = (
-        "Check",
-        "Wait",
-        "Rest",
-        "Turn",
-        "UseItem",
-        "Advance",
-        "Withdraw",
-        "Attack",
-        "Dodge",
-        "Parry",
-    )
-    for move_name in default_moves:
-        if _moves is None or not hasattr(_moves, move_name):
-            continue
-        move_class = getattr(_moves, move_name)
-        try:
-            move_instance = move_class(player)
-        except Exception:
-            # Skip moves that fail to instantiate
-            continue
-        player.known_moves.append(move_instance)
-    # add other moves based on logic and stuff
-
-
 def is_input_integer(
     input_to_check,
 ):  # useful for checking to see if the player's input can be converted to int
@@ -799,21 +715,6 @@ def autosave(player):
     save(player, "autosave1.sav")
 
 
-def findnth(haystack, needle, n):
-    parts = haystack.split(needle, n + 1)
-    if len(parts) <= n + 1:
-        return -1
-    return len(haystack) - len(parts[-1]) - len(needle)
-
-
-def checkrange(user):
-    """Checks the min & max range constraints for the user; returns a tuple of (min, max)"""
-    if user.name == "Jean":
-        return user.eq_weapon.range[0], user.eq_weapon.range[1]
-
-    return user.combat_range[0], user.combat_range[1]
-
-
 def randomize_amount(param):
     param = str(param)
     if "r" in param:
@@ -1045,16 +946,6 @@ def add_preference(player, preftype, setting):
 def escape_ansi(line):
     ansi_escape = re.compile(r"(?:\x1B[@-_]|[\x80-\x9F])[0-?]*[ -/]*[@-~]")
     return ansi_escape.sub("", line)
-
-
-def list_module_names(package_name):
-    package = __import__(package_name)
-    module_names = []
-
-    for importer, modname, ispkg in pkgutil.iter_modules(package.__path__):
-        module_names.append(modname)
-
-    return module_names
 
 
 def clean_string(input_string):

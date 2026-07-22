@@ -65,6 +65,11 @@ def validate_item_index(item_index: Any, max_items: int) -> Tuple[bool, Optional
     Returns:
         Tuple of (is_valid, error_message)
     """
+    if isinstance(item_index, bool):
+        # bool is an int subclass (True == 1, False == 0), but a boolean is
+        # never a meaningful inventory index. Reject explicitly to match
+        # coerce_optional_index's handling.
+        return False, "Item index must be a valid integer"
     try:
         idx = int(item_index)
         if idx < 0 or idx >= max_items:

@@ -126,7 +126,7 @@ class TestCoordinateIntegration:
         assert coord_config.is_coordinate_valid(25, 25) == True
         assert coord_config.is_coordinate_valid(0, 0) == True
         assert coord_config.is_coordinate_valid(49, 49) == True
-        assert coord_config.is_coordinate_valid(50, 50) == True  # Grid includes boundary
+        assert coord_config.is_coordinate_valid(50, 50) == False  # 0-indexed: valid range is 0..49
         assert coord_config.is_coordinate_valid(51, 51) == False
         assert coord_config.is_coordinate_valid(-1, 0) == False
 class TestScenarioIntegration:

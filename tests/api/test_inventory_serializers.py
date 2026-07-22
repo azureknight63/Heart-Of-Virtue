@@ -354,21 +354,29 @@ class TestItemComparisonSerializer:
         assert result["recommendation"] == "upgrade"
 
     def test_downgrade_comparison(self):
-        """Test comparing items showing downgrade."""
+        """Test comparing items showing downgrade.
+
+        Weapons never carry `protection` (it defaults to 0 for both sides),
+        so a strictly-worse weapon must be flagged "downgrade" on damage
+        alone — not fall through to "sidegrade" just because the unrelated
+        protection stat didn't move.
+        """
         current = MockWeapon(name="Steel Sword", damage=15)
         candidate = MockWeapon(name="Iron Sword", damage=5)
 
         result = ItemComparisonSerializer.serialize(current, candidate)
 
-        # When both damage and armor are lower, it's a downgrade
-        # But since our mock weapons only have damage, this becomes a sidegrade
-        assert result["recommendation"] in ["downgrade", "sidegrade"]
+        assert result["recommendation"] == "downgrade"
         assert result["differences"]["damage_diff"] == -10
 
     def test_sidegrade_comparison(self):
-        """Test comparing items showing sidegrade."""
+        """Test comparing items showing a genuine mixed trade-off (sidegrade)."""
         current = MockWeapon(name="Sword", damage=10, weight=2.0)
         candidate = MockWeapon(name="Dagger", damage=8, weight=1.0)
+        # Give them opposing protection deltas so this is a real trade-off
+        # (less damage, more protection) rather than a strictly-worse weapon.
+        current.protection = 2
+        candidate.protection = 5
 
         result = ItemComparisonSerializer.serialize(current, candidate)
 

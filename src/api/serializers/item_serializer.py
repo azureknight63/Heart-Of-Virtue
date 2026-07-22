@@ -32,10 +32,10 @@ class ItemSerializer:
             "count": 1,
         }
 
-        # Add quantity for stackable items
-        if hasattr(item, "quantity"):
-            item_data["count"] = item.quantity
-        elif hasattr(item, "count"):
+        # Add quantity for stackable items. Real Item objects (src/items.py)
+        # always use `count`; `quantity` is never set, so that branch was
+        # dead code.
+        if hasattr(item, "count"):
             item_data["count"] = item.count
 
         # Add subtype for categorization
@@ -117,71 +117,3 @@ class ItemSerializer:
             return []
 
         return [ItemSerializer.serialize(item) for item in items]
-
-    @staticmethod
-    def serialize_with_effects(item: Any) -> Dict[str, Any]:
-        """Serialize item with full effect details.
-
-        Args:
-            item: Item object to serialize
-
-        Returns:
-            Dictionary with detailed item and effect data
-        """
-        item_data = ItemSerializer.serialize(item)
-
-        # Add effect descriptions if available
-        if hasattr(item, "skills") and item.skills:
-            item_data["skills"] = item.skills
-
-        if hasattr(item, "effects") and item.effects:
-            item_data["effects"] = item.effects
-
-        # Add discovery/announcement text
-        if hasattr(item, "discovery_message"):
-            item_data["discovery_message"] = item.discovery_message
-
-        if hasattr(item, "announce"):
-            item_data["announce"] = item.announce
-
-        return item_data
-
-    @staticmethod
-    def serialize_inventory(
-        items: List[Any], include_effects: bool = False
-    ) -> Dict[str, Any]:
-        """Serialize player inventory.
-
-        Args:
-            items: List of items in inventory
-            include_effects: Whether to include full effect details
-
-        Returns:
-            Dictionary with inventory data
-        """
-        serializer = (
-            ItemSerializer.serialize_with_effects
-            if include_effects
-            else ItemSerializer.serialize
-        )
-
-        return {
-            "items": [serializer(item) for item in items],
-            "count": len(items),
-            "total_weight": sum(getattr(item, "weight", 0.0) for item in items),
-        }
-
-    @staticmethod
-    def serialize_container(items: List[Any]) -> Dict[str, Any]:
-        """Serialize items in a container (chest, shop, etc).
-
-        Args:
-            items: List of items in container
-
-        Returns:
-            Dictionary with container items
-        """
-        return {
-            "items": ItemSerializer.serialize_list(items),
-            "count": len(items),
-        }

@@ -198,11 +198,27 @@ class TestGetLlmAdapter:
         assert result is fake_adapter
 
     def test_disabled_returns_none(self):
+        from src.npc._llm import MynxLLMMixin
+
         m = _make_mynx()
         with patch.dict(os.environ, {"MYNX_LLM_ENABLED": "0"}):
             result = m._get_llm_adapter()
         assert result is None
-        assert m._llm_adapter is None
+        # Sticky "unavailable" sentinel is cached so repeated calls don't
+        # re-probe (see MynxLLMMixin._ADAPTER_FAILED).
+        assert m._llm_adapter is MynxLLMMixin._ADAPTER_FAILED
+
+    def test_disabled_then_cached_without_reprobe(self):
+        """Second call must not re-check the env var — the sentinel short-circuits."""
+        m = _make_mynx()
+        with patch.dict(os.environ, {"MYNX_LLM_ENABLED": "0"}):
+            first = m._get_llm_adapter()
+        assert first is None
+        # Even if the env var flips to enabled afterward, the cached failure
+        # sentinel means we don't re-probe within this instance's lifetime.
+        with patch.dict(os.environ, {"MYNX_LLM_ENABLED": "1"}):
+            second = m._get_llm_adapter()
+        assert second is None
 
     def test_disabled_with_debug_prints(self, capsys):
         m = _make_mynx()

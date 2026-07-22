@@ -12,9 +12,12 @@ messages and suppresses the stdout echo.
 """
 
 import contextvars
+import logging
 import re
 
 from neotermcolor import colored as _neo_colored
+
+logger = logging.getLogger(__name__)
 
 # Strips ANSI escape codes so the structured ``text`` field is clean.
 _ANSI_ESCAPE = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
@@ -75,7 +78,9 @@ def narrate(*parts, color=None, attrs=None, mtype="narration", sep=" ", **meta):
             try:
                 cb(entry)
             except Exception:
-                pass
+                logger.exception(
+                    "narration listener %r raised while handling entry %r", cb, entry
+                )
     if _echo_stdout.get():
         # Mirror to stdout for non-API contexts (unit tests / debugging).
         if color and clean.strip():
@@ -125,7 +130,9 @@ def _emit_control(entry):
         try:
             cb(entry)
         except Exception:
-            pass
+            logger.exception(
+                "narration listener %r raised while handling control entry %r", cb, entry
+            )
 
 
 def say(

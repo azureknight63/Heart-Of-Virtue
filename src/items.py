@@ -78,14 +78,6 @@ item_types: Dict[str, Dict[str, Any]] = {
 }
 
 
-def get_all_subtypes() -> None:
-    collection: List[str] = []
-    for group in item_types.keys():
-        for subtype in item_types[group]["subtypes"]:  # type: ignore[index]
-            collection.append(subtype)  # pragma: no cover - logic preserved as-is
-        item_types[group]["archetypes"]["All"] = collection  # type: ignore[index]
-
-
 def get_base_damage_type(item: Any) -> str:
     damagetype: str = "pure"  # default
     # If an item explicitly defines a base_damage_type (set by an enchantment), respect it.
@@ -312,9 +304,7 @@ class Item:
                                         "It's too heavy to carry all that!",
                                         "red",
                                     )
-                                    if quantity is not None:
-                                        break
-                                    continue
+                                    break
 
                             if take_count == getattr(self, "count"):
                                 # Take all
@@ -398,8 +388,7 @@ class Item:
         cprint(f"{player.name} picks up the {self.name}.", "green")
 
         # Stack items if possible (in inventory)
-        if hasattr(player, "stack_duplicate_items"):
-            player.stack_duplicate_items()
+        functions.stack_inv_items(player)
         # Also stack in the room if the method exists
         if hasattr(player.current_room, "stack_duplicate_items"):
             player.current_room.stack_duplicate_items()
@@ -1387,6 +1376,8 @@ class Fists(Weapon):  # equipped automatically when Jean has no other weapon equ
 
 
 class Rock(Weapon):
+    level: int = 0
+
     def __init__(self, merchandise: bool = False, enchantment_level: int = 0) -> None:
         super().__init__(
             name="Rock",
@@ -2891,6 +2882,12 @@ class Relic(Consumable):
 
     def use(self, player: "Player", user=None) -> None:
         _user = user if user is not None else player
+        if getattr(self, "merchandise", False):
+            cprint(
+                "{} must purchase {} before using it.".format(player.name, self.name),
+                "red",
+            )
+            return
         targets = [s for s in player.states if getattr(s, "statustype", "") == "apathy"]
         if targets:
             narrate(

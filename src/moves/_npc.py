@@ -66,8 +66,10 @@ class NpcAttack(Move):  # basic attack function, NPCs only
         target = getattr(self.user, "target", None)
         if target is not None and target in self.user.combat_proximity:
             return range_min <= self.user.combat_proximity[target] <= range_max
-        # Fallback: no target set yet, check any proximity entry
-        for enemy, distance in self.user.combat_proximity.items():
+        # Fallback: no target set yet — check any in-range hostile. Iterating
+        # _hostiles_in_proximity (filtered by combat_list, the opposing side)
+        # skips allied combatants that also appear in combat_proximity.
+        for enemy, distance in self._hostiles_in_proximity():
             if range_min <= distance <= range_max:
                 return True
         return False
@@ -409,11 +411,11 @@ class GorranClub(Move):  # Gorran's special club attack! Massive damage, long re
             beats_left=prep,
             target=npc.target,
             user=npc,
+            category="Offensive",
         )
         self.evaluate()
 
     def viable(self):
-        viability = False
         range_min = self.mvrange[0]
         range_max = self.mvrange[1]
 
@@ -421,11 +423,19 @@ class GorranClub(Move):  # Gorran's special club attack! Massive damage, long re
         if not hasattr(self.user, "combat_proximity"):
             return False
 
-        for enemy, distance in self.user.combat_proximity.items():
+        # Check only the actual target's distance, not all proximity entries.
+        # Counting fellow allied NPCs (other enemies) would incorrectly make attacks
+        # viable from any distance, causing NPCs to attack across the battlefield.
+        target = getattr(self.user, "target", None)
+        if target is not None and target in self.user.combat_proximity:
+            return range_min < self.user.combat_proximity[target] < range_max
+        # Fallback: no target set yet — check any in-range hostile. Iterating
+        # _hostiles_in_proximity (filtered by combat_list, the opposing side)
+        # skips allied combatants that also appear in combat_proximity.
+        for enemy, distance in self._hostiles_in_proximity():
             if range_min < distance < range_max:
-                viability = True
-                break
-        return viability
+                return True
+        return False
 
     def evaluate(
         self,
@@ -548,21 +558,28 @@ class VenomClaw(Move):  # Poisonous attack
             beats_left=prep,
             target=npc.target,
             user=npc,
+            category="Offensive",
         )
         self.evaluate()
 
     def viable(self):
         if not hasattr(self.user, "combat_proximity"):
             return False
-        viability = False
         range_min = self.mvrange[0]
         range_max = self.mvrange[1]
-        for enemy, distance in self.user.combat_proximity.items():
+        # Check only the actual target's distance, not all proximity entries.
+        # Counting fellow allied NPCs (other enemies) would incorrectly make attacks
+        # viable from any distance, causing NPCs to attack across the battlefield.
+        target = getattr(self.user, "target", None)
+        if target is not None and target in self.user.combat_proximity:
+            return range_min < self.user.combat_proximity[target] < range_max
+        # Fallback: no target set yet — check any in-range hostile. Iterating
+        # _hostiles_in_proximity (filtered by combat_list, the opposing side)
+        # skips allied combatants that also appear in combat_proximity.
+        for enemy, distance in self._hostiles_in_proximity():
             if range_min < distance < range_max:
-                viability = True
-                break
-
-        return viability
+                return True
+        return False
 
     def evaluate(
         self,
@@ -686,11 +703,11 @@ class SpiderBite(Move):  # Poisonous attack
             beats_left=prep,
             target=npc.target,
             user=npc,
+            category="Offensive",
         )
         self.evaluate()
 
     def viable(self):
-        viability = False
         range_min = self.mvrange[0]
         range_max = self.mvrange[1]
 
@@ -698,12 +715,19 @@ class SpiderBite(Move):  # Poisonous attack
         if not hasattr(self.user, "combat_proximity"):
             return False
 
-        for enemy, distance in self.user.combat_proximity.items():
+        # Check only the actual target's distance, not all proximity entries.
+        # Counting fellow allied NPCs (other enemies) would incorrectly make attacks
+        # viable from any distance, causing NPCs to attack across the battlefield.
+        target = getattr(self.user, "target", None)
+        if target is not None and target in self.user.combat_proximity:
+            return range_min < self.user.combat_proximity[target] < range_max
+        # Fallback: no target set yet — check any in-range hostile. Iterating
+        # _hostiles_in_proximity (filtered by combat_list, the opposing side)
+        # skips allied combatants that also appear in combat_proximity.
+        for enemy, distance in self._hostiles_in_proximity():
             if range_min < distance < range_max:
-                viability = True
-                break
-
-        return viability
+                return True
+        return False
 
     def evaluate(
         self,
@@ -825,11 +849,11 @@ class BatBite(Move):  # Vampiric / life-draining bite for bat-type NPCs
             beats_left=prep,
             target=npc.target,
             user=npc,
+            category="Offensive",
         )
         self.evaluate()
 
     def viable(self):
-        viability = False
         range_min = self.mvrange[0]
         range_max = self.mvrange[1]
 
@@ -837,12 +861,19 @@ class BatBite(Move):  # Vampiric / life-draining bite for bat-type NPCs
         if not hasattr(self.user, "combat_proximity"):
             return False
 
-        for enemy, distance in self.user.combat_proximity.items():
+        # Check only the actual target's distance, not all proximity entries.
+        # Counting fellow allied NPCs (other enemies) would incorrectly make attacks
+        # viable from any distance, causing NPCs to attack across the battlefield.
+        target = getattr(self.user, "target", None)
+        if target is not None and target in self.user.combat_proximity:
+            return range_min < self.user.combat_proximity[target] < range_max
+        # Fallback: no target set yet — check any in-range hostile. Iterating
+        # _hostiles_in_proximity (filtered by combat_list, the opposing side)
+        # skips allied combatants that also appear in combat_proximity.
+        for enemy, distance in self._hostiles_in_proximity():
             if range_min < distance < range_max:
-                viability = True
-                break
-
-        return viability
+                return True
+        return False
 
     def evaluate(
         self,

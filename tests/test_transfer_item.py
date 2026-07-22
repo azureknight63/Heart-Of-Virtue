@@ -12,8 +12,10 @@ class FakeMerchant:
         self.inventory = []
         # Name used by transfer_item logic to detect players vs merchants in this codebase
         self.name = "Merchant"
-        # production code detects merchants by presence of a 'shop' attribute
-        self.shop = None
+        # production code detects merchants by presence of a 'shop_name' attribute
+        # (real Merchant/MerchantShopMixin NPCs expose shop_name/buy_modifier/
+        # sell_modifier, never a bare 'shop' attribute -- see issue #442)
+        self.shop_name = "Fake Merchant Shop"
 
 
 def test_transfer_partial_stack_from_merchant_to_player():
@@ -95,7 +97,7 @@ class FakeContainer:
 
 
 def test_looting_non_merchant_container_clears_merchandise_flag():
-    # Container has no 'shop' attribute and no 'merchant' attribute
+    # Container has no 'shop_name' attribute and no 'merchant' attribute
     container = FakeContainer()
     item = Restorative(count=1, merchandise=True)
     container.inventory.append(item)

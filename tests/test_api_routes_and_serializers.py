@@ -331,125 +331,6 @@ class TestEventSerializer:
         assert result[0]["name"] == "A"
         assert result[1]["name"] == "B"
 
-    def test_serialize_with_conditions(self, serializer):
-        ev = self._make_event(
-            required_item="holy_sword",
-            required_level=5,
-            required_flag="chapter_1_done",
-            params={"key": "val"},
-        )
-        # Add check_conditions method
-        ev.check_conditions = lambda: True
-        data = serializer.serialize_with_conditions(ev)
-        assert data["has_conditions_check"] is True
-        assert data["required_item"] == "holy_sword"
-        assert data["required_level"] == 5
-        assert data["required_flag"] == "chapter_1_done"
-        assert data["params"] is not None
-
-    def test_serialize_with_conditions_check_exception(self, serializer):
-        ev = self._make_event()
-
-        def failing_check():
-            raise RuntimeError("context needed")
-
-        ev.requires_input = failing_check
-        # Should not raise
-        data = serializer.serialize_with_conditions(ev)
-        assert "has_conditions_check" not in data or True  # no crash
-
-    def test_serialize_with_conditions_no_params(self, serializer):
-        ev = self._make_event()
-        ev.params = None
-        data = serializer.serialize_with_conditions(ev)
-        assert data["params"] is None
-
-    def test_serialize_with_consequences(self, serializer):
-        ev = self._make_event(
-            consequence_text="You gain honour",
-            experience_reward=50,
-            gold_reward=10,
-            item_rewards=["sword"],
-            item_reward="shield",
-            story_flag="met_mynx",
-            chapter=1,
-            section="intro",
-        )
-        data = serializer.serialize_with_consequences(ev)
-        assert data["consequence"] == "You gain honour"
-        assert data["experience_reward"] == 50
-        assert data["gold_reward"] == 10
-        assert data["story_flag"] == "met_mynx"
-        assert data["chapter"] == 1
-
-    def test_serialize_with_consequences_complex_consequence(self, serializer):
-        ev = self._make_event()
-        ev.consequence = {"complex": "object"}
-        data = serializer.serialize_with_consequences(ev)
-        # Complex consequences are stringified
-        assert "consequence" in data
-
-    def test_serialize_with_consequences_simple_string_consequence(self, serializer):
-        ev = self._make_event()
-        ev.consequence = "you win"
-        data = serializer.serialize_with_consequences(ev)
-        assert data["consequence"] == "you win"
-
-    def test_serialize_story_event(self, serializer):
-        ev = self._make_event(
-            story_name="The First Trial",
-            narrative_text="Jean faces her destiny",
-            dialogue=["Hello knight"],
-            choices=["Option A", "Option B"],
-            enemy_spawned=True,
-            encounter_type="ambush",
-        )
-        data = serializer.serialize_story_event(ev)
-        assert data["is_story_event"] is True
-        assert data["story_name"] == "The First Trial"
-        assert data["narrative"] == "Jean faces her destiny"
-        assert data["choice_count"] == 2
-        assert data["enemy_spawned"] is True
-        assert data["encounter_type"] == "ambush"
-
-    def test_serialize_story_event_no_choices(self, serializer):
-        ev = self._make_event()
-        ev.choices = None
-        data = serializer.serialize_story_event(ev)
-        assert data["choice_count"] == 0
-
-    def test_serialize_combat_event(self, serializer):
-        ev = self._make_event(
-            trigger_on="hp_low",
-            trigger_condition="hp < 50",
-            enemy_type="Slime",
-            enemy_level=3,
-            enemy_count=2,
-            victory_message="Victory!",
-            defeat_message="Defeated.",
-        )
-        data = serializer.serialize_combat_event(ev)
-        assert data["is_combat_event"] is True
-        assert data["trigger_on"] == "hp_low"
-        assert data["enemy_type"] == "Slime"
-        assert data["enemy_count"] == 2
-        assert data["victory_message"] == "Victory!"
-
-    def test_serialize_conditional_event(self, serializer):
-        ev = self._make_event(
-            conditions=["c1", "c2"],
-            success_consequence="reward",
-            failure_consequence="punishment",
-            trigger_on_enter=True,
-            trigger_on_exit=False,
-            trigger_in_combat=True,
-        )
-        data = serializer.serialize_conditional_event(ev)
-        assert data["is_conditional"] is True
-        assert data["condition_count"] == 2
-        assert data["success_consequence"] == "reward"
-        assert data["trigger_on_enter"] is True
-
     def test_serialize_with_input_no_needs_input(self, serializer):
         ev = self._make_event()
         # Event class is SimpleNamespace — not in input_requiring_events list
@@ -876,6 +757,103 @@ class TestFeedbackRoute:
         call_kwargs = mock_post.call_args
         payload = call_kwargs[1]["json"]
         assert "anonymously" in payload["body"].lower()
+
+    # -----------------------------------------------------------------------
+    # Regression tests for #428: fields dict is checked for being a dict,
+    # but the inner values weren't type-checked before being passed to
+    # ._strip()/.lower()/.get() in the body builders — a wrong-typed value
+    # used to raise deep inside the builder and surface as a 500.
+    # -----------------------------------------------------------------------
+
+    def test_bug_non_string_field_returns_400(self, client):
+        c, _ = client
+        rv = c.post(
+            "/api/feedback/issue",
+            json={
+                "type": "bug",
+                "title": "Bad steps type",
+                "fields": {"steps": 123},
+            },
+            headers=AUTH_HEADER,
+        )
+        assert rv.status_code == 400
+        data = rv.get_json()
+        assert data["success"] is False
+
+    def test_bug_non_string_severity_returns_400(self, client):
+        c, _ = client
+        rv = c.post(
+            "/api/feedback/issue",
+            json={
+                "type": "bug",
+                "title": "Bad severity type",
+                "fields": {"severity": 5},
+            },
+            headers=AUTH_HEADER,
+        )
+        assert rv.status_code == 400
+
+    def test_feature_non_string_field_returns_400(self, client):
+        c, _ = client
+        rv = c.post(
+            "/api/feedback/issue",
+            json={
+                "type": "feature",
+                "title": "Bad description type",
+                "fields": {"description": ["not", "a", "string"]},
+            },
+            headers=AUTH_HEADER,
+        )
+        assert rv.status_code == 400
+
+    def test_general_non_string_message_returns_400(self, client):
+        c, _ = client
+        rv = c.post(
+            "/api/feedback/issue",
+            json={
+                "type": "general",
+                "title": "Bad message type",
+                "fields": {"message": 42},
+            },
+            headers=AUTH_HEADER,
+        )
+        assert rv.status_code == 400
+
+    def test_general_non_dict_ratings_returns_400(self, client):
+        c, _ = client
+        rv = c.post(
+            "/api/feedback/issue",
+            json={
+                "type": "general",
+                "title": "Bad ratings type",
+                "fields": {"ratings": "not-a-dict"},
+            },
+            headers=AUTH_HEADER,
+        )
+        assert rv.status_code == 400
+        data = rv.get_json()
+        assert data["success"] is False
+
+    def test_general_dict_ratings_still_succeeds(self, client):
+        import os
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 201
+        mock_resp.json.return_value = {"html_url": "https://github.com/issues/1"}
+
+        c, _ = client
+        with patch.dict(os.environ, {"GITHUB_TOKEN": "tok"}):
+            with patch("src.api.routes.feedback.requests.post", return_value=mock_resp):
+                rv = c.post(
+                    "/api/feedback/issue",
+                    json={
+                        "type": "general",
+                        "title": "Good ratings",
+                        "fields": {"ratings": {"story": 5, "combat": 4}},
+                    },
+                    headers=AUTH_HEADER,
+                )
+        assert rv.status_code == 201
 
 
 # ===========================================================================

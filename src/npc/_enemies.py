@@ -105,7 +105,7 @@ class Lurker(NPC):
         self.loot = loot.lev1
         self.resistance_base["dark"] = 0.5
         self.resistance_base["fire"] = -0.5
-        self.resistance_base["light"] = -2
+        self.resistance_base["light"] = 2.0
         self.status_resistance_base["death"] = 1
         self.status_resistance_base["doom"] = 1
         self.add_move(moves.NpcAttack(self), 5)
@@ -289,11 +289,16 @@ class TalusHound(NPC):
         self.add_move(moves.NpcIdle(self), 1)
 
     def _count_pack_members(self):
-        """Count how many other living TalusHounds are in this combat."""
-        if not hasattr(self, "combat_list"):
+        """Count how many other living TalusHounds are in this combat.
+
+        NPC combatants have ``combat_list`` aliased to the *opposing* side
+        (player + allies) by the combat adapter; fellow enemy NPCs live in
+        ``combat_list_allies``. Pack tactics need to look there instead.
+        """
+        if not hasattr(self, "combat_list_allies"):
             return 0
         pack_count = 0
-        for npc in self.combat_list:
+        for npc in self.combat_list_allies:
             if (
                 npc is not self
                 and isinstance(npc, TalusHound)
@@ -521,7 +526,7 @@ class CorruptedStoneCreature(NPC):
         self.resistance_base["crushing"] = 1.6
         self.resistance_base["fire"] = 1.4
         self.resistance_base["earth"] = 0.5
-        self.status_resistance_base["stone"] = 0.0  # immune to its own petrification
+        self.status_resistance_base["stone"] = 1.0  # immune to its own petrification
         self.status_resistance_base["slow"] = -0.5  # extra vulnerable to slow-type states
         self.add_move(moves.NpcAttack(self), 4)
         self.add_move(moves.MineralSpit(self), 3)

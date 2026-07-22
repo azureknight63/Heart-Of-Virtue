@@ -346,8 +346,11 @@ class HumanNPCLLMMixin:
         if "personality" in entry and entry["personality"]:
             self._chat_personality = entry["personality"]
 
-        stored_loquacity = entry.get("loquacity_current", 0)
-        if stored_loquacity > 0:
+        # Use None (absent) rather than 0 as the "never persisted" sentinel —
+        # a persisted 0 (patience exhausted) must be restored as 0, not
+        # confused with "no stored value yet" and reset back to full.
+        stored_loquacity = entry.get("loquacity_current")
+        if stored_loquacity is not None:
             self.loquacity_current = stored_loquacity
 
     def _save_exchange_to_persistence(

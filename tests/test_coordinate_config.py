@@ -46,15 +46,15 @@ def test_coordinate_system_config_is_coordinate_valid():
 
     coord_config = CoordinateSystemConfig(player)
 
-    # Valid coordinates
+    # Valid coordinates (0-indexed grid: valid range is [0, width) / [0, height))
     assert coord_config.is_coordinate_valid(0, 0) is True
     assert coord_config.is_coordinate_valid(25, 25) is True
-    assert coord_config.is_coordinate_valid(50, 50) is True
+    assert coord_config.is_coordinate_valid(49, 49) is True
 
     # Invalid coordinates
     assert coord_config.is_coordinate_valid(-1, 0) is False
-    assert coord_config.is_coordinate_valid(51, 25) is False
-    assert coord_config.is_coordinate_valid(25, 51) is False
+    assert coord_config.is_coordinate_valid(50, 25) is False
+    assert coord_config.is_coordinate_valid(25, 50) is False
 
 
 def test_coordinate_system_config_clamp_coordinate():
@@ -66,11 +66,11 @@ def test_coordinate_system_config_clamp_coordinate():
 
     coord_config = CoordinateSystemConfig(player)
 
-    # Should clamp to bounds
+    # Should clamp to bounds (0-indexed grid: max valid index is width-1/height-1)
     assert coord_config.clamp_coordinate(-10, 25) == (0, 25)
-    assert coord_config.clamp_coordinate(60, 25) == (50, 25)
+    assert coord_config.clamp_coordinate(60, 25) == (49, 25)
     assert coord_config.clamp_coordinate(25, -5) == (25, 0)
-    assert coord_config.clamp_coordinate(25, 60) == (25, 50)
+    assert coord_config.clamp_coordinate(25, 60) == (25, 49)
 
     # Valid coordinates unchanged
     assert coord_config.clamp_coordinate(25, 25) == (25, 25)

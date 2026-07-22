@@ -71,7 +71,7 @@ class CoordinateSystemConfig:
             True if coordinate is valid, False otherwise
         """
         width, height = self.get_grid_size()
-        return 0 <= x <= width and 0 <= y <= height
+        return 0 <= x < width and 0 <= y < height
 
     def clamp_coordinate(self, x: int, y: int) -> Tuple[int, int]:
         """Clamp coordinate to grid bounds.
@@ -84,8 +84,8 @@ class CoordinateSystemConfig:
             Clamped (x, y) tuple
         """
         width, height = self.get_grid_size()
-        x = max(0, min(x, width))
-        y = max(0, min(y, height))
+        x = max(0, min(x, width - 1))
+        y = max(0, min(y, height - 1))
         return (x, y)
 
     def get_grid_center(self) -> Tuple[float, float]:

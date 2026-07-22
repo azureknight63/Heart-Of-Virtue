@@ -542,7 +542,10 @@ class TestNPCResistances:
         """Test Lurker has dark resistance and light weakness."""
         lurker = Lurker()
         assert lurker.resistance_base["dark"] == 0.5
-        assert lurker.resistance_base["light"] == -2
+        # Positive multiplier > 1 means vulnerability (double light damage) —
+        # a negative value would mean light damage *heals* the demon, the
+        # opposite of the intended weakness.
+        assert lurker.resistance_base["light"] == 2.0
 
     def test_cave_bat_light_resistance(self):
         """Test CaveBat has light resistance."""
@@ -651,16 +654,15 @@ class TestNPCStateManagement:
 class TestNPCKeywords:
     """Test NPC keyword system."""
 
-    def test_friend_keywords_overwritten_by_npc(self):
-        """Test Friend tries to set keywords but NPC overwrites them.
+    def test_friend_keywords_set_after_npc_init(self):
+        """Test Friend's base "talk" keyword survives NPC.__init__.
 
-        Note: This is a bug in the current code - Friend.__init__ sets
-        keywords=["talk"] but then calls super().__init__() which sets
-        keywords=[] afterwards. We test the actual behavior.
+        Friend.__init__ calls super().__init__() first (which resets
+        keywords=[]) and then sets keywords=["talk"] afterwards, so the
+        base interaction verb is preserved for every Friend subclass.
         """
         friend = Friend("Ally", "An ally", 10, False, 0)
-        # Due to bug, keywords get overwritten to empty list
-        assert friend.keywords == []
+        assert friend.keywords == ["talk"]
 
     def test_mynx_has_multiple_keywords(self):
         """Test Mynx has talk, pet, play keywords."""
@@ -802,13 +804,14 @@ class TestTalusHoundPacking:
         hound1 = TalusHound()
         hound2 = TalusHound()
 
-        # Mock combat_list
-        hound1.combat_list = [hound1, hound2]
-        hound2.combat_list = [hound1, hound2]
+        # Fellow enemy NPCs live in combat_list_allies (combat_list is aliased
+        # to the opposing side by the combat adapter).
+        hound1.combat_list_allies = [hound1, hound2]
+        hound2.combat_list_allies = [hound1, hound2]
 
         count1 = hound1._count_pack_members()
         # Should count hound2 but not itself
-        assert count1 >= 0  # Counts hound2 if alive
+        assert count1 == 1
 
 
 class TestMultipleNPCInstances:
@@ -936,17 +939,17 @@ class TestTalusHoundPackMechanics:
         hound2 = TalusHound()
         hound3 = TalusHound()
 
-        # Mock combat list with multiple hounds
-        hound1.combat_list = [hound1, hound2, hound3]
-        hound2.combat_list = [hound1, hound2, hound3]
-        hound3.combat_list = [hound1, hound2, hound3]
+        # Fellow enemy NPCs live in combat_list_allies (combat_list is aliased
+        # to the opposing side by the combat adapter).
+        hound1.combat_list_allies = [hound1, hound2, hound3]
+        hound2.combat_list_allies = [hound1, hound2, hound3]
+        hound3.combat_list_allies = [hound1, hound2, hound3]
 
-        # Each hound should count the others
+        # Each hound should count the other two
         count1 = hound1._count_pack_members()
         count2 = hound2._count_pack_members()
-        # Counts should be > 0 if pack mechanics working
-        assert count1 >= 0
-        assert count2 >= 0
+        assert count1 == 2
+        assert count2 == 2
 
 
 class TestAIConfigInitialization:

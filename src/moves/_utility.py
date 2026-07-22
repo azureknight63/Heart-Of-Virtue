@@ -369,18 +369,20 @@ class Attack(Move):  # basic attack function, always uses equipped weapon, playe
 
     def __init__(self, player):
         description = "Strike at your enemy with your equipped weapon."
-        prep = int(50 / player.speed)  # starting prep of 5
-        if prep < 1:
-            prep = 1
+        # These are placeholder values only: evaluate() (called below, right after
+        # super().__init__()) immediately recomputes stage_beat (prep/execute/
+        # recoil/cooldown), fatigue_cost, mvrange, power, and base_damage_type from
+        # the player's equipped weapon, and cast() resets beats_left at selection
+        # time. Real formulas for all of these live in evaluate() only — they used
+        # to be duplicated here with diverging numbers (e.g. cooldown was computed
+        # both as `3 - endurance/10` here and `5 - endurance/10` in evaluate()),
+        # which was dead, confusing, and never actually took effect.
+        weapon = "fist"  # placeholder; evaluate() fills in the real weapon name
+        prep = 1
         execute = 1
-        recoil = 1  # modified later, based on player weapon
-        cooldown = 3 - int(player.endurance / 10)
-        if cooldown < 0:
-            cooldown = 0
-        weapon = "fist"  # modified later, based on player weapon
-        fatigue_cost = int(math.ceil(100 - (2 * player.endurance)))
-        fatigue_cost = max(10, fatigue_cost)
-        fatigue_cost = _apply_carry_fatigue(player, fatigue_cost)
+        recoil = 1
+        cooldown = 1
+        fatigue_cost = 10
         mvrange = (0, 5)
         super().__init__(
             name="Attack",

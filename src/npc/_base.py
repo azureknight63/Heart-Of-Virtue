@@ -156,7 +156,6 @@ class Friend(AllyProgressionMixin, NPC):
         target=None,
         friend=True,
     ):
-        self.keywords = ["talk"]
         super().__init__(
             name=name,
             description=description,
@@ -184,6 +183,7 @@ class Friend(AllyProgressionMixin, NPC):
             target=target,
             friend=friend,
         )
+        self.keywords = ["talk"]
         self.knocked_out = False  # True while sitting out a fight after being KO'd
         # Ally progression (see _progression.py). Static growth; only classes
         # that declare a growth_profile ever gain exp or level.

@@ -984,7 +984,10 @@ def test_create_player_learn_all_skills_error_is_caught(monkeypatch):
     assert result is player
 
 
-def test_create_player_outer_exception_triggers_full_fallback(monkeypatch):
+def test_create_player_starting_experience_error_is_caught(monkeypatch):
+    """apply_starting_experience is wrapped in its own try/except (issue #361):
+    a bad config value degrades that one feature instead of discarding the
+    fully-built player and falling back to MinimalPlayer."""
     mgr = _bare_manager(monkeypatch)
     mgr.game_config = _make_game_config(starting_exp=5)
     mgr.starting_item_types = ["Gold"]
@@ -995,21 +998,19 @@ def test_create_player_outer_exception_triggers_full_fallback(monkeypatch):
 
     universe = _make_universe([game_map], default=game_map)
     player = _make_player()
-    # Unguarded call in the outer try -> propagates to the outer except,
-    # which rebuilds a brand new MinimalPlayer from scratch (re-running the
-    # config-items / starting-gold / equipment / party / stats application
-    # against the fresh MinimalPlayer).
+    player.combat_list_allies = []
     player.apply_starting_experience.side_effect = RuntimeError("boom")
 
     fake_mod = _fake_items_module(Gold=_FakeGold)
     with _fake_modules(player, universe), _fake_engine_modules(items=fake_mod):
         result = mgr._create_player_for_session("erin")
 
-    assert isinstance(result, MinimalPlayer)
-    assert result.username == "erin"
+    # Error was caught internally; player creation still succeeded (not a fallback).
+    assert result is player
+    player.apply_starting_experience.assert_called_once_with(5)
     # One Gold from starting_item_types + one Gold from starting_gold.
-    assert len(result.inventory) == 4 + 2  # 4 default MinimalPlayer items + 2 Gold
-    assert sum(isinstance(i, _FakeGold) for i in result.inventory) == 2
+    assert len(player.inventory) == 2
+    assert sum(isinstance(i, _FakeGold) for i in player.inventory) == 2
 
 
 def test_create_player_applies_starting_gold_and_config_items(monkeypatch):
@@ -1062,7 +1063,11 @@ def test_create_player_starting_gold_error_is_caught(monkeypatch):
 
 def test_create_player_full_fallback_gold_error_is_swallowed(monkeypatch):
     """Outer-fallback path's gold block swallows any exception silently
-    (bare `except Exception: pass` at the end of the fallback gold block)."""
+    (bare `except Exception: pass` at the end of the fallback gold block).
+
+    apply_starting_experience errors are now caught locally (issue #361) and
+    no longer trigger this fallback, so a different unguarded outer-try call
+    (`_apply_starting_equipment`) is used to force the real outer except."""
     mgr = _bare_manager(monkeypatch)
     mgr.game_config = _make_game_config(starting_exp=5)
     mgr.starting_gold = 10
@@ -1072,7 +1077,13 @@ def test_create_player_full_fallback_gold_error_is_swallowed(monkeypatch):
 
     universe = _make_universe([game_map], default=game_map)
     player = _make_player()
-    player.apply_starting_experience.side_effect = RuntimeError("boom")
+    # Raise only on the first call (the main path) so the fallback block's
+    # own (unguarded) call to the same method on the second pass succeeds.
+    monkeypatch.setattr(
+        mgr,
+        "_apply_starting_equipment",
+        MagicMock(side_effect=[RuntimeError("equipment boom"), None]),
+    )
 
     class _BrokenGold:
         def __init__(self, amount):

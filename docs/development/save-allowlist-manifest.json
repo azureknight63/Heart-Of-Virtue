@@ -154,10 +154,6 @@
     },
     {
       "module": "src.actions",
-      "name": "Equip"
-    },
-    {
-      "module": "src.actions",
       "name": "Menu"
     },
     {
@@ -194,15 +190,7 @@
     },
     {
       "module": "src.actions",
-      "name": "Use"
-    },
-    {
-      "module": "src.actions",
       "name": "ViewMap"
-    },
-    {
-      "module": "src.actions",
-      "name": "ViewStatus"
     },
     {
       "module": "src.combat_event_config",
@@ -1905,6 +1893,6 @@
       "name": "UUID"
     }
   ],
-  "count": 476,
+  "count": 473,
   "header_version": 1
 }

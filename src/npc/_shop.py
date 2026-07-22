@@ -243,7 +243,7 @@ class MerchantShopMixin:
                 else rooms_source
             )
             for room in rooms:
-                for obj in getattr(room, "objects", []):
+                for obj in getattr(room, "objects_here", getattr(room, "objects", [])):
                     if hasattr(obj, "inventory") and hasattr(obj, "merchant"):
                         owner = getattr(obj, "merchant", None)
                         if owner == self or owner == self.name:
@@ -310,6 +310,11 @@ class MerchantShopMixin:
         spawned = self.current_room.spawn_item(item_class_name, merchandise=True)
         if spawned and desired_count > 0 and hasattr(spawned, "count"):
             spawned.count = desired_count
+        if spawned and not hasattr(spawned, "base_value"):
+            try:
+                spawned.base_value = spawned.value
+            except Exception:
+                pass
         return spawned
 
     def _maybe_enchant(self, item: Item):
@@ -543,7 +548,7 @@ class MerchantShopMixin:
                 if hasattr(rooms_source, "values")
                 else rooms_source
             ):
-                for obj in getattr(room, "objects", []):
+                for obj in getattr(room, "objects_here", getattr(room, "objects", [])):
                     if (
                         hasattr(obj, "inventory") and hasattr(obj, "merchant")
                     ) and getattr(obj, "merchant", None) in (self, self.name):

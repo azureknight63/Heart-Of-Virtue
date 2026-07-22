@@ -488,12 +488,22 @@ class ItemComparisonSerializer:
             current_item, candidate_item, "add_status_resistance"
         )
 
-        # Determine recommendation
+        # Determine recommendation. Weapons never carry protection and armor
+        # never carries damage, so one side of each pair is always exactly 0
+        # for a same-category comparison. The upgrade/downgrade checks below
+        # are symmetric on purpose: each stat only needs to improve/worsen
+        # while the other doesn't move in the opposite direction, so a
+        # strictly-worse weapon (damage_diff < 0, protection_diff == 0) or a
+        # strictly-worse armor piece (protection_diff < 0, damage_diff == 0)
+        # is still correctly flagged instead of falling through to
+        # "sidegrade".
         if damage_diff > 0 and protection_diff >= 0:
             recommendation = "upgrade"
         elif damage_diff >= 0 and protection_diff > 0:
             recommendation = "upgrade"
-        elif damage_diff < 0 and protection_diff < 0:
+        elif damage_diff < 0 and protection_diff <= 0:
+            recommendation = "downgrade"
+        elif damage_diff <= 0 and protection_diff < 0:
             recommendation = "downgrade"
         else:
             recommendation = "sidegrade"

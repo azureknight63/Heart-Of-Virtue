@@ -417,7 +417,11 @@ class TestJab:
         assert tgt.hp < 100
         assert user.combat_position.facing is not None
 
-    def test_execute_heavy_handed_staggers(self, monkeypatch):
+    def test_execute_heavy_handed_does_not_stagger(self, monkeypatch):
+        # Regression test for #419: Jab is an unarmed move. HeavyHanded is a
+        # Bludgeon-gated passive (see PowerStrike, which requires
+        # eq_weapon.subtype == "Bludgeon" before applying Staggered). Jab must
+        # never inflict Staggered via HeavyHanded, even if the user knows it.
         user = _make_user(subtype="Unarmed")
         tgt = _make_target(finesse=0, protection=0)
         tgt.states = []
@@ -435,26 +439,7 @@ class TestJab:
              patch("src.moves._unarmed.functions.inflict") as mock_inflict:
             move.execute(user)
 
-        mock_inflict.assert_called_once()
-        assert isinstance(mock_inflict.call_args[0][0], states.Staggered)
-
-    def test_execute_heavy_handed_inflict_exception_swallowed(self, monkeypatch):
-        user = _make_user(subtype="Unarmed")
-        tgt = _make_target(finesse=0, protection=0)
-        tgt.states = []
-        user.combat_proximity = {tgt: 2}
-        heavy_handed_move = MagicMock()
-        heavy_handed_move.name = "Heavy Handed"
-        user.known_moves = [heavy_handed_move]
-        move = Jab(user)
-        move.target = tgt
-        move.power = 60
-        user.fatigue = 200
-
-        monkeypatch.setattr(random, "randint", lambda a, b: 0)
-        with patch("src.moves._unarmed.functions.check_parry", return_value=False), \
-             patch("src.moves._unarmed.functions.inflict", side_effect=Exception("boom")):
-            move.execute(user)
+        mock_inflict.assert_not_called()
 
     def test_execute_hit_chance_floor_at_one(self, monkeypatch):
         user = _make_user(subtype="Unarmed")

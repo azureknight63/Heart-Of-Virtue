@@ -1,10 +1,9 @@
 """
-Combat-related serializers for combat state, combatants, moves, and status effects.
+Combat-related serializers for combat state, combatants, and status effects.
 
 This module provides serialization for:
 - CombatState: Full battle state (turn order, combatants, status)
 - Combatant: Character/NPC in combat (HP, moves, effects)
-- Move: Combat abilities/actions
 - StateEffect: Status effects and conditions
 """
 
@@ -15,7 +14,6 @@ from src.api.constants import ITEM_USE_RANGE
 if TYPE_CHECKING:
     from src.player import Player
     from src.npc import NPC
-    from src.moves import Move
     from src.states import State
 
 
@@ -439,88 +437,30 @@ class CombatantSerializer:
         return equipment
 
 
-class MoveSerializer:
-    """Serialize combat moves and abilities."""
+# Maps a State's `statustype` (see src/states.py — the real attribute; there
+# is no `state_type`) to the frontend's status-effect vocabulary consumed by
+# StatusEffectsIconPanel.jsx: "buff" (green), "debuff" (red), "ailment"
+# (gold). Damage/corruption-over-time types are "ailment"; pure stat
+# penalties or action-denial are "debuff"; net-positive effects are "buff".
+# The "generic" statustype is used by a mix of mostly-positive states
+# (SecretPlansState, StoneBulwarkState) so it defaults to "buff".
+_STATUSTYPE_CATEGORY = {
+    "poison": "ailment",
+    "enflamed": "ailment",
+    "slimed": "ailment",
+    "stun": "debuff",
+    "stone": "debuff",
+    "disoriented": "debuff",
+    "apathy": "debuff",
+    "clean": "buff",
+    "enraged": "buff",
+    "revive": "buff",
+    "generic": "buff",
+}
 
-    @staticmethod
-    def serialize_move(move: "Move") -> Dict[str, Any]:
-        """
-        Serialize combat move information.
-
-        Args:
-            move: Move object from moves.py
-
-        Returns:
-            Dict with move details
-        """
-        return {
-            "name": getattr(move, "name", "Unknown Move"),
-            "description": getattr(move, "description", ""),
-            "type": getattr(move, "move_type", "physical"),
-            "category": getattr(move, "category", "Miscellaneous"),
-            "damage": {
-                "base": getattr(move, "base_damage", 0),
-                "type": getattr(move, "damage_type", "physical"),
-            },
-            "cost": {
-                "mp": getattr(move, "mp_cost", 0),
-                "stamina": getattr(move, "stamina_cost", 0),
-            },
-            "range": getattr(move, "range", "melee"),
-            "cooldown": {
-                "base": getattr(move, "cooldown_max", 0),
-                "remaining": getattr(move, "cooldown", 0),
-            },
-            "accuracy": getattr(move, "accuracy", 100),
-            "effects": MoveSerializer._serialize_move_effects(move),
-        }
-
-    @staticmethod
-    def serialize_move_list(moves: List["Move"]) -> List[Dict[str, Any]]:
-        """
-        Serialize list of available moves.
-
-        Args:
-            moves: List of Move objects
-
-        Returns:
-            List of serialized moves
-        """
-        return [MoveSerializer.serialize_move(m) for m in moves]
-
-    @staticmethod
-    def serialize_move_with_cooldown(
-        move: "Move", cooldown_remaining: int = 0
-    ) -> Dict[str, Any]:
-        """
-        Serialize move with current cooldown state.
-
-        Args:
-            move: Move object
-            cooldown_remaining: Current cooldown counter
-
-        Returns:
-            Dict with move and cooldown info
-        """
-        move_data = MoveSerializer.serialize_move(move)
-        move_data["cooldown"]["remaining"] = cooldown_remaining
-        move_data["available"] = cooldown_remaining <= 0
-        return move_data
-
-    @staticmethod
-    def _serialize_move_effects(move: "Move") -> List[Dict[str, Any]]:
-        """Serialize status effects applied by move."""
-        effects = []
-        if hasattr(move, "applies_state") and getattr(move, "applies_state"):
-            state = getattr(move, "applies_state")
-            effects.append(
-                {
-                    "type": getattr(state, "name", "Unknown"),
-                    "duration": getattr(state, "duration", 1),
-                    "severity": StateEffectSerializer._get_severity(state),
-                }
-            )
-        return effects
+# Values already in the frontend's vocabulary pass through unchanged so a
+# state (real or mocked) that already reports a valid type is not remapped.
+_VALID_EFFECT_TYPES = {"buff", "debuff", "ailment"}
 
 
 class StateEffectSerializer:
@@ -539,12 +479,9 @@ class StateEffectSerializer:
         """
         return {
             "name": getattr(state, "name", "Unknown Effect"),
-            "type": getattr(state, "state_type", "buff"),
+            "type": StateEffectSerializer._get_effect_type(state),
             "description": getattr(state, "description", ""),
-            "damage_per_turn": getattr(state, "damage_per_turn", 0),
-            "healing_per_turn": getattr(state, "healing_per_turn", 0),
             "severity": StateEffectSerializer._get_severity(state),
-            "resistable": getattr(state, "resistable", True),
             "beats_left": getattr(state, "beats_left", 0),
         }
 
@@ -581,13 +518,27 @@ class StateEffectSerializer:
         return state_data
 
     @staticmethod
-    def _get_severity(state: "State") -> str:
-        """Determine severity level of state effect."""
-        damage = getattr(state, "damage_per_turn", 0)
+    def _get_effect_type(state: "State") -> str:
+        """Map a State's `statustype` to the frontend buff/debuff/ailment vocabulary."""
+        statustype = getattr(state, "statustype", "generic")
+        if statustype in _VALID_EFFECT_TYPES:
+            return statustype
+        return _STATUSTYPE_CATEGORY.get(statustype, "debuff")
 
-        if damage == 0:
-            return "light"
-        elif damage <= 5:
+    @staticmethod
+    def _get_severity(state: "State") -> str:
+        """Determine severity level of state effect from its effect category.
+
+        Real `State` objects have no generic damage-per-turn attribute (each
+        subclass computes damage inline in `effect()`), so severity is
+        derived from the same category used for `type`: ailments (poison,
+        burn, corrosion) are severe, pure debuffs are moderate, and buffs are
+        light.
+        """
+        category = StateEffectSerializer._get_effect_type(state)
+        if category == "ailment":
+            return "severe"
+        elif category == "debuff":
             return "moderate"
         else:
-            return "severe"
+            return "light"

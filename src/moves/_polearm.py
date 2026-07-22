@@ -140,7 +140,10 @@ class Sweep(Move):
             return False
         if not hasattr(self.user, "combat_proximity"):
             return False
-        return any(e.is_alive() for e in self.user.combat_proximity)
+        return any(
+            e.is_alive() and self.user.combat_proximity.get(e, 9999) <= self.mvrange[1]
+            for e in self.user.combat_proximity
+        )
 
     def evaluate(self):
         try:

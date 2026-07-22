@@ -116,7 +116,7 @@ def _coerce_finite_number(value, template):
     want_float = isinstance(template, float)
     try:
         number = float(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return None
     if not math.isfinite(number):
         return None

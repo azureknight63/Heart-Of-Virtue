@@ -486,10 +486,19 @@ class BullCharge(Move):
         if not hasattr(self.user, "combat_proximity"):
             return False
 
-        if not self.target or self.target not in self.user.combat_proximity:
-            return False
-        distance = self.user.combat_proximity[self.target]
-        return 3 <= distance <= 20
+        target = self.target
+        if target is not None and target is not self.user and target in self.user.combat_proximity:
+            distance = self.user.combat_proximity[target]
+            return 3 <= distance <= 20
+        # Fallback: the combat adapter assigns self.target only after viability
+        # filtering, so for the player's own move list self.target is unset (or
+        # still defaulted to self.user) at this point. Scan for an in-range
+        # hostile via _hostiles_in_proximity (combat_list is the opposing side,
+        # so allied combatants in proximity are skipped).
+        for enemy, distance in self._hostiles_in_proximity():
+            if 3 <= distance <= 20:
+                return True
+        return False
 
     def evaluate(self):
         pass
@@ -581,6 +590,7 @@ class TacticalRetreat(Move):
             beats_left=prep,
             target=target,
             user=user,
+            category="Maneuver",
         )
         self.fatigue_per_beat = 1
         self.evaluate()
@@ -670,6 +680,7 @@ class FlankingManeuver(Move):
             beats_left=prep,
             target=target,
             user=user,
+            category="Maneuver",
         )
         self.fatigue_per_beat = 1
         self.evaluate()
@@ -678,10 +689,19 @@ class FlankingManeuver(Move):
         if not hasattr(self.user, "combat_proximity"):
             return False
 
-        if not self.target or self.target not in self.user.combat_proximity:
-            return False
-        distance = self.user.combat_proximity[self.target]
-        return 3 <= distance <= 15
+        target = self.target
+        if target is not None and target is not self.user and target in self.user.combat_proximity:
+            distance = self.user.combat_proximity[target]
+            return 3 <= distance <= 15
+        # Fallback: the combat adapter assigns self.target only after viability
+        # filtering, so for the player's own move list self.target is unset (or
+        # still defaulted to self.user) at this point. Scan for an in-range
+        # hostile via _hostiles_in_proximity (combat_list is the opposing side,
+        # so allied combatants in proximity are skipped).
+        for enemy, distance in self._hostiles_in_proximity():
+            if 3 <= distance <= 15:
+                return True
+        return False
 
     def evaluate(self):
         pass
@@ -802,7 +822,8 @@ class TacticalPositioning(Move):
     def prep(self, user):
         # Distance is provided by the combat adapter before this stage runs
         # (needs_distance_input -> number_input -> self.distance). Default to the
-        # max range when unset; no terminal prompt.
+        # max range when unset; no terminal prompt. Use `is None` rather than a
+        # falsy check so an explicit point-blank distance of 0 is preserved.
         if self.distance is None:
             self.distance = self.mvrange[1]
         self.target_dist_final = None  # Reset for execution
@@ -1015,6 +1036,7 @@ class QuickSwap(Move):
             beats_left=prep,
             target=target,
             user=user,
+            category="Maneuver",
         )
         self.accepts_ally_target = True
         self.evaluate()

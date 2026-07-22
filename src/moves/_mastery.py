@@ -139,7 +139,6 @@ class KillingPrecision(Move):
             self.parry()
         else:
             self.hit(damage, False)
-            player.change_heat(1.5)
 
 
 class LightningAssault(Move):

@@ -322,10 +322,9 @@ class VertigoSpin(Move):
 
                 # Apply Disoriented status
                 try:
-                    disoriented = states.Disoriented(self.target)
-                    if disoriented not in self.target.states:
-                        self.target.states.append(disoriented)
-                        cprint(f"{self.target.name} is disoriented!", "red")
+                    # inflict() rolls against status resistance and handles
+                    # duplicate compounding, unlike a raw states.append().
+                    functions.inflict(states.Disoriented(self.target), self.target)
                 except Exception as e:
                     cprint(f"Could not apply Disoriented status: {e}", "yellow")
         else:

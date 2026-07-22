@@ -17,13 +17,7 @@ from src.api.serializers.shop_serializer import ShopSerializer
 from src.api.serializers.combat import (
     CombatStateSerializer,
     CombatantSerializer,
-    MoveSerializer,
     StateEffectSerializer,
-)
-from src.api.serializers.npc_ai import (
-    NPCAIStateSerializer,
-    DialogueStateSerializer,
-    NPCBehaviorProfileSerializer,
 )
 from src.api.serializers.reputation import NPCRelationshipSerializer
 from src.api.serializers.inventory import (
@@ -40,9 +34,8 @@ from src.api.serializers.inventory import (
 # the hardened methods too.
 for _serializer in (
     ItemSerializer, NPCSerializer, ObjectSerializer, EventSerializer,
-    ShopSerializer, CombatStateSerializer, CombatantSerializer, MoveSerializer,
-    StateEffectSerializer, NPCAIStateSerializer, DialogueStateSerializer,
-    NPCBehaviorProfileSerializer, NPCRelationshipSerializer,
+    ShopSerializer, CombatStateSerializer, CombatantSerializer,
+    StateEffectSerializer, NPCRelationshipSerializer,
     InventoryItemSerializer, InventorySerializer, EquipmentSlotSerializer,
     EquipmentSerializer, ItemDetailSerializer, ItemComparisonSerializer,
 ):
@@ -58,11 +51,7 @@ __all__ = [
     "ShopSerializer",
     "CombatStateSerializer",
     "CombatantSerializer",
-    "MoveSerializer",
     "StateEffectSerializer",
-    "NPCAIStateSerializer",
-    "DialogueStateSerializer",
-    "NPCBehaviorProfileSerializer",
     "NPCRelationshipSerializer",
     "InventoryItemSerializer",
     "InventorySerializer",

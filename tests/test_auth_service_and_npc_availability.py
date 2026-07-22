@@ -99,6 +99,30 @@ class TestAuthServiceValidation:
         assert result is None
 
     @pytest.mark.asyncio
+    async def test_authenticate_user_no_rows_still_verifies_dummy_hash(self, svc):
+        """Issue #365: unknown username must still run a full Argon2 verify
+        (against a static dummy hash) so the response time is comparable to
+        the 'username exists, wrong password' path — otherwise an attacker
+        could enumerate valid usernames by timing.
+        """
+        from src.api.services.auth_service import _DUMMY_PASSWORD_HASH
+
+        mock_result = MagicMock()
+        mock_result.rows = []
+        mock_db = AsyncMock()
+        mock_db.execute.return_value = mock_result
+
+        mock_ph = MagicMock()
+        mock_ph.verify.side_effect = Exception("mismatch")
+        svc.ph = mock_ph
+
+        with patch("src.api.services.auth_service.db", mock_db):
+            result = await svc.authenticate_user("nobody", "password")
+
+        assert result is None
+        mock_ph.verify.assert_called_once_with(_DUMMY_PASSWORD_HASH, "password")
+
+    @pytest.mark.asyncio
     async def test_authenticate_user_wrong_password_returns_none(self, svc):
         """ph.verify raises on bad password — method should catch and return None.
 

@@ -298,16 +298,6 @@ class Jab(Move):
                 self.parry()
             else:
                 self.hit(damage, glance)
-                # HeavyHanded passive: apply Staggered on Bludgeon hit (when wielding Fists or unarmed)
-                if any(
-                    getattr(m, "name", "") == "Heavy Handed"
-                    for m in getattr(self.user, "known_moves", [])
-                ):
-                    if self.target and self.target.is_alive():
-                        try:
-                            functions.inflict(states.Staggered(self.target), self.target)
-                        except Exception:
-                            pass
         else:
             self.miss()
         self.user.fatigue -= self.fatigue_cost

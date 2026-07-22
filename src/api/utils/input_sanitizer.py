@@ -57,9 +57,12 @@ def sanitize_event_input(
         except ValueError:
             return "", "Input must be a valid number"
 
-        # Check bounds if specified in options
-        min_value = event_data.get("min_value")
-        max_value = event_data.get("max_value")
+        # Check bounds if specified in options. The producer
+        # (EventSerializer.serialize_with_input) writes these as
+        # input_min/input_max, so read the same keys here or bounds are
+        # silently never enforced.
+        min_value = event_data.get("input_min")
+        max_value = event_data.get("input_max")
 
         if min_value is not None and num < min_value:
             return "", f"Number must be at least {min_value}"

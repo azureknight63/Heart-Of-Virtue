@@ -274,7 +274,11 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
             description = tile_data.get("description", "")
             try:
                 tile_cls = functions.seek_class(title, "tilesets", allow_other_modules=False)
-            except Exception:
+            except ValueError as e:
+                narrate(
+                    f"ERROR: Failed to resolve tile class for title '{title}' "
+                    f"at {coord_str} in map '{map_name}': {e}; falling back to MapTile"
+                )
                 from src.tiles import MapTile as tile_cls  # fallback
             tile_instance = tile_cls(self, this_map, x, y)
             # Store tile name from JSON title; only if the class didn't set its own.

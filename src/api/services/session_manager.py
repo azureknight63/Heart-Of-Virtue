@@ -824,11 +824,17 @@ class SessionManager:
                         flush=True,
                     )
                 if self.game_config.starting_exp > 0:
-                    player.apply_starting_experience(self.game_config.starting_exp)
-                    print(
-                        f"[SessionManager] [OK] Applied starting_exp {self.game_config.starting_exp} to all skill categories",
-                        flush=True,
-                    )
+                    try:
+                        player.apply_starting_experience(self.game_config.starting_exp)
+                        print(
+                            f"[SessionManager] [OK] Applied starting_exp {self.game_config.starting_exp} to all skill categories",
+                            flush=True,
+                        )
+                    except Exception as e:
+                        print(
+                            f"[SessionManager] [ERROR] apply_starting_experience failed: {e}",
+                            flush=True,
+                        )
                 if self.game_config.learn_all_skills:
                     try:
                         from src.functions import learn_all_skills_from_skilltree
@@ -847,11 +853,17 @@ class SessionManager:
                 if getattr(self.game_config, "god_mode", False) and hasattr(
                     player, "supersaiyan"
                 ):
-                    player.supersaiyan()
-                    print(
-                        "[SessionManager] [OK] god_mode=True — applied supersaiyan stats",
-                        flush=True,
-                    )
+                    try:
+                        player.supersaiyan()
+                        print(
+                            "[SessionManager] [OK] god_mode=True — applied supersaiyan stats",
+                            flush=True,
+                        )
+                    except Exception as e:
+                        print(
+                            f"[SessionManager] [ERROR] supersaiyan (god_mode) failed: {e}",
+                            flush=True,
+                        )
 
             # Apply starting gold
             if self.starting_gold > 0:

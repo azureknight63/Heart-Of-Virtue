@@ -299,7 +299,7 @@ maintenant et à l'heure de notre mort. Amen.""",
             # Set main character experience and trigger level-ups
             self.exp = exp_value
             level_up_events = []
-            while self.exp >= self.exp_to_level:
+            while self.level < 100 and self.exp >= self.exp_to_level:
                 level_up_events.append(self._level_up_api())
 
             # Set experience for skill tree learning
