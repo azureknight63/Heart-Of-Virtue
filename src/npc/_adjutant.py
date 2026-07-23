@@ -17,7 +17,6 @@ debug API.
 """
 
 import src.functions as functions  # type: ignore
-import src.moves as moves  # type: ignore
 
 from ._base import NPC, Friend  # noqa: F401
 from ._enemies import (  # noqa: F401
@@ -143,10 +142,7 @@ class TheAdjutant(Friend):
             "reflexive": "itself",
             "intensive": "itself",
         }
-        try:
-            self.known_moves = [moves.NpcIdle(self)]
-        except Exception:
-            self.known_moves = []
+        self._init_idle_moves()
 
     # ------------------------------------------------------------------
     # Keyword dispatch — flavor only; configuration happens via the debug API.

@@ -16,14 +16,59 @@ Attributes expected on the host class (provided by Mynx.__init__):
     self._jean_advisor      dict | None     (lazy-loaded)
 """
 
+import importlib
 import importlib.util
 import json
 import os
 import random
 import re
+import sys
 import time
 from pathlib import Path
 from src.narration import narrate
+
+
+def _load_llm_client_module(fallback_path=None):
+    """Return the shared ``ai.llm_client`` module object.
+
+    Loads via ``importlib.import_module`` so the module is registered in
+    ``sys.modules`` and every caller (the Mynx mixin, the chat mixin, and
+    ``ai.combat_strategist``) shares ONE module object with a single copy of
+    its process-wide state (issue #380). Only if the package genuinely isn't
+    importable do we fall back to a path-based load — and even then the result
+    is registered under the canonical name so subsequent callers reuse it.
+
+    Args:
+        fallback_path: Path to ``ai/llm_client.py`` used only if
+            ``import ai.llm_client`` fails and nothing is cached.
+
+    Returns:
+        The module object, or ``None`` if it cannot be loaded.
+    """
+    try:
+        return importlib.import_module("ai.llm_client")
+    except Exception:
+        pass
+    cached = sys.modules.get("ai.llm_client")
+    if cached is not None:
+        return cached
+    if fallback_path is None:
+        return None
+    try:
+        spec = importlib.util.spec_from_file_location(
+            "ai.llm_client", str(fallback_path)
+        )
+        if not (spec and spec.loader):
+            return None
+        mod = importlib.util.module_from_spec(spec)
+        # Register BEFORE exec so the canonical name resolves during import and
+        # future callers share this single instance.
+        sys.modules["ai.llm_client"] = mod
+        spec.loader.exec_module(mod)
+        return mod
+    except Exception:
+        sys.modules.pop("ai.llm_client", None)
+        return None
 
 
 class MynxLLMMixin:
@@ -125,18 +170,14 @@ class MynxLLMMixin:
                         f"[MYNX_LLM_DEBUG] llm_client.py not found at {adapter_path}."
                     )
                 return None
-            spec = importlib.util.spec_from_file_location(
-                "ai.llm_client", str(adapter_path)
-            )
-            if not (spec and spec.loader):
+            mod = _load_llm_client_module(adapter_path)
+            if mod is None:
                 self._llm_adapter = self._ADAPTER_FAILED
                 if _debug:
                     narrate(
-                        "[MYNX_LLM_DEBUG] Failed to create module spec for llm_client."
+                        "[MYNX_LLM_DEBUG] Failed to load llm_client module."
                     )
                 return None
-            mod = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(mod)
             Adapter = getattr(mod, "MynxLLMAdapter", None)
             if Adapter is None:
                 self._llm_adapter = self._ADAPTER_FAILED

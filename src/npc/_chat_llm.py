@@ -25,12 +25,13 @@ Instance attributes (set by _init_chat_attrs):
     self._chat_npc_key       str | None (persistence key)
 """
 
-import importlib.util
 import json
 import logging
 import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+from ._llm import _load_llm_client_module
 
 logger = logging.getLogger(__name__)
 
@@ -218,15 +219,12 @@ class HumanNPCLLMMixin:
             return self._chat_adapter
 
         try:
-            spec = importlib.util.find_spec("ai.llm_client")
-            if spec is None:
-                # Try direct path import
-                path = str(_AI_DIR / "llm_client.py")
-                spec = importlib.util.spec_from_file_location("ai_llm_client", path)
-
-            if spec and spec.loader:
-                module = importlib.util.module_from_spec(spec)
-                spec.loader.exec_module(module)
+            # Load through the shared loader so this mixin, the Mynx mixin, and
+            # ai.combat_strategist all share ONE ai.llm_client module object
+            # registered in sys.modules (issue #380) — the adapter's singleton
+            # state is no longer split across mutually-unaware module copies.
+            module = _load_llm_client_module(_AI_DIR / "llm_client.py")
+            if module is not None:
                 self._chat_adapter = module.NpcChatLLMAdapter.get_instance()
             else:
                 self._chat_adapter = self._ADAPTER_FAILED

@@ -233,10 +233,18 @@ class ApiCombatAdapter:
         if not hasattr(self.player, "combat_log"):
             self.player.combat_log = []
 
-        # Check for duplicate
-        # We check both message and round to allow the same event in different rounds
+        # Check for duplicate.
+        # We key on (message, round) plus the acting entity's id so that two
+        # distinct combatants using identically-named moves in the same beat
+        # (e.g. two same-species NPCs) don't collide — otherwise the second
+        # entry's animation would be silently dropped from the frontend log.
+        # For non-animation entries source_id is None on both sides, preserving
+        # the original (message, round) dedup behaviour.
+        new_source = (animation_data or {}).get("source_id")
         is_duplicate = any(
-            existing.get("message") == message and existing.get("round") == round_num
+            existing.get("message") == message
+            and existing.get("round") == round_num
+            and (existing.get("animation") or {}).get("source_id") == new_source
             for existing in self.player.combat_log
         )
         if not is_duplicate:
@@ -418,9 +426,12 @@ class ApiCombatAdapter:
 
             # Set up for player's move selection OR resume existing move
             if reinit and self.player.current_move is not None:
-                # RESUME the current move if we were mid-combat
-                # This ensures recoil/cooldown beats continue after reinforcements
-                return self._execute_move(self.player.current_move)
+                # RESUME the current move if we were mid-combat.
+                # Pass resume=True so the beat loop continues the move's
+                # recoil/cooldown from its stored stage WITHOUT re-casting —
+                # cast() would reset current_stage to 0 and re-apply one-shot
+                # cast effects, restarting the move instead. See issue #344.
+                return self._execute_move(self.player.current_move, resume=True)
 
             self.awaiting_input = True
             self.input_type = "move_selection"
@@ -519,6 +530,61 @@ class ApiCombatAdapter:
 
         return self.get_combat_state()
 
+    def _lookup_combatant(self, target_id: str):
+        """Return the combatant whose id() matches target_id, or None.
+
+        The prefix (``enemy_``/``ally_``) is stripped before comparison so
+        either form resolves against the raw Python id string.
+        """
+        target_obj_id = _strip_combatant_prefix(target_id)
+        for combatant in self.player.combat_list + self.player.combat_list_allies:
+            if str(id(combatant)) == target_obj_id:
+                return combatant
+        return None
+
+    def _resolve_move_target(
+        self, move, move_index: int, target_id: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Resolve the target for a targeted move (shared by both selection flows).
+
+        Resolution order: an explicit ``target_id``, single-viable-target
+        auto-resolution, or multi-target selection setup.
+
+        Returns one of:
+            {"target": <combatant>} — target found; caller assigns and executes
+            {"await": True}         — multiple targets; adapter state is set for
+                                      target_selection, caller returns combat state
+            {"error": <str>}        — no viable target could be resolved
+        """
+        viable_targets = self._get_available_targets(move)
+        target = None
+
+        if target_id:
+            target = self._lookup_combatant(target_id)
+
+        if target is None:
+            if len(viable_targets) == 1:
+                single_id = (
+                    viable_targets[0].get("id")
+                    if isinstance(viable_targets[0], dict)
+                    else None
+                )
+                if not isinstance(single_id, str):
+                    return {"error": "Invalid target"}
+                target = self._lookup_combatant(single_id)
+                if target is None:
+                    return {"error": "Failed to resolve single target"}
+            elif len(viable_targets) > 1:
+                # Multiple viable targets — request explicit target selection.
+                self.input_type = "target_selection"
+                self.available_options = viable_targets
+                self.pending_move_index = move_index
+                return {"await": True}
+            else:
+                return {"error": "No valid targets available for this move"}
+
+        return {"target": target}
+
     def _handle_combined_selection(
         self, move_name: str, target_id: Optional[str]
     ) -> Dict[str, Any]:
@@ -559,56 +625,16 @@ class ApiCombatAdapter:
         ):
             return {"error": "Not enough fatigue"}
 
-        # If move is targeted, find target
+        # If move is targeted, resolve the target via the shared helper
         if selected_move.targeted:
-            target = None
-            viable_targets = self._get_available_targets(selected_move)
-
-            if target_id:
-                # Try to find the specified target
-                target_obj_id = _strip_combatant_prefix(target_id)
-                all_combatants = (
-                    self.player.combat_list + self.player.combat_list_allies
-                )
-                for combatant in all_combatants:
-                    if str(id(combatant)) == target_obj_id:
-                        target = combatant
-                        break
-
-            # If no specific target found, try to auto-resolve if there's only one viable target
-            if not target:
-                if len(viable_targets) == 1:
-                    single_target_id = (
-                        viable_targets[0].get("id")
-                        if isinstance(viable_targets[0], dict)
-                        else None
-                    )
-                    if not isinstance(single_target_id, str):
-                        return {"error": "Invalid target"}
-
-                    target_obj_id = _strip_combatant_prefix(single_target_id)
-                    all_combatants = (
-                        self.player.combat_list + self.player.combat_list_allies
-                    )
-                    for combatant in all_combatants:
-                        if str(id(combatant)) == target_obj_id:
-                            target = combatant
-                            break
-                elif len(viable_targets) > 1:
-                    # Multiple viable targets — request target selection
-                    self.input_type = "target_selection"
-                    self.available_options = viable_targets
-                    self.pending_move_index = (
-                        self.player.known_moves.index(selected_move)
-                        if selected_move in self.player.known_moves
-                        else -1
-                    )
-                    return self.get_combat_state()
-
-            if not target:
-                return {"error": "No viable targets available for this move."}
-
-            selected_move.target = target
+            resolution = self._resolve_move_target(
+                selected_move, move_index, target_id
+            )
+            if "error" in resolution:
+                return {"error": resolution["error"]}
+            if resolution.get("await"):
+                return self.get_combat_state()
+            selected_move.target = resolution["target"]
         else:
             selected_move.target = self.player
 
@@ -664,46 +690,18 @@ class ApiCombatAdapter:
             "player_action",
         )
 
-        # Check if move needs targeting
+        # Check if move needs targeting — resolve via the shared helper
         if selected_move.targeted:
-            viable_targets = self._get_available_targets(selected_move)
-
-            # Check if we can auto-select target (exactly one viable target)
-            if len(viable_targets) == 1:
-                single_target_id = (
-                    viable_targets[0].get("id")
-                    if isinstance(viable_targets[0], dict)
-                    else None
-                )
-                if not isinstance(single_target_id, str):
-                    return {"error": "Invalid target"}
-
-                target_obj_id = _strip_combatant_prefix(single_target_id)
-                target = None
-                all_combatants = (
-                    self.player.combat_list + self.player.combat_list_allies
-                )
-                for combatant in all_combatants:
-                    if str(id(combatant)) == target_obj_id:
-                        target = combatant
-                        break
-
-                if target:
-                    selected_move.target = target
-                    self.pending_move_index = None
-                    return self._execute_move(selected_move)
-                else:
-                    return {"error": "Failed to resolve single target"}
-
-            if len(viable_targets) == 0:
-                return {"error": "No valid targets available for this move"}
-
-            # Multiple targets - standard flow
-            self.input_type = "target_selection"
-            self.available_options = viable_targets
-            self.pending_move_index = move_index
-            # Keep awaiting_input True so frontend knows to send target
-            return self.get_combat_state()
+            resolution = self._resolve_move_target(selected_move, move_index)
+            if "error" in resolution:
+                return {"error": resolution["error"]}
+            if resolution.get("await"):
+                # Multiple targets — keep awaiting_input True so the frontend
+                # knows to send a target selection.
+                return self.get_combat_state()
+            selected_move.target = resolution["target"]
+            self.pending_move_index = None
+            return self._execute_move(selected_move)
 
         # Check if move needs duration input (e.g., Wait move)
         if hasattr(selected_move, "needs_duration") and selected_move.needs_duration:
@@ -956,10 +954,15 @@ class ApiCombatAdapter:
 
         return False
 
-    def _execute_move(self, move) -> Dict[str, Any]:
-        """Execute a move and process the combat beat(s)."""
+    def _execute_move(self, move, resume: bool = False) -> Dict[str, Any]:
+        """Execute a move and process the combat beat(s).
+
+        When ``resume`` is True the initial ``cast()`` is skipped so an
+        already-in-progress move continues from its stored stage instead of
+        being restarted (used by the reinit/reinforcement path).
+        """
         try:
-            return self._execute_move_inner(move)
+            return self._execute_move_inner(move, resume=resume)
         except Exception as e:
             logger.exception(
                 "Unhandled exception in _execute_move for move '%s'",
@@ -975,57 +978,64 @@ class ApiCombatAdapter:
                 self.available_options = []
             return {"error": f"Move execution failed: {e}"}
 
-    def _execute_move_inner(self, move) -> Dict[str, Any]:
-        """Inner move execution — called only via _execute_move which handles state recovery."""
+    def _execute_move_inner(self, move, resume: bool = False) -> Dict[str, Any]:
+        """Inner move execution — called only via _execute_move which handles state recovery.
+
+        When ``resume`` is True the cast phase is skipped: the move is already
+        mid-execution (current_stage > 0) and re-casting would reset its stage
+        and re-apply one-shot cast effects. See issue #344.
+        """
         # Reset beat state index for this move execution
         self.current_beat_state_index = 0
 
         is_instant = hasattr(move, "instant") and move.instant
         beat_states = []
 
-        # Cast the move (capture output for initial cast message)
-        with self._capture_output():
-            # Store for repeat functionality
-            self.player.last_move_name = move.name
-            self.player.last_move_target_id = (
-                getattr(move.target, "id", f"enemy_{id(move.target)}")
-                if getattr(move, "target", None)
-                else None
-            )
-
-            # Determine animation type using fallback logic
-            animation_type = getattr(move, "web_animation", None)
-            if animation_type is None:
-                # Apply fallback logic
-                if move.targeted and self._move_deals_damage(move):
-                    animation_type = "attack"
-                else:
-                    animation_type = "pulse"
-
-            # Create animation metadata
-            animation_data = {
-                "type": animation_type,
-                "source_id": "player",
-                "target_id": (
-                    (
-                        f"enemy_{id(move.target)}"
-                        if move.target != self.player
-                        else "player"
-                    )
-                    if move.targeted and move.target
+        # Cast the move (capture output for initial cast message).
+        # Skipped when resuming an already-cast, in-progress move (issue #344).
+        if not resume:
+            with self._capture_output():
+                # Store for repeat functionality
+                self.player.last_move_name = move.name
+                self.player.last_move_target_id = (
+                    getattr(move.target, "id", f"enemy_{id(move.target)}")
+                    if getattr(move, "target", None)
                     else None
-                ),
-                "move_name": move.name,
-            }
+                )
 
-            # Store for outcome tracking (will be updated when combat output is captured)
-            self.player._pending_animation = animation_data
-            # Tag the active entity so write() can find the right pending animation
-            self.output_capture.active_entity = self.player
+                # Determine animation type using fallback logic
+                animation_type = getattr(move, "web_animation", None)
+                if animation_type is None:
+                    # Apply fallback logic
+                    if move.targeted and self._move_deals_damage(move):
+                        animation_type = "attack"
+                    else:
+                        animation_type = "pulse"
 
-            move.cast()
+                # Create animation metadata
+                animation_data = {
+                    "type": animation_type,
+                    "source_id": "player",
+                    "target_id": (
+                        (
+                            f"enemy_{id(move.target)}"
+                            if move.target != self.player
+                            else "player"
+                        )
+                        if move.targeted and move.target
+                        else None
+                    ),
+                    "move_name": move.name,
+                }
 
-        self.output_capture.active_entity = None
+                # Store for outcome tracking (updated when combat output is captured)
+                self.player._pending_animation = animation_data
+                # Tag the active entity so write() can find the right pending animation
+                self.output_capture.active_entity = self.player
+
+                move.cast()
+
+            self.output_capture.active_entity = None
 
         # For instant moves, process all stages immediately without advancing beats
         if is_instant:
@@ -1749,34 +1759,6 @@ class ApiCombatAdapter:
         import threading
 
         threading.Thread(target=fetch_suggestions_worker, daemon=True).start()
-
-    def _evaluate_combat_events(self):
-        """
-        Evaluate all active combat events when enemies are defeated.
-
-        This allows events (like reinforcement spawners) to inject new enemies
-        before combat ends, preventing premature victory declarations.
-
-        Each event's check_combat_conditions() is called safely with error
-        handling to prevent one failing event from crashing combat.
-
-        Combat events check conditions and can trigger processes that might
-        add new enemies to combat_list, which should continue the battle
-        rather than declaring victory.
-        """
-        if len(self.player.combat_events) == 0:
-            return
-
-        # Evaluate each combat event's conditions safely
-        for event in self.player.combat_events[
-            :
-        ]:  # Use slice copy to avoid modification issues
-            try:
-                if hasattr(event, "check_combat_conditions"):
-                    event.check_combat_conditions()
-            except Exception as e:
-                event_name = getattr(event, "name", "UnknownEvent")
-                logger.warning("Error evaluating combat event '%s': %s", event_name, e)
 
     def _handle_victory(self):
         """Handle combat victory."""

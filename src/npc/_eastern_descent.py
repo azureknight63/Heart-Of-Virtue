@@ -10,7 +10,6 @@ All three communicate in brief, practical terms. None overreach their tier.
 
 import random
 
-import src.moves as moves  # type: ignore
 from ._base import Friend
 from ._chat_llm import HumanNPCLLMMixin
 from src.narration import narrate
@@ -77,10 +76,7 @@ class NomadCamper(HumanNPCLLMMixin, Friend):
             "reflexive": "himself",
             "intensive": "himself",
         }
-        try:
-            self.known_moves = [moves.NpcIdle(self)]
-        except Exception:
-            self.known_moves = []
+        self._init_idle_moves()
         self._chat_config_path = None
         self._init_chat_attrs()
 
@@ -141,10 +137,7 @@ class NomadScout(HumanNPCLLMMixin, Friend):
             "reflexive": "himself",
             "intensive": "himself",
         }
-        try:
-            self.known_moves = [moves.NpcIdle(self)]
-        except Exception:
-            self.known_moves = []
+        self._init_idle_moves()
         self._chat_config_path = None
         self._init_chat_attrs()
 
@@ -207,10 +200,7 @@ class NomadTrader(HumanNPCLLMMixin, Friend):
             "reflexive": "herself",
             "intensive": "herself",
         }
-        try:
-            self.known_moves = [moves.NpcIdle(self)]
-        except Exception:
-            self.known_moves = []
+        self._init_idle_moves()
         self._chat_config_path = None
         self._init_chat_attrs()
 

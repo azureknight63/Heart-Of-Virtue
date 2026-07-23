@@ -303,6 +303,34 @@ class TestMaraSelectMove:
         mara.select_move()
         assert mara.current_move is not None
 
+    def test_bow_mode_attack_is_viable_at_bow_range(self):
+        """Issue #383: at bow distance Mara's only offensive move must become
+        viable after her stance sync, instead of being permanently melee-only.
+        """
+        mara = self._make_mara_with_enemy(15)
+        attack = next(m for m in mara.known_moves if m.name == "NPC_Attack")
+        # As constructed, her attack reach is melee (combat_range) and cannot
+        # reach bow distance.
+        assert not attack.viable()
+        mara.select_move()
+        # After the bow-stance retune her attack reaches bow range and is viable.
+        assert attack.mvrange[1] >= 15
+        assert attack.viable()
+
+    def test_dagger_mode_restores_melee_attack_range(self):
+        """Bow-stance widening must not leak into dagger stance — melee reach
+        is restored when she closes in (issue #383)."""
+        mara = self._make_mara_with_enemy(15)
+        mara.select_move()
+        assert mara.known_moves  # sanity
+        # Now simulate the enemy at dagger range on a later beat.
+        enemy = mara.player_ref.combat_list[0]
+        mara.combat_proximity = {enemy: 1}
+        mara.current_move = None
+        mara.select_move()
+        attack = next(m for m in mara.known_moves if m.name == "NPC_Attack")
+        assert attack.mvrange == mara.combat_range
+
     def test_select_move_no_enemies(self):
         mara = self._make_mara()
         # Suppress lazy ai_config init

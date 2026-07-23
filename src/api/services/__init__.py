@@ -6,7 +6,6 @@ from .validators import (
     validate_required_fields,
     validate_direction,
     validate_item_index,
-    validate_npc_id,
 )
 
 __all__ = [
@@ -16,5 +15,4 @@ __all__ = [
     "validate_required_fields",
     "validate_direction",
     "validate_item_index",
-    "validate_npc_id",
 ]

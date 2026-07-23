@@ -124,11 +124,12 @@ class PlayerInventoryMixin:
                             > capacity
                         ):
                             cprint("It's too heavy to carry!", "red")
-                            # Put it back in the room if it was previously in current_room.items_here
-                            # (though if passed directly as item_object it might not have been removed yet)
-                            if (
-                                target_item in candidates
-                            ):  # Was popped in candidates logic
+                            # Only return it to the room if it was actually
+                            # removed from it. Room candidates are left in
+                            # items_here until the equip succeeds, so appending
+                            # unconditionally here duplicated the item on the
+                            # tile. Guard on absence so we never double-list it.
+                            if target_item not in self.current_room.items_here:
                                 self.current_room.items_here.append(target_item)
                             return
 
@@ -182,14 +183,10 @@ class PlayerInventoryMixin:
                             else:
                                 replace_old = True
                         if replace_old:
-                            olditem.isequipped = False
-                            cprint(
-                                "Jean put {} back into his bag.".format(olditem.name),
-                                "cyan",
-                            )
-                            olditem.on_unequip(self)
-                            olditem.interactions.remove("unequip")
-                            olditem.interactions.append("equip")
+                            # Delegate to unequip_item so the swap-out follows
+                            # the single, defensively-guarded unequip path rather
+                            # than duplicating it here.
+                            self.unequip_item(olditem)
                     target_item.isequipped = True
                     cprint("Jean equipped {}!".format(target_item.name), "cyan")
                     target_item.on_equip(self)
@@ -310,6 +307,11 @@ class PlayerInventoryMixin:
                 continue
             if item not in self.inventory:
                 self.inventory.append(item)
+                # Track the added weight incrementally so items added earlier in
+                # this batch count against the cap for later items — otherwise
+                # several items could each pass against the original free
+                # capacity yet collectively exceed weight_tolerance.
+                self.weight_current = round(self.weight_current + item_weight, 2)
                 narrate(f"Jean adds {item_designation} to his inventory.")
             else:
                 narrate(f"{item_designation} is already in Jean's inventory.")

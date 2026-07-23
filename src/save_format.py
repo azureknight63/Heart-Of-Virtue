@@ -15,8 +15,9 @@ plus a one-shot converter that runs after a successful (trusted) pickle load.
 
 Version negotiation: every document carries ``format_version`` (bumped on
 breaking changes) and ``schema_version`` (bumped on additive changes). Loaders
-reject unknown ``format_version`` values and, in strict validation, unknown
-top-level keys.
+reject unknown ``format_version`` values and out-of-range ``schema_version``
+values (must be an integer in ``1..SAVE_SCHEMA_VERSION``), and, in strict
+validation, unknown top-level keys.
 """
 
 import io
@@ -248,6 +249,21 @@ def validate_save_data(data, *, strict=False):
         raise SaveSchemaError(
             f"Unsupported save format_version {version!r} "
             f"(expected {SAVE_FORMAT_VERSION})"
+        )
+
+    # schema_version is the additive-change half of version negotiation. Require
+    # it to be present, an integer (not a bool -- bool is an int subclass), and
+    # within the supported range so a missing/garbage value is rejected rather
+    # than silently accepted.
+    schema = data.get("schema_version")
+    if isinstance(schema, bool) or not isinstance(schema, int):
+        raise SaveSchemaError(
+            f"Save schema_version must be an integer, got {schema!r}"
+        )
+    if not 1 <= schema <= SAVE_SCHEMA_VERSION:
+        raise SaveSchemaError(
+            f"Unsupported save schema_version {schema!r} "
+            f"(supported 1..{SAVE_SCHEMA_VERSION})"
         )
 
     missing = _REQUIRED_TOP_LEVEL_KEYS - data.keys()

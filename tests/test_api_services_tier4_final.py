@@ -189,10 +189,6 @@ class TestValidators:
         result = validate_item_index(0, 5)
         assert isinstance(result, tuple)
 
-    def test_validate_npc_id(self):
-        """Test validate_npc_id"""
-        result = validate_npc_id("npc_123")
-        assert isinstance(result, tuple)
 
 
 class TestValidatorsEdgeCases:
