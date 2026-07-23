@@ -715,6 +715,27 @@ class GameService:
 
         session_data["tile_modifications"][tile_key][modification_type] = data
 
+    def persist_tile_state(self, session_data: Optional[Dict[str, Any]], tile) -> None:
+        """Persist a tile's mutable state into session data after events run.
+
+        Single source of truth for capturing tile modifications (currently the
+        blocked-exit set) so callers — move_player, interact_with_target, and the
+        /world/events route — don't each hand-roll the same store sequence. New
+        modification types (e.g. objects_removed, #328) should be added here so
+        every caller picks them up. No-op when there's no session to persist to.
+
+        Args:
+            session_data: The session data dictionary, or None.
+            tile: The MapTile whose state should be captured.
+        """
+        if session_data is None or tile is None:
+            return
+
+        block_exit = tile.block_exit.copy() if hasattr(tile, "block_exit") else []
+        self.store_tile_modification(
+            session_data, tile.x, tile.y, "block_exit", block_exit
+        )
+
     def apply_tile_modifications(self, tile, session_data: Dict[str, Any]) -> None:
         """Apply stored modifications to a tile.
 
@@ -849,17 +870,7 @@ class GameService:
         self._recover_npc_loquacity(player)
 
         # Store tile modifications after entry events have processed to capture state changes
-        if session_data is not None:
-            current_block_exit = (
-                new_tile.block_exit.copy() if hasattr(new_tile, "block_exit") else []
-            )
-            self.store_tile_modification(
-                session_data,
-                new_tile.x,
-                new_tile.y,
-                "block_exit",
-                current_block_exit,
-            )
+        self.persist_tile_state(session_data, new_tile)
 
         # Check for combat initiation
         combat_enemies = check_for_combat(player)
@@ -1740,21 +1751,7 @@ class GameService:
                     events_triggered.append(new_event)
 
         # Store tile modifications AFTER all events have processed to capture state changes
-        if session_data is not None:
-            # 1. Store blocked exits
-            current_block_exit = (
-                tile.block_exit.copy() if hasattr(tile, "block_exit") else []
-            )
-            self.store_tile_modification(
-                session_data, tile.x, tile.y, "block_exit", current_block_exit
-            )
-
-            # 2. Store removed objects (using object names as stable identifiers)
-            if hasattr(tile, "objects_here"):
-                # We need to consider what was there originally vs now
-                # This is a bit complex in a stateless environment, but for now
-                # we'll trust that the event removed what it needed to.
-                pass
+        self.persist_tile_state(session_data, tile)
 
         # Check for combat initiation
         combat_enemies = check_for_combat(player)

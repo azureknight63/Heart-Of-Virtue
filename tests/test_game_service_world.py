@@ -341,6 +341,53 @@ class TestGameServiceStoreTileModification:
         assert session_data["tile_modifications"]["5,5"]["block_exit"]["south"] is False
 
 
+class TestGameServicePersistTileState:
+    """Tests for persist_tile_state() - shared tile-state persistence helper (#401)."""
+
+    def test_persist_tile_state_stores_block_exit_copy(self, game_service):
+        from unittest.mock import MagicMock
+
+        tile = MagicMock()
+        tile.x = 3
+        tile.y = 4
+        tile.block_exit = ["north"]
+        session_data = {}
+
+        game_service.persist_tile_state(session_data, tile)
+
+        stored = session_data["tile_modifications"]["3,4"]["block_exit"]
+        assert stored == ["north"]
+        # Stored value must be a copy, not the live list.
+        assert stored is not tile.block_exit
+
+    def test_persist_tile_state_none_session_is_noop(self, game_service):
+        from unittest.mock import MagicMock
+
+        tile = MagicMock()
+        tile.x = 1
+        tile.y = 1
+        tile.block_exit = []
+        # Should not raise when there's no session to persist to.
+        game_service.persist_tile_state(None, tile)
+
+    def test_persist_tile_state_none_tile_is_noop(self, game_service):
+        session_data = {}
+        game_service.persist_tile_state(session_data, None)
+        assert session_data == {}
+
+    def test_persist_tile_state_missing_block_exit_defaults_empty(self, game_service):
+        from unittest.mock import MagicMock
+
+        tile = MagicMock(spec=["x", "y"])
+        tile.x = 2
+        tile.y = 2
+        session_data = {}
+
+        game_service.persist_tile_state(session_data, tile)
+
+        assert session_data["tile_modifications"]["2,2"]["block_exit"] == []
+
+
 class TestGameServiceApplyTileModifications:
     """Tests for apply_tile_modifications() - restores saved tile state."""
 
