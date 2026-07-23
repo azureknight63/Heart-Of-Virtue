@@ -1092,6 +1092,10 @@ class TestAfterKingSlimeReturn(unittest.TestCase):
         """Test check_conditions."""
         event = AfterKingSlimeReturn(self.player, self.tile, params=None)
         self.player.universe.story = {"king_slime_defeated": "1", "pool_cleansed": "1"}
+        # Jean must be carrying the fragment for the hand-over to begin (#371).
+        frag = Mock()
+        frag.__class__.__name__ = "MineralFragment"
+        self.player.inventory = [frag]
         with patch.object(event, 'pass_conditions_to_process') as mock_pass:
             event.check_conditions()
             mock_pass.assert_called_once()

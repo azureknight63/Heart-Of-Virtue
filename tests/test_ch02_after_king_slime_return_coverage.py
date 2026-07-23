@@ -98,10 +98,23 @@ class TestAfterKingSlimeReturnConditions:
 
     def test_check_conditions_passes_when_slime_defeated_no_response(self):
         self.player.universe.story["king_slime_defeated"] = "1"
+        # Jean must be carrying the fragment for the hand-over to begin (#371).
+        self.player.inventory = [MineralFragment()]
         evt = self._make_event()
         evt.pass_conditions_to_process = Mock()
         evt.check_conditions()
         evt.pass_conditions_to_process.assert_called_once()
+
+    def test_check_conditions_waits_when_slime_defeated_but_no_fragment(self):
+        """Regression for #371: reaching the Citadel without the fragment must
+        NOT start (and therefore not self-destruct) the event — it stays armed
+        for a later visit once Jean is carrying the fragment."""
+        self.player.universe.story["king_slime_defeated"] = "1"
+        self.player.inventory = []
+        evt = self._make_event()
+        evt.pass_conditions_to_process = Mock()
+        evt.check_conditions()
+        evt.pass_conditions_to_process.assert_not_called()
 
     def test_check_conditions_skips_when_not_defeated(self):
         evt = self._make_event()
@@ -117,12 +130,15 @@ class TestAfterKingSlimeReturnConditions:
         evt.check_conditions()
         evt.pass_conditions_to_process.assert_not_called()
 
-    def test_process_no_fragment_clears_needs_input(self):
-        """No MineralFragment in inventory — event should short-circuit."""
+    def test_process_no_fragment_keeps_event_alive(self):
+        """No MineralFragment at stage 1 — the event must stay alive
+        (needs_input=True) rather than self-destruct via the one-time
+        removal path. See #371."""
         self.player.inventory = []
         evt = self._make_event()
         evt.process(user_input=None)
-        assert evt.needs_input is False
+        assert evt.needs_input is True
+        assert getattr(evt, "completed", False) is False
 
     def test_process_stage1_sets_description_and_advances(self):
         self.player.inventory = [MineralFragment()]

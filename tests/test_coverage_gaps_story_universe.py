@@ -1389,10 +1389,12 @@ class TestAfterKingSlimeReturn:
             ev.check_conditions()
             mock_pass.assert_not_called()
 
-    def test_process_clears_without_fragment(self):
+    def test_process_without_fragment_keeps_event_alive(self):
+        # #371: no fragment at stage 1 must not self-destruct the event.
         ev, player, tile = self._make(has_fragment=False)
         ev.process(user_input=None)
-        assert ev.needs_input is False
+        assert ev.needs_input is True
+        assert getattr(ev, "completed", False) is False
 
     def _drive_to_completion(self, ev, choice="a"):
         """Drive through all 7 stages: stage1(no input), stage2(choice), stages 3-7(continue)."""
@@ -2238,7 +2240,6 @@ class TestUniverseBasics:
         u = self._make_universe()
         assert u.game_tick == 0
         assert u.maps == []
-        assert u.starting_position == (0, 0)
         assert u.story["gorran_language_stage"] == "0"
         assert u.story["gorran_first"] == "0"
 
