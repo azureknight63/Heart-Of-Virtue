@@ -381,6 +381,17 @@ class TestLogout:
             rv = c.post("/auth/logout", headers=AUTH)
         assert rv.status_code == 401
 
+    def test_logout_session_manager_not_initialized(self, app):
+        # Issue #408: require_auth now routes through the shared resolve_session
+        # helper; a falsy session_manager must still yield the 500 "not
+        # initialized" response at every call site.
+        app.session_manager = None
+        with app.test_client() as c:
+            rv = c.post("/auth/logout", headers=AUTH)
+        assert rv.status_code == 500
+        data = rv.get_json()
+        assert data["error"] == "Session manager not initialized"
+
 
 # ===========================================================================
 # GET /auth/validate

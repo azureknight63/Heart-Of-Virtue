@@ -3,6 +3,7 @@
 import logging
 
 from flask import Blueprint, request, jsonify
+from src.api.middleware.auth import resolve_session
 from src.api.rate_limiter import RateLimiter
 from src.api.services.auth_service import auth_service
 from functools import wraps
@@ -41,70 +42,28 @@ def _clear_login_attempts(key: str) -> None:
 
 
 def require_auth(f):
+    """Require a valid session for the wrapped route.
+
+    Resolves the session via the shared ``resolve_session`` helper (session
+    only — no player is fetched) and stashes it on ``request.session_obj`` /
+    ``request.session_manager`` for the handler. Works for both sync and async
+    routes.
+    """
+
     @wraps(f)
     async def async_decorated(*args, **kwargs):
-        auth_header = request.headers.get("Authorization", "")
-        if not auth_header.startswith("Bearer "):
-            return (
-                jsonify(
-                    {
-                        "success": False,
-                        "error": "Missing or invalid Authorization header",
-                    }
-                ),
-                401,
-            )
-        session_id = auth_header[7:]
-        from flask import current_app
-
-        session_manager = current_app.session_manager
-        if not session_manager:
-            return (
-                jsonify({"success": False, "error": "Session manager not initialized"}),
-                500,
-            )
-        session = session_manager.get_session(session_id)
-        if not session:
-            return (
-                jsonify(
-                    {"success": False, "error": "Session not found or already expired"}
-                ),
-                401,
-            )
+        session_manager, session, error = resolve_session()
+        if error:
+            return error
         request.session_obj = session
         request.session_manager = session_manager
         return await f(*args, **kwargs)
 
     @wraps(f)
     def sync_decorated(*args, **kwargs):
-        auth_header = request.headers.get("Authorization", "")
-        if not auth_header.startswith("Bearer "):
-            return (
-                jsonify(
-                    {
-                        "success": False,
-                        "error": "Missing or invalid Authorization header",
-                    }
-                ),
-                401,
-            )
-        session_id = auth_header[7:]
-        from flask import current_app
-
-        session_manager = current_app.session_manager
-        if not session_manager:
-            return (
-                jsonify({"success": False, "error": "Session manager not initialized"}),
-                500,
-            )
-        session = session_manager.get_session(session_id)
-        if not session:
-            return (
-                jsonify(
-                    {"success": False, "error": "Session not found or already expired"}
-                ),
-                401,
-            )
+        session_manager, session, error = resolve_session()
+        if error:
+            return error
         request.session_obj = session
         request.session_manager = session_manager
         return f(*args, **kwargs)
@@ -448,42 +407,39 @@ def validate_session():
         Authorization: Bearer <session_id>
 
     Returns:
-        {
-            "valid": bool,
-            "username": "str or null",
-            "player_id": "str or null"
-        }
+        On success (200):
+            {
+                "valid": true,
+                "player_id": "str"
+            }
+        On failure (401):
+            {
+                "valid": false,
+                "username": null,
+                "player_id": null
+            }
     """
     try:
-        auth_header = request.headers.get("Authorization", "")
-        if not auth_header.startswith("Bearer "):
+        session_manager, session, error = resolve_session()
+        if error:
+            # Re-shape the shared helper's {success, error} response into this
+            # route's own {valid, username, player_id} contract, preserving the
+            # helper's status code (401 for missing/invalid auth or session).
+            _, status = error
             return (
                 jsonify({"valid": False, "username": None, "player_id": None}),
-                401,
+                status,
             )
 
-        session_id = auth_header[7:]
-
-        from flask import current_app
-
-        session_manager = current_app.session_manager
-        session = session_manager.get_session(session_id)
-
-        if session:
-            return (
-                jsonify(
-                    {
-                        "valid": True,
-                        "player_id": session.player_id,
-                    }
-                ),
-                200,
-            )
-        else:
-            return (
-                jsonify({"valid": False, "username": None, "player_id": None}),
-                401,
-            )
+        return (
+            jsonify(
+                {
+                    "valid": True,
+                    "player_id": session.player_id,
+                }
+            ),
+            200,
+        )
 
     except Exception:
         logger.exception("Unhandled error in validate_session")
