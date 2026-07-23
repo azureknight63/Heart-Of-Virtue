@@ -334,10 +334,18 @@ class DeathsHarvest(Move):
             if functions.check_parry(self.target):
                 self.parry()
             else:
+                # Lifesteal must be based on the damage actually applied, not the
+                # pre-absorption value (issue #420): Blood of Martyrs fully absorbs
+                # the hit inside hit(), so no life is drained and nothing is healed.
+                absorbed = any(
+                    getattr(s, "_absorbing", False)
+                    for s in getattr(self.target, "states", [])
+                )
                 self.hit(damage, glance)
                 if marked:
                     self.target._reapers_mark = False
-                heal = max(1, int(damage * 0.30)) if damage > 0 else 0
+                applied = 0 if absorbed else damage
+                heal = max(1, int(applied * 0.30)) if applied > 0 else 0
                 if heal > 0:
                     player.hp = min(player.maxhp, player.hp + heal)
                     cprint(

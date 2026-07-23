@@ -69,9 +69,12 @@ class KeepAway(Move):
         evaluation = self.standard_evaluate_attack(
             base_power=-10,
             base_damage_type="piercing",
-            mod_power="-45%",
         )
-        self.power = evaluation[0]
+        # Keep Away is a control move that deals reduced damage (issue #397).
+        # Apply the 45% reduction as a numeric factor here rather than via a
+        # percent-string mod_power, whose branch multiplied power by a *negative*
+        # factor (-45/100) and clamped the resulting damage to 0.
+        self.power = max(1, int(evaluation[0] * 0.55))
         self.base_damage_type = evaluation[1]
         wpn = self.user.eq_weapon.name
         self.stage_announce[1] = colored(

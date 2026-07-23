@@ -469,7 +469,9 @@ class TestVertigoSpin:
             for c in mock_cprint.call_args_list
         )
 
-    def test_execute_miss_prints_message(self, monkeypatch):
+    def test_execute_miss_calls_miss(self, monkeypatch):
+        """On a miss, VertigoSpin now routes through the shared Move.miss()
+        pipeline (issue #402) instead of a bespoke cprint."""
         user = _make_user()
         tgt = _make_target()
         move = VertigoSpin(user)
@@ -480,12 +482,11 @@ class TestVertigoSpin:
 
         monkeypatch.setattr(random, "randint", lambda a, b: 100)
         with patch("src.moves._sword.functions.check_parry", return_value=False), \
-             patch("src.moves._sword.cprint") as mock_cprint:
+             patch.object(move, "miss") as mock_miss, \
+             patch("src.moves._sword.cprint"):
             move.execute(user)
 
-        assert any(
-            "missed" in str(c.args[0]) for c in mock_cprint.call_args_list
-        )
+        mock_miss.assert_called_once()
 
 
 # ---------------------------------------------------------------------------

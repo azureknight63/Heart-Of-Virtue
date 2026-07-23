@@ -1235,30 +1235,32 @@ class SeismicSlam(Move):
             f"{user.name} slams both fists into the ground — the stone itself ripples!",
             "cyan",
         )
+        # Route damage through the shared Move.hit()/parry() pipeline (issue #351)
+        # rather than raw HP subtraction, so NaN/Inf sanitization, Blood of Martyrs
+        # absorption, and parry heat/exp bookkeeping all apply — parameterized here
+        # for the radial multi-target hit.
+        original_target = self.target
         for enemy, distance in list(self.user.combat_proximity.items()):
             if not enemy.is_alive() or not _hostile_to(self.user, enemy):
                 continue
             if distance > self._RADIUS:
                 continue
-            resist = 1.0
-            if hasattr(enemy, "resistance"):
-                resist = enemy.resistance.get("crushing", 1.0)
+            resist = functions.combat_resistance(enemy, "crushing")
             damage = max(0, int(self.power * resist) - enemy.protection)
             hit_chance = max(
                 5, int(85 - enemy.finesse + (self.user.finesse * 0.7))
             )
             if random.randint(0, 100) <= hit_chance:
+                self.target = enemy
+                self.prep_colors()
                 if functions.check_parry(enemy):
-                    cprint(f"{enemy.name} deflects the shockwave!", "yellow")
+                    self.parry()
                     continue
-                enemy.hp = max(0, enemy.hp - damage)
-                cprint(
-                    f"{enemy.name} is battered by the shockwave for {damage} damage!",
-                    "red",
-                )
+                self.hit(damage, False)
                 functions.inflict(
                     states.Staggered(enemy), enemy, chance=self._STAGGER_CHANCE
                 )
+        self.target = original_target
         self.user.fatigue -= self.fatigue_cost
         if self.user.fatigue < 0:
             self.user.fatigue = 0
@@ -1492,31 +1494,31 @@ class TwinFangs(Move):
             isinstance(s, states.Quarried) for s in getattr(target, "states", [])
         )
         power = self.power * (self._QUARRY_BONUS if quarried else 1.0)
-        resist = 1.0
-        if hasattr(target, "resistance"):
-            resist = target.resistance.get("piercing", 1.0)
+        resist = functions.combat_resistance(target, "piercing")
         damage = max(0, int(power * resist) - target.protection)
         hit_chance = max(
             5, int(90 - target.finesse + (self.user.finesse * 0.8))
         )
         roll = random.randint(0, 100)
+        # Route damage through the shared Move.hit()/miss()/parry() pipeline
+        # (issue #351) instead of raw HP subtraction, so damage sanitization,
+        # Blood of Martyrs absorption, and parry/miss bookkeeping all apply.
+        self.prep_colors()
         if hit_chance >= roll:
             if functions.check_parry(target):
-                cprint(f"{target.name} turns aside the twin strike!", "yellow")
+                self.parry()
             else:
-                if hit_chance - roll < 10:  # glancing
+                glance = hit_chance - roll < 10
+                if glance:
                     damage //= 2
-                target.hp = max(0, target.hp - damage)
-                flavor = (
-                    " — straight through the marked gap!" if quarried else "!"
-                )
-                cprint(
-                    f"{user.name}'s arrow and blade land as one on {target.name} "
-                    f"for {damage} damage{flavor}",
-                    "red",
-                )
+                self.hit(damage, glance)
+                if quarried:
+                    cprint(
+                        f"{user.name}'s strike drives straight through the marked gap!",
+                        "red",
+                    )
         else:
-            cprint(f"{user.name}'s twin strike whistles past {target.name}.", "yellow")
+            self.miss()
         self.user.fatigue -= self.fatigue_cost
         if self.user.fatigue < 0:
             self.user.fatigue = 0

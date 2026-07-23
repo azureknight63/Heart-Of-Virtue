@@ -62,7 +62,7 @@ class PommelStrike(Move):
 
     def viable(self):
         viability = self.standard_viability_attack(
-            ("Axe", "Pick", "Scythe", "Spear", "Hammer", "Sword")
+            ("Axe", "Pick", "Scythe", "Spear", "Bludgeon", "Sword")
         )
         return viability
 
@@ -173,7 +173,15 @@ class WhirlAttack(Move):
         cprint(f"{user.name} whirls around with devastating force!", "magenta")
 
         self.affected_enemies = []
-        damage_total = 0
+        base_damage_type = getattr(self, "base_damage_type", "slashing")
+        original_target = self.target
+
+        # Award skill-tree progression exp for using the move (issue #402): the
+        # bespoke HP math this used to run gave none.
+        if hasattr(self.user, "eq_weapon") and self.user.eq_weapon:
+            _ensure_weapon_exp(self.user)
+            self.user.combat_exp[self.user.eq_weapon.subtype] += 5
+        self.user.combat_exp["Basic"] += 5
 
         # Find all enemies in range
         for enemy in list(self.user.combat_proximity.keys()):
@@ -185,24 +193,35 @@ class WhirlAttack(Move):
                     self.user.combat_position, enemy.combat_position
                 )
                 if dist <= self.mvrange[1]:
-                    # Calculate damage
-                    base_damage = max(1, int(self.power - enemy.protection))
+                    # Route damage through the shared pipeline (issue #402):
+                    # resistances, heat scaling, and self.hit()/parry() bookkeeping.
+                    self.target = enemy
+                    self.prep_colors()
+                    damage = (
+                        (
+                            (self.power * functions.combat_resistance(enemy, base_damage_type))
+                            - enemy.protection
+                        )
+                        * self.user.heat
+                    ) * random.uniform(0.8, 1.2)
+                    damage = max(0, damage)
 
-                    # Small random variance in hits
                     hit_chance = int(85 - enemy.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3))
                     roll = random.randint(0, 100)
+                    glance = False
+                    if hit_chance >= roll and hit_chance - roll < 10:
+                        damage /= 2
+                        glance = True
+                    damage = int(damage)
 
                     if hit_chance >= roll:
                         if functions.check_parry(enemy):
-                            cprint(f"{enemy.name} parried!", "yellow")
+                            self.parry()
                         else:
-                            damage_total += base_damage
-                            enemy.hp = max(0, enemy.hp - base_damage)
-                            cprint(
-                                f"{enemy.name} takes {base_damage} damage!",
-                                "red",
-                            )
+                            self.hit(damage, glance)
                             self.affected_enemies.append(enemy)
+
+        self.target = original_target
 
         # Set random facing
         random_facing = random.choice(list(positions.Direction))
@@ -299,18 +318,39 @@ class VertigoSpin(Move):
             cprint("Target is no longer available!", "red")
             return
 
-        # Calculate and deal damage
-        base_damage = max(1, int(self.power - self.target.protection))
+        self.prep_colors()
+
+        # Route damage through the shared pipeline (issue #402): resistances,
+        # heat scaling, and self.hit()/miss()/parry() bookkeeping (which also
+        # awards combat exp for the wielder).
+        base_damage_type = getattr(self, "base_damage_type", "slashing")
+        damage = (
+            (
+                (self.power * functions.combat_resistance(self.target, base_damage_type))
+                - self.target.protection
+            )
+            * self.user.heat
+        ) * random.uniform(0.8, 1.2)
+        damage = max(0, damage)
+
         hit_chance = int(85 - self.target.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3))
         roll = random.randint(0, 100)
+        glance = False
+        if hit_chance >= roll and hit_chance - roll < 10:
+            damage /= 2
+            glance = True
+        damage = int(damage)
+
+        if hasattr(self.user, "eq_weapon") and self.user.eq_weapon:
+            _ensure_weapon_exp(self.user)
+            self.user.combat_exp[self.user.eq_weapon.subtype] += 5
+        self.user.combat_exp["Basic"] += 5
 
         if hit_chance >= roll:
-            if not functions.check_parry(self.target):
-                self.target.hp = max(0, self.target.hp - base_damage)
-                cprint(
-                    f"{user.name} spins and strikes {self.target.name} for {base_damage} damage!",
-                    "red",
-                )
+            if functions.check_parry(self.target):
+                self.parry()
+            else:
+                self.hit(damage, glance)
 
                 # Rotate target's facing randomly
                 random_facing = random.choice(list(positions.Direction))
@@ -328,7 +368,7 @@ class VertigoSpin(Move):
                 except Exception as e:
                     cprint(f"Could not apply Disoriented status: {e}", "yellow")
         else:
-            cprint(f"{user.name}'s spin attack missed!", "yellow")
+            self.miss()
 
         # Deduct fatigue
         user.fatigue -= self.fatigue_cost
