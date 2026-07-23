@@ -806,6 +806,12 @@ class GameService:
         if hasattr(new_tile, "is_passable") and not new_tile.is_passable:
             return {"error": f"Cannot move {direction_lower} - path is blocked"}
 
+        # Record the tile Jean is leaving before we move him. Some story events
+        # (e.g. GorranGestureEvent) gate on player.previous_tile to detect that
+        # the player arrived from another tile; the engine otherwise only tracks
+        # prev_location_x/y, so this attribute would never be set. See #377.
+        player.previous_tile = tile
+
         # Update player position
         player.location_x = new_x
         player.location_y = new_y

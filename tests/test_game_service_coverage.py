@@ -5,7 +5,7 @@ use_item, get_player_status, and combat-related methods.
 """
 
 import pytest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 from src.api.services.game_service import GameService
 from src.player import Player
 from src.universe import Universe
@@ -159,9 +159,39 @@ class TestGameServiceMovement:
     def test_move_player_blocked(self, game_service, mock_player):
         """Test moving player to blocked tile."""
         mock_player.can_move_to.return_value = False
-        
+
         result = game_service.move_player(mock_player, "north")
         assert result is not None
+
+    def test_move_player_sets_previous_tile(self, game_service, mock_player):
+        """#377: a successful move records the outgoing tile on
+        player.previous_tile so events like GorranGestureEvent can fire."""
+        origin_tile = mock_player.universe.get_tile.return_value
+        dest_tile = MagicMock()
+        dest_tile.is_passable = True
+        dest_tile.x = 0
+        dest_tile.y = -1
+        dest_tile.name = "North Room"
+        dest_tile.npcs_here = []
+        dest_tile.items_here = []
+        dest_tile.objects_here = []
+        dest_tile.block_exit = []
+
+        # First get_tile call returns the current (origin) tile; subsequent
+        # calls (destination lookups) return the new tile.
+        mock_player.universe.get_tile = MagicMock(
+            side_effect=lambda x, y: origin_tile if (x, y) == (0, 0) else dest_tile
+        )
+
+        with patch.object(
+            game_service,
+            "_calculate_exits",
+            return_value={"north": {"x": 0, "y": -1}},
+        ):
+            result = game_service.move_player(mock_player, "north")
+
+        assert result is not None
+        assert mock_player.previous_tile is origin_tile
 
 
 class TestGameServiceInteraction:
