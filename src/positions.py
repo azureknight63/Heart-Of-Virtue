@@ -62,15 +62,37 @@ class CombatPosition:
     y: int
     facing: Direction = Direction.N
 
+    # Upper bound used for coordinate validation. Defaults to the legacy 50×50
+    # grid but is widened by ``initialize_combat_positions`` to match the active
+    # dynamic grid size (``CoordinateSystemConfig.get_dynamic_grid_size`` scales
+    # up to 100×100 for large fights). Holding this as a class attribute lets
+    # every CombatPosition created deep inside the spawn helpers honor the
+    # current grid without threading the bound through every call site.
+    _max_bound = 50
+
+    @classmethod
+    def set_grid_bounds(cls, width, height):
+        """Widen coordinate validation to the active dynamic grid size.
+
+        The bound only ever grows; it never shrinks below the legacy 50 default,
+        so positions on smaller grids and any pre-existing positions stay valid.
+
+        Args:
+            width: Active grid width.
+            height: Active grid height.
+        """
+        cls._max_bound = max(50, int(width), int(height))
+
     def __post_init__(self):
         """Validate coordinates and facing."""
         if not isinstance(self.x, int) or not isinstance(self.y, int):
             raise ValueError(f"Coordinates must be integers, got ({self.x}, {self.y})")
 
-        # Grid bounds validation (0-50)
-        if not (0 <= self.x <= 50) or not (0 <= self.y <= 50):
+        # Grid bounds validation (0 to the active grid bound, default 50)
+        bound = type(self)._max_bound
+        if not (0 <= self.x <= bound) or not (0 <= self.y <= bound):
             raise ValueError(
-                f"Coordinates must be between 0 and 50, got ({self.x}, {self.y})"
+                f"Coordinates must be between 0 and {bound}, got ({self.x}, {self.y})"
             )
 
         # Check facing is a Direction enum (handle module loading issues in tests)
@@ -795,6 +817,12 @@ def initialize_combat_positions(
         grid_height: Height of the battlefield
         seed: Optional random seed
     """
+    # Honor the active dynamic grid size when validating coordinates: large
+    # fights scale the grid beyond the legacy 50×50, and units spawned past 50
+    # would otherwise raise ValueError and silently downgrade the encounter to
+    # the legacy proximity system.
+    CombatPosition.set_grid_bounds(grid_width, grid_height)
+
     scenario = get_combat_scenario(scenario_type, grid_width, grid_height, seed)
 
     # Spawn allies in their zone

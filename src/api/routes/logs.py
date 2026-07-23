@@ -7,10 +7,21 @@ from flask import Blueprint, current_app, request, jsonify, abort
 from datetime import datetime
 import os
 import re
+import zlib
 from pathlib import Path
 from src.api.utils.log_cleanup import LogCleanupManager
 
 logs_bp = Blueprint("logs", __name__)
+
+# Resource-exhaustion guards for the unauthenticated POST /browser route.
+# The frontend logger posts here without auth (incl. via sendBeacon), so the
+# route cannot be gated — instead we bound what a single request can write and
+# how many distinct files a hostile client can create (issue #429).
+MAX_LOGS_PER_REQUEST = 500       # max log entries accepted per request
+MAX_MESSAGE_LENGTH = 4000        # per-message truncation (matches npc_chat)
+MAX_FIELD_LENGTH = 2048          # cap on url and other free-text fields
+MAX_SHORT_FIELD_LENGTH = 64      # cap on timestamp/level
+SESSION_ID_BUCKETS = 64          # bound distinct session log files per day
 
 
 def _require_testing():
@@ -63,10 +74,19 @@ def receive_browser_logs():
             return jsonify({"error": "No logs provided"}), 400
 
         logs = data.get("logs", [])
+        # A non-list "logs" (string/number/dict) is malformed input, not a
+        # payload to iterate — treat it as a bad request rather than a 500.
+        if not isinstance(logs, list):
+            return jsonify({"error": "No logs provided"}), 400
+
         session_id = str(data.get("session_id", "unknown"))
 
         if not logs:
             return jsonify({"message": "No logs to write"}), 200
+
+        # Cap the number of entries accepted per request so a single
+        # unauthenticated POST cannot write an unbounded amount to disk.
+        logs = logs[:MAX_LOGS_PER_REQUEST]
 
         # Sanitize the client-supplied session id before it becomes part of a
         # filesystem path — strip directory components and restrict to a safe
@@ -76,21 +96,37 @@ def receive_browser_logs():
         if not session_id:
             session_id = "unknown"
 
-        # Create a log file for today with session ID
+        # Bound the number of distinct log files a hostile client can create by
+        # mapping the client-controlled session id into a fixed bucket set.
+        # Without this, varying session_id yields unbounded per-day files that
+        # size-based cleanup cannot reclaim until they age out. The full session
+        # id is preserved on each log line below so traceability is retained.
+        bucket = zlib.crc32(session_id.encode("utf-8")) % SESSION_ID_BUCKETS
+
+        # Create a bucketed log file for today.
         today = datetime.now().strftime("%Y-%m-%d")
-        log_filename = f"{today}_{session_id}.log"
+        log_filename = f"{today}_bucket{bucket:02d}.log"
         log_filepath = LOGS_DIR / log_filename
 
-        # Append logs to the file
+        # Append logs to the file, bounding every free-text field so no single
+        # oversized entry can blow up disk usage.
         with open(log_filepath, "a", encoding="utf-8") as f:
             for log_entry in logs:
-                timestamp = log_entry.get("timestamp", datetime.now().isoformat())
-                level = log_entry.get("level", "LOG")
-                message = log_entry.get("message", "")
-                url = log_entry.get("url", "")
+                # Hostile payloads may include non-dict entries (e.g. bare
+                # strings); skip them instead of raising.
+                if not isinstance(log_entry, dict):
+                    continue
+                timestamp = str(
+                    log_entry.get("timestamp", datetime.now().isoformat())
+                )[:MAX_SHORT_FIELD_LENGTH]
+                level = str(log_entry.get("level", "LOG"))[:MAX_SHORT_FIELD_LENGTH]
+                message = str(log_entry.get("message", ""))[:MAX_MESSAGE_LENGTH]
+                url = str(log_entry.get("url", ""))[:MAX_FIELD_LENGTH]
 
-                # Format: [TIMESTAMP] [LEVEL] [URL] MESSAGE
-                log_line = f"[{timestamp}] [{level}] [{url}] {message}\n"
+                # Format: [TIMESTAMP] [LEVEL] [SESSION] [URL] MESSAGE
+                log_line = (
+                    f"[{timestamp}] [{level}] [{session_id}] [{url}] {message}\n"
+                )
                 f.write(log_line)
 
         # Perform automatic cleanup after writing logs

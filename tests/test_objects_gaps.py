@@ -230,41 +230,32 @@ def test_container_take_all_closed_opens_first():
 
 
 # ---------------------------------------------------------------------------
-# Container — loot when closed (lines 485-486)
+# Container — open() reveals contents (canonical loot path)
 # ---------------------------------------------------------------------------
 
 
-def test_container_loot_closed_opens_first():
-    """Container.loot opens the container if it's closed."""
+def test_container_open_reveals_closed():
+    """Container.open reveals a closed, unlocked container."""
     from src.objects import Container
 
     player = _make_player()
     tile = _make_tile()
     c = Container(name="Chest", player=player, tile=tile, start_open=False)
 
-    calls = []
+    c.open()
 
-    def mock_open():
-        calls.append("open")
-        c.state = "opened"
-
-    c.open = mock_open
-
-    c.loot()
-
-    assert "open" in calls
+    assert c.state == "opened"
 
 
-def test_container_loot_locked_does_not_open():
-    """Container.loot on a locked container opens (no-op when locked) without error."""
+def test_container_open_locked_stays_closed():
+    """open() on a locked container is a no-op — it stays closed, no error."""
     from src.objects import Container
 
     player = _make_player()
     tile = _make_tile()
     c = Container(name="Chest", player=player, tile=tile, locked=True)
 
-    # loot() ensures the container is opened; a locked container stays closed.
-    c.loot()
+    c.open()
     assert c.state != "opened"
 
 

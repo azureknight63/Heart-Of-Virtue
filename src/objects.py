@@ -58,6 +58,43 @@ class Object:
         else:
             return None
 
+    def _parse_bang_events(self, params, player=None, tile=None):
+        """Parse ``!EventType:setting:...`` entries from a map-file params list.
+
+        Each entry beginning with ``!`` names a story event class followed by
+        colon-delimited settings. The special setting ``r`` marks the event as
+        repeating. Returns a list of instantiated events in the order they
+        appear in ``params``. Shared by WallSwitch, Shrine, and HealingSpring so
+        the bang-event syntax is parsed in exactly one place.
+        """
+        player = player if player is not None else self.player
+        tile = tile if tile is not None else self.tile
+        events = []
+        if not params:
+            return events
+        for thing in params:
+            if not thing or thing[0] != "!":
+                continue
+            param = thing.replace("!", "")
+            p_list = param.split(":")
+            repeat = False
+            event_type = p_list.pop(0)
+            for setting in p_list:
+                if setting == "r":
+                    repeat = True
+                    p_list.remove(setting)
+                    continue
+            event_cls = functions.seek_class(event_type, "story")
+            event = functions.instantiate_event(
+                event_cls,
+                player,
+                tile,
+                params=(p_list if p_list else None),
+                repeat=repeat,
+            )
+            events.append(event)
+        return events
+
 
 class TileDescription(Object):
     """
@@ -138,33 +175,14 @@ class WallSwitch(Object):
         self.keywords.extend(self.action_aliases)
 
         if params:
-            for thing in params:
-                # account for the events associated with this switch. Max of 2 events.
-                # The first event, in order of index, is tied to toggling the switch ON.
-                # The second is tied to an OFF toggle.
-                if thing[0] == "!":
-                    param = thing.replace("!", "")
-                    p_list = param.split(":")
-                    repeat = False
-                    event_type = p_list.pop(0)
-                    for setting in p_list:
-                        if setting == "r":
-                            repeat = True
-                            p_list.remove(setting)
-                            continue
-                    # use adapter for backward compatible signature handling
-                    event_cls = functions.seek_class(event_type, "story")
-                    event = functions.instantiate_event(
-                        event_cls,
-                        player,
-                        tile,
-                        params=(p_list if p_list else None),
-                        repeat=repeat,
-                    )
-                    if self.event_on is None:
-                        self.event_on = event
-                    else:
-                        self.event_off = event
+            # Account for the events associated with this switch. Max of 2 events.
+            # The first event, in order of index, is tied to toggling the switch ON.
+            # The second is tied to an OFF toggle.
+            parsed = self._parse_bang_events(params, player, tile)
+            if parsed:
+                self.event_on = parsed[0]
+            if len(parsed) > 1:
+                self.event_off = parsed[1]
 
     def press(self):
         narrate("Jean hears a faint 'click.'")
@@ -238,16 +256,6 @@ class Container(Object):
 
     # Class constants for better performance and memory usage
     _POSSIBLE_STATES = ("closed", "opened")
-    _DEFAULT_KEYWORDS = [
-        "open",
-        "unlock",
-        "loot",
-        "check",
-        "view",
-        "examine",
-        "inspect",
-        "peruse",
-    ]
 
     @property
     def start_open(self) -> bool:
@@ -466,34 +474,6 @@ class Container(Object):
         self.refresh_description()
         self.process_events()
 
-    def loot(self):
-        """
-        Open the container so its contents are revealed.
-
-        Item selection and transfer are driven by the structured
-        ``events.LootEvent`` (created by
-        ``GameService.interact_with_target``) for the web client. This method
-        only ensures the container is open; it no longer launches a terminal
-        interface.
-        """
-        if self.state == "closed":
-            self.open()
-
-    def check(self):
-        self.loot()
-
-    def view(self):
-        self.loot()
-
-    def examine(self):
-        self.loot()
-
-    def inspect(self):
-        self.loot()
-
-    def peruse(self):
-        self.loot()
-
     def process_events(self):
         """Optimized process_events method with early return and cleaner iteration"""
         if not self.events:
@@ -546,23 +526,6 @@ class Container(Object):
         # Remove duplicates in reverse order to maintain indices
         for idx in sorted(items_to_remove, reverse=True):
             self.inventory.pop(idx)
-
-
-# --- Annotation normalization patch ---
-# Ensure that the 'allowed_subtypes' annotation on Container.__init__ is an evaluated type
-# instead of a postponed string (due to from __future__ import annotations) so that
-# inspect.get_origin returns 'list' as expected by tests and runtime reflection.
-try:
-    _ann = Container.__init__.__annotations__.get("allowed_subtypes")  # type: ignore[attr-defined]
-    if isinstance(_ann, str):
-        # Rebind with concrete evaluated type
-        from src.items import (
-            Item as _Item,
-        )  # local import to avoid re-export side effects
-
-        Container.__init__.__annotations__["allowed_subtypes"] = list[type[_Item]]  # type: ignore[index]
-except Exception:
-    pass
 
 
 class Crate(Container):
@@ -665,27 +628,11 @@ class Shrine(Object):
         self.keywords.append("pray")
 
         if params:
-            for thing in params:
-                # account for the events associated with this object. Max of 1 event.
-                # Triggers after interacting with the shrine.
-                if thing[0] == "!":
-                    param = thing.replace("!", "")
-                    p_list = param.split(":")
-                    repeat = False
-                    event_type = p_list.pop(0)
-                    for setting in p_list:
-                        if setting == "r":
-                            repeat = True
-                            p_list.remove(setting)
-                            continue
-                    event_cls = functions.seek_class(event_type, "story")
-                    self.event = functions.instantiate_event(
-                        event_cls,
-                        player,
-                        tile,
-                        params=(p_list if p_list else None),
-                        repeat=repeat,
-                    )
+            # Account for the events associated with this object. Max of 1 event.
+            # Triggers after interacting with the shrine.
+            parsed = self._parse_bang_events(params, player, tile)
+            if parsed:
+                self.event = parsed[-1]
 
     def pray(self, player):
         narrate("Jean kneels down and begins to pray for intercession.")
@@ -724,27 +671,11 @@ class HealingSpring(Object):
         self.keywords.append("wash")
 
         if params:
-            for thing in params:
-                # account for the events associated with this object. Max of 1 event.
-                # Triggers after interacting with the object.
-                if thing[0] == "!":
-                    param = thing.replace("!", "")
-                    p_list = param.split(":")
-                    repeat = False
-                    event_type = p_list.pop(0)
-                    for setting in p_list:
-                        if setting == "r":
-                            repeat = True
-                            p_list.remove(setting)
-                            continue
-                    event_cls = functions.seek_class(event_type, "story")
-                    self.event = functions.instantiate_event(
-                        event_cls,
-                        player,
-                        tile,
-                        params=(p_list if p_list else None),
-                        repeat=repeat,
-                    )
+            # Account for the events associated with this object. Max of 1 event.
+            # Triggers after interacting with the object.
+            parsed = self._parse_bang_events(params, player, tile)
+            if parsed:
+                self.event = parsed[-1]
 
     def drink(self, player):
         narrate(

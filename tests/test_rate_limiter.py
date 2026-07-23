@@ -133,3 +133,40 @@ class TestRateLimiterBoundedGrowth:
             remaining = set(limiter._store.keys())
         assert "b" not in remaining
         assert {"a", "c", "d"}.issubset(remaining)
+
+    def test_limited_key_is_not_evicted_by_key_spray(self):
+        """Issue #410: LRU eviction must not reset a throttled key.
+
+        A victim key that is currently at/over the limit must survive a flood
+        of distinct throwaway keys, otherwise an attacker could LRU-evict the
+        victim's throttle and re-enable brute force against it.
+        """
+        limit = 5
+        max_keys = 10
+        limiter = RateLimiter(limit=limit, window_seconds=900, max_keys=max_keys)
+
+        victim = "victim:1.2.3.4"
+        for _ in range(limit):
+            limiter.record(victim)
+        assert limiter.is_limited(victim) is True
+
+        # Flood with many distinct (non-limited) keys — far more than the cap.
+        for i in range(max_keys * 20):
+            limiter.record(f"spray-{i}:203.0.113.{i % 255}")
+
+        # The victim must still be tracked and still limited.
+        with limiter._lock:
+            assert victim in limiter._store
+        assert limiter.is_limited(victim) is True
+
+    def test_expired_key_that_looks_limited_is_still_evictable(self):
+        """A key whose hits have all expired must not count as limited during
+        cap enforcement — otherwise stale keys would pin the store above cap."""
+        limit = 3
+        limiter = RateLimiter(limit=limit, window_seconds=0.05, max_keys=5)
+        for _ in range(limit):
+            limiter.record("stale:9.9.9.9")
+        time.sleep(0.08)  # let the stale key's window fully expire
+        for i in range(50):
+            limiter.record(f"fresh-{i}:198.51.100.{i % 255}")
+        assert limiter.size() <= 5

@@ -8,6 +8,10 @@ from pathlib import Path
 from typing import Optional, Dict, Tuple, Any
 from src.config_manager import ConfigManager
 
+# Minimum seconds between opportunistic sweeps of expired sessions. Keeps the
+# O(n) cleanup off the hot per-request path while still bounding memory growth.
+_REAP_INTERVAL_SECONDS = 60
+
 
 class MinimalPlayer:
     """Minimal player object for API testing/initialization."""
@@ -238,6 +242,7 @@ class SessionManager:
         self.players: Dict[str, object] = {}  # Stores Player or MinimalPlayer objects
         self.session_to_player: Dict[str, str] = {}
         self.universe = universe  # Reference to universe for getting starting positions
+        self._last_reap = datetime.now()  # Throttle for opportunistic expired-session reaping
 
         # Load starting position from config file
         self.start_x, self.start_y = 1, 1  # defaults
@@ -969,6 +974,10 @@ class SessionManager:
         Returns:
             Tuple of (session_id, player_id)
         """
+        # Reap abandoned/expired sessions opportunistically so a long-running
+        # single worker doesn't accumulate Player+Universe graphs forever.
+        self._reap_expired_if_due()
+
         player_id = str(uuid.uuid4())
         session_id = str(uuid.uuid4())
 
@@ -1019,6 +1028,10 @@ class SessionManager:
         Returns:
             Session object or None if not found or expired
         """
+        # Opportunistically reap other expired sessions (throttled) so
+        # abandoned tabs/silent logouts don't linger in memory (issue #363).
+        self._reap_expired_if_due()
+
         if session_id not in self.sessions:
             return None
 
@@ -1105,6 +1118,26 @@ class SessionManager:
             del self.players[player_id]
 
         return True
+
+    def _reap_expired_if_due(self, force: bool = False) -> None:
+        """Opportunistically remove expired sessions, throttled to keep the
+        O(n) sweep off the hot per-request path.
+
+        Called on session create/access so abandoned sessions (crash-closed
+        browser tabs, silent logouts) don't hold a full Player + Universe
+        graph in memory forever in the long-running single worker (issue
+        #363). Reaping must never disrupt the caller, so failures are
+        swallowed.
+        """
+        now = datetime.now()
+        if not force and (now - self._last_reap).total_seconds() < _REAP_INTERVAL_SECONDS:
+            return
+        self._last_reap = now
+        try:
+            self.cleanup_expired()
+        except Exception:
+            # Never let cleanup break session create/access.
+            pass
 
     def cleanup_expired(self) -> int:
         """Remove all expired sessions.

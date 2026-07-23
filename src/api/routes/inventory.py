@@ -23,6 +23,7 @@ from src.api.serializers.inventory import (
     ItemDetailSerializer,
 )
 from src.api.middleware.auth import get_session_and_player
+from src.api.utils.inventory import get_inventory_list
 
 # Create blueprint
 inventory_bp = Blueprint("inventory", __name__)
@@ -42,9 +43,7 @@ def get_item_and_index(player, item_id=None, item_index=None):
     Returns:
         Tuple of (item, index) or (None, None) if not found
     """
-    inventory_list = getattr(player, "inventory_list", None) or getattr(
-        player, "inventory", []
-    )
+    inventory_list = get_inventory_list(player)
 
     # Try finding by ID first
     if item_id:
@@ -123,9 +122,7 @@ def examine_item():
             )
 
         # Get inventory (handle both naming conventions)
-        inventory_list = getattr(player, "inventory_list", None) or getattr(
-            player, "inventory", []
-        )
+        inventory_list = get_inventory_list(player)
         is_valid, error_msg = validate_item_index(item_index, len(inventory_list))
         if not is_valid:
             return jsonify({"success": False, "error": error_msg}), 400
@@ -485,9 +482,7 @@ def compare_items():
             )
 
         # Get inventory (handle both naming conventions)
-        inventory_list = getattr(player, "inventory_list", None) or getattr(
-            player, "inventory", []
-        )
+        inventory_list = get_inventory_list(player)
 
         # Validate candidate index
         is_valid, error_msg = validate_item_index(candidate_index, len(inventory_list))
