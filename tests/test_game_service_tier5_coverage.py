@@ -1115,6 +1115,23 @@ class TestInteractWithTargetExtra:
         assert result["success"] is False
         assert "cannot" in result["message"].lower()
 
+    def test_arbitrary_public_method_not_invokable(self, game_service, mock_player):
+        # Regression for #334: a public method that exists on the target but is
+        # NOT a curated keyword nor an allowed interaction verb (e.g. NPC.die)
+        # must be rejected instead of being dispatched via getattr.
+        npc = MagicMock(spec=["keywords", "name", "die"])
+        npc.keywords = ["talk"]
+        npc.name = "Quest Giver"
+        npc.die = MagicMock()
+        tile = self._tile(mock_player)
+        tile.npcs_here = [npc]
+
+        result = game_service.interact_with_target(mock_player, str(id(npc)), "die")
+
+        assert result["success"] is False
+        assert "cannot" in result["message"].lower()
+        npc.die.assert_not_called()
+
     def test_item_found_in_open_container(self, game_service, mock_player):
         from src.objects import Container
 

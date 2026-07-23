@@ -58,6 +58,26 @@ class GameService:
     and exposes clean methods for REST endpoints to call.
     """
 
+    # Interaction verbs that are always permitted, independent of a target's
+    # curated ``keywords``. These are the inspect/pickup verbs the dispatch in
+    # ``interact_with_target`` understands. Restricting the fallback to this
+    # explicit allow-list (rather than ``hasattr(target, action)``) prevents a
+    # client from invoking arbitrary public methods — e.g. ``NPC.die`` — through
+    # the interaction API. See issue #334.
+    _ALLOWED_INTERACTION_VERBS = frozenset(
+        {
+            "loot",
+            "check",
+            "view",
+            "examine",
+            "inspect",
+            "peruse",
+            "look",
+            "take",
+            "equip",
+        }
+    )
+
     def __init__(self):
         """Initialize GameService.
 
@@ -1514,8 +1534,10 @@ class GameService:
         is_valid = False
         if hasattr(target, "keywords") and action in target.keywords:
             is_valid = True
-        elif hasattr(target, action):
-            # Allow calling method if it exists, even if not in keywords (fallback)
+        elif action in self._ALLOWED_INTERACTION_VERBS:
+            # Fallback restricted to an explicit allow-list of interaction
+            # verbs. Never dispatch on arbitrary attribute names — that would
+            # expose every public method on the target (e.g. NPC.die). See #334.
             is_valid = True
 
         if not is_valid:
