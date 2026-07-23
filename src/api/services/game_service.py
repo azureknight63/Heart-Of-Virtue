@@ -1142,12 +1142,25 @@ class GameService:
             new_event_id = str(uuid.uuid4())
             event.api_event_id = new_event_id
             updated_event_data["event_id"] = new_event_id
+            # Carry the originating tile coordinates forward so the next
+            # process_event_input call resolves event.tile from the same tile
+            # the event was first queued on, rather than falling back to
+            # player.current_room (which is often None in the API). See #327.
+            carry_tile_x = pending.get("tile_x")
+            carry_tile_y = pending.get("tile_y")
+            if carry_tile_x is None or carry_tile_y is None:
+                event_tile = getattr(event, "tile", None)
+                if event_tile is not None:
+                    carry_tile_x = getattr(event_tile, "x", carry_tile_x)
+                    carry_tile_y = getattr(event_tile, "y", carry_tile_y)
             # Move the session entry from the old id to the new id
             if "pending_events" in session_data:
                 session_data["pending_events"].pop(old_event_id, None)
                 session_data["pending_events"][new_event_id] = {
                     "event": event,
                     "event_data": updated_event_data,
+                    "tile_x": carry_tile_x,
+                    "tile_y": carry_tile_y,
                 }
             result["event"] = updated_event_data
             result["needs_input"] = True
