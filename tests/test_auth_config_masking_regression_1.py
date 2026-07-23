@@ -69,6 +69,10 @@ def _load_auth_module():
     _stubs["src.api.services.session_manager"].SessionManager = MagicMock(return_value=sm_mock)
     _stubs["src.api.services.auth_service"].auth_service = auth_svc
     _stubs["src.api.middleware.auth"].require_session = lambda f: f
+    # auth.py also imports resolve_session (issue #408); the stub must provide
+    # it or exec_module raises at fixture setup, skipping teardown and leaking
+    # these stub modules into sys.modules for every later test.
+    _stubs["src.api.middleware.auth"].resolve_session = MagicMock()
 
     # Always inject stubs, saving originals so teardown can restore them.
     # (The real src.api.* modules may already be in sys.modules from other test
