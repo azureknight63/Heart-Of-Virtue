@@ -8,27 +8,13 @@ ROOT = Path(__file__).resolve().parent.parent
 
 import pytest
 from unittest.mock import MagicMock, patch
-from src.player import Player, generate_output_grid
+from src.player import Player
 import src.items as items
 
 class TestPlayerCore:
     @pytest.fixture
     def player(self):
         return Player()
-
-    def test_generate_output_grid(self):
-        data = ["A", "B", "C", "D"]
-        grid = generate_output_grid(data, rows=2, cols=2)
-        assert "A" in grid
-        assert "B" in grid
-        assert "C" in grid
-        assert "D" in grid
-        assert "*" in grid
-
-    def test_testevent(self, player):
-        player.current_room = MagicMock()
-        player.testevent("EventName")
-        player.current_room.spawn_event.assert_called_once_with("EventName", player, player.current_room, repeat=False, params=[])
 
     def test_player_init(self, player):
         assert player.name == "Jean"
@@ -429,27 +415,6 @@ class TestPlayerCore:
         assert ring1.isequipped is True
         assert ring2.isequipped is False
 
-    @patch('src.player.time.sleep')
-    @patch('src.player.random.uniform', return_value=1.0)
-    def test_search(self, mock_uniform, mock_sleep, player):
-        npc = MagicMock()
-        npc.name = "Hidden Thief"
-        npc.hidden = True
-        npc.hide_factor = 10
-
-        player.finesse = 10
-        player.intelligence = 10
-        player.faith = 10
-        # search_ability = (10*2 + 10*3 + 10) * 1.0 = 60
-
-        player.current_room = MagicMock()
-        player.current_room.npcs_here = [npc]
-        player.current_room.items_here = []
-        player.current_room.objects_here = []
-
-        player.search()
-        assert npc.hidden is False
-
     def test_teleport_success(self, player):
         mock_tile = MagicMock()
         mock_tile.intro_text.return_value = "Welcome to the new area!"
@@ -486,60 +451,6 @@ class TestPlayerCore:
             # Should not change location
             assert player.location_x == 0
             assert player.location_y == 0
-
-    def test_spawnobject_npc(self, player):
-        player.current_room = MagicMock()
-        player.spawnobject("npc Guard hidden hfactor=5 delay=10 count=2")
-        assert player.current_room.spawn_npc.call_count == 2
-        player.current_room.spawn_npc.assert_any_call("Guard", hidden=True, hfactor=5, delay=10)
-
-    def test_spawnobject_item(self, player):
-        player.current_room = MagicMock()
-        player.spawnobject("item Sword hidden hfactor=3")
-        player.current_room.spawn_item.assert_called_once_with("Sword", hidden=True, hfactor=3)
-
-    def test_spawnobject_event(self, player):
-        player.current_room = MagicMock()
-        player.spawnobject("event Trap repeat params=fire,10")
-        player.current_room.spawn_event.assert_called_once_with("Trap", player, player.current_room, repeat=True, params=["fire", "10"])
-
-    def test_spawnobject_object(self, player):
-        player.current_room = MagicMock()
-        player.spawnobject("object Chest params=locked,gold")
-        player.current_room.spawn_object.assert_called_once_with("Chest", player, player.current_room, ["locked", "gold"], hidden=False, hfactor=0)
-
-    def test_view_map(self, player):
-        mock_tile1 = MagicMock()
-        mock_tile1.discovered = True
-        mock_tile1.last_entered = 1
-        mock_tile1.symbol = "O"
-
-        mock_tile2 = MagicMock()
-        mock_tile2.discovered = True
-        mock_tile2.last_entered = 0 # Discovered but not visited
-
-        player.map = {
-            'name': 'Test Map',
-            (0, 0): mock_tile1,
-            (1, 0): mock_tile2
-        }
-        player.current_room = mock_tile1
-        player.location_x = 0
-        player.location_y = 0
-        player.prev_location_x = 0
-        player.prev_location_y = 0
-
-        with patch('builtins.print') as mock_print, \
-             patch('src.functions.await_input'):
-            player.view_map()
-            # Should print the map. We just check if it ran without error and called print.
-            assert mock_print.called
-
-    def test_alter(self, player):
-        player.universe = MagicMock()
-        player.universe.story = {"test_var": "old_value"}
-        player.alter("test_var new_value")
-        assert player.universe.story["test_var"] == "new_value"
 
     def test_drop_merchandise_items(self, player):
         mock_tile = MagicMock()
@@ -618,62 +529,6 @@ class TestPlayerCore:
             assert "Ally2" in output
             assert "Ally3" in output
 
-    def test_view_map_directions(self, player):
-        mock_tile = MagicMock()
-        mock_tile.discovered = True
-        mock_tile.last_entered = 1
-
-        player.map = {(0, 0): mock_tile, (1, 0): mock_tile, (0, 1): mock_tile, (1, 1): mock_tile}
-        player.current_room = mock_tile
-
-        with patch('builtins.print'), patch('src.functions.await_input'):
-            # East
-            player.prev_location_x, player.prev_location_y = 0, 0
-            player.location_x, player.location_y = 1, 0
-            player.view_map()
-
-            # South
-            player.prev_location_x, player.prev_location_y = 0, 0
-            player.location_x, player.location_y = 0, 1
-            player.view_map()
-
-            # Diagonal
-            player.prev_location_x, player.prev_location_y = 0, 0
-            player.location_x, player.location_y = 1, 1
-            player.view_map()
-
-    def test_view_map_diagonals(self, player):
-        mock_tile = MagicMock()
-        mock_tile.discovered = True
-        mock_tile.last_entered = 1
-
-        player.map = {
-            (0, 0): mock_tile, (1, 1): mock_tile,
-            (1, 0): mock_tile, (0, 1): mock_tile
-        }
-        player.current_room = mock_tile
-
-        with patch('builtins.print'), patch('src.functions.await_input'):
-            # SE (dx=1, dy=1)
-            player.prev_location_x, player.prev_location_y = 0, 0
-            player.location_x, player.location_y = 1, 1
-            player.view_map()
-
-            # SW (dx=-1, dy=1)
-            player.prev_location_x, player.prev_location_y = 1, 0
-            player.location_x, player.location_y = 0, 1
-            player.view_map()
-
-            # NE (dx=1, dy=-1)
-            player.prev_location_x, player.prev_location_y = 0, 1
-            player.location_x, player.location_y = 1, 0
-            player.view_map()
-
-            # NW (dx=-1, dy=-1)
-            player.prev_location_x, player.prev_location_y = 1, 1
-            player.location_x, player.location_y = 0, 0
-            player.view_map()
-
     def test_get_equipped_items(self, player):
         item1 = MagicMock()
         item1.isequipped = True
@@ -684,23 +539,6 @@ class TestPlayerCore:
         equipped = player.get_equipped_items()
         assert item1 in equipped
         assert item2 not in equipped
-
-    def test_print_status(self, player):
-        state = MagicMock()
-        state.name = "Poisoned"
-        state.steps_left = 5
-        player.states = [state]
-
-        with patch('src.functions.refresh_stat_bonuses'), \
-             patch('src.player.Player.refresh_protection_rating'), \
-             patch('src.player._ui.generate_output_grid', return_value="GRID"), \
-             patch('builtins.print') as mock_print, \
-             patch('src.player._ui.cprint') as mock_cprint, \
-             patch('src.functions.await_input'):
-            player.print_status()
-
-            assert mock_print.called
-            assert mock_cprint.called
 
     def test_refresh_merchants(self, player):
         player.universe = MagicMock()
@@ -812,16 +650,6 @@ class TestPlayerCore:
             assert item1 not in player.inventory
             assert item1 in player.current_room.items_here
             assert item2 in player.inventory
-
-    def test_show_bars(self, player):
-        player.hp = 50
-        player.maxhp = 100
-        player.fatigue = 75
-        player.maxfatigue = 150
-
-        with patch('builtins.print') as mock_print:
-            player.show_bars()
-            assert mock_print.called
 
     def test_refresh_moves(self, player):
         move1 = MagicMock()

@@ -1393,10 +1393,6 @@
       "name": "PlayerMovementMixin"
     },
     {
-      "module": "src.player._ui",
-      "name": "PlayerUIMixin"
-    },
-    {
       "module": "src.player._world",
       "name": "PlayerWorldMixin"
     },
@@ -1893,6 +1889,6 @@
       "name": "UUID"
     }
   ],
-  "count": 473,
+  "count": 472,
   "header_version": 1
 }

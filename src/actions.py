@@ -15,10 +15,17 @@ class Action:
         return "{}: {}".format(self.hotkey, self.name)
 
 
+# NOTE: These command classes are still instantiated by
+# ``tiles.available_actions`` so ``GameService.get_available_commands`` can
+# advertise their name/hotkey to the client. Their underlying terminal
+# ``Player`` methods were removed in the terminal-mode teardown, so ``method``
+# is ``None`` — the web API dispatches these via REST routes, not Action.method.
+
+
 class Search(Action):
     def __init__(self):
         super().__init__(
-            method=Player.search,
+            method=None,
             name="Search",
             hotkey=("search", "seek", "snoop"),
         )
@@ -27,19 +34,19 @@ class Search(Action):
 class Menu(Action):
     def __init__(self):
         super().__init__(
-            method=Player.menu, name="Menu", hotkey=("menu", "exit", "quit")
+            method=None, name="Menu", hotkey=("menu", "exit", "quit")
         )
 
 
 class Save(Action):
     def __init__(self):
-        super().__init__(method=Player.save, name="Save", hotkey=("sav", "save"))
+        super().__init__(method=None, name="Save", hotkey=("sav", "save"))
 
 
 class ViewMap(Action):
     def __init__(self):
         super().__init__(
-            method=Player.view_map,
+            method=None,
             name="View Map",
             hotkey=("m", "map", "cartography"),
         )
@@ -62,7 +69,7 @@ class Teleport(Action):
 class Alter(Action):  # change a switch/variable
     def __init__(self):
         super().__init__(
-            method=Player.alter,
+            method=None,
             name="Alter",
             hotkey=("alt", "alter"),
             debug=True,
@@ -73,7 +80,7 @@ class Alter(Action):  # change a switch/variable
 class Showvar(Action):  # list all switches/vars
     def __init__(self):
         super().__init__(
-            method=Player.print_story_vars,
+            method=None,
             name="Showvar",
             hotkey=("sv", "showvar"),
             debug=True,
@@ -95,7 +102,7 @@ class Supersaiyan(Action):
 class TestEvent(Action):
     def __init__(self):
         super().__init__(
-            method=Player.testevent,
+            method=None,
             name="TestEvent",
             hotkey=("te", "test", "testevent"),
             debug=True,
@@ -106,7 +113,7 @@ class TestEvent(Action):
 class SpawnObj(Action):
     def __init__(self):
         super().__init__(
-            method=Player.spawnobject,
+            method=None,
             name="SpawnObj",
             hotkey=("so", "spawn", "spawnobject"),
             debug=True,

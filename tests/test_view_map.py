@@ -21,14 +21,6 @@ def test_player_has_prev_location_attributes():
     assert player.prev_location_y == 0
 
 
-def test_player_has_view_map_method():
-    """Test that player has a view_map method."""
-
-    player = Player()
-    assert hasattr(player, 'view_map')
-    assert callable(player.view_map)
-
-
 def test_starting_tile_discovered_in_game():
     """Test that the starting tile is marked as discovered when game starts."""
     # This tests the game.py change we made
