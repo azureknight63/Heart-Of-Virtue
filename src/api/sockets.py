@@ -1,7 +1,11 @@
 """WebSocket event handlers for the Heart of Virtue API."""
 
+import logging
+
 from flask import request, current_app
 from flask_socketio import emit, join_room, leave_room
+
+logger = logging.getLogger(__name__)
 
 
 def register_socket_handlers(socketio):
@@ -9,16 +13,16 @@ def register_socket_handlers(socketio):
 
     @socketio.on("connect")
     def handle_connect():
-        print(f"[SOCKET] Client connected: {request.sid}")
+        logger.debug("[SOCKET] Client connected: %s", request.sid)
 
     @socketio.on("disconnect")
     def handle_disconnect():
-        print(f"[SOCKET] Client disconnected: {request.sid}")
+        logger.debug("[SOCKET] Client disconnected: %s", request.sid)
 
     @socketio.on("join_combat")
     def on_join(data):
         """Join a combat room based on session ID."""
-        session_id = data.get("session_id")
+        session_id = (data or {}).get("session_id")
         if not session_id:
             return emit("error", {"message": "Missing session_id"})
 
@@ -30,17 +34,17 @@ def register_socket_handlers(socketio):
 
         room = f"combat_{session_id}"
         join_room(room)
-        print(f"[SOCKET] Client {request.sid} joined room {room}")
+        logger.debug("[SOCKET] Client %s joined room %s", request.sid, room)
         emit("joined_combat", {"room": room})
 
     @socketio.on("leave_combat")
     def on_leave(data):
         """Leave a combat room."""
-        session_id = data.get("session_id")
+        session_id = (data or {}).get("session_id")
         if session_id:
             room = f"combat_{session_id}"
             leave_room(room)
-            print(f"[SOCKET] Client {request.sid} left room {room}")
+            logger.debug("[SOCKET] Client %s left room %s", request.sid, room)
             emit("left_combat", {"room": room})
 
     @socketio.on("ping_combat")

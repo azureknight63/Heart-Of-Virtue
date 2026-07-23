@@ -41,6 +41,15 @@ class Config:
     SOCKETIO_CORS_ALLOWED_ORIGINS = CORS_ORIGINS
     SOCKETIO_MESSAGE_QUEUE = None  # Use simple in-memory queue for now
 
+    # Engine-driven combat streaming over SocketIO (issue #436). Off by default:
+    # while off, combat resolves via the existing lump-response replay path. When
+    # on, the engine streams per-beat events the frontend animates/sounds in
+    # lockstep. Feature-flag for the phased rollout (see
+    # docs/development/combat-streaming-plan.md).
+    COMBAT_SOCKET_STREAMING = os.environ.get(
+        "COMBAT_SOCKET_STREAMING", "false"
+    ).lower() not in ("0", "false", "no", "")
+
 
 class DevelopmentConfig(Config):
     """Development configuration."""

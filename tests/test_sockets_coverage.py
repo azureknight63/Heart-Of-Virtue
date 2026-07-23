@@ -6,6 +6,8 @@ a mock socketio object and invoke them directly with patched flask `request`/
 src/api/sockets.py imports them under).
 """
 
+import logging
+
 from unittest.mock import MagicMock, patch
 
 from src.api.sockets import register_socket_handlers
@@ -28,18 +30,18 @@ def _register_and_capture_handlers():
     return handlers
 
 
-def test_handle_connect_and_disconnect_print_client_sid(capsys):
+def test_handle_connect_and_disconnect_log_client_sid(caplog):
     handlers = _register_and_capture_handlers()
     fake_request = MagicMock()
     fake_request.sid = "sid-123"
 
-    with patch("src.api.sockets.request", fake_request):
-        handlers["connect"]()
-        handlers["disconnect"]()
+    with caplog.at_level(logging.DEBUG, logger="src.api.sockets"):
+        with patch("src.api.sockets.request", fake_request):
+            handlers["connect"]()
+            handlers["disconnect"]()
 
-    out = capsys.readouterr().out
-    assert "Client connected: sid-123" in out
-    assert "Client disconnected: sid-123" in out
+    assert "Client connected: sid-123" in caplog.text
+    assert "Client disconnected: sid-123" in caplog.text
 
 
 def test_on_join_missing_session_id_emits_error():
@@ -61,37 +63,39 @@ def test_on_join_invalid_session_emits_error():
     mock_emit.assert_called_once_with("error", {"message": "Invalid session"})
 
 
-def test_on_join_valid_session_joins_room_and_emits(capsys):
+def test_on_join_valid_session_joins_room_and_emits(caplog):
     handlers = _register_and_capture_handlers()
     fake_app = MagicMock()
     fake_app.session_manager.get_session.return_value = MagicMock()
     fake_request = MagicMock()
     fake_request.sid = "sid-xyz"
 
-    with patch("src.api.sockets.current_app", fake_app), \
-         patch("src.api.sockets.request", fake_request), \
-         patch("src.api.sockets.join_room") as mock_join_room, \
-         patch("src.api.sockets.emit") as mock_emit:
-        handlers["join_combat"]({"session_id": "abc"})
+    with caplog.at_level(logging.DEBUG, logger="src.api.sockets"):
+        with patch("src.api.sockets.current_app", fake_app), \
+             patch("src.api.sockets.request", fake_request), \
+             patch("src.api.sockets.join_room") as mock_join_room, \
+             patch("src.api.sockets.emit") as mock_emit:
+            handlers["join_combat"]({"session_id": "abc"})
 
     mock_join_room.assert_called_once_with("combat_abc")
     mock_emit.assert_called_once_with("joined_combat", {"room": "combat_abc"})
-    assert "joined room combat_abc" in capsys.readouterr().out
+    assert "joined room combat_abc" in caplog.text
 
 
-def test_on_leave_with_session_id_leaves_room_and_emits(capsys):
+def test_on_leave_with_session_id_leaves_room_and_emits(caplog):
     handlers = _register_and_capture_handlers()
     fake_request = MagicMock()
     fake_request.sid = "sid-xyz"
 
-    with patch("src.api.sockets.request", fake_request), \
-         patch("src.api.sockets.leave_room") as mock_leave_room, \
-         patch("src.api.sockets.emit") as mock_emit:
-        handlers["leave_combat"]({"session_id": "abc"})
+    with caplog.at_level(logging.DEBUG, logger="src.api.sockets"):
+        with patch("src.api.sockets.request", fake_request), \
+             patch("src.api.sockets.leave_room") as mock_leave_room, \
+             patch("src.api.sockets.emit") as mock_emit:
+            handlers["leave_combat"]({"session_id": "abc"})
 
     mock_leave_room.assert_called_once_with("combat_abc")
     mock_emit.assert_called_once_with("left_combat", {"room": "combat_abc"})
-    assert "left room combat_abc" in capsys.readouterr().out
+    assert "left room combat_abc" in caplog.text
 
 
 def test_on_leave_without_session_id_is_a_noop():
