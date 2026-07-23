@@ -1,7 +1,6 @@
 """Extended coverage tests for src/universe.py.
 
 Targets uncovered lines:
-    76-79, 83:       legacy txt-map loading path in build()
     182:             skip empty inventory in _deserialize_saved_instance
     204-205:         bad coordinate string in _load_single_json_map
     215-216:         fallback tile_cls when seek_class raises
@@ -10,10 +9,6 @@ Targets uncovered lines:
     298-299, 305:    fallback attribute synthesis for broken event instances
     312-314, 321:    items/npcs loading in JSON map
     335-337:         objects loading in JSON map
-    352-353, 357:    StartingRoom detection
-    377-468:         load_tiles() txt-format parsing
-    481-488:         load_tiles() fallback tile construction
-    494:             StartingRoom from txt map
 """
 
 import sys
@@ -299,17 +294,6 @@ class TestLoadSingleJsonMap:
         loaded = next((m for m in u.maps if m.get("name") == "sym_map"), None)
         tile = loaded.get((0, 0))
         assert tile.symbol == "X"
-
-    def test_starting_room_sets_starting_position(self):
-        """A tile titled 'StartingRoom' sets universe.starting_position."""
-        u = self._universe_with_player()
-        raw = {"(3,5)": {"title": "StartingRoom", "description": ""}}
-        json_path = Path("/fake/start_map.json")
-
-        with patch("builtins.open", mock_open(read_data=json.dumps(raw))):
-            u._load_single_json_map(u.player, json_path)
-
-        assert u.starting_position == (3, 5)
 
     def test_items_loaded_into_tile(self):
         """Items from JSON are deserialized and placed in tile.items_here."""

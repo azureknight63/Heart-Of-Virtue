@@ -218,24 +218,6 @@ class TestUniverseLoadSingleJsonMap:
         if tile:
             assert tile.symbol == "@"
 
-    def test_starting_room_sets_starting_position(self):
-        """Lines 356-357: StartingRoom tile sets starting_position."""
-        from src.universe import Universe
-
-        u = self._universe()
-        with tempfile.TemporaryDirectory() as tmpdir:
-            jf = Path(tmpdir) / "starting_map.json"
-            data = {
-                "(3, 5)": {
-                    "title": "StartingRoom",
-                    "description": "The start.",
-                }
-            }
-            jf.write_text(json.dumps(data))
-            p = _player()
-            u._load_single_json_map(p, jf)
-        assert u.starting_position == (3, 5)
-
     def test_tile_with_item_payload(self):
         """Lines 301-315: item payload deserialized and added to tile."""
         from src.universe import Universe
@@ -287,20 +269,8 @@ class TestUniverseLoadSingleJsonMap:
             u._load_single_json_map(p, jf)
 
 
-class TestUniverseLoadTilesLegacy:
-    """Lines 377-494: load_tiles() legacy txt format."""
-
-    def _universe(self):
-        from src.universe import Universe
-
-        p = _player()
-        u = Universe(player=p)
-        return u
-
-    def _write_map(self, tmpdir, name, content):
-        """Write a map txt file in the expected resources directory layout."""
-        # We need to write to the actual resources directory or patch the path
-        return Path(tmpdir) / f"{name}.txt"
+class TestUniverseParseHidden:
+    """Universe.parse_hidden() helper."""
 
     def test_parse_hidden_no_h_plus(self):
         """parse_hidden with no h+ marker returns (False, 0)."""
@@ -317,103 +287,6 @@ class TestUniverseLoadTilesLegacy:
         hidden, hfactor = Universe.parse_hidden("h+50")
         assert hidden is True
         assert hfactor == 50
-
-    def test_load_tiles_basic(self):
-        """Lines 377-396: load_tiles parses a minimal txt file."""
-        from src.universe import Universe
-
-        p = _player()
-        u = Universe(player=p)
-
-        map_content = "BlankTile\t\n"
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            # Patch RESOURCES_DIR to our temp dir
-            map_file = Path(tmpdir) / "simple_test.txt"
-            map_file.write_text(map_content, encoding="utf-8")
-
-            with patch("src.universe.RESOURCES_DIR", Path(tmpdir)):
-                u.load_tiles(p, "simple_test")
-
-        assert len(u.maps) >= 1
-        assert u.maps[-1].get("name") == "simple_test"
-
-    def test_load_tiles_with_npc_spawn(self):
-        """Lines 393-412: $ prefix spawns NPCs."""
-        from src.universe import Universe
-
-        p = _player()
-        u = Universe(player=p)
-
-        # BlankTile with NPC spawn: $RockRumbler.1
-        map_content = "BlankTile|$RockRumbler.1\t\n"
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            map_file = Path(tmpdir) / "npc_test.txt"
-            map_file.write_text(map_content, encoding="utf-8")
-
-            with patch("src.universe.RESOURCES_DIR", Path(tmpdir)):
-                u.load_tiles(p, "npc_test")
-
-        assert len(u.maps) >= 1
-
-    def test_load_tiles_with_item_spawn(self):
-        """Lines 413-427: # prefix spawns items."""
-        from src.universe import Universe
-
-        p = _player()
-        u = Universe(player=p)
-
-        # BlankTile with item spawn: #Gold.10
-        map_content = "BlankTile|#Gold.10\t\n"
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            map_file = Path(tmpdir) / "item_test.txt"
-            map_file.write_text(map_content, encoding="utf-8")
-
-            with patch("src.universe.RESOURCES_DIR", Path(tmpdir)):
-                u.load_tiles(p, "item_test")
-
-        assert len(u.maps) >= 1
-
-    def test_load_tiles_empty_block(self):
-        """Lines 476-479: empty block sets None in map."""
-        from src.universe import Universe
-
-        p = _player()
-        u = Universe(player=p)
-
-        # Row with empty second column
-        map_content = "BlankTile\t\n"
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            map_file = Path(tmpdir) / "empty_block.txt"
-            map_file.write_text(map_content, encoding="utf-8")
-
-            with patch("src.universe.RESOURCES_DIR", Path(tmpdir)):
-                u.load_tiles(p, "empty_block")
-
-        assert len(u.maps) >= 1
-        # Second column (x=1) should be None
-        assert u.maps[-1].get((1, 0)) is None
-
-    def test_load_tiles_starting_room(self):
-        """Line 494: StartingRoom sets starting_position."""
-        from src.universe import Universe
-
-        p = _player()
-        u = Universe(player=p)
-
-        map_content = "StartingRoom\t\n"
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            map_file = Path(tmpdir) / "start_test.txt"
-            map_file.write_text(map_content, encoding="utf-8")
-
-            with patch("src.universe.RESOURCES_DIR", Path(tmpdir)):
-                u.load_tiles(p, "start_test")
-
-        assert u.starting_position == (0, 0)
 
 
 class TestUniverseMiscMethods:

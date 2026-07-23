@@ -88,7 +88,6 @@ def test_universe_init():
     u = Universe()
     assert u.game_tick == 0
     assert u.maps == []
-    assert u.starting_position == (0, 0)
     assert u.starting_map_default is None
     assert isinstance(u.story, dict)
     assert u.locked_chests == []
@@ -203,18 +202,3 @@ def test_load_single_json_map(monkeypatch, tmp_path):
     assert tile.objects_here == []
 
 
-def test_load_tiles(monkeypatch, tmp_path):
-    # Setup dummy tile class
-    class DummyTile:
-        def __init__(self, universe, this_map, x, y):
-            self.x = x
-            self.y = y
-    monkeypatch.setattr(functions, 'seek_class', lambda name, mod, **kw: DummyTile)
-    # Create dummy txt file
-    txt_path = tmp_path / 'testmap.txt'
-    txt_path.write_text('DummyTile\t\n\n')
-    monkeypatch.setattr('src.universe.RESOURCES_DIR', tmp_path)
-    u = Universe()
-    u.load_tiles(player=None, mapname='testmap')
-    assert u.maps[-1]['name'] == 'testmap'
-    assert isinstance(u.maps[-1][(0,0)], DummyTile)

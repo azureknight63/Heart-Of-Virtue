@@ -44,7 +44,6 @@ def test_universe_init_defaults():
     assert u.player is None
     assert u.game_tick == 0
     assert u.maps == []
-    assert u.starting_position == (0, 0)
     assert u.starting_map_default is None
     assert isinstance(u.story, dict)
     assert u.testing_mode is False

@@ -129,7 +129,6 @@ class TestUniverseInitialization:
         assert u.player is None
         assert u.game_tick == 0
         assert u.maps == []
-        assert u.starting_position == (0, 0)
         assert u.starting_map_default is None
         assert isinstance(u.story, dict)
         assert u.locked_chests == []
@@ -857,14 +856,6 @@ class TestWorldStatePersistence:
             universe.game_tick_events()
 
         assert universe.game_tick == 10
-
-    def test_starting_position_updates(self):
-        """Test that starting_position can be updated."""
-        universe = Universe()
-        assert universe.starting_position == (0, 0)
-
-        universe.starting_position = (5, 5)
-        assert universe.starting_position == (5, 5)
 
 
 # ============================================================================

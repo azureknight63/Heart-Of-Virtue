@@ -253,7 +253,6 @@ class TestUniverseInit:
         assert u.player is None
         assert u.game_tick == 0
         assert u.maps == []
-        assert u.starting_position == (0, 0)
         assert u.starting_map_default is None
         assert isinstance(u.story, dict)
         assert u.locked_chests == []
