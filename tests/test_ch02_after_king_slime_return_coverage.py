@@ -388,12 +388,16 @@ class TestAfterDefeatingKingSlimeProcess:
 
     @patch("src.story.ch02.time.sleep")
     @patch("src.story.ch02.print_slow")
-    def test_process_spawns_mineral_fragment(self, mock_print, mock_sleep):
+    def test_process_grants_mineral_fragment_to_inventory(self, mock_print, mock_sleep):
+        # #378/#371: fragment is granted straight to inventory, not spawned as
+        # a floor item, so Jean always carries it to Votha Krr.
         self.player.map = {}
         self.player.universe.maps = [self._make_pools_map()]
         evt = self._make_event()
         evt.process()
-        self.tile.spawn_item.assert_called_with("MineralFragment")
+        self.player.add_items_to_inventory.assert_called_once()
+        granted = self.player.add_items_to_inventory.call_args[0][0]
+        assert any(i.__class__.__name__ == "MineralFragment" for i in granted)
 
     @patch("src.story.ch02.time.sleep")
     @patch("src.story.ch02.print_slow")

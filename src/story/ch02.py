@@ -571,10 +571,16 @@ class AfterDefeatingKingSlime(Event):
             ),
         )
 
-        # Spawn the MineralFragment on this tile
-        self.tile.spawn_item("MineralFragment")
+        # Grant the MineralFragment straight to Jean's inventory. Spawning it as
+        # a floor item relied on the player picking it up before leaving, backed
+        # only by Ch02FragmentReminder — which is attached to this pools tile and
+        # is never evaluated once Jean crosses to another map, so leaving without
+        # the fragment could soft-lock the Votha Krr hand-over. Granting it here
+        # guarantees he carries it. The memory flash still fires on possession
+        # (see Ch02KingSlimeMemoryFlash.check_conditions). See #378 / #371.
+        self.player.add_items_to_inventory([items.MineralFragment()])
 
-        # Queue the memory flash so it fires once Jean picks up the fragment
+        # Queue the memory flash so it fires once the fragment is in inventory
         self.tile.events_here.append(Ch02KingSlimeMemoryFlash(
             player=self.player, tile=self.tile, repeat=False
         ))

@@ -1096,14 +1096,20 @@ class TestAfterDefeatingKingSlime:
             ev.process()
         assert player.universe.story.get("king_slime_defeated") == "1"
 
-    def test_process_spawns_mineral_fragment(self):
+    def test_process_grants_mineral_fragment_to_inventory(self):
+        # #378/#371: the fragment is granted straight to inventory so Jean can
+        # never leave the pools without it (which would soft-lock Votha Krr).
         ev, player, tile = self._make()
         with (
             patch("src.story.ch02.print_slow"),
             patch("src.story.ch02.time.sleep"),
         ):
             ev.process()
-        tile.spawn_item.assert_called_with("MineralFragment")
+        player.add_items_to_inventory.assert_called_once()
+        granted = player.add_items_to_inventory.call_args[0][0]
+        assert any(
+            i.__class__.__name__ == "MineralFragment" for i in granted
+        )
 
     def test_process_spawns_tile_description(self):
         ev, player, tile = self._make()
