@@ -249,7 +249,7 @@ def test_set_combatant_stats():
 # --- clear_room). --------------------------------------------------------
 
 def test_known_moves_exception_falls_back_to_empty_list():
-    with patch("src.npc._adjutant.moves.NpcIdle", side_effect=RuntimeError("boom")):
+    with patch("src.npc._base.moves.NpcIdle", side_effect=RuntimeError("boom")):
         adj = TheAdjutant()
     assert adj.known_moves == []
 
