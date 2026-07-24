@@ -794,6 +794,7 @@ class Passageway(Object):
         hidden: bool = False,
         hide_factor: int = 0,
         is_shop_exit: bool = False,
+        passthrough: bool = False,
         name: str = "Passageway",
         description: str = "A passageway leading elsewhere is here.",
         idle_message: str = "There is a passageway here.",
@@ -825,6 +826,9 @@ class Passageway(Object):
         self.teleport_tile = teleport_tile if teleport_tile is not None else ""
         self.persist = persist  # if True, the passageway will remain after use, else
         # it will be removed from the tile after use
+        # If True, the frontend skips the Interactions panel and directly executes
+        # the first action (enter) when the player clicks this object.
+        self.passthrough = passthrough
 
     def enter(self, player):
         # Drop any merchandise items immediately upon attempting to enter/teleport
