@@ -63,7 +63,7 @@ class NPCSerializer:
         if keywords:
             npc_data["keywords"] = keywords
 
-        # LLM chat capability flags (set by HumanNPCLLMMixin)
+        # LLM chat capability flags (set by ConversationalNPCMixin)
         import os
 
         chat_enabled_env = os.getenv("NPC_CHAT_LLM_ENABLED", "0") in (

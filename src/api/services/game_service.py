@@ -818,7 +818,7 @@ class GameService:
             _logging.getLogger(__name__).warning("game_tick_events failed: %s", e)
 
         # Recover NPC loquacity on world beats (mirrors the terminal loop's intent
-        # for HumanNPCLLMMixin.loquacity_tick, which had no caller). Guarded so it
+        # for ConversationalNPCMixin.loquacity_tick, which had no caller). Guarded so it
         # only ticks on genuine movement beats, never during an active conversation.
         self._recover_npc_loquacity(player)
 
@@ -3320,7 +3320,7 @@ class GameService:
     def _recover_npc_loquacity(self, player: "player_module.Player") -> None:
         """Recover persisted NPC loquacity by one beat.
 
-        ``HumanNPCLLMMixin.loquacity_tick`` operates on live NPC instances, but
+        ``ConversationalNPCMixin.loquacity_tick`` operates on live NPC instances, but
         between conversations those instances are transient — the source of truth
         is ``player.npc_chat_histories``. This ticks the persisted values so an
         NPC's willingness to talk regenerates over time, and ``chat_open`` picks

@@ -92,6 +92,10 @@ class ObjectSerializer:
         if has_attr("idle_message"):
             obj_data["idle_message"] = get_attr("idle_message")
 
+        # Passageway direct-click flag
+        if has_attr("passthrough"):
+            obj_data["passthrough"] = get_attr("passthrough")
+
         return obj_data
 
     @staticmethod
