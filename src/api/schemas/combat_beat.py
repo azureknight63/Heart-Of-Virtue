@@ -132,6 +132,48 @@ def build_beat(
     }
 
 
+def diff_combatants(prev_combatants, curr_combatants):
+    """Diff two serialized-combatant snapshots into structured beat facts.
+
+    Each combatant is a dict with ``id``, ``hp``, and ``status_effects`` (a list
+    of ``{"name": ...}``). Matching is by ``id``. Returns a tuple
+    ``(hp_changes, killed, status_changes)`` in the shapes ``build_beat`` expects:
+
+    - ``hp_changes``: ``[{"id", "delta"}]`` for every combatant whose HP changed
+      (signed; negative = damage, positive = heal).
+    - ``killed``: ids whose HP crossed from ``> 0`` to ``<= 0`` this beat.
+    - ``status_changes``: ``[{"id", "status"}]`` for statuses newly present.
+
+    Combatants absent from ``prev`` (e.g. reinforcements appearing this beat)
+    have no baseline and are skipped for HP/kill diffing.
+    """
+    prev_by_id = {c.get("id"): c for c in (prev_combatants or [])}
+    hp_changes = []
+    killed = []
+    status_changes = []
+
+    for curr in curr_combatants or []:
+        cid = curr.get("id")
+        prev = prev_by_id.get(cid)
+        if prev is None:
+            continue
+        prev_hp = prev.get("hp", 0)
+        curr_hp = curr.get("hp", 0)
+        if curr_hp != prev_hp:
+            hp_changes.append({"id": cid, "delta": curr_hp - prev_hp})
+        if prev_hp > 0 and curr_hp <= 0:
+            killed.append(cid)
+        prev_statuses = {
+            s.get("name") for s in (prev.get("status_effects") or [])
+        }
+        for effect in curr.get("status_effects") or []:
+            name = effect.get("name")
+            if name not in prev_statuses:
+                status_changes.append({"id": cid, "status": name})
+
+    return hp_changes, killed, status_changes
+
+
 def validate_beat(beat):
     """Return a list of contract problems with a beat dict (empty = valid)."""
     problems = []

@@ -170,3 +170,68 @@ def test_validate_beat_flags_non_monotonic_sfx_index():
     beat["sfx"][0]["index"] = 5
     problems = cb.validate_beat(beat)
     assert any("sfx index" in p for p in problems)
+
+
+# ── diff_combatants ─────────────────────────────────────────────────────────
+
+def _combatant(cid, hp, statuses=None):
+    return {
+        "id": cid,
+        "hp": hp,
+        "status_effects": [{"name": n} for n in (statuses or [])],
+    }
+
+
+def test_diff_damage_only():
+    prev = [_combatant("enemy_9", 30)]
+    curr = [_combatant("enemy_9", 16)]
+    hp_changes, killed, status_changes = cb.diff_combatants(prev, curr)
+    assert hp_changes == [{"id": "enemy_9", "delta": -14}]
+    assert killed == []
+    assert status_changes == []
+
+
+def test_diff_lifesteal_two_subjects():
+    prev = [_combatant("enemy_9", 30), _combatant("player", 50)]
+    curr = [_combatant("enemy_9", 16), _combatant("player", 54)]
+    hp_changes, killed, _ = cb.diff_combatants(prev, curr)
+    assert {"id": "enemy_9", "delta": -14} in hp_changes
+    assert {"id": "player", "delta": 4} in hp_changes
+    assert killed == []
+
+
+def test_diff_kill_detected_on_crossing_zero():
+    prev = [_combatant("enemy_9", 5)]
+    curr = [_combatant("enemy_9", 0)]
+    _, killed, _ = cb.diff_combatants(prev, curr)
+    assert killed == ["enemy_9"]
+
+
+def test_diff_no_kill_when_already_dead():
+    prev = [_combatant("enemy_9", 0)]
+    curr = [_combatant("enemy_9", 0)]
+    hp_changes, killed, _ = cb.diff_combatants(prev, curr)
+    assert killed == []
+    assert hp_changes == []
+
+
+def test_diff_new_status_attributed():
+    prev = [_combatant("enemy_9", 30, [])]
+    curr = [_combatant("enemy_9", 28, ["poison"])]
+    _, _, status_changes = cb.diff_combatants(prev, curr)
+    assert status_changes == [{"id": "enemy_9", "status": "poison"}]
+
+
+def test_diff_existing_status_not_reported():
+    prev = [_combatant("enemy_9", 30, ["poison"])]
+    curr = [_combatant("enemy_9", 28, ["poison"])]
+    _, _, status_changes = cb.diff_combatants(prev, curr)
+    assert status_changes == []
+
+
+def test_diff_reinforcement_has_no_baseline():
+    prev = [_combatant("enemy_9", 30)]
+    curr = [_combatant("enemy_9", 30), _combatant("enemy_new", 40)]
+    hp_changes, killed, _ = cb.diff_combatants(prev, curr)
+    assert hp_changes == []
+    assert killed == []

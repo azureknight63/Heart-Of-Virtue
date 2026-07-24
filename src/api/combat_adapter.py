@@ -22,6 +22,7 @@ from src.api.serializers.combat import (
     CombatantSerializer,
 )
 from src.api.constants import ITEM_USE_RANGE, ALLY_HEAL_THRESHOLD
+from src.api.combat_beat_stream import CombatBeatStreamer
 from ai.combat_strategist import CombatStrategist
 from src.moves._base import select_weighted_target
 
@@ -146,6 +147,10 @@ class ApiCombatAdapter:
         )  # Set by initialize_combat; default matches legacy map size
         self.strategist = CombatStrategist()
 
+        # Engine-driven beat streaming (issue #436). Created per combat by
+        # _maybe_init_streamer when COMBAT_SOCKET_STREAMING is on; None otherwise.
+        self._beat_streamer = None
+
         # Initialize persistent state if missing
         if not hasattr(self.player, "combat_adapter_state"):
             self.player.combat_adapter_state = {
@@ -172,6 +177,51 @@ class ApiCombatAdapter:
             _animations.set_api_mode(True)
         except Exception:
             pass
+
+    def _maybe_init_streamer(self, initial_state):
+        """Create a beat streamer when COMBAT_SOCKET_STREAMING is on (#436).
+
+        Captures the socketio instance up front so later emits (including from
+        the async suggestion thread) never touch current_app off-request.
+        """
+        self._beat_streamer = None
+        if not self.session_id:
+            return
+        try:
+            from flask import current_app
+
+            if not current_app.config.get("COMBAT_SOCKET_STREAMING"):
+                return
+            socketio = getattr(current_app, "socketio", None)
+            if socketio is None:
+                return
+            self._beat_streamer = CombatBeatStreamer(
+                socketio,
+                f"combat_{self.session_id}",
+                initial_combatants=(initial_state or {}).get("combatants", []),
+            )
+        except Exception:
+            logger.exception("failed to init combat beat streamer")
+            self._beat_streamer = None
+
+    def _stream_combat_result(self, result, beat_states, ended=False):
+        """Stream this move's beats + terminal event when streaming is on (#436).
+
+        No-op unless a streamer exists (flag off / no socket). Never raises —
+        streaming must not break combat resolution.
+        """
+        streamer = self._beat_streamer
+        if streamer is None:
+            return
+        try:
+            streamer.stream_beats(beat_states)
+            end_state = (result or {}).get("end_state")
+            if ended or end_state:
+                streamer.emit_ended(end_state or result)
+            else:
+                streamer.emit_resolved(result)
+        except Exception:
+            logger.exception("combat beat streaming failed")
 
     @property
     def awaiting_input(self):
@@ -440,6 +490,12 @@ class ApiCombatAdapter:
             self.refresh_suggestions()
 
             result = self.get_combat_state()
+
+            # Set up beat streaming for this combat (issue #436). Only on a fresh
+            # start — a reinit (reinforcements) keeps the existing streamer so
+            # seq stays monotonic across the whole encounter.
+            if not reinit:
+                self._maybe_init_streamer(result)
 
             # Emit combat started event
             if self.session_id:
@@ -1182,6 +1238,7 @@ class ApiCombatAdapter:
 
             result = self.get_combat_state()
             result["beat_states"] = beat_states
+            self._stream_combat_result(result, beat_states, ended=True)
 
             # Clear enemies after the state snapshot so the defeat payload shows who killed
             # the player rather than an empty battlefield. Preserve only living allies
@@ -1273,6 +1330,7 @@ class ApiCombatAdapter:
             if not event_just_triggered:
                 result = self.get_combat_state()
                 result["beat_states"] = beat_states
+                self._stream_combat_result(result, beat_states, ended=True)
                 return result
 
         # Set up for next move selection if battle continues and no event is blocking
@@ -1312,6 +1370,7 @@ class ApiCombatAdapter:
         # Final state capture (consumes events_triggered)
         result = self.get_combat_state()
         result["beat_states"] = beat_states
+        self._stream_combat_result(result, beat_states)
 
         # Emit final state update
         if self.session_id:

@@ -73,10 +73,16 @@ def create_app(config_class=None):
         supports_credentials=True,
     )
 
-    # Initialize SocketIO for real-time updates
+    # Initialize SocketIO for real-time updates. Honor the dedicated SocketIO
+    # config keys (issue #436): SOCKETIO_CORS_ALLOWED_ORIGINS falls back to the
+    # HTTP CORS origins, and SOCKETIO_MESSAGE_QUEUE (e.g. a Redis URL) fans emits
+    # out across workers when set — None keeps the single-process in-memory queue.
     socketio = SocketIO(
         app,
-        cors_allowed_origins=app.config["CORS_ORIGINS"],
+        cors_allowed_origins=app.config.get(
+            "SOCKETIO_CORS_ALLOWED_ORIGINS", app.config["CORS_ORIGINS"]
+        ),
+        message_queue=app.config.get("SOCKETIO_MESSAGE_QUEUE"),
         async_mode="threading",
         logger=app.debug,
         engineio_logger=app.debug,
