@@ -173,23 +173,53 @@ def test_emit_ended():
     assert payload["status"] == "victory"
 
 
-def test_reconcile_final_emits_death_beat_for_removed_enemy():
+def test_reconcile_final_emits_death_beat_when_reason_is_death():
     sock = FakeSocketIO()
-    # Last streamed snapshot had the enemy alive; it then died on its own turn
-    # (poison) and was removed, so it's absent from the authoritative final state.
+    # Enemy alive in the last snapshot, then died on its own turn (poison) and
+    # was removed; the engine recorded the reason as a death.
     streamer = CombatBeatStreamer(
         sock,
         "r",
         initial_combatants=[_combatant("enemy_9", 6), _combatant("player", 40)],
     )
-    streamer.reconcile_final([_combatant("player", 40)])
+    streamer.reconcile_final(
+        [_combatant("player", 40)], departures={"enemy_9": "death"}
+    )
 
     assert len(sock.emits) == 1
     event, beat, _ = sock.emits[0]
     assert event == BEAT_EVENT
     assert beat["killed"] == ["enemy_9"]
+    assert beat["departed"] == []
     assert beat["web_animation"] == "death"
     assert "death" in [e["kind"] for e in beat["sfx"]]
+
+
+def test_reconcile_final_alive_exit_is_not_a_death():
+    sock = FakeSocketIO()
+    # Enemy fled/warped away alive — must NOT render as a death.
+    streamer = CombatBeatStreamer(
+        sock, "r", initial_combatants=[_combatant("enemy_9", 25)]
+    )
+    streamer.reconcile_final([], departures={"enemy_9": "fled"})
+
+    beat = sock.emits[0][1]
+    assert beat["killed"] == []
+    assert beat["departed"] == [{"id": "enemy_9", "reason": "fled"}]
+    assert beat["web_animation"] != "death"
+    assert "death" not in [e["kind"] for e in beat["sfx"]]
+
+
+def test_reconcile_final_unknown_removal_defaults_to_non_fatal():
+    sock = FakeSocketIO()
+    # No recorded reason -> default to a non-fatal 'removed', never a death.
+    streamer = CombatBeatStreamer(
+        sock, "r", initial_combatants=[_combatant("enemy_9", 25)]
+    )
+    streamer.reconcile_final([])
+    beat = sock.emits[0][1]
+    assert beat["killed"] == []
+    assert beat["departed"] == [{"id": "enemy_9", "reason": "removed"}]
 
 
 def test_reconcile_final_is_noop_when_nothing_outstanding():
@@ -212,7 +242,7 @@ def test_reconcile_final_no_double_death_when_already_streamed():
     )
     sock.emits.clear()
     # ...and the final state has it removed; reconcile must not re-report it.
-    streamer.reconcile_final([])
+    streamer.reconcile_final([], departures={"enemy_9": "death"})
     assert sock.emits == []
 
 

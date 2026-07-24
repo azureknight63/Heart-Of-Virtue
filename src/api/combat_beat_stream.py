@@ -113,21 +113,41 @@ class CombatBeatStreamer:
             self._emit(BEAT_EVENT, beat)
             self._last = curr
 
-    def reconcile_final(self, final_combatants):
-        """Emit a closing beat for deaths/changes not captured by a snapshot.
+    def reconcile_final(self, final_combatants, departures=None):
+        """Emit a closing beat for exits/changes not captured by a snapshot.
 
-        Some deaths (e.g. an enemy dying to poison/recoil on its own turn) remove
-        the combatant from combat_list without an intervening beat_state, so the
-        per-snapshot stream never sees them. Diffing the last streamed snapshot
-        against the authoritative final state surfaces those so they still
-        animate + sound. A no-op when nothing is outstanding.
+        Some combatants leave the roster without an intervening beat_state — e.g.
+        an enemy dying to poison on its own turn, or (in future) fleeing/warping.
+        Absence alone can't tell death from an alive-exit, so ``departures`` (an
+        engine-recorded ``{id: reason}`` map) classifies each: ``"death"`` →
+        ``killed`` (death animation + SFX); any other reason → ``departed`` (drop
+        the token, no death sound). Absences with no recorded reason default to a
+        non-fatal ``"removed"`` so a death is never fabricated. No-op when
+        nothing is outstanding.
         """
+        departures = departures or {}
         hp_changes, killed, status_changes = diff_combatants(
             self._last, final_combatants
         )
-        if not (hp_changes or killed or status_changes):
+
+        final_ids = {c.get("id") for c in (final_combatants or [])}
+        departed = []
+        for prev in self._last:
+            cid = prev.get("id")
+            if cid in final_ids or prev.get("hp", 0) <= 0:
+                # Still present, or already-dead (its death was already reported).
+                continue
+            reason = departures.get(cid, "removed")
+            if reason == "death":
+                hp_changes.append({"id": cid, "delta": -prev.get("hp", 0)})
+                killed.append(cid)
+            else:
+                departed.append({"id": cid, "reason": reason})
+
+        if not (hp_changes or killed or departed or status_changes):
             self._last = list(final_combatants or [])
             return
+
         beat = build_beat(
             seq=self._next_seq(),
             actor_id=None,
@@ -136,6 +156,7 @@ class CombatBeatStreamer:
             outcome="hit" if killed else "miss",
             hp_changes=hp_changes,
             killed=killed,
+            departed=departed,
             status_changes=status_changes,
             log_line="",
             has_swing=False,

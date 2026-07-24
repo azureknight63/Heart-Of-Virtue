@@ -32,6 +32,7 @@ def _bare_adapter(session_id="s1"):
     adapter = ApiCombatAdapter.__new__(ApiCombatAdapter)
     adapter.session_id = session_id
     adapter._beat_streamer = None
+    adapter._departures = {}
     return adapter
 
 
@@ -99,6 +100,34 @@ def test_stream_combat_result_emits_beats_and_resolved():
     assert BEAT_EVENT in events
     assert RESOLVED_EVENT in events
     assert ENDED_EVENT not in events
+
+
+def test_record_departure_uses_enemy_stream_id():
+    adapter = _bare_adapter()
+
+    class FakeEnemy:
+        friend = False
+
+    enemy = FakeEnemy()
+    adapter._record_departure(enemy, "fled")
+    assert adapter._departures == {f"enemy_{id(enemy)}": "fled"}
+
+
+def test_stream_combat_result_consumes_and_clears_departures():
+    adapter = _bare_adapter()
+    sock = FakeSocketIO()
+    adapter._beat_streamer = CombatBeatStreamer(
+        sock,
+        "combat_s1",
+        initial_combatants=[{"id": "enemy_1", "hp": 20, "status_effects": []}],
+    )
+    adapter._departures = {"enemy_1": "death"}
+    # enemy_1 is gone from the final roster; recorded reason -> death beat.
+    adapter._stream_combat_result({"combatants": []}, [])
+
+    beats = [p for e, p, _ in sock.emits if e == BEAT_EVENT]
+    assert beats and beats[0]["killed"] == ["enemy_1"]
+    assert adapter._departures == {}  # cleared for the next move
 
 
 def test_stream_combat_result_emits_ended_when_flagged():

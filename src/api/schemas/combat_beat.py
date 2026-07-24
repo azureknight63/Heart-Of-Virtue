@@ -23,9 +23,20 @@ BEAT_FIELDS = (
     "outcome",
     "hp_changes",
     "killed",
+    "departed",
     "status_changes",
     "log_line",
     "sfx",
+)
+
+# Reasons a combatant leaves the battlefield. ``death`` is the only fatal one
+# (drives the death animation + SFX via ``killed``); the rest are alive-exits
+# that remove the token without a death animation/sound.
+DEPARTURE_REASONS = (
+    "death",
+    "fled",
+    "warped",
+    "removed",
 )
 
 # Attack/resolution outcomes an ``impact`` SFX emission resolves against.
@@ -96,6 +107,7 @@ def build_beat(
     outcome,
     hp_changes=None,
     killed=None,
+    departed=None,
     status_changes=None,
     log_line="",
     has_swing=True,
@@ -105,11 +117,14 @@ def build_beat(
     ``hp_changes`` is a list of ``{"id": <combatant_id>, "delta": <signed int>}``
     (negative = damage, positive = heal) attributed per combatant, so a single
     beat can correctly express lifesteal (target −N, actor +M), recoil, AoE, and
-    ally-heals. ``killed`` is a list of combatant ids that died this beat;
-    ``status_changes`` is a list of ``{"id", "status"}``.
+    ally-heals. ``killed`` is a list of combatant ids that died this beat.
+    ``departed`` is a list of ``{"id", "reason"}`` for combatants that LEFT the
+    battlefield alive (flee/warp/scripted removal) — the client drops the token
+    without a death animation/sound. ``status_changes`` is ``{"id", "status"}``.
     """
     hp_changes = list(hp_changes or [])
     killed = list(killed or [])
+    departed = list(departed or [])
     status_changes = list(status_changes or [])
     return {
         "seq": seq,
@@ -119,6 +134,7 @@ def build_beat(
         "outcome": outcome,
         "hp_changes": hp_changes,
         "killed": killed,
+        "departed": departed,
         "status_changes": status_changes,
         "log_line": log_line,
         "sfx": build_sfx_chain(
@@ -148,7 +164,6 @@ def diff_combatants(prev_combatants, curr_combatants):
     have no baseline and are skipped for HP/kill diffing.
     """
     prev_by_id = {c.get("id"): c for c in (prev_combatants or [])}
-    curr_ids = {c.get("id") for c in (curr_combatants or [])}
     hp_changes = []
     killed = []
     status_changes = []
@@ -172,17 +187,10 @@ def diff_combatants(prev_combatants, curr_combatants):
             if name not in prev_statuses:
                 status_changes.append({"id": cid, "status": name})
 
-    # A combatant alive in prev but ABSENT from curr died and was removed from
-    # combat_list (combat_adapter removes on death). Its death would otherwise be
-    # dropped since the loop above only visits combatants present in curr.
-    for cid, prev in prev_by_id.items():
-        if cid in curr_ids:
-            continue
-        prev_hp = prev.get("hp", 0)
-        if prev_hp > 0:
-            hp_changes.append({"id": cid, "delta": -prev_hp})
-            killed.append(cid)
-
+    # NOTE: a combatant present in prev but ABSENT from curr is deliberately NOT
+    # classified here — absence alone cannot distinguish a death from an alive
+    # exit (flee, warp, scripted removal). Departures are resolved by the caller
+    # using an engine-recorded reason (see CombatBeatStreamer.reconcile_final).
     return hp_changes, killed, status_changes
 
 
@@ -203,6 +211,12 @@ def validate_beat(beat):
     for change in beat.get("status_changes", []) or []:
         if "id" not in change or "status" not in change:
             problems.append(f"status_change missing id/status: {change!r}")
+
+    for exit_ in beat.get("departed", []) or []:
+        if "id" not in exit_ or "reason" not in exit_:
+            problems.append(f"departed missing id/reason: {exit_!r}")
+        elif exit_.get("reason") not in DEPARTURE_REASONS:
+            problems.append(f"invalid departure reason: {exit_.get('reason')!r}")
 
     for expected_index, emission in enumerate(beat.get("sfx", []) or []):
         if emission.get("index") != expected_index:

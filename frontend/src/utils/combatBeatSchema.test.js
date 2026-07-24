@@ -7,6 +7,7 @@ import {
   BEAT_FIELDS,
   OUTCOMES,
   SFX_KINDS,
+  DEPARTURE_REASONS,
 } from './combatBeatSchema';
 
 // This mirror is kept in parity with src/api/schemas/combat_beat.py by the
@@ -29,10 +30,15 @@ describe('combatBeatSchema', () => {
       'outcome',
       'hp_changes',
       'killed',
+      'departed',
       'status_changes',
       'log_line',
       'sfx',
     ]);
+  });
+
+  it('declares the departure reasons', () => {
+    expect(DEPARTURE_REASONS).toEqual(['death', 'fled', 'warped', 'removed']);
   });
 
   it('declares the outcome vocabulary', () => {

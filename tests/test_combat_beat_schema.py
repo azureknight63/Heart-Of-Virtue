@@ -45,6 +45,10 @@ def test_sfx_kinds_parity():
     assert _js_string_array("SFX_KINDS") == cb.SFX_KINDS
 
 
+def test_departure_reasons_parity():
+    assert _js_string_array("DEPARTURE_REASONS") == cb.DEPARTURE_REASONS
+
+
 def test_event_name_parity():
     assert _js_string_const("BEAT_EVENT") == cb.BEAT_EVENT
     assert _js_string_const("RESOLVED_EVENT") == cb.RESOLVED_EVENT
@@ -73,7 +77,30 @@ def test_build_beat_defaults_empty_collections():
     beat = cb.build_beat(1, "player", None, "pulse", "hit")
     assert beat["hp_changes"] == []
     assert beat["killed"] == []
+    assert beat["departed"] == []
     assert beat["status_changes"] == []
+
+
+def test_build_beat_with_departed_is_valid():
+    beat = cb.build_beat(
+        1,
+        "enemy_3",
+        None,
+        "pulse",
+        "miss",
+        departed=[{"id": "enemy_3", "reason": "fled"}],
+    )
+    assert cb.validate_beat(beat) == []
+    assert beat["departed"] == [{"id": "enemy_3", "reason": "fled"}]
+    # An alive-exit is NOT a death: no death SFX kind.
+    assert "death" not in [e["kind"] for e in beat["sfx"]]
+
+
+def test_validate_beat_flags_bad_departure_reason():
+    beat = cb.build_beat(1, "player", "enemy_9", "pierce", "hit")
+    beat["departed"] = [{"id": "enemy_9", "reason": "vaporized"}]
+    problems = cb.validate_beat(beat)
+    assert any("invalid departure reason" in p for p in problems)
 
 
 # ── SFX chain ordering / indices ────────────────────────────────────────────
@@ -237,19 +264,11 @@ def test_diff_reinforcement_has_no_baseline():
     assert killed == []
 
 
-def test_diff_living_combatant_removed_is_a_death():
-    # Alive in prev, gone from curr (died and removed from combat_list).
+def test_diff_ignores_absent_combatants():
+    # Absence alone can't distinguish death from an alive-exit, so the pure diff
+    # does NOT classify a removed combatant (the caller resolves it by reason).
     prev = [_combatant("enemy_9", 12), _combatant("player", 40)]
     curr = [_combatant("player", 40)]
-    hp_changes, killed, _ = cb.diff_combatants(prev, curr)
-    assert killed == ["enemy_9"]
-    assert {"id": "enemy_9", "delta": -12} in hp_changes
-
-
-def test_diff_already_dead_combatant_removed_is_not_a_death():
-    # Was already at 0 in prev (death already reported), now removed — no dup.
-    prev = [_combatant("enemy_9", 0)]
-    curr = []
     hp_changes, killed, _ = cb.diff_combatants(prev, curr)
     assert killed == []
     assert hp_changes == []

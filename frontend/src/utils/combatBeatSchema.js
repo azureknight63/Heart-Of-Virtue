@@ -23,10 +23,18 @@ export const BEAT_FIELDS = [
   'outcome',
   'hp_changes',
   'killed',
+  'departed',
   'status_changes',
   'log_line',
   'sfx',
 ];
+
+/**
+ * Reasons a combatant leaves the battlefield. `death` is the only fatal one
+ * (drives the death animation + SFX via `killed`); the rest are alive-exits
+ * that drop the token without a death animation/sound.
+ */
+export const DEPARTURE_REASONS = ['death', 'fled', 'warped', 'removed'];
 
 /** Outcomes an `impact` SFX emission resolves against. */
 export const OUTCOMES = [

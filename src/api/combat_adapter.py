@@ -150,6 +150,9 @@ class ApiCombatAdapter:
         # Engine-driven beat streaming (issue #436). Created per combat by
         # _maybe_init_streamer when COMBAT_SOCKET_STREAMING is on; None otherwise.
         self._beat_streamer = None
+        # Per-move {stream_id: reason} for combatants removed from the roster, so
+        # streaming can tell a death from an alive-exit (flee/warp/scripted).
+        self._departures = {}
 
         # Initialize persistent state if missing
         if not hasattr(self.player, "combat_adapter_state"):
@@ -200,9 +203,28 @@ class ApiCombatAdapter:
                 f"combat_{self.session_id}",
                 initial_combatants=(initial_state or {}).get("combatants", []),
             )
+            self._departures = {}
         except Exception:
             logger.exception("failed to init combat beat streamer")
             self._beat_streamer = None
+
+    @staticmethod
+    def _combatant_stream_id(combatant):
+        """Stream id for a combatant, matching CombatantSerializer's scheme."""
+        from src.player import Player
+
+        if isinstance(combatant, Player):
+            return "player"
+        if getattr(combatant, "friend", False):
+            return f"ally_{id(combatant)}"
+        return f"enemy_{id(combatant)}"
+
+    def _record_departure(self, combatant, reason):
+        """Note why a combatant left the roster this move (issue #436)."""
+        try:
+            self._departures[self._combatant_stream_id(combatant)] = reason
+        except Exception:
+            logger.exception("failed to record combat departure")
 
     def _stream_combat_result(self, result, beat_states, ended=False):
         """Stream this move's beats + terminal event when streaming is on (#436).
@@ -211,13 +233,19 @@ class ApiCombatAdapter:
         streaming must not break combat resolution.
         """
         streamer = self._beat_streamer
+        # Consume-and-clear this move's departure reasons regardless of path.
+        departures = self._departures
+        self._departures = {}
         if streamer is None:
             return
         try:
             streamer.stream_beats(beat_states)
-            # Surface any death/change the per-snapshot stream missed (e.g. an
-            # enemy removed on death without an intervening beat_state).
-            streamer.reconcile_final((result or {}).get("combatants", []))
+            # Surface any exit/change the per-snapshot stream missed (e.g. an
+            # enemy removed on death without an intervening beat_state), using the
+            # recorded reason so an alive-exit is never rendered as a death.
+            streamer.reconcile_final(
+                (result or {}).get("combatants", []), departures
+            )
             end_state = (result or {}).get("end_state")
             if ended or end_state:
                 streamer.emit_ended(end_state or result)
@@ -1453,6 +1481,11 @@ class ApiCombatAdapter:
 
                     if enemy in self.player.combat_list:
                         self.player.combat_list.remove(enemy)
+
+                    # Record the departure reason so beat streaming animates a
+                    # death (not a silent/false exit) for combatants removed
+                    # without an intervening snapshot (issue #436).
+                    self._record_departure(enemy, "death")
 
                     # CleaveInstinct: mark that player killed an enemy (for next move's prep boost)
                     self.player._cleave_instinct_pending = True
