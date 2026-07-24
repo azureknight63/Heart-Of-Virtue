@@ -101,7 +101,8 @@
                         2,
                         6
                     ],
-                    "persist": true
+                    "persist": true,
+                    "passthrough": false
                 }
             }
         ]
@@ -245,7 +246,8 @@
                         2,
                         2
                     ],
-                    "persist": true
+                    "persist": true,
+                    "passthrough": false
                 }
             },
             {
@@ -296,7 +298,8 @@
                         3,
                         6
                     ],
-                    "persist": true
+                    "persist": true,
+                    "passthrough": false
                 }
             }
         ]
@@ -441,7 +444,703 @@
         ],
         "events": [],
         "items": [],
-        "npcs": [],
+        "npcs": [
+            {
+                "__class__": "Kaelen",
+                "__module__": "npc._merchants",
+                "props": {
+                    "name": "Kaelen",
+                    "description": "A broad-shouldered weaponsmith with a full, rugged beard singed pale in spots from forge sparks. He stands at the Iron & Oath counter, filing a pommel with the focused efficiency of a master craftsman.",
+                    "current_room": null,
+                    "inventory": [],
+                    "idle_message": " is examining the balance of a shortsword.",
+                    "alert_message": " looks up, hand resting on an anvil hammer.",
+                    "maxhp": 110,
+                    "maxhp_base": 110,
+                    "hp": 110,
+                    "damage": 2,
+                    "damage_base": 2,
+                    "protection": 4,
+                    "protection_base": 4,
+                    "speed": 10,
+                    "speed_base": 10,
+                    "finesse": 12,
+                    "finesse_base": 12,
+                    "resistance": {
+                        "fire": 1.0,
+                        "ice": 1.0,
+                        "shock": 1.0,
+                        "earth": 1.0,
+                        "light": 1.0,
+                        "dark": 1.0,
+                        "piercing": 1.0,
+                        "slashing": 1.0,
+                        "crushing": 1.0,
+                        "spiritual": 1.0,
+                        "pure": 1.0
+                    },
+                    "resistance_base": {
+                        "fire": 1.0,
+                        "ice": 1.0,
+                        "shock": 1.0,
+                        "earth": 1.0,
+                        "light": 1.0,
+                        "dark": 1.0,
+                        "piercing": 1.0,
+                        "slashing": 1.0,
+                        "crushing": 1.0,
+                        "spiritual": 1.0,
+                        "pure": 1.0
+                    },
+                    "status_resistance": {
+                        "generic": 1.0,
+                        "stun": 1.0,
+                        "poison": 1.0,
+                        "slimed": 1.0,
+                        "enflamed": 1.0,
+                        "sloth": 1.0,
+                        "apathy": 1.0,
+                        "blind": 1.0,
+                        "incoherence": 1.0,
+                        "mute": 1.0,
+                        "enraged": 1.0,
+                        "enchanted": 1.0,
+                        "ethereal": 1.0,
+                        "berserk": 1.0,
+                        "slow": 1.0,
+                        "sleep": 1.0,
+                        "confusion": 1.0,
+                        "cursed": 1.0,
+                        "stop": 1.0,
+                        "stone": 1.0,
+                        "frozen": 1.0,
+                        "doom": 1.0,
+                        "death": 1.0,
+                        "disoriented": 1.0
+                    },
+                    "status_resistance_base": {
+                        "generic": 1.0,
+                        "stun": 1.0,
+                        "poison": 1.0,
+                        "slimed": 1.0,
+                        "enflamed": 1.0,
+                        "sloth": 1.0,
+                        "apathy": 1.0,
+                        "blind": 1.0,
+                        "incoherence": 1.0,
+                        "mute": 1.0,
+                        "enraged": 1.0,
+                        "enchanted": 1.0,
+                        "ethereal": 1.0,
+                        "berserk": 1.0,
+                        "slow": 1.0,
+                        "sleep": 1.0,
+                        "confusion": 1.0,
+                        "cursed": 1.0,
+                        "stop": 1.0,
+                        "stone": 1.0,
+                        "frozen": 1.0,
+                        "doom": 1.0,
+                        "death": 1.0,
+                        "disoriented": 1.0
+                    },
+                    "awareness": 10,
+                    "aggro": false,
+                    "exp_award": 0,
+                    "exp_award_base": 0,
+                    "maxfatigue": 100,
+                    "maxfatigue_base": 100,
+                    "endurance": 10,
+                    "endurance_base": 10,
+                    "strength": 16,
+                    "strength_base": 16,
+                    "charisma": 14,
+                    "charisma_base": 14,
+                    "intelligence": 15,
+                    "intelligence_base": 15,
+                    "faith": 10,
+                    "faith_base": 10,
+                    "fatigue": 100,
+                    "target": null,
+                    "known_moves": [
+                        {
+                            "__class__": "NpcRest",
+                            "__module__": "src.moves._npc",
+                            "props": {
+                                "name": "Rest",
+                                "description": "Rest for a moment to restore fatigue.",
+                                "category": "Miscellaneous",
+                                "xp_gain": 0,
+                                "heat_gain": 0,
+                                "current_stage": 0,
+                                "stage_beat": [
+                                    0,
+                                    1,
+                                    2,
+                                    0
+                                ],
+                                "beats_left": 1,
+                                "stage_announce": [
+                                    "Kaelen rests for a moment.",
+                                    "\u001b[37mKaelen is resting.\u001b[0m",
+                                    "",
+                                    ""
+                                ],
+                                "fatigue_cost": 0,
+                                "target": "<circular_ref:Kaelen>",
+                                "user": "<circular_ref:Kaelen>",
+                                "targeted": false,
+                                "verbose_targeting": false,
+                                "interrupted": false,
+                                "initialized": false,
+                                "usercolor": "white",
+                                "targetcolor": "white",
+                                "mvrange": [
+                                    0,
+                                    9999
+                                ],
+                                "instant": false,
+                                "weight": 1,
+                                "passive": false,
+                                "fatigue_per_beat": 0
+                            }
+                        }
+                    ],
+                    "current_move": null,
+                    "states": [],
+                    "in_combat": false,
+                    "combat_proximity": {},
+                    "combat_position": null,
+                    "default_proximity": 20,
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": "a rugged weaponsmith at the Iron & Oath stall.",
+                    "friend": false,
+                    "can_yield": true,
+                    "combat_delay": 0,
+                    "combat_range": [
+                        0,
+                        5
+                    ],
+                    "loot": {
+                        "Gold": {
+                            "chance": 50,
+                            "qty": "r25-50"
+                        },
+                        "Restorative": {
+                            "chance": 25,
+                            "qty": 1
+                        },
+                        "Draught": {
+                            "chance": 25,
+                            "qty": 1
+                        },
+                        "Equipment_0_1": {
+                            "chance": 10,
+                            "qty": 1
+                        }
+                    },
+                    "keywords": [
+                        "buy",
+                        "sell",
+                        "trade",
+                        "talk",
+                        "chat"
+                    ],
+                    "pronouns": {
+                        "personal": "it",
+                        "possessive": "its",
+                        "reflexive": "itself",
+                        "intensive": "itself"
+                    },
+                    "player_ref": null,
+                    "ai_config": null,
+                    "specialties": [
+                        {
+                            "__class_type__": "src.items:Weapon"
+                        }
+                    ],
+                    "enchantment_rate": 0.0,
+                    "stock_count": 12,
+                    "always_stock": [
+                        {
+                            "__class__": "Shortsword",
+                            "__module__": "src.items",
+                            "props": {
+                                "damage": 25,
+                                "str_req": 5,
+                                "fin_req": 10,
+                                "str_mod": 0.75,
+                                "fin_mod": 1.25,
+                                "weight": 2,
+                                "isequipped": false,
+                                "maintype": "Weapon",
+                                "subtype": "Sword",
+                                "wpnrange": [
+                                    0,
+                                    4
+                                ],
+                                "name": "Shortsword",
+                                "description": "A double-edged shortsword. A reliable companion in any fight.",
+                                "value": 100,
+                                "type": "Weapon",
+                                "hidden": false,
+                                "hide_factor": 0,
+                                "merchandise": true,
+                                "discovery_message": "a kind of weapon.",
+                                "announce": "There's a Shortsword here.",
+                                "aliases": [],
+                                "action_aliases": [],
+                                "interactions": [
+                                    "drop",
+                                    "equip"
+                                ],
+                                "skills": null,
+                                "owner": null,
+                                "equip_states": [],
+                                "add_resistance": {},
+                                "add_status_resistance": {},
+                                "gives_exp": true,
+                                "twohand": false
+                            }
+                        },
+                        {
+                            "__class__": "Spear",
+                            "__module__": "src.items",
+                            "props": {
+                                "damage": 25,
+                                "str_req": 10,
+                                "fin_req": 1,
+                                "str_mod": 2,
+                                "fin_mod": 0.5,
+                                "weight": 3,
+                                "isequipped": false,
+                                "maintype": "Weapon",
+                                "subtype": "Spear",
+                                "wpnrange": [
+                                    3,
+                                    8
+                                ],
+                                "name": "Spear",
+                                "description": "A weapon of simple design and great effectiveness. \nHas a longer reach than most melee weapons but is not great at close range.",
+                                "value": 100,
+                                "type": "Weapon",
+                                "hidden": false,
+                                "hide_factor": 0,
+                                "merchandise": true,
+                                "discovery_message": "a kind of weapon.",
+                                "announce": "There's a Spear here.",
+                                "aliases": [],
+                                "action_aliases": [],
+                                "interactions": [
+                                    "drop",
+                                    "equip"
+                                ],
+                                "skills": null,
+                                "owner": null,
+                                "equip_states": [],
+                                "add_resistance": {},
+                                "add_status_resistance": {},
+                                "gives_exp": true,
+                                "twohand": false
+                            }
+                        },
+                        {
+                            "__class__": "Dagger",
+                            "__module__": "src.items",
+                            "props": {
+                                "damage": 12,
+                                "str_req": 1,
+                                "fin_req": 12,
+                                "str_mod": 0.25,
+                                "fin_mod": 3,
+                                "weight": 1,
+                                "isequipped": false,
+                                "maintype": "Weapon",
+                                "subtype": "Dagger",
+                                "wpnrange": [
+                                    0,
+                                    3
+                                ],
+                                "name": "Dagger",
+                                "description": "A rogue's best friend.",
+                                "value": 100,
+                                "type": "Weapon",
+                                "hidden": false,
+                                "hide_factor": 0,
+                                "merchandise": true,
+                                "discovery_message": "a kind of weapon.",
+                                "announce": "There's a Dagger here.",
+                                "aliases": [],
+                                "action_aliases": [],
+                                "interactions": [
+                                    "drop",
+                                    "equip"
+                                ],
+                                "skills": null,
+                                "owner": null,
+                                "equip_states": [],
+                                "add_resistance": {},
+                                "add_status_resistance": {},
+                                "gives_exp": true,
+                                "twohand": false
+                            }
+                        }
+                    ],
+                    "base_gold": 1200,
+                    "shop_conditions": {
+                        "value": [],
+                        "availability": [],
+                        "unique": []
+                    },
+                    "buy_modifier": 1.0,
+                    "sell_modifier": 0.5,
+                    "shop_name": "Iron & Oath",
+                    "loquacity_current": 0,
+                    "loquacity_max": 0,
+                    "loquacity_threshold": 0,
+                    "loquacity_recovery": 2
+                }
+            },
+            {
+                "__class__": "Vespera",
+                "__module__": "npc._merchants",
+                "props": {
+                    "name": "Vespera",
+                    "description": "A sharp, poised armorer with dark hair bound in a braid threaded with brass wire. Her dark leather harness holds awls and calipers, and a leather-bound merchant's ledger rests on the Iron & Oath counter beside her.",
+                    "current_room": null,
+                    "inventory": [],
+                    "idle_message": " is inspecting the strap alignment on a leather doublet.",
+                    "alert_message": " looks up, ledger in hand.",
+                    "maxhp": 95,
+                    "maxhp_base": 95,
+                    "hp": 95,
+                    "damage": 1,
+                    "damage_base": 1,
+                    "protection": 5,
+                    "protection_base": 5,
+                    "speed": 11,
+                    "speed_base": 11,
+                    "finesse": 14,
+                    "finesse_base": 14,
+                    "resistance": {
+                        "fire": 1.0,
+                        "ice": 1.0,
+                        "shock": 1.0,
+                        "earth": 1.0,
+                        "light": 1.0,
+                        "dark": 1.0,
+                        "piercing": 1.0,
+                        "slashing": 1.0,
+                        "crushing": 1.0,
+                        "spiritual": 1.0,
+                        "pure": 1.0
+                    },
+                    "resistance_base": {
+                        "fire": 1.0,
+                        "ice": 1.0,
+                        "shock": 1.0,
+                        "earth": 1.0,
+                        "light": 1.0,
+                        "dark": 1.0,
+                        "piercing": 1.0,
+                        "slashing": 1.0,
+                        "crushing": 1.0,
+                        "spiritual": 1.0,
+                        "pure": 1.0
+                    },
+                    "status_resistance": {
+                        "generic": 1.0,
+                        "stun": 1.0,
+                        "poison": 1.0,
+                        "slimed": 1.0,
+                        "enflamed": 1.0,
+                        "sloth": 1.0,
+                        "apathy": 1.0,
+                        "blind": 1.0,
+                        "incoherence": 1.0,
+                        "mute": 1.0,
+                        "enraged": 1.0,
+                        "enchanted": 1.0,
+                        "ethereal": 1.0,
+                        "berserk": 1.0,
+                        "slow": 1.0,
+                        "sleep": 1.0,
+                        "confusion": 1.0,
+                        "cursed": 1.0,
+                        "stop": 1.0,
+                        "stone": 1.0,
+                        "frozen": 1.0,
+                        "doom": 1.0,
+                        "death": 1.0,
+                        "disoriented": 1.0
+                    },
+                    "status_resistance_base": {
+                        "generic": 1.0,
+                        "stun": 1.0,
+                        "poison": 1.0,
+                        "slimed": 1.0,
+                        "enflamed": 1.0,
+                        "sloth": 1.0,
+                        "apathy": 1.0,
+                        "blind": 1.0,
+                        "incoherence": 1.0,
+                        "mute": 1.0,
+                        "enraged": 1.0,
+                        "enchanted": 1.0,
+                        "ethereal": 1.0,
+                        "berserk": 1.0,
+                        "slow": 1.0,
+                        "sleep": 1.0,
+                        "confusion": 1.0,
+                        "cursed": 1.0,
+                        "stop": 1.0,
+                        "stone": 1.0,
+                        "frozen": 1.0,
+                        "doom": 1.0,
+                        "death": 1.0,
+                        "disoriented": 1.0
+                    },
+                    "awareness": 10,
+                    "aggro": false,
+                    "exp_award": 0,
+                    "exp_award_base": 0,
+                    "maxfatigue": 100,
+                    "maxfatigue_base": 100,
+                    "endurance": 10,
+                    "endurance_base": 10,
+                    "strength": 10,
+                    "strength_base": 10,
+                    "charisma": 16,
+                    "charisma_base": 16,
+                    "intelligence": 16,
+                    "intelligence_base": 16,
+                    "faith": 10,
+                    "faith_base": 10,
+                    "fatigue": 100,
+                    "target": null,
+                    "known_moves": [
+                        {
+                            "__class__": "NpcRest",
+                            "__module__": "src.moves._npc",
+                            "props": {
+                                "name": "Rest",
+                                "description": "Rest for a moment to restore fatigue.",
+                                "category": "Miscellaneous",
+                                "xp_gain": 0,
+                                "heat_gain": 0,
+                                "current_stage": 0,
+                                "stage_beat": [
+                                    0,
+                                    1,
+                                    2,
+                                    0
+                                ],
+                                "beats_left": 1,
+                                "stage_announce": [
+                                    "Vespera rests for a moment.",
+                                    "\u001b[37mVespera is resting.\u001b[0m",
+                                    "",
+                                    ""
+                                ],
+                                "fatigue_cost": 0,
+                                "target": "<circular_ref:Vespera>",
+                                "user": "<circular_ref:Vespera>",
+                                "targeted": false,
+                                "verbose_targeting": false,
+                                "interrupted": false,
+                                "initialized": false,
+                                "usercolor": "white",
+                                "targetcolor": "white",
+                                "mvrange": [
+                                    0,
+                                    9999
+                                ],
+                                "instant": false,
+                                "weight": 1,
+                                "passive": false,
+                                "fatigue_per_beat": 0
+                            }
+                        }
+                    ],
+                    "current_move": null,
+                    "states": [],
+                    "in_combat": false,
+                    "combat_proximity": {},
+                    "combat_position": null,
+                    "default_proximity": 20,
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": "a sharp-eyed armorer at the Iron & Oath stall.",
+                    "friend": false,
+                    "can_yield": true,
+                    "combat_delay": 0,
+                    "combat_range": [
+                        0,
+                        5
+                    ],
+                    "loot": {
+                        "Gold": {
+                            "chance": 50,
+                            "qty": "r25-50"
+                        },
+                        "Restorative": {
+                            "chance": 25,
+                            "qty": 1
+                        },
+                        "Draught": {
+                            "chance": 25,
+                            "qty": 1
+                        },
+                        "Equipment_0_1": {
+                            "chance": 10,
+                            "qty": 1
+                        }
+                    },
+                    "keywords": [
+                        "buy",
+                        "sell",
+                        "trade",
+                        "talk",
+                        "chat"
+                    ],
+                    "pronouns": {
+                        "personal": "it",
+                        "possessive": "its",
+                        "reflexive": "itself",
+                        "intensive": "itself"
+                    },
+                    "player_ref": null,
+                    "ai_config": null,
+                    "specialties": [
+                        {
+                            "__class_type__": "src.items:Armor"
+                        }
+                    ],
+                    "enchantment_rate": 0.0,
+                    "stock_count": 12,
+                    "always_stock": [
+                        {
+                            "__class__": "PaddedJerkin",
+                            "__module__": "src.items",
+                            "props": {
+                                "protection": 2,
+                                "str_req": 1,
+                                "str_mod": 0.1,
+                                "weight": 1.0,
+                                "isequipped": false,
+                                "maintype": "Armor",
+                                "subtype": "Light Armor",
+                                "name": "Padded Jerkin",
+                                "description": "A jerkin sewn from layers of fabric and padding. Lightweight and inexpensive.",
+                                "value": 10,
+                                "type": "Armor",
+                                "hidden": false,
+                                "hide_factor": 0,
+                                "merchandise": true,
+                                "discovery_message": "a piece of armor.",
+                                "announce": "There's a Padded Jerkin here.",
+                                "aliases": [],
+                                "action_aliases": [],
+                                "interactions": [
+                                    "drop",
+                                    "equip"
+                                ],
+                                "skills": null,
+                                "owner": null,
+                                "equip_states": [],
+                                "add_resistance": {},
+                                "add_status_resistance": {},
+                                "gives_exp": false,
+                                "add_fin": 1
+                            }
+                        },
+                        {
+                            "__class__": "LeatherArmor",
+                            "__module__": "src.items",
+                            "props": {
+                                "protection": 4,
+                                "str_req": 4,
+                                "str_mod": 0.2,
+                                "weight": 2.5,
+                                "isequipped": false,
+                                "maintype": "Armor",
+                                "subtype": "Light Armor",
+                                "name": "Leather Armor",
+                                "description": "Thick leather treated to resist wear and improve protection.",
+                                "value": 50,
+                                "type": "Armor",
+                                "hidden": false,
+                                "hide_factor": 0,
+                                "merchandise": true,
+                                "discovery_message": "a piece of armor.",
+                                "announce": "There's a Leather Armor here.",
+                                "aliases": [],
+                                "action_aliases": [],
+                                "interactions": [
+                                    "drop",
+                                    "equip"
+                                ],
+                                "skills": null,
+                                "owner": null,
+                                "equip_states": [],
+                                "add_resistance": {},
+                                "add_status_resistance": {},
+                                "gives_exp": false,
+                                "add_fin": 1
+                            }
+                        },
+                        {
+                            "__class__": "StuddedLeather",
+                            "__module__": "src.items",
+                            "props": {
+                                "protection": 6,
+                                "str_req": 6,
+                                "str_mod": 0.3,
+                                "weight": 3.0,
+                                "isequipped": false,
+                                "maintype": "Armor",
+                                "subtype": "Medium Armor",
+                                "name": "Studded Leather",
+                                "description": "A leather cuirass reinforced with small metal studs. Popular with rangers and skirmishers.",
+                                "value": 120,
+                                "type": "Armor",
+                                "hidden": false,
+                                "hide_factor": 0,
+                                "merchandise": true,
+                                "discovery_message": "a piece of armor.",
+                                "announce": "There's a Studded Leather here.",
+                                "aliases": [],
+                                "action_aliases": [],
+                                "interactions": [
+                                    "drop",
+                                    "equip"
+                                ],
+                                "skills": null,
+                                "owner": null,
+                                "equip_states": [],
+                                "add_resistance": {},
+                                "add_status_resistance": {},
+                                "gives_exp": false
+                            }
+                        }
+                    ],
+                    "base_gold": 1200,
+                    "shop_conditions": {
+                        "value": [],
+                        "availability": [],
+                        "unique": []
+                    },
+                    "buy_modifier": 1.0,
+                    "sell_modifier": 0.5,
+                    "shop_name": "Iron & Oath",
+                    "loquacity_current": 0,
+                    "loquacity_max": 0,
+                    "loquacity_threshold": 0,
+                    "loquacity_recovery": 2
+                }
+            }
+        ],
         "objects": [],
         "block_exit": [],
         "symbol": ""
