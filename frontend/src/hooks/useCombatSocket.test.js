@@ -1,11 +1,4 @@
-import {
-  describe,
-  it,
-  expect,
-  vi,
-  beforeEach,
-  afterEach,
-} from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useCombatSocket } from './useCombatSocket';
 
@@ -24,14 +17,7 @@ function makeFakeSocket() {
   };
 }
 
-const beat = (seq) => ({
-  seq,
-  web_animation: 'attack', // 800ms hold in ANIMATION_CONFIGS
-  actor_id: 'player',
-  target_id: 'enemy_1',
-  outcome: 'hit',
-  sfx: [{ index: 0, kind: 'impact', outcome: 'hit' }],
-});
+const beat = (seq) => ({ seq, web_animation: 'attack', outcome: 'hit', sfx: [] });
 
 function setup(overrides = {}) {
   const socket = makeFakeSocket();
@@ -40,8 +26,7 @@ function setup(overrides = {}) {
     onResolved: vi.fn(),
     onEnded: vi.fn(),
     onSuggestions: vi.fn(),
-    playSfx: vi.fn(),
-    fetchStatus: vi.fn().mockResolvedValue({ combatants: [], resynced: true }),
+    fetchStatus: vi.fn().mockResolvedValue({ resynced: true }),
   };
   const hook = renderHook(() =>
     useCombatSocket({
@@ -56,11 +41,7 @@ function setup(overrides = {}) {
 }
 
 describe('useCombatSocket', () => {
-  beforeEach(() => vi.useFakeTimers());
-  afterEach(() => {
-    vi.runOnlyPendingTimers();
-    vi.useRealTimers();
-  });
+  afterEach(() => vi.restoreAllMocks());
 
   it('joins the combat room on connect', () => {
     const { socket } = setup();
@@ -70,83 +51,48 @@ describe('useCombatSocket', () => {
     });
   });
 
-  it('plays a beat and marks animating', () => {
-    const { socket, calls, hook } = setup();
+  it('forwards beats in order', () => {
+    const { socket, calls } = setup();
     act(() => socket.fire('combat:beat', beat(1)));
-    expect(calls.onBeat).toHaveBeenCalledWith(beat(1));
-    expect(hook.result.current.isAnimating).toBe(true);
+    act(() => socket.fire('combat:beat', beat(2)));
+    expect(calls.onBeat.mock.calls.map((c) => c[0].seq)).toEqual([1, 2]);
   });
 
-  it('defers resolved until the beat queue drains', () => {
-    const { socket, calls, hook } = setup();
+  it('applies resolved immediately (state is final-immediate)', () => {
+    const { socket, calls } = setup();
     act(() => socket.fire('combat:beat', beat(1)));
     act(() => socket.fire('combat:resolved', { seq: 2, awaiting_input: true }));
-
-    // Held while the beat animates.
-    expect(calls.onResolved).not.toHaveBeenCalled();
-
-    act(() => vi.advanceTimersByTime(800));
     expect(calls.onResolved).toHaveBeenCalledWith({
       seq: 2,
       awaiting_input: true,
     });
-    expect(hook.result.current.isAnimating).toBe(false);
-  });
-
-  it('applies resolved immediately when no beats are animating', () => {
-    const { socket, calls } = setup();
-    act(() => socket.fire('combat:resolved', { seq: 1, awaiting_input: true }));
-    expect(calls.onResolved).toHaveBeenCalledTimes(1);
-  });
-
-  it('fires the beat SFX', () => {
-    const { socket, calls } = setup();
-    act(() => socket.fire('combat:beat', beat(1)));
-    act(() => vi.advanceTimersByTime(0));
-    expect(calls.playSfx).toHaveBeenCalledWith('attack_hit');
   });
 
   it('ignores a duplicate seq', () => {
     const { socket, calls } = setup();
     act(() => socket.fire('combat:beat', beat(1)));
-    act(() => vi.advanceTimersByTime(800));
     calls.onBeat.mockClear();
-    act(() => socket.fire('combat:beat', beat(1))); // same seq
+    act(() => socket.fire('combat:beat', beat(1)));
     expect(calls.onBeat).not.toHaveBeenCalled();
   });
 
-  it('resyncs on a seq gap (dropping the backlog)', async () => {
+  it('resyncs on a seq gap', async () => {
     const { socket, calls } = setup();
     act(() => socket.fire('combat:beat', beat(1)));
     await act(async () => {
-      socket.fire('combat:beat', beat(5)); // gap: 5 > 1+1
+      socket.fire('combat:beat', beat(5));
       await Promise.resolve();
     });
     expect(calls.fetchStatus).toHaveBeenCalled();
-    expect(calls.onResolved).toHaveBeenCalledWith({
-      combatants: [],
-      resynced: true,
-    });
+    expect(calls.onResolved).toHaveBeenCalledWith({ resynced: true });
   });
 
-  it('flushes ended (victory/defeat) after drain', () => {
+  it('routes ended and suggestions', () => {
     const { socket, calls } = setup();
-    act(() => socket.fire('combat:beat', beat(1)));
-    act(() => socket.fire('combat:ended', { seq: 2, status: 'victory' }));
-    expect(calls.onEnded).not.toHaveBeenCalled();
-    act(() => vi.advanceTimersByTime(800));
-    expect(calls.onEnded).toHaveBeenCalledWith({ seq: 2, status: 'victory' });
-  });
-
-  it('routes suggestions', () => {
-    const { socket, calls } = setup();
-    act(() =>
-      socket.fire('combat:suggestions', { seq: 1, suggestions: [{ a: 1 }] })
-    );
-    expect(calls.onSuggestions).toHaveBeenCalledWith({
-      seq: 1,
-      suggestions: [{ a: 1 }],
-    });
+    act(() => socket.fire('combat:ended', { seq: 1, status: 'victory' }));
+    act(() => socket.fire('combat:suggestions', { seq: 2, suggestions: [] }));
+    expect(calls.onEnded).toHaveBeenCalledWith({ seq: 1, status: 'victory' });
+    expect(calls.onSuggestions).toHaveBeenCalledWith({ seq: 2, suggestions: [] });
   });
 
   it('disconnects on unmount', () => {
