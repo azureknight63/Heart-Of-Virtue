@@ -23,7 +23,7 @@ function anyEnemyOffScreen(state) {
   return false;
 }
 
-export default function Battlefield({ combat, currentLogIndex, displayedLogCount, hoveredTargetId, onAnimatingChange }) {
+export default function Battlefield({ combat, currentLogIndex, displayedLogCount, hoveredTargetId, onAnimatingChange, streaming = false, streamedAnimations = [], combatSpeed = 1 }) {
   const [selectedTab, setSelectedTab] = useState('overview')
   const [zoom, setZoom] = useState(1)
   // Transient banner shown once per "enemy goes off-screen" transition, auto-
@@ -181,6 +181,9 @@ export default function Battlefield({ combat, currentLogIndex, displayedLogCount
           hoveredTargetId={hoveredTargetId}
           mapSize={combat?.map_size}
           onAnimatingChange={onAnimatingChange}
+          streaming={streaming}
+          streamedAnimations={streamedAnimations}
+          combatSpeed={combatSpeed}
         />
 
         {selectedTab === 'overview' && showOffScreenBanner && (

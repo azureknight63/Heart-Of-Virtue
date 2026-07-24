@@ -2,7 +2,7 @@ import Battlefield from './Battlefield'
 import WorldMap from './WorldMap'
 import CollapsibleRoomDescription from './CollapsibleRoomDescription'
 
-export default function RightPanel({ mode, combat, location, onMoveToLocation, exploredTiles, currentLogIndex, displayedLogCount, hoveredTargetId, showDescription, onDescriptionInteract, onAnimatingChange }) {
+export default function RightPanel({ mode, combat, location, onMoveToLocation, exploredTiles, currentLogIndex, displayedLogCount, hoveredTargetId, showDescription, onDescriptionInteract, onAnimatingChange, streaming = false, streamedAnimations = [], combatSpeed = 1 }) {
   return (
     <div className="flex-1 flex flex-col bg-dark-panel border-2 border-orange rounded-lg overflow-hidden retro-glow">
       {/* Header */}
@@ -28,6 +28,9 @@ export default function RightPanel({ mode, combat, location, onMoveToLocation, e
             displayedLogCount={displayedLogCount}
             hoveredTargetId={hoveredTargetId}
             onAnimatingChange={onAnimatingChange}
+            streaming={streaming}
+            streamedAnimations={streamedAnimations}
+            combatSpeed={combatSpeed}
           />
         ) : (
           <WorldMap location={location} onMoveToLocation={onMoveToLocation} exploredTiles={exploredTiles} />

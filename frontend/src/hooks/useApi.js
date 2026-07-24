@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import apiEndpoints from '../api/endpoints'
 import { useAuthContext } from '../context/AuthContext'
+import { combatSocketEnabled } from '../utils/featureFlags'
 
 // Helper to transform combat data
 const transformCombatData = (data) => ({
@@ -144,6 +145,14 @@ export const useCombat = () => {
     }
   }, [])
 
+  // Apply a server combat-state payload (HTTP response or a socket
+  // combat:resolved/ended event — both are get_combat_state() output).
+  const applyCombatState = useCallback((data) => {
+    if (!data) return
+    setCombat(transformCombatData(data))
+    if (typeof data.combat_active === 'boolean') setInCombat(data.combat_active)
+  }, [])
+
   const performAction = useCallback(async (action, target) => {
     try {
       setLoading(true)
@@ -154,9 +163,12 @@ export const useCombat = () => {
       if (data.success === false) {
         return data
       }
-      const transformed = transformCombatData(data)
-      setCombat(transformed)
-      setInCombat(data.combat_active)
+      // When streaming (issue #436) the response is an ack: combat state (and its
+      // beats) arrive over the socket, so applying it here would double-drive the
+      // UI. Off by default — the HTTP path applies state as before.
+      if (!combatSocketEnabled()) {
+        applyCombatState(data)
+      }
       return data
     } catch (err) {
       console.error('Combat action error:', err)
@@ -164,9 +176,16 @@ export const useCombat = () => {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [applyCombatState])
 
-  return { combat, loading, inCombat, fetchCombatStatus, performAction }
+  return {
+    combat,
+    loading,
+    inCombat,
+    fetchCombatStatus,
+    performAction,
+    applyCombatState,
+  }
 }
 
 export const useWorld = () => {

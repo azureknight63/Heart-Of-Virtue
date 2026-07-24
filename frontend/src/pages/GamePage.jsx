@@ -2,6 +2,9 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { usePlayer, useWorld, useCombat, useExploration, useAutosave } from '../hooks/useApi'
 import { useEventManager } from '../hooks/useEventManager'
 import { useCombatCoordinator } from '../hooks/useCombatCoordinator'
+import { useCombatSocket } from '../hooks/useCombatSocket'
+import { combatSocketEnabled } from '../utils/featureFlags'
+import { beatToAnimations } from '../utils/combatStreamAdapter'
 import { useMobile } from '../hooks/useMobile'
 import { colors, spacing, fonts } from '../styles/theme'
 import { combat as combatApi } from '../api/endpoints'
@@ -25,10 +28,38 @@ export default function GamePage() {
   const { player, loading: playerLoading, refetch: refetchPlayer } = usePlayer()
   const { location, loading: worldLoading, moveToLocation, refetch: refetchWorld } = useWorld()
   const { exploredTiles, setExploredTiles, refetch: refetchExploration } = useExploration()
-  const { combat, inCombat, fetchCombatStatus, performAction } = useCombat()
+  const { combat, inCombat, fetchCombatStatus, performAction, applyCombatState } = useCombat()
   const { playBGM, playSFX, playSting } = useAudio()
   const { triggerTick } = useAutosave(player)
   const { error: showError } = useToast()
+
+  // Engine-driven combat streaming (issue #436). Off by default; when the
+  // VITE_COMBAT_SOCKET flag is on, per-beat animations arrive over the socket
+  // and drive BattlefieldGrid; combat:resolved/ended apply state (performAction
+  // becomes ack-only in useCombat).
+  const streaming = combatSocketEnabled()
+  const [streamedAnimations, setStreamedAnimations] = useState([])
+  const combatRef = useRef(combat)
+  combatRef.current = combat
+
+  useCombatSocket({
+    sessionId: localStorage.getItem('authToken'),
+    enabled: streaming && inCombat,
+    onBeat: (beat) =>
+      setStreamedAnimations((prev) => [
+        ...prev,
+        ...beatToAnimations(beat, combatRef.current),
+      ]),
+    onResolved: applyCombatState,
+    onEnded: applyCombatState,
+    fetchStatus: fetchCombatStatus,
+  })
+
+  // Reset the streamed-animation buffer when a combat ends so the next fight
+  // starts fresh.
+  useEffect(() => {
+    if (!inCombat) setStreamedAnimations([])
+  }, [inCombat])
 
   // Debug logging for combat data
   useEffect(() => {
@@ -611,6 +642,8 @@ export default function GamePage() {
           showDescription={isMobile}
           onDescriptionInteract={isMobile ? () => setActiveMobileTab('character') : undefined}
           onAnimatingChange={setIsBattlefieldAnimating}
+          streaming={streaming}
+          streamedAnimations={streamedAnimations}
         />
       </div>
 
