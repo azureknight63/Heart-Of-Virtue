@@ -235,3 +235,30 @@ def test_diff_reinforcement_has_no_baseline():
     hp_changes, killed, _ = cb.diff_combatants(prev, curr)
     assert hp_changes == []
     assert killed == []
+
+
+def test_diff_living_combatant_removed_is_a_death():
+    # Alive in prev, gone from curr (died and removed from combat_list).
+    prev = [_combatant("enemy_9", 12), _combatant("player", 40)]
+    curr = [_combatant("player", 40)]
+    hp_changes, killed, _ = cb.diff_combatants(prev, curr)
+    assert killed == ["enemy_9"]
+    assert {"id": "enemy_9", "delta": -12} in hp_changes
+
+
+def test_diff_already_dead_combatant_removed_is_not_a_death():
+    # Was already at 0 in prev (death already reported), now removed — no dup.
+    prev = [_combatant("enemy_9", 0)]
+    curr = []
+    hp_changes, killed, _ = cb.diff_combatants(prev, curr)
+    assert killed == []
+    assert hp_changes == []
+
+
+def test_diff_transient_dip_ending_alive_is_not_a_death():
+    # Snapshot diff only sees net start->end; ending above 0 is not a kill.
+    prev = [_combatant("enemy_9", 30)]
+    curr = [_combatant("enemy_9", 5)]
+    hp_changes, killed, _ = cb.diff_combatants(prev, curr)
+    assert killed == []
+    assert hp_changes == [{"id": "enemy_9", "delta": -25}]

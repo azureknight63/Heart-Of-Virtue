@@ -215,6 +215,9 @@ class ApiCombatAdapter:
             return
         try:
             streamer.stream_beats(beat_states)
+            # Surface any death/change the per-snapshot stream missed (e.g. an
+            # enemy removed on death without an intervening beat_state).
+            streamer.reconcile_final((result or {}).get("combatants", []))
             end_state = (result or {}).get("end_state")
             if ended or end_state:
                 streamer.emit_ended(end_state or result)

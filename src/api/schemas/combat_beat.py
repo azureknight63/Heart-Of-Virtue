@@ -148,6 +148,7 @@ def diff_combatants(prev_combatants, curr_combatants):
     have no baseline and are skipped for HP/kill diffing.
     """
     prev_by_id = {c.get("id"): c for c in (prev_combatants or [])}
+    curr_ids = {c.get("id") for c in (curr_combatants or [])}
     hp_changes = []
     killed = []
     status_changes = []
@@ -170,6 +171,17 @@ def diff_combatants(prev_combatants, curr_combatants):
             name = effect.get("name")
             if name not in prev_statuses:
                 status_changes.append({"id": cid, "status": name})
+
+    # A combatant alive in prev but ABSENT from curr died and was removed from
+    # combat_list (combat_adapter removes on death). Its death would otherwise be
+    # dropped since the loop above only visits combatants present in curr.
+    for cid, prev in prev_by_id.items():
+        if cid in curr_ids:
+            continue
+        prev_hp = prev.get("hp", 0)
+        if prev_hp > 0:
+            hp_changes.append({"id": cid, "delta": -prev_hp})
+            killed.append(cid)
 
     return hp_changes, killed, status_changes
 

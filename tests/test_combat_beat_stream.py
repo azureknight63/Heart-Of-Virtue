@@ -173,6 +173,49 @@ def test_emit_ended():
     assert payload["status"] == "victory"
 
 
+def test_reconcile_final_emits_death_beat_for_removed_enemy():
+    sock = FakeSocketIO()
+    # Last streamed snapshot had the enemy alive; it then died on its own turn
+    # (poison) and was removed, so it's absent from the authoritative final state.
+    streamer = CombatBeatStreamer(
+        sock,
+        "r",
+        initial_combatants=[_combatant("enemy_9", 6), _combatant("player", 40)],
+    )
+    streamer.reconcile_final([_combatant("player", 40)])
+
+    assert len(sock.emits) == 1
+    event, beat, _ = sock.emits[0]
+    assert event == BEAT_EVENT
+    assert beat["killed"] == ["enemy_9"]
+    assert beat["web_animation"] == "death"
+    assert "death" in [e["kind"] for e in beat["sfx"]]
+
+
+def test_reconcile_final_is_noop_when_nothing_outstanding():
+    sock = FakeSocketIO()
+    streamer = CombatBeatStreamer(
+        sock, "r", initial_combatants=[_combatant("enemy_9", 20)]
+    )
+    streamer.reconcile_final([_combatant("enemy_9", 20)])
+    assert sock.emits == []
+
+
+def test_reconcile_final_no_double_death_when_already_streamed():
+    sock = FakeSocketIO()
+    streamer = CombatBeatStreamer(
+        sock, "r", initial_combatants=[_combatant("enemy_9", 5)]
+    )
+    # The killing beat already reported the death (enemy shown at hp 0)...
+    streamer.stream_beats(
+        [_snapshot([_combatant("enemy_9", 0)], animation=_anim("player", "enemy_9"))]
+    )
+    sock.emits.clear()
+    # ...and the final state has it removed; reconcile must not re-report it.
+    streamer.reconcile_final([])
+    assert sock.emits == []
+
+
 def test_emit_never_raises_on_socket_failure():
     class Boom:
         def emit(self, *a, **k):

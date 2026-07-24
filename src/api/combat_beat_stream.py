@@ -113,6 +113,36 @@ class CombatBeatStreamer:
             self._emit(BEAT_EVENT, beat)
             self._last = curr
 
+    def reconcile_final(self, final_combatants):
+        """Emit a closing beat for deaths/changes not captured by a snapshot.
+
+        Some deaths (e.g. an enemy dying to poison/recoil on its own turn) remove
+        the combatant from combat_list without an intervening beat_state, so the
+        per-snapshot stream never sees them. Diffing the last streamed snapshot
+        against the authoritative final state surfaces those so they still
+        animate + sound. A no-op when nothing is outstanding.
+        """
+        hp_changes, killed, status_changes = diff_combatants(
+            self._last, final_combatants
+        )
+        if not (hp_changes or killed or status_changes):
+            self._last = list(final_combatants or [])
+            return
+        beat = build_beat(
+            seq=self._next_seq(),
+            actor_id=None,
+            target_id=killed[0] if killed else None,
+            web_animation="death" if killed else "pulse",
+            outcome="hit" if killed else "miss",
+            hp_changes=hp_changes,
+            killed=killed,
+            status_changes=status_changes,
+            log_line="",
+            has_swing=False,
+        )
+        self._emit(BEAT_EVENT, beat)
+        self._last = list(final_combatants or [])
+
     def emit_resolved(self, state):
         """Emit the terminal authoritative state (beats already streamed)."""
         payload = {"seq": self._next_seq()}
