@@ -7,7 +7,7 @@
 > - **No UI surface.** Per user decision, ally growth is surfaced through the
 >   LLM ally chat instead of exp bars/level badges: progressing allies get a
 >   `COMBAT SELF-KNOWLEDGE` block in their chat system prompt
->   (`HumanNPCLLMMixin._build_combat_knowledge_block`) so the player can ask
+>   (`ConversationalNPCMixin._build_combat_knowledge_block`) so the player can ask
 >   them about their techniques in character. Combat-log lines
 >   ("Gorran reached level 5!", "Gorran has learned X!") still appear.
 > - **KO policy confirmed:** KO'd allies keep their full exp share.
