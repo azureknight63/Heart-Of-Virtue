@@ -14,7 +14,7 @@ import src.genericng as genericng  # type: ignore
 import src.moves as moves  # type: ignore
 from src.narration import colored, narrate  # type: ignore
 from ._base import Friend
-from ._chat_llm import HumanNPCLLMMixin
+from ._chat_llm import ConversationalNPCMixin
 from ._llm import MynxLLMMixin
 
 _HUMAN_NPC_DIR = Path(__file__).resolve().parent.parent.parent / "ai" / "npc" / "human"
@@ -629,7 +629,7 @@ class GronditeConclaveElder(Friend):
             narrate(random.choice(lines))
 
 
-class Mara(HumanNPCLLMMixin, Friend):
+class Mara(ConversationalNPCMixin, Friend):
     """Scavenger, ferry operator, and guide. First human Jean encounters outside any
     institutional context. Sardonic, watchful, practical. Skilled in precision combat,
     positioning, and tactical awareness. Fights with the same observant efficiency as
@@ -683,7 +683,7 @@ class Mara(HumanNPCLLMMixin, Friend):
             alert_message=" straightens, hand moving to her weapon.",
             discovery_message="a scavenger woman by the campfire.",
         )
-        self.keywords = ["talk", "trade"]
+        self.keywords = ["talk"]
         self.pronouns = {
             "personal": "she",
             "possessive": "her",
@@ -720,17 +720,27 @@ class Mara(HumanNPCLLMMixin, Friend):
         ]
         return random.choice(msgs)
 
+    _TALK_LINES = [
+        "Mara glances up from what she's doing. Her gaze finds Jean briefly, takes in what "
+        "it needs to, and returns to her work.",
+        "Mara nods once. She doesn't elaborate.",
+        "Mara says, 'The river's crossable this time of year. Careful of the current at "
+        "the bend.'",
+        "Mara's eyes narrow slightly as she studies Jean. Then she returns to her sorting.",
+        "Mara says, without looking up, 'Fewer people come through heading west than you'd "
+        "think. Most of them turn back at the water.'",
+        "Mara glances at Jean's hands. Then at his pack. Then she returns to what she was doing. "
+        "She doesn't offer what she was looking for.",
+        "Mara says, 'The camp doesn't have a healer. Devet knows some basics. Don't get hurt.'",
+        "She's moving supplies from one bag to another with the efficiency of someone who "
+        "has done this so many times she no longer has to think about it. She doesn't look up.",
+        "Mara says, 'East road\'s passable. If that changes, I\'ll know before you do.'",
+        "Mara looks at Jean once. Something is calculated, briefly, and filed. She returns to work.",
+    ]
+
     def talk(self, player):
         """Mara's dialogue is sparse, practical, observant."""
-        lines = [
-            "Mara glances up from what she's doing. Her gaze finds Jean briefly, takes in what "
-            "it needs to, and returns to her work.",
-            "Mara nods once. She doesn't elaborate.",
-            "Mara says, 'The river's crossable this time of year. Careful of the current at "
-            "the bend.'",
-            "Mara's eyes narrow slightly as she studies Jean. Then she returns to her sorting.",
-        ]
-        narrate(random.choice(lines))
+        narrate(random.choice(self._TALK_LINES))
 
     def _get_optimal_range_to_target(self):
         """Determine what range Mara should maintain based on nearest enemy (not allies)."""
@@ -879,7 +889,7 @@ class Mara(HumanNPCLLMMixin, Friend):
             return
 
 
-class Devet(HumanNPCLLMMixin, Friend):
+class Devet(ConversationalNPCMixin, Friend):
     """Camp cook, older, unhurried. Quietly observant. Offers food and healing.
     Uncle or relation of Mara — exact nature left ambiguous.
     """
@@ -920,21 +930,34 @@ class Devet(HumanNPCLLMMixin, Friend):
         self._chat_config_path = str(_HUMAN_NPC_DIR / "devet.json")
         self._init_chat_attrs()
 
+    _TALK_LINES = [
+        "Devet hands Jean a bowl of warm food without asking if he's hungry. It's clear "
+        "this is not a question.",
+        "Devet studies Jean for a long moment. Then he says, 'Jean's come from the city.' "
+        "It's not a question.",
+        "Devet says quietly, 'The west's not kind.'",
+        "Devet tends the fire. When he speaks, his voice is low. 'Rest here. "
+        "Crossing\'s better at dawn.'",
+        "Devet ladles something into a cup and sets it near Jean without comment. Steam "
+        "rises from it. He returns to the fire.",
+        "Devet says, 'River\'s been steady. Good time to cross, if that\'s where you\'re "
+        "going.' He does not ask if that is where Jean is going.",
+        "Devet stirs the pot once and tastes from the spoon. He adds something from a "
+        "small pouch. He does not name the ingredient.",
+        "Devet says, 'Food\'s not much. But it\'s warm and it\'s here.' He seems to "
+        "regard this as sufficient.",
+        "Devet watches the fire for a moment. Then: 'You\'re welcome at the camp as long "
+        "as you need.' He means it the way practical people mean things: without ceremony.",
+        "Devet glances at Jean\'s pack. Then at the fire. 'Long road,' he says. Not a "
+        "question. A recognition.",
+    ]
+
     def talk(self, player):
         """Terminal fallback — static dialogue. Web uses chat_open/chat_respond via the API."""
-        lines = [
-            "Devet hands Jean a bowl of warm food without asking if he's hungry. It's clear "
-            "this is not a question.",
-            "Devet studies Jean for a long moment. Then he says, 'Jean's come from the city.' "
-            "It's not a question.",
-            "Devet says quietly, 'The west's not kind.'",
-            "Devet tends the fire. When he speaks, his voice is low. 'Rest here. "
-            "Crossing\\'s better at dawn.'",
-        ]
-        narrate(random.choice(lines))
+        narrate(random.choice(self._TALK_LINES))
 
 
-class Liss(HumanNPCLLMMixin, Friend):
+class Liss(ConversationalNPCMixin, Friend):
     """Young, openly curious, observant. Part of Mara's nomad group. At the camp's edge,
     watching the river and the world beyond.
     """
@@ -975,22 +998,30 @@ class Liss(HumanNPCLLMMixin, Friend):
         self._chat_config_path = str(_HUMAN_NPC_DIR / "liss.json")
         self._init_chat_attrs()
 
+    _TALK_LINES = [
+        "Liss says, 'Where's Jean headed?' She doesn't wait for an answer before asking "
+        "another question. 'What's beyond the Badlands? Does anyone actually know?'",
+        "Liss watches Jean with open curiosity. 'Mara said he was going west. Most people "
+        "don't go west unless they have nowhere else to go.'",
+        "Liss says, 'I've never seen a Golemite up close before. The one with Jean — he's "
+        "different, isn't he?' She doesn't elaborate on what 'different' means.",
+        "Liss looks at Jean directly. 'Jean looks like he's carrying something. Not in his "
+        "pack. In his — ' She makes a vague gesture, 'everything, I guess.'",
+        "Liss says, 'Does the Golemite sleep? He never looked like he was sleeping. "
+        "But does he?'",
+        "Liss says, 'What does stone eat? I asked Devet and he said I was being strange "
+        "but I think it's a real question.'",
+        "Liss says, 'If Jean hit the Golemite — not that Jean should — would he feel it? "
+        "Or is it like hitting a rock? Is he like a rock? He doesn't seem like a rock.'",
+        "Liss says, 'Does the Badlands have animals? Devet said he didn't know. Mara "
+        "said probably. But she said it in the way she says things when she actually doesn't "
+        "want to talk about it.'",
+        "Liss tilts her head at Jean. 'What did Jean do? Before. Mara says it's not her business "
+        "to ask, but she asked me not to ask, which means she's wondering too.'",
+        "Liss says, 'Is the Golemite Jean's? Like, does he belong to Jean, or does Jean "
+        "belong to him, or — ' She pauses. 'I don't think those are the right words for it.'",
+    ]
+
     def talk(self, player):
         """Terminal fallback — static dialogue. Web uses chat_open/chat_respond via the API."""
-        lines = [
-            "Liss says, 'Where's Jean headed?' She doesn't wait for an answer before asking "
-            "another question. 'What's beyond the Badlands? Does anyone actually know?'",
-            "Liss watches Jean with open curiosity. 'Mara said he was going west. Most people "
-            "don't go west unless they have nowhere else to go.'",
-            "Liss says, 'I've never seen a Golemite up close before. The one with Jean — he's "
-            "different, isn't he?' She doesn't elaborate on what 'different' means.",
-            "Liss looks at Jean directly. 'Jean looks like he's carrying something. Not in his "
-            "pack. In his — ' She makes a vague gesture, 'everything, I guess.'",
-            "Liss says, 'Does the Golemite sleep? He never looked like he was sleeping. "
-            "But does he?'",
-            "Liss says, 'What does stone eat? I asked Devet and he said I was being strange "
-            "but I think it's a real question.'",
-            "Liss says, 'If Jean hit the Golemite — not that Jean should — would he feel it? "
-            "Or is it like hitting a rock? Is he like a rock? He doesn\\'t seem like a rock.'",
-        ]
-        narrate(random.choice(lines))
+        narrate(random.choice(self._TALK_LINES))

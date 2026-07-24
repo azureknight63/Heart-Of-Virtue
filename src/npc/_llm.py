@@ -94,7 +94,7 @@ class MynxLLMMixin:
     # ── LLM adapter (lazy-loaded via importlib) ────────────────────────────────
 
     # Sentinel distinguishing "known unavailable" from "not yet attempted".
-    # Mirrors HumanNPCLLMMixin._ADAPTER_FAILED in _chat_llm.py: once we've
+    # Mirrors ConversationalNPCMixin._ADAPTER_FAILED in _chat_llm.py: once we've
     # determined the adapter is disabled/unreachable/unavailable, stick with
     # that outcome for the lifetime of this instance instead of re-running the
     # module reload + live availability probe (up to several network round

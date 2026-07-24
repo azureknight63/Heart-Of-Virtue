@@ -6,7 +6,8 @@ the buy/sell/trade verbs.  MiloCurioDealer and JamboHealsU are concrete
 merchant subclasses with their own inventories and shop personalities.
 """
 
-import random
+from pathlib import Path
+
 import src.functions as functions  # type: ignore
 from src.items import (  # type: ignore
     Item,
@@ -18,11 +19,20 @@ from src.items import (  # type: ignore
     Rock,
     Spear,
     Consumable,
+    Dagger,
+    Weapon,
+    Armor,
+    PaddedJerkin,
+    LeatherArmor,
+    StuddedLeather,
 )
 
 from ._base import NPC
 from ._shop import MerchantShopMixin
+from ._chat_llm import ConversationalNPCMixin
 from src.narration import narrate
+
+_HUMAN_NPC_DIR = Path(__file__).resolve().parent.parent.parent / "ai" / "npc" / "human"
 
 
 class Merchant(NPC, MerchantShopMixin):
@@ -258,3 +268,119 @@ class JamboHealsU(Merchant):
     def trade(self, player):
         # Collect any merchandise Jean brought in so it appears in the Buy list.
         self._collect_player_merchandise(player)
+
+
+class Kaelen(ConversationalNPCMixin, Merchant):
+    """Weaponsmith and co-proprietor of Iron & Oath arms & armor stall.
+    Passionate about metallurgy and weapon balance, deeply loyal to Vespera.
+    """
+
+    def __init__(self):
+        always_stock = [
+            Shortsword(merchandise=True),
+            Spear(merchandise=True),
+            Dagger(merchandise=True),
+        ]
+        specialties = [Weapon]
+        inventory = []
+        super().__init__(
+            name="Kaelen",
+            description=(
+                "A broad-shouldered weaponsmith with a full, rugged beard singed pale in spots "
+                "from forge sparks. He stands at the Iron & Oath counter, filing a pommel with "
+                "the focused efficiency of a master craftsman."
+            ),
+            damage=2,
+            aggro=False,
+            exp_award=0,
+            stock_count=12,
+            inventory=inventory,
+            specialties=specialties,
+            enchantment_rate=0.0,
+            always_stock=always_stock,
+            base_gold=1200,
+            maxhp=110,
+            protection=4,
+            speed=10,
+            finesse=12,
+            charisma=14,
+            intelligence=15,
+            strength=16,
+            idle_message=" is examining the balance of a shortsword.",
+            alert_message=" looks up, hand resting on an anvil hammer.",
+            discovery_message="a rugged weaponsmith at the Iron & Oath stall.",
+        )
+        self.shop_name = "Iron & Oath"
+        self._chat_config_path = str(_HUMAN_NPC_DIR / "kaelen.json")
+        self._init_chat_attrs()
+
+    def talk(self, player):
+        lines = [
+            "Kaelen holds up a blade to the light, checking the edge. 'Feel the balance where the guard "
+            "meets the tang, Jean. That's three hours of hammer work right there.'",
+            "Kaelen nods toward Vespera with a quiet grin. 'Listen to her on the armor fittings. "
+            "I make the steel hold an edge, but Vespera makes sure you live to swing it.'",
+            "Kaelen turns a spear in his hands. 'The road west is hard on iron. If you need a nick "
+            "filed out before crossing, set it on the block.'",
+            "Kaelen's eyes track to Gorran's stone shoulder. 'That's natural granite weave... "
+            "Fascinating structure. You couldn't forge plates like that if you had a bellows the size of a barn.'",
+        ]
+        narrate(random.choice(lines))
+
+
+class Vespera(ConversationalNPCMixin, Merchant):
+    """Armor specialist and commercial co-proprietor of Iron & Oath.
+    Sharp, commercial, protective of travelers, deeply loyal to Kaelen.
+    """
+
+    def __init__(self):
+        always_stock = [
+            PaddedJerkin(merchandise=True),
+            LeatherArmor(merchandise=True),
+            StuddedLeather(merchandise=True),
+        ]
+        specialties = [Armor]
+        inventory = []
+        super().__init__(
+            name="Vespera",
+            description=(
+                "A sharp, poised armorer with dark hair bound in a braid threaded with brass wire. "
+                "Her dark leather harness holds awls and calipers, and a leather-bound merchant's "
+                "ledger rests on the Iron & Oath counter beside her."
+            ),
+            damage=1,
+            aggro=False,
+            exp_award=0,
+            stock_count=12,
+            inventory=inventory,
+            specialties=specialties,
+            enchantment_rate=0.0,
+            always_stock=always_stock,
+            base_gold=1200,
+            maxhp=95,
+            protection=5,
+            speed=11,
+            finesse=14,
+            charisma=16,
+            intelligence=16,
+            idle_message=" is inspecting the strap alignment on a leather doublet.",
+            alert_message=" looks up, ledger in hand.",
+            discovery_message="a sharp-eyed armorer at the Iron & Oath stall.",
+        )
+        self.shop_name = "Iron & Oath"
+        self._chat_config_path = str(_HUMAN_NPC_DIR / "vespera.json")
+        self._init_chat_attrs()
+
+    def talk(self, player):
+        lines = [
+            "Vespera runs a finger along the seam of a doublet. 'A good sword gets all the glory, Jean, "
+            "but two inches of boiled leather over the ribs keeps your heart inside where it belongs.'",
+            "Vespera glances at Kaelen with a fond, quiet smile. 'Don't mind his lecture on coal temperature. "
+            "He forged the steel, but I set the price and guarantee the fit.'",
+            "Vespera says, 'Take your time looking through the racks. We buy fair, we sell honest, and we "
+            "don't sell garbage to people heading into the Badlands.'",
+            "Vespera checks a strap buckle. 'The river damp gets into iron faster than you think. Keep your "
+            "harness oiled before crossing.'",
+        ]
+        narrate(random.choice(lines))
+

@@ -1,7 +1,7 @@
 """
-HumanNPCLLMMixin — LLM-driven conversational dialogue mixin for human nomad NPCs.
+ConversationalNPCMixin — LLM-driven conversational dialogue mixin for speaking NPCs.
 
-Mixed into NPC classes (e.g. class Mara(HumanNPCLLMMixin, Friend)).
+Mixed into NPC classes (e.g. class Mara(ConversationalNPCMixin, Friend)).
 Provides multi-turn conversational dialogue with dialogue history persistence,
 loquacity draining, QC pipeline (slang/anachronism filtering, proper noun validation),
 and graceful fallback to deterministic dialogue pools when LLM is unavailable.
@@ -130,8 +130,8 @@ _GENERIC_FALLBACKS = [
 ]
 
 
-class HumanNPCLLMMixin:
-    """LLM-driven conversational dialogue mixin for human nomad NPCs."""
+class ConversationalNPCMixin:
+    """LLM-driven conversational dialogue mixin for speaking NPCs."""
 
     # Class-level caches: files are read once per process, not once per NPC instance.
     _world_facts_cache: Optional[Dict[str, Any]] = None
@@ -145,31 +145,31 @@ class HumanNPCLLMMixin:
         # Load character config if path provided (class-level cache)
         self._chat_char_config: Optional[Dict[str, Any]] = None
         if self._chat_config_path:
-            if self._chat_config_path not in HumanNPCLLMMixin._char_config_cache:
+            if self._chat_config_path not in ConversationalNPCMixin._char_config_cache:
                 try:
                     with open(self._chat_config_path, "r", encoding="utf-8") as f:
-                        HumanNPCLLMMixin._char_config_cache[self._chat_config_path] = (
+                        ConversationalNPCMixin._char_config_cache[self._chat_config_path] = (
                             json.load(f)
                         )
                 except Exception as e:
                     logger.debug(
                         f"Could not load chat config from {self._chat_config_path}: {e}"
                     )
-                    HumanNPCLLMMixin._char_config_cache[self._chat_config_path] = None
-            self._chat_char_config = HumanNPCLLMMixin._char_config_cache[
+                    ConversationalNPCMixin._char_config_cache[self._chat_config_path] = None
+            self._chat_char_config = ConversationalNPCMixin._char_config_cache[
                 self._chat_config_path
             ]
 
         # Load world facts (class-level cache)
-        if HumanNPCLLMMixin._world_facts_cache is None:
+        if ConversationalNPCMixin._world_facts_cache is None:
             try:
                 with open(_WORLD_FACTS_PATH, "r", encoding="utf-8") as f:
-                    HumanNPCLLMMixin._world_facts_cache = json.load(f)
+                    ConversationalNPCMixin._world_facts_cache = json.load(f)
             except Exception as e:
                 logger.debug(f"Could not load world facts: {e}")
-                HumanNPCLLMMixin._world_facts_cache = {}
+                ConversationalNPCMixin._world_facts_cache = {}
         self._chat_world_facts: Optional[Dict[str, Any]] = (
-            HumanNPCLLMMixin._world_facts_cache
+            ConversationalNPCMixin._world_facts_cache
         )
 
         # For generic nomads: generated on first talk
@@ -231,7 +231,7 @@ class HumanNPCLLMMixin:
             else:
                 self._chat_adapter = self._ADAPTER_FAILED
         except Exception as e:
-            logger.debug(f"HumanNPCLLMMixin: could not load adapter: {e}")
+            logger.debug(f"ConversationalNPCMixin: could not load adapter: {e}")
             self._chat_adapter = self._ADAPTER_FAILED
 
         return (
@@ -818,7 +818,7 @@ class HumanNPCLLMMixin:
                 "reputation": getattr(player, "reputation", {}).get(self.name, 0),
             }
         except Exception as e:
-            logger.error(f"HumanNPCLLMMixin.chat_open error: {e}")
+            logger.error(f"ConversationalNPCMixin.chat_open error: {e}")
             return {"success": False, "error": str(e)}
 
     def chat_respond(self, player, jean_text: str, jean_tone: str) -> Dict[str, Any]:
@@ -928,7 +928,7 @@ class HumanNPCLLMMixin:
                 "reputation_delta": reputation_delta,
             }
         except Exception as e:
-            logger.error(f"HumanNPCLLMMixin.chat_respond error: {e}")
+            logger.error(f"ConversationalNPCMixin.chat_respond error: {e}")
             return {"success": False, "error": str(e)}
 
     def loquacity_tick(self):
@@ -990,3 +990,4 @@ class HumanNPCLLMMixin:
         pool = _JEAN_FALLBACK_POOL[self._chat_fallback_idx % len(_JEAN_FALLBACK_POOL)]
         self._chat_fallback_idx += 1
         return pool
+

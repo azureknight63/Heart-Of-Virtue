@@ -12,7 +12,7 @@ import random
 
 import src.moves as moves  # type: ignore
 from ._base import Friend
-from ._chat_llm import HumanNPCLLMMixin
+from ._chat_llm import ConversationalNPCMixin
 from src.narration import narrate
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -20,7 +20,7 @@ from src.narration import narrate
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-class NomadCamper(HumanNPCLLMMixin, Friend):
+class NomadCamper(ConversationalNPCMixin, Friend):
     """A generic nomad resting at the east-bank camp between routes.
 
     Not a fighter, not a guide — someone between places, occupying the camp
@@ -47,6 +47,17 @@ class NomadCamper(HumanNPCLLMMixin, Friend):
         "'Feels like more people west-bound this year than last,' he says, folding "
         "something carefully. 'Could just be the season.' He seems prepared to leave "
         "it at that.",
+        "The camper is quiet for a while. Then: 'You get used to the sound of the river. "
+        "After a few nights you stop hearing it. Then when you leave, you notice it\'s gone.'",
+        "He sets his pack upright and leans it against a stone with the care of someone "
+        "who has done this in many different places. He doesn't explain why he\'s here or "
+        "where he\'s headed. He doesn\'t seem to think it requires explanation.",
+        "'Crossing\'s not bad this time of year,' he says, not looking up. 'Ask the "
+        "woman by the water before you go. She knows the timing.'",
+        "He feeds the fire a piece of wood without ceremony. 'You\'re not from the "
+        "settlements.' Not an accusation. A quiet observation filed and set aside.",
+        "The camper ties off a knot on his mending and bites the end. He studies the "
+        "work briefly, then returns to his pack. He has nothing to add.",
     ]
 
     def __init__(self):
@@ -89,7 +100,7 @@ class NomadCamper(HumanNPCLLMMixin, Friend):
         narrate(random.choice(self._TALK_LINES))
 
 
-class NomadScout(HumanNPCLLMMixin, Friend):
+class NomadScout(ConversationalNPCMixin, Friend):
     """A nomad who watches the eastern approaches and knows the terrain.
 
     Economical with words. Has practical knowledge of the paths between the
@@ -112,6 +123,19 @@ class NomadScout(HumanNPCLLMMixin, Friend):
         "edge.' He says this to everyone heading west.",
         "'Don't know what's past the Badlands.' He is watching the far bank. "
         "'Nobody does who's come back.' Not dramatic. Accurate.",
+        "He shifts his weight slightly and rescans the approach road. 'Nothing out "
+        "there right now. That can change.' He says this without alarm. It's a fact "
+        "he tracks the way others track weather.",
+        "'River's running a little high this week. Still crossable. Give it another "
+        "day if you want an easier time of it.' He does not say whether he thinks "
+        "Jean should wait.",
+        "The scout doesn't speak when Jean approaches. He acknowledges Jean the way "
+        "he acknowledges the wind — registers it, notes the direction, files it away.",
+        "'Saw smoke to the east this morning. Probably a camp. Nothing hostile — "
+        "wrong direction for that.' He returns his attention to the road.",
+        "'People who come through heading west usually don't ask questions,' the "
+        "scout says. 'The ones who do are either worried or prepared. Hard to tell "
+        "which you are from here.'",
     ]
 
     def __init__(self):
@@ -153,7 +177,7 @@ class NomadScout(HumanNPCLLMMixin, Friend):
         narrate(random.choice(self._TALK_LINES))
 
 
-class NomadTrader(HumanNPCLLMMixin, Friend):
+class NomadTrader(ConversationalNPCMixin, Friend):
     """A nomad who barters goods picked up along the eastern routes.
 
     Not a full merchant — no shop, no stock list. Trades as part of nomadic
@@ -176,6 +200,19 @@ class NomadTrader(HumanNPCLLMMixin, Friend):
         "'Good for travel. Bad for trade.'",
         "'If you need anything, best to ask before crossing.' She is speaking from "
         "experience. 'Supply's thin on the other side.'",
+        "She holds up two items side by side, considers them, sets one down. The "
+        "other gets wrapped and returned to the bundle. She does not explain what "
+        "distinguished them.",
+        "'Most of what I carry came through the eastern settlements. Some of it "
+        "came further.' She ties off a bundle. 'Provenance matters to some people. "
+        "Not most.'",
+        "She glances at Jean's pack. Brief, professional. Then back to her work. "
+        "She doesn't make an offer. She files the assessment somewhere.",
+        "'Trade tends to move before trouble does,' she says. 'If the routes start "
+        "going quiet, that's the sign. They're not quiet yet.'",
+        "She sets her bundle down and straightens her back. Looks at Jean directly "
+        "for a moment. 'You've got that look. Going west.' She picks the bundle "
+        "back up. 'Good luck with it.'",
     ]
 
     def __init__(self):
