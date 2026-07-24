@@ -768,45 +768,25 @@ python tools/bug_hunt.py --headless --output bugs.json
 
 ## Code Review Gate
 
-**Always use the `code_reviewer` skill** whenever code changes are made. After any task that introduces code changes, invoke the skill to perform an automated review, then manually verify critical dimensions if needed.
+**Always use the `code-review` skill (or `code-scrubber` for large diffs)** whenever code changes are made. After any task that introduces code changes, invoke the appropriate skill to perform an automated review, then manually verify critical dimensions if needed.
 
-The code_reviewer skill automatically analyzes code changes and grades them. For non-trivial changes, the agent should review the feedback and correct any issues until all dimensions reach A or above.
+Routing is by diff size (see `.claude/skills/_shared/review_rules/code_review_rules.py`'s `review_depth_for_diff_size()`):
 
-### Confidence filter
-Before grading, score each potential issue 0–100. Only count issues with confidence ≥ 80 toward a grade — don't let unverified nitpicks drag a dimension down.
+| Diff size | Skill | How it runs |
+|---|---|---|
+| ≤ 1000 changed lines | `code-review` | Inline, single pass, current conversation |
+| > 1000 changed lines | `code-scrubber` | Chunked, 5 dimension subagents per chunk in parallel, dispatched as a background Agent (doesn't block the session) |
 
-- **0–24**: False positive or pre-existing. Ignore.
-- **25–49**: Possible issue but unverified. Flag for awareness only; does not affect grade.
-- **50–74**: Real but minor. Mention; does not fail a dimension alone.
-- **75–100**: Verified, impactful, or explicitly required by this file. Counts toward grade.
+Both skills grade the same core dimensions — DRY, Clean Code, Optimization, Maintainability, Security, AI-Friendliness — plus two Heart of Virtue-specific additions folded in during migration from this project's old 10-dimension gate: **Architecture** (engine/API separation, no duplication of `Combatant` logic, `PassiveMove`/`web_animation` contracts, `GameService`/`SessionManager` boundaries — gating) and **Correctness** (logic errors, null handling, race conditions, edge cases — graded and reported). The old Convention/Code Quality/Simplicity/Stability/Performance dimensions are subsumed into the ones above rather than tracked separately. Full dimension tables, the confidence filter (score 0–100, only count ≥80 toward a grade), and grading rules live in `.claude/skills/code-review/SKILL.md` and `.claude/skills/code-scrubber/SKILL.md` — don't duplicate them here; edit the skill files and this pointer stays accurate.
 
-### Dimensions
-
-| Dimension | What to check |
-|---|---|
-| **Correctness** | Does the change solve the stated problem? Logic errors, null/undefined handling, race conditions, memory leaks, edge cases, regressions |
-| **Architecture** | Follows rules in this file — engine/API separation, no duplication of Combatant logic, adapter pattern respected, GameService/SessionManager boundaries |
-| **Convention** | Naming, error handling style, docstrings on public methods, no stray `###DEBUG###`, import grouping, logging patterns, platform compatibility |
-| **Code Quality** | DRY — no repeated logic that belongs in a shared location; clean, purposeful code; missing critical error handling; adequate test coverage for changed behavior |
-| **Simplicity** | Minimum complexity for the task; no premature abstraction, no speculative features, no backwards-compat shims for unused code |
-| **Security** | No new vulnerabilities; inputs validated at system boundaries; no secrets in code; SQL/XSS/injection safe |
-| **Maintainability** | Readable at a glance; low cognitive load; names convey intent; changes are localized and don't create hidden coupling; future modifications are not made harder |
-| **Stability** | Graceful error recovery in hot paths; no unhandled exceptions that crash the game loop; silent failures logged; degraded-mode behavior is acceptable |
-| **AI-friendliness** | Structure is navigable without global context; naming makes intent clear without requiring comments to decode; logic is locally coherent rather than scattered across distant files |
-| **Performance** | No unnecessary computation in hot paths (especially combat loop); efficient data structures; no repeated work that could be cached; no obvious memory leaks |
-
-### Rules
-- Report issues grouped by severity: **Critical** (must fix) then **Important** (should fix).
-- Do not suggest `/commit` until all dimensions are at A.
-- If a dimension can't reach A without a decision from the user, stop and ask — don't invent a resolution.
-- For trivial changes (config edits, comment fixes), briefly confirm all dimensions are N/A or A and move on without a full table.
+For non-trivial changes, the agent should review the feedback and correct any issues until all gating dimensions reach A or above. Do not suggest `/commit` until then. If a dimension can't reach A without a decision from the user, stop and ask — don't invent a resolution. For trivial changes (config edits, comment fixes), briefly confirm all dimensions are N/A or A and move on without a full table.
 
 ## Session Workflow
 
 At the end of every task, suggest the appropriate overhead steps before moving on. The goal is to ship and maintain a complete game — treat housekeeping as part of the work, not an afterthought.
 
 Standard closing checklist (use judgment on which apply):
-- **`code_reviewer` skill** — use the skill to review all code changes (mandatory for any non-trivial changes)
+- **`code-review` / `code-scrubber` skills** — use the size-appropriate skill to review all code changes (mandatory for any non-trivial changes; see "Code Review Gate" above)
 - **`/commit`** — if there are uncommitted changes worth preserving
 - **`/revise-claude-md`** — if the session revealed something about the project that isn't in CLAUDE.md (new patterns, gotchas, decisions made)
 - **Tests** — remind to run `python -m pytest -q` or `cd frontend && npm test` if the changes touch testable code
@@ -871,7 +851,8 @@ Key routing rules:
 - "Review everything", full review pipeline → invoke /autoplan
 - Bugs, errors, "why is this broken", "wtf", "this doesn't work" → invoke /investigate
 - Test the site, find bugs, "does this work" → invoke /qa (or /qa-only for report only)
-- Code review, check the diff, "look at my changes" → invoke /review
+- Review a GitHub pull request → invoke /review
+- Code review, check the diff, "look at my changes" → invoke /code-review (redirects to /code-scrubber automatically for diffs over 1000 lines)
 - Visual polish, design audit, "this looks off" → invoke /design-review
 - Developer experience audit, try onboarding → invoke /devex-review
 - Ship, deploy, create a PR, "send it" → invoke /ship
