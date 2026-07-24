@@ -1,0 +1,172 @@
+"""Contract + builder tests for the combat beat protocol (issue #436).
+
+Covers the pure Python builders/validators and asserts the frontend JS mirror
+(frontend/src/utils/combatBeatSchema.js) stays in parity with the Python source
+of truth (src/api/schemas/combat_beat.py).
+"""
+
+import re
+from pathlib import Path
+
+from src.api.schemas import combat_beat as cb
+
+_ROOT = Path(__file__).resolve().parents[1]
+_MIRROR_JS = _ROOT / "frontend" / "src" / "utils" / "combatBeatSchema.js"
+
+
+# ── JS-mirror parity ────────────────────────────────────────────────────────
+
+def _js_string_array(name):
+    """Parse `export const NAME = [ 'a', 'b', ... ];` out of the JS mirror."""
+    source = _MIRROR_JS.read_text(encoding="utf-8")
+    match = re.search(
+        rf"export const {name} = \[(.*?)\];", source, re.DOTALL
+    )
+    assert match, f"{name} array not found in combatBeatSchema.js"
+    return tuple(re.findall(r"'([^']+)'", match.group(1)))
+
+
+def _js_string_const(name):
+    source = _MIRROR_JS.read_text(encoding="utf-8")
+    match = re.search(rf"export const {name} = '([^']+)';", source)
+    assert match, f"{name} const not found in combatBeatSchema.js"
+    return match.group(1)
+
+
+def test_beat_fields_parity():
+    assert _js_string_array("BEAT_FIELDS") == cb.BEAT_FIELDS
+
+
+def test_outcomes_parity():
+    assert _js_string_array("OUTCOMES") == cb.OUTCOMES
+
+
+def test_sfx_kinds_parity():
+    assert _js_string_array("SFX_KINDS") == cb.SFX_KINDS
+
+
+def test_event_name_parity():
+    assert _js_string_const("BEAT_EVENT") == cb.BEAT_EVENT
+    assert _js_string_const("RESOLVED_EVENT") == cb.RESOLVED_EVENT
+    assert _js_string_const("ENDED_EVENT") == cb.ENDED_EVENT
+    assert _js_string_const("SUGGESTIONS_EVENT") == cb.SUGGESTIONS_EVENT
+
+
+# ── build_beat ──────────────────────────────────────────────────────────────
+
+def test_build_beat_is_valid_and_has_all_fields():
+    beat = cb.build_beat(
+        seq=1,
+        actor_id="player",
+        target_id="enemy_9",
+        web_animation="pierce",
+        outcome="hit",
+        hp_changes=[{"id": "enemy_9", "delta": -14}],
+        log_line="Jean pierces the Slime for 14.",
+    )
+    assert cb.validate_beat(beat) == []
+    assert set(beat) == set(cb.BEAT_FIELDS)
+    assert beat["hp_changes"] == [{"id": "enemy_9", "delta": -14}]
+
+
+def test_build_beat_defaults_empty_collections():
+    beat = cb.build_beat(1, "player", None, "pulse", "hit")
+    assert beat["hp_changes"] == []
+    assert beat["killed"] == []
+    assert beat["status_changes"] == []
+
+
+# ── SFX chain ordering / indices ────────────────────────────────────────────
+
+def test_sfx_chain_basic_hit_is_swing_then_impact():
+    chain = cb.build_sfx_chain("hit")
+    kinds = [e["kind"] for e in chain]
+    assert kinds == ["swing", "impact"]
+    assert [e["index"] for e in chain] == [0, 1]
+    assert chain[1]["outcome"] == "hit"
+
+
+def test_sfx_chain_miss_still_has_impact():
+    chain = cb.build_sfx_chain("miss")
+    assert [e["kind"] for e in chain] == ["swing", "impact"]
+    assert chain[1]["outcome"] == "miss"
+
+
+def test_sfx_chain_without_swing():
+    chain = cb.build_sfx_chain("hit", has_swing=False)
+    assert [e["kind"] for e in chain] == ["impact"]
+    assert chain[0]["index"] == 0
+
+
+def test_sfx_chain_lifesteal_kill_and_status_order_and_indices():
+    # A poisoned, killing lifesteal strike: target -14, actor +4.
+    chain = cb.build_sfx_chain(
+        "hit",
+        hp_changes=[{"id": "enemy_9", "delta": -14}, {"id": "player", "delta": 4}],
+        killed=["enemy_9"],
+        status_changes=[{"id": "enemy_9", "status": "poison"}],
+        actor_id="player",
+    )
+    assert [e["kind"] for e in chain] == [
+        "swing",
+        "impact",
+        "status",
+        "heal",
+        "death",
+    ]
+    assert [e["index"] for e in chain] == [0, 1, 2, 3, 4]
+    status_emission = next(e for e in chain if e["kind"] == "status")
+    assert status_emission["status"] == "poison"
+
+
+def test_sfx_chain_heal_only_when_actor_gains_hp():
+    # A positive delta on the TARGET (ally heal) is not an actor heal SFX.
+    chain = cb.build_sfx_chain(
+        "hit",
+        hp_changes=[{"id": "ally_2", "delta": 10}],
+        actor_id="player",
+    )
+    assert "heal" not in [e["kind"] for e in chain]
+
+
+def test_build_beat_embeds_sfx_chain():
+    beat = cb.build_beat(
+        7,
+        "player",
+        "enemy_9",
+        "pierce",
+        "hit",
+        hp_changes=[{"id": "enemy_9", "delta": -14}, {"id": "player", "delta": 4}],
+        killed=["enemy_9"],
+        status_changes=[{"id": "enemy_9", "status": "poison"}],
+    )
+    assert [e["kind"] for e in beat["sfx"]] == [
+        "swing",
+        "impact",
+        "status",
+        "heal",
+        "death",
+    ]
+
+
+# ── validate_beat negative cases ────────────────────────────────────────────
+
+def test_validate_beat_flags_bad_outcome():
+    beat = cb.build_beat(1, "player", "enemy_9", "pierce", "hit")
+    beat["outcome"] = "obliterated"
+    problems = cb.validate_beat(beat)
+    assert any("invalid outcome" in p for p in problems)
+
+
+def test_validate_beat_flags_missing_field():
+    beat = cb.build_beat(1, "player", "enemy_9", "pierce", "hit")
+    del beat["log_line"]
+    problems = cb.validate_beat(beat)
+    assert any("missing field: log_line" in p for p in problems)
+
+
+def test_validate_beat_flags_non_monotonic_sfx_index():
+    beat = cb.build_beat(1, "player", "enemy_9", "pierce", "hit")
+    beat["sfx"][0]["index"] = 5
+    problems = cb.validate_beat(beat)
+    assert any("sfx index" in p for p in problems)
