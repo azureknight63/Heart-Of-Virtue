@@ -359,7 +359,7 @@ class TestMaraSelectMove:
         assert m.name == "Mara"
         assert m.maxhp == 95
         assert "talk" in m.keywords
-        assert "trade" in m.keywords
+        assert "trade" not in m.keywords
 
 
 # ---------------------------------------------------------------------------

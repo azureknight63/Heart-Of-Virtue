@@ -1,5 +1,5 @@
 """
-Tier 4B - Comprehensive test suite for HumanNPCLLMMixin chat system.
+Tier 4B - Comprehensive test suite for ConversationalNPCMixin chat system.
 
 100% coverage on src/npc/_chat_llm.py (373 lines).
 
@@ -33,7 +33,7 @@ from typing import Dict, Any, List
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
-from src.npc._chat_llm import HumanNPCLLMMixin
+from src.npc._chat_llm import ConversationalNPCMixin
 
 
 class TestInitChatAttrs:
@@ -41,7 +41,7 @@ class TestInitChatAttrs:
 
     def test_init_chat_attrs_basic(self):
         """Test basic initialization of chat attributes."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self.charisma = 10
@@ -63,7 +63,7 @@ class TestInitChatAttrs:
 
     def test_init_chat_attrs_chat_keyword_already_exists(self):
         """Test that 'chat' keyword isn't duplicated."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self.charisma = 10
@@ -76,7 +76,7 @@ class TestInitChatAttrs:
 
     def test_init_chat_attrs_no_keywords_attr(self):
         """Test initialization when keywords attribute doesn't exist."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self.charisma = 10
@@ -90,7 +90,7 @@ class TestInitChatAttrs:
 
     def test_init_chat_attrs_with_config_path(self):
         """Test initialization with character config path."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self.charisma = 10
@@ -104,7 +104,7 @@ class TestInitChatAttrs:
 
     def test_init_chat_attrs_prohibited_patterns_setup(self):
         """Test that prohibited patterns are pre-compiled."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self.charisma = 10
@@ -122,7 +122,7 @@ class TestGetAdapter:
 
     def test_get_adapter_not_yet_loaded(self):
         """Test adapter is None on first call when import fails."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self.charisma = 10
@@ -138,7 +138,7 @@ class TestGetAdapter:
 
     def test_get_adapter_caching(self):
         """Test adapter is cached after first load."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self.charisma = 10
@@ -154,14 +154,14 @@ class TestGetAdapter:
 
     def test_get_adapter_failed_state(self):
         """Test adapter returns None when marked as failed."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self.charisma = 10
                 self.wisdom = 10
                 self.keywords = []
-                self._chat_adapter = HumanNPCLLMMixin._ADAPTER_FAILED
-                self._ADAPTER_FAILED = HumanNPCLLMMixin._ADAPTER_FAILED
+                self._chat_adapter = ConversationalNPCMixin._ADAPTER_FAILED
+                self._ADAPTER_FAILED = ConversationalNPCMixin._ADAPTER_FAILED
 
         npc = TestNPC()
         adapter = npc._get_adapter()
@@ -173,7 +173,7 @@ class TestStoryMethod:
 
     def test_story_with_valid_universe(self):
         """Test _story returns story dict from player."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             pass
 
         npc = TestNPC()
@@ -183,7 +183,7 @@ class TestStoryMethod:
 
     def test_story_with_missing_universe(self):
         """Test _story returns empty dict when universe missing."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             pass
 
         npc = TestNPC()
@@ -193,7 +193,7 @@ class TestStoryMethod:
 
     def test_story_with_missing_story_attr(self):
         """Test _story returns empty dict when story attr missing."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             pass
 
         npc = TestNPC()
@@ -204,7 +204,7 @@ class TestStoryMethod:
 
     def test_story_with_none_story(self):
         """Test _story returns empty dict when story is None."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             pass
 
         npc = TestNPC()
@@ -219,7 +219,7 @@ class TestGetChapter:
 
     def test_get_chapter_from_story(self):
         """Test chapter retrieval from story dict."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             pass
 
         npc = TestNPC()
@@ -229,7 +229,7 @@ class TestGetChapter:
 
     def test_get_chapter_default(self):
         """Test default chapter when not in story."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             pass
 
         npc = TestNPC()
@@ -243,7 +243,7 @@ class TestComputeLoquacity:
 
     def test_compute_loquacity_basic(self):
         """Test basic loquacity computation with default base."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self.charisma = 10
@@ -271,7 +271,7 @@ class TestComputeLoquacity:
 
     def test_compute_loquacity_caches_result(self):
         """Test loquacity is only computed once."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self.charisma = 10
@@ -296,7 +296,7 @@ class TestComputeLoquacity:
 
     def test_compute_loquacity_npc_charisma_bonus(self):
         """Test NPC charisma bonus to loquacity."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self.charisma = 15
@@ -323,7 +323,7 @@ class TestComputeLoquacity:
 
     def test_compute_loquacity_reputation_bonus(self):
         """Test positive reputation bonus."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self.charisma = 10
@@ -350,7 +350,7 @@ class TestComputeLoquacity:
 
     def test_compute_loquacity_reputation_penalty(self):
         """Test negative reputation penalty."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self.charisma = 10
@@ -377,7 +377,7 @@ class TestComputeLoquacity:
 
     def test_compute_loquacity_jean_charisma_bonus(self):
         """Test Jean's charisma modifier."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self.charisma = 10
@@ -404,7 +404,7 @@ class TestComputeLoquacity:
 
     def test_compute_loquacity_equipment_bonus(self):
         """Test equipment modifiers."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self.charisma = 10
@@ -431,7 +431,7 @@ class TestComputeLoquacity:
 
     def test_compute_loquacity_gorran_ally_bonus(self):
         """Test Gorran in allies gives bonus."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self.charisma = 10
@@ -460,7 +460,7 @@ class TestComputeLoquacity:
 
     def test_compute_loquacity_recovery_from_wisdom(self):
         """Test recovery rate derived from wisdom."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self.charisma = 10
@@ -487,7 +487,7 @@ class TestComputeLoquacity:
 
     def test_compute_loquacity_min_threshold(self):
         """Test loquacity threshold has minimum."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self.charisma = 1
@@ -518,7 +518,7 @@ class TestGetNPCKey:
 
     def test_get_npc_key_story_npc(self):
         """Test story NPC uses name as key."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "Gorran"
                 self._chat_config_path = "/path/to/config.json"
@@ -535,7 +535,7 @@ class TestGetNPCKey:
 
     def test_get_npc_key_generic_first_instance(self):
         """Test generic NPC gets unique key."""
-        class CustomNomad(HumanNPCLLMMixin):
+        class CustomNomad(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "NomadTrader"
                 self._chat_config_path = None
@@ -551,7 +551,7 @@ class TestGetNPCKey:
 
     def test_get_npc_key_generic_instance_count(self):
         """Test generic NPCs increment instance counter."""
-        class CustomNomad(HumanNPCLLMMixin):
+        class CustomNomad(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "NomadTrader"
                 self._chat_config_path = None
@@ -570,7 +570,7 @@ class TestGetNPCKey:
 
     def test_get_npc_key_caching(self):
         """Test key is cached after first call."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self._chat_config_path = None
@@ -590,7 +590,7 @@ class TestLoadHistoryFromPersistence:
 
     def test_load_history_no_persistence_attr(self):
         """Test loading when player has no npc_chat_histories."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self._chat_history = []
@@ -605,7 +605,7 @@ class TestLoadHistoryFromPersistence:
 
     def test_load_history_key_not_found(self):
         """Test loading when key not in histories."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self._chat_history = []
@@ -621,7 +621,7 @@ class TestLoadHistoryFromPersistence:
 
     def test_load_history_with_exchanges(self):
         """Test loading exchanges from persistence."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self._chat_history = []
@@ -641,7 +641,7 @@ class TestLoadHistoryFromPersistence:
 
     def test_load_history_with_personality(self):
         """Test loading personality from persistence."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self._chat_history = []
@@ -660,7 +660,7 @@ class TestLoadHistoryFromPersistence:
 
     def test_load_history_with_loquacity(self):
         """Test loading loquacity from persistence."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self._chat_history = []
@@ -680,7 +680,7 @@ class TestSaveExchangeToPersistence:
 
     def test_save_exchange_no_persistence_attr(self):
         """Test saving when player has no npc_chat_histories."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self.loquacity_current = 50
@@ -695,7 +695,7 @@ class TestSaveExchangeToPersistence:
 
     def test_save_exchange_creates_entry(self):
         """Test creating new history entry."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self.loquacity_current = 50
@@ -715,7 +715,7 @@ class TestSaveExchangeToPersistence:
 
     def test_save_exchange_keeps_last_20(self):
         """Test that only last 20 exchanges are kept."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self.loquacity_current = 50
@@ -733,7 +733,7 @@ class TestSaveExchangeToPersistence:
 
     def test_save_exchange_increments_conversation_count(self):
         """Test conversation count incremented only for full exchanges."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self.loquacity_current = 50
@@ -753,7 +753,7 @@ class TestSaveExchangeToPersistence:
 
     def test_save_exchange_stores_personality(self):
         """Test personality is stored when present."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self.loquacity_current = 50
@@ -773,7 +773,7 @@ class TestBuildSystemPrompt:
 
     def test_build_system_prompt_no_world_facts(self):
         """Test building prompt when world facts are empty."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self._chat_world_facts = {}
@@ -787,7 +787,7 @@ class TestBuildSystemPrompt:
 
     def test_build_system_prompt_story_npc(self):
         """Test prompt building for story NPC."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "Gorran"
                 self._chat_world_facts = {}
@@ -800,7 +800,7 @@ class TestBuildSystemPrompt:
 
     def test_build_system_prompt_generic_npc(self):
         """Test prompt building for generic NPC."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "Nomad"
                 self._chat_world_facts = {}
@@ -819,7 +819,7 @@ class TestBuildSystemPrompt:
 
     def test_build_system_prompt_includes_world_facts(self):
         """Test prompt includes world facts."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self._chat_world_facts = {
@@ -845,7 +845,7 @@ class TestEnsurePersonality:
 
     def test_ensure_personality_already_story_npc(self):
         """Test personality skipped for story NPCs."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "Gorran"
                 self._chat_char_config = {"some": "config"}
@@ -857,7 +857,7 @@ class TestEnsurePersonality:
 
     def test_ensure_personality_already_generated(self):
         """Test personality skipped if already generated."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self._chat_char_config = None
@@ -869,7 +869,7 @@ class TestEnsurePersonality:
 
     def test_ensure_personality_fallback_deterministic(self):
         """Test fallback personality is deterministic."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "NomadA"
                 self._chat_config_path = None
@@ -891,7 +891,7 @@ class TestJaccard:
 
     def test_jaccard_identical_text(self):
         """Test Jaccard of identical text is 1.0."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             pass
 
         npc = TestNPC()
@@ -900,7 +900,7 @@ class TestJaccard:
 
     def test_jaccard_completely_different(self):
         """Test Jaccard of completely different text is 0.0."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             pass
 
         npc = TestNPC()
@@ -909,7 +909,7 @@ class TestJaccard:
 
     def test_jaccard_partial_overlap(self):
         """Test Jaccard with partial overlap."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             pass
 
         npc = TestNPC()
@@ -918,7 +918,7 @@ class TestJaccard:
 
     def test_jaccard_empty_strings(self):
         """Test Jaccard with empty strings."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             pass
 
         npc = TestNPC()
@@ -927,7 +927,7 @@ class TestJaccard:
 
     def test_jaccard_one_empty(self):
         """Test Jaccard with one empty string."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             pass
 
         npc = TestNPC()
@@ -940,7 +940,7 @@ class TestQCNpcText:
 
     def test_qc_empty_text(self):
         """Test QC rejects empty text."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self._chat_world_facts = {}
@@ -952,7 +952,7 @@ class TestQCNpcText:
 
     def test_qc_too_short_text(self):
         """Test QC rejects text under 10 chars."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self._chat_world_facts = {}
@@ -964,7 +964,7 @@ class TestQCNpcText:
 
     def test_qc_valid_text(self):
         """Test QC passes valid text."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self._chat_world_facts = {}
@@ -976,7 +976,7 @@ class TestQCNpcText:
 
     def test_qc_rejects_jean_dialogue(self):
         """Test QC rejects Jean-dialogue pattern."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self._chat_world_facts = {}
@@ -988,7 +988,7 @@ class TestQCNpcText:
 
     def test_qc_rejects_jean_quote(self):
         """Test QC rejects Jean quotes."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self._chat_world_facts = {}
@@ -1000,7 +1000,7 @@ class TestQCNpcText:
 
     def test_qc_truncates_long_text(self):
         """Test QC truncates text over 300 chars."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self._chat_world_facts = {}
@@ -1014,7 +1014,7 @@ class TestQCNpcText:
 
     def test_qc_detects_slang(self):
         """Test QC removes slang."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self._chat_world_facts = {}
@@ -1028,7 +1028,7 @@ class TestQCNpcText:
 
     def test_qc_detects_invented_proper_nouns(self):
         """Test QC handles invented proper nouns."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self._chat_world_facts = {"allowed_proper_nouns": ["Grondite"]}
@@ -1041,7 +1041,7 @@ class TestQCNpcText:
 
     def test_qc_adds_terminal_punctuation(self):
         """Test QC adds period if missing."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self._chat_world_facts = {}
@@ -1053,7 +1053,7 @@ class TestQCNpcText:
 
     def test_qc_caps_sentences_to_three(self):
         """Test QC keeps only first 3 sentences."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self._chat_world_facts = {}
@@ -1066,7 +1066,7 @@ class TestQCNpcText:
 
     def test_qc_detects_repetition(self):
         """Test QC rejects text similar to history."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self._chat_world_facts = {}
@@ -1081,7 +1081,7 @@ class TestQCNpcText:
 
     def test_qc_applies_prohibited_phrases(self):
         """Test QC applies prohibited phrase substitution."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self._chat_world_facts = {}
@@ -1097,7 +1097,7 @@ class TestQCJeanOptions:
 
     def test_qc_jean_options_not_list(self):
         """Test QC rejects non-list options."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             pass
 
         npc = TestNPC()
@@ -1106,7 +1106,7 @@ class TestQCJeanOptions:
 
     def test_qc_jean_options_less_than_3(self):
         """Test QC rejects less than 3 options."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             pass
 
         npc = TestNPC()
@@ -1115,7 +1115,7 @@ class TestQCJeanOptions:
 
     def test_qc_jean_options_valid(self):
         """Test QC passes valid options."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             pass
 
         npc = TestNPC()
@@ -1130,7 +1130,7 @@ class TestQCJeanOptions:
 
     def test_qc_jean_options_missing_text(self):
         """Test QC rejects option without text."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             pass
 
         npc = TestNPC()
@@ -1144,7 +1144,7 @@ class TestQCJeanOptions:
 
     def test_qc_jean_options_invalid_length(self):
         """Test QC rejects text outside 5-120 range."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             pass
 
         npc = TestNPC()
@@ -1158,7 +1158,7 @@ class TestQCJeanOptions:
 
     def test_qc_jean_options_rejects_meta_speech(self):
         """Test QC rejects meta-speech."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             pass
 
         npc = TestNPC()
@@ -1172,7 +1172,7 @@ class TestQCJeanOptions:
 
     def test_qc_jean_options_dedup(self):
         """Test QC rejects duplicate options."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             pass
 
         npc = TestNPC()
@@ -1187,7 +1187,7 @@ class TestQCJeanOptions:
 
     def test_qc_jean_options_tone_mapping(self):
         """Test QC maps tone correctly."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             pass
 
         npc = TestNPC()
@@ -1207,7 +1207,7 @@ class TestChatOpen:
 
     def test_chat_open_success(self):
         """Test successful chat open."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self.charisma = 10
@@ -1245,7 +1245,7 @@ class TestChatOpen:
 
     def test_chat_open_loquacity_exhausted(self):
         """Test chat open when loquacity is exhausted."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self.charisma = 10
@@ -1291,7 +1291,7 @@ class TestChatOpen:
 
     def test_chat_open_error_handling(self):
         """Test chat open handles errors gracefully."""
-        class BrokenNPC(HumanNPCLLMMixin):
+        class BrokenNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "BrokenNPC"
 
@@ -1310,7 +1310,7 @@ class TestChatRespond:
 
     def test_chat_respond_success(self):
         """Test successful chat response."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self.charisma = 10
@@ -1381,7 +1381,7 @@ class TestChatRespond:
 
     def test_chat_respond_loquacity_drain(self):
         """Test loquacity is drained on response."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self.charisma = 10
@@ -1451,7 +1451,7 @@ class TestChatRespond:
 
     def test_chat_respond_error_handling(self):
         """Test chat respond handles errors."""
-        class BrokenNPC(HumanNPCLLMMixin):
+        class BrokenNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "BrokenNPC"
 
@@ -1469,7 +1469,7 @@ class TestLoquacityTick:
 
     def test_loquacity_tick_recovery(self):
         """Test loquacity recovers each tick."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self.loquacity_max = 100
@@ -1482,7 +1482,7 @@ class TestLoquacityTick:
 
     def test_loquacity_tick_respects_max(self):
         """Test loquacity doesn't exceed max."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self.loquacity_max = 100
@@ -1495,7 +1495,7 @@ class TestLoquacityTick:
 
     def test_loquacity_tick_not_initialized(self):
         """Test loquacity tick skips if not initialized."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self.loquacity_max = 0  # Not initialized
@@ -1512,7 +1512,7 @@ class TestDisplayName:
 
     def test_display_name_story_npc(self):
         """Test story NPC displays actual name."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "Gorran"
                 self._chat_char_config = {"some": "config"}
@@ -1523,7 +1523,7 @@ class TestDisplayName:
 
     def test_display_name_generic_with_personality(self):
         """Test generic NPC displays personality name."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "GenericNomad"
                 self._chat_char_config = None
@@ -1534,7 +1534,7 @@ class TestDisplayName:
 
     def test_display_name_generic_fallback(self):
         """Test generic NPC without personality uses name."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "GenericNomad"
                 self._chat_char_config = None
@@ -1549,7 +1549,7 @@ class TestGetBrushOffLine:
 
     def test_get_brush_off_line_story_npc(self):
         """Test story NPC uses config brush-off."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "Gorran"
                 self._chat_char_config = {
@@ -1562,7 +1562,7 @@ class TestGetBrushOffLine:
 
     def test_get_brush_off_line_generic(self):
         """Test generic NPC uses fallback."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "GenericNomad"
                 self._chat_char_config = None
@@ -1581,7 +1581,7 @@ class TestGetFallbackNpcLine:
 
     def test_get_fallback_npc_line_story_opening(self):
         """Test story NPC opening fallback from config."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "Gorran"
                 self._chat_char_config = {
@@ -1598,7 +1598,7 @@ class TestGetFallbackNpcLine:
 
     def test_get_fallback_npc_line_story_non_opening(self):
         """Test story NPC non-opening fallback from config."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "Gorran"
                 self._chat_char_config = {
@@ -1615,7 +1615,7 @@ class TestGetFallbackNpcLine:
 
     def test_get_fallback_npc_line_generic(self):
         """Test generic NPC uses personality speech sample."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "GenericNomad"
                 self._chat_char_config = None
@@ -1631,7 +1631,7 @@ class TestGetFallbackNpcLine:
 
     def test_get_fallback_npc_line_default(self):
         """Test default fallback when nothing else available."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "GenericNomad"
                 self._chat_char_config = None
@@ -1651,7 +1651,7 @@ class TestGetFallbackJeanOptions:
 
     def test_get_fallback_jean_options_rotation(self):
         """Test Jean options rotate through pool."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self._chat_fallback_idx = 0
@@ -1665,7 +1665,7 @@ class TestGetFallbackJeanOptions:
 
     def test_get_fallback_jean_options_format(self):
         """Test Jean options have correct format."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self._chat_fallback_idx = 0
@@ -1683,7 +1683,7 @@ class TestIntegrationChatFlow:
 
     def test_full_conversation_cycle(self):
         """Test opening and responding in sequence."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "Ren"
                 self.charisma = 10
@@ -1726,7 +1726,7 @@ class TestIntegrationChatFlow:
 
     def test_loquacity_exhaustion(self):
         """Test conversation ends when loquacity exhausted."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self.charisma = 10
@@ -1801,14 +1801,14 @@ class TestCacheManagement:
 
     def test_world_facts_cache_shared(self):
         """Test world facts cache is shared across instances."""
-        HumanNPCLLMMixin._world_facts_cache = {"cached": True}
+        ConversationalNPCMixin._world_facts_cache = {"cached": True}
 
-        class TestNPC1(HumanNPCLLMMixin):
+        class TestNPC1(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "NPC1"
                 self.keywords = []
 
-        class TestNPC2(HumanNPCLLMMixin):
+        class TestNPC2(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "NPC2"
                 self.keywords = []
@@ -1817,13 +1817,13 @@ class TestCacheManagement:
         npc2 = TestNPC2()
 
         # Both should use the same cache reference
-        assert HumanNPCLLMMixin._world_facts_cache == {"cached": True}
+        assert ConversationalNPCMixin._world_facts_cache == {"cached": True}
 
     def test_char_config_cache(self):
         """Test character config cache."""
-        HumanNPCLLMMixin._char_config_cache = {}
+        ConversationalNPCMixin._char_config_cache = {}
 
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self.keywords = []
@@ -1832,7 +1832,7 @@ class TestCacheManagement:
 
         npc = TestNPC()
         # Cache should be populated even on error
-        assert "/nonexistent/path.json" in HumanNPCLLMMixin._char_config_cache
+        assert "/nonexistent/path.json" in ConversationalNPCMixin._char_config_cache
 
 
 class TestProhibitedPatternsSetup:
@@ -1840,7 +1840,7 @@ class TestProhibitedPatternsSetup:
 
     def test_prohibited_patterns_with_config(self):
         """Test prohibited patterns are compiled from config."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self.charisma = 10
@@ -1860,7 +1860,7 @@ class TestEquipmentHandling:
 
     def test_compute_loquacity_equipment_non_dict(self):
         """Test equipment handling when value is not dict."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self.charisma = 10
@@ -1887,7 +1887,7 @@ class TestEquipmentHandling:
 
     def test_compute_loquacity_religious_token(self):
         """Test religious token equipment bonus."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self.charisma = 10
@@ -1914,7 +1914,7 @@ class TestEquipmentHandling:
 
     def test_compute_loquacity_nomad_gear(self):
         """Test nomad gear equipment bonus."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self.charisma = 10
@@ -1945,7 +1945,7 @@ class TestTextTruncation:
 
     def test_qc_truncates_at_sentence_boundary(self):
         """Test QC truncates at sentence boundary."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self._chat_world_facts = {}
@@ -1967,7 +1967,7 @@ class TestSlangRemoval:
 
     def test_qc_removes_okay(self):
         """Test QC removes 'okay' slang."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self._chat_world_facts = {}
@@ -1981,7 +1981,7 @@ class TestSlangRemoval:
 
     def test_qc_removes_wanna(self):
         """Test QC removes 'wanna' slang."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self._chat_world_facts = {}
@@ -1994,7 +1994,7 @@ class TestSlangRemoval:
 
     def test_qc_removes_guns_slang(self):
         """Test QC removes 'guns' slang."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self._chat_world_facts = {}
@@ -2011,7 +2011,7 @@ class TestProperNounReplacement:
 
     def test_qc_replaces_ia_ending(self):
         """Test QC replaces -ia ending nouns."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self._chat_world_facts = {"allowed_proper_nouns": []}
@@ -2024,7 +2024,7 @@ class TestProperNounReplacement:
 
     def test_qc_replaces_on_ending(self):
         """Test QC replaces -on ending nouns."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self._chat_world_facts = {"allowed_proper_nouns": []}
@@ -2036,7 +2036,7 @@ class TestProperNounReplacement:
 
     def test_qc_replaces_or_ending(self):
         """Test QC replaces -or ending nouns."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self._chat_world_facts = {"allowed_proper_nouns": []}
@@ -2065,7 +2065,7 @@ class TestChatOpenWithLLM:
                     {"text": "What do you want?", "tone": "guarded"},
                 ]
 
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self.charisma = 10
@@ -2123,7 +2123,7 @@ class TestChatRespondWithLLM:
                     {"text": "What else?", "tone": "direct"},
                 ]
 
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self.charisma = 10
@@ -2177,7 +2177,7 @@ class TestChatRespondWithLLM:
                     {"text": "What else?", "tone": "direct"},
                 ]
 
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self.charisma = 10
@@ -2230,7 +2230,7 @@ class TestChatRespondWithLLM:
                     {"text": "Tell me more.", "tone": "open"},
                 ]
 
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self.charisma = 10
@@ -2268,7 +2268,7 @@ class TestAdapterLoadingPaths:
 
     def test_get_adapter_spec_none(self):
         """Test adapter loading when spec is None."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self._chat_adapter = None
@@ -2283,7 +2283,7 @@ class TestHistoryUpdating:
 
     def test_chat_respond_updates_last_entry(self):
         """Test chat_respond updates last history entry."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self.charisma = 10
@@ -2357,9 +2357,9 @@ class TestWorldFactsLoading:
     def test_world_facts_load_error(self):
         """Test graceful handling of world facts load errors."""
         # Reset cache to force loading
-        HumanNPCLLMMixin._world_facts_cache = None
+        ConversationalNPCMixin._world_facts_cache = None
 
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self.charisma = 10
@@ -2389,9 +2389,9 @@ class TestCharConfigLoading:
             temp_path = f.name
 
         try:
-            HumanNPCLLMMixin._char_config_cache = {}
+            ConversationalNPCMixin._char_config_cache = {}
 
-            class TestNPC(HumanNPCLLMMixin):
+            class TestNPC(ConversationalNPCMixin):
                 def __init__(self):
                     self.name = "TestNPC"
                     self.charisma = 10
@@ -2430,7 +2430,7 @@ class TestALLMRetryLogic:
                     {"text": "Tell.", "tone": "open"},
                 ]
 
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self.charisma = 10
@@ -2490,7 +2490,7 @@ class TestConversationQualityDrains:
             def generate_personality(self, class_name):
                 return None
 
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self.charisma = 10
@@ -2541,7 +2541,7 @@ class TestConversationQualityDrains:
             def generate_personality(self, class_name):
                 return None
 
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self.charisma = 10
@@ -2577,7 +2577,7 @@ class TestEdgeCasesAndBoundaries:
 
     def test_loquacity_never_negative(self):
         """Test loquacity doesn't go below zero."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self.loquacity_current = 5
@@ -2589,7 +2589,7 @@ class TestEdgeCasesAndBoundaries:
 
     def test_text_with_only_periods(self):
         """Test text that's only punctuation."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self._chat_world_facts = {}
@@ -2601,7 +2601,7 @@ class TestEdgeCasesAndBoundaries:
 
     def test_very_long_proper_noun_replacement(self):
         """Test proper noun replacement in long text."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self._chat_world_facts = {"allowed_proper_nouns": []}
@@ -2618,7 +2618,7 @@ class TestCharConfigPathHandling:
 
     def test_init_chat_attrs_without_config_path_attr(self):
         """Test _init_chat_attrs when config path not pre-set."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self.charisma = 10
@@ -2655,7 +2655,7 @@ class TestRetryOnQCFailure:
                     {"text": "Option three ok", "tone": "open"},
                 ]
 
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self.charisma = 10
@@ -2707,7 +2707,7 @@ class TestJeanOptionsQCRetry:
                 # Return invalid options that QC will reject
                 return [{"text": "x"}]  # Not list of 3
 
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self.charisma = 10
@@ -2767,7 +2767,7 @@ class TestUnknownConversationQuality:
             def generate_personality(self, class_name):
                 return None
 
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self.charisma = 10
@@ -2803,7 +2803,7 @@ class TestHistoryPersistenceAppend:
 
     def test_save_exchange_appends_new_entry(self):
         """Test saving with empty history appends new entry."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self.loquacity_current = 50

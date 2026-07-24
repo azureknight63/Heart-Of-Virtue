@@ -61,10 +61,10 @@ def test_mara_learns_signatures_at_9_and_12():
 
 
 def test_signature_moves_appear_in_chat_knowledge():
-    from src.npc._chat_llm import HumanNPCLLMMixin
+    from src.npc._chat_llm import ConversationalNPCMixin
 
     m = _mara(12)
-    block = HumanNPCLLMMixin._build_combat_knowledge_block(m)
+    block = ConversationalNPCMixin._build_combat_knowledge_block(m)
     assert "Marked Quarry" in block
     assert "Twin Fangs" in block
 

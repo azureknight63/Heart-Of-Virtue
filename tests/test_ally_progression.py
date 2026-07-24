@@ -232,19 +232,19 @@ def test_pickle_roundtrip_preserves_progression():
 
 
 def test_combat_knowledge_block_empty_without_profile():
-    from src.npc._chat_llm import HumanNPCLLMMixin
+    from src.npc._chat_llm import ConversationalNPCMixin
 
     bare = SimpleNamespace()
-    assert HumanNPCLLMMixin._build_combat_knowledge_block(bare) == ""
+    assert ConversationalNPCMixin._build_combat_knowledge_block(bare) == ""
 
 
 def test_combat_knowledge_block_describes_techniques():
-    from src.npc._chat_llm import HumanNPCLLMMixin
+    from src.npc._chat_llm import ConversationalNPCMixin
     from src.npc._friends import Mara
 
     mara = Mara()
     mara.sync_level(5)
-    block = HumanNPCLLMMixin._build_combat_knowledge_block(mara)
+    block = ConversationalNPCMixin._build_combat_knowledge_block(mara)
     assert "COMBAT SELF-KNOWLEDGE" in block
     assert "seasoned" in block
     assert "Dodge" in block
