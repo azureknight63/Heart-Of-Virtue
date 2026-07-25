@@ -394,40 +394,67 @@ class TestGameServiceApplyTileModifications:
     def test_apply_tile_modifications_returns_none(
         self, game_service, mock_world_player, mock_tile
     ):
-        """Test that apply_tile_modifications executes."""
-        game_service.apply_tile_modifications(mock_tile, {})
-        assert True
+        """Empty session data is a no-op that returns None and leaves the tile alone."""
+        mock_tile.objects_here = [MagicMock()]
+        original_objects = list(mock_tile.objects_here)
+        result = game_service.apply_tile_modifications(mock_tile, {})
+        assert result is None
+        assert mock_tile.objects_here == original_objects
 
     def test_apply_tile_modifications_empty_session_data(self, game_service, mock_tile):
-        """Test with no modifications to apply."""
-        game_service.apply_tile_modifications(mock_tile, {})
-        assert True
+        """No 'tile_modifications' key means nothing is applied."""
+        sentinel = MagicMock()
+        mock_tile.objects_here = [sentinel]
+        game_service.apply_tile_modifications(mock_tile, {"other": "data"})
+        assert mock_tile.objects_here == [sentinel]
 
-    def test_apply_tile_modifications_removes_item(self, game_service, mock_tile):
-        """Test removing an item from a tile."""
-        item = MagicMock()
-        item.name = "Gold Coin"
-        mock_tile.items_here = [item]
-        modifications = {"items_here_removed": ["Gold Coin"]}
-        game_service.apply_tile_modifications(mock_tile, modifications)
-        assert True
+    def test_apply_tile_modifications_no_entry_for_tile(self, game_service, mock_tile):
+        """A tile with no stored modifications is left untouched."""
+        sentinel = MagicMock()
+        mock_tile.objects_here = [sentinel]
+        session_data = {"tile_modifications": {"9,9": {"block_exit": ["south"]}}}
+        game_service.apply_tile_modifications(mock_tile, session_data)
+        assert mock_tile.objects_here == [sentinel]
 
-    def test_apply_tile_modifications_restores_state(self, game_service, mock_tile):
-        """Test restoring complex tile state."""
-        modifications = {
-            "removed_item": "Sword",
-            "opened": True,
-            "looted": True,
+    def test_apply_tile_modifications_removes_object(self, game_service, mock_tile):
+        """objects_removed filters matching objects out of objects_here by id."""
+        keep = MagicMock()
+        drop = MagicMock()
+        mock_tile.objects_here = [keep, drop]
+        session_data = {
+            "tile_modifications": {"5,5": {"objects_removed": [id(drop)]}}
         }
-        game_service.apply_tile_modifications(mock_tile, modifications)
-        assert True
+        game_service.apply_tile_modifications(mock_tile, session_data)
+        assert mock_tile.objects_here == [keep]
+
+    def test_apply_tile_modifications_restores_block_exit(self, game_service, mock_tile):
+        """block_exit is restored as an independent copy of the stored list."""
+        stored = ["south", "east"]
+        session_data = {"tile_modifications": {"5,5": {"block_exit": stored}}}
+        game_service.apply_tile_modifications(mock_tile, session_data)
+        assert mock_tile.block_exit == ["south", "east"]
+        # It must be a copy, not the stored list itself, so later mutations don't leak.
+        assert mock_tile.block_exit is not stored
 
     def test_apply_tile_modifications_multiple_tiles(self, game_service):
-        """Test applying modifications to multiple tiles."""
-        tiles = [MagicMock() for _ in range(3)]
-        for tile in tiles:
-            game_service.apply_tile_modifications(tile, {})
-        assert True
+        """Each tile picks up only its own keyed modifications."""
+        session_data = {
+            "tile_modifications": {
+                "0,0": {"block_exit": ["north"]},
+                "1,0": {"block_exit": ["west"]},
+            }
+        }
+        results = {}
+        for coord in ((0, 0), (1, 0), (2, 0)):
+            tile = MagicMock()
+            tile.x, tile.y = coord
+            tile.objects_here = []
+            game_service.apply_tile_modifications(tile, session_data)
+            results[coord] = tile.block_exit
+        assert results[(0, 0)] == ["north"]
+        assert results[(1, 0)] == ["west"]
+        # (2, 0) has no stored entry, so block_exit was never assigned a real list.
+        assert not isinstance(results[(2, 0)], list)
 
 
 class TestGameServiceWorldIntegration:
@@ -456,15 +483,15 @@ class TestGameServiceWorldIntegration:
     def test_world_tile_modification_persistence(self, game_service, mock_tile):
         """Test saving and restoring tile state."""
         session_data = {}
-        # Store modification
+        # Store modification (mock_tile is at 5,5)
         game_service.store_tile_modification(
-            session_data, 5, 5, "block_exit", {"south": True}
+            session_data, 5, 5, "block_exit", ["south"]
         )
-        assert "tile_modifications" in session_data
+        assert session_data["tile_modifications"]["5,5"]["block_exit"] == ["south"]
 
-        # Apply modifications
+        # Apply modifications: the stored block_exit lands on the tile as a copy.
         game_service.apply_tile_modifications(mock_tile, session_data)
-        assert True
+        assert mock_tile.block_exit == ["south"]
 
 
 class TestGameServiceWorldEdgeCases:
