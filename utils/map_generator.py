@@ -2322,12 +2322,23 @@ class TagListFrame(tk.Frame):
 
 def _get_module_paths_for_class(class_name: str) -> List[str]:
     """
-    Returns a list of absolute file paths for all modules in src/ that define the given class or its subclasses.
+    Returns absolute file paths for modules that define the requested class or
+    any transitive subclass of it.
+
+    The chooser parses the returned modules into one combined hierarchy later,
+    so this helper must include intermediate inheritance branches as well as
+    direct subclasses. For example, Friend is an NPC subclass defined in
+    _base.py, while concrete Friend NPCs live in _friends.py and inherit from
+    Friend rather than NPC directly.
     """
     this_project_root = os.path.dirname(os.path.dirname(__file__))
     src_dir = os.path.join(this_project_root, "src")
+    module_classes = []
     result_paths = set()
-    # Walk through src/ and subdirectories
+
+    # Parse every module once and retain its class/base relationships. A
+    # single pass that only compares bases to class_name misses descendants
+    # behind intermediate classes such as NPC -> Friend -> Gorran.
     for dirpath, dirnames, filenames in os.walk(src_dir):
         for filename in filenames:
             if filename.endswith(".py") and not filename.startswith("__"):
@@ -2336,26 +2347,38 @@ def _get_module_paths_for_class(class_name: str) -> List[str]:
                     with open(file_path, "r", encoding="utf-8") as f:
                         src = f.read()
                     tree = ast.parse(src)
+                    classes = []
                     for node in ast.walk(tree):
                         if isinstance(node, ast.ClassDef):
-                            # Check if class matches or subclasses the target
-                            if node.name == class_name:
-                                result_paths.add(file_path)
-                            else:
-                                # Check bases for subclassing
-                                for base in node.bases:
-                                    if (
-                                        isinstance(base, ast.Name)
-                                        and base.id == class_name
-                                    ):
-                                        result_paths.add(file_path)
-                                    elif (
-                                        isinstance(base, ast.Attribute)
-                                        and base.attr == class_name
-                                    ):
-                                        result_paths.add(file_path)
+                            base_names = []
+                            for base in node.bases:
+                                if isinstance(base, ast.Name):
+                                    base_names.append(base.id)
+                                elif isinstance(base, ast.Attribute):
+                                    base_names.append(base.attr)
+                            classes.append((node.name, base_names))
+                    if classes:
+                        module_classes.append((file_path, classes))
                 except Exception:
                     continue  # Ignore parse errors
+
+    # Expand the known class set until no new class is discovered. This keeps
+    # the helper independent of source-file traversal order and supports
+    # arbitrarily deep inheritance chains.
+    known_classes = {class_name}
+    changed = True
+    while changed:
+        changed = False
+        for file_path, classes in module_classes:
+            for defined_name, base_names in classes:
+                if defined_name in known_classes or any(
+                    base_name in known_classes for base_name in base_names
+                ):
+                    result_paths.add(file_path)
+                    if defined_name not in known_classes:
+                        known_classes.add(defined_name)
+                        changed = True
+
     return list(result_paths)
 
 
