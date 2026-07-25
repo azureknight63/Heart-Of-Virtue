@@ -14,7 +14,7 @@ Vespera never operates in isolation. When Jean interacts with the stall, Vespera
 ---
 
 ## Physical Appearance and Manner
-Vespera is a woman in her mid-30s with sharp, expressive dark eyes, warm olive skin, and dark hair neatly bound back in a practical braid threaded with thin brass wire.
+Vespera is a woman in her mid-30s of South Korean descent, with a slender, athletic build honed by years of hauling armor stock and fitting gear. She has a fair, warm complexion, sharp almond-shaped dark eyes that miss nothing, high cheekbones, and straight, jet-black hair neatly bound back in a practical braid threaded with thin brass wire.
 
 She wears dark, durable travel garments under a reinforced leather harness fitted with brass buckles and tool loops holding brass calipers, punch-awls, and heavy thread spools. A leather-bound merchant ledger is rarely far from her reach.
 

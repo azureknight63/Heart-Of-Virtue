@@ -801,7 +801,7 @@
                     "events_after": [],
                     "teleport_map": "eastern-descent-nomad-camp",
                     "teleport_tile": [
-                        2,
+                        3,
                         0
                     ],
                     "persist": true

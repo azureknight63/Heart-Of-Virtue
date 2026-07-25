@@ -54,7 +54,7 @@ from ._friends import (
     Liss,
 )
 from ._adjutant import TheAdjutant
-from ._eastern_descent import NomadCamper, NomadScout, NomadTrader
+from ._eastern_descent import NomadCamper, NomadScout, NomadTrader, NomadBoy, NomadGirl
 
 __all__ = [
     # Base classes
@@ -98,7 +98,9 @@ __all__ = [
     # Arena testing NPC
     "TheAdjutant",
     # Eastern Descent — nomad camp NPCs
-    "NomadCamper",
-    "NomadScout",
-    "NomadTrader",
-]
+        "NomadCamper",
+        "NomadScout",
+        "NomadTrader",
+        "NomadBoy",
+        "NomadGirl",
+    ]
