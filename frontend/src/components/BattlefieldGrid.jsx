@@ -1131,6 +1131,21 @@ function BattlefieldGrid({
     };
   }, []);
 
+  // Schedule a timeout tracked for unmount cleanup, self-pruning its id once it
+  // fires. Without the self-prune the tracking array grows unbounded across a
+  // whole play session (BattlefieldGrid never unmounts between fights), holding
+  // dead ids forever; only unmount cleared it.
+  const trackTimeout = useCallback((fn, delay) => {
+    const id = setTimeout(() => {
+      animationTimeoutsRef.current = animationTimeoutsRef.current.filter(
+        (t) => t !== id
+      );
+      fn();
+    }, delay);
+    animationTimeoutsRef.current.push(id);
+    return id;
+  }, []);
+
   // Streaming (issue #436): enqueue pre-built animations as the engine's beats
   // arrive. Replaces the log-spooler path below; deaths/departures are built by
   // the parent from the engine's authoritative killed/departed, not diffed here.
@@ -1211,8 +1226,7 @@ function BattlefieldGrid({
         combatSpeed
       );
       for (const { cue, startMs } of schedule) {
-        const t = setTimeout(() => playSFX(cue), startMs);
-        animationTimeoutsRef.current.push(t);
+        trackTimeout(() => playSFX(cue), startMs);
       }
     }
 
@@ -1251,15 +1265,14 @@ function BattlefieldGrid({
         playSFX(cue === 'outcome' ? impactSfxFor(animData.outcome) : cue);
       }
 
-      const timeoutId = setTimeout(() => {
+      trackTimeout(() => {
         currentPhaseIndex++;
         advancePhase();
       }, phase.duration);
-      animationTimeoutsRef.current.push(timeoutId);
     };
 
     advancePhase();
-    // Safe: State setters are stable; ANIMATION_CONFIGS and animationCancelRef are module/ref level, keeping playAnimation reference stable.
+    // Safe: State setters are stable; ANIMATION_CONFIGS and animationCancelRef are module/ref level, keeping playAnimation reference stable. trackTimeout is stable (empty-dep useCallback).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playSFX, combatSpeed]);
 

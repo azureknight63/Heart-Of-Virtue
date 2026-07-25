@@ -48,6 +48,11 @@ export default function GamePage() {
   useCombatSocket({
     sessionId: localStorage.getItem('authToken'),
     enabled: streaming && inCombat,
+    // Accumulate cumulatively via a functional updater: BattlefieldGrid consumes
+    // this buffer through an absolute-index cursor, and appending to `prev`
+    // guarantees no beat is dropped even if SocketIO updates coalesce. The buffer
+    // resets to [] on every combat end (below), so its length is bounded per
+    // fight — the per-beat copy is O(fight length), not session-wide growth.
     onBeat: (beat) =>
       setStreamedAnimations((prev) => [
         ...prev,
