@@ -1145,7 +1145,13 @@ class SessionManager:
         Returns:
             Number of sessions cleaned up
         """
-        expired_ids = [sid for sid, sess in self.sessions.items() if sess.is_expired()]
+        # Snapshot before iterating: a concurrent request (threaded server /
+        # async routes) can expire a session mid-scan, and iterating the live
+        # dict would raise "dictionary changed size during iteration" and abort
+        # the reap (issue #363).
+        expired_ids = [
+            sid for sid, sess in list(self.sessions.items()) if sess.is_expired()
+        ]
 
         for session_id in expired_ids:
             self.expire_session(session_id)

@@ -2,9 +2,12 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useCombatSocket } from './useCombatSocket';
 
-// Fake socket: records handlers and lets tests fire server events.
+// Fake socket: records handlers and lets tests fire server events. Mirrors
+// socket.io-client v4's split between Socket-level events (.on) and
+// Manager-level events like 'reconnect' (.io.on).
 function makeFakeSocket() {
   const handlers = {};
+  const ioHandlers = {};
   return {
     emit: vi.fn(),
     disconnect: vi.fn(),
@@ -13,6 +16,14 @@ function makeFakeSocket() {
     },
     fire(ev, payload) {
       (handlers[ev] || []).forEach((fn) => fn(payload));
+    },
+    io: {
+      on(ev, fn) {
+        (ioHandlers[ev] ||= []).push(fn);
+      },
+      fire(ev, payload) {
+        (ioHandlers[ev] || []).forEach((fn) => fn(payload));
+      },
     },
   };
 }
@@ -93,6 +104,20 @@ describe('useCombatSocket', () => {
     act(() => socket.fire('combat:suggestions', { seq: 2, suggestions: [] }));
     expect(calls.onEnded).toHaveBeenCalledWith({ seq: 1, status: 'victory' });
     expect(calls.onSuggestions).toHaveBeenCalledWith({ seq: 2, suggestions: [] });
+  });
+
+  it('rejoins and resyncs on a manager reconnect', async () => {
+    const { socket, calls } = setup();
+    act(() => socket.fire('connect'));
+    socket.emit.mockClear();
+    await act(async () => {
+      socket.io.fire('reconnect');
+      await Promise.resolve();
+    });
+    expect(socket.emit).toHaveBeenCalledWith('join_combat', {
+      session_id: 'sess-1',
+    });
+    expect(calls.fetchStatus).toHaveBeenCalled();
   });
 
   it('disconnects on unmount', () => {

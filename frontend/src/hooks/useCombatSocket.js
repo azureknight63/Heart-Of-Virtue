@@ -72,7 +72,10 @@ export function useCombatSocket({
     const socket = cbs.current.createSocket({});
     const join = () => socket.emit('join_combat', { session_id: sessionId });
     socket.on('connect', join);
-    socket.on('reconnect', () => {
+    // socket.io-client v4 emits 'reconnect' on the Manager (socket.io), not the
+    // Socket itself — listening on the Socket never fires. Guarded so a bare
+    // test double without a manager doesn't throw.
+    socket.io?.on?.('reconnect', () => {
       join();
       resync();
     });
@@ -96,5 +99,8 @@ export function useCombatSocket({
         /* already gone */
       }
     };
+    // Callbacks are read through cbs.current, so they intentionally stay out of
+    // the dep array — the socket wires up once per [enabled, sessionId].
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, sessionId]);
 }

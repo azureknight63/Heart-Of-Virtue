@@ -23,6 +23,16 @@ MAX_FIELD_LENGTH = 2048          # cap on url and other free-text fields
 MAX_SHORT_FIELD_LENGTH = 64      # cap on timestamp/level
 SESSION_ID_BUCKETS = 64          # bound distinct session log files per day
 
+# Control chars (incl. CR/LF) are stripped from every client-supplied field
+# before it is written into a log line, so a hostile payload can't inject a
+# newline to forge fake entries or embed terminal escape sequences (CWE-117).
+_LOG_CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f]")
+
+
+def _sanitize_log_field(value):
+    """Collapse control characters in a log field to single spaces."""
+    return _LOG_CONTROL_CHARS.sub(" ", value)
+
 
 def _require_testing():
     """Gate log-management routes behind TESTING mode.
@@ -116,12 +126,20 @@ def receive_browser_logs():
                 # strings); skip them instead of raising.
                 if not isinstance(log_entry, dict):
                     continue
-                timestamp = str(
-                    log_entry.get("timestamp", datetime.now().isoformat())
-                )[:MAX_SHORT_FIELD_LENGTH]
-                level = str(log_entry.get("level", "LOG"))[:MAX_SHORT_FIELD_LENGTH]
-                message = str(log_entry.get("message", ""))[:MAX_MESSAGE_LENGTH]
-                url = str(log_entry.get("url", ""))[:MAX_FIELD_LENGTH]
+                timestamp = _sanitize_log_field(
+                    str(log_entry.get("timestamp", datetime.now().isoformat()))[
+                        :MAX_SHORT_FIELD_LENGTH
+                    ]
+                )
+                level = _sanitize_log_field(
+                    str(log_entry.get("level", "LOG"))[:MAX_SHORT_FIELD_LENGTH]
+                )
+                message = _sanitize_log_field(
+                    str(log_entry.get("message", ""))[:MAX_MESSAGE_LENGTH]
+                )
+                url = _sanitize_log_field(
+                    str(log_entry.get("url", ""))[:MAX_FIELD_LENGTH]
+                )
 
                 # Format: [TIMESTAMP] [LEVEL] [SESSION] [URL] MESSAGE
                 log_line = (

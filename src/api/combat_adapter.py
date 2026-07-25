@@ -201,7 +201,9 @@ class ApiCombatAdapter:
             self._beat_streamer = CombatBeatStreamer(
                 socketio,
                 f"combat_{self.session_id}",
-                initial_combatants=(initial_state or {}).get("combatants", []),
+                initial_combatants=(
+                    (initial_state or {}).get("battle_state") or {}
+                ).get("combatants", []),
             )
             self._departures = {}
         except Exception:
@@ -210,14 +212,14 @@ class ApiCombatAdapter:
 
     @staticmethod
     def _combatant_stream_id(combatant):
-        """Stream id for a combatant, matching CombatantSerializer's scheme."""
-        from src.player import Player
+        """Stream id for a combatant, matching CombatantSerializer's scheme.
 
-        if isinstance(combatant, Player):
-            return "player"
-        if getattr(combatant, "friend", False):
-            return f"ally_{id(combatant)}"
-        return f"enemy_{id(combatant)}"
+        Delegates to the single source of truth so the streamer and the
+        serializer can never drift apart (issue #436).
+        """
+        from src.api.serializers.combat import CombatantSerializer
+
+        return CombatantSerializer.stream_id(combatant)
 
     def _record_departure(self, combatant, reason):
         """Note why a combatant left the roster this move (issue #436)."""
@@ -244,7 +246,8 @@ class ApiCombatAdapter:
             # enemy removed on death without an intervening beat_state), using the
             # recorded reason so an alive-exit is never rendered as a death.
             streamer.reconcile_final(
-                (result or {}).get("combatants", []), departures
+                ((result or {}).get("battle_state") or {}).get("combatants", []),
+                departures,
             )
             end_state = (result or {}).get("end_state")
             if ended or end_state:

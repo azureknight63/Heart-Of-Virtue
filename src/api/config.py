@@ -72,3 +72,8 @@ class ProductionConfig(Config):
     DEBUG = False
     SESSION_COOKIE_SECURE = True
     CORS_ORIGINS = ["https://nexusfidei.dev"]
+    # Keep SocketIO CORS in lockstep with the HTTP CORS origins. The base class
+    # binds SOCKETIO_CORS_ALLOWED_ORIGINS to the (localhost) CORS_ORIGINS at
+    # class-definition time, so overriding CORS_ORIGINS alone would leave prod
+    # sockets stuck on localhost origins and reject the real origin.
+    SOCKETIO_CORS_ALLOWED_ORIGINS = CORS_ORIGINS

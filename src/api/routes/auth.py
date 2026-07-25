@@ -41,6 +41,29 @@ def _clear_login_attempts(key: str) -> None:
     _login_limiter.clear(key)
 
 
+# Substrings that mark an internal config/infrastructure error whose text must
+# never reach the client (avoids leaking env-var names, connection URLs, etc).
+_CONFIG_LEAK_MARKERS = ("_URL", "_KEY", "_TOKEN", "not set", "os.environ")
+
+
+def _is_config_leak(msg: str) -> bool:
+    """True if an error message would expose internal config/infra details."""
+    return any(marker in msg for marker in _CONFIG_LEAK_MARKERS)
+
+
+def _establish_session_for_user(session_manager, username, user):
+    """Create a session for ``username`` and link it to the DB user record.
+
+    Shared by register and login so the session-creation + linkage contract
+    (db_user_id, timezone default) lives in exactly one place.
+    """
+    session_id, player_id = session_manager.create_session(username)
+    session = session_manager.get_session(session_id)
+    session.db_user_id = user["id"]
+    session.data["timezone"] = user.get("timezone", "America/New_York")
+    return session_id, player_id
+
+
 def require_auth(f):
     """Require a valid session for the wrapped route.
 
@@ -138,9 +161,7 @@ async def register():
         except ValueError as ve:
             msg = str(ve)
             # Don't expose internal config/infrastructure details to users
-            if any(
-                kw in msg for kw in ("_URL", "_KEY", "_TOKEN", "not set", "os.environ")
-            ):
+            if _is_config_leak(msg):
                 return (
                     jsonify(
                         {
@@ -180,12 +201,10 @@ async def register():
 
         session_manager = current_app.session_manager
 
-        # Create session with the DB user ID
-        session_id, player_id = session_manager.create_session(username)
-        # Link session to DB user ID
-        session = session_manager.get_session(session_id)
-        session.db_user_id = user["id"]
-        session.data["timezone"] = user.get("timezone", "America/New_York")
+        # Create session and link it to the DB user record.
+        session_id, player_id = _establish_session_for_user(
+            session_manager, username, user
+        )
 
         return (
             jsonify(
@@ -302,12 +321,10 @@ async def login():
 
         session_manager = current_app.session_manager
 
-        # Create session
-        session_id, player_id = session_manager.create_session(username)
-        # Link session to DB user ID
-        session = session_manager.get_session(session_id)
-        session.db_user_id = user["id"]
-        session.data["timezone"] = user.get("timezone", "America/New_York")
+        # Create session and link it to the DB user record.
+        session_id, player_id = _establish_session_for_user(
+            session_manager, username, user
+        )
 
         return (
             jsonify(
@@ -326,7 +343,7 @@ async def login():
         logger.exception("Unhandled error in login")
         msg = str(e)
         # Don't expose internal config/infrastructure details to users
-        if any(kw in msg for kw in ("_URL", "_KEY", "_TOKEN", "not set", "os.environ")):
+        if _is_config_leak(msg):
             return (
                 jsonify(
                     {
