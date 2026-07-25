@@ -39,6 +39,9 @@ export default function GamePage() {
   // becomes ack-only in useCombat).
   const streaming = combatSocketEnabled()
   const [streamedAnimations, setStreamedAnimations] = useState([])
+  // Note: `combatSpeed` is deliberately NOT wired from here — the downstream
+  // Battlefield/RightPanel/BattlefieldGrid chain defaults it to 1x until the
+  // combat-speed control ships (issue #460).
   const combatRef = useRef(combat)
   combatRef.current = combat
 

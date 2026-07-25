@@ -166,13 +166,16 @@ class CombatBeatStreamer:
 
     def emit_resolved(self, state):
         """Emit the terminal authoritative state (beats already streamed)."""
-        payload = {"seq": self._next_seq()}
-        payload.update(state or {})
+        payload = dict(state or {})
         payload.pop("beat_states", None)
+        # Assign seq last so the streamer's authoritative sequence number always
+        # wins over any stray "seq" key that might appear in the state payload.
+        payload["seq"] = self._next_seq()
         self._emit(RESOLVED_EVENT, payload)
 
     def emit_ended(self, end_state):
         """Emit victory/defeat resolution."""
-        payload = {"seq": self._next_seq()}
-        payload.update(end_state or {})
+        payload = dict(end_state or {})
+        # Assign seq last so it can't be clobbered by an incoming "seq" key.
+        payload["seq"] = self._next_seq()
         self._emit(ENDED_EVENT, payload)
