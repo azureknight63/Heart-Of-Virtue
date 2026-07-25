@@ -77,13 +77,14 @@ class Object:
                 continue
             param = thing.replace("!", "")
             p_list = param.split(":")
-            repeat = False
             event_type = p_list.pop(0)
-            for setting in p_list:
-                if setting == "r":
-                    repeat = True
-                    p_list.remove(setting)
-                    continue
+            # The ``r`` setting marks the event as repeating and is stripped from
+            # the remaining params. Filter with a comprehension rather than
+            # ``list.remove`` inside a ``for`` over the same list, which skips the
+            # element after each removal (a second adjacent ``r`` would leak into
+            # the params).
+            repeat = "r" in p_list
+            p_list = [setting for setting in p_list if setting != "r"]
             event_cls = functions.seek_class(event_type, "story")
             event = functions.instantiate_event(
                 event_cls,

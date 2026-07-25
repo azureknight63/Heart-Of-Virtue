@@ -72,10 +72,18 @@ class CombatPosition:
 
     @classmethod
     def set_grid_bounds(cls, width, height):
-        """Widen coordinate validation to the active dynamic grid size.
+        """Set coordinate validation to the active dynamic grid size.
 
-        The bound only ever grows; it never shrinks below the legacy 50 default,
-        so positions on smaller grids and any pre-existing positions stay valid.
+        The bound is (re)set on every call to ``max(50, width, height)`` — it is
+        floored at the legacy 50 default so smaller grids never invalidate
+        pre-existing positions, but it is NOT monotonic across calls: a later
+        small-grid combat resets the bound back down to 50. Callers that widen
+        for a large fight own restoring the default afterward.
+
+        NOTE: this is process-global class state shared by every CombatPosition,
+        so concurrent combats in one process share one bound. That is acceptable
+        for the current single-active-combat model; a future concurrent-combat
+        design should thread the bound per-encounter instead.
 
         Args:
             width: Active grid width.

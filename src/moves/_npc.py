@@ -1240,27 +1240,31 @@ class SeismicSlam(Move):
         # absorption, and parry heat/exp bookkeeping all apply — parameterized here
         # for the radial multi-target hit.
         original_target = self.target
-        for enemy, distance in list(self.user.combat_proximity.items()):
-            if not enemy.is_alive() or not _hostile_to(self.user, enemy):
-                continue
-            if distance > self._RADIUS:
-                continue
-            resist = functions.combat_resistance(enemy, "crushing")
-            damage = max(0, int(self.power * resist) - enemy.protection)
-            hit_chance = max(
-                5, int(85 - enemy.finesse + (self.user.finesse * 0.7))
-            )
-            if random.randint(0, 100) <= hit_chance:
-                self.target = enemy
-                self.prep_colors()
-                if functions.check_parry(enemy):
-                    self.parry()
+        try:
+            for enemy, distance in list(self.user.combat_proximity.items()):
+                if not enemy.is_alive() or not _hostile_to(self.user, enemy):
                     continue
-                self.hit(damage, False)
-                functions.inflict(
-                    states.Staggered(enemy), enemy, chance=self._STAGGER_CHANCE
+                if distance > self._RADIUS:
+                    continue
+                resist = functions.combat_resistance(enemy, "crushing")
+                damage = max(0, int(self.power * resist) - enemy.protection)
+                hit_chance = max(
+                    5, int(85 - enemy.finesse + (self.user.finesse * 0.7))
                 )
-        self.target = original_target
+                if random.randint(0, 100) <= hit_chance:
+                    self.target = enemy
+                    self.prep_colors()
+                    if functions.check_parry(enemy):
+                        self.parry()
+                        continue
+                    self.hit(damage, False)
+                    functions.inflict(
+                        states.Staggered(enemy), enemy, chance=self._STAGGER_CHANCE
+                    )
+        finally:
+            # Restore the original target even if a hit()/inflict() raises mid-loop,
+            # so later recoil/cooldown stages don't act on a stale loop enemy.
+            self.target = original_target
         self.user.fatigue -= self.fatigue_cost
         if self.user.fatigue < 0:
             self.user.fatigue = 0

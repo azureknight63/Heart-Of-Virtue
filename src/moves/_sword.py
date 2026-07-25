@@ -184,44 +184,47 @@ class WhirlAttack(Move):
         self.user.combat_exp["Basic"] += 5
 
         # Find all enemies in range
-        for enemy in list(self.user.combat_proximity.keys()):
-            if not enemy.is_alive():
-                continue
+        try:
+            for enemy in list(self.user.combat_proximity.keys()):
+                if not enemy.is_alive():
+                    continue
 
-            if hasattr(enemy, "combat_position") and enemy.combat_position is not None:
-                dist = positions.distance_from_coords(
-                    self.user.combat_position, enemy.combat_position
-                )
-                if dist <= self.mvrange[1]:
-                    # Route damage through the shared pipeline (issue #402):
-                    # resistances, heat scaling, and self.hit()/parry() bookkeeping.
-                    self.target = enemy
-                    self.prep_colors()
-                    damage = (
-                        (
-                            (self.power * functions.combat_resistance(enemy, base_damage_type))
-                            - enemy.protection
-                        )
-                        * self.user.heat
-                    ) * random.uniform(0.8, 1.2)
-                    damage = max(0, damage)
+                if hasattr(enemy, "combat_position") and enemy.combat_position is not None:
+                    dist = positions.distance_from_coords(
+                        self.user.combat_position, enemy.combat_position
+                    )
+                    if dist <= self.mvrange[1]:
+                        # Route damage through the shared pipeline (issue #402):
+                        # resistances, heat scaling, and self.hit()/parry() bookkeeping.
+                        self.target = enemy
+                        self.prep_colors()
+                        damage = (
+                            (
+                                (self.power * functions.combat_resistance(enemy, base_damage_type))
+                                - enemy.protection
+                            )
+                            * self.user.heat
+                        ) * random.uniform(0.8, 1.2)
+                        damage = max(0, damage)
 
-                    hit_chance = int(85 - enemy.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3))
-                    roll = random.randint(0, 100)
-                    glance = False
-                    if hit_chance >= roll and hit_chance - roll < 10:
-                        damage /= 2
-                        glance = True
-                    damage = int(damage)
+                        hit_chance = int(85 - enemy.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3))
+                        roll = random.randint(0, 100)
+                        glance = False
+                        if hit_chance >= roll and hit_chance - roll < 10:
+                            damage /= 2
+                            glance = True
+                        damage = int(damage)
 
-                    if hit_chance >= roll:
-                        if functions.check_parry(enemy):
-                            self.parry()
-                        else:
-                            self.hit(damage, glance)
-                            self.affected_enemies.append(enemy)
-
-        self.target = original_target
+                        if hit_chance >= roll:
+                            if functions.check_parry(enemy):
+                                self.parry()
+                            else:
+                                self.hit(damage, glance)
+                                self.affected_enemies.append(enemy)
+        finally:
+            # Restore the original target even if a hit() raises mid-loop, so the
+            # facing/fatigue stages below don't act on a stale loop enemy.
+            self.target = original_target
 
         # Set random facing
         random_facing = random.choice(list(positions.Direction))
