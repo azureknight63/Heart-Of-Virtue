@@ -232,57 +232,6 @@ class TestUniverseGetTile:
         assert universe.get_tile(10, 10).name == "Tile1010"
 
 
-# ============================================================================
-# TEST: Universe.parse_hidden
-# ============================================================================
-
-class TestUniverseParseHidden:
-    """Test Universe.parse_hidden() static method."""
-
-    @pytest.mark.parametrize("setting,expected_hidden,expected_factor", [
-        ("", False, 0),
-        ("garbage", False, 0),
-        ("random_text", False, 0),
-        ("h+0", True, 0),
-        ("h+1", True, 1),
-        ("h+42", True, 42),
-        ("h+999", True, 999),
-        ("h+", True, ValueError),  # Will fail on int() conversion
-    ])
-    def test_parse_hidden_comprehensive(self, setting, expected_hidden, expected_factor):
-        """Test parse_hidden with various inputs."""
-        if expected_factor is ValueError:
-            with pytest.raises(ValueError):
-                Universe.parse_hidden(setting)
-        else:
-            hidden, hfactor = Universe.parse_hidden(setting)
-            assert hidden == expected_hidden
-            assert hfactor == expected_factor
-
-    def test_parse_hidden_with_spaces(self):
-        """Test parse_hidden with spaces - will match 'h+' but fail on int() conversion."""
-        # The implementation checks if "h+" is IN the string, so "h+ 5" will match
-        # but int(" 5") will fail. Let's test what actually happens.
-        try:
-            hidden, hfactor = Universe.parse_hidden("h+ 5")
-            # If it succeeds, the implementation strips/converts differently
-            assert isinstance(hidden, bool)
-        except (ValueError, IndexError):
-            # If it fails, that's also valid behavior
-            pass
-
-    def test_parse_hidden_multiple_h_plus(self):
-        """Test parse_hidden with multiple h+ - tests implementation behavior."""
-        # Implementation: if "h+" in setting, extract from position 2
-        # "h+5h+10" -> setting[2:] = "5h+10" -> int("5h+10") fails
-        try:
-            hidden, hfactor = Universe.parse_hidden("h+5h+10")
-            # If it succeeds, verify behavior
-            assert isinstance(hidden, bool)
-        except ValueError:
-            # Expected: int() can't parse "5h+10"
-            pass
-
 
 # ============================================================================
 # TEST: Universe._json_maps_root_candidates

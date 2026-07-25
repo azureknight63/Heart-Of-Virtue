@@ -66,15 +66,6 @@ def test_recursive_deserialize_inventory():
         assert hasattr(item, 'value')
 
 
-@pytest.mark.parametrize(
-    "setting, expected_hidden, expected_hfactor",
-    [("", False, 0), ("garbage", False, 0), ("h+0", True, 0), ("h+123", True, 123)],
-)
-def test_parse_hidden(setting: str, expected_hidden: bool, expected_hfactor: int):
-    hidden, hfactor = Universe.parse_hidden(setting)
-
-    assert hidden == expected_hidden
-    assert hfactor == expected_hfactor
 
 
 def test_tile_exists():

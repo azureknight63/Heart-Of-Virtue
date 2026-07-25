@@ -602,18 +602,3 @@ class TestLoadAllJsonMaps:
         assert count == 0
 
 
-# ---------------------------------------------------------------------------
-# parse_hidden static method
-# ---------------------------------------------------------------------------
-
-
-class TestParseHidden:
-    def test_h_plus_marks_hidden(self):
-        hidden, hfactor = Universe.parse_hidden("h+5")
-        assert hidden is True
-        assert hfactor == 5
-
-    def test_no_h_plus_not_hidden(self):
-        hidden, hfactor = Universe.parse_hidden("normal_setting")
-        assert hidden is False
-        assert hfactor == 0

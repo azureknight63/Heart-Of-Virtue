@@ -457,14 +457,3 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
                                 continue
         except Exception:
             pass
-
-    @staticmethod
-    def parse_hidden(setting: str) -> tuple[bool, int]:
-        hidden = False
-        hfactor = 0
-
-        if "h+" in setting:
-            hidden = True
-            hfactor = int(setting[2:])
-
-        return hidden, hfactor

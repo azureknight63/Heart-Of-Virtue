@@ -414,43 +414,6 @@ class TestUniverseDeserializeSavedInstance:
         # May fail due to actual Item initialization, but shouldn't crash on structure
 
 
-class TestUniverseParseHidden:
-    """Test Universe.parse_hidden static method."""
-
-    def test_parse_hidden_not_hidden(self):
-        """Test parse_hidden with non-hidden setting."""
-        hidden, hfactor = Universe.parse_hidden("normal")
-
-        assert hidden is False
-        assert hfactor == 0
-
-    def test_parse_hidden_with_h_plus(self):
-        """Test parse_hidden with h+ prefix."""
-        hidden, hfactor = Universe.parse_hidden("h+5")
-
-        assert hidden is True
-        assert hfactor == 5
-
-    def test_parse_hidden_h_plus_zero(self):
-        """Test parse_hidden with h+0."""
-        hidden, hfactor = Universe.parse_hidden("h+0")
-
-        assert hidden is True
-        assert hfactor == 0
-
-    def test_parse_hidden_h_plus_large(self):
-        """Test parse_hidden with large h+ value."""
-        hidden, hfactor = Universe.parse_hidden("h+999")
-
-        assert hidden is True
-        assert hfactor == 999
-
-    def test_parse_hidden_empty_string(self):
-        """Test parse_hidden with empty string."""
-        hidden, hfactor = Universe.parse_hidden("")
-
-        assert hidden is False
-        assert hfactor == 0
 
 
 class TestUniverseGameTickEvents:

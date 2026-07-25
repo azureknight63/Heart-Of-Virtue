@@ -2235,7 +2235,7 @@ class TestMaybeExploreFlavor:
 
 
 class TestUniverseBasics:
-    """Universe class init, get_tile, game_tick_events, parse_hidden."""
+    """Universe class init, get_tile, game_tick_events."""
 
     def _make_universe(self):
         from src.universe import Universe
@@ -2271,26 +2271,8 @@ class TestUniverseBasics:
         result = u.get_tile(99, 99)
         assert result is None
 
-    def test_parse_hidden_no_flag(self):
-        from src.universe import Universe
 
-        hidden, hfactor = Universe.parse_hidden("normal_param")
-        assert hidden is False
-        assert hfactor == 0
 
-    def test_parse_hidden_with_h_plus(self):
-        from src.universe import Universe
-
-        hidden, hfactor = Universe.parse_hidden("h+5")
-        assert hidden is True
-        assert hfactor == 5
-
-    def test_parse_hidden_with_h_plus_zero(self):
-        from src.universe import Universe
-
-        hidden, hfactor = Universe.parse_hidden("h+0")
-        assert hidden is True
-        assert hfactor == 0
 
     def test_game_tick_increments(self):
         u = self._make_universe()

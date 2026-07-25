@@ -269,24 +269,6 @@ class TestUniverseLoadSingleJsonMap:
             u._load_single_json_map(p, jf)
 
 
-class TestUniverseParseHidden:
-    """Universe.parse_hidden() helper."""
-
-    def test_parse_hidden_no_h_plus(self):
-        """parse_hidden with no h+ marker returns (False, 0)."""
-        from src.universe import Universe
-
-        hidden, hfactor = Universe.parse_hidden("something")
-        assert hidden is False
-        assert hfactor == 0
-
-    def test_parse_hidden_with_h_plus(self):
-        """parse_hidden with h+50 returns (True, 50)."""
-        from src.universe import Universe
-
-        hidden, hfactor = Universe.parse_hidden("h+50")
-        assert hidden is True
-        assert hfactor == 50
 
 
 class TestUniverseMiscMethods:

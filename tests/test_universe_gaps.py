@@ -333,25 +333,9 @@ def test_evaluate_map_entry_spawners_handles_exception_in_event():
     u._evaluate_map_entry_spawners()
 
 
-# ---------------------------------------------------------------------------
-# Universe.parse_hidden
-# ---------------------------------------------------------------------------
 
 
-def test_parse_hidden_with_h_plus():
-    from src.universe import Universe
 
-    hidden, hfactor = Universe.parse_hidden("h+5")
-    assert hidden is True
-    assert hfactor == 5
-
-
-def test_parse_hidden_without_marker():
-    from src.universe import Universe
-
-    hidden, hfactor = Universe.parse_hidden("somevalue")
-    assert hidden is False
-    assert hfactor == 0
 
 
 # ---------------------------------------------------------------------------
