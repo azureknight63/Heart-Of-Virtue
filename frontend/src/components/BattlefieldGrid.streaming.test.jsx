@@ -85,6 +85,40 @@ describe('BattlefieldGrid streaming mode', () => {
     expect(mockPlaySFX).not.toHaveBeenCalledWith('enemy_death');
   });
 
+  it('re-enqueues a new fight after the buffer is reset to []', () => {
+    // First fight: one beat plays.
+    const { rerender } = render(
+      <BattlefieldGrid
+        combat={combat}
+        tab="overview"
+        streaming
+        streamedAnimations={[attackAnim]}
+      />
+    );
+    act(() => vi.advanceTimersByTime(1000));
+    mockPlaySFX.mockClear();
+
+    // Parent clears the buffer between fights (GamePage resets on combat end).
+    rerender(
+      <BattlefieldGrid combat={combat} tab="overview" streaming streamedAnimations={[]} />
+    );
+    act(() => vi.advanceTimersByTime(0));
+
+    // Second fight's first beat must still enqueue and play (regression: the
+    // stream cursor was never reset, so a shorter buffer stayed stuck).
+    const secondBeat = { ...attackAnim, beat: { ...attackBeat, seq: 2 } };
+    rerender(
+      <BattlefieldGrid
+        combat={combat}
+        tab="overview"
+        streaming
+        streamedAnimations={[secondBeat]}
+      />
+    );
+    act(() => vi.advanceTimersByTime(0));
+    expect(mockPlaySFX).toHaveBeenCalledWith('attack_swipe');
+  });
+
   it('ignores the log-spooler path when streaming (no phase SFX from the log)', () => {
     render(
       <BattlefieldGrid

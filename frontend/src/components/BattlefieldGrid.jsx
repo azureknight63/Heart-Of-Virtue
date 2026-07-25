@@ -1137,6 +1137,13 @@ function BattlefieldGrid({
   const [lastProcessedStreamIndex, setLastProcessedStreamIndex] = useState(0);
   useEffect(() => {
     if (!streaming) return;
+    // The parent resets streamedAnimations to [] between fights. Without
+    // re-syncing the cursor, a shorter (or empty) buffer would sit below the
+    // stale index and the next combat's beats would never enqueue.
+    if (streamedAnimations.length < lastProcessedStreamIndex) {
+      setLastProcessedStreamIndex(streamedAnimations.length);
+      return;
+    }
     if (streamedAnimations.length > lastProcessedStreamIndex) {
       const next = streamedAnimations.slice(lastProcessedStreamIndex);
       setAnimationQueue((prev) => [...prev, ...next]);
