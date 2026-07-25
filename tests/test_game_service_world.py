@@ -11,7 +11,7 @@ Target: Increase game_service.py coverage from 20-25% → 35%+ with world tests.
 """
 
 import pytest
-from unittest.mock import MagicMock, Mock, patch, PropertyMock
+from unittest.mock import MagicMock
 from src.api.services.game_service import GameService
 
 
