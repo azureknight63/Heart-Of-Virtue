@@ -765,16 +765,6 @@
                     "events": [],
                     "tile": null,
                     "player": null,
-                    "ferry": {
-                        "__class__": "method",
-                        "__module__": "builtins",
-                        "props": {}
-                    },
-                    "landing": {
-                        "__class__": "method",
-                        "__module__": "builtins",
-                        "props": {}
-                    },
                     "events_before": [],
                     "events_after": [],
                     "teleport_map": "eastern-descent",
@@ -1489,16 +1479,6 @@
                     "events": [],
                     "tile": null,
                     "player": null,
-                    "jambo": {
-                        "__class__": "method",
-                        "__module__": "builtins",
-                        "props": {}
-                    },
-                    "tent": {
-                        "__class__": "method",
-                        "__module__": "builtins",
-                        "props": {}
-                    },
                     "events_before": [],
                     "events_after": [],
                     "teleport_map": "eastern-descent-jambos-tent",
@@ -1541,16 +1521,6 @@
                     "events": [],
                     "tile": null,
                     "player": null,
-                    "camp": {
-                        "__class__": "method",
-                        "__module__": "builtins",
-                        "props": {}
-                    },
-                    "boundary": {
-                        "__class__": "method",
-                        "__module__": "builtins",
-                        "props": {}
-                    },
                     "events_before": [],
                     "events_after": [],
                     "teleport_map": "eastern-descent",
