@@ -789,11 +789,11 @@
                 "props": {
                     "name": "Camp Entrance",
                     "description": "A gap in the stake boundary where the ground is worn smooth by regular passage.",
-                    "idle_message": "A gap in the boundary stakes opens into the camp.",
+                    "idle_message": "A gap in the boundary stakes, forming the camp entrance.",
                     "hidden": false,
                     "hide_factor": 0,
                     "discovery_message": "a worn gap leading into the camp!",
-                    "announce": "A gap in the boundary stakes opens into the camp.",
+                    "announce": "A gap in the boundary stakes, forming the camp entrance.",
                     "events": [],
                     "tile": null,
                     "player": null,
