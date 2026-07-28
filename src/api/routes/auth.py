@@ -23,21 +23,65 @@ _LOGIN_RATE_LIMIT = 10
 _LOGIN_RATE_WINDOW = 900  # 15 minutes
 _login_limiter = RateLimiter(limit=_LOGIN_RATE_LIMIT, window_seconds=_LOGIN_RATE_WINDOW)
 
+# Second, independent throttle keyed on IP alone. The username+IP limiter above
+# resets its budget every time the username changes, so a single IP can spray
+# thousands of distinct usernames (credential stuffing) without ever tripping
+# it. This IP-only limiter catches that horizontal attack. The threshold is set
+# far above what a legitimate human — even several sharing one NAT'd IP — would
+# fail in the window, so it's defense-in-depth against spray, not a per-account
+# gate. Same per-worker caveat as above (issue #284): the effective limit is
+# _IP_RATE_LIMIT * worker_count, so treat it as raising the cost of spray, not
+# an airtight cap. It keys on request.remote_addr, which is the direct client
+# IP by default (no proxy/load balancer in this deployment) and automatically
+# becomes the real client IP if the opt-in ProxyFix is ever configured (see
+# _apply_proxy_fix / TRUSTED_PROXY_COUNT and tests/test_proxy_fix.py).
+_IP_RATE_LIMIT = 60
+_IP_RATE_WINDOW = 900  # 15 minutes
+_ip_limiter = RateLimiter(limit=_IP_RATE_LIMIT, window_seconds=_IP_RATE_WINDOW)
+
+
+def _client_ip() -> str:
+    """The client's IP, collapsed to a /64 prefix for IPv6.
+
+    Full IPv6 addresses (/128) are cheap for an attacker to rotate within their
+    allocation, which would defeat an IP-keyed throttle; a typical end-site is a
+    /64, so keying on that prefix throttles the whole allocation. IPv4 and
+    unparseable values are used verbatim. Returns ``"unknown"`` when called
+    outside a request context (e.g. direct helper calls in tests).
+    """
+    try:
+        ip = request.remote_addr or "unknown"
+    except RuntimeError:  # working outside of request context
+        return "unknown"
+    if ":" in ip:  # IPv6
+        try:
+            import ipaddress
+
+            network = ipaddress.ip_network(f"{ip}/64", strict=False)
+            return str(network.network_address)
+        except ValueError:
+            return ip
+    return ip
+
 
 def _login_rate_limit_key(username: str) -> str:
-    ip = request.remote_addr or "unknown"
-    return f"{(username or '').strip().lower()}:{ip}"
+    return f"{(username or '').strip().lower()}:{request.remote_addr or 'unknown'}"
 
 
 def _is_login_rate_limited(key: str) -> bool:
-    return _login_limiter.is_limited(key)
+    """True if either the username+IP or the IP-only throttle is tripped."""
+    return _login_limiter.is_limited(key) or _ip_limiter.is_limited(_client_ip())
 
 
 def _record_failed_login(key: str) -> None:
     _login_limiter.record(key)
+    _ip_limiter.record(_client_ip())
 
 
 def _clear_login_attempts(key: str) -> None:
+    # Clear only the per-account key on success. The IP counter is left to decay
+    # naturally so a single valid login mid-spray doesn't wipe the accumulated
+    # IP-level evidence of an ongoing attack.
     _login_limiter.clear(key)
 
 
