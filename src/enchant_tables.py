@@ -56,23 +56,59 @@ class Enchantment:
 # PREFIXES
 
 
-class Sharp(Enchantment):
-    tier = 1
+class _DamagePercentBoostEnchantment(Enchantment):
+    """
+    Shared modify() for prefix enchantments that boost item.damage by a random
+    percentage and scale item.value proportionally to that boost (#424). Concrete
+    subclasses (Sharp, Weighted, Balanced, and the elemental damage prefixes)
+    supply only the differing data as class attributes instead of each
+    reimplementing this body.
 
-    def __init__(self, item):
-        super().__init__(item, name="Sharp", rarity=0, group="Prefix", value=1)
+    Not itself a real enchantment: it deliberately doesn't override __init__,
+    so tests/enumeration code that walks module classes should exclude it (and
+    any future helper base) by checking for an own __init__, same as they
+    already exclude Enchantment itself.
+
+    _mod_low / _mod_high: random.uniform() range sampled fresh each call
+    _mod_offset: subtracted from the sampled value to get the fractional damage
+                 boost (1 when the range is centered on 1.0, e.g. (1.05, 1.15);
+                 0 when the range already IS the fraction, e.g. Weighted's
+                 (0.05, 0.15))
+    _value_scale: how much of the fractional boost carries into item.value
+    _base_damage_type: if set, overwrites item.base_damage_type (elemental
+                        prefixes force the weapon's damage type)
+    _announce_template: format string with a single {} for the item name
+    """
+
+    _mod_low = 0.0
+    _mod_high = 0.0
+    _mod_offset = 1
+    _value_scale = 0.5
+    _base_damage_type = None
+    _announce_template = "There's a {} here."
 
     def modify(self):
-        mod = random.uniform(1.05, 1.15)
-        amount = self.item.damage * (mod - 1)
+        mod = random.uniform(self._mod_low, self._mod_high)
+        frac = mod - self._mod_offset
+        amount = self.item.damage * frac
         if amount < 1:
             amount = 1
         self.item.damage += amount
+        if self._base_damage_type is not None:
+            self.item.base_damage_type = self._base_damage_type
         # scale value based on the extra damage in a manner consistent with Flaming
-        value_mod = ((mod - 1) / 2) + self.value
+        value_mod = (frac * self._value_scale) + self.value
         self.item.value = int(self.item.value * value_mod)
         self.item.name = self.name + " " + self.item.name
-        self.item.announce = "There's a {} here.".format(self.item.name)
+        self.item.announce = self._announce_template.format(self.item.name)
+
+
+class Sharp(_DamagePercentBoostEnchantment):
+    tier = 1
+    _mod_low, _mod_high = 1.05, 1.15
+
+    def __init__(self, item):
+        super().__init__(item, name="Sharp", rarity=0, group="Prefix", value=1)
 
     def requirements(self):
         allowed_subtypes = item_types["weapons"]["archetypes"]["Blade"]
@@ -82,22 +118,14 @@ class Sharp(Enchantment):
             return False
 
 
-class Weighted(Enchantment):
+class Weighted(_DamagePercentBoostEnchantment):
     tier = 1
+    _mod_low, _mod_high = 0.05, 0.15
+    _mod_offset = 0
+    _value_scale = 1.0
 
     def __init__(self, item):
         super().__init__(item, name="Weighted", rarity=0, group="Prefix", value=1)
-
-    def modify(self):
-        mod = random.uniform(0.05, 0.15)
-        amount = self.item.damage * mod
-        if amount < 1:
-            amount = 1
-        self.item.damage += amount
-        self.item.value *= 1 + mod
-        self.item.value = int(self.item.value)
-        self.item.name = self.name + " " + self.item.name
-        self.item.announce = "There's a {} here.".format(self.item.name)
 
     def requirements(self):
         allowed_subtypes = item_types["weapons"]["archetypes"]["Blunt"]
@@ -107,23 +135,12 @@ class Weighted(Enchantment):
             return False
 
 
-class Balanced(Enchantment):
+class Balanced(_DamagePercentBoostEnchantment):
     tier = 1
+    _mod_low, _mod_high = 1.05, 1.15
 
     def __init__(self, item):
         super().__init__(item, name="Balanced", rarity=0, group="Prefix", value=1)
-
-    def modify(self):
-        mod = random.uniform(1.05, 1.15)
-        amount = self.item.damage * (mod - 1)
-        if amount < 1:
-            amount = 1
-        self.item.damage += amount
-        # scale value based on the extra damage in a manner consistent with Flaming
-        value_mod = ((mod - 1) / 2) + self.value
-        self.item.value = int(self.item.value * value_mod)
-        self.item.name = self.name + " " + self.item.name
-        self.item.announce = "There's a {} here.".format(self.item.name)
 
     def requirements(self):
         allowed_subtypes = item_types["weapons"]["archetypes"]["Ranged"]
@@ -316,207 +333,106 @@ class Dousing(Enchantment):  # grants resistance to fire when equipped
         return self.item.maintype in allowed_maintypes
 
 
-class Flaming(Enchantment):
+class Flaming(_DamagePercentBoostEnchantment):
     tier = 2
+    _mod_low, _mod_high = 1.12, 1.28
+    _base_damage_type = "fire"
+    _announce_template = "There's a {} here, crackling with heat."
 
     def __init__(self, item):
         super().__init__(item, name="Flaming", rarity=0, group="Prefix", value=1.3)
 
-    def modify(self):
-        # modest elemental damage boost
-        mod = random.uniform(1.12, 1.28)
-        amount = self.item.damage * (mod - 1)
-        if amount < 1:
-            amount = 1
-        self.item.damage += amount
-        # force weapon to do fire damage as its base damage type
-        self.item.base_damage_type = "fire"
-        value_mod = ((mod - 1) / 2) + self.value
-        self.item.value = int(self.item.value * value_mod)
-        self.item.name = self.name + " " + self.item.name
-        self.item.announce = "There's a {} here, crackling with heat.".format(
-            self.item.name
-        )
-
     def requirements(self):
         return getattr(self.item, "maintype", None) == "Weapon"
 
 
-class Icy(Enchantment):
+class Icy(_DamagePercentBoostEnchantment):
     tier = 2
+    _mod_low, _mod_high = 1.12, 1.28
+    _base_damage_type = "ice"
+    _announce_template = "There's a {} here, rimed in frost."
 
     def __init__(self, item):
         super().__init__(item, name="Icy", rarity=0, group="Prefix", value=1.25)
 
-    def modify(self):
-        mod = random.uniform(1.12, 1.28)
-        amount = self.item.damage * (mod - 1)
-        if amount < 1:
-            amount = 1
-        self.item.damage += amount
-        self.item.base_damage_type = "ice"
-        # scale value based on damage bonus (fractional mod)
-        value_mod = ((mod - 1) / 2) + self.value
-        self.item.value = int(self.item.value * value_mod)
-        self.item.name = self.name + " " + self.item.name
-        self.item.announce = "There's a {} here, rimed in frost.".format(self.item.name)
-
     def requirements(self):
         return getattr(self.item, "maintype", None) == "Weapon"
 
 
-class Shocking(Enchantment):
+class Shocking(_DamagePercentBoostEnchantment):
     tier = 2
+    _mod_low, _mod_high = 1.10, 1.25
+    _base_damage_type = "shock"
+    _announce_template = "There's a {} here, humming with electricity."
 
     def __init__(self, item):
         super().__init__(item, name="Shocking", rarity=0, group="Prefix", value=1.35)
 
-    def modify(self):
-        mod = random.uniform(1.10, 1.25)
-        amount = self.item.damage * (mod - 1)
-        if amount < 1:
-            amount = 1
-        self.item.damage += amount
-        self.item.base_damage_type = "shock"
-        # scale value based on damage bonus (fractional mod)
-        value_mod = ((mod - 1) / 2) + self.value
-        self.item.value = int(self.item.value * value_mod)
-        self.item.name = self.name + " " + self.item.name
-        self.item.announce = "There's a {} here, humming with electricity.".format(
-            self.item.name
-        )
-
     def requirements(self):
         return getattr(self.item, "maintype", None) == "Weapon"
 
 
-class Earthen(Enchantment):
+class Earthen(_DamagePercentBoostEnchantment):
     tier = 2
+    _mod_low, _mod_high = 1.08, 1.22
+    _base_damage_type = "earth"
+    _announce_template = "There's a {} here, bound with the weight of the earth."
 
     def __init__(self, item):
         super().__init__(item, name="Earthen", rarity=0, group="Prefix", value=1.2)
 
-    def modify(self):
-        mod = random.uniform(1.08, 1.22)
-        amount = self.item.damage * (mod - 1)
-        if amount < 1:
-            amount = 1
-        self.item.damage += amount
-        self.item.base_damage_type = "earth"
-        # scale value based on damage bonus (fractional mod)
-        value_mod = ((mod - 1) / 2) + self.value
-        self.item.value = int(self.item.value * value_mod)
-        self.item.name = self.name + " " + self.item.name
-        self.item.announce = (
-            "There's a {} here, bound with the weight of the earth.".format(
-                self.item.name
-            )
-        )
-
     def requirements(self):
         return getattr(self.item, "maintype", None) == "Weapon"
 
 
-class Radiant(Enchantment):
+class Radiant(_DamagePercentBoostEnchantment):
     tier = 3
+    _mod_low, _mod_high = 1.15, 1.30
+    _base_damage_type = "light"
+    _announce_template = "There's a {} here, glowing with a pure light."
 
     def __init__(self, item):
         super().__init__(item, name="Radiant", rarity=0, group="Prefix", value=1.5)
 
-    def modify(self):
-        mod = random.uniform(1.15, 1.30)
-        amount = self.item.damage * (mod - 1)
-        if amount < 1:
-            amount = 1
-        self.item.damage += amount
-        self.item.base_damage_type = "light"
-        # scale value based on damage bonus (fractional mod)
-        value_mod = ((mod - 1) / 2) + self.value
-        self.item.value = int(self.item.value * value_mod)
-        self.item.name = self.name + " " + self.item.name
-        self.item.announce = "There's a {} here, glowing with a pure light.".format(
-            self.item.name
-        )
-
     def requirements(self):
         return getattr(self.item, "maintype", None) == "Weapon"
 
 
-class Umbral(Enchantment):
+class Umbral(_DamagePercentBoostEnchantment):
     tier = 3
+    _mod_low, _mod_high = 1.15, 1.30
+    _base_damage_type = "dark"
+    _announce_template = "There's a {} here, cloaked in shadow."
 
     def __init__(self, item):
         super().__init__(item, name="Umbral", rarity=0, group="Prefix", value=1.5)
 
-    def modify(self):
-        mod = random.uniform(1.15, 1.30)
-        amount = self.item.damage * (mod - 1)
-        if amount < 1:
-            amount = 1
-        self.item.damage += amount
-        self.item.base_damage_type = "dark"
-        # scale value based on damage bonus (fractional mod)
-        value_mod = ((mod - 1) / 2) + self.value
-        self.item.value = int(self.item.value * value_mod)
-        self.item.name = self.name + " " + self.item.name
-        self.item.announce = "There's a {} here, cloaked in shadow.".format(
-            self.item.name
-        )
-
     def requirements(self):
         return getattr(self.item, "maintype", None) == "Weapon"
 
 
-class Spiritual(Enchantment):
+class Spiritual(_DamagePercentBoostEnchantment):
     tier = 3
+    _mod_low, _mod_high = 1.10, 1.25
+    _base_damage_type = "spiritual"
+    _announce_template = "There's a {} here, suffused with otherworldly power."
 
     def __init__(self, item):
         super().__init__(item, name="Spiritual", rarity=0, group="Prefix", value=1.4)
 
-    def modify(self):
-        mod = random.uniform(1.10, 1.25)
-        amount = self.item.damage * (mod - 1)
-        if amount < 1:
-            amount = 1
-        self.item.damage += amount
-        self.item.base_damage_type = "spiritual"
-        # scale value based on damage bonus (fractional mod)
-        value_mod = ((mod - 1) / 2) + self.value
-        self.item.value = int(self.item.value * value_mod)
-        self.item.name = self.name + " " + self.item.name
-        self.item.announce = (
-            "There's a {} here, suffused with otherworldly power.".format(
-                self.item.name
-            )
-        )
-
     def requirements(self):
         return getattr(self.item, "maintype", None) == "Weapon"
 
 
-class Pure(Enchantment):
+class Pure(_DamagePercentBoostEnchantment):
+    # 'Pure' enchantment makes attacks ignore some resistances by converting to pure damage
     tier = 3
+    _mod_low, _mod_high = 1.15, 1.30
+    _base_damage_type = "pure"
+    _announce_template = "There's a {} here, its edge humming with uncompromising force."
 
     def __init__(self, item):
         super().__init__(item, name="Pure", rarity=0, group="Prefix", value=1.4)
-
-    def modify(self):
-        # 'Pure' enchanment makes attacks ignore some resistances by converting to pure damage
-        mod = random.uniform(1.15, 1.30)
-        amount = self.item.damage * (mod - 1)
-        if amount < 1:
-            amount = 1
-        self.item.damage += amount
-        self.item.base_damage_type = "pure"
-        # scale value based on damage bonus (fractional mod)
-        value_mod = ((mod - 1) / 2) + self.value
-        self.item.value = int(self.item.value * value_mod)
-        self.item.name = self.name + " " + self.item.name
-        self.item.announce = (
-            "There's a {} here, its edge humming with uncompromising force.".format(
-                self.item.name
-            )
-        )
 
     def requirements(self):
         return getattr(self.item, "maintype", None) == "Weapon"

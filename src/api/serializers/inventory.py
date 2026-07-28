@@ -14,6 +14,8 @@ Classes:
 
 from typing import Dict, Optional
 
+from src.api.utils.inventory import get_inventory_list
+
 # Effect descriptors for consumable items, keyed by class name.
 # Each list entry has a `type` discriminator used by the frontend chip renderer.
 # New consumables only need a new entry here — no frontend layout changes required.
@@ -89,9 +91,7 @@ def _get_equip_slot_status(player, item):
     if maintype == "Accessory" and subtype in _MULTI_EQUIP_ACCESSORY_SUBTYPES:
         return False, None
 
-    inventory_list = getattr(player, "inventory_list", None) or getattr(
-        player, "inventory", []
-    )
+    inventory_list = get_inventory_list(player)
     for other_item in inventory_list:
         if other_item is item or not getattr(other_item, "isequipped", False):
             continue
@@ -237,9 +237,7 @@ class InventorySerializer:
         total_weight = 0.0
 
         # Handle both inventory_list (real Player) and inventory (MinimalPlayer)
-        inventory_list = getattr(player, "inventory_list", None) or getattr(
-            player, "inventory", []
-        )
+        inventory_list = get_inventory_list(player)
         for idx, item in enumerate(inventory_list):
             items.append(InventoryItemSerializer.serialize(item, idx, player))
             total_weight += getattr(item, "weight", 0.0)
@@ -366,9 +364,7 @@ class EquipmentSerializer:
 
         # Count unequipped equippable items (handle both inventory_list and inventory)
         unequipped_equippable = 0
-        inventory_list = getattr(player, "inventory_list", None) or getattr(
-            player, "inventory", []
-        )
+        inventory_list = get_inventory_list(player)
         for item in inventory_list:
             if hasattr(item, "equip") and not getattr(item, "equipped_state", False):
                 unequipped_equippable += 1

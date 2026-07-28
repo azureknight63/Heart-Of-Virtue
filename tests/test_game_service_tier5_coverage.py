@@ -906,6 +906,33 @@ class TestMovePlayerExtra:
         assert result["combat_started"] is False
         assert mock_player._combat_deferred_enemies == [enemy]
 
+    def test_move_clears_stale_active_chat_flag(self, game_service, mock_player):
+        """Regression test for #336: abandoning an NPC chat without hitting
+        /npc/chat/end (closing the dialog via the X button/overlay, or a
+        chat_open failure) must not permanently disable loquacity recovery.
+        A genuine move can only happen once the chat dialog isn't blocking
+        the client, so move_player self-heals by clearing the stale flag.
+        """
+        new_tile = MagicMock()
+        new_tile.x, new_tile.y = 5, 4
+        new_tile.is_passable = True
+        new_tile.events_here = []
+        new_tile.name = "NewArea"
+
+        mock_player.universe.get_tile = MagicMock(return_value=new_tile)
+        mock_player.universe.game_tick_events = MagicMock()
+        mock_player.__dict__["_active_chat_npc_id"] = "Gorran"
+
+        with patch.object(
+            game_service, "_calculate_exits", return_value={"north": {"x": 5, "y": 4}}
+        ), patch(
+            "src.api.services.game_service.check_for_combat", return_value=[]
+        ):
+            result = game_service.move_player(mock_player, "north")
+
+        assert result["success"] is True
+        assert "_active_chat_npc_id" not in mock_player.__dict__
+
     def test_combat_initialized_with_adapter_state(self, game_service, mock_player):
         new_tile = MagicMock()
         new_tile.x, new_tile.y = 5, 4
@@ -1608,6 +1635,35 @@ class TestGetCombatStatusExtra:
         mock_adapter.refresh_suggestions.assert_called_once()
         assert result == {"battle_state": {}}
 
+    def test_deferred_enemies_resume_threads_session_data(self, game_service, mock_player):
+        """Regression test for #335: the deferred-combat resume branch must
+        build the new adapter's on_event_callback with the current request's
+        session_data, not a bare `lambda p: self.trigger_combat_events(p)`
+        that silently drops it (permanently binding session_data=None).
+        """
+        enemy = MagicMock()
+        mock_player._combat_deferred_enemies = [enemy]
+        mock_player.pending_attribute_points = 0
+        mock_player.in_combat = True
+        mock_player.combat_list = [enemy]
+        # Skip the refresh_suggestions() call to keep the test focused.
+        mock_player.suggestions_loading = True
+
+        session_data = {"marker": "deferred-resume-session"}
+
+        with patch.object(game_service, "_initialize_combat"), patch(
+            "src.api.combat_adapter.ApiCombatAdapter"
+        ) as mock_adapter_cls:
+            mock_adapter_cls.return_value._get_available_moves.return_value = []
+            game_service.get_combat_status(
+                mock_player, session_id="resume-sess", session_data=session_data
+            )
+
+            callback = mock_adapter_cls.call_args.kwargs["on_event_callback"]
+            with patch.object(game_service, "trigger_combat_events") as mock_trigger:
+                callback(mock_player)
+            mock_trigger.assert_called_once_with(mock_player, session_data=session_data)
+
     def test_deferred_enemies_but_not_in_combat_after_init(self, game_service, mock_player):
         enemy = MagicMock()
         mock_player._combat_deferred_enemies = [enemy]
@@ -1892,6 +1948,58 @@ class TestNpcChat:
         result = game_service.npc_chat_open(mock_player, "Gorran")
         assert result["success"] is False
         assert "Failed to open chat" in result["error"]
+
+    def test_npc_chat_open_exception_clears_active_chat_flag(self, game_service, mock_player):
+        """Regression test for #336: a chat_open() failure must not leave
+        _active_chat_npc_id set, or NPC loquacity recovery is disabled for
+        the rest of the session.
+        """
+        npc = MagicMock()
+        npc.name = "Gorran"
+        npc.chat_open = MagicMock(side_effect=RuntimeError("no llm"))
+        mock_player.current_room.npcs_here = [npc]
+
+        game_service.npc_chat_open(mock_player, "Gorran")
+
+        assert "_active_chat_npc_id" not in mock_player.__dict__
+
+    def test_npc_chat_open_brush_off_clears_active_chat_flag(self, game_service, mock_player):
+        """Regression test for #336: an immediate brush-off (loquacity
+        exhausted, conversation_ended=True returned from a *successful*
+        chat_open) must clear the flag too — mirroring npc_chat_respond —
+        otherwise the "conversation" that never really started leaves
+        loquacity recovery permanently disabled.
+        """
+        npc = MagicMock()
+        npc.name = "Gorran"
+        npc.chat_open = MagicMock(
+            return_value={
+                "success": True,
+                "conversation_ended": True,
+                "npc_opening": "Not now.",
+            }
+        )
+        mock_player.current_room.npcs_here = [npc]
+
+        result = game_service.npc_chat_open(mock_player, "Gorran")
+
+        assert result["success"] is True
+        assert "_active_chat_npc_id" not in mock_player.__dict__
+
+    def test_npc_chat_open_success_keeps_active_chat_flag(self, game_service, mock_player):
+        """A genuinely opened conversation (conversation_ended=False) must
+        keep the flag set so loquacity recovery stays suppressed mid-chat.
+        """
+        npc = MagicMock()
+        npc.name = "Gorran"
+        npc.chat_open = MagicMock(
+            return_value={"success": True, "conversation_ended": False}
+        )
+        mock_player.current_room.npcs_here = [npc]
+
+        game_service.npc_chat_open(mock_player, "Gorran")
+
+        assert mock_player.__dict__.get("_active_chat_npc_id") == "Gorran"
 
     def test_npc_chat_respond_npc_not_found(self, game_service, mock_player):
         mock_player.current_room.npcs_here = []

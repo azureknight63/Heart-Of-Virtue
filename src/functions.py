@@ -892,8 +892,11 @@ def add_random_enchantments(item: "Item", count: int) -> None:
         if hasattr(cls, "tier"):
             class_by_tier.setdefault(int(cls.tier), []).append(cls)
 
+    group_names = {0: "Prefix", 1: "Suffix"}
+
     while ench_pool > 0:
         group = random.randrange(2)  # 0 = "Prefix", 1 = "Suffix"
+        expected_group = group_names[group]
         enchantment_level[group] += 1
         tier = enchantment_level[group]
 
@@ -902,6 +905,11 @@ def add_random_enchantments(item: "Item", count: int) -> None:
         for cls in class_by_tier.get(tier, ()):
             try:
                 ench = cls(item)
+                # Only consider enchantments belonging to this slot's group
+                # (Prefix vs. Suffix) so a slot never draws the wrong kind
+                # (e.g. a "prefix" slot pulling a Suffix class).
+                if getattr(ench, "group", None) != expected_group:
+                    continue
                 req = getattr(ench, "requirements", None)
                 # Normalize the optional `requirements` attribute. It may be:
                 # - a callable returning bool

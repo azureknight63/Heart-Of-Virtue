@@ -864,6 +864,14 @@ class GameService:
 
             _logging.getLogger(__name__).warning("game_tick_events failed: %s", e)
 
+        # A move only reaches this point when the client isn't blocked by an open
+        # chat dialog, so landing here means any previously "active" chat was
+        # abandoned without an explicit /npc/chat/end call (dialog dismissed via
+        # the X button, the overlay, or a chat_open failure — see #336). Self-heal
+        # by clearing the stale marker on this genuine non-chat action so loquacity
+        # recovery resumes instead of being disabled for the rest of the session.
+        player.__dict__.pop("_active_chat_npc_id", None)
+
         # Recover NPC loquacity on world beats (mirrors the terminal loop's intent
         # for HumanNPCLLMMixin.loquacity_tick, which had no caller). Guarded so it
         # only ticks on genuine movement beats, never during an active conversation.
@@ -2229,10 +2237,26 @@ class GameService:
             return adapter.process_command(command)
 
         elif move_type == "attack":
-            return self.execute_move(player, "move", "Attack", target_id, direction)
+            return self.execute_move(
+                player,
+                "move",
+                "Attack",
+                target_id,
+                direction,
+                session_id=session_id,
+                session_data=session_data,
+            )
 
         elif move_type == "defend":
-            return self.execute_move(player, "move", "Wait", target_id, direction)
+            return self.execute_move(
+                player,
+                "move",
+                "Wait",
+                target_id,
+                direction,
+                session_id=session_id,
+                session_data=session_data,
+            )
 
         elif move_type == "cancel":
             command = {"type": "cancel_selection"}
@@ -2307,7 +2331,7 @@ class GameService:
 
                 # Ensure the new adapter has the event callback
                 def event_callback(p):
-                    return self.trigger_combat_events(p)
+                    return self.trigger_combat_events(p, session_data=session_data)
 
                 player._combat_adapter = ApiCombatAdapter(
                     player,
@@ -3242,8 +3266,17 @@ class GameService:
             player._combat_adapter = ApiCombatAdapter(
                 player, session_id=session_id, on_event_callback=event_callback
             )
-        elif session_id:
-            player._combat_adapter.session_id = session_id
+        else:
+            # Update the existing adapter's callback to ensure it has access to the
+            # current session_data (mirrors the execute_move pattern above) — without
+            # this, an adapter created earlier with session_data=None permanently
+            # loses the ability to persist interactive combat events.
+            def event_callback(p):
+                return self.trigger_combat_events(p, session_data=session_data)
+
+            player._combat_adapter.on_event_callback = event_callback
+            if session_id:
+                player._combat_adapter.session_id = session_id
 
         # Reset post-combat state so events fire correctly after this combat's
         # victory even when the adapter object is reused across fights.
@@ -3428,9 +3461,21 @@ class GameService:
         # Call NPC's chat_open method
         try:
             result = npc.chat_open(player)
-            return self._enrich_chat_result_with_relationship(result, npc)
         except Exception as e:
+            # The conversation never actually started — clear the flag so
+            # loquacity recovery isn't stuck disabled for the rest of the
+            # session (see #336).
+            player.__dict__.pop("_active_chat_npc_id", None)
             return {"success": False, "error": f"Failed to open chat: {str(e)}"}
+
+        # Mirror npc_chat_respond's teardown: a failed open or an immediate
+        # brush-off (loquacity exhausted) ends the "conversation" before it
+        # really begins, so clear the active-chat marker here too — otherwise
+        # it would permanently suppress loquacity recovery on future moves.
+        if not result.get("success") or result.get("conversation_ended"):
+            player.__dict__.pop("_active_chat_npc_id", None)
+
+        return self._enrich_chat_result_with_relationship(result, npc)
 
     def npc_chat_respond(
         self,

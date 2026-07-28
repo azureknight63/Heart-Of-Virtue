@@ -198,6 +198,25 @@ class TestInventorySerializer:
         assert result["total_weight"] == 12.0
         assert result["weight_percentage"] == 120.0
 
+    def test_empty_inventory_list_does_not_fall_through_to_inventory(self):
+        """A legitimately empty ``inventory_list`` must not fall through to
+        a stale/non-empty ``inventory`` attribute.
+
+        Regression test for the ``a or b`` falsy-empty-list trap: with the
+        old ``getattr(player, "inventory_list", None) or getattr(player,
+        "inventory", [])`` idiom, an empty ``inventory_list`` (falsy) would
+        incorrectly fall back to ``inventory``.
+        """
+        player = MockPlayer()
+        player.inventory_list = []
+        player.inventory = [MockItem(name="Stale Potion", weight=1.0)]
+
+        result = InventorySerializer.serialize(player)
+
+        assert result["item_count"] == 0
+        assert result["items"] == []
+        assert result["total_weight"] == 0.0
+
 
 @pytest.mark.skipif(not SERIALIZERS_AVAILABLE, reason="Serializers not available")
 class TestEquipmentSlotSerializer:
@@ -283,6 +302,22 @@ class TestEquipmentSerializer:
         result = EquipmentSerializer.serialize(player)
 
         assert result["equipment_value"] == 350
+
+    def test_empty_inventory_list_does_not_fall_through_to_inventory(self):
+        """An empty ``inventory_list`` must not fall through to a stale
+        ``inventory`` attribute when counting unequipped equippable items.
+
+        Regression test for the same falsy-empty-list trap covered in
+        ``TestInventorySerializer``, but for the ``EquipmentSerializer``
+        call site.
+        """
+        player = MockPlayer()
+        player.inventory_list = []
+        player.inventory = [MockWeapon(name="Stale Sword")]
+
+        result = EquipmentSerializer.serialize(player)
+
+        assert result["unequipped_equippable_count"] == 0
 
 
 @pytest.mark.skipif(not SERIALIZERS_AVAILABLE, reason="Serializers not available")
