@@ -489,6 +489,35 @@ class TestProcessEventInputExtra:
         # A new UUID key should now be present
         assert len(session_data["pending_events"]) == 1
 
+    def test_stage_requeue_carries_tile_coords_forward(self, game_service, mock_player):
+        # Regression for #327: when a multi-stage event advances to a new stage
+        # under a fresh UUID, the originating tile_x/tile_y must be preserved so
+        # the next round-trip resolves event.tile from the correct tile.
+        event = MagicMock(spec=["process", "completed", "player", "tile", "api_event_id"])
+        event.completed = False
+        event.process = MagicMock()
+        session_data = {
+            "pending_events": {
+                "evt-1": {
+                    "event": event,
+                    "event_data": {"name": "Test"},
+                    "tile_x": 7,
+                    "tile_y": 3,
+                }
+            }
+        }
+
+        with patch(
+            "src.api.serializers.event_serializer.EventSerializer.serialize_with_input",
+            return_value={"needs_input": True, "name": "Test"},
+        ):
+            game_service.process_event_input(mock_player, "evt-1", "yes", session_data)
+
+        assert "evt-1" not in session_data["pending_events"]
+        new_entry = next(iter(session_data["pending_events"].values()))
+        assert new_entry["tile_x"] == 7
+        assert new_entry["tile_y"] == 3
+
     def test_event_uses_check_conditions_when_no_process(self, game_service, mock_player):
         event = MagicMock(spec=["check_conditions", "completed", "player", "tile"])
         event.completed = True
@@ -1114,6 +1143,23 @@ class TestInteractWithTargetExtra:
         result = game_service.interact_with_target(mock_player, str(id(obj)), "dance")
         assert result["success"] is False
         assert "cannot" in result["message"].lower()
+
+    def test_arbitrary_public_method_not_invokable(self, game_service, mock_player):
+        # Regression for #334: a public method that exists on the target but is
+        # NOT a curated keyword nor an allowed interaction verb (e.g. NPC.die)
+        # must be rejected instead of being dispatched via getattr.
+        npc = MagicMock(spec=["keywords", "name", "die"])
+        npc.keywords = ["talk"]
+        npc.name = "Quest Giver"
+        npc.die = MagicMock()
+        tile = self._tile(mock_player)
+        tile.npcs_here = [npc]
+
+        result = game_service.interact_with_target(mock_player, str(id(npc)), "die")
+
+        assert result["success"] is False
+        assert "cannot" in result["message"].lower()
+        npc.die.assert_not_called()
 
     def test_item_found_in_open_container(self, game_service, mock_player):
         from src.objects import Container

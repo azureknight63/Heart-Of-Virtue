@@ -110,14 +110,38 @@ def test_validate_rejects_wrong_version():
 
 def test_validate_rejects_missing_top_level_keys():
     with pytest.raises(sf.SaveSchemaError):
-        sf.validate_save_data({"format_version": sf.SAVE_FORMAT_VERSION})
+        sf.validate_save_data({
+            "format_version": sf.SAVE_FORMAT_VERSION,
+            "schema_version": sf.SAVE_SCHEMA_VERSION,
+        })
 
 
 def test_validate_rejects_missing_player_keys():
     with pytest.raises(sf.SaveSchemaError):
         sf.validate_save_data({
             "format_version": sf.SAVE_FORMAT_VERSION,
+            "schema_version": sf.SAVE_SCHEMA_VERSION,
             "player": {"name": "x"},  # missing level/hp/maxhp
+            "world": {"map_name": "m"},
+        })
+
+
+def test_validate_rejects_missing_schema_version():
+    with pytest.raises(sf.SaveSchemaError):
+        sf.validate_save_data({
+            "format_version": sf.SAVE_FORMAT_VERSION,
+            "player": {"name": "x", "level": 1, "hp": 1, "maxhp": 1},
+            "world": {"map_name": "m"},
+        })
+
+
+@pytest.mark.parametrize("bad_schema", [0, -1, sf.SAVE_SCHEMA_VERSION + 1, "1", 1.0, True, None])
+def test_validate_rejects_bad_schema_version(bad_schema):
+    with pytest.raises(sf.SaveSchemaError):
+        sf.validate_save_data({
+            "format_version": sf.SAVE_FORMAT_VERSION,
+            "schema_version": bad_schema,
+            "player": {"name": "x", "level": 1, "hp": 1, "maxhp": 1},
             "world": {"map_name": "m"},
         })
 

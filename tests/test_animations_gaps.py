@@ -154,14 +154,14 @@ def test_main_no_args_gif(monkeypatch):
 
 
 def test_main_no_args_function_exists(monkeypatch):
-    """main() with a function name that exists in the module calls Screen.wrapper."""
+    """main() with a function name that exists in the module dispatches it."""
     import src.animations as animations
 
     monkeypatch.setattr(sys, "argv", ["animations.py", "demo"])
-    with patch.object(animations.Screen, "wrapper"):
-        # function_exists checks first argument as module string — this path won't match,
-        # so it should print "Animation not found!"
+    with patch.object(animations.Screen, "wrapper") as mock_wrapper:
         animations.main()
+    # The module-level ``demo`` function should be dispatched to Screen.wrapper.
+    mock_wrapper.assert_called_once_with(animations.demo)
 
 
 def test_main_no_args_not_found(monkeypatch, capsys):

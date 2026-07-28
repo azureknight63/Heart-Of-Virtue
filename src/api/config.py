@@ -41,6 +41,15 @@ class Config:
     SOCKETIO_CORS_ALLOWED_ORIGINS = CORS_ORIGINS
     SOCKETIO_MESSAGE_QUEUE = None  # Use simple in-memory queue for now
 
+    # Engine-driven combat streaming over SocketIO (issue #436). Off by default:
+    # while off, combat resolves via the existing lump-response replay path. When
+    # on, the engine streams per-beat events the frontend animates/sounds in
+    # lockstep. Feature-flag for the phased rollout (see
+    # docs/development/combat-streaming-plan.md).
+    COMBAT_SOCKET_STREAMING = os.environ.get(
+        "COMBAT_SOCKET_STREAMING", "false"
+    ).lower() not in ("0", "false", "no", "")
+
 
 class DevelopmentConfig(Config):
     """Development configuration."""
@@ -63,3 +72,8 @@ class ProductionConfig(Config):
     DEBUG = False
     SESSION_COOKIE_SECURE = True
     CORS_ORIGINS = ["https://nexusfidei.dev"]
+    # Keep SocketIO CORS in lockstep with the HTTP CORS origins. The base class
+    # binds SOCKETIO_CORS_ALLOWED_ORIGINS to the (localhost) CORS_ORIGINS at
+    # class-definition time, so overriding CORS_ORIGINS alone would leave prod
+    # sockets stuck on localhost origins and reject the real origin.
+    SOCKETIO_CORS_ALLOWED_ORIGINS = CORS_ORIGINS

@@ -1096,14 +1096,20 @@ class TestAfterDefeatingKingSlime:
             ev.process()
         assert player.universe.story.get("king_slime_defeated") == "1"
 
-    def test_process_spawns_mineral_fragment(self):
+    def test_process_grants_mineral_fragment_to_inventory(self):
+        # #378/#371: the fragment is granted straight to inventory so Jean can
+        # never leave the pools without it (which would soft-lock Votha Krr).
         ev, player, tile = self._make()
         with (
             patch("src.story.ch02.print_slow"),
             patch("src.story.ch02.time.sleep"),
         ):
             ev.process()
-        tile.spawn_item.assert_called_with("MineralFragment")
+        player.add_items_to_inventory.assert_called_once()
+        granted = player.add_items_to_inventory.call_args[0][0]
+        assert any(
+            i.__class__.__name__ == "MineralFragment" for i in granted
+        )
 
     def test_process_spawns_tile_description(self):
         ev, player, tile = self._make()
@@ -1389,10 +1395,12 @@ class TestAfterKingSlimeReturn:
             ev.check_conditions()
             mock_pass.assert_not_called()
 
-    def test_process_clears_without_fragment(self):
+    def test_process_without_fragment_keeps_event_alive(self):
+        # #371: no fragment at stage 1 must not self-destruct the event.
         ev, player, tile = self._make(has_fragment=False)
         ev.process(user_input=None)
-        assert ev.needs_input is False
+        assert ev.needs_input is True
+        assert getattr(ev, "completed", False) is False
 
     def _drive_to_completion(self, ev, choice="a"):
         """Drive through all 7 stages: stage1(no input), stage2(choice), stages 3-7(continue)."""
@@ -2227,7 +2235,7 @@ class TestMaybeExploreFlavor:
 
 
 class TestUniverseBasics:
-    """Universe class init, get_tile, game_tick_events, parse_hidden."""
+    """Universe class init, get_tile, game_tick_events."""
 
     def _make_universe(self):
         from src.universe import Universe
@@ -2238,7 +2246,6 @@ class TestUniverseBasics:
         u = self._make_universe()
         assert u.game_tick == 0
         assert u.maps == []
-        assert u.starting_position == (0, 0)
         assert u.story["gorran_language_stage"] == "0"
         assert u.story["gorran_first"] == "0"
 
@@ -2264,26 +2271,8 @@ class TestUniverseBasics:
         result = u.get_tile(99, 99)
         assert result is None
 
-    def test_parse_hidden_no_flag(self):
-        from src.universe import Universe
 
-        hidden, hfactor = Universe.parse_hidden("normal_param")
-        assert hidden is False
-        assert hfactor == 0
 
-    def test_parse_hidden_with_h_plus(self):
-        from src.universe import Universe
-
-        hidden, hfactor = Universe.parse_hidden("h+5")
-        assert hidden is True
-        assert hfactor == 5
-
-    def test_parse_hidden_with_h_plus_zero(self):
-        from src.universe import Universe
-
-        hidden, hfactor = Universe.parse_hidden("h+0")
-        assert hidden is True
-        assert hfactor == 0
 
     def test_game_tick_increments(self):
         u = self._make_universe()

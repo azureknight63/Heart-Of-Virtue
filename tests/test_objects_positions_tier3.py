@@ -491,59 +491,20 @@ class TestContainer:
             container.take_all(player)
             mock_open.assert_called_once()
 
-    def test_container_loot_closed(self):
-        """Test loot on closed container."""
-        player = Mock()
-        tile = Mock()
-        container = Container(player=player, tile=tile)
-        with patch.object(container, "open") as mock_open:
-            container.loot()
-            mock_open.assert_called_once()
+    def test_container_open_reveals_closed(self):
+        """open() is the canonical entry point for revealing a closed container.
 
-    def test_container_check_alias(self):
-        """Test check() aliases loot()."""
+        The loot/check/view/examine/inspect/peruse keywords route straight to
+        open() through GameService.interact_with_target, so the container no
+        longer carries redundant alias methods.
+        """
         player = Mock()
         tile = Mock()
+        tile.events_here = []
+        tile.evaluate_events = Mock()
         container = Container(player=player, tile=tile)
-        with patch.object(container, "loot") as mock_loot:
-            container.check()
-            mock_loot.assert_called_once()
-
-    def test_container_view_alias(self):
-        """Test view() aliases loot()."""
-        player = Mock()
-        tile = Mock()
-        container = Container(player=player, tile=tile)
-        with patch.object(container, "loot") as mock_loot:
-            container.view()
-            mock_loot.assert_called_once()
-
-    def test_container_examine_alias(self):
-        """Test examine() aliases loot()."""
-        player = Mock()
-        tile = Mock()
-        container = Container(player=player, tile=tile)
-        with patch.object(container, "loot") as mock_loot:
-            container.examine()
-            mock_loot.assert_called_once()
-
-    def test_container_inspect_alias(self):
-        """Test inspect() aliases loot()."""
-        player = Mock()
-        tile = Mock()
-        container = Container(player=player, tile=tile)
-        with patch.object(container, "loot") as mock_loot:
-            container.inspect()
-            mock_loot.assert_called_once()
-
-    def test_container_peruse_alias(self):
-        """Test peruse() aliases loot()."""
-        player = Mock()
-        tile = Mock()
-        container = Container(player=player, tile=tile)
-        with patch.object(container, "loot") as mock_loot:
-            container.peruse()
-            mock_loot.assert_called_once()
+        container.open()
+        assert container.state == "opened"
 
     def test_container_process_events(self):
         """Test process_events transfers events to tile."""

@@ -531,12 +531,15 @@ class TestShootBowExecute:
     def test_execute_glancing_blow(self):
         """hit_chance >= roll but hit_chance - roll < 10: glancing blow.
 
-        move.power starts at 0 (evaluate() doesn't derive it from the arrow;
-        that only happens in prep(), which this setup bypasses), then execute()
-        adds user.finesse(10) * fin_mod(0.5) = 5. damage = ((5*1.0) - protection(2))
-        * heat(1.0) * uniform(1.0) = 3, halved by the glancing blow to 1.
+        After issue #414, evaluate() derives power from the selected arrow, so
+        the arrow's power survives to execute() instead of being reset to 0.
+        Here evaluate() sets power = arrow.power(15); execute() then adds
+        user.finesse(10) * fin_mod(0.5) = 5 -> 20. damage = ((20*1.0) -
+        protection(2)) * heat(1.0) * uniform(1.0) = 18, halved by the glancing
+        blow to 9.
         """
         move, user, enemy, arrow = self._setup_execute()
+        move.evaluate()  # advance() runs this each beat; loads arrow power
         with (
             patch.object(move, "calculate_hit_chance", return_value=55),
             patch.object(move, "hit") as mock_hit,
@@ -545,7 +548,19 @@ class TestShootBowExecute:
             patch("src.moves._ranged.random.uniform", return_value=1.0),
         ):
             move.execute(user)
-        mock_hit.assert_called_once_with(1, True)
+        mock_hit.assert_called_once_with(9, True)
+
+    def test_evaluate_preserves_arrow_power(self):
+        """Regression for #414: evaluate() runs every beat (via advance()),
+        including the beat between prep() loading the arrow's power and
+        execute() consuming it. It used to reset power to 0, wiping the arrow's
+        contribution; it must now derive power from the selected arrow."""
+        move, user, enemy, arrow = self._setup_execute()
+        arrow.power = 15
+        move.prep(user)  # selects the arrow and loads its power
+        assert move.power == 15
+        move.evaluate()  # the beat that used to zero it out
+        assert move.power == 15
 
     def test_execute_arrow_effect_on_hit(self):
         """execute-triggered arrow effect is processed on hit."""

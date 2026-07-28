@@ -76,10 +76,7 @@ class Mynx(MynxLLMMixin, Friend):
         self._combat_disabled = True
 
         # Minimal move set (no attacks)
-        try:
-            self.known_moves = [moves.NpcIdle(self)]
-        except Exception:
-            self.known_moves = []
+        self._init_idle_moves()
 
         # Basic state useful for LLM-driven behavior
         self._llm_last_response = None
@@ -375,10 +372,7 @@ class GronditePasserby(Friend):
             "reflexive": "himself",
             "intensive": "himself",
         }
-        try:
-            self.known_moves = [moves.NpcIdle(self)]
-        except Exception:
-            self.known_moves = []
+        self._init_idle_moves()
 
     def talk(self, player):
         narrate(random.choice(self._TALK_LINES))
@@ -430,10 +424,7 @@ class GronditeWorker(Friend):
             "reflexive": "himself",
             "intensive": "himself",
         }
-        try:
-            self.known_moves = [moves.NpcIdle(self)]
-        except Exception:
-            self.known_moves = []
+        self._init_idle_moves()
 
     def talk(self, player):
         narrate(random.choice(self._TALK_LINES))
@@ -490,10 +481,7 @@ class GronditeElder(Friend):
             "reflexive": "himself",
             "intensive": "himself",
         }
-        try:
-            self.known_moves = [moves.NpcIdle(self)]
-        except Exception:
-            self.known_moves = []
+        self._init_idle_moves()
 
     def talk(self, player):
         narrate(random.choice(self._TALK_LINES))
@@ -537,10 +525,7 @@ class GronditeConclaveElder(Friend):
             "reflexive": "himself",
             "intensive": "himself",
         }
-        try:
-            self.known_moves = [moves.NpcIdle(self)]
-        except Exception:
-            self.known_moves = []
+        self._init_idle_moves()
 
     def talk(self, player):
         import time
@@ -766,11 +751,37 @@ class Mara(HumanNPCLLMMixin, Friend):
             else:
                 return "dagger"
 
+    def _sync_attack_range(self, optimal_range):
+        """Retune Mara's basic attack (NpcAttack) to her active weapon stance.
+
+        NpcAttack fixes its ``mvrange`` from ``combat_range`` at construction
+        and never re-derives it during combat, so at bow distance her only
+        offensive move would otherwise never be viable and she'd kite forever
+        (issue #383). In bow stance widen the reach to cover bow range; in
+        dagger/neutral stance keep her original melee reach.
+        """
+        attack = next(
+            (m for m in self.known_moves if getattr(m, "name", "") == "NPC_Attack"),
+            None,
+        )
+        if attack is None:
+            return
+        if optimal_range == "bow":
+            attack.mvrange = (0, self.bow_range[1])
+        else:
+            attack.mvrange = self.combat_range
+
     def select_move(self):
         """Mara's move selection reflects her nature: precise, observant, tactical.
         She switches between bow (medium/long range) and dagger (close range) based on
         combat distance, maintaining optimal positioning for her current weapon.
         """
+        # Determine optimal weapon range and retune her basic attack to match
+        # BEFORE filtering by viability, so a bow-stance attack is actually
+        # selectable this turn (issue #383).
+        optimal_range = self._get_optimal_range_to_target()
+        self._sync_attack_range(optimal_range)
+
         available_moves = self.refresh_moves()
 
         # Initialize AI config if we have a player reference (combat started)
@@ -785,9 +796,6 @@ class Mara(HumanNPCLLMMixin, Friend):
                 self.ai_config = NPCAIConfig(self.player_ref)
             except ImportError:
                 pass
-
-        # Determine optimal weapon range based on current situation
-        optimal_range = self._get_optimal_range_to_target()
 
         # Mara favors tactical positioning over raw aggression
         weighted_moves = []
@@ -913,10 +921,7 @@ class Devet(HumanNPCLLMMixin, Friend):
             "reflexive": "himself",
             "intensive": "himself",
         }
-        try:
-            self.known_moves = [moves.NpcIdle(self)]
-        except Exception:
-            self.known_moves = []
+        self._init_idle_moves()
         self._chat_config_path = str(_HUMAN_NPC_DIR / "devet.json")
         self._init_chat_attrs()
 
@@ -968,10 +973,7 @@ class Liss(HumanNPCLLMMixin, Friend):
             "reflexive": "herself",
             "intensive": "herself",
         }
-        try:
-            self.known_moves = [moves.NpcIdle(self)]
-        except Exception:
-            self.known_moves = []
+        self._init_idle_moves()
         self._chat_config_path = str(_HUMAN_NPC_DIR / "liss.json")
         self._init_chat_attrs()
 

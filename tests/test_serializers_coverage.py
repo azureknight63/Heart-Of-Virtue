@@ -1384,6 +1384,10 @@ class TestEventSerializer:
         event.hidden = False
         event.hide_factor = 0
         event.delay_mode = None
+        # Real Event classes don't define awaits_input unless they opt in to the
+        # resolve-on-first-call structural signal; a bare MagicMock would otherwise
+        # auto-vivify it to a truthy value.
+        event.awaits_input = False
         return event
 
     def test_serialize_none_event(self):

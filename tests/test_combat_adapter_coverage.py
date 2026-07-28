@@ -21,7 +21,6 @@ Targets the large uncovered sections by exercising:
 - _capture_output context manager
 - get_combat_state (check_data, events_triggered, end_state branches)
 - _handle_victory (exp / drops / beta_end / tile cleanup)
-- _evaluate_combat_events
 - _process_npc / _process_npc_turns / _process_initial_turns
 - _npc_try_heal_ally
 - refresh_suggestions (paused path)
@@ -1809,37 +1808,6 @@ class TestHandleVictory:
         adapter._handle_victory()
         assert npc.aggro is False
         assert npc.in_combat is False
-
-
-# ---------------------------------------------------------------------------
-# _evaluate_combat_events
-# ---------------------------------------------------------------------------
-
-
-class TestEvaluateCombatEvents:
-    def test_empty_events_no_op(self):
-        player = _make_player()
-        player.combat_events = []
-        adapter = _make_adapter(player)
-        adapter._evaluate_combat_events()  # Should not raise
-
-    def test_calls_check_combat_conditions(self):
-        player = _make_player()
-        event = MagicMock()
-        event.check_combat_conditions = MagicMock()
-        player.combat_events = [event]
-        adapter = _make_adapter(player)
-        adapter._evaluate_combat_events()
-        event.check_combat_conditions.assert_called_once()
-
-    def test_exception_in_event_does_not_propagate(self):
-        player = _make_player()
-        event = MagicMock()
-        event.name = "BadEvent"
-        event.check_combat_conditions.side_effect = RuntimeError("boom")
-        player.combat_events = [event]
-        adapter = _make_adapter(player)
-        adapter._evaluate_combat_events()  # Should not raise
 
 
 # ---------------------------------------------------------------------------

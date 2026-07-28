@@ -726,14 +726,9 @@ def trigger_room_events():
         # Trigger events on the tile
         events_triggered = game_service.trigger_tile_events(player, tile, session.data)
 
-        # Store tile modifications after events have processed
-        game_service.store_tile_modification(
-            session.data,
-            tile.x,
-            tile.y,
-            "block_exit",
-            tile.block_exit.copy() if hasattr(tile, "block_exit") else [],
-        )
+        # Store tile modifications after events have processed. Delegate to the
+        # service so persistence logic lives in one place (see #401).
+        game_service.persist_tile_state(session.data, tile)
         session_manager.save_session(session.session_id)
 
         return jsonify({"success": True, "events": events_triggered}), 200

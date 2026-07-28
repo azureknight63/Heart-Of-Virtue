@@ -571,10 +571,16 @@ class AfterDefeatingKingSlime(Event):
             ),
         )
 
-        # Spawn the MineralFragment on this tile
-        self.tile.spawn_item("MineralFragment")
+        # Grant the MineralFragment straight to Jean's inventory. Spawning it as
+        # a floor item relied on the player picking it up before leaving, backed
+        # only by Ch02FragmentReminder — which is attached to this pools tile and
+        # is never evaluated once Jean crosses to another map, so leaving without
+        # the fragment could soft-lock the Votha Krr hand-over. Granting it here
+        # guarantees he carries it. The memory flash still fires on possession
+        # (see Ch02KingSlimeMemoryFlash.check_conditions). See #378 / #371.
+        self.player.add_items_to_inventory([items.MineralFragment()])
 
-        # Queue the memory flash so it fires once Jean picks up the fragment
+        # Queue the memory flash so it fires once the fragment is in inventory
         self.tile.events_here.append(Ch02KingSlimeMemoryFlash(
             player=self.player, tile=self.tile, repeat=False
         ))
@@ -1083,23 +1089,33 @@ class AfterKingSlimeReturn(Event):
             name=name, player=player, tile=tile, repeat=repeat, params=params
         )
 
+    def _has_fragment(self):
+        """True when Jean is carrying the MineralFragment."""
+        return any(
+            i.__class__.__name__ == "MineralFragment" for i in self.player.inventory
+        )
+
     def check_conditions(self):
         story = getattr(self.player.universe, "story", {})
-        if story.get("king_slime_defeated") == "1" and not story.get(
+        if story.get("king_slime_defeated") != "1" or story.get(
             "votha_krr_response_given"
         ):
+            return
+        # Only start the hand-over once Jean actually has the fragment. If he
+        # reaches the Citadel first, do nothing and leave the event attached so
+        # it can fire on a later visit — never self-destruct here. See #371.
+        if self._has_fragment():
             self.pass_conditions_to_process()
 
     def process(self, user_input=None):
         if not hasattr(self, "_stage"):
             self._stage = 1
 
-        # Check if Jean actually has the MineralFragment
-        has_fragment = any(
-            i.__class__.__name__ == "MineralFragment" for i in self.player.inventory
-        )
-        if not has_fragment:
-            self.needs_input = False
+        # Defensive: if the fragment is somehow absent at the first stage, keep
+        # the event alive (needs_input=True) rather than letting the one-time
+        # removal in pass_conditions_to_process permanently drop it. See #371.
+        if self._stage == 1 and not self._has_fragment():
+            self.needs_input = True
             return
 
         # Stage 1 — Votha rises and greets Jean; present choice

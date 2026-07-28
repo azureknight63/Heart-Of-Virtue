@@ -283,11 +283,13 @@ class TestLoginRateLimitBoundedGrowth:
 
     @pytest.fixture(autouse=True)
     def _isolate_limiter(self):
-        from src.api.routes.auth import _login_limiter
+        from src.api.routes.auth import _login_limiter, _ip_limiter
 
         _login_limiter.clear_all()
+        _ip_limiter.clear_all()
         yield
         _login_limiter.clear_all()
+        _ip_limiter.clear_all()
 
     @pytest.fixture
     def app(self):
@@ -340,6 +342,127 @@ class TestLoginRateLimitBoundedGrowth:
         assert _login_limiter.is_limited(key) is False
 
 
+class TestLoginPerIpThrottle:
+    """Second, IP-only throttle: catches credential-stuffing / username-spray
+    from a single IP, which the username+IP limiter never trips (each new
+    username gets a fresh budget)."""
+
+    @pytest.fixture(autouse=True)
+    def _isolate_limiter(self):
+        from src.api.routes.auth import _login_limiter, _ip_limiter
+
+        _login_limiter.clear_all()
+        _ip_limiter.clear_all()
+        yield
+        _login_limiter.clear_all()
+        _ip_limiter.clear_all()
+
+    @pytest.fixture
+    def app(self):
+        return _make_app()
+
+    # Pin the source IP so the throttle key is deterministic regardless of the
+    # test client's default REMOTE_ADDR.
+    _ATTACKER = {"REMOTE_ADDR": "203.0.113.50"}
+
+    def test_username_spray_from_one_ip_is_throttled(self, app):
+        """Distinct usernames from one IP never trip the username+IP limiter,
+        but the IP-only limiter locks the source out after its threshold."""
+        from src.api.routes.auth import _IP_RATE_LIMIT
+
+        with patch(
+            "src.api.routes.auth.auth_service.authenticate_user",
+            new_callable=AsyncMock,
+            return_value=None,
+        ):
+            with app.test_client() as c:
+                # Each attempt uses a brand-new username, so no username+IP key
+                # ever reaches its own (10) limit — only the IP counter climbs.
+                for i in range(_IP_RATE_LIMIT):
+                    rv = c.post(
+                        "/auth/login",
+                        json={"username": f"spray{i}", "password": "wrong"},
+                        environ_base=self._ATTACKER,
+                    )
+                    assert rv.status_code == 401, f"attempt {i} should be a 401"
+
+                # The next distinct-username attempt is now IP-throttled.
+                rv = c.post(
+                    "/auth/login",
+                    json={"username": "spray_final", "password": "wrong"},
+                    environ_base=self._ATTACKER,
+                )
+        assert rv.status_code == 429
+        assert rv.get_json()["error"] == "rate_limited"
+
+    def test_successful_login_does_not_clear_ip_counter(self, app):
+        """A valid login clears only the per-account key; the IP evidence of an
+        ongoing spray must survive so the attack stays throttled."""
+        from src.api.routes.auth import _ip_limiter, _IP_RATE_LIMIT
+
+        ip_key = self._ATTACKER["REMOTE_ADDR"]
+
+        # Fill the IP counter to its limit via failed logins.
+        with patch(
+            "src.api.routes.auth.auth_service.authenticate_user",
+            new_callable=AsyncMock,
+            return_value=None,
+        ):
+            with app.test_client() as c:
+                for i in range(_IP_RATE_LIMIT):
+                    c.post(
+                        "/auth/login",
+                        json={"username": f"spray{i}", "password": "wrong"},
+                        environ_base=self._ATTACKER,
+                    )
+
+        assert _ip_limiter.is_limited(ip_key) is True
+
+        # A genuine success on a fresh username still 429s: the IP is locked and
+        # the success path must not reset the IP counter.
+        mock_user = {"id": "u1", "username": "legit", "timezone": "UTC"}
+        with patch(
+            "src.api.routes.auth.auth_service.authenticate_user",
+            new_callable=AsyncMock,
+            return_value=mock_user,
+        ):
+            with app.test_client() as c:
+                rv = c.post(
+                    "/auth/login",
+                    json={"username": "legit", "password": "right"},
+                    environ_base=self._ATTACKER,
+                )
+        assert rv.status_code == 429
+        assert _ip_limiter.is_limited(ip_key) is True
+
+    def test_client_ip_outside_request_context_is_unknown(self):
+        """Direct helper calls (no request context) must not raise."""
+        from src.api.routes.auth import _client_ip
+
+        assert _client_ip() == "unknown"
+
+    def test_client_ip_collapses_ipv6_to_64_prefix(self):
+        """IPv6 clients are throttled per /64 so an attacker can't rotate the
+        low bits within their allocation to dodge the limit."""
+        from src.api.routes.auth import _client_ip
+
+        app = Flask(__name__)
+        with app.test_request_context(
+            "/auth/login",
+            environ_base={"REMOTE_ADDR": "2001:db8:abcd:1234::dead:beef"},
+        ):
+            assert _client_ip() == "2001:db8:abcd:1234::"
+
+    def test_client_ip_passes_ipv4_through(self):
+        from src.api.routes.auth import _client_ip
+
+        app = Flask(__name__)
+        with app.test_request_context(
+            "/auth/login", environ_base={"REMOTE_ADDR": "198.51.100.7"}
+        ):
+            assert _client_ip() == "198.51.100.7"
+
+
 # ===========================================================================
 # POST /auth/logout  (requires @require_auth)
 # ===========================================================================
@@ -380,6 +503,17 @@ class TestLogout:
         with app.test_client() as c:
             rv = c.post("/auth/logout", headers=AUTH)
         assert rv.status_code == 401
+
+    def test_logout_session_manager_not_initialized(self, app):
+        # Issue #408: require_auth now routes through the shared resolve_session
+        # helper; a falsy session_manager must still yield the 500 "not
+        # initialized" response at every call site.
+        app.session_manager = None
+        with app.test_client() as c:
+            rv = c.post("/auth/logout", headers=AUTH)
+        assert rv.status_code == 500
+        data = rv.get_json()
+        assert data["error"] == "Session manager not initialized"
 
 
 # ===========================================================================

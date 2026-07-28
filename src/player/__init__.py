@@ -6,13 +6,11 @@ The Player class is composed from focused mixin modules:
   _combat.py      — attack, death, heat, move management
   _inventory.py   — equip, use, take, weight, gold stacking
   _movement.py    — teleport, party recall
-  _exploration.py — search, view_map
-  _ui.py          — skill menu, status display, HP/FP bars
+  _exploration.py — (terminal exploration removed; web uses REST routes)
   _world.py       — merchant refresh
-  _debug.py       — cheat/debug commands
+  _debug.py       — cheat/debug commands (supersaiyan)
 
-External callers continue to use ``from player import Player`` or
-``from player import Player, generate_output_grid`` unchanged.
+External callers continue to use ``from player import Player`` unchanged.
 """
 
 # These are intentionally re-exported from the package namespace so that tests
@@ -34,17 +32,15 @@ from ._combat import PlayerCombatMixin
 from ._inventory import PlayerInventoryMixin
 from ._movement import PlayerMovementMixin
 from ._exploration import PlayerExplorationMixin
-from ._ui import PlayerUIMixin, generate_output_grid
 from ._world import PlayerWorldMixin
 from ._debug import PlayerDebugMixin
 
-__all__ = ["Player", "generate_output_grid"]
+__all__ = ["Player"]
 
 
 class Player(
     PlayerDebugMixin,
     PlayerWorldMixin,
-    PlayerUIMixin,
     PlayerExplorationMixin,
     PlayerMovementMixin,
     PlayerInventoryMixin,

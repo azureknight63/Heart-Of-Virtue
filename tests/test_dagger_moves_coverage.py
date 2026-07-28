@@ -397,6 +397,28 @@ class TestFeintAndPivot:
         behind_result = move._calculate_new_position(user_pos, target_pos, target_pos.facing, "behind")
         assert type(behind_result).__name__ == "CombatPosition"
 
+    def test_calculate_new_position_honors_dynamic_grid_bound(self):
+        """Regression for #405: repositioning must clamp to the active dynamic
+        grid size, not a hardcoded 0-50 square. On a widened grid a pivot near
+        the far edge can legitimately land beyond the legacy 50 cap."""
+        user = _make_user()
+        move = FeintAndPivot(user)
+        try:
+            positions.CombatPosition.set_grid_bounds(100, 100)
+            target_pos = positions.CombatPosition(x=80, y=80, facing=positions.Direction.N)
+            user_pos = positions.CombatPosition(x=80, y=70, facing=positions.Direction.N)
+            result = move._calculate_new_position(
+                user_pos, target_pos, target_pos.facing, "flank"
+            )
+            assert type(result).__name__ == "CombatPosition"
+            assert 0 <= result.x <= 100 and 0 <= result.y <= 100
+            # At least one coordinate exceeds the legacy 50 cap, proving the
+            # clamp used the dynamic bound rather than min(50, ...).
+            assert result.x > 50 or result.y > 50
+        finally:
+            # Reset to the legacy default so later tests see a 50x50 bound.
+            positions.CombatPosition.set_grid_bounds(50, 50)
+
     def test_execute_no_target_returns_early(self):
         user = _make_user()
         move = FeintAndPivot(user)

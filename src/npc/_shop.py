@@ -214,6 +214,14 @@ class MerchantShopMixin:
                 self._remove_placed_item_from_room(item)
         self._update_shop_conditions()
         self._fill_remaining_stock(containers)
+        # Items are appended straight into live container inventories during
+        # restock (see _place_item / _fill_remaining_stock), which can land the
+        # same item class in a container more than once. Container only stacks in
+        # __init__, so collapse duplicate entries here per its documented
+        # contract. See issue #356.
+        for container in containers:
+            if hasattr(container, "stack_items"):
+                container.stack_items()
         self._apply_value_conditions()
         for condition in self.shop_conditions.get("unique", []):
             if isinstance(condition, UniqueItemInjectionCondition):

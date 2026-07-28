@@ -11,7 +11,6 @@ from src.api.services.validators import (
     validate_required_fields,
     validate_direction,
     validate_item_index,
-    validate_npc_id,
 )
 from src.api.utils.input_sanitizer import sanitize_event_input
 
@@ -136,34 +135,6 @@ class TestValidateItemIndex:
         ok, err = validate_item_index(False, 5)
         assert ok is False
         assert err is not None
-
-
-# ---------------------------------------------------------------------------
-# validate_npc_id
-# ---------------------------------------------------------------------------
-
-
-class TestValidateNpcId:
-    def test_valid_id(self):
-        ok, err = validate_npc_id("gorran_01")
-        assert ok is True
-
-    def test_empty_string(self):
-        ok, err = validate_npc_id("")
-        assert ok is False
-
-    def test_too_long(self):
-        ok, err = validate_npc_id("x" * 101)
-        assert ok is False
-
-    def test_exactly_100_chars(self):
-        ok, err = validate_npc_id("x" * 100)
-        assert ok is True
-
-    def test_non_string(self):
-        ok, err = validate_npc_id(42)
-        assert ok is False
-        assert "string" in err
 
 
 # ---------------------------------------------------------------------------

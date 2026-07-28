@@ -5,6 +5,9 @@ import GameText from './GameText';
 import { useAudio } from '../context/AudioContext';
 import { getAnimationConfig, impactSfxFor } from '../utils/animationConfigs';
 import { MOVE_CATEGORY_COLOR, MOVE_CATEGORY_GLOW } from '../utils/categories';
+import { beatSfxFor } from '../utils/combatSfx';
+import { scheduleSfxChain } from '../utils/combatTiming';
+import { SFX_DURATIONS } from '../utils/sfxDurations';
 
 // Fragment definitions for the death burst — module-level, never recreated
 const DEATH_FRAGMENTS = Array.from({ length: 12 }, (_, i) => ({
@@ -924,6 +927,14 @@ function BattlefieldGrid({
   hoveredTargetId = null,
   mapSize = null,
   onAnimatingChange = null,
+  // Engine-driven combat streaming (issue #436). When `streaming` is true the
+  // log-spooler animation path is bypassed: pre-built animations arrive via
+  // `streamedAnimations` (each may carry the source `beat` so its 75% SFX chain
+  // fires at animation start, or `suppressSfx` to stay silent). `combatSpeed`
+  // scales SFX timing (issue #460). Off by default — production is unchanged.
+  streaming = false,
+  streamedAnimations = [],
+  combatSpeed = 1,
 }) {
   const [activeAnimation, setActiveAnimation] = useState(null);
   const [animationPhase, setAnimationPhase] = useState(null);
@@ -1120,8 +1131,44 @@ function BattlefieldGrid({
     };
   }, []);
 
+  // Schedule a timeout tracked for unmount cleanup, self-pruning its id once it
+  // fires. Without the self-prune the tracking array grows unbounded across a
+  // whole play session (BattlefieldGrid never unmounts between fights), holding
+  // dead ids forever; only unmount cleared it.
+  const trackTimeout = useCallback((fn, delay) => {
+    const id = setTimeout(() => {
+      animationTimeoutsRef.current = animationTimeoutsRef.current.filter(
+        (t) => t !== id
+      );
+      fn();
+    }, delay);
+    animationTimeoutsRef.current.push(id);
+    return id;
+  }, []);
+
+  // Streaming (issue #436): enqueue pre-built animations as the engine's beats
+  // arrive. Replaces the log-spooler path below; deaths/departures are built by
+  // the parent from the engine's authoritative killed/departed, not diffed here.
+  const [lastProcessedStreamIndex, setLastProcessedStreamIndex] = useState(0);
+  useEffect(() => {
+    if (!streaming) return;
+    // The parent resets streamedAnimations to [] between fights. Without
+    // re-syncing the cursor, a shorter (or empty) buffer would sit below the
+    // stale index and the next combat's beats would never enqueue.
+    if (streamedAnimations.length < lastProcessedStreamIndex) {
+      setLastProcessedStreamIndex(streamedAnimations.length);
+      return;
+    }
+    if (streamedAnimations.length > lastProcessedStreamIndex) {
+      const next = streamedAnimations.slice(lastProcessedStreamIndex);
+      setAnimationQueue((prev) => [...prev, ...next]);
+      setLastProcessedStreamIndex(streamedAnimations.length);
+    }
+  }, [streaming, streamedAnimations, lastProcessedStreamIndex]);
+
   // Enqueue new animations from the combat log as entries are revealed
   useEffect(() => {
+    if (streaming) return; // beats drive animation instead (see effect above)
     const log = combatLog || combat?.log;
     if (!log) return;
     if (displayedLogCount > lastProcessedLogIndex) {
@@ -1160,7 +1207,7 @@ function BattlefieldGrid({
       }
       setLastProcessedLogIndex(displayedLogCount);
     }
-  }, [combatLog, combat?.log, lastProcessedLogIndex, displayedLogCount, allBeatStates]);
+  }, [streaming, combatLog, combat?.log, lastProcessedLogIndex, displayedLogCount, allBeatStates]);
 
   // Run one animation at a time from the queue
   const playAnimation = useCallback((animData) => {
@@ -1168,12 +1215,28 @@ function BattlefieldGrid({
     setActiveAnimation({ ...animData, config });
     setAnimationPhase(config.phases[0].name);
 
+    // Streaming (issue #436): fire this beat's ordered SFX as a 75% partial
+    // stack at animation start (the engine authored the emissions); this
+    // replaces the phase-keyed cues below. `suppressSfx` entries stay silent
+    // (e.g. a streamed death whose sound already played in the attack's chain).
+    if (animData.beat) {
+      const schedule = scheduleSfxChain(
+        beatSfxFor(animData.beat),
+        (cue) => SFX_DURATIONS[cue] || 0,
+        combatSpeed
+      );
+      for (const { cue, startMs } of schedule) {
+        trackTimeout(() => playSFX(cue), startMs);
+      }
+    }
+
     // Register the entity as dying so DeathAnimationLayer can render the burst
     // and EntityLayer can fade out the marker
     if (animData.type === 'death' && animData.position) {
       setDyingEntities((prev) => [...prev, { id: animData.target_id, position: animData.position, entity: animData.entity }]);
-      // Enemy death SFX — play once per kill
-      playSFX('enemy_death');
+      // Enemy death SFX — play once per kill (streamed deaths are sounded by the
+      // attack beat's SFX chain instead, so they carry suppressSfx).
+      if (!animData.suppressSfx) playSFX('enemy_death');
     }
 
     let currentPhaseIndex = 0;
@@ -1194,22 +1257,24 @@ function BattlefieldGrid({
       // Phase-aligned SFX cues, declared on the animation config. The special
       // cue 'outcome' resolves through the animation's outcome
       // ('hit' | 'miss' | 'parry' | ...) to the matching pre-baked WAV.
-      const cue = config.sfx?.[phase.name];
+      // Skipped for streaming beats: their SFX is the 75% chain fired at start
+      // (animData.beat), or intentionally silent (suppressSfx).
+      const usesChain = animData.beat || animData.suppressSfx;
+      const cue = usesChain ? null : config.sfx?.[phase.name];
       if (cue) {
         playSFX(cue === 'outcome' ? impactSfxFor(animData.outcome) : cue);
       }
 
-      const timeoutId = setTimeout(() => {
+      trackTimeout(() => {
         currentPhaseIndex++;
         advancePhase();
       }, phase.duration);
-      animationTimeoutsRef.current.push(timeoutId);
     };
 
     advancePhase();
-    // Safe: State setters are stable; ANIMATION_CONFIGS and animationCancelRef are module/ref level, keeping playAnimation reference stable.
+    // Safe: State setters are stable; ANIMATION_CONFIGS and animationCancelRef are module/ref level, keeping playAnimation reference stable. trackTimeout is stable (empty-dep useCallback).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [playSFX]);
+  }, [playSFX, combatSpeed]);
 
   useEffect(() => {
     if (!activeAnimation && animationQueue.length > 0) {
