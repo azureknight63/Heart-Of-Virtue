@@ -14,6 +14,7 @@ from typing import (
     Any,
     Dict,
     List,
+    Set,
     Tuple,
     Optional,
     cast,
@@ -2322,40 +2323,93 @@ class TagListFrame(tk.Frame):
 
 def _get_module_paths_for_class(class_name: str) -> List[str]:
     """
-    Returns a list of absolute file paths for all modules in src/ that define the given class or its subclasses.
+    Returns a list of absolute file paths for all modules in src/ that define
+    the given class or any *transitive* descendant of it (not just direct
+    subclasses).
+
+    A naive single-pass AST scan only catches classes whose bases literally
+    name `class_name` (e.g. `Merchant(NPC, ...)`). That misses descendants
+    reached through an intermediate class -- e.g. concrete Friend NPCs in
+    `src/npc/_friends.py` inherit from `Friend` (defined in
+    `src/npc/_base.py`), not from `NPC` directly, so a direct-base-only scan
+    silently omits `_friends.py` for an `NPC` query (issue #462).
+
+    To fix this we first build a whole-tree map of every class name to its
+    immediate base names and defining file(s), then run a fixpoint over that
+    graph: start with `{class_name}` and repeatedly add any class whose base
+    set intersects the current matched set, until a pass adds nothing new.
+    Because `matched` only ever grows and the class universe is finite, this
+    always terminates -- including in the presence of inheritance cycles
+    (which shouldn't exist in valid Python but a bug/typo elsewhere shouldn't
+    turn into an infinite loop here).
+
+    Aliased imports (`from ._base import Friend as FriendBase`) are also
+    resolved on a best-effort basis: `import`/`from...import` aliases are
+    collected across the tree and each class's base-name set is expanded to
+    include the alias's original name, so a base referenced only by its
+    alias still matches during the fixpoint.
     """
     this_project_root = os.path.dirname(os.path.dirname(__file__))
     src_dir = os.path.join(this_project_root, "src")
-    result_paths = set()
-    # Walk through src/ and subdirectories
+
+    # name -> set of immediate base names (by their local, possibly-aliased
+    # spelling in that file)
+    class_bases: Dict[str, Set[str]] = {}
+    # name -> set of absolute file paths where a class of that name is defined
+    class_files: Dict[str, Set[str]] = {}
+    # local alias name -> original imported name (e.g. "FriendBase" -> "Friend")
+    alias_to_real: Dict[str, str] = {}
+
     for dirpath, dirnames, filenames in os.walk(src_dir):
         for filename in filenames:
-            if filename.endswith(".py") and not filename.startswith("__"):
-                file_path = os.path.join(dirpath, filename)
-                try:
-                    with open(file_path, "r", encoding="utf-8") as f:
-                        src = f.read()
-                    tree = ast.parse(src)
-                    for node in ast.walk(tree):
-                        if isinstance(node, ast.ClassDef):
-                            # Check if class matches or subclasses the target
-                            if node.name == class_name:
-                                result_paths.add(file_path)
-                            else:
-                                # Check bases for subclassing
-                                for base in node.bases:
-                                    if (
-                                        isinstance(base, ast.Name)
-                                        and base.id == class_name
-                                    ):
-                                        result_paths.add(file_path)
-                                    elif (
-                                        isinstance(base, ast.Attribute)
-                                        and base.attr == class_name
-                                    ):
-                                        result_paths.add(file_path)
-                except Exception:
-                    continue  # Ignore parse errors
+            if not (filename.endswith(".py") and not filename.startswith("__")):
+                continue
+            file_path = os.path.join(dirpath, filename)
+            try:
+                with open(file_path, "r", encoding="utf-8") as f:
+                    src = f.read()
+                tree = ast.parse(src)
+            except Exception:
+                continue  # Ignore parse errors
+
+            for node in ast.walk(tree):
+                if isinstance(node, (ast.Import, ast.ImportFrom)):
+                    for alias in node.names:
+                        if alias.asname:
+                            alias_to_real[alias.asname] = alias.name
+                elif isinstance(node, ast.ClassDef):
+                    bases: Set[str] = set()
+                    for base in node.bases:
+                        if isinstance(base, ast.Name):
+                            bases.add(base.id)
+                        elif isinstance(base, ast.Attribute):
+                            bases.add(base.attr)
+                    class_bases.setdefault(node.name, set()).update(bases)
+                    class_files.setdefault(node.name, set()).add(file_path)
+
+    # Resolve aliased bases to their original name so the fixpoint below can
+    # match through an alias (e.g. `class Foo(FriendBase)` where
+    # `FriendBase` is `Friend` imported under an alias).
+    for name, bases in class_bases.items():
+        aliased = {alias_to_real[b] for b in bases if b in alias_to_real}
+        if aliased:
+            class_bases[name] = bases | aliased
+
+    # Fixpoint: grow the matched set until a full pass adds nothing new.
+    matched: Set[str] = {class_name}
+    changed = True
+    while changed:
+        changed = False
+        for name, bases in class_bases.items():
+            if name in matched:
+                continue
+            if bases & matched:
+                matched.add(name)
+                changed = True
+
+    result_paths: Set[str] = set()
+    for name in matched:
+        result_paths.update(class_files.get(name, ()))
     return list(result_paths)
 
 

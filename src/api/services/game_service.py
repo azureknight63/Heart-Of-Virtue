@@ -23,6 +23,7 @@ from src.api.serializers.inventory import (
 from src.api.serializers.combat import (
     CombatStateSerializer,
 )
+from src.api.utils.inventory import get_inventory_list
 
 _log = logging.getLogger(__name__)
 
@@ -1403,9 +1404,7 @@ class GameService:
 
                         # Auto-take items with hide_factor == 0 (intentionally findable)
                         if hide_factor == 0:
-                            inventory = getattr(
-                                player, "inventory_list", None
-                            ) or getattr(player, "inventory", [])
+                            inventory = get_inventory_list(player)
                             if isinstance(inventory, list):
                                 total_weight = sum(
                                     getattr(i, "weight", 0) for i in inventory
@@ -1556,8 +1555,12 @@ class GameService:
             # Check if target is an NPC by looking in current tile's NPCs
             is_npc = hasattr(tile, "npcs_here") and target in tile.npcs_here
             if is_npc:
-                # Redirect to start_combat instead of trying to call attack() method
-                combat_result = self.start_combat(player, target_id)
+                # Redirect to start_combat instead of trying to call attack() method.
+                # Pass session_data so the combat adapter's event callback can persist
+                # interactive combat events to the session (#335).
+                combat_result = self.start_combat(
+                    player, target_id, session_data=session_data
+                )
                 # Wrap start_combat response to match interact_with_target format
                 if "error" in combat_result:
                     return {"success": False, "message": combat_result["error"]}
@@ -1985,8 +1988,15 @@ class GameService:
         player: "player_module.Player",
         enemy_id: str,
         session_id: str = None,
+        session_data: Dict[str, Any] = None,
     ) -> Dict[str, Any]:
-        """Start combat with a specific enemy (e.g. from dialogue/interaction)."""
+        """Start combat with a specific enemy (e.g. from dialogue/interaction).
+
+        ``session_data`` is threaded through to ``_initialize_combat`` so the
+        adapter's event callback can persist interactive (``needs_input``) combat
+        events into ``session["pending_events"]`` (#335). Omitting it leaves the
+        callback bound to ``None``, which silently drops those events.
+        """
         # Find enemy in current room
         enemy = None
         tile = None
@@ -2045,7 +2055,9 @@ class GameService:
         for e in all_enemies:
             e.in_combat = True
 
-        result = self._initialize_combat(player, all_enemies, session_id=session_id)
+        result = self._initialize_combat(
+            player, all_enemies, session_id=session_id, session_data=session_data
+        )
 
         # _initialize_combat returns None in the idempotency branch (already in combat
         # with the same enemy set).  Treat this as a graceful no-op.
@@ -3642,9 +3654,7 @@ class GameService:
             player.combat_drops = []
             return {"success": True, "collected": [], "skipped": []}
 
-        inventory = getattr(player, "inventory_list", None)
-        if inventory is None:
-            inventory = getattr(player, "inventory", [])
+        inventory = get_inventory_list(player)
 
         capacity = float(getattr(player, "weight_tolerance", 20.0) or 20.0)
 

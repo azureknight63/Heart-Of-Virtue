@@ -260,6 +260,20 @@ class Item:
                         player.eq_weapon = player.fists
         functions.refresh_stat_bonuses(player)
 
+    def _exceeds_capacity(self, player: "Player", count: int = 1) -> bool:
+        """Return True if taking `count` of this item would push the
+        player's carried weight over their capacity. Shared by both
+        branches of take() so the check can't drift out of sync between
+        them (see issue #329/#332)."""
+        capacity = getattr(
+            player,
+            "weight_tolerance",
+            getattr(player, "carrying_capacity", None),
+        )
+        if capacity is None or not hasattr(player, "weight_current"):
+            return False
+        return player.weight_current + (getattr(self, "weight", 0) * count) > capacity
+
     def take(self, player: "Player", quantity: Optional[int] = None) -> None:
         """Take the item from the ground."""
         # Determine if the player is currently in a shop map
@@ -287,24 +301,12 @@ class Item:
                     if 0 <= take_count <= getattr(self, "count"):
                         if take_count > 0:
                             # Check weight limit
-                            capacity = getattr(
-                                player,
-                                "weight_tolerance",
-                                getattr(player, "carrying_capacity", None),
-                            )
-                            if capacity is not None and hasattr(
-                                player, "weight_current"
-                            ):
-                                if (
-                                    player.weight_current
-                                    + (getattr(self, "weight", 0) * take_count)
-                                    > capacity
-                                ):
-                                    cprint(
-                                        "It's too heavy to carry all that!",
-                                        "red",
-                                    )
-                                    break
+                            if self._exceeds_capacity(player, take_count):
+                                cprint(
+                                    "It's too heavy to carry all that!",
+                                    "red",
+                                )
+                                break
 
                             if take_count == getattr(self, "count"):
                                 # Take all
@@ -366,15 +368,9 @@ class Item:
             return
 
         # Original logic for non-stacked or single items
-        capacity = getattr(
-            player,
-            "weight_tolerance",
-            getattr(player, "carrying_capacity", None),
-        )
-        if capacity is not None and hasattr(player, "weight_current"):
-            if player.weight_current + getattr(self, "weight", 0) > capacity:
-                cprint("It's too heavy to carry!", "red")
-                return
+        if self._exceeds_capacity(player):
+            cprint("It's too heavy to carry!", "red")
+            return
 
         # Add to inventory
         if hasattr(self, "merchandise"):
@@ -529,7 +525,14 @@ class Weapon(Item):
             )
 
 
-class Armor(Item):
+class ProtectiveGear(Item):
+    """Shared base for wearable protective-gear slots (Armor, Boots, Helm,
+    Gloves). Owns the protection/str_req/str_mod/weight/isequipped attribute
+    assignments and the `__str__` display format that all four slots share
+    byte-for-byte; each subclass only supplies its own constructor signature
+    (default `discovery_message`, `maintype`/`subtype` values) and delegates
+    the body here. See issue #332."""
+
     protection: Union[int, float]
     str_req: int
     str_mod: Union[int, float]
@@ -538,6 +541,62 @@ class Armor(Item):
     maintype: str
     subtype: str
 
+    def __init__(
+        self,
+        name: str,
+        description: str,
+        value: Union[int, float],
+        protection: Union[int, float],
+        isequipped: bool,
+        str_req: int,
+        str_mod: Union[int, float],
+        weight: Union[int, float],
+        maintype: str,
+        subtype: str,
+        discovery_message: str,
+        merchandise: bool = False,
+        enchantment_level: int = 0,
+        aliases: Optional[List[str]] = None,
+    ) -> None:
+        self.protection = protection
+        self.str_req = str_req
+        self.str_mod = str_mod
+        self.weight = weight
+        self.isequipped = isequipped
+        self.maintype = maintype
+        self.subtype = subtype
+        super().__init__(
+            name,
+            description,
+            value,
+            maintype,
+            subtype,
+            discovery_message,
+            merchandise=merchandise,
+            enchantment_level=enchantment_level,
+            aliases=aliases,
+        )
+
+    def __str__(self) -> str:  # pragma: no cover - display logic
+        if self.isequipped:
+            return "{} (EQUIPPED)\n=====\n{}\nValue: {}\nProtection: {}\nWeight: {}".format(
+                self.name,
+                self.description,
+                self.value,
+                self.protection,
+                self.weight,
+            )
+        else:
+            return "{}\n=====\n{}\nValue: {}\nProtection: {}\nWeight: {}".format(
+                self.name,
+                self.description,
+                self.value,
+                self.protection,
+                self.weight,
+            )
+
+
+class Armor(ProtectiveGear):
     def __init__(
         self,
         name: str,
@@ -555,17 +614,15 @@ class Armor(Item):
         enchantment_level: int = 0,
         aliases: Optional[List[str]] = None,
     ) -> None:
-        self.protection = protection
-        self.str_req = str_req
-        self.str_mod = str_mod
-        self.weight = weight
-        self.isequipped = isequipped
-        self.maintype = maintype
-        self.subtype = subtype
         super().__init__(
             name,
             description,
             value,
+            protection,
+            isequipped,
+            str_req,
+            str_mod,
+            weight,
             maintype,
             subtype,
             discovery_message,
@@ -574,34 +631,8 @@ class Armor(Item):
             aliases=aliases,
         )
 
-    def __str__(self) -> str:  # pragma: no cover - display logic
-        if self.isequipped:
-            return "{} (EQUIPPED)\n=====\n{}\nValue: {}\nProtection: {}\nWeight: {}".format(
-                self.name,
-                self.description,
-                self.value,
-                self.protection,
-                self.weight,
-            )
-        else:
-            return "{}\n=====\n{}\nValue: {}\nProtection: {}\nWeight: {}".format(
-                self.name,
-                self.description,
-                self.value,
-                self.protection,
-                self.weight,
-            )
 
-
-class Boots(Item):
-    protection: Union[int, float]
-    str_req: int
-    str_mod: Union[int, float]
-    weight: Union[int, float]
-    isequipped: bool
-    maintype: str
-    subtype: str
-
+class Boots(ProtectiveGear):
     def __init__(
         self,
         name: str,
@@ -619,17 +650,15 @@ class Boots(Item):
         enchantment_level: int = 0,
         aliases: Optional[List[str]] = None,
     ) -> None:
-        self.protection = protection
-        self.str_req = str_req
-        self.str_mod = str_mod
-        self.weight = weight
-        self.isequipped = isequipped
-        self.maintype = maintype
-        self.subtype = subtype
         super().__init__(
             name,
             description,
             value,
+            protection,
+            isequipped,
+            str_req,
+            str_mod,
+            weight,
             maintype,
             subtype,
             discovery_message,
@@ -637,24 +666,6 @@ class Boots(Item):
             enchantment_level=enchantment_level,
             aliases=aliases,
         )
-
-    def __str__(self) -> str:  # pragma: no cover - display logic
-        if self.isequipped:
-            return "{} (EQUIPPED)\n=====\n{}\nValue: {}\nProtection: {}\nWeight: {}".format(
-                self.name,
-                self.description,
-                self.value,
-                self.protection,
-                self.weight,
-            )
-        else:
-            return "{}\n=====\n{}\nValue: {}\nProtection: {}\nWeight: {}".format(
-                self.name,
-                self.description,
-                self.value,
-                self.protection,
-                self.weight,
-            )
 
 
 class ClothBoots(Boots):
@@ -794,15 +805,7 @@ class IronGreaves(Boots):
         # heavy boots do not grant finesse bonus
 
 
-class Helm(Item):
-    protection: Union[int, float]
-    str_req: int
-    str_mod: Union[int, float]
-    weight: Union[int, float]
-    isequipped: bool
-    maintype: str
-    subtype: str
-
+class Helm(ProtectiveGear):
     def __init__(
         self,
         name: str,
@@ -820,17 +823,15 @@ class Helm(Item):
         enchantment_level: int = 0,
         aliases: Optional[List[str]] = None,
     ) -> None:
-        self.protection = protection
-        self.str_req = str_req
-        self.str_mod = str_mod
-        self.weight = weight
-        self.isequipped = isequipped
-        self.maintype = maintype
-        self.subtype = subtype
         super().__init__(
             name,
             description,
             value,
+            protection,
+            isequipped,
+            str_req,
+            str_mod,
+            weight,
             maintype,
             subtype,
             discovery_message,
@@ -839,34 +840,8 @@ class Helm(Item):
             aliases=aliases,
         )
 
-    def __str__(self) -> str:  # pragma: no cover - display logic
-        if self.isequipped:
-            return "{} (EQUIPPED)\n=====\n{}\nValue: {}\nProtection: {}\nWeight: {}".format(
-                self.name,
-                self.description,
-                self.value,
-                self.protection,
-                self.weight,
-            )
-        else:
-            return "{}\n=====\n{}\nValue: {}\nProtection: {}\nWeight: {}".format(
-                self.name,
-                self.description,
-                self.value,
-                self.protection,
-                self.weight,
-            )
 
-
-class Gloves(Item):
-    protection: Union[int, float]
-    str_req: int
-    str_mod: Union[int, float]
-    weight: Union[int, float]
-    isequipped: bool
-    maintype: str
-    subtype: str
-
+class Gloves(ProtectiveGear):
     def __init__(
         self,
         name: str,
@@ -884,17 +859,15 @@ class Gloves(Item):
         enchantment_level: int = 0,
         aliases: Optional[List[str]] = None,
     ) -> None:
-        self.protection = protection
-        self.str_req = str_req
-        self.str_mod = str_mod
-        self.weight = weight
-        self.isequipped = isequipped
-        self.maintype = maintype
-        self.subtype = subtype
         super().__init__(
             name,
             description,
             value,
+            protection,
+            isequipped,
+            str_req,
+            str_mod,
+            weight,
             maintype,
             subtype,
             discovery_message,
@@ -902,24 +875,6 @@ class Gloves(Item):
             enchantment_level=enchantment_level,
             aliases=aliases,
         )
-
-    def __str__(self) -> str:  # pragma: no cover - display logic
-        if self.isequipped:
-            return "{} (EQUIPPED)\n=====\n{}\nValue: {}\nProtection: {}\nWeight: {}".format(
-                self.name,
-                self.description,
-                self.value,
-                self.protection,
-                self.weight,
-            )
-        else:
-            return "{}\n=====\n{}\nValue: {}\nProtection: {}\nWeight: {}".format(
-                self.name,
-                self.description,
-                self.value,
-                self.protection,
-                self.weight,
-            )
 
 
 # New gloves subclasses (low -> medium value)

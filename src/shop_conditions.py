@@ -35,8 +35,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import inspect
+import logging
 import random
-from typing import Any, Dict, List, Optional, Sequence, Type
+from typing import Any, Dict, Iterable, Iterator, List, Optional, Sequence, Type
 
 try:
     from src.items import Item  # type: ignore
@@ -44,6 +45,77 @@ except Exception:  # pragma: no cover - fallback for static analysis
 
     class Item:  # type: ignore
         value: int  # minimal stub
+
+
+logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Room / container traversal helpers
+# ---------------------------------------------------------------------------
+#
+# These live here (rather than in src/npc/_shop.py) because _shop.py already
+# imports this module, so both shop modules can share them without a circular
+# import.
+
+
+def _room_objects(room: Any) -> Iterable[Any]:
+    """Return the interactive objects sitting in ``room``.
+
+    Real rooms expose ``objects_here`` (``src/tiles.py``); ``objects`` is only
+    a legacy/test-harness alias. Reading the wrong name silently yields nothing
+    — the root cause of issues #373/#374/#375 — so both are checked here, once,
+    instead of being re-derived at every call site.
+
+    Only list-like values are accepted, so a test double that defines just one
+    of the two names (and auto-generates the other) still resolves correctly.
+    """
+    for attr in ("objects_here", "objects"):
+        value = getattr(room, attr, None)
+        if isinstance(value, (list, tuple, set)):
+            return value
+    return []
+
+
+def iter_rooms(rooms_source: Any) -> Iterator[Any]:
+    """Yield the room objects held in ``rooms_source``.
+
+    ``rooms_source`` is a universe/tile map, which is a dict keyed by ``(x, y)``
+    coordinates (``src/universe.py``) but may be a plain list in test harnesses.
+    Iterating a dict directly yields coordinate tuples rather than rooms, so the
+    dict case is unwrapped via ``.values()``. Non-room entries (raw strings or
+    nested dicts left by partial map loads) and non-iterable sources are skipped.
+    """
+    if not rooms_source:
+        return
+    rooms = rooms_source.values() if hasattr(rooms_source, "values") else rooms_source
+    try:
+        iterator = iter(rooms)
+    except TypeError:
+        return
+    for room in iterator:
+        if isinstance(room, (str, bytes, dict)):
+            continue
+        yield room
+
+
+def iter_merchant_containers(room: Any, merchant: Any) -> Iterator[Any]:
+    """Yield the containers in ``room`` whose stock belongs to ``merchant``.
+
+    Ownership is recorded on ``Container.merchant`` as either the merchant
+    object itself or its name, so both forms are matched.
+    """
+    merchant_name = getattr(merchant, "name", None)
+    for obj in _room_objects(room):
+        if not (hasattr(obj, "inventory") and hasattr(obj, "merchant")):
+            continue
+        owner = getattr(obj, "merchant", None)
+        if owner is None:
+            continue
+        if owner is merchant or owner == merchant:
+            yield obj
+        elif merchant_name is not None and owner == merchant_name:
+            yield obj
 
 
 # ---------------------------------------------------------------------------
@@ -286,17 +358,28 @@ class UniqueItemInjectionCondition(ShopCondition):
             # Attempt to locate a merchant container (first match)
             container = None
             try:
-                if hasattr(merchant, "current_room") and getattr(
-                    merchant.current_room, "universe", None
-                ):
-                    for room in merchant.current_room.universe.map:  # type: ignore[attr-defined]
-                        for obj in getattr(room, "objects", []):
-                            if getattr(obj, "merchant", None) is merchant:
-                                container = obj
-                                break
-                        if container:
+                universe = getattr(
+                    getattr(merchant, "current_room", None), "universe", None
+                )
+                if universe is not None:
+                    for room in iter_rooms(getattr(universe, "map", None)):
+                        for obj in iter_merchant_containers(room, merchant):
+                            container = obj
                             break
-            except Exception:
+                        if container is not None:
+                            break
+            except Exception as exc:  # noqa: BLE001
+                # Stays broad so a malformed world never aborts the injection
+                # (that would leak the already-claimed unique_items_spawned
+                # entry), but it is no longer silent: swallowing this is what
+                # hid the fact that the container path was dead (issue #375).
+                logger.warning(
+                    "Unique item injection: container lookup failed for merchant "
+                    "%r (%s: %s); falling back to merchant inventory",
+                    getattr(merchant, "name", merchant),
+                    type(exc).__name__,
+                    exc,
+                )
                 container = None
 
             if container is not None and hasattr(container, "inventory"):
@@ -309,7 +392,13 @@ class UniqueItemInjectionCondition(ShopCondition):
             if not self.description:
                 self.description = f"Injected unique item: {item.name}"
             return [item]
-        except Exception:
+        except Exception as exc:  # noqa: BLE001 - injection is best-effort
+            logger.warning(
+                "Unique item injection aborted for merchant %r (%s: %s)",
+                getattr(merchant, "name", merchant),
+                type(exc).__name__,
+                exc,
+            )
             return []
 
     # Backwards-compatible singular variant used elsewhere in codebase
@@ -319,6 +408,8 @@ class UniqueItemInjectionCondition(ShopCondition):
 
 
 __all__ = [
+    "iter_rooms",
+    "iter_merchant_containers",
     "ShopCondition",
     "ValueModifierCondition",
     "RestockWeightBoostCondition",

@@ -276,6 +276,23 @@ class TestItemTake:
         assert item not in player.inventory
         assert item.count == 5
 
+    def test_take_stackable_too_heavy_no_quantity_does_not_hang(self):
+        """Regression test for issue #329: taking a whole stack (quantity=None)
+        that exceeds weight capacity must break out of the take() loop
+        instead of looping forever (the original bug used `continue`, which
+        recomputed the identical failing check every iteration)."""
+        player = _fresh_player()
+        item = items.Restorative(count=5)
+        item.weight = 1000  # guarantee over capacity
+        player.current_room.items_here = [item]
+
+        # If this hangs, the test itself will time out / never return.
+        item.take(player, quantity=None)
+
+        assert item not in player.inventory
+        assert item.count == 5
+        assert item in player.current_room.items_here
+
     def test_take_stack_in_shop_map_sets_merchandise_true(self):
         player = _fresh_player()
         player.map = {"name": "grondia-jambos_shop"}
@@ -308,6 +325,24 @@ class TestItemTake:
         assert weapon in player.inventory
         assert weapon not in player.current_room.items_here
 
+    def test_take_single_item_merges_into_existing_inventory_stack(self):
+        """Regression test for issue #330: the single-item branch of take()
+        must actually merge into an existing stack of the same item, not
+        silently no-op (the original bug called the nonexistent
+        `player.stack_duplicate_items`, guarded by a `hasattr` check that
+        was always False)."""
+        player = _fresh_player()
+        existing = items.Restorative(count=2)
+        player.inventory = [existing]
+        picked_up = items.Restorative(count=1)
+        player.current_room.items_here = [picked_up]
+
+        picked_up.take(player)
+
+        restoratives = [i for i in player.inventory if isinstance(i, items.Restorative)]
+        assert len(restoratives) == 1
+        assert restoratives[0].count == 3
+
     def test_take_non_integer_quantity_invalid_amount(self):
         """Covers the is_input_integer() False branch (a non-numeric explicit
         quantity)."""
@@ -330,6 +365,100 @@ class TestItemTake:
         item.take(player)
 
         assert item in player.inventory
+
+
+# ---------------------------------------------------------------------------
+# ProtectiveGear — shared base for Armor/Boots/Helm/Gloves (issue #332)
+# ---------------------------------------------------------------------------
+
+
+class TestProtectiveGearBase:
+    """Armor/Boots/Helm/Gloves now share a ProtectiveGear(Item) base that
+    owns the attribute assignments and __str__ implementation. These tests
+    lock in the shared behavior and that each slot class's own default
+    discovery_message / constructor signature is preserved exactly."""
+
+    def test_all_slots_inherit_protective_gear(self):
+        assert issubclass(items.Armor, items.ProtectiveGear)
+        assert issubclass(items.Boots, items.ProtectiveGear)
+        assert issubclass(items.Helm, items.ProtectiveGear)
+        assert issubclass(items.Gloves, items.ProtectiveGear)
+        assert issubclass(items.ProtectiveGear, items.Item)
+
+    def test_str_shared_across_all_slots_when_equipped(self):
+        kwargs = dict(
+            name="Gear",
+            description="Test gear.",
+            value=10,
+            protection=2,
+            isequipped=True,
+            str_req=1,
+            str_mod=0.1,
+            weight=1.0,
+            maintype="Armor",
+            subtype="Light",
+        )
+        for cls in (items.Armor, items.Boots, items.Helm, items.Gloves):
+            gear = cls(**kwargs)
+            gear_str = str(gear)
+            assert "EQUIPPED" in gear_str
+            assert "Protection: 2" in gear_str
+            assert "Weight: 1.0" in gear_str
+
+    def test_str_shared_across_all_slots_when_not_equipped(self):
+        kwargs = dict(
+            name="Gear",
+            description="Test gear.",
+            value=10,
+            protection=2,
+            isequipped=False,
+            str_req=1,
+            str_mod=0.1,
+            weight=1.0,
+            maintype="Armor",
+            subtype="Light",
+        )
+        for cls in (items.Armor, items.Boots, items.Helm, items.Gloves):
+            gear = cls(**kwargs)
+            gear_str = str(gear)
+            assert "EQUIPPED" not in gear_str
+
+    def test_each_slot_keeps_its_own_default_discovery_message(self):
+        common = dict(
+            name="Gear",
+            description="Test gear.",
+            value=10,
+            protection=2,
+            isequipped=False,
+            str_req=1,
+            str_mod=0.1,
+            weight=1.0,
+            maintype="Armor",
+            subtype="Light",
+        )
+        assert items.Armor(**common).discovery_message == "a piece of armor."
+        assert items.Boots(**common).discovery_message == "a pair of footgear."
+        assert items.Helm(**common).discovery_message == "a kind of head covering."
+        assert items.Gloves(**common).discovery_message == "a pair of gloves."
+
+    def test_real_subclasses_still_construct_correctly(self):
+        """Sanity check real leaf subclasses (instantiated from map JSON)
+        still work through the shared base unchanged."""
+        armor = items.TatteredCloth()
+        boots = items.ClothBoots()
+        helm = items.ClothHood()
+        gloves = items.ClothMitts()
+
+        assert armor.name == "Tattered Cloth"
+        assert boots.name == "Cloth Boots"
+        assert isinstance(helm, items.Helm)
+        assert isinstance(gloves, items.Gloves)
+        for gear in (armor, boots, helm, gloves):
+            assert isinstance(gear, items.ProtectiveGear)
+            assert hasattr(gear, "protection")
+            assert hasattr(gear, "str_req")
+            assert hasattr(gear, "str_mod")
+            assert hasattr(gear, "isequipped")
 
 
 # ---------------------------------------------------------------------------

@@ -37,6 +37,46 @@ class TestLogCleanupManagerInit:
         mgr = LogCleanupManager("/tmp/logs")
         assert isinstance(mgr.logs_dir, Path)
 
+    # -----------------------------------------------------------------------
+    # Regression tests for #451: a negative retention_days pushes the cutoff
+    # date into the future, so cleanup_old_logs would delete every existing
+    # log immediately. A zero/negative max_size_mb has the analogous effect
+    # for size-based cleanup. Both must be clamped to a sane non-negative
+    # floor in __init__.
+    # -----------------------------------------------------------------------
+
+    def test_negative_retention_days_clamped(self):
+        mgr = LogCleanupManager("/tmp/logs", retention_days=-5)
+        assert mgr.retention_days >= LogCleanupManager.MIN_RETENTION_DAYS
+        assert mgr.retention_days > 0
+
+    def test_zero_retention_days_clamped(self):
+        mgr = LogCleanupManager("/tmp/logs", retention_days=0)
+        assert mgr.retention_days >= LogCleanupManager.MIN_RETENTION_DAYS
+        assert mgr.retention_days > 0
+
+    def test_negative_max_size_mb_clamped(self):
+        mgr = LogCleanupManager("/tmp/logs", max_size_mb=-100)
+        assert mgr.max_size_bytes >= LogCleanupManager.MIN_MAX_SIZE_MB * 1024 * 1024
+
+    def test_zero_max_size_mb_clamped(self):
+        mgr = LogCleanupManager("/tmp/logs", max_size_mb=0)
+        assert mgr.max_size_bytes >= LogCleanupManager.MIN_MAX_SIZE_MB * 1024 * 1024
+
+    def test_negative_retention_days_does_not_delete_recent_log(self):
+        # End-to-end guard: with the pre-fix bug, a negative retention_days
+        # would push the cutoff into the future and delete every log file
+        # regardless of age, including ones created moments ago.
+        with tempfile.TemporaryDirectory() as tmpdir:
+            log_path = Path(tmpdir) / "recent.log"
+            log_path.write_text("just created")
+
+            mgr = LogCleanupManager(tmpdir, retention_days=-5)
+            result = mgr.cleanup_old_logs()
+
+            assert result["deleted_count"] == 0
+            assert log_path.exists()
+
 
 class TestCleanupOldLogs:
     def test_nonexistent_dir_returns_error(self):
