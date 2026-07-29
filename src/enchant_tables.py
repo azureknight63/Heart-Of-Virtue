@@ -311,26 +311,45 @@ class Poisonous(
             return False
 
 
-class Dousing(Enchantment):  # grants resistance to fire when equipped
+class _ResistanceEnchantment(Enchantment):
+    """
+    Shared modify() for prefix enchantments that grant a flat resistance and
+    scale item.value by the enchantment's own value multiplier (#424). Concrete
+    subclasses (Dousing, Purifying, Needleproof, Edgebound, Bulwark) supply only
+    the resistance type/amount and flavor announce as class attributes.
+
+    Not itself a real enchantment: it deliberately doesn't override __init__, so
+    class-enumeration code excludes it the same way it excludes Enchantment.
+
+    _resist_type / _resist_amount: passed straight to Enchantment._add_resistance
+    _announce_template: format string with a single {} for the item name
+    _allowed_maintypes: item maintypes this enchantment may apply to
+    """
+
+    _resist_type = None
+    _resist_amount = 0.0
+    _announce_template = "There's a {} here."
+    _allowed_maintypes = ["Armor", "Helm", "Gloves", "Boots", "Accessory"]
+
+    def modify(self):
+        self._add_resistance(self._resist_type, self._resist_amount)
+        # scale value by the enchantment's own multiplier (self.value == the old
+        # per-class literal, e.g. Dousing's 1.25)
+        self.item.value = int(self.item.value * self.value)
+        self.item.name = self.name + " " + self.item.name
+        self.item.announce = self._announce_template.format(self.item.name)
+
+    def requirements(self):
+        return self.item.maintype in self._allowed_maintypes
+
+
+class Dousing(_ResistanceEnchantment):  # grants resistance to fire when equipped
     tier = 2
+    _resist_type, _resist_amount = "fire", 0.3
+    _announce_template = "There's a {} here, treated against flame."
 
     def __init__(self, item):
         super().__init__(item, name="Dousing", rarity=0, group="Prefix", value=1.25)
-
-    def modify(self):
-        # add or increase fire resistance on the item (works for dict or object)
-        self._add_resistance("fire", 0.3)
-        # increase value modestly for the protection
-        self.item.value *= 1.25
-        self.item.value = int(self.item.value)
-        self.item.name = self.name + " " + self.item.name
-        self.item.announce = "There's a {} here, treated against flame.".format(
-            self.item.name
-        )
-
-    def requirements(self):
-        allowed_maintypes = ["Armor", "Helm", "Gloves", "Boots", "Accessory"]
-        return self.item.maintype in allowed_maintypes
 
 
 class Flaming(_DamagePercentBoostEnchantment):
@@ -441,197 +460,141 @@ class Pure(_DamagePercentBoostEnchantment):
 # SUFFIXES
 
 
-class OfHealth(Enchantment):  # it's healthy! Increase maxhp by 10-30
+class _StatBoostEnchantment(Enchantment):
+    """
+    Shared modify() for suffix enchantments that raise a single stat bonus on
+    the item by a random amount and add a flat-per-point bump to item.value
+    (#424). Concrete subclasses (of Health, of Vigor, ... of Relief) supply only
+    their differing data as class attributes.
+
+    Not itself a real enchantment: it deliberately doesn't override __init__, so
+    class-enumeration code excludes it the same way it excludes Enchantment.
+
+    _mod_low / _mod_high: random.randint() range for the stat increase
+    _stat_attr: the item bonus attribute incremented (e.g. "add_str")
+    _value_mult: gold added to item.value per point of the roll
+    _stat_wrap: optional callable applied to the roll before it's stored
+                (of Relief stores a decimal.Decimal); None means store the raw int
+    """
+
+    _mod_low = 0
+    _mod_high = 0
+    _stat_attr = None
+    _value_mult = 0
+    _stat_wrap = None
+    _announce_template = "There's a {} here."
+
+    def modify(self):
+        mod = random.randint(self._mod_low, self._mod_high)
+        delta = self._stat_wrap(mod) if self._stat_wrap is not None else mod
+        if hasattr(self.item, self._stat_attr):
+            setattr(
+                self.item, self._stat_attr, getattr(self.item, self._stat_attr) + delta
+            )
+        else:
+            setattr(self.item, self._stat_attr, delta)
+        self.item.value += mod * self._value_mult
+        self.item.value = int(self.item.value)
+        self.item.name = self.item.name + " " + self.name
+        self.item.announce = self._announce_template.format(self.item.name)
+
+    def requirements(self):
+        return True
+
+
+class OfHealth(_StatBoostEnchantment):  # it's healthy! Increase maxhp by 10-30
     tier = 1
+    _mod_low, _mod_high = 10, 30
+    _stat_attr = "add_maxhp"
+    _value_mult = 2
 
     def __init__(self, item):
         super().__init__(item, name="of Health", rarity=0, group="Suffix", value=1)
 
-    def modify(self):
-        mod = random.randint(10, 30)
-        if hasattr(self.item, "add_maxhp"):
-            self.item.add_maxhp += mod
-        else:
-            self.item.add_maxhp = mod
-        self.item.value += mod * 2
-        self.item.value = int(self.item.value)
-        self.item.name = self.item.name + " " + self.name
-        self.item.announce = "There's a {} here.".format(self.item.name)
 
-    def requirements(self):
-        return True
-
-
-class OfVigor(Enchantment):  # it's strong! Increase strength by 1-3
+class OfVigor(_StatBoostEnchantment):  # it's strong! Increase strength by 1-3
     tier = 1
+    _mod_low, _mod_high = 1, 3
+    _stat_attr = "add_str"
+    _value_mult = 20
 
     def __init__(self, item):
         super().__init__(item, name="of Vigor", rarity=0, group="Suffix", value=1)
 
-    def modify(self):
-        mod = random.randint(1, 3)
-        if hasattr(self.item, "add_str"):
-            self.item.add_str += mod
-        else:
-            self.item.add_str = mod
-        self.item.value += mod * 20
-        self.item.value = int(self.item.value)
-        self.item.name = self.item.name + " " + self.name
-        self.item.announce = "There's a {} here.".format(self.item.name)
 
-    def requirements(self):
-        return True
-
-
-class OfPerseverance(Enchantment):  # Increase max fatigue by 10-30
+class OfPerseverance(_StatBoostEnchantment):  # Increase max fatigue by 10-30
     tier = 1
+    _mod_low, _mod_high = 10, 30
+    _stat_attr = "add_maxfatigue"
+    _value_mult = 2
 
     def __init__(self, item):
         super().__init__(
             item, name="of Perseverance", rarity=0, group="Suffix", value=1
         )
 
-    def modify(self):
-        mod = random.randint(10, 30)
-        if hasattr(self.item, "add_maxfatigue"):
-            self.item.add_maxfatigue += mod
-        else:
-            self.item.add_maxfatigue = mod
-        self.item.value += mod * 2
-        self.item.value = int(self.item.value)
-        self.item.name = self.item.name + " " + self.name
-        self.item.announce = "There's a {} here.".format(self.item.name)
 
-    def requirements(self):
-        return True
-
-
-class OfTempo(Enchantment):  # it's fast! Increase speed by 1-3
+class OfTempo(_StatBoostEnchantment):  # it's fast! Increase speed by 1-3
     tier = 1
+    _mod_low, _mod_high = 1, 3
+    _stat_attr = "add_speed"
+    _value_mult = 20
 
     def __init__(self, item):
         super().__init__(item, name="of Tempo", rarity=0, group="Suffix", value=1)
 
-    def modify(self):
-        mod = random.randint(1, 3)
-        if hasattr(self.item, "add_speed"):
-            self.item.add_speed += mod
-        else:
-            self.item.add_speed = mod
-        self.item.value += mod * 20
-        self.item.value = int(self.item.value)
-        self.item.name = self.item.name + " " + self.name
-        self.item.announce = "There's a {} here.".format(self.item.name)
 
-    def requirements(self):
-        return True
-
-
-class OfGrit(Enchantment):  # Increase endurance by 1-3
+class OfGrit(_StatBoostEnchantment):  # Increase endurance by 1-3
     tier = 1
+    _mod_low, _mod_high = 1, 3
+    _stat_attr = "add_endurance"
+    _value_mult = 20
 
     def __init__(self, item):
         super().__init__(item, name="of Grit", rarity=0, group="Suffix", value=1)
 
-    def modify(self):
-        mod = random.randint(1, 3)
-        if hasattr(self.item, "add_endurance"):
-            self.item.add_endurance += mod
-        else:
-            self.item.add_endurance = mod
-        self.item.value += mod * 20
-        self.item.value = int(self.item.value)
-        self.item.name = self.item.name + " " + self.name
-        self.item.announce = "There's a {} here.".format(self.item.name)
 
-    def requirements(self):
-        return True
-
-
-class OfCharms(Enchantment):  # Increase charisma by 1-3
+class OfCharms(_StatBoostEnchantment):  # Increase charisma by 1-3
     tier = 1
+    _mod_low, _mod_high = 1, 3
+    _stat_attr = "add_charisma"
+    _value_mult = 20
 
     def __init__(self, item):
         super().__init__(item, name="of Charms", rarity=0, group="Suffix", value=1)
 
-    def modify(self):
-        mod = random.randint(1, 3)
-        if hasattr(self.item, "add_charisma"):
-            self.item.add_charisma += mod
-        else:
-            self.item.add_charisma = mod
-        self.item.value += mod * 20
-        self.item.value = int(self.item.value)
-        self.item.name = self.item.name + " " + self.name
-        self.item.announce = "There's a {} here.".format(self.item.name)
 
-    def requirements(self):
-        return True
-
-
-class OfInsight(Enchantment):  # Increase intelligence by 1-3
+class OfInsight(_StatBoostEnchantment):  # Increase intelligence by 1-3
     tier = 1
+    _mod_low, _mod_high = 1, 3
+    _stat_attr = "add_intelligence"
+    _value_mult = 20
 
     def __init__(self, item):
         super().__init__(item, name="of Insight", rarity=0, group="Suffix", value=1)
 
-    def modify(self):
-        mod = random.randint(1, 3)
-        if hasattr(self.item, "add_intelligence"):
-            self.item.add_intelligence += mod
-        else:
-            self.item.add_intelligence = mod
-        self.item.value += mod * 20
-        self.item.value = int(self.item.value)
-        self.item.name = self.item.name + " " + self.name
-        self.item.announce = "There's a {} here.".format(self.item.name)
 
-    def requirements(self):
-        return True
-
-
-class OfSupplication(Enchantment):  # Increase faith by 1-3
+class OfSupplication(_StatBoostEnchantment):  # Increase faith by 1-3
     tier = 1
+    _mod_low, _mod_high = 1, 3
+    _stat_attr = "add_faith"
+    _value_mult = 20
 
     def __init__(self, item):
         super().__init__(
             item, name="of Supplication", rarity=0, group="Suffix", value=1
         )
 
-    def modify(self):
-        mod = random.randint(1, 3)
-        if hasattr(self.item, "add_faith"):
-            self.item.add_faith += mod
-        else:
-            self.item.add_faith = mod
-        self.item.value += mod * 20
-        self.item.value = int(self.item.value)
-        self.item.name = self.item.name + " " + self.name
-        self.item.announce = "There's a {} here.".format(self.item.name)
 
-    def requirements(self):
-        return True
-
-
-class OfRelief(Enchantment):  # Increase weight tolerance slightly
+class OfRelief(_StatBoostEnchantment):  # Increase weight tolerance slightly
     tier = 1
+    _mod_low, _mod_high = 3, 7
+    _stat_attr = "add_weight_tolerance"
+    _value_mult = 5
+    _stat_wrap = decimal.Decimal  # weight tolerance is stored as a Decimal
 
     def __init__(self, item):
         super().__init__(item, name="of Relief", rarity=0, group="Suffix", value=1)
-
-    def modify(self):
-        mod = random.randint(3, 7)
-        if hasattr(self.item, "add_weight_tolerance"):
-            self.item.add_weight_tolerance += decimal.Decimal(mod)
-        else:
-            self.item.add_weight_tolerance = decimal.Decimal(mod)
-        self.item.value += mod * 5
-        self.item.value = int(self.item.value)
-        self.item.name = self.item.name + " " + self.name
-        self.item.announce = "There's a {} here.".format(self.item.name)
-
-    def requirements(self):
-        return True
 
 
 class OfThePhoenix(Enchantment):  # Grants a chance to revive on death once per combat
@@ -655,89 +618,45 @@ class OfThePhoenix(Enchantment):  # Grants a chance to revive on death once per 
         return self.item.maintype in allowed_maintypes
 
 
-class Purifying(Enchantment):  # grants resistance to pure damage
+class Purifying(_ResistanceEnchantment):  # grants resistance to pure damage
     tier = 3
+    _resist_type, _resist_amount = "pure", 0.35
+    _announce_template = (
+        "There's a {} here, tempered to guard against absolute force."
+    )
 
     def __init__(self, item):
         super().__init__(item, name="Purifying", rarity=0, group="Prefix", value=1.5)
 
-    def modify(self):
-        # use the helper to safely add/increment pure resistance whether add_resistance
-        # is a dict or an object
-        self._add_resistance("pure", 0.35)
-        self.item.value *= 1.5
-        self.item.value = int(self.item.value)
-        self.item.name = self.name + " " + self.item.name
-        self.item.announce = (
-            "There's a {} here, tempered to guard against absolute force.".format(
-                self.item.name
-            )
-        )
 
-    def requirements(self):
-        allowed_maintypes = ["Armor", "Helm", "Gloves", "Boots", "Accessory"]
-        return self.item.maintype in allowed_maintypes
-
-
-class Needleproof(Enchantment):  # grants resistance to piercing attacks
+class Needleproof(_ResistanceEnchantment):  # grants resistance to piercing attacks
     tier = 2
+    _resist_type, _resist_amount = "piercing", 0.3
+    _announce_template = (
+        "There's a {} here, its fibers woven to shrug off arrows and needles."
+    )
 
     def __init__(self, item):
         super().__init__(item, name="Needleproof", rarity=0, group="Prefix", value=1.2)
 
-    def modify(self):
-        self._add_resistance("piercing", 0.3)
-        self.item.value *= 1.2
-        self.item.value = int(self.item.value)
-        self.item.name = self.name + " " + self.item.name
-        self.item.announce = "There's a {} here, its fibers woven to shrug off arrows and needles.".format(
-            self.item.name
-        )
 
-    def requirements(self):
-        allowed_maintypes = ["Armor", "Helm", "Gloves", "Boots", "Accessory"]
-        return self.item.maintype in allowed_maintypes
-
-
-class Edgebound(Enchantment):  # reduces slashing damage
+class Edgebound(_ResistanceEnchantment):  # reduces slashing damage
     tier = 2
+    _resist_type, _resist_amount = "slashing", 0.3
+    _announce_template = (
+        "There's a {} here, its plates deflect blade and saber alike."
+    )
 
     def __init__(self, item):
         super().__init__(item, name="Edgebound", rarity=0, group="Prefix", value=1.25)
 
-    def modify(self):
-        self._add_resistance("slashing", 0.3)
-        self.item.value *= 1.25
-        self.item.value = int(self.item.value)
-        self.item.name = self.name + " " + self.item.name
-        self.item.announce = (
-            "There's a {} here, its plates deflect blade and saber alike.".format(
-                self.item.name
-            )
-        )
 
-    def requirements(self):
-        allowed_maintypes = ["Armor", "Helm", "Gloves", "Boots", "Accessory"]
-        return self.item.maintype in allowed_maintypes
-
-
-class Bulwark(Enchantment):  # toughened against crushing impacts
+class Bulwark(_ResistanceEnchantment):  # toughened against crushing impacts
     tier = 3
+    _resist_type, _resist_amount = "crushing", 0.35
+    _announce_template = (
+        "There's a {} here, bulked and braced to take heavy blows."
+    )
 
     def __init__(self, item):
         super().__init__(item, name="Bulwark", rarity=0, group="Prefix", value=1.35)
-
-    def modify(self):
-        self._add_resistance("crushing", 0.35)
-        self.item.value *= 1.35
-        self.item.value = int(self.item.value)
-        self.item.name = self.name + " " + self.item.name
-        self.item.announce = (
-            "There's a {} here, bulked and braced to take heavy blows.".format(
-                self.item.name
-            )
-        )
-
-    def requirements(self):
-        allowed_maintypes = ["Armor", "Helm", "Gloves", "Boots", "Accessory"]
-        return self.item.maintype in allowed_maintypes
