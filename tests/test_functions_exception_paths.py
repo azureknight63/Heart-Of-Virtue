@@ -333,7 +333,8 @@ def test_safe_unpickler_rewrite_success(tmp_path, monkeypatch):
     rewritten_name = "src." + mod_name
     monkeypatch.setitem(sys.modules, rewritten_name, ghost_mod)
 
-    loaded = functions.load(str(pfile))
+    with open(pfile, "rb") as f:
+        loaded = functions._safe_pickle_load(f)
     assert loaded.__class__.__name__ == "RewriteClass"
     assert loaded.v == 7
 

@@ -725,11 +725,25 @@ class GameService:
         persistence in #328: a re-hydrated tile is rebuilt from the same map JSON,
         so its objects carry the same names but brand-new memory addresses.
         """
-        roster = []
-        for obj in getattr(tile, "objects_here", None) or []:
-            name = getattr(obj, "name", None)
-            roster.append(name if isinstance(name, str) else type(obj).__name__)
-        return roster
+        objects = getattr(tile, "objects_here", None)
+        if not isinstance(objects, list):
+            # Real MapTiles always hold a list; anything else (None, a test double)
+            # has no roster worth persisting.
+            return []
+        return [GameService._object_key(obj) for obj in objects]
+
+    @staticmethod
+    def _object_key(obj) -> str:
+        """Stable per-object identifier: its name, or its class name as a fallback."""
+        name = getattr(obj, "name", None)
+        return name if isinstance(name, str) else type(obj).__name__
+
+    @staticmethod
+    def _tile_modifications(session_data: Dict[str, Any], tile) -> Dict[str, Any]:
+        """Return the stored modification dict for ``tile`` (empty if there is none)."""
+        tile_key = f"{getattr(tile, 'x', None)},{getattr(tile, 'y', None)}"
+        stored = (session_data.get("tile_modifications") or {}).get(tile_key)
+        return stored if isinstance(stored, dict) else {}
 
     def capture_tile_object_baseline(
         self, session_data: Optional[Dict[str, Any]], tile
@@ -745,16 +759,14 @@ class GameService:
         No-op for tiles that have no objects (nothing can be removed from them), which
         keeps ``tile_modifications`` from growing an entry for every tile ever walked on.
         """
-        if session_data is None or tile is None:
+        if not isinstance(session_data, dict) or tile is None:
             return
 
         roster = self._object_roster(tile)
         if not roster:
             return
 
-        tile_key = f"{getattr(tile, 'x', None)},{getattr(tile, 'y', None)}"
-        existing = (session_data.get("tile_modifications") or {}).get(tile_key, {})
-        if "objects_baseline" in existing:
+        if "objects_baseline" in self._tile_modifications(session_data, tile):
             return
 
         self.store_tile_modification(
@@ -774,7 +786,7 @@ class GameService:
             session_data: The session data dictionary, or None.
             tile: The MapTile whose state should be captured.
         """
-        if session_data is None or tile is None:
+        if not isinstance(session_data, dict) or tile is None:
             return
 
         block_exit = tile.block_exit.copy() if hasattr(tile, "block_exit") else []
@@ -784,21 +796,14 @@ class GameService:
 
         # Objects removed since the baseline snapshot (#328). Computed as a
         # multiset difference over names so duplicates ("Rock", "Rock") persist a
-        # count rather than an unstable identity.
-        tile_key = f"{getattr(tile, 'x', None)},{getattr(tile, 'y', None)}"
-        baseline = (session_data.get("tile_modifications") or {}).get(
-            tile_key, {}
-        ).get("objects_baseline")
-        if baseline is None:
+        # count rather than an unstable identity like id().
+        baseline = self._tile_modifications(session_data, tile).get("objects_baseline")
+        if not isinstance(baseline, list):
             # Never baselined (tile had no objects, or a caller that skipped
             # capture_tile_object_baseline) — nothing trustworthy to diff against.
             return
 
-        remaining = Counter(baseline)
-        remaining.subtract(Counter(self._object_roster(tile)))
-        removed = list(
-            Counter({name: n for name, n in remaining.items() if n > 0}).elements()
-        )
+        removed = list((Counter(baseline) - Counter(self._object_roster(tile))).elements())
         self.store_tile_modification(
             session_data, tile.x, tile.y, "objects_removed", removed
         )
@@ -831,7 +836,8 @@ class GameService:
         # keep — rather than "drop N more", so re-applying to an already-filtered
         # tile is a no-op instead of removing another one each time.
         removed_names = modifications.get("objects_removed")
-        if removed_names:
+        objects_here = getattr(tile, "objects_here", None)
+        if removed_names and isinstance(objects_here, list):
             removed_counts = Counter(n for n in removed_names if isinstance(n, str))
             baseline_counts = Counter(
                 modifications.get("objects_baseline") or self._object_roster(tile)
@@ -841,10 +847,8 @@ class GameService:
                 for name, count in removed_counts.items()
             }
             survivors = []
-            for obj in getattr(tile, "objects_here", None) or []:
-                name = getattr(obj, "name", None)
-                if not isinstance(name, str):
-                    name = type(obj).__name__
+            for obj in objects_here:
+                name = self._object_key(obj)
                 # Names with no recorded removal (including objects spawned at
                 # runtime, absent from the baseline) are always kept.
                 if name in allowance:

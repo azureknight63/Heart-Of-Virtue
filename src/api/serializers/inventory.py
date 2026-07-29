@@ -64,6 +64,20 @@ _BONUS_ATTRS = {
 # single "slot counterpart" to compare against.
 _MULTI_EQUIP_ACCESSORY_SUBTYPES = ["Ring", "Bracelet", "Earring"]
 
+# Maps an item's real `maintype` (items.py) to the equipment-slot name exposed
+# by the API. The engine has no per-slot player attributes: equipping flips
+# `item.isequipped` on the inventory item (plus `player.eq_weapon` for
+# weapons), so slots are derived by bucketing equipped inventory items.
+# "Accessory" is deliberately absent — accessories are multi-equip and get
+# numbered `accessory_N` slots instead (see `_collect_equipped_items`).
+_MAINTYPE_TO_SLOT = {
+    "Weapon": "weapon",
+    "Armor": "body",
+    "Helm": "head",
+    "Gloves": "hands",
+    "Boots": "feet",
+}
+
 
 def _collect_item_bonuses(item) -> Dict:
     """Collect non-zero scalar stat bonuses an item grants, keyed by stat label."""
@@ -72,6 +86,48 @@ def _collect_item_bonuses(item) -> Dict:
         for attr, label in _BONUS_ATTRS.items()
         if getattr(item, attr, 0)
     }
+
+
+def is_equippable(item) -> bool:
+    """True if `item` is a piece of equipment.
+
+    ``hasattr(item, "equip")`` is *not* a valid test: `equip`/`unequip` are
+    defined on the base `Item` class, so every potion, key and gold pouch
+    answers True. The engine's own equip path keys off `isequipped`, which
+    only equippable subclasses (Weapon, ProtectiveGear, Accessory) define.
+    """
+    return hasattr(item, "isequipped")
+
+
+def _collect_equipped_items(player) -> Dict:
+    """Map slot name → equipped item, derived from the real engine model.
+
+    Filters the inventory for `isequipped` items and buckets them by
+    `maintype`. Accessories are multi-equip, so they occupy numbered
+    `accessory_1`, `accessory_2`, … slots in inventory order. The weapon slot
+    falls back to `player.eq_weapon` because the default unarmed `Fists` are
+    held on the player rather than in the inventory.
+    """
+    equipped = {}
+    accessory_count = 0
+    for item in get_inventory_list(player):
+        if not getattr(item, "isequipped", False):
+            continue
+        maintype = getattr(item, "maintype", None)
+        slot = _MAINTYPE_TO_SLOT.get(maintype)
+        if slot is None:
+            if maintype != "Accessory":
+                continue
+            accessory_count += 1
+            slot = "accessory_{}".format(accessory_count)
+        equipped[slot] = item
+
+    if "weapon" not in equipped:
+        weapon = getattr(player, "eq_weapon", None)
+        if weapon is not None:
+            equipped["weapon"] = weapon
+
+    return equipped
 
 
 def _get_equip_slot_status(player, item):
@@ -276,10 +332,11 @@ class EquipmentSlotSerializer:
                 "slot": slot_name,
                 "equipped": False,
                 "item_name": None,
-                "armor": 0,
+                "protection": 0,
                 "damage": 0,
                 "stat_bonuses": {},
                 "resistance_bonuses": {},
+                "status_resistance_bonuses": {},
             }
 
         return {
@@ -287,12 +344,19 @@ class EquipmentSlotSerializer:
             "equipped": True,
             "item_name": getattr(item, "name", "Unknown"),
             "item_type": item.__class__.__name__,
-            "armor": round(getattr(item, "armor", 0)),
+            # Real armour stat is `protection` (items.ProtectiveGear /
+            # Accessory); there is no `armor` attribute on any engine item.
+            "protection": round(getattr(item, "protection", 0)),
             "damage": round(getattr(item, "damage", 0)),
             "weight": getattr(item, "weight", 0.0),
             "value": getattr(item, "value", 0),
-            "stat_bonuses": getattr(item, "stat_bonuses", {}),
-            "resistance_bonuses": getattr(item, "resistance_bonuses", {}),
+            # Bonuses live on `add_*` attributes (enchantments), not on a
+            # `stat_bonuses`/`resistance_bonuses` dict.
+            "stat_bonuses": _collect_item_bonuses(item),
+            "resistance_bonuses": dict(getattr(item, "add_resistance", None) or {}),
+            "status_resistance_bonuses": dict(
+                getattr(item, "add_status_resistance", None) or {}
+            ),
             "rarity": getattr(item, "rarity", "common"),
         }
 
