@@ -390,6 +390,105 @@ class TestCombatAdapterInitialization:
         # Should have dispatched to move type
         assert mock_adapter.process_command.called or "error" not in result
 
+    def test_attack_shortcut_threads_session_data_into_callback(
+        self, game_service, combat_player_fixture
+    ):
+        """Regression test for #335: the 'attack' shortcut must forward the
+        current request's session_id/session_data into the recursive
+        execute_move("move", "Attack", ...) call so the adapter's event
+        callback isn't permanently bound to session_data=None.
+        """
+        from src.api.combat_adapter import ApiCombatAdapter
+
+        mock_adapter = MagicMock(spec=ApiCombatAdapter)
+        mock_adapter.awaiting_input = True
+        mock_adapter.available_options = [{"name": "Attack", "index": 0}]
+        mock_adapter.process_command = MagicMock(return_value={"success": True})
+        combat_player_fixture._combat_adapter = mock_adapter
+
+        session_data = {"marker": "attack-session"}
+
+        game_service.execute_move(
+            combat_player_fixture,
+            "attack",
+            "ignored",
+            session_id="attack-sess",
+            session_data=session_data,
+        )
+
+        # The recursive call should have rebound the adapter's callback using
+        # the session_data passed to the outer "attack" call.
+        callback = mock_adapter.on_event_callback
+        with patch.object(game_service, "trigger_combat_events") as mock_trigger:
+            callback(combat_player_fixture)
+        mock_trigger.assert_called_once_with(
+            combat_player_fixture, session_data=session_data
+        )
+
+    def test_defend_shortcut_threads_session_data_into_callback(
+        self, game_service, combat_player_fixture
+    ):
+        """Regression test for #335: the 'defend' shortcut must forward
+        session_id/session_data the same way the 'attack' shortcut does.
+        """
+        from src.api.combat_adapter import ApiCombatAdapter
+
+        mock_adapter = MagicMock(spec=ApiCombatAdapter)
+        mock_adapter.awaiting_input = True
+        mock_adapter.available_options = [{"name": "Wait", "index": 0}]
+        mock_adapter.process_command = MagicMock(return_value={"success": True})
+        combat_player_fixture._combat_adapter = mock_adapter
+
+        session_data = {"marker": "defend-session"}
+
+        game_service.execute_move(
+            combat_player_fixture,
+            "defend",
+            "ignored",
+            session_id="defend-sess",
+            session_data=session_data,
+        )
+
+        callback = mock_adapter.on_event_callback
+        with patch.object(game_service, "trigger_combat_events") as mock_trigger:
+            callback(combat_player_fixture)
+        mock_trigger.assert_called_once_with(
+            combat_player_fixture, session_data=session_data
+        )
+
+
+# ============================================================================
+# Test Group 4b: _initialize_combat() existing-adapter callback (regression)
+# ============================================================================
+
+
+class TestInitializeCombatExistingAdapterCallback:
+    """Regression tests for #335: the '_combat_adapter already exists' branch
+    in _initialize_combat must rebuild on_event_callback with the current
+    request's session_data, mirroring execute_move's pattern, instead of
+    only updating session_id.
+    """
+
+    def test_existing_adapter_callback_threads_session_data(
+        self, game_service, mock_player
+    ):
+        mock_player.in_combat = False
+        mock_player.combat_list_allies = [mock_player]
+        existing_adapter = MagicMock()
+        mock_player._combat_adapter = existing_adapter
+
+        enemy = MagicMock()
+        session_data = {"marker": "init-combat-session"}
+
+        game_service._initialize_combat(
+            mock_player, [enemy], session_id="init-sess", session_data=session_data
+        )
+
+        callback = mock_player._combat_adapter.on_event_callback
+        with patch.object(game_service, "trigger_combat_events") as mock_trigger:
+            callback(mock_player)
+        mock_trigger.assert_called_once_with(mock_player, session_data=session_data)
+
 
 # ============================================================================
 # Test Group 5: Status effect and cooldown mechanics (3 tests)

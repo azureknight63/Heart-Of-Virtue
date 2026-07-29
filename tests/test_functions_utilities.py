@@ -168,3 +168,49 @@ def test_add_random_enchantments_elemental_weapon(monkeypatch):
     assert getattr(weapon, "base_damage_type", None) == "fire"
     assert weapon.value >= 100
     assert weapon.damage > 10
+
+
+def test_add_random_enchantments_candidate_pools_are_group_filtered(monkeypatch):
+    """Regression for issue #422: the candidate pool handed to random.choice()
+    for the prefix slot (group 0) must contain only group="Prefix" classes,
+    and the suffix slot (group 1) only group="Suffix" classes."""
+    weapon = DummyWeapon()
+    seen_groups = []
+    seq = [0, 1]  # slot 0 = prefix, slot 1 = suffix
+    monkeypatch.setattr(random, "randrange", lambda n: seq.pop(0))
+    monkeypatch.setattr(random, "randint", lambda a, b: b)  # max rarity, everything passes
+
+    def record_and_pick_first(candidates):
+        seen_groups.append({c.group for c in candidates})
+        return candidates[0]
+
+    monkeypatch.setattr(random, "choice", record_and_pick_first)
+
+    functions.add_random_enchantments(weapon, 2)
+
+    assert len(seen_groups) == 2
+    assert seen_groups[0] == {"Prefix"}
+    assert seen_groups[1] == {"Suffix"}
+
+
+def test_add_random_enchantments_no_duplicate_suffix_regression(monkeypatch):
+    """Regression for issue #422: forcing random.choice() to prefer the
+    "OfVigor" Suffix class must not let it slip into the prefix slot too --
+    that previously produced item names like 'Sword of Vigor of Vigor'."""
+    weapon = DummyWeapon()
+    seq = [0, 1]  # slot 0 = prefix, slot 1 = suffix
+    monkeypatch.setattr(random, "randrange", lambda n: seq.pop(0))
+    monkeypatch.setattr(random, "randint", lambda a, b: b)  # max rarity, everything passes
+
+    def choose_of_vigor_if_present(candidates):
+        for c in candidates:
+            if c.__class__.__name__ == "OfVigor":
+                return c
+        return candidates[0]
+
+    monkeypatch.setattr(random, "choice", choose_of_vigor_if_present)
+
+    functions.add_random_enchantments(weapon, 2)
+
+    assert weapon.name.count("of Vigor") == 1
+    assert "of Vigor of Vigor" not in weapon.name

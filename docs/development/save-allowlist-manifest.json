@@ -353,6 +353,18 @@
       "name": "Weighted"
     },
     {
+      "module": "src.enchant_tables",
+      "name": "_DamagePercentBoostEnchantment"
+    },
+    {
+      "module": "src.enchant_tables",
+      "name": "_ResistanceEnchantment"
+    },
+    {
+      "module": "src.enchant_tables",
+      "name": "_StatBoostEnchantment"
+    },
+    {
       "module": "src.events",
       "name": "CombatEvent"
     },
@@ -1889,6 +1901,6 @@
       "name": "UUID"
     }
   ],
-  "count": 472,
+  "count": 475,
   "header_version": 1
 }
