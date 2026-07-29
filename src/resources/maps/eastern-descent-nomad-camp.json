@@ -2,7 +2,7 @@
     "(3, 2)": {
         "id": "tile_3_2",
         "title": "FireRing",
-        "description": "A fire ring at the camp's centre, its stones black with years of smoke. The ring is well-maintained \u00e2\u20ac\u201d ash cleared, wood stacked to one side in a manner that suggests habit rather than recent effort. A blackened iron pot hangs from a simple tripod above a bed of coals. The smell here is woodsmoke, dried meat, something with herbs.",
+        "description": "A fire ring at the camp's centre, its stones black with years of smoke. The ring is well-maintained - ash cleared, wood stacked to one side in a manner that suggests habit rather than recent effort. A blackened iron pot hangs from a simple tripod above a bed of coals. The smell here is woodsmoke, dried meat, something with herbs.",
         "exits": [
             "north",
             "south",
@@ -1416,7 +1416,7 @@
     "(3, 0)": {
         "id": "tile_3_0",
         "title": "CampEntry",
-        "description": "The camp's east edge is marked by a line of weathered stakes driven into the gravel at intervals \u00e2\u20ac\u201d a boundary worn smooth by seasons of river wind. The ground inside is packed harder than the bank beyond it, darkened by years of foot traffic. Lean-tos of oiled canvas stand to the west, angled against the prevailing wind. The smell of woodsmoke and dried meat is warm and immediate.",
+        "description": "The camp's east edge is marked by a line of weathered stakes driven into the gravel at intervals - a boundary worn smooth by seasons of river wind. The ground inside is packed harder than the bank beyond it, darkened by years of foot traffic. Lean-tos of oiled canvas stand to the west, angled against the prevailing wind. The smell of woodsmoke and dried meat is warm and immediate.",
         "exits": [
             "south",
             "southeast",
@@ -1532,7 +1532,8 @@
                     "passthrough": false
                 }
             }
-        ]
+        ],
+        "symbol": ""
     },
     "(3, 4)": {
         "id": "tile_3_4",
@@ -2903,7 +2904,7 @@
                     "merchant": "",
                     "allowed_item_types": [
                         {
-                            "__class_type__": "src.items:Item"
+                            "__class_type__": "items:Item"
                         }
                     ],
                     "stock_count": 10,
@@ -3952,7 +3953,28 @@
             "northwest",
             "southwest"
         ],
-        "events": [],
+        "events": [
+            {
+                "__class__": "IronAndOathIntroEvent",
+                "__module__": "story.ch03",
+                "props": {
+                    "name": "IronAndOathIntro",
+                    "player": null,
+                    "tile": null,
+                    "repeat": false,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null,
+                    "combat_effect": false,
+                    "delay_duration": 3000,
+                    "delay_mode": "combat",
+                    "completed": false,
+                    "api_event_id": null,
+                    "needs_input": false
+                }
+            }
+        ],
         "items": [],
         "npcs": [
             {

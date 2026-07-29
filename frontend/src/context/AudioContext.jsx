@@ -61,6 +61,7 @@ const BGM_MAP = {
     'memory_flash': getAssetPath('/assets/sounds/memory_flash.mp3'),
     'mineral_pools': getAssetPath('/assets/sounds/bgm_mineral_pools.wav'),
     'nomad_camp': getAssetPath('/assets/sounds/bgm_nomad_camp.mp3'),
+    'jambos_tent': getAssetPath('/assets/sounds/bgm_jambos_tent.mp3'),
     'dream_space': getAssetPath('/assets/sounds/bgm_dream_space.wav'),
 };
 

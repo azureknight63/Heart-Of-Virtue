@@ -332,6 +332,10 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
                     tile_instance.symbol = tile_data["symbol"]
                 except Exception:
                     pass
+            # bgm — transferred from JSON so _resolve_bgm can pick it up
+            # without relying solely on map-name fallback
+            if "bgm" in tile_data:
+                tile_instance.bgm = tile_data["bgm"]
             # events
             for ev_payload in tile_data.get("events", []):
                 inst = self._deserialize_saved_instance(ev_payload)
