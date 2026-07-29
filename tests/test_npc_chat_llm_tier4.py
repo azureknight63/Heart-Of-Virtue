@@ -678,20 +678,31 @@ class TestLoadHistoryFromPersistence:
 class TestSaveExchangeToPersistence:
     """Test _save_exchange_to_persistence."""
 
-    def test_save_exchange_no_persistence_attr(self):
-        """Test saving when player has no npc_chat_histories."""
+    def test_save_exchange_initializes_missing_persistence_attr(self):
+        """A fresh Player has no npc_chat_histories (same gotcha as
+        player.reputation — see CLAUDE.md). This used to make the save
+        silently no-op forever; it must now initialize the dict in place and
+        actually persist the exchange, whether the attribute was never set
+        or was explicitly None.
+        """
         class TestNPC(HumanNPCLLMMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self.loquacity_current = 50
                 self.loquacity_max = 100
                 self._chat_npc_key = "test_key"
+                self._chat_personality = None
 
         npc = TestNPC()
         player = MagicMock(spec=["universe"])
         player.npc_chat_histories = None
         npc._save_exchange_to_persistence(player, "NPC text", "Jean text", 10, "1")
-        # Should exit silently
+
+        assert player.npc_chat_histories is not None
+        entry = player.npc_chat_histories["test_key"]
+        assert entry["exchanges"] == [
+            {"npc": "NPC text", "jean": "Jean text", "game_tick": 10, "chapter": "1"}
+        ]
 
     def test_save_exchange_creates_entry(self):
         """Test creating new history entry."""
@@ -2973,8 +2984,145 @@ class TestHistoryPersistenceAppend:
         assert len(player.npc_chat_histories["test_key"]["exchanges"]) == 2
 
 
-if __name__ == "__main__":
-    pytest.main([__file__, "-v", "-s"])
+class TestChatRespondHistoryIntegrity:
+    """End-to-end regression coverage for a full chat_open -> chat_respond*
+    conversation against a player object that (like a real Player, unlike
+    MinimalPlayer) has no npc_chat_histories attribute to start with.
+
+    This is the exact scenario a live conversation with a story NPC (e.g.
+    Mara) exercises: it caught two real bugs that unit tests calling
+    _save_exchange_to_persistence directly couldn't see — (1)
+    player.npc_chat_histories was never initialized on a real Player, so
+    persistence silently no-opped every call, and (2) chat_respond's history
+    bookkeeping double-appended a row every single turn once persistence
+    actually worked.
+    """
+
+    def _make_npc(self, starters, closing):
+        class TestNPC(HumanNPCLLMMixin):
+            def __init__(self):
+                self.name = "Mara"
+                self.charisma = 10
+                self.wisdom = 10
+                self.keywords = []
+                self._chat_config_path = None
+                self._chat_char_config = {
+                    "conversation_starters_by_chapter": {"1": starters},
+                    "closing_lines_when_exhausted": closing,
+                }
+                self._chat_world_facts = {}
+                self._chat_personality = None
+                self._chat_history = []
+                self._chat_npc_key = None
+                self._chat_fallback_idx = 0
+                self._chat_npc_fallback_idx = 0
+                self._prohibited_patterns = []
+                self.loquacity_current = 0
+                self.loquacity_max = 0
+                self.loquacity_threshold = 0
+                self.loquacity_recovery = 2
+
+            def _get_adapter(self):
+                return None  # force the deterministic fallback path
+
+            def _get_chapter(self, player):
+                return "1"
+
+        return TestNPC()
+
+    def _make_player(self):
+        player = MagicMock(spec=["universe", "reputation", "charisma", "equipped", "allies"])
+        player.universe.game_tick = 0
+        player.universe.story = {}
+        player.reputation = {}
+        player.charisma = 10
+        player.equipped = {}
+        player.allies = []
+        # Deliberately no npc_chat_histories attribute — matches a real
+        # Player, which never initializes it (unlike MinimalPlayer).
+        assert not hasattr(player, "npc_chat_histories")
+        return player
+
+    def test_full_conversation_creates_one_row_per_round(self):
+        npc = self._make_npc(
+            starters=["Line A.", "Line B.", "Line C."],
+            closing=["Goodbye now."],
+        )
+        player = self._make_player()
+
+        opened = npc.chat_open(player)
+        assert hasattr(player, "npc_chat_histories")
+
+        npc.chat_respond(player, "Q1", "direct")
+        npc.chat_respond(player, "Q2", "direct")
+
+        entry = player.npc_chat_histories["Mara"]
+        # Opening + 2 respond rounds = 3 rows, never more (no double-append).
+        assert len(entry["exchanges"]) == 3
+        assert entry["conversation_count"] == 2
+
+    def test_full_conversation_never_repeats_an_npc_line(self):
+        """Regression test for the exact bug reported against this feature:
+        a conversation that outlasts the authored fallback pool must end
+        gracefully instead of visibly repeating a line already said.
+        """
+        npc = self._make_npc(
+            starters=["Line A.", "Line B."],
+            closing=["Goodbye now."],
+        )
+        player = self._make_player()
+
+        opened = npc.chat_open(player)
+        lines_said = [opened["npc_opening"]]
+
+        for i in range(6):
+            resp = npc.chat_respond(player, f"Question {i}", "direct")
+            lines_said.append(resp["npc_response"])
+            if resp["conversation_ended"]:
+                break
+
+        assert len(lines_said) == len(set(lines_said)), (
+            f"NPC repeated a line within one conversation: {lines_said}"
+        )
+
+    def test_single_line_pool_ends_immediately_instead_of_repeating(self):
+        """A one-line authored pool is the tightest case for the duplicate
+        guard: rotation alone can never help (idx % 1 is always 0), so the
+        very first respond turn must detect the repeat against the opening
+        line itself and end there rather than echo it back.
+        """
+        npc = self._make_npc(
+            starters=["Only line."],
+            closing=["Goodbye now."],
+        )
+        player = self._make_player()
+
+        opened = npc.chat_open(player)
+        assert opened["npc_opening"] == "Only line."
+
+        resp = npc.chat_respond(player, "Question", "direct")
+        assert resp["npc_response"] != "Only line."
+        assert resp["conversation_ended"] is True
+
+    def test_conversation_history_is_chronologically_ordered(self):
+        """Each persisted row must pair an NPC line with Jean's reply TO it,
+        not with the reply that prompted the NEXT line — otherwise the
+        formatted transcript handed to the LLM reads out of order.
+        """
+        npc = self._make_npc(
+            starters=["Line A.", "Line B.", "Line C."],
+            closing=["Goodbye now."],
+        )
+        player = self._make_player()
+
+        npc.chat_open(player)
+        npc.chat_respond(player, "Q1", "direct")
+        npc.chat_respond(player, "Q2", "direct")
+
+        exchanges = player.npc_chat_histories["Mara"]["exchanges"]
+        assert exchanges[0]["jean"] == "Q1"
+        assert exchanges[1]["jean"] == "Q2"
+        assert exchanges[0]["npc"] != exchanges[1]["npc"]
 
 
 if __name__ == "__main__":

@@ -321,18 +321,19 @@ class HumanNPCLLMMixin:
             self._chat_npc_key = self.name
             return self._chat_npc_key
 
-        # Generic nomads use class name + instance count
-        hists = getattr(player, "npc_chat_histories", {})
-        meta = hists.get("__meta__", {})
+        # Generic nomads use class name + instance count. player.npc_chat_histories
+        # doesn't exist on a fresh Player (same gotcha as player.reputation —
+        # see CLAUDE.md); initialize it in place so the counter below actually
+        # persists instead of being written to a throwaway dict every call.
+        if getattr(player, "npc_chat_histories", None) is None:
+            player.npc_chat_histories = {}
+        hists = player.npc_chat_histories
+        meta = hists.setdefault("__meta__", {})
         class_name = type(self).__name__
         instance_count = meta.get(class_name, 0)
 
         self._chat_npc_key = f"{class_name}_{instance_count}"
-
-        # Increment for next generic of same type
-        if "__meta__" not in hists:
-            hists["__meta__"] = {}
-        hists["__meta__"][class_name] = instance_count + 1
+        meta[class_name] = instance_count + 1
 
         return self._chat_npc_key
 
@@ -358,10 +359,21 @@ class HumanNPCLLMMixin:
     def _save_exchange_to_persistence(
         self, player, npc_text: str, jean_text: str, game_tick: int, chapter: str
     ):
-        """Save exchange to player persistence."""
-        hists = getattr(player, "npc_chat_histories", None)
-        if hists is None:
-            return
+        """Save exchange to player persistence.
+
+        player.npc_chat_histories doesn't exist on a fresh Player instance
+        (same gotcha as player.reputation — see CLAUDE.md); a real Player
+        (as opposed to the MinimalPlayer API fallback, which does set this in
+        __init__) previously hit this every single call and silently
+        no-opped, so no chat history, loquacity, or personality ever
+        persisted, and even the opening line was invisible to
+        self._chat_history on the very next turn.
+        """
+        # None covers both "attribute never set" and "explicitly set to
+        # None" defensively.
+        if getattr(player, "npc_chat_histories", None) is None:
+            player.npc_chat_histories = {}
+        hists = player.npc_chat_histories
 
         key = self._chat_npc_key
         if key not in hists:
@@ -401,6 +413,21 @@ class HumanNPCLLMMixin:
         # Store personality for generics
         if self._chat_personality:
             entry["personality"] = self._chat_personality
+
+    def _bump_conversation_count(self, player) -> None:
+        """Increment conversation_count for a completed respond round.
+
+        chat_respond persists its new row with jean_text="" (see the call
+        site) so the row shape matches chat_open's and next round's history
+        fill-in works correctly, which means _save_exchange_to_persistence's
+        own jean_text-truthy increment never fires for either caller anymore.
+        This does the increment explicitly instead, right after a call that
+        is guaranteed to have already created the persisted entry.
+        """
+        hists = getattr(player, "npc_chat_histories", None)
+        key = self._chat_npc_key
+        if hists is not None and key in hists:
+            hists[key]["conversation_count"] = hists[key].get("conversation_count", 0) + 1
 
     def _build_system_prompt(self, player) -> str:
         """Build system prompt from world facts + character block."""
@@ -939,6 +966,34 @@ class HumanNPCLLMMixin:
                 )
                 llm_available = False
 
+                # Authored fallback pools are small (often 3 lines), so a
+                # conversation that leans on fallback for several turns in a
+                # row (LLM disabled, or repeatedly failing QC) will otherwise
+                # cycle back to a line already said earlier in THIS
+                # conversation. Rotation alone can't prevent that once the
+                # pool wraps, so once it does, end the conversation gracefully
+                # instead of visibly repeating.
+                #
+                # Every row currently in self._chat_history is a genuinely
+                # prior statement at this point — including the last one: the
+                # "fill jean into last entry" step above already completed it
+                # with Jean's current line before this fallback was generated,
+                # and this round's own response hasn't been persisted yet (that
+                # happens further down). So the comparison set is the full
+                # list, not history[:-1] — slicing off the last entry would
+                # blind the check to a duplicate against the single most
+                # recent line (visible whenever an authored pool has only one
+                # entry, since rotation itself only guarantees no two
+                # *consecutive* draws collide for pools of two or more).
+                already_said = {
+                    entry.get("npc") for entry in self._chat_history if entry.get("npc")
+                }
+                if not conversation_ended and npc_response in already_said:
+                    conversation_ended = True
+                    npc_response = self._get_fallback_npc_line(
+                        is_opening=False, player=player, exhausted=True
+                    )
+
             # Apply the NPC's in-character reaction to Jean's reputation
             if not hasattr(player, "reputation"):
                 player.reputation = {}
@@ -946,18 +1001,26 @@ class HumanNPCLLMMixin:
             new_reputation = max(-100, min(100, old_reputation + reputation_delta))
             player.reputation[self.name] = new_reputation
 
-            # Persist exchange
+            # Persist exchange as a new row awaiting Jean's next line, mirroring
+            # chat_open's row shape ({npc: <this line>, jean: ""}) so next
+            # round's "fill jean into last entry" step (top of this method)
+            # updates it in place instead of falling into that step's own
+            # append-a-placeholder branch. Passing the real jean_text here
+            # (as this used to) made BOTH that fill step AND this persist call
+            # append a row every single round — every turn was saved twice,
+            # once as a bare {npc: "", jean: ...} placeholder and once
+            # complete. jean_text="" avoids that, and also keeps
+            # _format_history's per-row "NPC line, then Jean line" print order
+            # chronologically correct (Jean's reply prints right after the
+            # line it replied to, not attached to the line it *prompted*).
+            # conversation_count is bumped separately since it no longer rides
+            # on _save_exchange_to_persistence's own jean_text-truthy check.
             game_tick = getattr(getattr(player, "universe", None), "game_tick", 0) or 0
             chapter = self._get_chapter(player)
-            if self._chat_history and not self._chat_history[-1].get("npc"):
-                self._chat_history[-1]["npc"] = npc_response
-                self._save_exchange_to_persistence(
-                    player, npc_response, jean_text, game_tick, chapter
-                )
-            else:
-                self._save_exchange_to_persistence(
-                    player, npc_response, jean_text, game_tick, chapter
-                )
+            self._save_exchange_to_persistence(
+                player, npc_response, "", game_tick, chapter
+            )
+            self._bump_conversation_count(player)
 
             # Jean's options for the next round. Once loquacity is spent the
             # options are omitted so the NPC's own (lore- and context-aware) reply
