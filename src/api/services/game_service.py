@@ -321,6 +321,22 @@ class GameService:
                 cast = [
                     self._norm_enter_op(member, player) for member in m.get("cast", [])
                 ]
+                # When a sequential begin_conversation changes the cast (e.g.
+                # Liss joins mid-scene in IronAndOathIntro), diff against the
+                # previous cast so new members get enter ops and removed members
+                # get exit ops in the segments. Otherwise only the final cast
+                # reaches the frontend and characters who appear only in an
+                # intermediate conversation are invisible.
+                if conversation and conversation.get("cast"):
+                    prev_ids = {m["id"] for m in conversation["cast"]}
+                    new_ids = {m["id"] for m in cast}
+                    for added_id in new_ids - prev_ids:
+                        added = next(m for m in cast if m["id"] == added_id)
+                        pending_enter.append(added)
+                    for removed_id in prev_ids - new_ids:
+                        pending_exit.append(
+                            {"id": removed_id, "transition": "fade"}
+                        )
                 conversation = {"cast": cast}
                 conv_active = True
                 staged_used = True
@@ -1541,7 +1557,7 @@ class GameService:
                 patch("src.functions.await_input", return_value=None),
             ):
 
-                from src.objects import Container
+                from src.objects import Container, Passageway
                 from src.items import Item
                 from src.inventory_utils import transfer_item
                 from src.events import LootEvent
@@ -1606,6 +1622,38 @@ class GameService:
                     else:
                         # Proceed with equipment logic
                         target.equip(player)
+                elif isinstance(target, Passageway) and session_data is not None:
+                    # Passageway in API mode: create a confirmation event so the
+                    # frontend can display "Jean steps through..." and wait for
+                    # user acknowledgment before teleporting.
+                    from src.events import PassagewayTransitionEvent
+
+                    # Run events_before (not teleport — that happens on confirm)
+                    if hasattr(player, "drop_merchandise_items"):
+                        player.drop_merchandise_items()
+                    if target.events_before:
+                        for ev in target.events_before:
+                            ev.process()
+
+                    trans_event = PassagewayTransitionEvent(
+                        name=f"Passage_{target.name}",
+                        player=player,
+                        tile=tile,
+                        passageway=target,
+                    )
+                    event_data = EventSerializer.serialize_with_input(trans_event)
+                    if session_data is not None:
+                        event_id = str(uuid.uuid4())
+                        event_data["event_id"] = event_id
+                        if "pending_events" not in session_data:
+                            session_data["pending_events"] = {}
+                        session_data["pending_events"][event_id] = {
+                            "event": trans_event,
+                            "tile_x": tile.x,
+                            "tile_y": tile.y,
+                            "event_data": event_data,
+                        }
+                    events_triggered.append(event_data)
                 else:
                     method = getattr(target, action)
                     # Check signature to see if we need to pass player
@@ -1676,7 +1724,11 @@ class GameService:
 
         # Provide fallback message if no output was captured
         if not clean_output:
-            if action == "take_all":
+            # When events were triggered (e.g. PassagewayTransitionEvent),
+            # skip the robotic fallback text — the event UI handles it.
+            if events_triggered:
+                clean_output = ""
+            elif action == "take_all":
                 clean_output = "Jean collects all of the available items."
             elif action == "talk":
                 target_name = getattr(target, "name", None)

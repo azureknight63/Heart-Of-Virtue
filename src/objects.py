@@ -819,6 +819,7 @@ class Passageway(Object):
         for _word in _name_words:
             if len(_word) > 3 and _word.isalpha() and not hasattr(self, _word):
                 setattr(self, _word, self.enter)
+                self.action_aliases.append(_word)
                 self.keywords.append(_word)
         self.events_before = events_before if events_before is not None else []
         self.events_after = events_after if events_after is not None else []
@@ -838,30 +839,22 @@ class Passageway(Object):
             for event in self.events_before:
                 event.process()
         if self.teleport_map and self.teleport_tile:
-            # Build a natural article phrase.
-            # Possessives (Jambo's Tent) are proper nouns — no article.
-            # Names already starting with "The" strip the duplicate and preserve rest.
-            # Generic noun phrases (Archive Door, Tent Flap) get "the " prepended.
-            _n = self.name
-            if "'" in _n:
-                _ref = _n
-            elif _n.lower().startswith("the "):
-                _ref = f"the {_n[4:]}"
-            else:
-                _ref = f"the {_n.lower()}"
-            narrate(f"Jean steps through {_ref}...")
-            time.sleep(0.5)
-            player.teleport(self.teleport_map, self.teleport_tile)
-            if self.events_after:
-                for event in self.events_after:
-                    event.process()
-            if not self.persist:
-                self.tile.objects_here.remove(self)
+            self._commit_teleport(player)
         else:
             narrate(
                 "The passageway is not properly configured. Please contact the developer."
             )
         functions.await_input()
+
+    def _commit_teleport(self, player):
+        """Perform the actual teleport.  Called directly by CLI enter()
+        or via PassagewayTransitionEvent.process() in API mode."""
+        player.teleport(self.teleport_map, self.teleport_tile)
+        if self.events_after:
+            for event in self.events_after:
+                event.process()
+        if not self.persist:
+            self.tile.objects_here.remove(self)
 
     def go(self, player):
         self.enter(player)
