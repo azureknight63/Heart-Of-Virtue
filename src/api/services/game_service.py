@@ -827,19 +827,30 @@ class GameService:
             tile.block_exit = modifications["block_exit"].copy()
 
         # Re-remove objects that were removed earlier in this session (#328).
-        # Matching is by name, consuming one survivor per recorded removal, so a
-        # tile rebuilt from map JSON loses the same objects it lost before.
+        # Expressed as an *allowance* — how many objects of each name the tile may
+        # keep — rather than "drop N more", so re-applying to an already-filtered
+        # tile is a no-op instead of removing another one each time.
         removed_names = modifications.get("objects_removed")
         if removed_names:
-            pending = Counter(n for n in removed_names if isinstance(n, str))
+            removed_counts = Counter(n for n in removed_names if isinstance(n, str))
+            baseline_counts = Counter(
+                modifications.get("objects_baseline") or self._object_roster(tile)
+            )
+            allowance = {
+                name: max(0, baseline_counts.get(name, 0) - count)
+                for name, count in removed_counts.items()
+            }
             survivors = []
             for obj in getattr(tile, "objects_here", None) or []:
                 name = getattr(obj, "name", None)
                 if not isinstance(name, str):
                     name = type(obj).__name__
-                if pending.get(name, 0) > 0:
-                    pending[name] -= 1
-                    continue
+                # Names with no recorded removal (including objects spawned at
+                # runtime, absent from the baseline) are always kept.
+                if name in allowance:
+                    if allowance[name] <= 0:
+                        continue
+                    allowance[name] -= 1
                 survivors.append(obj)
             tile.objects_here = survivors
 
@@ -931,9 +942,11 @@ class GameService:
         # Record exploration of the new tile
         self._record_exploration(player, new_tile)
 
-        # Snapshot the tile's object roster before entry events can remove any of
-        # them, so persist_tile_state can diff against it afterwards (#328).
-        self.capture_tile_object_baseline(session_data, new_tile)
+        # Re-apply this session's stored modifications (and snapshot the tile's
+        # object roster) before entry events run. Without this, persist_tile_state
+        # below would diff a freshly rehydrated tile — one that still has its
+        # authored objects and exits — and clobber the stored modifications (#328).
+        self.apply_tile_modifications(new_tile, session_data)
 
         # Trigger tile entry events with session data for pending event storage
         events_triggered = self.trigger_tile_events(player, new_tile, session_data)
@@ -1589,6 +1602,10 @@ class GameService:
         tile = player.universe.get_tile(player.location_x, player.location_y)
         # Ensure player knows where they are for interactions that modify the room (like taking items)
         player.current_room = tile
+        # Re-apply stored modifications (and baseline the object roster) before the
+        # action runs, so persist_tile_state at the end diffs against the right
+        # starting state and objects removed earlier stay removed (#328).
+        self.apply_tile_modifications(tile, session_data)
         target = None
 
         # Check NPCs

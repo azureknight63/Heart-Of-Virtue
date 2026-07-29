@@ -1,5 +1,4 @@
 import math
-import os
 import inspect
 import logging
 import re
@@ -15,8 +14,6 @@ if TYPE_CHECKING:  # only for type hints; avoids runtime circular imports
     from src.player import Player
 
 from src.narration import colored, cprint, narrate
-from os import listdir
-from os.path import isfile, join
 
 """
 This module contains general functions to use throughout the game
@@ -649,90 +646,6 @@ def _safe_pickle_load(fp):
         # silently indistinguishable from the security-relevant cases above.
         logger.warning("Failed to load save data: %s", e)
         return None
-
-
-def load(filename):
-    """Load a saved game file. Returns deserialized object or raises if completely unreadable.
-    Legacy compatibility: missing modules/classes replaced with benign placeholders.
-    """
-    try:
-        with open(filename, "rb") as f:
-            data = _safe_pickle_load(f)
-            if data is None:
-                raise RuntimeError(f"Failed to load save: {filename}")
-            _maybe_convert_to_v2(data, filename)
-            return data
-    except FileNotFoundError:
-        raise
-    except Exception as e:
-        # Re-raise with context so caller can decide to skip
-        raise RuntimeError(f"Corrupt or incompatible save '{filename}': {e}") from e
-
-
-def _maybe_convert_to_v2(data, filename):
-    """One-shot migration: write a data-only v2 sidecar after a pickle load.
-
-    Feature-flagged via HOV_SAVE_V2 (off by default). Best-effort and never
-    fatal to the load -- a Player loaded from the trusted pickle is converted to
-    the safe JSON format alongside the original .sav (issue #13, Phase 3).
-    """
-    try:
-        from src.save_format import save_v2_enabled, convert_pickle_save_to_v2
-        from src.player import Player
-
-        if not save_v2_enabled() or not isinstance(data, Player):
-            return
-        sidecar = re.sub(r"\.sav$", "", filename) + ".v2.json"
-        convert_pickle_save_to_v2(data, sidecar)
-    except Exception:
-        # Migration is opportunistic; a failure must not break loading.
-        pass
-
-
-def save(player, filename):  # player is the player object
-    # TODO(security, issue #13): saves are written as pickle (now wrapped in an
-    # integrity header for tamper detection). Loading a pickle executes
-    # arbitrary code by design, so these files are only safe as trusted local
-    # artifacts (see SECURITY.md). Phase 3's data-only (JSON) format
-    # (src.save_format) is the eventual replacement; pickle becomes legacy-import
-    # only. serialize_for_save() prepends the HOVS magic/version/sha256 header;
-    # the loader validates it and still accepts old headerless saves.
-    if not filename.endswith(".sav"):
-        filename = "{}.sav".format(filename)
-    with open(filename, "wb") as f:
-        f.write(serialize_for_save(player))
-
-
-def saves_list():
-    path = os.path.dirname(os.path.abspath(__file__))
-    savefiles = [
-        f for f in listdir(path) if isfile(join(path, f)) and f.endswith(".sav")
-    ]
-    savefiles.sort(key=lambda x: os.stat(os.path.join(path, x)).st_mtime, reverse=True)
-    return savefiles
-
-
-def autosave(player):
-    # Rotate existing autosaves (skip corrupt ones silently)
-    for i in range(4, 0, -1):
-        old_name = f"autosave{i}.sav"
-        new_name = f"autosave{i+1}.sav"
-        try:
-            if old_name in saves_list():
-                try:
-                    loaded = load(old_name)
-                except Exception:
-                    continue  # skip corrupt legacy file
-                if loaded:
-                    try:
-                        save(loaded, new_name)
-                    except Exception:
-                        continue
-        except Exception:
-            # Skip problematic legacy/corrupt file
-            continue
-    # Finally write newest autosave1
-    save(player, "autosave1.sav")
 
 
 def randomize_amount(param):
