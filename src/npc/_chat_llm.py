@@ -185,8 +185,12 @@ class HumanNPCLLMMixin:
         # LLM adapter (lazy-loaded)
         self._chat_adapter: Optional[Any] = None
 
-        # Fallback rotation index
+        # Fallback rotation index (Jean's options pool)
         self._chat_fallback_idx: int = 0
+
+        # Fallback rotation index (NPC line pool — separate counter so the two
+        # rotations don't lock-step and repeat in tandem)
+        self._chat_npc_fallback_idx: int = 0
 
         # Pre-compile prohibited phrase regexes for story NPCs
         self._prohibited_patterns: List[Any] = []
@@ -458,7 +462,8 @@ class HumanNPCLLMMixin:
         if combat_block:
             blocks.append(combat_block)
 
-        # Jean instruction block + spoiler guard
+        # Jean instruction block + spoiler guard (governs what the NPC — not
+        # Jean — is allowed to reference)
         chapter = self._get_chapter(player)
         blocks.append(
             "Jean is he/him. Do not write Jean's dialogue. Do not describe Jean's "
@@ -468,7 +473,46 @@ class HumanNPCLLMMixin:
             "people, or revelations from later in the story."
         )
 
+        # Jean's own knowledge boundary — governs Jean's dialogue OPTIONS,
+        # generated in the same call as the NPC's line.
+        blocks.append(self._build_jean_context_block(player, chapter))
+
         return "\n\n".join(blocks)
+
+    def _build_jean_context_block(self, player, chapter: str) -> str:
+        """Describe what Jean himself has actually experienced so far.
+
+        Gates Jean's generated dialogue OPTIONS (as opposed to the NPC's own
+        chapter guard above, which gates the NPC's line). Without an explicit
+        anchor for what Jean personally knows, generated options default to
+        generic small talk or, worse, reference events Jean hasn't lived
+        through yet. Built from the same story-flag dict the rest of the
+        engine reads (``player.universe.story``), so it tracks real narrative
+        progress instead of needing separate authoring per NPC.
+        """
+        story = self._story(player)
+        experienced: List[str] = []
+
+        gorran_stage = str(story.get("gorran_language_stage", "0"))
+        if gorran_stage != "0":
+            experienced.append(
+                "Gorran, his Golemite companion, has begun communicating in "
+                "words rather than only gesture."
+            )
+
+        known = (
+            " ".join(experienced)
+            if experienced
+            else "Nothing unusual beyond ordinary travel and the people he has directly met."
+        )
+        return (
+            f"JEAN'S KNOWN CONTEXT (chapter {chapter}): Jean only knows what he "
+            f"has personally witnessed. {known} When generating Jean's dialogue "
+            "OPTIONS, never let him reference people, places, events, or "
+            "revelations beyond this context, the WORLD facts above, and this "
+            "conversation's history — no foreshadowing, no spoilers, nothing "
+            "only the NPC or narrator would know."
+        )
 
     def _build_combat_knowledge_block(self) -> str:
         """Describe this ally's combat experience and techniques for the system prompt.
@@ -712,13 +756,18 @@ class HumanNPCLLMMixin:
     ) -> Optional[Dict[str, Any]]:
         """Produce a QC'd NPC turn, or None if the caller should fall back.
 
-        The combined single-call path uses one attempt to stay within the
-        per-round latency budget; the legacy path keeps the original two-attempt
-        QC retry.
+        Allows up to two attempts regardless of adapter shape. A single QC
+        rejection (most commonly the repetition guard in ``_qc_npc_text``)
+        used to drop the combined single-call path straight to the static
+        deterministic fallback line, which is what made NPCs appear to repeat
+        themselves verbatim turn after turn. A second attempt costs one extra
+        round trip only on the QC-failure path — successful calls are still a
+        single round trip — and is worth it to avoid the repeated-fallback
+        experience.
         """
         if not llm_available or adapter is None:
             return None
-        max_attempts = 1 if hasattr(adapter, "generate_turn") else 2
+        max_attempts = 2
         for _ in range(max_attempts):
             turn = self._generate_turn(adapter, system, is_opening, jean_text)
             if turn and turn.get("npc_text"):
@@ -855,17 +904,13 @@ class HumanNPCLLMMixin:
             conversation_quality = "neutral"
             reputation_delta = 0
             loquacity_delta = None
+            npc_response = None
 
             if turn is not None:
                 npc_response = turn["npc_text"]
                 conversation_quality = turn["conversation_quality"]
                 reputation_delta = turn["reputation_delta"]
                 loquacity_delta = turn["loquacity_delta"]
-            else:
-                npc_response = self._get_fallback_npc_line(
-                    is_opening=False, player=player
-                )
-                llm_available = False
 
             # Apply loquacity change. The LLM may signal a signed delta (usually a
             # drain, occasionally a GAIN when Jean raises a topic the NPC finds
@@ -878,6 +923,21 @@ class HumanNPCLLMMixin:
             self.loquacity_current = max(
                 0, min(self.loquacity_max, self.loquacity_current + loquacity_delta)
             )
+
+            # Resolved once here (rather than separately for the fallback-line
+            # decision and the later response payload) so the two can never
+            # drift out of sync.
+            conversation_ended = self.loquacity_current < self.loquacity_threshold
+
+            # Fall back only after loquacity is resolved, so a fallback line can
+            # tell whether this exchange is actually ending the conversation
+            # (use a "done talking" closing line) or just a mid-conversation LLM
+            # hiccup (use in-character filler instead of a false goodbye).
+            if npc_response is None:
+                npc_response = self._get_fallback_npc_line(
+                    is_opening=False, player=player, exhausted=conversation_ended
+                )
+                llm_available = False
 
             # Apply the NPC's in-character reaction to Jean's reputation
             if not hasattr(player, "reputation"):
@@ -898,9 +958,6 @@ class HumanNPCLLMMixin:
                 self._save_exchange_to_persistence(
                     player, npc_response, jean_text, game_tick, chapter
                 )
-
-            # Check conversation end
-            conversation_ended = self.loquacity_current < self.loquacity_threshold
 
             # Jean's options for the next round. Once loquacity is spent the
             # options are omitted so the NPC's own (lore- and context-aware) reply
@@ -962,24 +1019,79 @@ class HumanNPCLLMMixin:
         ]
         return fallbacks[idx]
 
-    def _get_fallback_npc_line(self, is_opening: bool, player) -> str:
-        """Get fallback NPC line (no LLM)."""
+    def _next_from_pool(self, pool: List[str]) -> Optional[str]:
+        """Return the next line from ``pool``, rotating via the NPC-line index.
+
+        Always advances the counter (even for a single-entry pool) so repeated
+        fallback calls stay predictable and never silently reset. Uses
+        ``getattr``/instance-``setattr`` rather than assuming
+        ``_chat_npc_fallback_idx`` was set by ``_init_chat_attrs`` — minimal
+        NPC test doubles and any future caller that skips full init still
+        rotate correctly instead of raising ``AttributeError``.
+        """
+        if not pool:
+            return None
+        idx = getattr(self, "_chat_npc_fallback_idx", 0)
+        line = pool[idx % len(pool)]
+        self._chat_npc_fallback_idx = idx + 1
+        return line
+
+    def _get_fallback_npc_line(
+        self, is_opening: bool, player, exhausted: bool = False
+    ) -> str:
+        """Get fallback NPC line (no LLM).
+
+        Rotates through the NPC's authored line pool instead of always
+        returning the first entry — a stalled/unavailable LLM used to make
+        every fallback turn (opening AND every mid-conversation reply) return
+        the exact same string, which read as the NPC repeating itself.
+
+        ``exhausted`` distinguishes a genuinely ending conversation (loquacity
+        below threshold — use the authored "done talking" closing lines) from
+        a mid-conversation LLM hiccup (conversation continues — reusing a
+        closing line here would falsely tell the player the NPC is done).
+        """
         if self._chat_char_config:
             chapter = self._get_chapter(player)
+            starters = self._chat_char_config.get(
+                "conversation_starters_by_chapter", {}
+            ).get(chapter, [])
+            closing = self._chat_char_config.get("closing_lines_when_exhausted", [])
+
             if is_opening:
-                starters = self._chat_char_config.get(
-                    "conversation_starters_by_chapter", {}
-                ).get(chapter, [])
-                if starters:
-                    return starters[0]
+                line = self._next_from_pool(starters)
+                if line:
+                    return line
+            elif exhausted:
+                line = self._next_from_pool(closing) or self._next_from_pool(starters)
+                if line:
+                    return line
             else:
-                closing = self._chat_char_config.get("closing_lines_when_exhausted", [])
-                if closing:
-                    return closing[0]
+                # Mid-conversation and not exhausted: chapter-flavor starters
+                # read as plausible filler without implying the NPC is done.
+                line = self._next_from_pool(starters) or self._next_from_pool(closing)
+                if line:
+                    return line
         else:
-            # Generic
-            if self._chat_personality and "speech_sample" in self._chat_personality:
-                return self._chat_personality["speech_sample"]
+            # Generic nomad: rotate through a small pool derived from the
+            # generated personality so the same speech sample doesn't repeat
+            # verbatim on every fallback turn.
+            pers = self._chat_personality or {}
+            speech = pers.get("speech_sample")
+            knowledge = pers.get("knowledge") or []
+            given_name = pers.get("given_name", "They")
+            pool = [
+                text
+                for text in (
+                    speech,
+                    f"{given_name} falls quiet a moment, considering." if speech else None,
+                    f"Ask again about {knowledge[0]}, maybe." if knowledge else None,
+                )
+                if text
+            ]
+            line = self._next_from_pool(pool)
+            if line:
+                return line
 
         return "Nothing to say right now."
 

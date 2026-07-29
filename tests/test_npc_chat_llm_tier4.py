@@ -840,6 +840,65 @@ class TestBuildSystemPrompt:
         assert "Crusaders" in prompt
 
 
+class TestBuildJeanContextBlock:
+    """Test _build_jean_context_block — chapter-gates Jean's own dialogue options."""
+
+    class _Universe:
+        def __init__(self, story):
+            self.story = story
+
+    class _Player:
+        def __init__(self, story):
+            self.universe = TestBuildJeanContextBlock._Universe(story)
+
+    def _npc(self):
+        class TestNPC(HumanNPCLLMMixin):
+            def __init__(self):
+                self.name = "TestNPC"
+        return TestNPC()
+
+    def test_includes_chapter_number(self):
+        npc = self._npc()
+        player = self._Player({})
+        block = npc._build_jean_context_block(player, "2")
+        assert "chapter 2" in block
+
+    def test_defaults_to_no_unusual_developments(self):
+        npc = self._npc()
+        player = self._Player({})
+        block = npc._build_jean_context_block(player, "1")
+        assert "Nothing unusual beyond ordinary travel" in block
+
+    def test_includes_gorran_language_flag_when_set(self):
+        npc = self._npc()
+        player = self._Player({"gorran_language_stage": "2"})
+        block = npc._build_jean_context_block(player, "1")
+        assert "Gorran" in block
+        assert "words rather than only gesture" in block
+
+    def test_omits_gorran_flag_at_stage_zero(self):
+        npc = self._npc()
+        player = self._Player({"gorran_language_stage": "0"})
+        block = npc._build_jean_context_block(player, "1")
+        assert "words rather than only gesture" not in block
+
+    def test_included_in_full_system_prompt(self):
+        """The Jean-context block must actually be wired into the system prompt
+        the adapter receives, not just callable in isolation."""
+        class TestNPC(HumanNPCLLMMixin):
+            def __init__(self):
+                self.name = "TestNPC"
+                self._chat_world_facts = {}
+                self._chat_char_config = None
+                self._chat_personality = {"given_name": "Ren", "voice": "sparse"}
+
+        npc = TestNPC()
+        player = self._Player({"gorran_language_stage": "1"})
+        prompt = npc._build_system_prompt(player)
+        assert "JEAN'S KNOWN CONTEXT" in prompt
+        assert "words rather than only gesture" in prompt
+
+
 class TestEnsurePersonality:
     """Test _ensure_personality generation."""
 
@@ -1348,7 +1407,7 @@ class TestChatRespond:
             def _get_adapter(self):
                 return None
 
-            def _get_fallback_npc_line(self, is_opening, player):
+            def _get_fallback_npc_line(self, is_opening, player, exhausted=False):
                 return "Response from fallback."
 
             def _get_fallback_jean_options(self):
@@ -1419,7 +1478,7 @@ class TestChatRespond:
             def _get_adapter(self):
                 return None
 
-            def _get_fallback_npc_line(self, is_opening, player):
+            def _get_fallback_npc_line(self, is_opening, player, exhausted=False):
                 return "Response from fallback."
 
             def _get_fallback_jean_options(self):
@@ -1645,6 +1704,96 @@ class TestGetFallbackNpcLine:
         line = npc._get_fallback_npc_line(is_opening=True, player=player)
         assert line == "Nothing to say right now."
 
+    def test_get_fallback_npc_line_rotates_through_pool(self):
+        """Repeated fallback calls must not return the same line every time.
+
+        Regression test: the fallback used to always index [0], which made an
+        NPC repeat the exact same line on every turn when the LLM was
+        unavailable.
+        """
+        class TestNPC(HumanNPCLLMMixin):
+            def __init__(self):
+                self.name = "Gorran"
+                self._chat_char_config = {
+                    "conversation_starters_by_chapter": {
+                        "1": ["First line.", "Second line.", "Third line."]
+                    }
+                }
+
+            def _get_chapter(self, player):
+                return "1"
+
+        npc = TestNPC()
+        player = MagicMock()
+        lines = [
+            npc._get_fallback_npc_line(is_opening=True, player=player)
+            for _ in range(3)
+        ]
+        assert lines == ["First line.", "Second line.", "Third line."]
+        # Rotation wraps back to the start rather than raising.
+        assert npc._get_fallback_npc_line(is_opening=True, player=player) == "First line."
+
+    def test_get_fallback_npc_line_exhausted_uses_closing(self):
+        """When the conversation is actually ending, use the closing pool."""
+        class TestNPC(HumanNPCLLMMixin):
+            def __init__(self):
+                self.name = "Gorran"
+                self._chat_char_config = {
+                    "conversation_starters_by_chapter": {"1": ["Hello, friend!"]},
+                    "closing_lines_when_exhausted": ["Farewell."],
+                }
+
+            def _get_chapter(self, player):
+                return "1"
+
+        npc = TestNPC()
+        player = MagicMock()
+        line = npc._get_fallback_npc_line(is_opening=False, player=player, exhausted=True)
+        assert line == "Farewell."
+
+    def test_get_fallback_npc_line_mid_conversation_prefers_starters(self):
+        """A non-exhausted mid-conversation LLM hiccup must not claim the NPC
+        is done talking — it should reuse chapter-flavor starters instead of
+        the 'done talking' closing lines.
+        """
+        class TestNPC(HumanNPCLLMMixin):
+            def __init__(self):
+                self.name = "Gorran"
+                self._chat_char_config = {
+                    "conversation_starters_by_chapter": {"1": ["Hello, friend!"]},
+                    "closing_lines_when_exhausted": ["Farewell."],
+                }
+
+            def _get_chapter(self, player):
+                return "1"
+
+        npc = TestNPC()
+        player = MagicMock()
+        line = npc._get_fallback_npc_line(is_opening=False, player=player, exhausted=False)
+        assert line == "Hello, friend!"
+
+    def test_get_fallback_npc_line_generic_rotates(self):
+        """Generic-nomad fallback must vary rather than repeat the speech sample."""
+        class TestNPC(HumanNPCLLMMixin):
+            def __init__(self):
+                self.name = "GenericNomad"
+                self._chat_char_config = None
+                self._chat_personality = {
+                    "given_name": "Ren",
+                    "speech_sample": "The river's cold.",
+                    "knowledge": ["river crossings"],
+                }
+
+            def _get_chapter(self, player):
+                return "1"
+
+        npc = TestNPC()
+        player = MagicMock()
+        first = npc._get_fallback_npc_line(is_opening=False, player=player)
+        second = npc._get_fallback_npc_line(is_opening=False, player=player)
+        assert first == "The river's cold."
+        assert second != first
+
 
 class TestGetFallbackJeanOptions:
     """Test _get_fallback_jean_options."""
@@ -1764,7 +1913,7 @@ class TestIntegrationChatFlow:
             def _get_adapter(self):
                 return None
 
-            def _get_fallback_npc_line(self, is_opening, player):
+            def _get_fallback_npc_line(self, is_opening, player, exhausted=False):
                 return "Response from fallback."
 
             def _get_fallback_jean_options(self):
@@ -2321,7 +2470,7 @@ class TestHistoryUpdating:
             def _get_adapter(self):
                 return None
 
-            def _get_fallback_npc_line(self, is_opening, player):
+            def _get_fallback_npc_line(self, is_opening, player, exhausted=False):
                 return "Response."
 
             def _get_fallback_jean_options(self):

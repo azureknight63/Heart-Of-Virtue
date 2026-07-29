@@ -23,7 +23,6 @@ export default function NpcChatPanel({ npcId, npcName, onClose }) {
   const [loquacity, setLoquacity] = useState({ current: 0, max: 1 })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
-  const [latestNpcText, setLatestNpcText] = useState(null)
   const [relationship, setRelationship] = useState(null)
   const retryFnRef = useRef(null)
   // Guards async setState calls (open/respond) from firing after unmount, and
@@ -63,7 +62,6 @@ export default function NpcChatPanel({ npcId, npcName, onClose }) {
 
         if (data.npc_opening) {
           setMessages([{ speaker: 'npc', text: data.npc_opening }])
-          setLatestNpcText(data.npc_opening)
         } else {
           setMessages([])
         }
@@ -116,7 +114,6 @@ export default function NpcChatPanel({ npcId, npcName, onClose }) {
         max: data.loquacity_max ?? 1,
       })
       setCurrentOptions(data.jean_options || [])
-      setLatestNpcText(data.npc_response)
       setRelationship(data.relationship || null)
 
       // Check if conversation ended
@@ -268,60 +265,70 @@ export default function NpcChatPanel({ npcId, npcName, onClose }) {
             Waiting for NPC to speak...
           </div>
         ) : (
-          messages.map((msg, idx) => (
-            <div
-              key={idx}
-              style={{
-                color:
-                  msg.speaker === 'npc'
-                    ? colors.secondary
-                    : colors.text.muted,
-                fontFamily: fonts.main,
-                fontSize: '13px',
-                fontStyle: msg.speaker === 'jean' ? 'italic' : 'normal',
-                lineHeight: '1.5',
-              }}
-            >
-              {msg.speaker === 'npc' ? (
-                <div>
-                  <strong>{displayName}:</strong> {msg.text}
-                </div>
-              ) : (
-                <div>
-                  <strong>Jean:</strong> <em>{msg.text}</em>
-                  {msg.tone && (
-                    <span
-                      style={{
-                        marginLeft: spacing.sm,
-                        color: colors.text.dim,
-                        fontSize: '11px',
-                      }}
-                    >
-                      [{msg.tone}]
-                    </span>
-                  )}
-                </div>
-              )}
-            </div>
-          ))
-        )}
-
-        {/* TypewriterOutput for latest NPC text */}
-        {latestNpcText && phase !== 'opening' && (
-          <TypewriterOutput
-            text={latestNpcText}
-            speed={20}
-            onComplete={check}
-            style={{
-              marginTop: spacing.sm,
-              padding: spacing.md,
-              backgroundColor: colors.bg.panelHeavy,
-              border: `1px solid ${colors.border.main}`,
-              borderRadius: '6px',
-              minHeight: 'auto',
-              maxHeight: '120px',
-            }}
-          />
+          messages.map((msg, idx) => {
+            const isLatestNpcLine =
+              msg.speaker === 'npc' &&
+              idx === messages.length - 1 &&
+              phase !== 'opening'
+            return (
+              <div
+                key={idx}
+                style={{
+                  color:
+                    msg.speaker === 'npc'
+                      ? colors.secondary
+                      : colors.text.muted,
+                  fontFamily: fonts.main,
+                  fontSize: '13px',
+                  fontStyle: msg.speaker === 'jean' ? 'italic' : 'normal',
+                  lineHeight: '1.5',
+                }}
+              >
+                {msg.speaker === 'npc' ? (
+                  <div>
+                    <strong>{displayName}:</strong>{' '}
+                    {isLatestNpcLine ? (
+                      <TypewriterOutput
+                        text={msg.text}
+                        speed={20}
+                        onComplete={check}
+                        style={{
+                          display: 'inline',
+                          padding: 0,
+                          margin: 0,
+                          backgroundColor: 'transparent',
+                          border: 'none',
+                          borderRadius: 0,
+                          minHeight: 'auto',
+                          color: 'inherit',
+                          fontFamily: 'inherit',
+                          fontSize: 'inherit',
+                          lineHeight: 'inherit',
+                        }}
+                      />
+                    ) : (
+                      msg.text
+                    )}
+                  </div>
+                ) : (
+                  <div>
+                    <strong>Jean:</strong> <em>{msg.text}</em>
+                    {msg.tone && (
+                      <span
+                        style={{
+                          marginLeft: spacing.sm,
+                          color: colors.text.dim,
+                          fontSize: '11px',
+                        }}
+                      >
+                        [{msg.tone}]
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+            )
+          })
         )}
       </div>
       {showTop && (
