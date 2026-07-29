@@ -756,6 +756,21 @@ class ConversationalNPCMixin:
                     return options
         return self._get_fallback_jean_options()
 
+    def chat(self, player):
+        """Interact-system entry point for the 'chat' keyword.
+
+        When the frontend's LLM-chat routing is active (llm_chat_enabled), the
+        'chat' and 'talk' keywords are intercepted client-side and open the
+        NpcChatPanel via the /api/npc-chat endpoints — this method is never
+        called.  If those checks are ever bypassed (disabled env, older
+        frontend), fall back to the NPC's static talk dialogue so the player
+        still gets a response instead of an AttributeError.
+        """
+        if hasattr(self, "talk"):
+            self.talk(player)
+        else:
+            narrate(self._display_name() + " has nothing to say.")
+
     def chat_open(self, player) -> Dict[str, Any]:
         """Start conversation. Returns opening line + 3 Jean options."""
         try:

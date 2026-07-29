@@ -189,8 +189,12 @@ function InteractPanel({
             return
         }
 
-        // Open LLM chat panel for talk action on LLM-capable NPCs
-        if (action.toLowerCase() === 'talk' && selectedTarget?.llm_chat_enabled && selectedTarget?.loquacity_available !== false) {
+        // Open LLM chat panel for talk or chat action on LLM-capable NPCs
+        if (
+            (action.toLowerCase() === 'talk' || action.toLowerCase() === 'chat') &&
+            selectedTarget?.llm_chat_enabled &&
+            selectedTarget?.loquacity_available !== false
+        ) {
             setShowChatPanel(true)
             return
         }
