@@ -856,6 +856,20 @@ class Passageway(Object):
         if not self.persist:
             self.tile.objects_here.remove(self)
 
+    @staticmethod
+    def build_article_phrase(name):
+        """Build a natural article phrase for a passageway name.
+
+        Possessives (Jambo's Tent) are proper nouns — no article.
+        Names starting with "The" strip the duplicate and preserve rest.
+        Generic noun phrases (Archive Door, Tent Flap) get "the " prepended.
+        """
+        if "'" in name:
+            return name
+        if name.lower().startswith("the "):
+            return f"the {name[4:]}"
+        return f"the {name.lower()}"
+
     def go(self, player):
         self.enter(player)
 

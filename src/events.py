@@ -225,14 +225,9 @@ class PassagewayTransitionEvent(Event):
             {"value": "continue", "label": "Step through"},
         ]
 
-        # Build the article phrase for the description (mirrors Passageway.enter)
+        # Build the article phrase for the description
         _n = getattr(passageway, "name", "passageway")
-        if "'" in _n:
-            _ref = _n
-        elif _n.lower().startswith("the "):
-            _ref = f"the {_n[4:]}"
-        else:
-            _ref = f"the {_n.lower()}"
+        _ref = passageway.build_article_phrase(_n) if passageway else _n
         self.description = f"Jean steps through {_ref}..."
 
     def process(self, user_input=None):

@@ -1644,17 +1644,16 @@ class GameService:
                         passageway=target,
                     )
                     event_data = EventSerializer.serialize_with_input(trans_event)
-                    if session_data is not None:
-                        event_id = str(uuid.uuid4())
-                        event_data["event_id"] = event_id
-                        if "pending_events" not in session_data:
-                            session_data["pending_events"] = {}
-                        session_data["pending_events"][event_id] = {
-                            "event": trans_event,
-                            "tile_x": tile.x,
-                            "tile_y": tile.y,
-                            "event_data": event_data,
-                        }
+                    event_id = str(uuid.uuid4())
+                    event_data["event_id"] = event_id
+                    if "pending_events" not in session_data:
+                        session_data["pending_events"] = {}
+                    session_data["pending_events"][event_id] = {
+                        "event": trans_event,
+                        "tile_x": tile.x,
+                        "tile_y": tile.y,
+                        "event_data": event_data,
+                    }
                     events_triggered.append(event_data)
                 else:
                     method = getattr(target, action)
