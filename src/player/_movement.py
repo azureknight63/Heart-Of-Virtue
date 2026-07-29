@@ -1,7 +1,11 @@
 """Movement mixin for Player — map navigation, teleport, and party recall."""
 
+import logging
+
 from src.universe import tile_exists as tile_exists
 from src.narration import colored, narrate
+
+logger = logging.getLogger(__name__)
 
 
 class PlayerMovementMixin:
@@ -44,7 +48,10 @@ class PlayerMovementMixin:
                                 event.tile = tile
                                 event.check_conditions()
                         except Exception:
-                            pass
+                            logger.debug(
+                                "Event check_conditions failed during teleport",
+                                exc_info=True,
+                            )
                     return
                 else:
                     narrate(f"### INVALID TELEPORT LOCATION: {target_map} | {x},{y} ###")
