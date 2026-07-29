@@ -1619,3 +1619,91 @@ class TestQuickSwapRemainingGaps:
         with patch.object(qs, "_execute_legacy", side_effect=RuntimeError("boom")):
             qs.execute(p)
         assert "Error during swap" in capsys.readouterr().out
+
+
+# ---------------------------------------------------------------------------
+# Regression: player-castable movement moves (issues #368, #370)
+# ---------------------------------------------------------------------------
+
+
+class TestPlayerCastableMovementRegressions:
+    """#368: BullCharge/FlankingManeuver were permanently uncastable by the
+    player because ``viable()`` gated entirely on ``self.target``, which the
+    combat adapter only assigns *after* viability filtering (it still defaults
+    to the user itself at that point, and a unit is never a key in its own
+    ``combat_proximity``). Both now fall back to scanning hostile proximity
+    entries.
+
+    #370: TacticalRetreat/FlankingManeuver/QuickSwap omitted ``category``, so
+    they rendered under the MISC panel instead of MANEUVER.
+    """
+
+    def _fresh_move(self, cls, player):
+        """Build the move the way the adapter does — no target assigned yet."""
+        move = cls(player)
+        assert move.target is player, "unassigned target should still be the user"
+        return move
+
+    def test_bullcharge_viable_before_target_assignment(self):
+        import src.moves as moves
+
+        p = _player()
+        enemy = _make_enemy()
+        p.combat_proximity[enemy] = 10
+        p.combat_list = [enemy]
+        bc = self._fresh_move(moves.BullCharge, p)
+        assert bc.viable() is True
+
+    def test_flankingmaneuver_viable_before_target_assignment(self):
+        import src.moves as moves
+
+        p = _player()
+        enemy = _make_enemy()
+        p.combat_proximity[enemy] = 8
+        p.combat_list = [enemy]
+        fm = self._fresh_move(moves.FlankingManeuver, p)
+        assert fm.viable() is True
+
+    def test_fallback_ignores_out_of_range_hostiles(self):
+        import src.moves as moves
+
+        p = _player()
+        enemy = _make_enemy()
+        p.combat_proximity[enemy] = 1  # inside the 3-square minimum
+        p.combat_list = [enemy]
+        bc = self._fresh_move(moves.BullCharge, p)
+        fm = self._fresh_move(moves.FlankingManeuver, p)
+        assert bc.viable() is False
+        assert fm.viable() is False
+
+    def test_fallback_ignores_allies(self):
+        """An ally at charge distance must not make the move viable."""
+        import src.moves as moves
+
+        p = _player()
+        ally = _make_enemy(name="Gorran")
+        ally.friend = True
+        enemy = _make_enemy()
+        p.combat_proximity[ally] = 8
+        p.combat_proximity[enemy] = 1
+        p.combat_list = [enemy]  # combat_list holds the opposing side only
+        p.combat_list_allies = [p, ally]
+        bc = self._fresh_move(moves.BullCharge, p)
+        fm = self._fresh_move(moves.FlankingManeuver, p)
+        assert bc.viable() is False
+        assert fm.viable() is False
+
+    def test_movement_moves_declare_maneuver_category(self):
+        import src.moves as moves
+
+        p = _player()
+        for cls in (
+            moves.TacticalRetreat,
+            moves.FlankingManeuver,
+            moves.QuickSwap,
+            moves.Advance,
+            moves.Withdraw,
+            moves.TacticalPositioning,
+            moves.Turn,
+        ):
+            assert cls(p).category == "Maneuver", cls.__name__

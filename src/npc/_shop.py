@@ -244,25 +244,16 @@ class MerchantShopMixin:
         for it in getattr(self, "inventory", []) or []:
             if getattr(it, "unique", False):
                 removed_unique.add(it.__class__.__name__)
+        self.inventory = []
         containers: list[Container] = []
+        # Collecting and clearing happen in one walk on purpose: they used to be
+        # two passes that drifted apart, so container-housed unique items were
+        # destroyed without ever being released (issue #373).
         for room in iter_rooms(self._resolve_rooms_source()):
             for container in iter_merchant_containers(room, self):
                 for it in getattr(container, "inventory", []) or []:
                     if getattr(it, "unique", False):
                         removed_unique.add(it.__class__.__name__)
-        self.inventory = []
-        if not self.current_room:
-            for cls_name in removed_unique:
-                items_module.unique_items_spawned.discard(cls_name)
-            return containers
-        # Recompute defensively — current_room.map may have been absent in the first pass
-        rooms_source = self._resolve_rooms_source()
-        if not rooms_source:
-            for cls_name in removed_unique:
-                items_module.unique_items_spawned.discard(cls_name)
-            return containers
-        for room in iter_rooms(rooms_source):
-            for container in iter_merchant_containers(room, self):
                 container.inventory = []
                 containers.append(container)
             room_items = getattr(room, "items_here", None)
@@ -534,16 +525,7 @@ class MerchantShopMixin:
 
         for item in self.inventory:
             _apply_to_item(item)
-        rooms_source = self._resolve_rooms_source()
-        if rooms_source:
-            for room in (
-                rooms_source.values()
-                if hasattr(rooms_source, "values")
-                else rooms_source
-            ):
-                for obj in getattr(room, "objects_here", getattr(room, "objects", [])):
-                    if (
-                        hasattr(obj, "inventory") and hasattr(obj, "merchant")
-                    ) and getattr(obj, "merchant", None) in (self, self.name):
-                        for item in obj.inventory:
-                            _apply_to_item(item)
+        for room in iter_rooms(self._resolve_rooms_source()):
+            for container in iter_merchant_containers(room, self):
+                for item in container.inventory:
+                    _apply_to_item(item)
