@@ -231,11 +231,19 @@ class PassagewayTransitionEvent(Event):
         self.description = f"Jean steps through {_ref}..."
 
     def process(self, user_input=None):
-        if user_input == "continue":
-            pw = self.passageway
-            if pw and pw.teleport_map and pw.teleport_tile:
-                pw._commit_teleport(self.player)
+        if user_input != "continue":
+            # Mark completed before raising so the event is cleaned up even
+            # on invalid input — the API's process_event_input will catch
+            # the ValueError and surface the error to the client.
             self.completed = True
             self.needs_input = False
-            return {"success": True}
+            raise ValueError(
+                f"Unexpected input for {self.name}: "
+                f"expected 'continue', got {user_input!r}"
+            )
+        pw = self.passageway
+        if pw and pw.teleport_map and pw.teleport_tile:
+            pw._commit_teleport(self.player)
+        self.completed = True
+        self.needs_input = False
         return {"success": True}
