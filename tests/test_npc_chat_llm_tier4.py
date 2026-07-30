@@ -678,7 +678,7 @@ class TestLoadHistoryFromPersistence:
         """A persisted 0 (patience fully exhausted) must be restored as 0, not
         confused with 'never persisted' and silently reset back to a nonzero
         default (issue #381)."""
-        class TestNPC(HumanNPCLLMMixin):
+        class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self._chat_history = []
