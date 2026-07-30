@@ -685,4 +685,3 @@ class IronAndOathIntroEvent(Event):
         story = getattr(getattr(self.player, "universe", None), "story", None)
         if story is not None:
             story["iron_and_oath_intro_done"] = "1"
-

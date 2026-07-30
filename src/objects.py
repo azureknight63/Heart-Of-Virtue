@@ -1335,7 +1335,6 @@ class WaterBarrel(Object):
         cprint(f"Jean drinks from the water barrel. (+{hp_restored} HP)", "green")
         functions.await_input()
 
-
     def examine(self):
         narrate(self.description)
 
