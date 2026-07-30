@@ -875,3 +875,54 @@ class TestSwordPassives:
         move = CounterGuard(user)
         assert move.name == "Counter Guard"
         assert move.viable() is False
+
+
+# ---------------------------------------------------------------------------
+# Regression: VertigoSpin must respect status resistance (issue #403)
+# ---------------------------------------------------------------------------
+
+
+class TestVertigoSpinRespectsStatusResistance:
+    """VertigoSpin used to ``states.append()`` the Disoriented debuff directly,
+    landing it 100% of the time and bypassing the resistance system entirely.
+    It now routes through ``functions.inflict()`` like DisarmingSlash.
+    """
+
+    def _hit_setup(self, monkeypatch, status_resistance):
+        user = _make_user()
+        tgt = _make_target(finesse=0, protection=0)
+        tgt.states = []
+        tgt.status_resistance = status_resistance
+        move = VertigoSpin(user)
+        move.target = tgt
+        move.power = 40
+        user.fatigue = 100
+        move.fatigue_cost = 10
+        monkeypatch.setattr(random, "randint", lambda a, b: 0)  # always hits
+        monkeypatch.setattr(random, "choice", lambda seq: list(seq)[0])
+        return move, user, tgt
+
+    def test_immune_target_is_not_disoriented(self, monkeypatch):
+        move, user, tgt = self._hit_setup(monkeypatch, {"disoriented": 1.0})
+        with patch("src.moves._sword.functions.check_parry", return_value=False), \
+             patch("src.moves._sword.cprint"):
+            move.execute(user)
+        assert not any(isinstance(s, states.Disoriented) for s in tgt.states)
+
+    def test_unresisted_target_is_disoriented(self, monkeypatch):
+        move, user, tgt = self._hit_setup(monkeypatch, {"disoriented": 0.0})
+        with patch("src.moves._sword.functions.check_parry", return_value=False), \
+             patch("src.moves._sword.cprint"):
+            move.execute(user)
+        assert any(isinstance(s, states.Disoriented) for s in tgt.states)
+
+    def test_debuff_is_routed_through_inflict(self, monkeypatch):
+        move, user, tgt = self._hit_setup(monkeypatch, {})
+        with patch("src.moves._sword.functions.check_parry", return_value=False), \
+             patch("src.moves._sword.cprint"), \
+             patch("src.moves._sword.functions.inflict") as mock_inflict:
+            move.execute(user)
+        mock_inflict.assert_called_once()
+        applied, target = mock_inflict.call_args.args[:2]
+        assert isinstance(applied, states.Disoriented)
+        assert target is tgt

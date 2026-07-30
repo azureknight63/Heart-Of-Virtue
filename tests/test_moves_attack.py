@@ -168,3 +168,45 @@ def test_attack_evaluate_various_weapons(weapon_cls):
     assert math.isclose(attack.power, expected_power)
     assert attack.mvrange == weapon.wpnrange
     assert weapon.name.lower() in attack.stage_announce[1].lower()
+
+
+def test_attack_constructor_defers_entirely_to_evaluate():
+    """Regression for #396: Attack.__init__ used to hand-roll prep/execute/
+    recoil/cooldown/fatigue formulas that disagreed with evaluate()'s (e.g.
+    cooldown `3 - endurance/10` vs `5 - endurance/10`) and were discarded by
+    the evaluate() call at the end of the constructor. The constructor now
+    carries placeholders only, so a freshly built move is already identical to
+    a re-evaluated one.
+    """
+    player = Player()
+    weapon = items.Hammer()
+    weapon.isequipped = True
+    player.eq_weapon = weapon
+
+    attack = Attack(player)
+    fresh = (
+        list(attack.stage_beat),
+        attack.fatigue_cost,
+        attack.mvrange,
+        attack.power,
+        attack.base_damage_type,
+        attack.stage_announce[1],
+    )
+
+    attack.evaluate()
+    reevaluated = (
+        list(attack.stage_beat),
+        attack.fatigue_cost,
+        attack.mvrange,
+        attack.power,
+        attack.base_damage_type,
+        attack.stage_announce[1],
+    )
+
+    assert fresh == reevaluated
+    # No placeholder leakage: the constructor's stand-in weapon/range/fatigue
+    # must have been replaced by the equipped weapon's real values.
+    assert attack.mvrange == weapon.wpnrange
+    assert weapon.name.lower() in attack.stage_announce[1].lower()
+    assert "fist" not in attack.stage_announce[1].lower()
+    assert attack.stage_beat[3] == max(0, 5 - int(player.endurance / 10))

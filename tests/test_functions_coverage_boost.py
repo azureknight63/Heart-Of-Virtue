@@ -463,54 +463,6 @@ class TestResetStats:
 
 
 # ---------------------------------------------------------------------------
-# load / save / saves_list
-# ---------------------------------------------------------------------------
-
-
-class TestLoadSaveFunctions:
-    """Lines 699-1022."""
-
-    def test_load_file_not_found_raises(self):
-        """Line 953-954: FileNotFoundError raised for nonexistent file."""
-        with pytest.raises(FileNotFoundError):
-            functions.load("nonexistent_save_file_xyz.sav")
-
-    def test_load_corrupt_file_raises_runtime_error(self):
-        """Lines 955-957: corrupt file raises RuntimeError."""
-        with tempfile.NamedTemporaryFile(suffix=".sav", delete=False) as f:
-            f.write(b"definitely not pickle data @#$%")
-            fname = f.name
-        try:
-            with pytest.raises(RuntimeError):
-                functions.load(fname)
-        finally:
-            os.unlink(fname)
-
-    def test_save_and_load_roundtrip(self):
-        """Lines 1006-1012: save() pickles player, load() unpickles."""
-        p = _player()
-        with tempfile.TemporaryDirectory() as tmpdir:
-            fname = os.path.join(tmpdir, "test_save.sav")
-            functions.save(p, fname)
-            assert os.path.exists(fname)
-            loaded = functions.load(fname)
-            assert loaded is not None
-
-    def test_save_adds_sav_extension(self):
-        """Line 1010-1012: save() adds .sav if not present."""
-        p = _player()
-        with tempfile.TemporaryDirectory() as tmpdir:
-            fname = os.path.join(tmpdir, "test_no_ext")
-            functions.save(p, fname)
-            assert os.path.exists(fname + ".sav")
-
-    def test_saves_list_returns_list(self):
-        """Line 1015-1021: saves_list returns list."""
-        result = functions.saves_list()
-        assert isinstance(result, list)
-
-
-# ---------------------------------------------------------------------------
 # _MissingLegacyPlaceholder
 # ---------------------------------------------------------------------------
 

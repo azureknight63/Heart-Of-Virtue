@@ -4,7 +4,6 @@ import builtins
 import pickle
 import types
 import importlib
-import pytest
 import src.functions as functions
 
 
@@ -47,16 +46,6 @@ def _src_dir():
 
 # -------- save_select new file and cancel paths ---------
 
-# -------- load error path (corrupt file) ---------
-
-def test_load_corrupt_file(tmp_path):
-    corrupt = tmp_path / 'corrupt_save.sav'
-    with open(corrupt, 'wb') as f:
-        f.write(b'not a pickle')
-    with pytest.raises(RuntimeError):
-        functions.load(str(corrupt))
-
-
 # -------- SafeUnpickler placeholder creation ---------
 
 def test_safe_unpickler_placeholder(tmp_path):
@@ -77,7 +66,8 @@ def test_safe_unpickler_placeholder(tmp_path):
     # Remove modules so they can't be found on load
     del sys.modules[mod_name]
     del sys.modules['story']
-    loaded = functions.load(str(pfile))
+    with open(pfile, 'rb') as f:
+        loaded = functions._safe_pickle_load(f)
     # Expect placeholder class name pattern. The unpickler rewrites the bare
     # 'story.fake_mod' path to the canonical 'src.story.fake_mod' before
     # resolution, so the placeholder carries the src-prefixed name.

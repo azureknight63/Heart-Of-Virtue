@@ -230,64 +230,74 @@ def submit_feedback():
             429,
         )
 
-    username = _MARKDOWN_UNSAFE.sub("", getattr(session, "username", "Unknown Player"))
-
-    data = request.get_json(silent=True) or {}
-    if not isinstance(data, dict):
-        data = {}
-    raw_type = data.get("type", "")
-    feedback_type = raw_type.lower() if isinstance(raw_type, str) else ""
-    raw_title = data.get("title") or ""
-    title = raw_title.strip() if isinstance(raw_title, str) else ""
-    anonymous = bool(data.get("anonymous", False))
-    fields = data.get("fields") or {}
-    if not isinstance(fields, dict):
-        fields = {}
-
-    if feedback_type not in ("bug", "feature", "general"):
-        return jsonify({"success": False, "error": "Invalid feedback type"}), 400
-
-    if not title:
-        return jsonify({"success": False, "error": "Title is required"}), 400
-
-    if len(title) > MAX_TITLE_LENGTH:
-        return (
-            jsonify(
-                {
-                    "success": False,
-                    "error": f"Title must be {MAX_TITLE_LENGTH} characters or fewer",
-                }
-            ),
-            400,
+    try:
+        username = _MARKDOWN_UNSAFE.sub(
+            "", getattr(session, "username", "Unknown Player")
         )
 
-    # Truncate oversized text fields to avoid enormous GitHub issues
-    fields = {
-        k: (v[:MAX_FIELD_LENGTH] if isinstance(v, str) else v)
-        for k, v in fields.items()
-    }
+        data = request.get_json(silent=True) or {}
+        if not isinstance(data, dict):
+            data = {}
+        raw_type = data.get("type", "")
+        feedback_type = raw_type.lower() if isinstance(raw_type, str) else ""
+        raw_title = data.get("title") or ""
+        title = raw_title.strip() if isinstance(raw_title, str) else ""
+        anonymous = bool(data.get("anonymous", False))
+        fields = data.get("fields") or {}
+        if not isinstance(fields, dict):
+            fields = {}
 
-    field_type_error = _validate_fields_for_type(feedback_type, fields)
-    if field_type_error:
-        return jsonify({"success": False, "error": field_type_error}), 400
+        if feedback_type not in ("bug", "feature", "general"):
+            return jsonify({"success": False, "error": "Invalid feedback type"}), 400
 
-    attribution = (
-        "Submitted anonymously via in-game feedback"
-        if anonymous
-        else f"Submitted in-game by: **{username}**"
-    )
+        if not title:
+            return jsonify({"success": False, "error": "Title is required"}), 400
 
-    if feedback_type == "bug":
-        body = _build_bug_body(fields, attribution)
-    elif feedback_type == "feature":
-        body = _build_feature_body(fields, attribution)
-    else:
-        body = _build_general_body(fields, attribution)
+        if len(title) > MAX_TITLE_LENGTH:
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "error": f"Title must be {MAX_TITLE_LENGTH} characters or fewer",
+                    }
+                ),
+                400,
+            )
 
-    labels = LABEL_MAP[feedback_type]
-    issue_url, err = _create_github_issue(title, body, labels)
+        # Truncate oversized text fields to avoid enormous GitHub issues
+        fields = {
+            k: (v[:MAX_FIELD_LENGTH] if isinstance(v, str) else v)
+            for k, v in fields.items()
+        }
 
-    if err:
-        return jsonify({"success": False, "error": err}), 503
+        field_type_error = _validate_fields_for_type(feedback_type, fields)
+        if field_type_error:
+            return jsonify({"success": False, "error": field_type_error}), 400
 
-    return jsonify({"success": True, "issue_url": issue_url}), 201
+        attribution = (
+            "Submitted anonymously via in-game feedback"
+            if anonymous
+            else f"Submitted in-game by: **{username}**"
+        )
+
+        if feedback_type == "bug":
+            body = _build_bug_body(fields, attribution)
+        elif feedback_type == "feature":
+            body = _build_feature_body(fields, attribution)
+        else:
+            body = _build_general_body(fields, attribution)
+
+        labels = LABEL_MAP[feedback_type]
+        issue_url, err = _create_github_issue(title, body, labels)
+
+        if err:
+            return jsonify({"success": False, "error": err}), 503
+
+        return jsonify({"success": True, "issue_url": issue_url}), 201
+
+    except Exception:
+        logger.exception("Unhandled error in submit_feedback")
+        return (
+            jsonify({"success": False, "error": "An internal error occurred"}),
+            500,
+        )

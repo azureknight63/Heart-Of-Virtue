@@ -277,23 +277,6 @@ def distance_from_coords(pos1: CombatPosition, pos2: CombatPosition) -> int:
     return int(round(euclidean))
 
 
-def distance_squared(pos1: CombatPosition, pos2: CombatPosition) -> float:
-    """Calculate squared Euclidean distance (faster for comparisons).
-
-    Useful when only comparing distances, not displaying them.
-
-    Args:
-        pos1: First combat position
-        pos2: Second combat position
-
-    Returns:
-        Squared distance (no square root)
-    """
-    dx = pos1.x - pos2.x
-    dy = pos1.y - pos2.y
-    return dx * dx + dy * dy
-
-
 def angle_to_target(from_pos: CombatPosition, to_pos: CombatPosition) -> float:
     """Calculate angle from one position to another (0-360°).
 
@@ -445,8 +428,11 @@ def move_toward(
 ) -> CombatPosition:
     """Move from current position toward target by specified distance.
 
-    Moves in a straight line (8-directional) as close as possible to the
-    target without overshooting. Returns clamped position within grid bounds.
+    Moves along the true bearing to the target (via ``_offset_from_bearing``,
+    the same trig helper ``move_to_flank`` uses) rather than a sign-only
+    per-axis step, so both the travelled distance and the direction of travel
+    are accurate for any angle -- not just the 8 compass bearings. Returns a
+    position clamped within grid bounds.
 
     Args:
         current: Starting position
@@ -461,23 +447,12 @@ def move_toward(
     if current.x == target.x and current.y == target.y:
         return current.copy()  # Already at target
 
-    # Calculate distance to target
-    distance_to_target = distance_from_coords(current, target)
-
     # If we would overshoot, only move close enough to reach the target
+    distance_to_target = distance_from_coords(current, target)
     actual_distance = min(distance, distance_to_target)
 
-    # Calculate direction (normalized to -1, 0, or 1)
-    dx = 0 if current.x == target.x else (1 if target.x > current.x else -1)
-    dy = 0 if current.y == target.y else (1 if target.y > current.y else -1)
-
-    # Move in that direction by the actual distance (capped at distance_to_target)
-    new_x = current.x + (dx * actual_distance)
-    new_y = current.y + (dy * actual_distance)
-
-    # Clamp to grid bounds
-    new_x = max(0, min(max_w, new_x))
-    new_y = max(0, min(max_h, new_y))
+    bearing = angle_to_target(current, target)
+    new_x, new_y = _offset_from_bearing(current, bearing, actual_distance, max_w, max_h)
 
     return CombatPosition(x=new_x, y=new_y, facing=current.facing)
 
@@ -539,6 +514,11 @@ def move_away_from(
 ) -> CombatPosition:
     """Move from current position away from a threat by specified distance.
 
+    Moves along the true bearing directly opposite the threat (via
+    ``_offset_from_bearing``, the same trig helper ``move_to_flank`` uses)
+    rather than a sign-only per-axis step, so the direction of travel is
+    accurate for any angle -- not just the 8 compass bearings.
+
     Args:
         current: Starting position
         threat: Position to move away from
@@ -559,13 +539,9 @@ def move_away_from(
         ]
         return clamp_position(random.choice(directions), max_w, max_h)
 
-    # Calculate direction away from threat (opposite of toward threat)
-    dx = 0 if current.x == threat.x else (1 if current.x > threat.x else -1)
-    dy = 0 if current.y == threat.y else (1 if current.y > threat.y else -1)
-
-    # Move away, clamping the coordinates before creating the position
-    new_x = max(0, min(max_w, current.x + (dx * distance)))
-    new_y = max(0, min(max_h, current.y + (dy * distance)))
+    # Move directly away: the bearing opposite of "toward the threat".
+    bearing_away = (angle_to_target(current, threat) + 180) % 360
+    new_x, new_y = _offset_from_bearing(current, bearing_away, distance, max_w, max_h)
 
     return CombatPosition(x=new_x, y=new_y, facing=current.facing)
 
@@ -1085,7 +1061,6 @@ __all__ = [
     "CombatScenario",
     "COMBAT_SCENARIOS",
     "distance_from_coords",
-    "distance_squared",
     "angle_to_target",
     "attack_angle_difference",
     "get_damage_modifier",

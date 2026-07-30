@@ -191,6 +191,23 @@ class TestNpcAttack:
         assert attack.power == power_before
         assert attack.stage_beat == stage_beat_before
 
+    def test_evaluate_syncs_mvrange_to_combat_range_by_default(self):
+        """Baseline for #349: a plain NpcAttack (custom_mvrange False, the
+        default) should keep tracking self.user.combat_range on every
+        evaluate() call — only subclasses that opt in with
+        custom_mvrange=True are exempt from this sync."""
+        import src.moves as moves
+
+        p = _player()
+        npc = _make_npc()
+        npc.target = p
+        attack = moves.NpcAttack(npc)
+        assert attack.custom_mvrange is False
+        assert attack.mvrange == npc.combat_range
+        npc.combat_range = [5, 9]
+        attack.evaluate()
+        assert attack.mvrange == [5, 9]
+
     def test_execute_hit_scenario(self):
         """Lines 129-167: execute runs the attack flow and applies damage on a
         guaranteed, non-glancing hit."""
@@ -883,6 +900,29 @@ class TestMineralSpit:
         ms.refresh_announcements(npc)
         assert "StoneCreature" in str(ms.stage_announce[0])
 
+    def test_mineral_spit_mvrange_survives_repeated_evaluate(self):
+        """Regression for #349: NpcAttack.evaluate() used to unconditionally
+        reset self.mvrange to self.user.combat_range every beat (Move.advance()
+        calls evaluate() unconditionally each beat), silently clobbering
+        MineralSpit's narrower ranged (1, 3) override back to melee range on
+        the very next beat. custom_mvrange=True must make evaluate() a no-op
+        for mvrange across any number of calls."""
+        import src.moves as moves
+
+        p = _make_player_target()
+        npc = _make_npc()
+        npc.target = p
+        ms = moves.MineralSpit(npc)
+        assert ms.mvrange == (1, 3)
+        assert ms.custom_mvrange is True
+        # Simulate several combat beats' worth of evaluate() calls.
+        for _ in range(5):
+            ms.evaluate()
+        assert ms.mvrange == (1, 3)
+        # Sanity: npc.combat_range is a different range, so a passing test
+        # here can't be an accident of the two ranges matching.
+        assert tuple(npc.combat_range) != ms.mvrange
+
 
 # ---------------------------------------------------------------------------
 # SoulDrain
@@ -1004,6 +1044,23 @@ class TestWailStrike:
         ws.target = p
         ws.refresh_announcements(npc)
         assert "WailWraith" in str(ws.stage_announce[0])
+
+    def test_wail_strike_mvrange_survives_repeated_evaluate(self):
+        """Regression for #349: same mvrange-clobbering defect as MineralSpit
+        (see test_mineral_spit_mvrange_survives_repeated_evaluate) applied to
+        WailStrike's (1, 4) ranged override."""
+        import src.moves as moves
+
+        p = _make_player_target()
+        npc = _make_npc()
+        npc.target = p
+        ws = moves.WailStrike(npc)
+        assert ws.mvrange == (1, 4)
+        assert ws.custom_mvrange is True
+        for _ in range(5):
+            ws.evaluate()
+        assert ws.mvrange == (1, 4)
+        assert tuple(npc.combat_range) != ws.mvrange
 
 
 # ---------------------------------------------------------------------------

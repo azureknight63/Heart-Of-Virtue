@@ -37,10 +37,11 @@ class NPCSerializer:
 
         # Hostility — the real model has no `is_hostile` flag; derive it from
         # `aggro` (will attack on sight) and `friend` (never hostile to Jean).
+        is_friend = bool(getattr(npc, "friend", False))
+        is_aggressive = bool(getattr(npc, "aggro", False))
+        is_hostile = is_aggressive and not is_friend
         if hasattr(npc, "aggro"):
-            npc_data["is_hostile"] = bool(getattr(npc, "aggro", False)) and not getattr(
-                npc, "friend", False
-            )
+            npc_data["is_hostile"] = is_hostile
 
         # Conversation/dialogue
         if hasattr(npc, "idle_message"):
@@ -53,11 +54,10 @@ class NPCSerializer:
         if hasattr(npc, "keywords") and npc.keywords:
             keywords = list(npc.keywords)
 
-        # Add attack keyword for hostile/aggressive NPCs, unless they are friendly
-        is_hostile = getattr(npc, "is_hostile", False)
-        is_aggressive = getattr(npc, "aggro", False)
-        is_friend = getattr(npc, "friend", False)
-        if (is_hostile or is_aggressive) and not is_friend and "attack" not in keywords:
+        # Add attack keyword for hostile NPCs, unless they are friendly. Reuses
+        # the derived hostility above rather than re-reading the nonexistent
+        # `is_hostile` attribute the engine never sets.
+        if is_hostile and "attack" not in keywords:
             keywords.append("attack")
 
         if keywords:

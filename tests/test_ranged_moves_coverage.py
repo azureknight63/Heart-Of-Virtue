@@ -1663,3 +1663,45 @@ class TestPinningBoltExecuteRealPath:
         mock_hit.assert_called_once()
         assert enemy.states.append_attempts == 1
         mock_cprint.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Regression: ranged moves must not collapse to melee range (issue #415)
+# ---------------------------------------------------------------------------
+
+
+class TestRangedMovesDoNotUseWpnrange:
+    """AimedShot and BroadheadBolt used to overwrite ``mvrange`` with the
+    weapon's ``wpnrange`` — which every Weapon carries with the melee-swing
+    default ``(0, 5)`` and no bow/crossbow overrides. That collapsed two
+    purchasable ranged skills to melee distance. Both now derive their reach
+    from ``range_base``/``range_decay``, exactly like ShootCrossbow.
+    """
+
+    @pytest.mark.parametrize("cls", [AimedShot, BroadheadBolt, ShootCrossbow, PinningBolt])
+    def test_mvrange_ignores_melee_wpnrange(self, cls):
+        user = _make_crossbow_user()
+        user.eq_weapon.wpnrange = (0, 5)  # the real Weapon constructor default
+        move = cls(user)
+        assert move.mvrange == (6, 40)
+
+    @pytest.mark.parametrize("cls", [AimedShot, BroadheadBolt, ShootCrossbow, PinningBolt])
+    def test_effective_range_matches_weapon_range_base_and_decay(self, cls):
+        user = _make_crossbow_user()
+        move = cls(user)
+        assert move.base_range == 15
+        assert move.get_effective_range_max(user) == pytest.approx(15 + (100 / 0.06))
+
+    @pytest.mark.parametrize("cls", [AimedShot, BroadheadBolt])
+    def test_viable_at_real_crossbow_range(self, cls):
+        user = _make_crossbow_user()
+        enemy = _make_enemy()
+        user.combat_proximity = {enemy: 30}
+        assert cls(user).viable() is True
+
+    def test_real_crossbow_item_keeps_melee_wpnrange(self):
+        """Guards the premise of #415: the shipped Crossbow really does leave
+        wpnrange at the melee default, so reading it would be a silent bug."""
+        crossbow = items.Crossbow()
+        assert crossbow.wpnrange == (0, 5)
+        assert crossbow.range_base > 5

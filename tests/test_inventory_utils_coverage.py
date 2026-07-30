@@ -315,3 +315,88 @@ class TestTransferItemGuards:
         assert item in target.inventory
         source.refresh_weight.assert_called_once()
         target.refresh_weight.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# _set_merch_flag — merchant detection (issue #442)
+# ---------------------------------------------------------------------------
+
+
+class TestMerchantDetection:
+    """`is_merchant()` must key off `shop_name`, the attribute merchants really
+    have. It used to test for a `.shop` attribute that no engine object defines,
+    so selling to a merchant on a map whose name lacks "shop" left the item
+    unflagged — a ghost occupying a stock slot the shop could never display
+    (issue #442)."""
+
+    def _merchant(self, name="Jambo"):
+        from src.npc import Merchant
+
+        return Merchant(
+            name=name,
+            description="A merchant.",
+            damage=1,
+            aggro=False,
+            exp_award=0,
+            stock_count=5,
+        )
+
+    def test_selling_to_merchant_on_non_shop_map_marks_merchandise(self):
+        merchant = self._merchant()
+        # Precondition: a real Merchant is identified by shop_name, and is not
+        # mistaken for a merchant-owned container.
+        assert hasattr(merchant, "shop_name")
+        assert not hasattr(merchant, "merchant")
+
+        source = _PlainInventoryHolder(name="Jean")
+        # Map name deliberately lacks "shop" so the filename heuristic cannot
+        # rescue the flag — only is_merchant() can set it.
+        source.map = {"name": "eastern-descent-jambos-tent"}
+        item = Restorative(count=1, merchandise=False)
+        source.inventory = [item]
+
+        transfer_item(source, merchant, item, qty=1)
+
+        assert item in merchant.inventory
+        assert item.merchandise is True
+
+    def test_buying_from_merchant_clears_merchandise(self):
+        merchant = self._merchant()
+        item = Restorative(count=1, merchandise=True)
+        merchant.inventory = [item]
+        target = _PlainInventoryHolder(name="Jean")
+        target.map = {"name": "eastern-descent-jambos-tent"}
+
+        transfer_item(merchant, target, item, qty=1)
+
+        assert item in target.inventory
+        assert item.merchandise is False
+
+    def test_split_stack_sold_to_merchant_marks_merchandise(self):
+        """The split-stack path flags the newly created object, not the source."""
+        merchant = self._merchant()
+        source = _PlainInventoryHolder(name="Jean")
+        source.map = {"name": "eastern-descent-jambos-tent"}
+        item = Restorative(count=5, merchandise=False)
+        source.inventory = [item]
+
+        transfer_item(source, merchant, item, qty=2)
+
+        transferred = merchant.inventory[0]
+        assert transferred is not item
+        assert transferred.count == 2
+        assert transferred.merchandise is True
+        assert item.merchandise is False
+
+    def test_legacy_shop_attribute_alone_does_not_make_a_merchant(self):
+        """Guards the regression: `.shop` is not a merchant marker."""
+        pseudo_merchant = _PlainInventoryHolder()
+        pseudo_merchant.shop = object()
+        source = _PlainInventoryHolder(name="Jean")
+        source.map = {"name": "eastern-descent-jambos-tent"}
+        item = Restorative(count=1, merchandise=False)
+        source.inventory = [item]
+
+        transfer_item(source, pseudo_merchant, item, qty=1)
+
+        assert item.merchandise is False

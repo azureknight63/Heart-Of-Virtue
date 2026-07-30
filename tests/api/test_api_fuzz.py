@@ -38,6 +38,14 @@ def test_api_fuzz_no_5xx_or_leak(seed):
     assert not security, "\n".join(str(f) for f in security)
 
 
+def test_field_pool_includes_action():
+    """Regression for #399: /world/interact's ``action`` field wasn't in the
+    fuzzer's field pool, so malformed-``action`` payloads were never
+    generated and the non-string-action 500 went uncaught by fuzzing.
+    """
+    assert "action" in fuzzer._FIELD_POOL
+
+
 def test_malformed_bodies_are_4xx_not_5xx():
     """A handful of previously-crashing shapes now return a structured 4xx."""
     from src.api.app import create_app

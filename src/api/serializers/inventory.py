@@ -64,6 +64,20 @@ _BONUS_ATTRS = {
 # single "slot counterpart" to compare against.
 _MULTI_EQUIP_ACCESSORY_SUBTYPES = ["Ring", "Bracelet", "Earring"]
 
+# Maps an item's real `maintype` (items.py) to the equipment-slot name exposed
+# by the API. The engine has no per-slot player attributes: equipping flips
+# `item.isequipped` on the inventory item (plus `player.eq_weapon` for
+# weapons), so slots are derived by bucketing equipped inventory items.
+# "Accessory" is deliberately absent — accessories are multi-equip and get
+# numbered `accessory_N` slots instead (see `_collect_equipped_items`).
+_MAINTYPE_TO_SLOT = {
+    "Weapon": "weapon",
+    "Armor": "body",
+    "Helm": "head",
+    "Gloves": "hands",
+    "Boots": "feet",
+}
+
 
 def _collect_item_bonuses(item) -> Dict:
     """Collect non-zero scalar stat bonuses an item grants, keyed by stat label."""
@@ -72,6 +86,48 @@ def _collect_item_bonuses(item) -> Dict:
         for attr, label in _BONUS_ATTRS.items()
         if getattr(item, attr, 0)
     }
+
+
+def is_equippable(item) -> bool:
+    """True if `item` is a piece of equipment.
+
+    ``hasattr(item, "equip")`` is *not* a valid test: `equip`/`unequip` are
+    defined on the base `Item` class, so every potion, key and gold pouch
+    answers True. The engine's own equip path keys off `isequipped`, which
+    only equippable subclasses (Weapon, ProtectiveGear, Accessory) define.
+    """
+    return hasattr(item, "isequipped")
+
+
+def _collect_equipped_items(player) -> Dict:
+    """Map slot name → equipped item, derived from the real engine model.
+
+    Filters the inventory for `isequipped` items and buckets them by
+    `maintype`. Accessories are multi-equip, so they occupy numbered
+    `accessory_1`, `accessory_2`, … slots in inventory order. The weapon slot
+    falls back to `player.eq_weapon` because the default unarmed `Fists` are
+    held on the player rather than in the inventory.
+    """
+    equipped = {}
+    accessory_count = 0
+    for item in get_inventory_list(player):
+        if not getattr(item, "isequipped", False):
+            continue
+        maintype = getattr(item, "maintype", None)
+        slot = _MAINTYPE_TO_SLOT.get(maintype)
+        if slot is None:
+            if maintype != "Accessory":
+                continue
+            accessory_count += 1
+            slot = "accessory_{}".format(accessory_count)
+        equipped[slot] = item
+
+    if "weapon" not in equipped:
+        weapon = getattr(player, "eq_weapon", None)
+        if weapon is not None:
+            equipped["weapon"] = weapon
+
+    return equipped
 
 
 def _get_equip_slot_status(player, item):
@@ -276,10 +332,11 @@ class EquipmentSlotSerializer:
                 "slot": slot_name,
                 "equipped": False,
                 "item_name": None,
-                "armor": 0,
+                "protection": 0,
                 "damage": 0,
                 "stat_bonuses": {},
                 "resistance_bonuses": {},
+                "status_resistance_bonuses": {},
             }
 
         return {
@@ -287,12 +344,19 @@ class EquipmentSlotSerializer:
             "equipped": True,
             "item_name": getattr(item, "name", "Unknown"),
             "item_type": item.__class__.__name__,
-            "armor": round(getattr(item, "armor", 0)),
+            # Real armour stat is `protection` (items.ProtectiveGear /
+            # Accessory); there is no `armor` attribute on any engine item.
+            "protection": round(getattr(item, "protection", 0)),
             "damage": round(getattr(item, "damage", 0)),
             "weight": getattr(item, "weight", 0.0),
             "value": getattr(item, "value", 0),
-            "stat_bonuses": getattr(item, "stat_bonuses", {}),
-            "resistance_bonuses": getattr(item, "resistance_bonuses", {}),
+            # Bonuses live on `add_*` attributes (enchantments), not on a
+            # `stat_bonuses`/`resistance_bonuses` dict.
+            "stat_bonuses": _collect_item_bonuses(item),
+            "resistance_bonuses": dict(getattr(item, "add_resistance", None) or {}),
+            "status_resistance_bonuses": dict(
+                getattr(item, "add_status_resistance", None) or {}
+            ),
             "rarity": getattr(item, "rarity", "common"),
         }
 
@@ -311,69 +375,26 @@ class EquipmentSerializer:
         Returns:
             Dictionary with all equipment slots and calculated bonuses
         """
+        equipment_dict = _collect_equipped_items(player)
+
         equipped = {}
-        total_bonuses = {
-            "attack": 0,
-            "defense": 0,
-            "magic_attack": 0,
-            "magic_defense": 0,
-            "speed": 0,
-            "accuracy": 0,
-            "evasion": 0,
-            "crit_chance": 0,
-        }
+        # Keyed by real player-stat label (see _BONUS_ATTRS); starts empty
+        # because the set of stats an item can boost is data-driven.
+        total_bonuses: Dict[str, float] = {}
+        equipment_value = 0
 
-        # Get equipped items from player (handle both equipped and equipment attributes)
-        equipment_dict = getattr(player, "equipped", None) or getattr(
-            player, "equipment", {}
-        )
-
-        # Fallback: check individual attributes if dict is empty
-        if not equipment_dict:
-            slot_mapping = {
-                "weapon": "eq_weapon",
-                "shield": "shield",
-                "head": "head",
-                "body": "body",
-                "legs": "legs",
-                "feet": "feet",
-                "hands": "hands",
-                "accessory_1": "accessory_1",
-                "accessory_2": "accessory_2",
-            }
-            equipment_dict = {}
-            for slot, attr in slot_mapping.items():
-                item = getattr(player, attr, None)
-                if item:
-                    # Only include if specifically marked as equipped, or if it's a weapon (always have a weapon)
-                    # Use isequipped flag to distinguish real equipped items from defaults if needed
-                    if getattr(item, "isequipped", False) or (
-                        slot == "weapon" and item
-                    ):
-                        equipment_dict[slot] = item
-
-        if equipment_dict:
-            for slot_name, item in equipment_dict.items():
-                equipped[slot_name] = EquipmentSlotSerializer.serialize(slot_name, item)
-
-                # Accumulate bonuses
-                if item and hasattr(item, "stat_bonuses"):
-                    for stat, bonus in item.stat_bonuses.items():
-                        if stat in total_bonuses:
-                            total_bonuses[stat] += bonus
+        for slot_name, item in equipment_dict.items():
+            equipped[slot_name] = EquipmentSlotSerializer.serialize(slot_name, item)
+            equipment_value += getattr(item, "value", 0)
+            for stat, bonus in _collect_item_bonuses(item).items():
+                total_bonuses[stat] = total_bonuses.get(stat, 0) + bonus
 
         # Count unequipped equippable items (handle both inventory_list and inventory)
-        unequipped_equippable = 0
-        inventory_list = get_inventory_list(player)
-        for item in inventory_list:
-            if hasattr(item, "equip") and not getattr(item, "equipped_state", False):
-                unequipped_equippable += 1
-
-        # Calculate equipment value
-        equipment_value = 0
-        for item in equipment_dict.values() if equipment_dict else []:
-            if item:
-                equipment_value += getattr(item, "value", 0)
+        unequipped_equippable = sum(
+            1
+            for item in get_inventory_list(player)
+            if is_equippable(item) and not getattr(item, "isequipped", False)
+        )
 
         return {
             "equipped": equipped,
@@ -413,7 +434,11 @@ class ItemDetailSerializer:
             "value": getattr(item, "value", 0),
             "equipped": equipped,
             "inventory_index": inventory_index,
-            "can_equip": hasattr(item, "equip"),
+            # `hasattr(item, "equip")` is True for every item — `equip` lives on
+            # the base `Item` class — so it offered an Equip button on potions
+            # and gold. `is_equippable` keys off `isequipped` instead, the same
+            # flag the engine's equip path uses (see its docstring).
+            "can_equip": is_equippable(item),
             "can_use": hasattr(item, "use"),
             "can_drop": True,  # Most items can be dropped
             "stats": {
@@ -424,9 +449,13 @@ class ItemDetailSerializer:
                 "accuracy": getattr(item, "accuracy", 0),
                 "evasion": getattr(item, "evasion", 0),
             },
+            # Bonuses live on scalar `add_*` attributes and the
+            # `add_resistance` dict (enchantments); no engine item has a
+            # `stat_bonuses`/`resistance_bonuses` mapping, so both blocks used
+            # to be permanently empty.
             "bonuses": {
-                "stat_bonuses": getattr(item, "stat_bonuses", {}),
-                "resistance_bonuses": getattr(item, "resistance_bonuses", {}),
+                "stat_bonuses": _collect_item_bonuses(item),
+                "resistance_bonuses": dict(getattr(item, "add_resistance", None) or {}),
             },
             "flags": {
                 "merchandise": getattr(item, "merchandise", False),

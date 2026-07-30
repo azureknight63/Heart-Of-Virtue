@@ -13,6 +13,11 @@ from ._base import Move  # noqa: F401
 
 class NpcAttack(Move):  # basic attack function, NPCs only
     web_animation = "attack"
+    # Subclasses that declare their own mvrange in __init__ (e.g. ranged
+    # attacks like MineralSpit/WailStrike) must set this True so evaluate()
+    # stops clobbering it back to the NPC's generic melee range every beat
+    # (Move.advance() calls evaluate() unconditionally each beat — see #349).
+    custom_mvrange = False
 
     def __init__(self, npc):
         description = ""
@@ -113,7 +118,8 @@ class NpcAttack(Move):  # basic attack function, NPCs only
         self.stage_beat[2] = recoil
         self.stage_beat[3] = cooldown
         self.fatigue_cost = fatigue_cost
-        self.mvrange = self.user.combat_range
+        if not self.custom_mvrange:
+            self.mvrange = self.user.combat_range
 
     def refresh_announcements(self, npc):
         self.stage_announce = [
@@ -968,6 +974,8 @@ class MineralSpit(NpcAttack):
         super().__init__(npc)
         self.name = "Mineral Spit"
         self.mvrange = (1, 3)
+        # Preserve this ranged mvrange across per-beat evaluate() calls (#349).
+        self.custom_mvrange = True
 
     def _prep_text(self, npc):
         return f"{npc.name} gurgles, mineral slurry building in its mass."
@@ -1091,6 +1099,8 @@ class WailStrike(NpcAttack):
         super().__init__(npc)
         self.name = "Wail Strike"
         self.mvrange = (1, 4)
+        # Preserve this ranged mvrange across per-beat evaluate() calls (#349).
+        self.custom_mvrange = True
 
     def refresh_announcements(self, npc):
         target_name = self.target.name if self.target else "its target"

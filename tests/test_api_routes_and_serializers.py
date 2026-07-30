@@ -834,6 +834,29 @@ class TestFeedbackRoute:
         data = rv.get_json()
         assert data["success"] is False
 
+    def test_unexpected_exception_returns_500_not_raised(self, client):
+        # Regression for #428: submit_feedback previously had no local
+        # try/except (unlike every route in combat.py), so any unexpected
+        # exception past validation would propagate to Flask's generic
+        # handler instead of a controlled 500 with logging.
+        c, _ = client
+        with patch(
+            "src.api.routes.feedback._build_bug_body",
+            side_effect=RuntimeError("boom"),
+        ):
+            rv = c.post(
+                "/api/feedback/issue",
+                json={
+                    "type": "bug",
+                    "title": "Trigger internal error",
+                    "fields": {"steps": "do a thing"},
+                },
+                headers=AUTH_HEADER,
+            )
+        assert rv.status_code == 500
+        data = rv.get_json()
+        assert data["success"] is False
+
     def test_general_dict_ratings_still_succeeds(self, client):
         import os
 
@@ -1535,3 +1558,52 @@ class TestMigrations:
             await init_db()
 
         mock_db.close.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_init_db_backfill_genuine_failure_is_logged(self):
+        """Regression for #407: a genuine backfill failure (not a
+        duplicate-column/already-exists error) must not be silently
+        swallowed — it should be logged at error level so it doesn't only
+        resurface later as an opaque 500 in the saves routes.
+        """
+        from unittest.mock import AsyncMock
+
+        mock_db = MagicMock()
+        mock_db.batch = AsyncMock(return_value=None)
+        mock_db.execute = AsyncMock(side_effect=Exception("permission denied"))
+        mock_db.close = AsyncMock(return_value=None)
+
+        with patch("src.api.migrations.db", mock_db):
+            with patch("src.api.migrations.logger") as mock_logger:
+                from src.api.migrations import init_db
+
+                # Should not raise
+                await init_db()
+
+        mock_db.close.assert_called_once()
+        assert mock_logger.error.called
+        # Every backfill statement fails with the same genuine error, so
+        # logger.error should be called once per backfill statement (5).
+        assert mock_logger.error.call_count == 5
+
+    @pytest.mark.asyncio
+    async def test_init_db_backfill_already_exists_variant_swallowed(self):
+        """The "already exists" phrasing (in addition to "duplicate column")
+        must also be treated as the expected pre-existing-column case, not
+        logged as an error.
+        """
+        from unittest.mock import AsyncMock
+
+        mock_db = MagicMock()
+        mock_db.batch = AsyncMock(return_value=None)
+        mock_db.execute = AsyncMock(side_effect=Exception("column already exists"))
+        mock_db.close = AsyncMock(return_value=None)
+
+        with patch("src.api.migrations.db", mock_db):
+            with patch("src.api.migrations.logger") as mock_logger:
+                from src.api.migrations import init_db
+
+                await init_db()
+
+        mock_db.close.assert_called_once()
+        assert not mock_logger.error.called

@@ -104,7 +104,9 @@ class Lurker(NPC):
         self.can_yield = False
         self.loot = loot.lev1
         self.resistance_base["dark"] = 0.5
-        self.resistance_base["fire"] = -0.5
+        # Vulnerable to fire (heat/light weaken it) — >1 means increased damage taken;
+        # a negative value here would mean fire damage *heals* it, the opposite of intent.
+        self.resistance_base["fire"] = 1.5
         self.resistance_base["light"] = 2.0
         self.status_resistance_base["death"] = 1
         self.status_resistance_base["doom"] = 1
@@ -136,7 +138,9 @@ class GiantSpider(NPC):
             aggro=True,
             exp_award=120,
         )
-        self.resistance_base["fire"] = -0.5
+        # Vulnerable to fire (heat/flames damage the creature) — >1 means increased
+        # damage taken; a negative value here would mean fire damage *heals* it.
+        self.resistance_base["fire"] = 1.5
         self.status_resistance_base["poison"] = 1
         self.add_move(moves.NpcAttack(self), 3)
         self.add_move(moves.SpiderBite(self), 6)

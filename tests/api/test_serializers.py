@@ -11,7 +11,9 @@ class MockItem:
     def __init__(self):
         self.name = "Test Item"
         self.description = "A test item"
-        self.quantity = 1
+        # Real engine Items (src/items.py) carry `count`; `quantity` was never
+        # set by anything and its serializer branch was removed as dead code.
+        self.count = 1
         self.rarity = "common"
         self.weight = 5
         self.value = 100
@@ -20,17 +22,22 @@ class MockItem:
 
 
 class MockNPC:
-    """Mock NPC for testing."""
+    """Mock NPC for testing.
 
-    def __init__(self):
+    Mirrors the real engine NPC (src/npc/_base.py): current HP is ``hp`` (not
+    ``current_hp``/``health``), max HP is ``maxhp``, and there is no
+    ``is_hostile`` flag — hostility is derived from ``aggro``/``friend``
+    (issue #432).
+    """
+
+    def __init__(self, aggro=False, friend=False):
         self.name = "Test NPC"
         self.description = "A test NPC"
         self.level = 5
-        self.health = 50
-        self.max_health = 100
-        self.is_hostile = False
-        self.faction = "neutral"
-        self.is_merchant = False
+        self.hp = 50
+        self.maxhp = 100
+        self.aggro = aggro
+        self.friend = friend
 
 
 class MockObject:
@@ -58,8 +65,9 @@ class TestItemSerializer:
         assert result["name"] == "Test Item"
         assert result["type"] == "MockItem"
         assert result["description"] == "A test item"
-        assert result["quantity"] == 1
-        assert result["rarity"] == "common"
+        assert result["count"] == 1
+        # `rarity` is not part of the serializer's contract — it reads only
+        # attributes the real Item model defines.
         assert result["weight"] == 5
         assert result["value"] == 100
 
@@ -102,12 +110,19 @@ class TestNPCSerializer:
         assert all(r["name"] == "Test NPC" for r in result)
 
     def test_serialize_hostile_npc(self):
-        """Test serializing a hostile NPC."""
-        npc = MockNPC()
-        npc.is_hostile = True
+        """Hostility is derived from the real `aggro`/`friend` flags."""
+        npc = MockNPC(aggro=True)
         result = NPCSerializer.serialize(npc)
 
         assert result["is_hostile"] is True
+        assert "attack" in result["keywords"]
+
+    def test_serialize_friendly_aggro_npc_is_not_hostile(self):
+        """An allied NPC is never hostile to Jean, even with aggro set."""
+        npc = MockNPC(aggro=True, friend=True)
+        result = NPCSerializer.serialize(npc)
+
+        assert result["is_hostile"] is False
 
 
 class TestObjectSerializer:
@@ -132,11 +147,22 @@ class TestObjectSerializer:
         assert all(r["name"] == "Test Object" for r in result)
 
     def test_serialize_container_object(self):
-        """Test serializing a container object."""
-        obj = MockObject()
-        obj.is_container = True
-        obj.is_open = True
+        """Test serializing a container object.
+
+        ObjectSerializer dispatches on `isinstance(obj, Container)`, so this must
+        use a real Container — a duck-typed mock with `is_container = True` never
+        reaches the container branch and silently serializes as a plain object.
+        """
+        from src.objects import Container
+
+        obj = Container.__new__(Container)
+        obj.name = "Test Chest"
+        obj.description = "A test container"
+        obj.inventory = []
+        obj.aliases = []
+        obj.action_aliases = []
+        obj.is_locked = False
+        obj.state = "opened"
         result = ObjectSerializer.serialize(obj)
 
         assert result["is_container"] is True
-        assert result["is_open"] is True

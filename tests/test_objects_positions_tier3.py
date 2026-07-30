@@ -46,7 +46,6 @@ from src.positions import (
     CombatScenario,
     COMBAT_SCENARIOS,
     distance_from_coords,
-    distance_squared,
     angle_to_target,
     attack_angle_difference,
     get_damage_modifier,
@@ -979,18 +978,6 @@ class TestDistanceFunctions:
         # 3-4-5 triangle
         assert distance_from_coords(pos1, pos2) == 5
 
-    def test_distance_squared_same(self):
-        """Test squared distance between same position."""
-        pos = CombatPosition(x=10, y=10)
-        assert distance_squared(pos, pos) == 0
-
-    def test_distance_squared_3_4_5(self):
-        """Test squared distance for 3-4-5 triangle."""
-        pos1 = CombatPosition(x=0, y=0)
-        pos2 = CombatPosition(x=3, y=4)
-        assert distance_squared(pos1, pos2) == 25
-
-
 class TestAngleFunctions:
     """Test suite for angle calculation functions."""
 
@@ -1196,12 +1183,26 @@ class TestMoveToward:
         assert new_pos.y == 5
 
     def test_move_toward_diagonal(self):
-        """Test moving diagonally toward target."""
+        """Test moving diagonally toward target.
+
+        Regression test for issue #393: the old sign-only per-axis
+        implementation applied the full requested distance independently to
+        both x and y, so a "distance=5" move landed at (5, 5) -- an actual
+        travelled distance of sqrt(50) ≈ 7.07, a ~41% overshoot. The
+        trig-based fix (shared with ``move_to_flank`` via
+        ``_offset_from_bearing``) steps `distance` grid squares along the
+        true 45° bearing instead, landing at (4, 4) (~5.66 travelled --
+        the closest an integer grid point can get to an exact 5-unit step).
+        """
         current = CombatPosition(x=0, y=0)
         target = CombatPosition(x=10, y=10)
         new_pos = move_toward(current, target, 5)
-        assert new_pos.x == 5
-        assert new_pos.y == 5
+        assert new_pos.x == 4
+        assert new_pos.y == 4
+        # Actual distance travelled should be close to the requested 5, not
+        # the old bug's sqrt(50) ≈ 7.07 (a 41% overshoot).
+        travelled = distance_from_coords(current, new_pos)
+        assert travelled <= 6, f"Overshot requested distance: travelled {travelled}"
 
     def test_move_toward_already_at_target(self):
         """Test moving when already at target."""

@@ -14,6 +14,7 @@ from typing import (
     Any,
     Dict,
     List,
+    Set,
     Tuple,
     Optional,
     cast,
@@ -2340,63 +2341,93 @@ class TagListFrame(tk.Frame):
 
 def _get_module_paths_for_class(class_name: str) -> List[str]:
     """
-    Returns absolute file paths for modules that define the requested class or
-    any transitive subclass of it.
+    Returns a list of absolute file paths for all modules in src/ that define
+    the given class or any *transitive* descendant of it (not just direct
+    subclasses).
 
-    The chooser parses the returned modules into one combined hierarchy later,
-    so this helper must include intermediate inheritance branches as well as
-    direct subclasses. For example, Friend is an NPC subclass defined in
-    _base.py, while concrete Friend NPCs live in _friends.py and inherit from
-    Friend rather than NPC directly.
+    A naive single-pass AST scan only catches classes whose bases literally
+    name `class_name` (e.g. `Merchant(NPC, ...)`). That misses descendants
+    reached through an intermediate class -- e.g. concrete Friend NPCs in
+    `src/npc/_friends.py` inherit from `Friend` (defined in
+    `src/npc/_base.py`), not from `NPC` directly, so a direct-base-only scan
+    silently omits `_friends.py` for an `NPC` query (issue #462).
+
+    To fix this we first build a whole-tree map of every class name to its
+    immediate base names and defining file(s), then run a fixpoint over that
+    graph: start with `{class_name}` and repeatedly add any class whose base
+    set intersects the current matched set, until a pass adds nothing new.
+    Because `matched` only ever grows and the class universe is finite, this
+    always terminates -- including in the presence of inheritance cycles
+    (which shouldn't exist in valid Python but a bug/typo elsewhere shouldn't
+    turn into an infinite loop here).
+
+    Aliased imports (`from ._base import Friend as FriendBase`) are also
+    resolved on a best-effort basis: `import`/`from...import` aliases are
+    collected across the tree and each class's base-name set is expanded to
+    include the alias's original name, so a base referenced only by its
+    alias still matches during the fixpoint.
     """
     this_project_root = os.path.dirname(os.path.dirname(__file__))
     src_dir = os.path.join(this_project_root, "src")
-    module_classes = []
-    result_paths = set()
 
-    # Parse every module once and retain its class/base relationships. A
-    # single pass that only compares bases to class_name misses descendants
-    # behind intermediate classes such as NPC -> Friend -> Gorran.
+    # name -> set of immediate base names (by their local, possibly-aliased
+    # spelling in that file)
+    class_bases: Dict[str, Set[str]] = {}
+    # name -> set of absolute file paths where a class of that name is defined
+    class_files: Dict[str, Set[str]] = {}
+    # local alias name -> original imported name (e.g. "FriendBase" -> "Friend")
+    alias_to_real: Dict[str, str] = {}
+
     for dirpath, dirnames, filenames in os.walk(src_dir):
         for filename in filenames:
-            if filename.endswith(".py") and not filename.startswith("__"):
-                file_path = os.path.join(dirpath, filename)
-                try:
-                    with open(file_path, "r", encoding="utf-8") as f:
-                        src = f.read()
-                    tree = ast.parse(src)
-                    classes = []
-                    for node in ast.walk(tree):
-                        if isinstance(node, ast.ClassDef):
-                            base_names = []
-                            for base in node.bases:
-                                if isinstance(base, ast.Name):
-                                    base_names.append(base.id)
-                                elif isinstance(base, ast.Attribute):
-                                    base_names.append(base.attr)
-                            classes.append((node.name, base_names))
-                    if classes:
-                        module_classes.append((file_path, classes))
-                except Exception:
-                    continue  # Ignore parse errors
+            if not (filename.endswith(".py") and not filename.startswith("__")):
+                continue
+            file_path = os.path.join(dirpath, filename)
+            try:
+                with open(file_path, "r", encoding="utf-8") as f:
+                    src = f.read()
+                tree = ast.parse(src)
+            except Exception:
+                continue  # Ignore parse errors
 
-    # Expand the known class set until no new class is discovered. This keeps
-    # the helper independent of source-file traversal order and supports
-    # arbitrarily deep inheritance chains.
-    known_classes = {class_name}
+            for node in ast.walk(tree):
+                if isinstance(node, (ast.Import, ast.ImportFrom)):
+                    for alias in node.names:
+                        if alias.asname:
+                            alias_to_real[alias.asname] = alias.name
+                elif isinstance(node, ast.ClassDef):
+                    bases: Set[str] = set()
+                    for base in node.bases:
+                        if isinstance(base, ast.Name):
+                            bases.add(base.id)
+                        elif isinstance(base, ast.Attribute):
+                            bases.add(base.attr)
+                    class_bases.setdefault(node.name, set()).update(bases)
+                    class_files.setdefault(node.name, set()).add(file_path)
+
+    # Resolve aliased bases to their original name so the fixpoint below can
+    # match through an alias (e.g. `class Foo(FriendBase)` where
+    # `FriendBase` is `Friend` imported under an alias).
+    for name, bases in class_bases.items():
+        aliased = {alias_to_real[b] for b in bases if b in alias_to_real}
+        if aliased:
+            class_bases[name] = bases | aliased
+
+    # Fixpoint: grow the matched set until a full pass adds nothing new.
+    matched: Set[str] = {class_name}
     changed = True
     while changed:
         changed = False
-        for file_path, classes in module_classes:
-            for defined_name, base_names in classes:
-                if defined_name in known_classes or any(
-                    base_name in known_classes for base_name in base_names
-                ):
-                    result_paths.add(file_path)
-                    if defined_name not in known_classes:
-                        known_classes.add(defined_name)
-                        changed = True
+        for name, bases in class_bases.items():
+            if name in matched:
+                continue
+            if bases & matched:
+                matched.add(name)
+                changed = True
 
+    result_paths: Set[str] = set()
+    for name in matched:
+        result_paths.update(class_files.get(name, ()))
     return list(result_paths)
 
 
