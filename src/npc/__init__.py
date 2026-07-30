@@ -98,9 +98,9 @@ __all__ = [
     # Arena testing NPC
     "TheAdjutant",
     # Eastern Descent — nomad camp NPCs
-        "NomadCamper",
-        "NomadScout",
-        "NomadTrader",
-        "NomadBoy",
-        "NomadGirl",
-    ]
+    "NomadCamper",
+    "NomadScout",
+    "NomadTrader",
+    "NomadBoy",
+    "NomadGirl",
+]

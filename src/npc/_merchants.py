@@ -8,6 +8,8 @@ merchant subclasses with their own inventories and shop personalities.
 
 from pathlib import Path
 
+import random
+
 import src.functions as functions  # type: ignore
 from src.items import (  # type: ignore
     Item,
@@ -383,4 +385,3 @@ class Vespera(ConversationalNPCMixin, Merchant):
             "harness oiled before crossing.'",
         ]
         narrate(random.choice(lines))
-

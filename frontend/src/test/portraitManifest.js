@@ -23,7 +23,7 @@ export function scanPortraitManifest() {
             .filter((f) => {
                 if (!f.endsWith('.png')) return false
                 const base = f.replace(/\.png$/, '')
-                if (base.endsWith('_collection') || base.endsWith('_source')) return false
+                if (base.endsWith('_collection') || base.endsWith('_source') || base.endsWith('_base')) return false
                 // Bare source portrait named after the character (any separator).
                 if (base.replace(/[_-]+/g, '') === slug) return false
                 return true

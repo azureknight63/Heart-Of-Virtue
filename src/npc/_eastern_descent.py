@@ -13,6 +13,7 @@ import random
 from ._base import Friend
 from ._chat_llm import ConversationalNPCMixin
 from src.narration import narrate
+import src.moves as moves
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Eastern Descent — Nomad Camp NPCs

@@ -32,6 +32,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from ._llm import _load_llm_client_module
+from src.narration import narrate
 
 logger = logging.getLogger(__name__)
 
@@ -1198,4 +1199,3 @@ class ConversationalNPCMixin:
         pool = _JEAN_FALLBACK_POOL[self._chat_fallback_idx % len(_JEAN_FALLBACK_POOL)]
         self._chat_fallback_idx += 1
         return pool
-
