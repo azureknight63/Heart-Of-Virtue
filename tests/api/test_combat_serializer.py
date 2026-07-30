@@ -28,6 +28,54 @@ except ImportError:
     SERIALIZERS_AVAILABLE = False
 
 
+class FakeCombatant:
+    """Stand-in for a Player/NPC using only attributes the engine really defines.
+
+    Player/NPC/Combatant have no ``armor``/``defense``/``evasion``/``accuracy``/
+    ``attack_power`` attributes, no ``equipped`` dict and no plural
+    ``resistances`` (issue #430) — the serializer derives combat stats from
+    ``protection``/``finesse``/``intelligence``/``eq_weapon`` and reads the
+    singular ``resistance`` dict. Mocks that hand-set the old names are exactly
+    why the always-default bug shipped, so this fake deliberately omits them.
+    """
+
+    def __init__(
+        self,
+        name="Goblin",
+        level=5,
+        hp=20,
+        maxhp=30,
+        damage=8,
+        protection=1,
+        speed=5,
+        finesse=10,
+        intelligence=10,
+        strength=10,
+        endurance=10,
+        combat_proximity=1,
+        resistance=None,
+        inventory=None,
+        eq_weapon=None,
+    ):
+        self.name = name
+        self.level = level
+        self.hp = hp
+        self.maxhp = maxhp
+        self.damage = damage
+        self.protection = protection
+        self.speed = speed
+        self.finesse = finesse
+        self.intelligence = intelligence
+        self.strength = strength
+        self.endurance = endurance
+        self.combat_proximity = combat_proximity
+        self.resistance = {} if resistance is None else resistance
+        self.inventory = [] if inventory is None else inventory
+        self.states = []
+        if eq_weapon is not None:
+            self.eq_weapon = eq_weapon
+
+
 @pytest.mark.skipif(
     not SERIALIZERS_AVAILABLE, reason="Combat serializers not available"
 )
@@ -36,39 +84,17 @@ class TestCombatStateSerializer:
 
     def test_serialize_combat_state_basic(self):
         """Test basic combat state serialization."""
-        # Mock player and enemies
-        class MockPlayer:
-            name = "Jean"
-            level = 10
-            health = 80
-            max_health = 100
-            damage = 15
-            armor = 5
-            speed = 10
-            accuracy = 85
-            evasion = 5
-            states = []
-            equipped = {"weapon": None, "body": None}
-            resistances = {"fire": 1.0, "ice": 1.0}
-            combat_proximity = 0
-
-        class MockEnemy:
-            name = "Goblin"
-            level = 5
-            health = 20
-            max_health = 30
-            damage = 8
-            armor = 1
-            speed = 5
-            accuracy = 70
-            evasion = 0
-            states = []
-            equipped = {"weapon": None, "body": None}
-            resistances = {"fire": 1.0, "ice": 1.0}
-            combat_proximity = 1
-
-        player = MockPlayer()
-        enemies = [MockEnemy()]
+        player = FakeCombatant(
+            name="Jean",
+            level=10,
+            hp=80,
+            maxhp=100,
+            protection=5,
+            speed=10,
+            combat_proximity=0,
+            resistance={"fire": 1.0, "ice": 1.0},
+        )
+        enemies = [FakeCombatant(resistance={"fire": 1.0, "ice": 1.0})]
 
         result = CombatStateSerializer.serialize_combat_state(
             player, enemies, current_turn_index=0, round_number=1
@@ -153,29 +179,30 @@ class TestCombatantSerializer:
 
     def test_serialize_combatant_player(self):
         """Test serializing player as combatant."""
-
-        class MockInventory:
-            pass
+        from types import SimpleNamespace
 
         # The serializer isinstance-checks the engine Player class, so build
         # an uninitialized real Player and attach just the attrs it reads.
         from src.player import Player
 
+        weapon = SimpleNamespace(
+            name="Iron Sword", damage=15, str_mod=0, fin_mod=0, subtype="Sword"
+        )
         player = Player.__new__(Player)
         player.name = "Jean"
         player.level = 10
-        player.health = 80
-        player.max_health = 100
-        player.damage = 15
-        player.armor = 5
+        player.hp = 80
+        player.maxhp = 100
+        player.protection = 5
         player.speed = 10
-        player.accuracy = 85
-        player.evasion = 5
+        player.finesse = 10
+        player.intelligence = 10
+        player.strength = 10
         player.states = []
         player.combat_proximity = 0
-        player.inventory = MockInventory()
-        player.equipped = {"weapon": None, "body": None}
-        player.resistances = {"fire": 1.0}
+        player.inventory = []
+        player.eq_weapon = weapon
+        player.resistance = {"fire": 1.0}
 
         result = CombatantSerializer.serialize_combatant(player)
 
@@ -185,33 +212,25 @@ class TestCombatantSerializer:
         assert result["health"]["current"] == 80
         assert result["health"]["max"] == 100
         assert "stats" in result
+        # Player damage comes from the equipped weapon — Player has no `damage`.
         assert result["stats"]["damage"] == 15
+        assert result["stats"]["defense"] == 5  # protection
+        assert result["equipment"]["weapon"]["name"] == "Iron Sword"
+        assert result["equipment"]["resistances"] == {"fire": 1.0}
         assert "status_effects" in result
 
     def test_serialize_combatant_npc(self):
         """Test serializing NPC as combatant."""
-
-        class MockNPC:
-            name = "Goblin"
-            level = 5
-            health = 20
-            max_health = 30
-            damage = 8
-            armor = 1
-            speed = 5
-            accuracy = 70
-            evasion = 0
-            states = []
-            combat_proximity = 1
-            equipped = {"weapon": None, "body": None}
-            resistances = {}
-
-        npc = MockNPC()
+        npc = FakeCombatant()
         result = CombatantSerializer.serialize_combatant(npc)
 
         assert result["name"] == "Goblin"
         assert result["type"] == "npc"
         assert result["level"] == 5
+        # NPCs equip nothing; their flat `damage` is their power.
+        assert result["stats"]["damage"] == 8
+        assert result["stats"]["attack_power"] == 8
+        assert result["equipment"]["weapon"] is None
 
     def test_serialize_health_bar(self):
         """Test health bar serialization."""
@@ -243,23 +262,10 @@ class TestCombatantSerializer:
 
     def test_serialize_combatant_list(self):
         """Test serializing multiple combatants."""
-
-        class MockCombatant:
-            name = "Test"
-            level = 1
-            health = 10
-            max_health = 10
-            damage = 1
-            armor = 0
-            speed = 5
-            accuracy = 80
-            evasion = 0
-            states = []
-            combat_proximity = 0
-            equipped = {}
-            resistances = {}
-
-        combatants = [MockCombatant(), MockCombatant()]
+        combatants = [
+            FakeCombatant(name="Test", level=1, hp=10, maxhp=10, damage=1, protection=0),
+            FakeCombatant(name="Test", level=1, hp=10, maxhp=10, damage=1, protection=0),
+        ]
         result = CombatantSerializer.serialize_combatant_list(combatants)
 
         assert len(result) == 2
@@ -430,39 +436,11 @@ class TestGameServiceCombatMethods:
 
     def test_combat_state_structure(self):
         """Test that combat state has required structure."""
-
-        class MockPlayer:
-            name = "Jean"
-            level = 10
-            health = 80
-            max_health = 100
-            damage = 15
-            armor = 5
-            speed = 10
-            accuracy = 85
-            evasion = 5
-            states = []
-            equipped = {}
-            resistances = {}
-            combat_proximity = 0
-
-        class MockEnemy:
-            name = "Goblin"
-            level = 5
-            health = 20
-            max_health = 30
-            damage = 8
-            armor = 1
-            speed = 5
-            accuracy = 70
-            evasion = 0
-            states = []
-            equipped = {}
-            resistances = {}
-            combat_proximity = 1
-
-        player = MockPlayer()
-        enemies = [MockEnemy()]
+        player = FakeCombatant(
+            name="Jean", level=10, hp=80, maxhp=100, protection=5, speed=10,
+            combat_proximity=0,
+        )
+        enemies = [FakeCombatant()]
 
         state = CombatStateSerializer.serialize_combat_state(player, enemies)
 

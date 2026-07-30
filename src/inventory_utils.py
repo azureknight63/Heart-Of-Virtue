@@ -134,6 +134,9 @@ def transfer_item(
             return getattr(ent, "name", None) == "Jean"
 
         def is_merchant(ent):
+            # Real merchants carry `shop_name` (set by initialize_shop); nothing in
+            # the engine has ever had a `.shop` attribute — the old check here made
+            # this branch permanently dead and created ghost stock entries (#442).
             return hasattr(ent, "shop_name")
 
         def is_merchant_container(ent):

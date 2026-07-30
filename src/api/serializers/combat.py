@@ -7,14 +7,87 @@ This module provides serialization for:
 - StateEffect: Status effects and conditions
 """
 
+import logging
 from typing import Dict, List, Any, Optional, TYPE_CHECKING
 
 from src.api.constants import ITEM_USE_RANGE
+from src.api.serializers.inventory import _BONUS_ATTRS, _collect_equipped_items
 
 if TYPE_CHECKING:
     from src.player import Player
     from src.npc import NPC
     from src.states import State
+
+logger = logging.getLogger(__name__)
+
+
+# Base term of the engine's hit-chance formula (see
+# `Move.standard_execute_attack` in src/moves/_base.py and `Attack.execute` in
+# src/moves/_utility.py):
+#
+#     hit_chance = 98 - target.finesse + user.finesse * 0.7 + user.intelligence * 0.3
+#
+# Split across two serialized stats so `accuracy - target_evasion` reproduces
+# the engine value exactly: `accuracy` is the attacker-side rating
+# (98 + own finesse/intelligence terms) and `evasion` is the defender-side
+# subtrahend (own finesse).
+# SYNC RISK: if the hit-chance formula in src/moves changes, update these.
+_ACCURACY_BASE = 98
+_ACCURACY_FINESSE_WEIGHT = 0.7
+_ACCURACY_INTELLIGENCE_WEIGHT = 0.3
+
+
+def _num(obj, attr, default=0.0) -> float:
+    """Read a numeric attribute defensively, coercing None/garbage to `default`."""
+    try:
+        value = getattr(obj, attr, default)
+        if value is None:
+            return float(default)
+        return float(value)
+    except (TypeError, ValueError):
+        return float(default)
+
+
+def _as_dict(value) -> Dict:
+    """Coerce a resistance-style attribute to a plain dict, tolerating junk."""
+    if not value:
+        return {}
+    try:
+        return dict(value)
+    except (TypeError, ValueError):
+        return {}
+
+
+def _weapon_damage(combatant: Any) -> float:
+    """Base weapon damage for a combatant.
+
+    Player damage comes from the equipped weapon (`eq_weapon`); the Player
+    class has no `damage` attribute of its own. NPCs don't equip weapons —
+    their raw `damage` attribute is the engine's equivalent.
+    """
+    weapon = getattr(combatant, "eq_weapon", None)
+    if weapon is not None:
+        return _num(weapon, "damage")
+    return _num(combatant, "damage")
+
+
+def _attack_power(combatant: Any) -> float:
+    """Effective attack power: weapon damage plus attribute scaling.
+
+    Mirrors `Attack.evaluate()` in src/moves/_utility.py, the engine's own
+    power formula for the basic attack:
+        eq_weapon.damage + strength * str_mod + finesse * fin_mod
+    NPCs have no weapon, so their flat `damage` is their attack power.
+    SYNC RISK: keep in step with `Attack.evaluate()`.
+    """
+    weapon = getattr(combatant, "eq_weapon", None)
+    if weapon is None:
+        return _num(combatant, "damage")
+    return (
+        _num(weapon, "damage")
+        + _num(combatant, "strength") * _num(weapon, "str_mod")
+        + _num(combatant, "finesse") * _num(weapon, "fin_mod")
+    )
 
 
 class CombatStateSerializer:
@@ -368,15 +441,34 @@ class CombatantSerializer:
 
     @staticmethod
     def _serialize_combat_stats(combatant: Any) -> Dict[str, Any]:
-        """Serialize combat-relevant stats."""
+        """Serialize combat-relevant stats, derived from real engine attributes.
+
+        Player/NPC/Combatant have no `armor`, `accuracy`, `evasion`,
+        `defense` or `attack_power` attributes — reading them returned the
+        fallback default for every combatant (issue #430). Each stat below is
+        derived from what the engine actually stores:
+
+        * `damage` / `attack_power` — the equipped weapon (`eq_weapon`) for
+          the Player, the flat `damage` attribute for NPCs.
+        * `defense` — `protection`, the flat value the engine subtracts from
+          incoming damage.
+        * `accuracy` / `evasion` — the two halves of the engine's hit-chance
+          formula (see `_ACCURACY_BASE`).
+        """
+        finesse = _num(combatant, "finesse")
+        protection = _num(combatant, "protection")
+        accuracy = (
+            _ACCURACY_BASE
+            + finesse * _ACCURACY_FINESSE_WEIGHT
+            + _num(combatant, "intelligence") * _ACCURACY_INTELLIGENCE_WEIGHT
+        )
         return {
-            "damage": round(getattr(combatant, "damage", 0)),
-            "armor": int(getattr(combatant, "armor", 0)),
-            "speed": int(getattr(combatant, "speed", 5)),
-            "accuracy": int(getattr(combatant, "accuracy", 80)),
-            "evasion": int(getattr(combatant, "evasion", 0)),
-            "defense": int(getattr(combatant, "defense", 0)),
-            "attack_power": int(getattr(combatant, "attack_power", 0)),
+            "damage": round(_weapon_damage(combatant)),
+            "speed": int(_num(combatant, "speed", 5)),
+            "accuracy": int(accuracy),
+            "evasion": int(round(finesse)),
+            "defense": int(round(protection)),
+            "attack_power": round(_attack_power(combatant)),
         }
 
     @staticmethod
@@ -421,31 +513,68 @@ class CombatantSerializer:
 
     @staticmethod
     def _serialize_combat_equipment(combatant: Any) -> Dict[str, Any]:
-        """Serialize equipped items relevant to combat."""
+        """Serialize equipped items relevant to combat.
+
+        Sourced from the real engine model (issue #430): there is no
+        `combatant.equipped` dict — equipment is derived from the inventory's
+        `isequipped`/`maintype` fields (shared with the inventory serializer
+        via `_collect_equipped_items`, with `eq_weapon` as the weapon
+        fallback) — and the resistance dict is singular `resistance`, not
+        `resistances`.
+
+        The armour entry reports `protection`, the engine's real armour stat;
+        it deliberately does not report a `defense` key, because `defense` in
+        `stats` is already the *total* protection (gear included) and a
+        consumer summing the two would double-count.
+        """
         equipment = {
             "weapon": None,
             "armor": None,
             "resistances": {},
         }
 
-        if hasattr(combatant, "equipped"):
-            eq = getattr(combatant, "equipped", {})
-            if "weapon" in eq and eq["weapon"]:
-                equipment["weapon"] = {
-                    "name": getattr(eq["weapon"], "name", "Unarmed"),
-                    "damage_type": getattr(eq["weapon"], "damage_type", "physical"),
-                }
-            if "body" in eq and eq["body"]:
-                equipment["armor"] = {
-                    "name": getattr(eq["body"], "name", "No Armor"),
-                    "defense": getattr(eq["body"], "defense", 0),
-                }
+        # Contained failure: a degraded combatant with a non-iterable
+        # inventory must cost only the equipment block, not the whole
+        # combatant payload (the `_safe` boundary would blank the entire dict,
+        # emptying the battlefield UI).
+        try:
+            equipped = _collect_equipped_items(combatant)
+        except Exception:  # noqa: BLE001 - degraded engine object
+            logger.warning("combat equipment collection failed", exc_info=True)
+            equipped = {}
 
-        # Add resistances
-        if hasattr(combatant, "resistances"):
-            equipment["resistances"] = dict(getattr(combatant, "resistances", {}))
+        weapon = equipped.get("weapon")
+        if weapon is not None:
+            equipment["weapon"] = {
+                "name": getattr(weapon, "name", "Unarmed"),
+                "damage": round(_num(weapon, "damage")),
+                "damage_type": CombatantSerializer._weapon_damage_type(weapon),
+            }
+        body = equipped.get("body")
+        if body is not None:
+            equipment["armor"] = {
+                "name": getattr(body, "name", "No Armor"),
+                "protection": round(_num(body, "protection")),
+            }
+
+        # Real attribute is singular `resistance` (see src/combatant.py).
+        equipment["resistances"] = _as_dict(getattr(combatant, "resistance", None))
 
         return equipment
+
+    @staticmethod
+    def _weapon_damage_type(weapon: Any) -> str:
+        """Base damage type of a weapon.
+
+        Engine weapons have no `damage_type` attribute; the canonical accessor
+        is `items.get_base_damage_type` (which honours enchantment overrides).
+        """
+        from src.items import get_base_damage_type  # local import: see inventory.py
+
+        try:
+            return get_base_damage_type(weapon)
+        except Exception:
+            return "physical"
 
 
 # Maps a State's `statustype` (see src/states.py — the real attribute; there
@@ -453,8 +582,9 @@ class CombatantSerializer:
 # StatusEffectsIconPanel.jsx: "buff" (green), "debuff" (red), "ailment"
 # (gold). Damage/corruption-over-time types are "ailment"; pure stat
 # penalties or action-denial are "debuff"; net-positive effects are "buff".
-# The "generic" statustype is used by a mix of mostly-positive states
-# (SecretPlansState, StoneBulwarkState) so it defaults to "buff".
+# "generic" is the State default and is used by both buffs (Dodging,
+# SecretPlansState, StoneBulwarkState) and debuffs (Quarried), so it is
+# resolved from the state's own modifiers instead — see `_GENERIC_STATUSTYPE`.
 _STATUSTYPE_CATEGORY = {
     "poison": "ailment",
     "enflamed": "ailment",
@@ -466,8 +596,16 @@ _STATUSTYPE_CATEGORY = {
     "clean": "buff",
     "enraged": "buff",
     "revive": "buff",
-    "generic": "buff",
 }
+
+# The catch-all statustype whose polarity must be inferred per state.
+_GENERIC_STATUSTYPE = "generic"
+
+# Scalar stat-modifier attributes a State may expose. Sourced from the
+# inventory serializer's `_BONUS_ATTRS` (itself mirroring
+# functions.refresh_stat_bonuses' bonuses_map) plus `add_protection`, which
+# only states and armour use.
+_STATE_MODIFIER_ATTRS = tuple(_BONUS_ATTRS) + ("add_protection",)
 
 # Values already in the frontend's vocabulary pass through unchanged so a
 # state (real or mocked) that already reports a valid type is not remapped.
@@ -531,10 +669,25 @@ class StateEffectSerializer:
     @staticmethod
     def _get_effect_type(state: "State") -> str:
         """Map a State's `statustype` to the frontend buff/debuff/ailment vocabulary."""
-        statustype = getattr(state, "statustype", "generic")
+        statustype = getattr(state, "statustype", _GENERIC_STATUSTYPE)
         if statustype in _VALID_EFFECT_TYPES:
             return statustype
+        if statustype == _GENERIC_STATUSTYPE:
+            return StateEffectSerializer._generic_effect_type(state)
         return _STATUSTYPE_CATEGORY.get(statustype, "debuff")
+
+    @staticmethod
+    def _generic_effect_type(state: "State") -> str:
+        """Resolve the ambiguous "generic" statustype from the state's own modifiers.
+
+        Real states share this default across opposite polarities — Dodging and
+        StoneBulwarkState grant bonuses while Quarried strips protection — so
+        any negative scalar `add_*` modifier marks the state a debuff.
+        """
+        for attr in _STATE_MODIFIER_ATTRS:
+            if _num(state, attr) < 0:
+                return "debuff"
+        return "buff"
 
     @staticmethod
     def _get_severity(state: "State") -> str:

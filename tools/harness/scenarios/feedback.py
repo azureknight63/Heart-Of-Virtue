@@ -103,6 +103,50 @@ class FeedbackScenario(Scenario):
         if bug:
             bugs.append(bug)
 
+        # Wrong-typed inner 'fields' values (issue #428), must not 500 ----------
+        # `fields` itself is a dict, but the body builders call
+        # .strip()/.lower()/.get() on individual entries assuming they're
+        # strings (or, for ratings, a dict). A non-string value used to raise
+        # an unhandled AttributeError deep in _build_bug_body/_build_general_body.
+        body = {
+            "type": "bug",
+            "title": "Harness wrong-typed field test",
+            "fields": {"steps": 123, "expected": ["not", "a", "string"]},
+        }
+        resp = client.post("/api/feedback/issue", json=body)
+        bug = check_real_crash(resp, "Wrong-typed inner fields value (bug.steps=int)", body)
+        if bug:
+            bugs.append(bug)
+        else:
+            bug = self._check_rejected(
+                resp, "/api/feedback/issue", "POST",
+                "Feedback issue with wrong-typed inner fields value not rejected",
+                "HTTP 400 (fields.steps must be a string)",
+                severity=BugSeverity.MEDIUM, request_body=body,
+            )
+            if bug:
+                bugs.append(bug)
+
+        # 'general' type with non-dict 'ratings' inner value, must not 500 ------
+        body = {
+            "type": "general",
+            "title": "Harness wrong-typed ratings test",
+            "fields": {"message": "hi", "ratings": "not-a-dict"},
+        }
+        resp = client.post("/api/feedback/issue", json=body)
+        bug = check_real_crash(resp, "Wrong-typed inner fields value (general.ratings=str)", body)
+        if bug:
+            bugs.append(bug)
+        else:
+            bug = self._check_rejected(
+                resp, "/api/feedback/issue", "POST",
+                "Feedback issue with non-dict ratings not rejected",
+                "HTTP 400 (fields.ratings must be an object)",
+                severity=BugSeverity.MEDIUM, request_body=body,
+            )
+            if bug:
+                bugs.append(bug)
+
         # Well-formed bug report — no GITHUB_TOKEN configured here, so we
         # expect a clean 503 ("service not configured"), never a 500.
         body = {

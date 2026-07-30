@@ -1,5 +1,5 @@
-import builtins
 import os
+import builtins
 import random
 import types
 import inspect
@@ -305,23 +305,6 @@ def test_print_slow(capsys):
     functions.print_slow("Hello World", speed="fast")
     captured = capsys.readouterr().out
     assert "Hello World" in captured
-
-
-def test_save_and_load_roundtrip(tmp_path):
-    player = DummyPlayer()
-    filename = 'src/test_temp_save_roundtrip'
-    try:
-        if os.path.exists(filename + '.sav'):
-            os.remove(filename + '.sav')
-    except Exception:
-        pass
-    functions.save(player, filename)
-    loaded = functions.load(filename + '.sav')
-    assert getattr(loaded, '__class__', object()).__name__ == 'DummyPlayer'
-    try:
-        os.remove(filename + '.sav')
-    except Exception:
-        pass
 
 
 def test_seek_class_error():

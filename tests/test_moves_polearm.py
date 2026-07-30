@@ -199,6 +199,38 @@ class TestSweep:
         move = Sweep(user)
         assert move.viable() is False
 
+    def test_viable_false_enemy_out_of_arc_range(self):
+        """Regression for #398: no range check meant Sweep was offered with
+        nothing in its arc, burning the full 65 fatigue for zero hits."""
+        user = _make_user()
+        tgt = _make_target()
+        move = Sweep(user)
+        user.combat_proximity = {tgt: move.mvrange[1] + 5}
+        user.combat_list = [tgt]
+        assert move.viable() is False
+
+    def test_viable_false_only_ally_in_arc(self):
+        """Regression for #398: an ally inside the arc must not make the swing
+        viable when the only enemy is out of reach."""
+        user = _make_user()
+        ally = _make_target(name="Gorran")
+        ally.friend = True
+        enemy = _make_target()
+        move = Sweep(user)
+        user.combat_proximity = {ally: 2, enemy: move.mvrange[1] + 5}
+        user.combat_list = [enemy]  # combat_list holds the opposing side only
+        assert move.viable() is False
+
+    def test_viable_true_enemy_in_arc_alongside_ally(self):
+        user = _make_user()
+        ally = _make_target(name="Gorran")
+        ally.friend = True
+        enemy = _make_target()
+        move = Sweep(user)
+        user.combat_proximity = {ally: 2, enemy: 3}
+        user.combat_list = [enemy]
+        assert move.viable() is True
+
     def test_evaluate_exception_sets_power_to_one(self):
         user = _make_user()
         move = Sweep(user)
@@ -533,6 +565,19 @@ class TestHalberdSpin:
         user = _make_user()
         tgt = _make_target()
         user.combat_proximity = {tgt: 9999}
+        move = HalberdSpin(user)
+        move.mvrange = (1, 10)
+        assert move.viable() is False
+
+    def test_viable_false_only_ally_in_range(self):
+        """Companion to the Sweep case in #398: both arc swings share the same
+        hostile-only viability helper."""
+        user = _make_user()
+        ally = _make_target(name="Gorran")
+        ally.friend = True
+        enemy = _make_target()
+        user.combat_proximity = {ally: 2, enemy: 9999}
+        user.combat_list = [enemy]
         move = HalberdSpin(user)
         move.mvrange = (1, 10)
         assert move.viable() is False

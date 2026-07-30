@@ -224,12 +224,18 @@ class NPCAIConfig:
             return [player] + ally_side, enemy_side
         return enemy_side, [player] + ally_side
 
-    def calculate_retreat_priority(self, npc, enemies: list) -> float:
+    def calculate_retreat_priority(self, npc, _enemies: list) -> float:
         """Calculate priority score for retreat (0.0-1.0, higher = more urgent).
 
         Args:
             npc: The NPC being evaluated
-            enemies: List of enemies the NPC faces
+            _enemies: List of enemies the NPC faces. Currently unused -- the
+                priority is a pure health-ratio calculation (see below) and
+                does not weigh threat count. Kept as a parameter (leading
+                underscore signals intentionally-unused) rather than dropped,
+                since the sole production caller (``src/npc/_combat.py``)
+                already passes it positionally; wiring enemy count/threat
+                into the score is a balance decision, not made here.
 
         Returns:
             Priority score (0.0 = no retreat needed, 1.0 = critical retreat needed)

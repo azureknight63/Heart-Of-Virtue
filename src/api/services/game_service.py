@@ -2,6 +2,7 @@ import logging
 import uuid
 import contextlib
 import re
+from collections import Counter
 from typing import TYPE_CHECKING, Dict, Any, Optional, List
 from unittest.mock import patch
 
@@ -23,6 +24,7 @@ from src.api.serializers.inventory import (
 from src.api.serializers.combat import (
     CombatStateSerializer,
 )
+from src.api.utils.inventory import get_inventory_list
 
 _log = logging.getLogger(__name__)
 
@@ -715,25 +717,95 @@ class GameService:
 
         session_data["tile_modifications"][tile_key][modification_type] = data
 
+    @staticmethod
+    def _object_roster(tile) -> List[str]:
+        """Return the names of the objects currently on a tile, duplicates included.
+
+        Names (not ``id()``) are the stable identifier used by the object-removal
+        persistence in #328: a re-hydrated tile is rebuilt from the same map JSON,
+        so its objects carry the same names but brand-new memory addresses.
+        """
+        objects = getattr(tile, "objects_here", None)
+        if not isinstance(objects, list):
+            # Real MapTiles always hold a list; anything else (None, a test double)
+            # has no roster worth persisting.
+            return []
+        return [GameService._object_key(obj) for obj in objects]
+
+    @staticmethod
+    def _object_key(obj) -> str:
+        """Stable per-object identifier: its name, or its class name as a fallback."""
+        name = getattr(obj, "name", None)
+        return name if isinstance(name, str) else type(obj).__name__
+
+    @staticmethod
+    def _tile_modifications(session_data: Dict[str, Any], tile) -> Dict[str, Any]:
+        """Return the stored modification dict for ``tile`` (empty if there is none)."""
+        tile_key = f"{getattr(tile, 'x', None)},{getattr(tile, 'y', None)}"
+        stored = (session_data.get("tile_modifications") or {}).get(tile_key)
+        return stored if isinstance(stored, dict) else {}
+
+    def capture_tile_object_baseline(
+        self, session_data: Optional[Dict[str, Any]], tile
+    ) -> None:
+        """Record a tile's as-authored object roster once per session (#328).
+
+        ``persist_tile_state`` diffs the tile's live objects against this baseline
+        to work out which objects an event or interaction removed. It must therefore
+        be captured *before* anything can remove objects — on tile entry and before
+        an interaction runs — and never overwritten afterwards, or the removal
+        becomes invisible.
+
+        No-op for tiles that have no objects (nothing can be removed from them), which
+        keeps ``tile_modifications`` from growing an entry for every tile ever walked on.
+        """
+        if not isinstance(session_data, dict) or tile is None:
+            return
+
+        roster = self._object_roster(tile)
+        if not roster:
+            return
+
+        if "objects_baseline" in self._tile_modifications(session_data, tile):
+            return
+
+        self.store_tile_modification(
+            session_data, tile.x, tile.y, "objects_baseline", roster
+        )
+
     def persist_tile_state(self, session_data: Optional[Dict[str, Any]], tile) -> None:
         """Persist a tile's mutable state into session data after events run.
 
-        Single source of truth for capturing tile modifications (currently the
-        blocked-exit set) so callers — move_player, interact_with_target, and the
-        /world/events route — don't each hand-roll the same store sequence. New
-        modification types (e.g. objects_removed, #328) should be added here so
+        Single source of truth for capturing tile modifications (the blocked-exit
+        set and the removed-object roster) so callers — move_player,
+        interact_with_target, and the /world/events route — don't each hand-roll
+        the same store sequence. New modification types should be added here so
         every caller picks them up. No-op when there's no session to persist to.
 
         Args:
             session_data: The session data dictionary, or None.
             tile: The MapTile whose state should be captured.
         """
-        if session_data is None or tile is None:
+        if not isinstance(session_data, dict) or tile is None:
             return
 
         block_exit = tile.block_exit.copy() if hasattr(tile, "block_exit") else []
         self.store_tile_modification(
             session_data, tile.x, tile.y, "block_exit", block_exit
+        )
+
+        # Objects removed since the baseline snapshot (#328). Computed as a
+        # multiset difference over names so duplicates ("Rock", "Rock") persist a
+        # count rather than an unstable identity like id().
+        baseline = self._tile_modifications(session_data, tile).get("objects_baseline")
+        if not isinstance(baseline, list):
+            # Never baselined (tile had no objects, or a caller that skipped
+            # capture_tile_object_baseline) — nothing trustworthy to diff against.
+            return
+
+        removed = list((Counter(baseline) - Counter(self._object_roster(tile))).elements())
+        self.store_tile_modification(
+            session_data, tile.x, tile.y, "objects_removed", removed
         )
 
     def apply_tile_modifications(self, tile, session_data: Dict[str, Any]) -> None:
@@ -743,6 +815,12 @@ class GameService:
             tile: The MapTile object to modify
             session_data: The session data dictionary containing modifications
         """
+        if tile is None:
+            return
+
+        # Snapshot the pristine roster before any filtering below mutates it.
+        self.capture_tile_object_baseline(session_data, tile)
+
         if not session_data or "tile_modifications" not in session_data:
             return
 
@@ -756,12 +834,32 @@ class GameService:
         if "block_exit" in modifications:
             tile.block_exit = modifications["block_exit"].copy()
 
-        # Apply objects_removed modifications
-        if "objects_removed" in modifications:
-            removed_ids = modifications["objects_removed"]
-            tile.objects_here = [
-                obj for obj in tile.objects_here if id(obj) not in removed_ids
-            ]
+        # Re-remove objects that were removed earlier in this session (#328).
+        # Expressed as an *allowance* — how many objects of each name the tile may
+        # keep — rather than "drop N more", so re-applying to an already-filtered
+        # tile is a no-op instead of removing another one each time.
+        removed_names = modifications.get("objects_removed")
+        objects_here = getattr(tile, "objects_here", None)
+        if removed_names and isinstance(objects_here, list):
+            removed_counts = Counter(n for n in removed_names if isinstance(n, str))
+            baseline_counts = Counter(
+                modifications.get("objects_baseline") or self._object_roster(tile)
+            )
+            allowance = {
+                name: max(0, baseline_counts.get(name, 0) - count)
+                for name, count in removed_counts.items()
+            }
+            survivors = []
+            for obj in objects_here:
+                name = self._object_key(obj)
+                # Names with no recorded removal (including objects spawned at
+                # runtime, absent from the baseline) are always kept.
+                if name in allowance:
+                    if allowance[name] <= 0:
+                        continue
+                    allowance[name] -= 1
+                survivors.append(obj)
+            tile.objects_here = survivors
 
     def move_player(
         self,
@@ -850,6 +948,12 @@ class GameService:
 
         # Record exploration of the new tile
         self._record_exploration(player, new_tile)
+
+        # Re-apply this session's stored modifications (and snapshot the tile's
+        # object roster) before entry events run. Without this, persist_tile_state
+        # below would diff a freshly rehydrated tile — one that still has its
+        # authored objects and exits — and clobber the stored modifications (#328).
+        self.apply_tile_modifications(new_tile, session_data)
 
         # Trigger tile entry events with session data for pending event storage
         events_triggered = self.trigger_tile_events(player, new_tile, session_data)
@@ -1403,9 +1507,7 @@ class GameService:
 
                         # Auto-take items with hide_factor == 0 (intentionally findable)
                         if hide_factor == 0:
-                            inventory = getattr(
-                                player, "inventory_list", None
-                            ) or getattr(player, "inventory", [])
+                            inventory = get_inventory_list(player)
                             if isinstance(inventory, list):
                                 total_weight = sum(
                                     getattr(i, "weight", 0) for i in inventory
@@ -1507,6 +1609,10 @@ class GameService:
         tile = player.universe.get_tile(player.location_x, player.location_y)
         # Ensure player knows where they are for interactions that modify the room (like taking items)
         player.current_room = tile
+        # Re-apply stored modifications (and baseline the object roster) before the
+        # action runs, so persist_tile_state at the end diffs against the right
+        # starting state and objects removed earlier stay removed (#328).
+        self.apply_tile_modifications(tile, session_data)
         target = None
 
         # Check NPCs
@@ -1556,8 +1662,12 @@ class GameService:
             # Check if target is an NPC by looking in current tile's NPCs
             is_npc = hasattr(tile, "npcs_here") and target in tile.npcs_here
             if is_npc:
-                # Redirect to start_combat instead of trying to call attack() method
-                combat_result = self.start_combat(player, target_id)
+                # Redirect to start_combat instead of trying to call attack() method.
+                # Pass session_data so the combat adapter's event callback can persist
+                # interactive combat events to the session (#335).
+                combat_result = self.start_combat(
+                    player, target_id, session_data=session_data
+                )
                 # Wrap start_combat response to match interact_with_target format
                 if "error" in combat_result:
                     return {"success": False, "message": combat_result["error"]}
@@ -1985,8 +2095,15 @@ class GameService:
         player: "player_module.Player",
         enemy_id: str,
         session_id: str = None,
+        session_data: Dict[str, Any] = None,
     ) -> Dict[str, Any]:
-        """Start combat with a specific enemy (e.g. from dialogue/interaction)."""
+        """Start combat with a specific enemy (e.g. from dialogue/interaction).
+
+        ``session_data`` is threaded through to ``_initialize_combat`` so the
+        adapter's event callback can persist interactive (``needs_input``) combat
+        events into ``session["pending_events"]`` (#335). Omitting it leaves the
+        callback bound to ``None``, which silently drops those events.
+        """
         # Find enemy in current room
         enemy = None
         tile = None
@@ -2045,7 +2162,9 @@ class GameService:
         for e in all_enemies:
             e.in_combat = True
 
-        result = self._initialize_combat(player, all_enemies, session_id=session_id)
+        result = self._initialize_combat(
+            player, all_enemies, session_id=session_id, session_data=session_data
+        )
 
         # _initialize_combat returns None in the idempotency branch (already in combat
         # with the same enemy set).  Treat this as a graceful no-op.
@@ -3642,9 +3761,7 @@ class GameService:
             player.combat_drops = []
             return {"success": True, "collected": [], "skipped": []}
 
-        inventory = getattr(player, "inventory_list", None)
-        if inventory is None:
-            inventory = getattr(player, "inventory", [])
+        inventory = get_inventory_list(player)
 
         capacity = float(getattr(player, "weight_tolerance", 20.0) or 20.0)
 

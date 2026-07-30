@@ -19,6 +19,18 @@ from types import SimpleNamespace
 # ---------------------------------------------------------------------------
 
 
+def _mock_weapon(name="fists", damage=1, str_mod=1, fin_mod=1, subtype="Unarmed"):
+    """Mock an engine `Weapon` (src/items.py).
+
+    Real weapons expose `damage`/`str_mod`/`fin_mod`/`subtype` and have **no**
+    `damage_type` attribute (the canonical accessor is
+    `items.get_base_damage_type`), so the mock deliberately omits it.
+    """
+    return SimpleNamespace(
+        name=name, damage=damage, str_mod=str_mod, fin_mod=fin_mod, subtype=subtype
+    )
+
+
 def _mock_combatant(
     name="Jean",
     hp=80,
@@ -30,19 +42,24 @@ def _mock_combatant(
     heat=1.2,
     speed=8,
     damage=15,
-    armor=5,
-    accuracy=85,
-    evasion=10,
-    defense=5,
-    attack_power=20,
+    protection=5,
     strength=12,
     finesse=9,
     endurance=10,
     intelligence=7,
     charisma=6,
     friend=False,
-    resistances=None,
+    resistance=None,
 ):
+    """Mock a Player/NPC.
+
+    Only attributes the real engine classes define are set (issue #430): the
+    combat serializer derives armour/defense/evasion/accuracy/attack_power
+    from `protection`, `finesse`, `intelligence` and the equipped weapon —
+    there are no `armor`/`defense`/`evasion`/`accuracy`/`attack_power`
+    attributes on Player, NPC or Combatant, and the resistance dict is
+    singular `resistance`.
+    """
     c = MagicMock()
     if is_player:
         # Serializers isinstance-check the real Player class; assigning it to
@@ -61,11 +78,7 @@ def _mock_combatant(
     c.heat = heat
     c.speed = speed
     c.damage = damage
-    c.armor = armor
-    c.accuracy = accuracy
-    c.evasion = evasion
-    c.defense = defense
-    c.attack_power = attack_power
+    c.protection = protection
     c.strength = strength
     c.finesse = finesse
     c.endurance = endurance
@@ -84,10 +97,12 @@ def _mock_combatant(
     c.last_move_summary = ""
     c.last_move_name = None
     c.last_move_target_id = None
-    if resistances is not None:
-        c.resistances = resistances
+    if is_player:
+        # Only the Player equips weapons; NPCs deal their flat `damage`.
+        c.eq_weapon = _mock_weapon()
     else:
-        del c.resistances
+        del c.eq_weapon
+    c.resistance = {} if resistance is None else resistance
     return c
 
 
@@ -482,29 +497,103 @@ class TestCombatantSerializer:
         assert result[0]["name"] == "Poisoned"
 
     def test_serialize_combat_equipment_with_weapon_and_armor(self):
+        """Equipment is derived from `eq_weapon` + inventory `isequipped`.
+
+        There is no `combatant.equipped` dict on any engine class (#430).
+        """
         combatant = _mock_combatant()
-        weapon = MagicMock()
-        weapon.name = "Iron Sword"
-        weapon.damage_type = "slashing"
-        body = MagicMock()
-        body.name = "Leather Armor"
-        body.defense = 8
-        combatant.equipped = {"weapon": weapon, "body": body}
+        combatant.eq_weapon = _mock_weapon(name="Iron Sword", damage=12, subtype="Sword")
+        body = SimpleNamespace(
+            name="Leather Armor", maintype="Armor", isequipped=True, protection=8
+        )
+        combatant.inventory = [body]
+        del combatant.inventory_list
         result = self.CombatantSerializer._serialize_combat_equipment(combatant)
         assert result["weapon"]["name"] == "Iron Sword"
+        assert result["weapon"]["damage"] == 12
+        assert result["weapon"]["damage_type"] == "slashing"
         assert result["armor"]["name"] == "Leather Armor"
+        assert result["armor"]["protection"] == 8
 
-    def test_serialize_combat_equipment_with_resistances(self):
-        combatant = _mock_combatant(resistances={"fire": 0.5})
-        combatant.equipped = {}
+    def test_serialize_combat_equipment_ignores_stale_equipped_dict(self):
+        """A fabricated `equipped` dict must not be read — real combatants
+        have no such attribute, so honouring it would resurrect #430."""
+        combatant = _mock_combatant(is_player=False)
+        combatant.inventory = []
+        del combatant.inventory_list
+        combatant.equipped = {
+            "weapon": SimpleNamespace(name="Phantom Blade"),
+            "body": SimpleNamespace(name="Phantom Mail", defense=99),
+        }
+        result = self.CombatantSerializer._serialize_combat_equipment(combatant)
+        assert result["weapon"] is None
+        assert result["armor"] is None
+
+    def test_serialize_combat_equipment_reads_singular_resistance(self):
+        """The real attribute is `resistance`, not `resistances` (#430)."""
+        combatant = _mock_combatant(resistance={"fire": 0.5})
+        combatant.inventory = []
+        del combatant.inventory_list
         result = self.CombatantSerializer._serialize_combat_equipment(combatant)
         assert result["resistances"]["fire"] == 0.5
+
+    def test_serialize_combat_equipment_ignores_plural_resistances(self):
+        combatant = _mock_combatant(is_player=False, resistance={})
+        combatant.resistances = {"fire": 0.25}
+        combatant.inventory = []
+        del combatant.inventory_list
+        result = self.CombatantSerializer._serialize_combat_equipment(combatant)
+        assert result["resistances"] == {}
 
     def test_serialize_combat_equipment_empty(self):
         combatant = MagicMock(spec=[])
         result = self.CombatantSerializer._serialize_combat_equipment(combatant)
         assert result["weapon"] is None
         assert result["armor"] is None
+        assert result["resistances"] == {}
+
+    def test_serialize_combat_stats_derived_from_real_attributes(self):
+        """`armor`/`defense`/`evasion`/`accuracy`/`attack_power` don't exist on
+        any engine class; the serializer derives them (#430)."""
+        combatant = _mock_combatant(
+            protection=7, finesse=20, intelligence=10, strength=12, speed=8
+        )
+        combatant.eq_weapon = _mock_weapon(
+            name="Steel Sword", damage=20, str_mod=0.5, fin_mod=0.25
+        )
+        stats = self.CombatantSerializer._serialize_combat_stats(combatant)
+        assert stats["defense"] == 7  # protection, the real mitigation stat
+        assert stats["evasion"] == 20  # finesse, subtracted from attacker accuracy
+        # 98 + finesse*0.7 + intelligence*0.3
+        assert stats["accuracy"] == 115
+        assert stats["damage"] == 20  # weapon base damage
+        # weapon damage + strength*str_mod + finesse*fin_mod
+        assert stats["attack_power"] == 31
+
+    def test_serialize_combat_stats_ignores_fabricated_attributes(self):
+        """Hand-set `armor`/`defense`/`evasion`/`accuracy`/`attack_power` must
+        be ignored — no engine class defines them, so honouring them would
+        make the mock-only tests that shipped #430 pass again."""
+        combatant = _mock_combatant(protection=3, finesse=12, intelligence=8)
+        combatant.armor = 99
+        combatant.defense = 99
+        combatant.evasion = 99
+        combatant.accuracy = 42
+        combatant.attack_power = 99
+        stats = self.CombatantSerializer._serialize_combat_stats(combatant)
+        assert stats["defense"] == 3
+        assert stats["evasion"] == 12
+        assert stats["accuracy"] == 108
+        assert stats["attack_power"] != 99
+        assert "armor" not in stats
+
+    def test_serialize_combat_stats_npc_uses_flat_damage(self):
+        """NPCs equip nothing — their flat `damage` is their attack power."""
+        npc = _mock_combatant(is_player=False, damage=26, protection=4)
+        stats = self.CombatantSerializer._serialize_combat_stats(npc)
+        assert stats["damage"] == 26
+        assert stats["attack_power"] == 26
+        assert stats["defense"] == 4
 
 
 # ===========================================================================
@@ -581,12 +670,17 @@ class TestNPCSerializer:
 
         self.NPCSerializer = NPCSerializer
 
-    def _make_npc(self, name="Goblin", is_hostile=False, aggro=False, friend=False):
+    def _make_npc(self, name="Goblin", aggro=False, friend=False):
+        """Mock an engine NPC (src/npc/_base.py).
+
+        There is no `is_hostile` attribute on the real class (#432) — the mock
+        omits it so tests can't pass by fabricating it.
+        """
         npc = MagicMock()
         npc.name = name
         npc.description = "A generic NPC"
         npc.level = 2
-        npc.is_hostile = is_hostile
+        del npc.is_hostile
         npc.aggro = aggro
         npc.friend = friend
         npc.keywords = ["talk"]
@@ -626,23 +720,33 @@ class TestNPCSerializer:
         assert "health" not in result
         assert "max_health" not in result
 
-    def test_serialize_hostile_npc_gets_attack_keyword(self):
-        npc = self._make_npc(is_hostile=True)
-        npc.keywords = []
-        result = self.NPCSerializer.serialize(npc)
-        assert "attack" in result["keywords"]
-
     def test_serialize_aggressive_npc_gets_attack_keyword(self):
         npc = self._make_npc(aggro=True)
         npc.keywords = []
         result = self.NPCSerializer.serialize(npc)
         assert "attack" in result["keywords"]
 
-    def test_serialize_friendly_hostile_no_attack_keyword(self):
-        npc = self._make_npc(is_hostile=True, friend=True)
+    def test_serialize_passive_npc_gets_no_attack_keyword(self):
+        npc = self._make_npc(aggro=False)
         npc.keywords = []
         result = self.NPCSerializer.serialize(npc)
         assert "attack" not in result.get("keywords", [])
+
+    def test_serialize_friendly_aggro_no_attack_keyword(self):
+        npc = self._make_npc(aggro=True, friend=True)
+        npc.keywords = []
+        result = self.NPCSerializer.serialize(npc)
+        assert "attack" not in result.get("keywords", [])
+
+    def test_serialize_ignores_fabricated_is_hostile(self):
+        """A hand-set `is_hostile` must not grant the attack keyword — the real
+        NPC class never defines it (#432)."""
+        npc = self._make_npc(aggro=False)
+        npc.is_hostile = True
+        npc.keywords = []
+        result = self.NPCSerializer.serialize(npc)
+        assert "attack" not in result.get("keywords", [])
+        assert result["is_hostile"] is False
 
     def test_serialize_loquacity_available_below_threshold(self):
         npc = self._make_npc()
@@ -1093,41 +1197,48 @@ class TestInventorySerializer:
         result = self.EquipmentSlotSerializer.serialize("head", None)
         assert result["equipped"] is False
         assert result["slot"] == "head"
-        assert result["armor"] == 0
+        # Real gear exposes `protection`; there is no `.armor` attribute (#411).
+        assert result["protection"] == 0
 
     def test_equipment_slot_serializer_with_item(self):
         item = MagicMock()
         item.__class__.__name__ = "Helm"
         item.name = "Iron Helm"
-        item.armor = 5.0
+        item.protection = 5.0
         item.damage = 0.0
         item.weight = 1.5
         item.value = 80
-        item.stat_bonuses = {}
         item.resistance_bonuses = {}
         item.rarity = "common"
         result = self.EquipmentSlotSerializer.serialize("head", item)
         assert result["equipped"] is True
         assert result["item_name"] == "Iron Helm"
-        assert result["armor"] == 5
+        assert result["protection"] == 5
 
-    def test_equipment_serializer_with_equipped_dict(self):
+    def test_equipment_serializer_derives_slots_from_inventory(self):
+        """Equipment comes from inventory `isequipped` + `maintype` (#411).
+
+        The real Player has no `equipped`/`equipment` dict and no per-slot
+        attributes, and stat bonuses are scalar `add_*` fields, not a
+        `stat_bonuses` mapping.
+        """
         player = MagicMock()
         weapon = MagicMock()
         weapon.name = "Sword"
         weapon.__class__.__name__ = "Weapon"
-        weapon.armor = 0.0
+        weapon.maintype = "Weapon"
+        weapon.isequipped = True
+        weapon.protection = 0.0
         weapon.damage = 10.0
         weapon.weight = 2.0
         weapon.value = 100
-        weapon.stat_bonuses = {"attack": 5}
+        weapon.add_str = 5
         weapon.resistance_bonuses = {}
         weapon.rarity = "uncommon"
-        player.equipped = {"weapon": weapon}
-        player.inventory_list = []
+        player.inventory_list = [weapon]
         result = self.EquipmentSerializer.serialize(player)
         assert "weapon" in result["equipped"]
-        assert result["total_stat_bonuses"]["attack"] == 5
+        assert result["total_stat_bonuses"]["strength"] == 5
 
     def test_equipment_serializer_empty_equipment_fallback(self):
         player = MagicMock()
@@ -1170,10 +1281,14 @@ class TestInventorySerializer:
         player.hands = None
         player.accessory_1 = None
         player.accessory_2 = None
-        equippable = MagicMock()
-        equippable.equip = MagicMock()
-        equippable.equipped_state = False
-        player.inventory_list = [equippable]
+        # Equippability is `hasattr(item, "isequipped")` — `equip` lives on base
+        # Item, so it counted potions and gold before (#411). A non-equippable
+        # item alongside the real one proves the filter works.
+        equippable = MagicMock(spec=["isequipped", "name", "maintype"])
+        equippable.isequipped = False
+        equippable.maintype = "Helm"
+        potion = MagicMock(spec=["name", "use"])
+        player.inventory_list = [equippable, potion]
         result = self.EquipmentSerializer.serialize(player)
         assert result["unequipped_equippable_count"] == 1
 

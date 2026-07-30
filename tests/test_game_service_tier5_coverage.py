@@ -767,19 +767,43 @@ class TestApplyTileModificationsExtra:
         game_service.apply_tile_modifications(tile, session_data)
 
     def test_objects_removed_filters_tile(self, game_service):
+        # Removals are keyed on stable object names, not id() (#328).
         tile = MagicMock()
         tile.x, tile.y = 1, 1
         obj_keep = MagicMock()
+        obj_keep.name = "Statue"
         obj_remove = MagicMock()
+        obj_remove.name = "Debris"
         tile.objects_here = [obj_keep, obj_remove]
         session_data = {
             "tile_modifications": {
-                "1,1": {"objects_removed": [id(obj_remove)]}
+                "1,1": {
+                    "objects_baseline": ["Statue", "Debris"],
+                    "objects_removed": ["Debris"],
+                }
             }
         }
         game_service.apply_tile_modifications(tile, session_data)
         assert obj_remove not in tile.objects_here
         assert obj_keep in tile.objects_here
+
+    def test_runtime_spawned_object_is_never_filtered(self, game_service):
+        """An object absent from the baseline is kept, not silently removed."""
+        tile = MagicMock()
+        tile.x, tile.y = 1, 1
+        spawned = MagicMock()
+        spawned.name = "Summoned Brazier"
+        tile.objects_here = [spawned]
+        session_data = {
+            "tile_modifications": {
+                "1,1": {
+                    "objects_baseline": ["Debris"],
+                    "objects_removed": ["Debris"],
+                }
+            }
+        }
+        game_service.apply_tile_modifications(tile, session_data)
+        assert spawned in tile.objects_here
 
     def test_block_exit_modification_applied(self, game_service):
         tile = MagicMock()
@@ -1000,9 +1024,9 @@ class TestSearchExtra:
         tile.npcs_here = []
         tile.items_here = [item]
         tile.objects_here = []
-        # `inventory_list` is falsy (empty) so the ``or`` in search() falls
-        # back to `player.inventory` — assert against that, mirroring the
-        # actual branch taken.
+        # get_inventory_list() now honors a legitimately empty `inventory_list`
+        # instead of falling through to `inventory` (#465), so the picked-up item
+        # lands in `inventory_list`.
         mock_player.inventory_list = []
         mock_player.inventory = []
         mock_player.weight_tolerance = 20.0
@@ -1011,7 +1035,7 @@ class TestSearchExtra:
             result = game_service.search(mock_player)
 
         assert result["success"] is True
-        assert item in mock_player.inventory
+        assert item in mock_player.inventory_list
         assert item not in tile.items_here
 
     def test_finds_hidden_item_exceeds_capacity_not_taken(self, game_service, mock_player):

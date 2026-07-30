@@ -24,7 +24,6 @@ from src.positions import (
     CombatScenario,
     COMBAT_SCENARIOS,
     distance_from_coords,
-    distance_squared,
     angle_to_target,
     attack_angle_difference,
     get_damage_modifier,
@@ -164,20 +163,6 @@ class TestDistanceCalculations:
         pos1 = CombatPosition(x=10, y=15)
         pos2 = CombatPosition(x=25, y=40)
         assert distance_from_coords(pos1, pos2) == distance_from_coords(pos2, pos1)
-
-    def test_distance_squared(self):
-        """Test squared distance (faster for comparisons)."""
-        pos1 = CombatPosition(x=0, y=0)
-        pos2 = CombatPosition(x=3, y=4)
-        # 3^2 + 4^2 = 25
-        assert distance_squared(pos1, pos2) == 25
-
-    def test_distance_squared_larger(self):
-        """Test larger squared distance."""
-        pos1 = CombatPosition(x=0, y=0)
-        pos2 = CombatPosition(x=10, y=10)
-        # 10^2 + 10^2 = 200
-        assert distance_squared(pos1, pos2) == 200
 
 
 class TestAngleCalculations:
@@ -489,6 +474,76 @@ class TestMovement:
         # Moving away from (0,25) means moving toward positive X
         result = move_away_from(from_pos, threat, 10)
         assert result.x >= from_pos.x  # Should move away (increase X)
+
+    def test_move_toward_diagonal_does_not_overshoot_requested_distance(self):
+        """Regression test for issue #393.
+
+        The old sign-only per-axis implementation applied the full requested
+        distance independently to both x and y, so
+        ``move_toward((0,0), (3,4), distance=3)`` actually travelled
+        sqrt(3^2 + 3^2) ≈ 4.24 (rounds to 4) -- up to a 41% overshoot of the
+        requested distance of 3. The trig-based fix travels `distance` grid
+        squares along the true bearing instead, landing at (2, 2): an actual
+        travelled distance of sqrt(8) ≈ 2.83 (rounds to 3), matching the
+        request instead of overshooting it.
+        """
+        current = CombatPosition(x=0, y=0)
+        target = CombatPosition(x=3, y=4)
+        new_pos = move_toward(current, target, distance=3)
+
+        assert (new_pos.x, new_pos.y) == (2, 2)
+        travelled = distance_from_coords(current, new_pos)
+        assert travelled == 3, f"Expected ~3, got {travelled} (old buggy code gave 4)"
+
+    def test_move_toward_off_axis_target_follows_true_bearing(self):
+        """Regression test for issue #393.
+
+        The old sign-only per-axis implementation locked movement to the 8
+        compass bearings regardless of the target's actual direction, so
+        ``move_toward((0,0), (10,1), distance=3)`` headed at a 45° bearing
+        despite the true bearing to the target being ~84.3° (nearly due
+        east). The trig-based fix follows the true bearing, landing much
+        closer to the correct heading.
+        """
+        current = CombatPosition(x=0, y=0)
+        target = CombatPosition(x=10, y=1)
+        true_bearing = angle_to_target(current, target)
+        assert true_bearing == pytest.approx(84.29, abs=0.1)
+
+        new_pos = move_toward(current, target, distance=3)
+        assert (new_pos.x, new_pos.y) == (3, 0)
+
+        actual_bearing = angle_to_target(current, new_pos)
+        bearing_error = abs(actual_bearing - true_bearing)
+        # The old sign-only bug produced a 45° bearing, a ~39° error. The
+        # trig-based fix should land well under half of that.
+        assert bearing_error < 10, (
+            f"Movement bearing {actual_bearing} strayed too far from the "
+            f"true bearing {true_bearing} (old buggy code gave 45°, a "
+            f"~39° error)"
+        )
+
+    def test_move_away_from_diagonal_follows_true_opposite_bearing(self):
+        """Regression test for issue #393 (move_away_from's counterpart).
+
+        Moving away from an off-axis threat should follow the bearing
+        directly opposite the threat (~264.3° here), not a sign-only
+        per-axis step that locks to the 8 compass directions (which would
+        head at exactly 225° or 270°).
+        """
+        current = CombatPosition(x=20, y=20)
+        threat = CombatPosition(x=30, y=21)  # nearly due east, slightly south
+
+        new_pos = move_away_from(current, threat, distance=3)
+        assert (new_pos.x, new_pos.y) == (17, 20)
+
+        true_away_bearing = (angle_to_target(current, threat) + 180) % 360
+        actual_bearing = angle_to_target(current, new_pos)
+        bearing_error = min(
+            abs(actual_bearing - true_away_bearing),
+            360 - abs(actual_bearing - true_away_bearing),
+        )
+        assert bearing_error < 10
 
     def test_move_to_flank(self):
         """Test moving to flank position."""

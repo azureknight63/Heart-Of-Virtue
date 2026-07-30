@@ -50,7 +50,7 @@ _FIELD_POOL = [
     "direction", "item_id", "item_index", "index", "count", "quantity",
     "target_id", "npc_id", "npc_key", "jean_text", "jean_tone", "name",
     "is_autosave", "message", "username", "password", "move_index",
-    "move_name", "value", "x", "y", "tiles", "amount", "slot",
+    "move_name", "value", "x", "y", "tiles", "amount", "slot", "action",
 ]
 
 _ADVERSARIAL_STRINGS = [

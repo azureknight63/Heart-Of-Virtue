@@ -539,19 +539,27 @@ class TestNPCResistances:
         assert rumbler.resistance_base["crushing"] == 1.5
 
     def test_lurker_dark_resistance(self):
-        """Test Lurker has dark resistance and light weakness."""
+        """Test Lurker has dark resistance and light/fire weakness."""
         lurker = Lurker()
         assert lurker.resistance_base["dark"] == 0.5
         # Positive multiplier > 1 means vulnerability (double light damage) —
         # a negative value would mean light damage *heals* the demon, the
         # opposite of the intended weakness.
         assert lurker.resistance_base["light"] == 2.0
+        # Same sign convention applies to fire: > 1 means increased damage
+        # taken (vulnerability), not healing.
+        assert lurker.resistance_base["fire"] == 1.5
 
     def test_cave_bat_light_resistance(self):
         """Test CaveBat has light resistance."""
         bat = CaveBat()
         assert bat.resistance_base["light"] == 0.8
         assert bat.resistance_base["earth"] == 1.1
+
+    def test_giant_spider_fire_weakness(self):
+        """Test GiantSpider takes increased damage from fire (not healed by it)."""
+        spider = GiantSpider()
+        assert spider.resistance_base["fire"] == 1.5
 
     def test_status_resistance_poison(self):
         """Test NPCs with poison resistance."""

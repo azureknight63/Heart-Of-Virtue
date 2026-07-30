@@ -14,6 +14,24 @@ from ._base import (
 )  # noqa: F401
 
 
+def _living_hostile_in_arc(move):
+    """True when a living hostile stands within ``move``'s maximum arc range.
+
+    Shared by the two area-of-effect polearm swings (Sweep, HalberdSpin), which
+    hit everything in the arc rather than a single assigned target. Allies are
+    excluded via ``Move._hostiles_in_proximity`` — an ally standing next to the
+    user must not make an arc swing look castable when every enemy is out of
+    reach (issue #398).
+    """
+    if not hasattr(move.user, "combat_proximity"):
+        return False
+    max_range = move.mvrange[1]
+    return any(
+        enemy.is_alive() and distance <= max_range
+        for enemy, distance in move._hostiles_in_proximity()
+    )
+
+
 class OverheadSmash(Move):
     """Bring the polearm shaft down in a heavy vertical strike.
 
@@ -138,12 +156,7 @@ class Sweep(Move):
             return False
         if getattr(self.user.eq_weapon, "subtype", None) != "Polearm":
             return False
-        if not hasattr(self.user, "combat_proximity"):
-            return False
-        return any(
-            e.is_alive() and self.user.combat_proximity.get(e, 9999) <= self.mvrange[1]
-            for e in self.user.combat_proximity
-        )
+        return _living_hostile_in_arc(self)
 
     def evaluate(self):
         try:
@@ -334,12 +347,7 @@ class HalberdSpin(Move):
             return False
         if getattr(self.user.eq_weapon, "subtype", None) != "Polearm":
             return False
-        if not hasattr(self.user, "combat_proximity"):
-            return False
-        return any(
-            e.is_alive() and self.user.combat_proximity.get(e, 9999) <= self.mvrange[1]
-            for e in self.user.combat_proximity
-        )
+        return _living_hostile_in_arc(self)
 
     def evaluate(self):
         try:

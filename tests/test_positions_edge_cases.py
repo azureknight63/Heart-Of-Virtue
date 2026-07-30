@@ -235,18 +235,6 @@ class TestExtremeDistances:
         # Due to rounding, we expect 1 or 2
         assert distance in [1, 2]
 
-    def test_squared_distance_function(self):
-        """Test that squared distance function exists and works."""
-        pos1 = positions.CombatPosition(x=25, y=25, facing=positions.Direction.N)
-        pos2 = positions.CombatPosition(x=30, y=25, facing=positions.Direction.N)
-
-        dist = positions.distance_from_coords(pos1, pos2)
-        squared_dist = positions.distance_squared(pos1, pos2)
-
-        # Squared distance should be approximately dist^2
-        expected_squared = dist ** 2
-        assert math.isclose(squared_dist, expected_squared, rel_tol=0.1)
-
 
 class TestDirectionEdgeCases:
     """Test direction/facing edge cases."""

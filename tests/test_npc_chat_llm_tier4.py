@@ -674,6 +674,24 @@ class TestLoadHistoryFromPersistence:
         npc._load_history_from_persistence(player)
         assert npc.loquacity_current == 42
 
+    def test_load_history_with_loquacity_exactly_zero(self):
+        """A persisted 0 (patience fully exhausted) must be restored as 0, not
+        confused with 'never persisted' and silently reset back to a nonzero
+        default (issue #381)."""
+        class TestNPC(HumanNPCLLMMixin):
+            def __init__(self):
+                self.name = "TestNPC"
+                self._chat_history = []
+                self._chat_personality = None
+                self.loquacity_current = 99  # pre-existing nonzero value
+                self._chat_npc_key = "test_key"
+
+        npc = TestNPC()
+        player = MagicMock()
+        player.npc_chat_histories = {"test_key": {"exchanges": [], "loquacity_current": 0}}
+        npc._load_history_from_persistence(player)
+        assert npc.loquacity_current == 0
+
 
 class TestSaveExchangeToPersistence:
     """Test _save_exchange_to_persistence."""

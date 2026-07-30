@@ -702,6 +702,10 @@
     },
     {
       "module": "src.items",
+      "name": "ProtectiveGear"
+    },
+    {
+      "module": "src.items",
       "name": "QualityReport117K"
     },
     {
@@ -1901,6 +1905,6 @@
       "name": "UUID"
     }
   ],
-  "count": 475,
+  "count": 476,
   "header_version": 1
 }
