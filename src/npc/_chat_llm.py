@@ -71,6 +71,26 @@ _COMMON_CAP_WORDS = frozenset(
     )
 )
 
+# Minimum length for NPC dialogue text to be treated as real content rather
+# than empty/near-empty noise. Several NPCs are authored with terse,
+# economical voices (Mara: "Says half of what she means") and can
+# legitimately reply with "No." or "I see." — a flat 10-character floor
+# silently rejected those in-character replies on every single turn, forcing
+# unnecessary retries/fallback for exactly the NPCs whose voice most called
+# for short answers. This only needs to catch genuinely empty/near-empty
+# noise; _has_real_npc_text's alphanumeric check (below) does the actual
+# garbage filtering (e.g. "..." or "-").
+_MIN_NPC_TEXT_LEN = 2
+
+_HAS_ALNUM_PATTERN = re.compile(r"[A-Za-z0-9]")
+
+
+def _has_real_npc_text(text: str) -> bool:
+    """True if text is long enough and has actual word content (not just
+    punctuation/whitespace noise like "..." or "-")."""
+    return len(text) >= _MIN_NPC_TEXT_LEN and bool(_HAS_ALNUM_PATTERN.search(text))
+
+
 # Fallback drain amounts keyed by conversation_quality — used only when the LLM
 # does not supply an explicit signed loquacity_delta (legacy adapter / fallback).
 _LOQUACITY_DRAIN = {"positive": 3, "neutral": 8, "negative": 15, "offensive": 30}
@@ -613,9 +633,9 @@ class HumanNPCLLMMixin:
 
     def _qc_npc_text(self, text: str, history: List[Dict[str, Any]]) -> Optional[str]:
         """Apply QC pipeline. Return cleaned text or None."""
-        # Step 1: Strip and length check
+        # Step 1: Strip and garbage check (see _has_real_npc_text/_MIN_NPC_TEXT_LEN)
         text = text.strip()
-        if not text or len(text) < 10:
+        if not _has_real_npc_text(text):
             return None
 
         # Step 2: Truncate at sentence boundary if too long
@@ -670,7 +690,7 @@ class HumanNPCLLMMixin:
 
         # Step 5: Slang filter
         text = _SLANG_PATTERN.sub("", text).strip()
-        if not text or len(text) < 10:
+        if not _has_real_npc_text(text):
             return None
 
         # Step 6: Prohibited phrases (story chars only, patterns pre-compiled in _init_chat_attrs)

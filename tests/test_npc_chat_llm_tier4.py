@@ -1020,8 +1020,8 @@ class TestQCNpcText:
         result = npc._qc_npc_text("", [])
         assert result is None
 
-    def test_qc_too_short_text(self):
-        """Test QC rejects text under 10 chars."""
+    def test_qc_rejects_single_char_noise(self):
+        """QC still rejects genuinely near-empty noise (below the 2-char floor)."""
         class TestNPC(HumanNPCLLMMixin):
             def __init__(self):
                 self.name = "TestNPC"
@@ -1029,8 +1029,36 @@ class TestQCNpcText:
                 self._prohibited_patterns = []
 
         npc = TestNPC()
-        result = npc._qc_npc_text("short", [])
-        assert result is None
+        assert npc._qc_npc_text("k", []) is None
+
+    def test_qc_rejects_punctuation_only_noise(self):
+        """QC rejects text with no actual word content, regardless of length."""
+        class TestNPC(HumanNPCLLMMixin):
+            def __init__(self):
+                self.name = "TestNPC"
+                self._chat_world_facts = {}
+                self._prohibited_patterns = []
+
+        npc = TestNPC()
+        assert npc._qc_npc_text("-- ...", []) is None
+
+    def test_qc_allows_terse_in_character_replies(self):
+        """Regression test: several NPCs are authored with terse, economical
+        voices (Mara: "Says half of what she means") and can legitimately
+        reply with something under 10 characters. A flat length floor used to
+        reject these in-character replies on every single turn.
+        """
+        class TestNPC(HumanNPCLLMMixin):
+            def __init__(self):
+                self.name = "TestNPC"
+                self._chat_world_facts = {}
+                self._prohibited_patterns = []
+
+        npc = TestNPC()
+        for terse in ["No.", "I see.", "Not now.", "Fine."]:
+            result = npc._qc_npc_text(terse, [])
+            assert result is not None, f"{terse!r} should have passed QC"
+            assert result == terse
 
     def test_qc_valid_text(self):
         """Test QC passes valid text."""
