@@ -4,6 +4,7 @@ Combat states to be used within combat module. May also spill over to the standa
 """
 
 from src.narration import cprint
+import math
 import random
 import src.functions as functions
 
@@ -164,26 +165,45 @@ class Poisoned(State):
             self.steps_left = self.steps_max
 
 
+# Balance constants for Enflamed (issue #343) -- tune here rather than
+# scattering magic numbers through effect()/compound().
+ENFLAMED_DAMAGE_PCT_PER_BEAT = 0.01  # fraction of target maxhp dealt per beat, before fire resistance
+ENFLAMED_MAX_BEATS = 25
+ENFLAMED_MAX_STACKS = 3
+
+
 class Enflamed(
     State
-):  # target is engulfed in flames, taking damage every few beats; COMBAT ONLY
+):  # target is engulfed in flames, taking damage every beat; COMBAT ONLY
+    """Fire damage-over-time.
+
+    Deals ENFLAMED_DAMAGE_PCT_PER_BEAT of the target's maxhp each beat
+    (scaled by stack count, then reduced/amplified by fire resistance). Each
+    beat also rolls a chance -- based on the target's resistance to the
+    "enflamed" status itself -- to burn out early, so more fire-resistant
+    targets both take less damage per beat and tend to shed the fire sooner.
+    Reapplying while already burning adds a stack (capped at
+    ENFLAMED_MAX_STACKS) and refreshes the duration, rather than creating a
+    second, independent instance.
+    """
+
     def __init__(self, target):
-        duration = random.randint(21, 60)
         super().__init__(
             name="Enflamed",
             target=target,
-            beats_max=duration,
+            beats_max=ENFLAMED_MAX_BEATS,
             steps_max=0,
             compounding=True,
             world=False,
             statustype="enflamed",
             persistent=False,
-            description="Deals escalating HP damage every few beats. Worsens if reapplied.",
+            description=(
+                "Deals fire damage every beat, reduced by fire resistance. Each beat "
+                "carries a chance to burn out early based on fire resistance. "
+                "Stacks up to {} times.".format(ENFLAMED_MAX_STACKS)
+            ),
         )
-        self.tick = 0  # increases at each effect cycle
-        self.execute_on = (
-            3  # when the tick is a multiple of this number, execute the effect
-        )
+        self.stacks = 1
 
     def on_application(self, target):
         cprint("{} has been set aflame!".format(target.name), "magenta")
@@ -192,11 +212,16 @@ class Enflamed(
         cprint("{} is no longer on fire.".format(target.name), "white")
 
     def effect(self, target):
-        self.tick += 1
-        if self.tick % self.execute_on == 0:
-            damage = int(
-                target.maxhp * (random.uniform(0.015, 0.035) + (self.tick * 0.003))
-            )
+        resistance_mult = functions.combat_resistance(target, "fire")
+        raw_damage = (
+            target.maxhp * ENFLAMED_DAMAGE_PCT_PER_BEAT * self.stacks * resistance_mult
+        )
+        # Round up rather than truncate: 1% of a low-maxhp fodder enemy (e.g. a
+        # 20 HP Slime) is well under 1 before rounding, and int()-truncating
+        # would make Enflamed a complete no-op against exactly the enemies
+        # most likely to be shot with a FlareArrow.
+        damage = max(0, math.ceil(raw_damage))
+        if damage > 0:
             cprint(
                 "{} writhes in the flames, suffering {} damage!".format(
                     target.name, damage
@@ -205,21 +230,34 @@ class Enflamed(
             )
             target.hp -= damage
 
+        # Each beat, a chance to burn out early -- scales with the target's
+        # resistance to the enflamed status (0.0 = never shakes it off early,
+        # 1.0 = always extinguished the very first beat).
+        removal_chance = getattr(target, "status_resistance", {}).get("enflamed", 0.0)
+        removal_chance = max(0.0, min(1.0, removal_chance))
+        if removal_chance > 0 and random.random() < removal_chance:
+            # State.process() decrements beats_left immediately after effect()
+            # and removes the state once it hits 0 -- landing here at 1 makes
+            # that happen on this same beat instead of waiting for beats_max.
+            self.beats_left = 1
+
     def compound(self, target):
-        #  Increases the strength and duration of the flames by 25% every time it's inflicted
-        cprint("{}'s flames have grown fiercer!".format(target.name), "magenta")
-        self.tick *= 1.25
-        self.tick = int(self.tick)
-        self.beats_max *= 1.1
-        self.beats_max = int(self.beats_max)
-        self.steps_max *= 1.1
-        self.steps_max = int(self.steps_max)
-        self.beats_left += int((self.beats_max / 4))
-        if self.beats_left > self.beats_max:
-            self.beats_left = self.beats_max
-        self.steps_left += int((self.steps_max / 4))
-        if self.steps_left > self.steps_max:
-            self.steps_left = self.steps_max
+        # Reapplying adds a stack (up to the cap) and refreshes the duration,
+        # rather than escalating tick/duration multipliers indefinitely.
+        if self.stacks < ENFLAMED_MAX_STACKS:
+            self.stacks += 1
+            cprint(
+                "{}'s flames intensify! ({} stacks)".format(target.name, self.stacks),
+                "magenta",
+            )
+        else:
+            cprint(
+                "{}'s flames are already burning at their fiercest.".format(
+                    target.name
+                ),
+                "magenta",
+            )
+        self.beats_left = self.beats_max
 
 
 class Clean(State):

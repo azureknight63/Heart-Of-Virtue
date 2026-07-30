@@ -414,31 +414,59 @@ def test_petrified_fatigue_drain_scaling(mock_cprint, mock_refresh, realistic_ta
 
 
 @patch('src.states.cprint')
-def test_enflamed_damage_scales_with_duration(mock_cprint, realistic_target):
-    """Test that Enflamed's damage increases as ticks accumulate"""
+def test_enflamed_damage_per_beat_matches_formula(mock_cprint, realistic_target):
+    """Issue #343: Enflamed deals a flat ENFLAMED_DAMAGE_PCT_PER_BEAT% of maxhp
+    every beat (not an escalating tick-based curve), reduced by fire resistance.
+    realistic_target's resistance["enflamed"] is 1.0, so extinguish early --
+    silence that by zeroing it out for this damage-only assertion."""
     realistic_target.in_combat = True
     realistic_target.hp = 1000  # High HP to survive multiple hits
+    realistic_target.status_resistance["enflamed"] = 0.0  # isolate damage from early burnout
 
     state = Enflamed(realistic_target)
 
-    hp_after_first_tick = realistic_target.hp
-    # Trigger first damage
-    for _ in range(3):  # execute_on = 3
-        state.effect(realistic_target)
+    hp_before = realistic_target.hp
+    state.effect(realistic_target)
+    first_damage = hp_before - realistic_target.hp
 
-    hp_after_first_damage = realistic_target.hp
-    first_damage = hp_after_first_tick - hp_after_first_damage
+    hp_before = realistic_target.hp
+    state.effect(realistic_target)
+    second_damage = hp_before - realistic_target.hp
 
-    # Trigger second damage
-    for _ in range(3):
-        state.effect(realistic_target)
+    expected = int(realistic_target.maxhp * 0.01 * 1 * 1.0)  # 1 stack, neutral fire resistance
+    assert first_damage == expected
+    assert second_damage == expected  # flat per beat, not escalating
 
-    hp_after_second_damage = realistic_target.hp
-    second_damage = hp_after_first_damage - hp_after_second_damage
 
-    # Both should have dealt damage
-    assert first_damage > 0
-    assert second_damage > 0
+@patch('src.states.cprint')
+def test_enflamed_damage_scales_with_stacks(mock_cprint, realistic_target):
+    """Stacking Enflamed (via compound()) should multiply per-beat damage."""
+    realistic_target.in_combat = True
+    realistic_target.hp = 1000
+    realistic_target.status_resistance["enflamed"] = 0.0
+
+    state = Enflamed(realistic_target)
+    state.stacks = 3
+
+    hp_before = realistic_target.hp
+    state.effect(realistic_target)
+    damage = hp_before - realistic_target.hp
+
+    assert damage == int(realistic_target.maxhp * 0.01 * 3 * 1.0)
+
+
+@patch('src.states.cprint')
+def test_enflamed_early_burnout_from_resistance(mock_cprint, realistic_target):
+    """A target fully resistant to the enflamed status should shake off the
+    fire on the very first beat (issue #343's per-beat removal-chance spec)."""
+    realistic_target.in_combat = True
+    realistic_target.hp = 1000
+    realistic_target.status_resistance["enflamed"] = 1.0
+
+    state = Enflamed(realistic_target)
+    state.effect(realistic_target)
+
+    assert state.beats_left == 1
 
 
 @patch('src.states.functions.refresh_stat_bonuses')

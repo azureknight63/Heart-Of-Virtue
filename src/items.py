@@ -3040,6 +3040,10 @@ class GlassArrow(Arrow):
 
 class FlareArrow(Arrow):
     def __init__(self, count: int = 1, merchandise: bool = False) -> None:
+        # Deferred import: src.story.effects -> src.npc -> src.items would be
+        # circular if this were a module-level import.
+        from src.story.effects import FlareArrowImpact
+
         super().__init__(
             name="Flare Arrow",
             description="A useful device composed of a sharp tip, a shaft of sorts, "
@@ -3054,11 +3058,10 @@ class FlareArrow(Arrow):
             sturdiness=0.0,
             helptext=colored("+range, +damage, -decay, ", "green")
             + colored("----sturdiness", "red"),
-            effects=None,
+            effects=[FlareArrowImpact()],
             count=count,
             merchandise=merchandise,
         )
-        # todo add fire effect on impact
 
 
 # ---------------------------------------------------------------------------
