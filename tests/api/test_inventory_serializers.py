@@ -27,74 +27,75 @@ except ImportError:
     SERIALIZERS_AVAILABLE = False
 
 
-# Mock item classes for testing
+# Mock item classes for testing. These mirror the *real* engine model
+# (src/items.py, src/player/__init__.py):
+#   * stack size is `count`, never `quantity`
+#   * equippability is the `isequipped` attribute plus the `interactions` list
+#   * armour value is `protection`; weapons have no `protection` and armour has
+#     no `damage` (issues #411/#412)
+#   * stat bonuses are scalar `add_*` attributes, not a `stat_bonuses` dict
+#   * the Player has no `equipped` dict — equipment is derived from the
+#     inventory's `isequipped`/`maintype` fields plus `eq_weapon`
 class MockItem:
-    """Mock basic item."""
+    """Mock basic (non-equippable) item."""
 
     def __init__(
         self,
         name="Test Item",
-        quantity=1,
+        count=1,
         rarity="common",
         weight=1.0,
         value=100,
+        interactions=None,
     ):
         self.name = name
-        self.quantity = quantity
+        self.count = count
         self.rarity = rarity
         self.weight = weight
         self.value = value
         self.description = "Test item description"
+        self.interactions = ["drop"] if interactions is None else interactions
 
 
 class MockWeapon(MockItem):
-    """Mock weapon item."""
+    """Mock weapon item. Real weapons carry `damage` and no `protection`."""
 
-    def __init__(self, name="Sword", damage=10, **kwargs):
+    maintype = "Weapon"
+    subtype = "Sword"
+
+    def __init__(self, name="Sword", damage=10, isequipped=False, **kwargs):
+        kwargs.setdefault("interactions", ["equip", "unequip", "drop"])
         super().__init__(name=name, **kwargs)
         self.damage = damage
-        self.stat_bonuses = {"attack": 5}
-        self.resistance_bonuses = {}
-
-    def equip(self, player):
-        self.equipped_state = True
-
-    def unequip(self, player):
-        self.equipped_state = False
+        self.str_mod = 1
+        self.fin_mod = 0
+        self.add_str = 5
+        self.isequipped = isequipped
 
 
 class MockArmor(MockItem):
-    """Mock armor item."""
+    """Mock armor item. Real armour carries `protection` and no `damage`."""
 
-    def __init__(self, name="Leather Armor", armor=5, **kwargs):
+    maintype = "Armor"
+    subtype = "Light"
+
+    def __init__(self, name="Leather Armor", protection=5, isequipped=False, **kwargs):
+        kwargs.setdefault("interactions", ["equip", "unequip", "drop"])
         super().__init__(name=name, **kwargs)
-        self.armor = armor
-        self.protection = armor
-        self.stat_bonuses = {"defense": 3}
-        self.resistance_bonuses = {"piercing": 0.8}
-
-    def equip(self, player):
-        self.equipped_state = True
-
-    def unequip(self, player):
-        self.equipped_state = False
+        self.protection = protection
+        self.str_mod = 0
+        self.fin_mod = 0
+        self.add_endurance = 3
+        self.add_resistance = {"piercing": 0.8}
+        self.isequipped = isequipped
 
 
 class MockPlayer:
-    """Mock player with inventory and equipment."""
+    """Mock player with an inventory (the engine's only equipment source)."""
 
     def __init__(self):
         self.inventory_list = []
-        self.equipped = {
-            "head": None,
-            "chest": None,
-            "legs": None,
-            "hands": None,
-            "feet": None,
-            "back": None,
-            "ring1": None,
-            "ring2": None,
-        }
+        self.eq_weapon = None
         self.carrying_capacity = 100.0
         self.inventory_slots = 20
 
@@ -105,7 +106,7 @@ class TestInventoryItemSerializer:
 
     def test_serialize_basic_item(self):
         """Test serializing a basic item."""
-        item = MockItem(name="Potion", quantity=5, rarity="common", weight=0.5, value=50)
+        item = MockItem(name="Potion", count=5, rarity="common", weight=0.5, value=50)
         result = InventoryItemSerializer.serialize(item, 0)
 
         assert result["index"] == 0
@@ -162,9 +163,9 @@ class TestInventorySerializer:
         """Test serializing inventory with multiple items."""
         player = MockPlayer()
         player.inventory_list = [
-            MockItem(name="Potion", quantity=2, weight=0.5, value=50),
+            MockItem(name="Potion", count=2, weight=0.5, value=50),
             MockWeapon(name="Sword", damage=10, weight=2.0, value=200),
-            MockArmor(name="Leather Armor", armor=5, weight=3.0, value=150),
+            MockArmor(name="Leather Armor", protection=5, weight=3.0, value=150),
         ]
 
         result = InventorySerializer.serialize(player)
@@ -229,7 +230,8 @@ class TestEquipmentSlotSerializer:
         assert result["slot"] == "head"
         assert result["equipped"] is False
         assert result["item_name"] is None
-        assert result["armor"] == 0
+        # Real gear exposes `protection`; no engine item has an `armor` attr.
+        assert result["protection"] == 0
         assert result["damage"] == 0
 
     def test_equipped_weapon(self):
@@ -241,18 +243,20 @@ class TestEquipmentSlotSerializer:
         assert result["equipped"] is True
         assert result["item_name"] == "Sword"
         assert result["damage"] == 15
-        assert result["stat_bonuses"]["attack"] == 5
+        # Bonuses come from scalar `add_*` attributes, keyed by player stat.
+        assert result["stat_bonuses"]["strength"] == 5
 
     def test_equipped_armor(self):
         """Test serializing equipped armor."""
-        armor = MockArmor(name="Plate Mail", armor=10)
+        armor = MockArmor(name="Plate Mail", protection=10)
         result = EquipmentSlotSerializer.serialize("chest", armor)
 
         assert result["slot"] == "chest"
         assert result["equipped"] is True
         assert result["item_name"] == "Plate Mail"
-        assert result["armor"] == 10
-        assert result["stat_bonuses"]["defense"] == 3
+        assert result["protection"] == 10
+        assert result["stat_bonuses"]["endurance"] == 3
+        assert result["resistance_bonuses"]["piercing"] == 0.8
 
 
 @pytest.mark.skipif(not SERIALIZERS_AVAILABLE, reason="Serializers not available")
@@ -260,25 +264,29 @@ class TestEquipmentSerializer:
     """Test EquipmentSerializer."""
 
     def test_empty_equipment(self):
-        """Test serializing equipment with nothing equipped."""
+        """Nothing equipped — slots are derived, so none are reported."""
         player = MockPlayer()
         result = EquipmentSerializer.serialize(player)
 
-        assert len(result["equipped"]) == 8  # 8 slots
+        # Slots come from equipped inventory items, so an empty inventory with
+        # no `eq_weapon` yields no slots at all (the engine has no fixed
+        # per-slot player attributes to enumerate).
+        assert result["equipped"] == {}
         assert result["unequipped_equippable_count"] == 0
-        assert result["total_stat_bonuses"]["attack"] == 0
-        assert result["total_stat_bonuses"]["defense"] == 0
+        assert result["total_stat_bonuses"] == {}
 
     def test_equipped_items_bonuses(self):
-        """Test stat bonuses from equipped items."""
+        """Stat bonuses are summed from equipped inventory items' `add_*`."""
         player = MockPlayer()
-        player.equipped["hand"] = MockWeapon(damage=10)  # +5 attack
-        player.equipped["chest"] = MockArmor(armor=5)  # +3 defense
+        weapon = MockWeapon(damage=10, isequipped=True)  # add_str 5
+        armor = MockArmor(protection=5, isequipped=True)  # add_endurance 3
+        player.inventory_list = [weapon, armor]
 
         result = EquipmentSerializer.serialize(player)
 
-        assert result["total_stat_bonuses"]["attack"] == 5
-        assert result["total_stat_bonuses"]["defense"] == 3
+        assert set(result["equipped"]) == {"weapon", "body"}
+        assert result["total_stat_bonuses"]["strength"] == 5
+        assert result["total_stat_bonuses"]["endurance"] == 3
 
     def test_unequipped_equippable_count(self):
         """Test counting unequipped equippable items."""
@@ -296,12 +304,26 @@ class TestEquipmentSerializer:
     def test_equipment_value(self):
         """Test calculating total equipment value."""
         player = MockPlayer()
-        player.equipped["hand"] = MockWeapon(value=200)
-        player.equipped["chest"] = MockArmor(value=150)
+        player.inventory_list = [
+            MockWeapon(value=200, isequipped=True),
+            MockArmor(value=150, isequipped=True),
+        ]
 
         result = EquipmentSerializer.serialize(player)
 
         assert result["equipment_value"] == 350
+
+    def test_unequipped_items_are_excluded_from_slots(self):
+        """Only `isequipped` items occupy slots — a carried-but-unworn item
+        must not appear as equipment (#411)."""
+        player = MockPlayer()
+        player.inventory_list = [MockWeapon(name="Spare Sword", isequipped=False)]
+
+        result = EquipmentSerializer.serialize(player)
+
+        assert result["equipped"] == {}
+        assert result["equipment_value"] == 0
+        assert result["unequipped_equippable_count"] == 1
 
     def test_empty_inventory_list_does_not_fall_through_to_inventory(self):
         """An empty ``inventory_list`` must not fall through to a stale
@@ -344,7 +366,8 @@ class TestItemDetailSerializer:
         assert result["equipped"] is True
         assert result["can_equip"] is True
         assert result["stats"]["damage"] == 15
-        assert result["bonuses"]["stat_bonuses"]["attack"] == 5
+        # Bonuses come from scalar `add_*` attributes, keyed by player stat.
+        assert result["bonuses"]["stat_bonuses"]["strength"] == 5
 
     def test_with_inventory_index(self):
         """Test serializing with inventory index."""
@@ -405,29 +428,45 @@ class TestItemComparisonSerializer:
         assert result["differences"]["damage_diff"] == -10
 
     def test_sidegrade_comparison(self):
-        """Test comparing items showing a genuine mixed trade-off (sidegrade)."""
+        """A same-damage weapon swap is a sidegrade.
+
+        Deliberately does *not* fabricate `protection` on the weapons: real
+        `Weapon` objects have no such attribute, and a test that invents one
+        can't tell a real sidegrade from #412's bug. Equal damage with a
+        different weight is the genuine in-domain sidegrade.
+        """
         current = MockWeapon(name="Sword", damage=10, weight=2.0)
-        candidate = MockWeapon(name="Dagger", damage=8, weight=1.0)
-        # Give them opposing protection deltas so this is a real trade-off
-        # (less damage, more protection) rather than a strictly-worse weapon.
-        current.protection = 2
-        candidate.protection = 5
+        candidate = MockWeapon(name="Dagger", damage=10, weight=1.0)
+        assert not hasattr(current, "protection")
 
         result = ItemComparisonSerializer.serialize(current, candidate)
 
         assert result["recommendation"] == "sidegrade"
-        assert result["differences"]["damage_diff"] == -2
+        assert result["differences"]["damage_diff"] == 0
         assert result["differences"]["weight_diff"] == -1.0
 
     def test_armor_comparison(self):
         """Test comparing armor pieces."""
-        current = MockArmor(name="Leather", armor=5)
-        candidate = MockArmor(name="Plate", armor=12)
+        current = MockArmor(name="Leather", protection=5)
+        candidate = MockArmor(name="Plate", protection=12)
 
         result = ItemComparisonSerializer.serialize(current, candidate)
 
         assert result["differences"]["protection_diff"] == 7
         assert result["recommendation"] == "upgrade"
+
+    def test_armor_downgrade_comparison(self):
+        """Armor never carries `damage`, so a strictly-worse armour piece must
+        be flagged "downgrade" on protection alone (#412)."""
+        current = MockArmor(name="Plate", protection=12)
+        candidate = MockArmor(name="Leather", protection=5)
+        assert not hasattr(current, "damage")
+
+        result = ItemComparisonSerializer.serialize(current, candidate)
+
+        assert result["differences"]["protection_diff"] == -7
+        assert result["differences"]["damage_diff"] == 0
+        assert result["recommendation"] == "downgrade"
 
 
 @pytest.mark.skipif(not SERIALIZERS_AVAILABLE, reason="Serializers not available")
@@ -437,24 +476,21 @@ class TestSerializerIntegration:
     def test_full_player_state(self):
         """Test serializing complete player state."""
         player = MockPlayer()
-        weapon = MockWeapon(name="Sword", damage=10)
-        armor = MockArmor(name="Armor", armor=5)
-        potion = MockItem(name="Potion", quantity=3)
+        # `isequipped` is the engine's own equip flag — the same one the
+        # serializer buckets into slots.
+        weapon = MockWeapon(name="Sword", damage=10, isequipped=True)
+        armor = MockArmor(name="Armor", protection=5, isequipped=True)
+        potion = MockItem(name="Potion", count=3)
 
         player.inventory_list = [weapon, armor, potion]
-        # Mark equipped items so they don't count as unequipped equippable
-        weapon.equipped_state = True
-        armor.equipped_state = True
-
-        player.equipped["hand"] = weapon
-        player.equipped["chest"] = armor
 
         inventory = InventorySerializer.serialize(player)
         equipment = EquipmentSerializer.serialize(player)
 
         assert inventory["item_count"] == 3
         assert equipment["unequipped_equippable_count"] == 0
-        assert equipment["total_stat_bonuses"]["attack"] == 5
+        assert set(equipment["equipped"]) == {"weapon", "body"}
+        assert equipment["total_stat_bonuses"]["strength"] == 5
 
     def test_comparison_workflow(self):
         """Test typical equip decision workflow."""

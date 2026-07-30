@@ -20,17 +20,22 @@ class MockItem:
 
 
 class MockNPC:
-    """Mock NPC for testing."""
+    """Mock NPC for testing.
 
-    def __init__(self):
+    Mirrors the real engine NPC (src/npc/_base.py): current HP is ``hp`` (not
+    ``current_hp``/``health``), max HP is ``maxhp``, and there is no
+    ``is_hostile`` flag — hostility is derived from ``aggro``/``friend``
+    (issue #432).
+    """
+
+    def __init__(self, aggro=False, friend=False):
         self.name = "Test NPC"
         self.description = "A test NPC"
         self.level = 5
-        self.health = 50
-        self.max_health = 100
-        self.is_hostile = False
-        self.faction = "neutral"
-        self.is_merchant = False
+        self.hp = 50
+        self.maxhp = 100
+        self.aggro = aggro
+        self.friend = friend
 
 
 class MockObject:
@@ -102,12 +107,19 @@ class TestNPCSerializer:
         assert all(r["name"] == "Test NPC" for r in result)
 
     def test_serialize_hostile_npc(self):
-        """Test serializing a hostile NPC."""
-        npc = MockNPC()
-        npc.is_hostile = True
+        """Hostility is derived from the real `aggro`/`friend` flags."""
+        npc = MockNPC(aggro=True)
         result = NPCSerializer.serialize(npc)
 
         assert result["is_hostile"] is True
+        assert "attack" in result["keywords"]
+
+    def test_serialize_friendly_aggro_npc_is_not_hostile(self):
+        """An allied NPC is never hostile to Jean, even with aggro set."""
+        npc = MockNPC(aggro=True, friend=True)
+        result = NPCSerializer.serialize(npc)
+
+        assert result["is_hostile"] is False
 
 
 class TestObjectSerializer:

@@ -434,7 +434,11 @@ class ItemDetailSerializer:
             "value": getattr(item, "value", 0),
             "equipped": equipped,
             "inventory_index": inventory_index,
-            "can_equip": hasattr(item, "equip"),
+            # `hasattr(item, "equip")` is True for every item — `equip` lives on
+            # the base `Item` class — so it offered an Equip button on potions
+            # and gold. `is_equippable` keys off `isequipped` instead, the same
+            # flag the engine's equip path uses (see its docstring).
+            "can_equip": is_equippable(item),
             "can_use": hasattr(item, "use"),
             "can_drop": True,  # Most items can be dropped
             "stats": {
@@ -445,9 +449,13 @@ class ItemDetailSerializer:
                 "accuracy": getattr(item, "accuracy", 0),
                 "evasion": getattr(item, "evasion", 0),
             },
+            # Bonuses live on scalar `add_*` attributes and the
+            # `add_resistance` dict (enchantments); no engine item has a
+            # `stat_bonuses`/`resistance_bonuses` mapping, so both blocks used
+            # to be permanently empty.
             "bonuses": {
-                "stat_bonuses": getattr(item, "stat_bonuses", {}),
-                "resistance_bonuses": getattr(item, "resistance_bonuses", {}),
+                "stat_bonuses": _collect_item_bonuses(item),
+                "resistance_bonuses": dict(getattr(item, "add_resistance", None) or {}),
             },
             "flags": {
                 "merchandise": getattr(item, "merchandise", False),
