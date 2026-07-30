@@ -72,10 +72,19 @@ config_combat_testing.ini   # Combat testing config (agent-only; pass CONFIG_FIL
 
 ```bash
 # API server (localhost:5000) — the game runs entirely through this
+python tools/run_api.py [CONFIG_FILE]
+
+# With a specific game config (starting position, equipment, story flags)
+python tools/run_api.py config_eastern_descent_test.ini
+
+# Omit CONFIG_FILE to fall back to CONFIG_FILE from .env, or config_dev.ini
 python tools/run_api.py
 
 # Frontend dev server (localhost:3000)
 cd frontend && npm install && npm run dev
+
+# One-shot: launch both servers via PowerShell
+.\tools\start_servers.ps1 [CONFIG_FILE]
 ```
 
 ## Running Tests
@@ -695,7 +704,7 @@ Starts API + frontend servers, then runs via gstack /qa. Catches JS errors, rend
 **Manual dev testing:**
 Edit `config.ini` to customize player stats, starting map, debug flags. Then:
 ```bash
-CONFIG_FILE=tests/acceptance/<feature-slug>/config.ini python tools/run_api.py
+python tools/run_api.py tests/acceptance/<feature-slug>/config.ini
 ```
 
 ### Customization

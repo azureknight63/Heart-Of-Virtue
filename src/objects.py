@@ -726,6 +726,7 @@ class Passageway(Object):
         hidden: bool = False,
         hide_factor: int = 0,
         is_shop_exit: bool = False,
+        passthrough: bool = False,
         name: str = "Passageway",
         description: str = "A passageway leading elsewhere is here.",
         idle_message: str = "There is a passageway here.",
@@ -750,6 +751,7 @@ class Passageway(Object):
         for _word in _name_words:
             if len(_word) > 3 and _word.isalpha() and not hasattr(self, _word):
                 setattr(self, _word, self.enter)
+                self.action_aliases.append(_word)
                 self.keywords.append(_word)
         self.events_before = events_before if events_before is not None else []
         self.events_after = events_after if events_after is not None else []
@@ -757,6 +759,9 @@ class Passageway(Object):
         self.teleport_tile = teleport_tile if teleport_tile is not None else ""
         self.persist = persist  # if True, the passageway will remain after use, else
         # it will be removed from the tile after use
+        # If True, the frontend skips the Interactions panel and directly executes
+        # the first action (enter) when the player clicks this object.
+        self.passthrough = passthrough
 
     def enter(self, player):
         # Drop any merchandise items immediately upon attempting to enter/teleport
@@ -766,30 +771,39 @@ class Passageway(Object):
             for event in self.events_before:
                 event.process()
         if self.teleport_map and self.teleport_tile:
-            # Build a natural article phrase.
-            # Possessives (Jambo's Tent) are proper nouns — no article.
-            # Names already starting with "The" strip the duplicate and preserve rest.
-            # Generic noun phrases (Archive Door, Tent Flap) get "the " prepended.
-            _n = self.name
-            if "'" in _n:
-                _ref = _n
-            elif _n.lower().startswith("the "):
-                _ref = f"the {_n[4:]}"
-            else:
-                _ref = f"the {_n.lower()}"
+            _ref = self.build_article_phrase(self.name)
             narrate(f"Jean steps through {_ref}...")
             time.sleep(0.5)
-            player.teleport(self.teleport_map, self.teleport_tile)
-            if self.events_after:
-                for event in self.events_after:
-                    event.process()
-            if not self.persist:
-                self.tile.objects_here.remove(self)
+            self._commit_teleport(player)
         else:
             narrate(
                 "The passageway is not properly configured. Please contact the developer."
             )
         functions.await_input()
+
+    def _commit_teleport(self, player):
+        """Perform the actual teleport.  Called directly by CLI enter()
+        or via PassagewayTransitionEvent.process() in API mode."""
+        player.teleport(self.teleport_map, self.teleport_tile)
+        if self.events_after:
+            for event in self.events_after:
+                event.process()
+        if not self.persist:
+            self.tile.objects_here.remove(self)
+
+    @staticmethod
+    def build_article_phrase(name):
+        """Build a natural article phrase for a passageway name.
+
+        Possessives (Jambo's Tent) are proper nouns — no article.
+        Names starting with "The" strip the duplicate and preserve rest.
+        Generic noun phrases (Archive Door, Tent Flap) get "the " prepended.
+        """
+        if "'" in name:
+            return name
+        if name.lower().startswith("the "):
+            return f"the {name[4:]}"
+        return f"the {name.lower()}"
 
     def go(self, player):
         self.enter(player)
@@ -1196,3 +1210,464 @@ class GeminateGeode(Object):
 
     def examine(self):
         narrate(self.description)
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# Camp objects — eastern-descent nomad camp interactables
+    # ═════════════════════════════════════════════════════════════════════════════
+
+
+class Campfire(Object):
+    """A campfire at the nomad camp. Can be LIT, used to WARM oneself, STOKEd, or SAT beside for a narrative moment.
+    """
+
+    def __init__(self, player=None, tile=None, lit: bool = True):
+        description = (
+            "A ring of stones encircling a bed of glowing embers. A thin curl of smoke "
+            "rises into the evening air. You could WARM yourself, STOKE it, or just SIT "
+            "and rest a while."
+            if lit
+            else "A ring of stones encircling a bed of cold ash. Dry kindling is stacked "
+            "beside it, ready to be LIT."
+        )
+        super().__init__(
+            name="Campfire",
+            description=description,
+            idle_message="A campfire burns softly here."
+            if lit
+            else "A cold fire ring sits here.",
+            discovery_message="a campfire!",
+            player=player,
+            tile=tile,
+            aliases=["fire", "fire ring", "campfire"],
+        )
+        self.lit = lit
+        self.keywords.extend(["light", "warm", "stoke", "sit", "examine", "use"])
+        self.action_aliases.extend([])
+
+    def light(self):
+        if self.lit:
+            narrate("The fire is already burning.")
+            return
+        narrate("Jean kneels and strikes flint against steel. After a few sparks, the "
+                "kindling catches and a small flame curls upward.")
+        self.lit = True
+        self.description = (
+            "A ring of stones encircling a bed of glowing embers. A thin curl of smoke "
+            "rises into the evening air. You could WARM yourself, STOKE it, or just SIT "
+            "and rest a while."
+        )
+        self.idle_message = "A campfire burns softly here."
+        functions.await_input()
+
+    def warm(self):
+        if not self.lit:
+            narrate("The fire is cold. Jean would need to LIGHT it first.")
+            return
+        narrate("Jean holds his hands over the flames, letting the warmth seep "
+                "into his fingers. The heat presses against his face, and for a "
+                "moment the road feels farther away than it is.")
+        functions.await_input()
+
+    def stoke(self):
+        if not self.lit:
+            narrate("The fire is cold. Jean would need to LIGHT it first.")
+            return
+        narrate("Jean nudges a fresh log into the embers. Sparks swirl upward and the "
+                "flames brighten with a low, satisfied crackle.")
+        functions.await_input()
+
+    def sit(self):
+        if not self.lit:
+            narrate("Jean sits on one of the stones ringing the cold fire pit. The air "
+                    "is still; the river murmurs somewhere beyond the camp. It's not "
+                    "unpleasant, exactly. Just quiet.")
+            return
+        narrate("Jean settles onto a smooth stone near the fire. The heat presses "
+                "against his face. Beyond the ring of light, the camp continues its "
+                "quiet rhythms — someone mending a strap, someone stirring a pot, "
+                "the river running below it all.")
+        functions.await_input()
+
+    def examine(self):
+        narrate(self.description)
+
+    def use(self):
+        if self.lit:
+            self.warm()
+        else:
+            self.light()
+
+
+class WaterBarrel(Object):
+    """A wooden barrel of fresh river water at the camp. Jean can DRINK to
+    restore a small amount of HP. Unlimited uses.
+    """
+
+    def __init__(self, player=None, tile=None):
+        description = (
+            "A sturdy wooden barrel, half-sunk into the ground near the fire ring. "
+            "A dipper hangs from its rim. The water inside is cool and clear — drawn "
+            "from the river upstream and left to settle. You could DRINK from it."
+        )
+        super().__init__(
+            name="Water Barrel",
+            description=description,
+            idle_message="A barrel of fresh water stands near the fire ring.",
+            discovery_message="a barrel of fresh water!",
+            player=player,
+            tile=tile,
+            aliases=["barrel", "water", "water barrel"],
+        )
+        self.keywords.extend(["drink", "examine", "use"])
+        self.action_aliases.extend([])
+
+    def drink(self):
+        if self.player is None:
+            narrate("Jean dips the ladle and drinks. The water is cool and clean.")
+            return
+        hp_restored = min(10, self.player.maxhp - self.player.hp)
+        if hp_restored <= 0:
+            narrate("Jean drinks deeply from the dipper. The water is cool and "
+                    "refreshing, but he doesn't need any more right now.")
+            return
+        self.player.hp += hp_restored
+        cprint(f"Jean drinks from the water barrel. (+{hp_restored} HP)", "green")
+        functions.await_input()
+
+    def examine(self):
+        narrate(self.description)
+
+    def use(self):
+        self.drink()
+
+
+class WashingBasin(Object):
+    """A simple basin of water for washing. Jean can WASH or CLEAN himself,
+    applying the Clean status effect. Unlimited uses.
+    """
+
+    def __init__(self, player=None, tile=None):
+        description = (
+            "A wide, shallow basin carved from a hollowed log, filled with water "
+            "that catches the firelight. A scrap of rough soap rests on the rim and "
+            "a cloth hangs from a peg beside it. You could WASH or CLEAN up here."
+        )
+        super().__init__(
+            name="Washing Basin",
+            description=description,
+            idle_message="A washing basin sits near the edge of the camp.",
+            discovery_message="a washing basin!",
+            player=player,
+            tile=tile,
+            aliases=["basin", "wash basin", "washing basin"],
+        )
+        self.keywords.extend(["wash", "clean", "examine", "use"])
+        self.action_aliases.extend([])
+
+    def wash(self):
+        if self.player is None:
+            narrate("Jean splashes water on his face. The cold cuts through the "
+                    "grime of the road.")
+            return
+        narrate("Jean scrubs the road dust from his hands and face. The water "
+                "darkens with silt. When he's done, he feels lighter — not clean "
+                "in the way a bathhouse makes you clean, but clean enough.")
+        self.player.apply_state(states.Clean(self.player))
+        cprint("Jean now has Clean status!", "green")
+        functions.await_input()
+
+    def clean(self):
+        self.wash()
+
+    def examine(self):
+        narrate(self.description)
+
+    def use(self):
+        self.wash()
+
+
+class DryingRack(Object):
+    """A wooden rack where nomads dry herbs, fish, and strips of meat. Jean can
+    CHECK what's drying or TAKE a small consumable item. Refills every 50 game ticks.
+    """
+
+    # What might be found drying on the rack
+    _DRIED_GOODS = [
+        ("Dried Fish", "A strip of river fish, salted and dried to a leathery "
+         "chew. Not delicious, but it keeps."),
+        ("Dried Meat", "A strip of cured meat, dark and firm. Traveler's fare."),
+        ("Dried Herbs", "A bundle of aromatic herbs tied with twine. They smell "
+         "of the foothills — sage, maybe, and something sharper."),
+        ("Dried Berries", "A small pouch of shriveled berries. Chewy and tart "
+         "enough to make your jaw tighten."),
+    ]
+
+    def __init__(self, player=None, tile=None):
+        description = (
+            "A wooden frame strung with lengths of twine, draped with strips "
+            "of something dark and fragrant drying slowly above the fire's reach. "
+            "You could CHECK what's there, or TAKE something if it's ready."
+        )
+        super().__init__(
+            name="Drying Rack",
+            description=description,
+            idle_message="A drying rack stands near the fire, laden with provisions.",
+            discovery_message="a drying rack laden with goods!",
+            player=player,
+            tile=tile,
+            aliases=["rack", "drying rack"],
+        )
+        self.keywords.extend(["check", "take", "loot", "examine", "use"])
+        self.action_aliases.extend(["loot"])
+        self._last_take_tick = -50  # Start ready
+        self._current_item = None
+
+    def _get_tick(self):
+        """Get current game tick, or 0 if unavailable."""
+        try:
+            return getattr(getattr(self.player, "universe", None), "game_tick", 0) or 0
+        except Exception:
+            return 0
+
+    def _refill_if_needed(self):
+        tick = self._get_tick()
+        if tick - self._last_take_tick >= 50:
+            self._current_item = random.choice(self._DRIED_GOODS)
+        return self._current_item is not None
+
+    def check(self):
+        item = self._refill_if_needed()
+        if item is None:
+            narrate("The drying rack is bare. Give it some time.")
+            return
+        name, desc = item
+        narrate(f"Jean checks the drying rack. There's {name} here — {desc}")
+
+    def take(self):
+        if self.player is None:
+            narrate("Jean takes something from the drying rack.")
+            return
+        item = self._refill_if_needed()
+        if item is None:
+            narrate("The drying rack is bare. Nothing ready to take yet.")
+            return
+        name, desc = item
+        # Spawn the item on the tile for the player to pick up
+        narrate(f"Jean takes {name} from the drying rack. {desc}")
+        if self.tile:
+            self.tile.spawn_item("Restorative")
+        self._last_take_tick = self._get_tick()
+        self._current_item = None
+        functions.await_input()
+
+    def loot(self):
+        self.take()
+
+    def examine(self):
+        self.check()
+
+    def use(self):
+        self.take()
+
+
+class SupplyTent(Container):
+    """A small canvas tent where the nomads keep shared camp supplies. Locked;
+    can be opened with a key held by Devet or Mara. Contains basic provisions.
+    """
+
+    def __init__(self, player=None, tile=None):
+        description = (
+            "A low canvas tent staked at the camp's edge, its flap tied shut with "
+            "a length of hemp cord. A faded mark on the canvas suggests it holds "
+            "shared supplies — bandages, rations, the kind of things a camp keeps "
+            "for when they're needed."
+        )
+        super().__init__(
+            name="Supply Tent",
+            description=description,
+            idle_message="A small supply tent is staked at the camp's edge.",
+            discovery_message="a small supply tent!",
+            player=player,
+            tile=tile,
+            nickname="supply tent",
+            locked=True,
+            start_open=False,
+        )
+        self.aliases.extend(["tent", "supply tent"])
+
+    def open(self):
+        if self.locked:
+            narrate("Jean tugs at the tent flap. The hemp cord holds fast — "
+                    "it's tied from the inside. Someone with access to the camp "
+                    "would have the key.")
+            return
+        super().open()
+
+
+class RiverCrossingMarker(Object):
+    """A weathered wooden post marking the river ford. Jean can READ the
+    carved directions or EXAMINE it more closely. Pure lore object.
+    """
+
+    _MARKER_TEXT = [
+        "The post is old but the carving is deep: CROSS AT DAWN WHEN CURRENT "
+        "IS LOW. Below it, in a different hand: Mara knows the timing. Ask her.",
+        "Carved into the wood: STAY ON THE MARKED LINE. CURRENT SHIFTS PAST "
+        "MIDDAY. Below: If the rope is gone, wait. Devet will restring it.",
+        "The marker reads: WEST BANK IS UNSTABLE AFTER RAIN. TEST THE GROUND "
+        "BEFORE STEPPING OFF. Someone has added in charcoal: Especially in spring.",
+        "Weathered letters spell out: FIVE SECONDS BETWEEN WAVES MEANS CROSS. "
+        "THREE MEANS WAIT. Beneath it: Gorran counts the seconds. He's never wrong.",
+    ]
+
+    def __init__(self, player=None, tile=None):
+        description = (
+            "A weathered wooden post driven deep into the riverbank, its surface "
+            "cross-hatched with carved directions and years of weather. You could "
+            "READ the markings or EXAMINE the post."
+        )
+        super().__init__(
+            name="River Crossing Marker",
+            description=description,
+            idle_message="A weathered marker post stands at the river's edge.",
+            discovery_message="a weathered marker post!",
+            player=player,
+            tile=tile,
+            aliases=["marker", "post", "river marker", "crossing marker"],
+        )
+        self.keywords.extend(["read", "examine", "use"])
+        self.action_aliases.extend([])
+
+    def read(self):
+        narrate(random.choice(self._MARKER_TEXT))
+        functions.await_input()
+
+    def examine(self):
+        self.read()
+
+    def use(self):
+        self.read()
+
+
+class CampBanner(Object):
+    """A cloth banner hanging from a pole at the nomad camp, bearing the
+    markings of the group that travels these routes. Jean can EXAMINE or READ
+    the markings. Pure lore object.
+    """
+
+    _BANNER_LINES = [
+        "The banner is a long strip of undyed wool, its edges frayed by wind. "
+        "Three symbols are stitched across it in dark thread: a river, a rising "
+        "sun, and what might be an open hand. The stitching is uneven — many "
+        "different hands have worked on it over the years.",
+        "The cloth is faded but the design is clear: a series of concentric "
+        "circles, each one stitched in a different color of thread, all of them "
+        "bleached by sun until the differences are almost gone. At the center, "
+        "a single knot of undyed wool. The meaning isn't obvious, but the care "
+        "taken is.",
+        "Jean studies the banner. It bears the mark of the eastern routes — "
+        "a stylized river forking into three paths, with a small stitched star "
+        "at the end of each one. Some of the stars have names embroidered beside "
+        "them in tiny, careful letters. Most are too worn to read.",
+        "The banner is newer than the post it hangs from. The cloth is still "
+        "supple, the dyes still holding. It shows a caravan silhouette against "
+        "a rising sun, and below it, a single word in a script Jean doesn't "
+        "recognize. The stitching is recent — someone in this camp made this.",
+    ]
+
+    def __init__(self, player=None, tile=None):
+        description = (
+            "A long strip of cloth hangs from a weathered pole at the camp's "
+            "center, stirring faintly in the river breeze. Its markings are "
+            "visible but faded. You could EXAMINE the banner or READ its markings."
+        )
+        super().__init__(
+            name="Camp Banner",
+            description=description,
+            idle_message="A cloth banner hangs from a pole at the camp's center.",
+            discovery_message="a cloth banner stirring in the breeze!",
+            player=player,
+            tile=tile,
+            aliases=["banner", "camp banner", "cloth", "flag"],
+        )
+        self.keywords.extend(["examine", "read", "look", "use"])
+        self.action_aliases.extend(["read", "look"])
+
+    def examine(self):
+        narrate(random.choice(self._BANNER_LINES))
+        functions.await_input()
+
+    def read(self):
+        self.examine()
+
+    def look(self):
+        self.examine()
+
+    def use(self):
+        self.examine()
+
+
+class TravelersLogbook(Object):
+    """A worn leather-bound book where travelers record their crossings. Jean
+    can READ entries from past travelers. Pure lore, flavor text.
+    """
+
+    _ENTRIES = [
+        "The ink is faded but legible: 'Crossed at dawn. River lower than "
+        "expected. The camp on the east side had good water and a fire going. "
+        "Didn't catch the name of the woman who pointed out the ford. She knew "
+        "the river like a road.' Signed with a symbol, not a name.",
+        "A cramped, hurried hand: 'Three of us crossed today. Current was "
+        "strong — lost a pack at the bend. Devet gave us dried fish and didn't "
+        "ask for anything. Good man. The Badlands start to feel real after this.'",
+        "Someone has written in careful, deliberate letters: 'I have crossed "
+        "this river four times now. Each time I tell myself it's the last. Each "
+        "time the road brings me back. The water doesn't remember you, but you "
+        "remember the water.' No signature.",
+        "A single line, pressed hard into the page: 'Going west. Not coming "
+        "back. Tell Mara thanks for the fuel.' The rest of the page is blank.",
+        "An entry in a looping, unhurried script: 'The girl at the camp — Liss — "
+        "asked me if I'd seen the stone one. I told her yes. She asked what he "
+        "eats. I said I didn't know. She seemed disappointed but not surprised. "
+        "Children on the road are different.'",
+        "A page that's been written on, crossed out, and written on again. The "
+        "final version reads: 'Crossed. Alive. Moving on.' Below it, someone "
+        "else has added in different ink: 'That's the spirit.'",
+        "Several names are listed in a column, each with a date and a destination "
+        "— some east, some west. The list goes back months. Near the bottom, a "
+        "line reads: 'If you're reading this and you're afraid, you're paying "
+        "attention. Cross anyway.' No name.",
+        "A child's drawing in the margin: a stick figure with what might be a "
+        "sword, and beside it a larger figure made of circles. Underneath, an "
+        "adult has written: 'He wanted to draw the Golemite. I told him to use "
+        "the margin.'",
+    ]
+
+    def __init__(self, player=None, tile=None):
+        description = (
+            "A worn leather-bound book resting on a flat stone near the fire ring, "
+            "its pages swollen with river damp and years of handling. A stub of "
+            "charcoal lies beside it. You could READ the travelers' entries."
+        )
+        super().__init__(
+            name="Traveler's Logbook",
+            description=description,
+            idle_message="A worn logbook rests on a flat stone near the fire.",
+            discovery_message="a traveler's logbook!",
+            player=player,
+            tile=tile,
+            aliases=["logbook", "book", "ledger", "traveler's logbook"],
+        )
+        self.keywords.extend(["read", "examine", "use"])
+        self.action_aliases.extend([])
+
+    def read(self):
+        narrate(random.choice(self._ENTRIES))
+        functions.await_input()
+
+    def examine(self):
+        self.read()
+
+    def use(self):
+        self.read()

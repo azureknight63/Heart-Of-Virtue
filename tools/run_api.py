@@ -1,6 +1,17 @@
 
-"""Entry point for running the Flask API server."""
+"""Entry point for running the Flask API server.
 
+Usage:
+    python tools/run_api.py [CONFIG_FILE]
+
+    CONFIG_FILE  Optional path to a game config .ini file (e.g. config_dev.ini,
+                 config_eastern_descent_test.ini). When provided, sets the
+                 CONFIG_FILE env var so the engine loads starting position,
+                 equipment, story flags, etc. from that config.
+                 Falls back to CONFIG_FILE from .env if omitted.
+"""
+
+import argparse
 import os
 import sys
 from pathlib import Path
@@ -22,6 +33,22 @@ from src.api.config import DevelopmentConfig, TestingConfig, ProductionConfig  #
 
 def main():
     """Run the Flask API server."""
+    # Allow an optional config file as a positional argument
+    parser = argparse.ArgumentParser(
+        description="Heart of Virtue Flask API server"
+    )
+    parser.add_argument(
+        "config",
+        nargs="?",
+        default=None,
+        help="Optional game config .ini file (e.g. config_eastern_descent_test.ini)",
+    )
+    args = parser.parse_args()
+
+    # Set CONFIG_FILE from command line if provided, otherwise fall back to .env
+    if args.config:
+        os.environ["CONFIG_FILE"] = args.config
+        print(f"[run_api] Using config file from command line: {args.config}")
     # Determine environment
     env = os.environ.get("FLASK_ENV", "development").lower()
 

@@ -126,6 +126,40 @@ class TestPropertyGrouping:
         assert all(e["kind"] == "field" for e in layout)
 
 
+class TestClassDiscovery:
+    def _allowed_classes(self, map_generator_module, base_class_name):
+        paths = map_generator_module._get_module_paths_for_class(base_class_name)
+        class_info = {}
+        for path in paths:
+            class_info.update(
+                map_generator_module.parse_module_classes(
+                    path, map_generator_module.project_root
+                )
+            )
+        class_info = map_generator_module.build_class_hierarchy(class_info)
+        return map_generator_module.filter_classes(class_info, base_class_name)
+
+    def test_npc_discovery_includes_transitive_friend_descendants(
+        self, map_generator_module
+    ):
+        allowed = self._allowed_classes(map_generator_module, "NPC")
+
+        assert {"Friend", "Mynx", "Gorran", "Mara", "Devet", "Liss"}.issubset(
+            allowed
+        )
+
+    def test_npc_discovery_keeps_direct_merchant_descendants(
+        self, map_generator_module
+    ):
+        allowed = self._allowed_classes(map_generator_module, "NPC")
+
+        assert {
+            "Merchant",
+            "MiloCurioDealer",
+            "JamboHealsU",
+        }.issubset(allowed)
+
+
 class TestBulkEditAppliesToEveryInstance:
     """Mirrors what open_property_dialog's existing/existing_list
     normalization and auto_save() do for a bulk edit, without needing to

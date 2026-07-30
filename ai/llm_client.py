@@ -955,7 +955,7 @@ _NPC_CHAT_WORLD_FACTS_PATH = os.path.join(_NPC_CHAT_HUMAN_DIR, "world_facts.json
 class NpcChatLLMAdapter(GenericLLMClient):
     """LLM adapter for conversational human NPC dialogue.
 
-    Provides three generation methods used by HumanNPCLLMMixin:
+    Provides three generation methods used by ConversationalNPCMixin:
       - generate_personality: one-shot personality seeding for generic nomads
       - generate_npc_turn:    NPC opening line or response; returns structured JSON
       - generate_jean_options: three Jean dialogue options in a single call

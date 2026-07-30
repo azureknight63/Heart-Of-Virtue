@@ -244,6 +244,11 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
             return None
 
     def _load_single_json_map(self, player, json_path: Path):
+        # Local import: src.tiles -> src.actions -> src.player -> src.universe
+        # is a circular chain at module-load time, so MapTile must be imported
+        # lazily here rather than at the top of this module.
+        from src.tiles import MapTile
+
         with open(json_path, "r", encoding="utf-8") as f:
             raw = json.load(f)
         map_name = json_path.stem
@@ -259,17 +264,31 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
                 y = int(y_str)
             except Exception:
                 continue
-            # determine tile class name from title; fallback to generic MapTile if not found
+            # ``title`` is a human-readable display name chosen freely by map
+            # designers/the map editor (e.g. "Conclave Archive — Reading Hall",
+            # "RiversEdge") — it has not been a reliable tileset *class* name
+            # for a long time, so it is never used for class resolution here.
+            # A tile only gets a real ``src.tilesets`` subclass when the JSON
+            # explicitly names one via an optional "class" field; otherwise it
+            # is a plain MapTile carrying its description/exits/events/etc.
+            # from JSON data alone (which is how the vast majority of tiles
+            # already work in practice).
             title = tile_data.get("title") or tile_data.get("id") or f"tile_{x}_{y}"
             description = tile_data.get("description", "")
-            try:
-                tile_cls = functions.seek_class(title, "tilesets", allow_other_modules=False)
-            except ValueError as e:
-                narrate(
-                    f"ERROR: Failed to resolve tile class for title '{title}' "
-                    f"at {coord_str} in map '{map_name}': {e}; falling back to MapTile"
-                )
-                from src.tiles import MapTile as tile_cls  # fallback
+            class_name = tile_data.get("class")
+            if class_name:
+                try:
+                    tile_cls = functions.seek_class(
+                        class_name, "tilesets", allow_other_modules=False
+                    )
+                except ValueError as e:
+                    narrate(
+                        f"ERROR: Failed to resolve tile class '{class_name}' "
+                        f"at {coord_str} in map '{map_name}': {e}; falling back to MapTile"
+                    )
+                    tile_cls = MapTile
+            else:
+                tile_cls = MapTile
             tile_instance = tile_cls(self, this_map, x, y)
             # Store tile name from JSON title; only if the class didn't set its own.
             # MapTile.__init__ never sets self.name, so getattr returns None for generic tiles.
@@ -303,6 +322,10 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
                     tile_instance.symbol = tile_data["symbol"]
                 except Exception:
                     pass
+            # bgm — transferred from JSON so _resolve_bgm can pick it up
+            # without relying solely on map-name fallback
+            if "bgm" in tile_data:
+                tile_instance.bgm = tile_data["bgm"]
             # events
             for ev_payload in tile_data.get("events", []):
                 inst = self._deserialize_saved_instance(ev_payload)

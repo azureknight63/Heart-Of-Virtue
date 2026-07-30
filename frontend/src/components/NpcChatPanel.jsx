@@ -185,6 +185,7 @@ export default function NpcChatPanel({ npcId, npcName, onClose }) {
       maxWidth="450px"
       width="95%"
       padding={spacing.lg}
+      zIndex={2100}
     >
       {/* Loquacity Bar */}
       <div

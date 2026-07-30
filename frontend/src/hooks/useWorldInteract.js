@@ -147,10 +147,14 @@ export function useWorldInteract({
             const data = response.data
 
             if (data.success) {
-                const message = data.message || 'Action completed.'
+                // When events are pending (e.g. PassagewayTransitionEvent),
+                // keep the spinner showing instead of flashing "Action completed."
+                // The event UI will take over when it renders.
+                const hasPendingEvents = data.events_triggered && data.events_triggered.length > 0
+                const message = hasPendingEvents ? '' : (data.message || 'Action completed.')
                 setInteractionOutput(message)
-                if (onTypingChange) onTypingChange(true)
-                setInteractionHistory(prev => [...prev, message])
+                if (message && onTypingChange) onTypingChange(true)
+                if (message) setInteractionHistory(prev => [...prev, message])
 
                 // If a teleport occurred, close the dialog immediately
                 if (data.teleported) {

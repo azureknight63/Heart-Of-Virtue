@@ -175,9 +175,11 @@ def test_load_single_json_map(monkeypatch, tmp_path):
             self.npcs_here = []
             self.objects_here = []
     monkeypatch.setattr(functions, 'seek_class', lambda title, mod, **kw: DummyTile)
-    # Create dummy map JSON
+    # Create dummy map JSON. The optional "class" field is what selects a real
+    # tileset subclass; "title" is display-only and is never used for class
+    # resolution.
     map_json = tmp_path / 'testmap.json'
-    map_json.write_text('{"(1,2)": {"title": "DummyTile", "description": "desc", "block_exit": ["N"], "symbol": "#", "events": [], "items": [], "npcs": [], "objects": []}}')
+    map_json.write_text('{"(1,2)": {"title": "Dummy Tile Display Name", "class": "DummyTile", "description": "desc", "block_exit": ["N"], "symbol": "#", "events": [], "items": [], "npcs": [], "objects": []}}')
     u = Universe()
     u._load_single_json_map(player=None, json_path=map_json)
     assert u.maps[-1]['name'] == 'testmap'

@@ -175,8 +175,9 @@ Client (Web/Mobile) → Flask API (17 endpoints) → GameService Wrapper → Gam
 # Install API dependencies
 pip install -r requirements-api.txt
 
-# Start development server
-python tools/run_api.py
+# Start development server (optionally with a game config)
+python tools/run_api.py                     # uses CONFIG_FILE from .env or config_dev.ini
+python tools/run_api.py config_eastern_descent_test.ini
 
 # Access Swagger UI (interactive docs)
 open http://localhost:5000/api/docs

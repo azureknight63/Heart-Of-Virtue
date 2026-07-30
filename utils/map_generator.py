@@ -1323,6 +1323,18 @@ class MapEditor:
                             return {
                                 "__class_type__": f"{val.__module__}:{val.__name__}"
                             }
+                        if inspect.ismethod(val) or inspect.isfunction(val):
+                            # Bound/unbound methods are dynamically-attached
+                            # convenience aliases (e.g. Passageway's per-word
+                            # keyword aliases binding self.enter under names
+                            # like "ferry"/"jambo") -- not persistable state.
+                            # Serializing them previously produced bogus
+                            # {"__class__": "method", "__module__": "builtins"}
+                            # payloads that the map loader's security gate
+                            # correctly refuses at load time. Drop them; the
+                            # loader always re-derives the alias attributes
+                            # from the class's own __init__ logic.
+                            return None
                         if isinstance(val, (int, float, str, bool)) or val is None:
                             return val
                         elif isinstance(val, list):
@@ -1426,6 +1438,12 @@ class MapEditor:
                     data = {}
                     for kx, vx in vars(inst).items():
                         if kx.startswith("_"):
+                            continue
+                        if inspect.ismethod(vx) or inspect.isfunction(vx):
+                            # Dynamically-attached alias attributes (see
+                            # recursive_serialize's method/function branch)
+                            # are not persistable state; omit the key
+                            # entirely rather than writing a null placeholder.
                             continue
                         try:
                             data[kx] = recursive_serialize(vx, attr_name=kx)

@@ -26,6 +26,7 @@ from ._combat import NPCCombatMixin
 from ._loot import NPCLootMixin
 from ._shop import MerchantShopMixin
 from ._llm import MynxLLMMixin
+from ._chat_llm import ConversationalNPCMixin
 from ._enemies import (
     Slime,
     Testexp,
@@ -40,7 +41,7 @@ from ._enemies import (
     TalusHound,
     ScarpAdder,
 )
-from ._merchants import Merchant, MiloCurioDealer, JamboHealsU
+from ._merchants import Merchant, MiloCurioDealer, JamboHealsU, Kaelen, Vespera
 from ._friends import (
     Mynx,
     Gorran,
@@ -53,7 +54,7 @@ from ._friends import (
     Liss,
 )
 from ._adjutant import TheAdjutant
-from ._eastern_descent import NomadCamper, NomadScout, NomadTrader
+from ._eastern_descent import NomadCamper, NomadScout, NomadTrader, NomadBoy, NomadGirl
 
 __all__ = [
     # Base classes
@@ -64,6 +65,7 @@ __all__ = [
     "NPCLootMixin",
     "MerchantShopMixin",
     "MynxLLMMixin",
+    "ConversationalNPCMixin",
     # Enemy NPCs
     "Slime",
     "Testexp",
@@ -81,6 +83,8 @@ __all__ = [
     "Merchant",
     "MiloCurioDealer",
     "JamboHealsU",
+    "Kaelen",
+    "Vespera",
     # Friend NPCs
     "Mynx",
     "Gorran",
@@ -97,4 +101,6 @@ __all__ = [
     "NomadCamper",
     "NomadScout",
     "NomadTrader",
+    "NomadBoy",
+    "NomadGirl",
 ]

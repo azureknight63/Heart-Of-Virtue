@@ -15,14 +15,13 @@ from unittest.mock import MagicMock
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
-
-from src.npc._chat_llm import HumanNPCLLMMixin  # noqa: E402
+from src.npc._chat_llm import ConversationalNPCMixin  # noqa: E402
 
 
 def _make_npc(**overrides):
     """Build a minimally-wired chat NPC whose helper methods are stubbed."""
 
-    class TestNPC(HumanNPCLLMMixin):
+    class TestNPC(ConversationalNPCMixin):
         def __init__(self):
             self.name = "TestNPC"
             self.charisma = 10
@@ -207,7 +206,7 @@ class TestGracefulClosure:
 
 class TestProperNounQC:
     def _npc(self):
-        class QCNPC(HumanNPCLLMMixin):
+        class QCNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self._chat_world_facts = {"allowed_proper_nouns": []}

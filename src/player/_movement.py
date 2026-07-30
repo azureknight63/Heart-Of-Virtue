@@ -1,7 +1,11 @@
 """Movement mixin for Player — map navigation, teleport, and party recall."""
 
+import logging
+
 from src.universe import tile_exists as tile_exists
 from src.narration import colored, narrate
+
+logger = logging.getLogger(__name__)
 
 
 class PlayerMovementMixin:
@@ -31,7 +35,23 @@ class PlayerMovementMixin:
                     self.universe.game_tick += 1
                     self.location_x = x
                     self.location_y = y
+                    self.current_room = tile
                     narrate(tile.intro_text())
+                    # Process entry events on the destination tile so that
+                    # intro events (camp smell, NPC greetings, etc.) fire
+                    # immediately when arriving via passageway rather than
+                    # requiring the player to step away and back.
+                    for event in list(getattr(tile, "events_here", [])):
+                        try:
+                            if hasattr(event, "check_conditions"):
+                                event.player = self
+                                event.tile = tile
+                                event.check_conditions()
+                        except Exception:
+                            logger.debug(
+                                "Event check_conditions failed during teleport",
+                                exc_info=True,
+                            )
                     return
                 else:
                     narrate(f"### INVALID TELEPORT LOCATION: {target_map} | {x},{y} ###")

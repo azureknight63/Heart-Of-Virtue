@@ -88,7 +88,7 @@ class NPCRelationshipSerializer:
         """Get NPC display name from ID.
 
         `player.reputation` is keyed by the NPC's actual display name
-        (`self.name` on the NPC instance, per `HumanNPCLLMMixin`), not a
+        (`self.name` on the NPC instance, per `ConversationalNPCMixin`), not a
         separate slug, so the id passed in already is the name.
 
         Args:

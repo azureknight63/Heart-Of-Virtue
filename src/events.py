@@ -205,3 +205,45 @@ class LootEvent(Event):
 
         # Keep pending if we didn't exit or take all
         return {"success": True}
+
+
+class PassagewayTransitionEvent(Event):
+    """Confirmation event shown before traversing a passageway.
+
+    The frontend displays the "Jean steps through..." narration and a
+    confirmation button.  Clicking it calls process() which performs the
+    actual teleport via the passageway's stored parameters.
+    """
+
+    def __init__(self, name, player=None, tile=None, passageway=None):
+        super().__init__(name, player, tile, repeat=False)
+        self.passageway = passageway
+        self.needs_input = True
+        self.input_type = "choice"
+        self.input_prompt = "Step through?"
+        self.input_options = [
+            {"value": "continue", "label": "Step through"},
+        ]
+
+        # Build the article phrase for the description
+        _n = getattr(passageway, "name", "passageway")
+        _ref = passageway.build_article_phrase(_n) if passageway else _n
+        self.description = f"Jean steps through {_ref}..."
+
+    def process(self, user_input=None):
+        if user_input != "continue":
+            # Mark completed before raising so the event is cleaned up even
+            # on invalid input — the API's process_event_input will catch
+            # the ValueError and surface the error to the client.
+            self.completed = True
+            self.needs_input = False
+            raise ValueError(
+                f"Unexpected input for {self.name}: "
+                f"expected 'continue', got {user_input!r}"
+            )
+        pw = self.passageway
+        if pw and pw.teleport_map and pw.teleport_tile:
+            pw._commit_teleport(self.player)
+        self.completed = True
+        self.needs_input = False
+        return {"success": True}

@@ -377,6 +377,10 @@
       "name": "LootEvent"
     },
     {
+      "module": "src.events",
+      "name": "PassagewayTransitionEvent"
+    },
+    {
       "module": "src.functions",
       "name": "_MissingLegacyPlaceholder"
     },
@@ -1178,7 +1182,7 @@
     },
     {
       "module": "src.npc._chat_llm",
-      "name": "HumanNPCLLMMixin"
+      "name": "ConversationalNPCMixin"
     },
     {
       "module": "src.npc._combat",
@@ -1186,7 +1190,15 @@
     },
     {
       "module": "src.npc._eastern_descent",
+      "name": "NomadBoy"
+    },
+    {
+      "module": "src.npc._eastern_descent",
       "name": "NomadCamper"
+    },
+    {
+      "module": "src.npc._eastern_descent",
+      "name": "NomadGirl"
     },
     {
       "module": "src.npc._eastern_descent",
@@ -1294,11 +1306,19 @@
     },
     {
       "module": "src.npc._merchants",
+      "name": "Kaelen"
+    },
+    {
+      "module": "src.npc._merchants",
       "name": "Merchant"
     },
     {
       "module": "src.npc._merchants",
       "name": "MiloCurioDealer"
+    },
+    {
+      "module": "src.npc._merchants",
+      "name": "Vespera"
     },
     {
       "module": "src.npc._progression",
@@ -1314,11 +1334,23 @@
     },
     {
       "module": "src.objects",
+      "name": "CampBanner"
+    },
+    {
+      "module": "src.objects",
+      "name": "Campfire"
+    },
+    {
+      "module": "src.objects",
       "name": "Container"
     },
     {
       "module": "src.objects",
       "name": "Crate"
+    },
+    {
+      "module": "src.objects",
+      "name": "DryingRack"
     },
     {
       "module": "src.objects",
@@ -1358,6 +1390,10 @@
     },
     {
       "module": "src.objects",
+      "name": "RiverCrossingMarker"
+    },
+    {
+      "module": "src.objects",
       "name": "Shelf"
     },
     {
@@ -1370,7 +1406,15 @@
     },
     {
       "module": "src.objects",
+      "name": "SupplyTent"
+    },
+    {
+      "module": "src.objects",
       "name": "TileDescription"
+    },
+    {
+      "module": "src.objects",
+      "name": "TravelersLogbook"
     },
     {
       "module": "src.objects",
@@ -1379,6 +1423,14 @@
     {
       "module": "src.objects",
       "name": "WallSwitch"
+    },
+    {
+      "module": "src.objects",
+      "name": "WashingBasin"
+    },
+    {
+      "module": "src.objects",
+      "name": "WaterBarrel"
     },
     {
       "module": "src.player",
@@ -1646,6 +1698,14 @@
     },
     {
       "module": "src.story.ch03",
+      "name": "CampEntryGreetingEvent"
+    },
+    {
+      "module": "src.story.ch03",
+      "name": "DemoEndEvent"
+    },
+    {
+      "module": "src.story.ch03",
       "name": "DevetIntroEvent"
     },
     {
@@ -1655,6 +1715,10 @@
     {
       "module": "src.story.ch03",
       "name": "GorranGestureEvent"
+    },
+    {
+      "module": "src.story.ch03",
+      "name": "IronAndOathIntroEvent"
     },
     {
       "module": "src.story.ch03",
@@ -1905,6 +1969,6 @@
       "name": "UUID"
     }
   ],
-  "count": 476,
+  "count": 492,
   "header_version": 1
 }

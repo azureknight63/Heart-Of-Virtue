@@ -111,7 +111,14 @@ def test_symbol_assignment_exception_is_swallowed(monkeypatch, tmp_path):
     mapfile = tmp_path / "symbol.json"
     mapfile.write_text(
         json.dumps(
-            {"(0, 0)": {"title": "AnyTitle", "description": "d", "symbol": "Y"}}
+            {
+                "(0, 0)": {
+                    "title": "AnyTitle",
+                    "class": "FakeTileReadOnlySymbol",
+                    "description": "d",
+                    "symbol": "Y",
+                }
+            }
         )
     )
     # Must not raise even though the tile's `symbol` property has no setter.

@@ -490,10 +490,10 @@ def test_load_starting_gold_exception_is_caught(monkeypatch, tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def test_load_game_config_default_missing_file(monkeypatch):
-    # No CONFIG_FILE -> defaults to "config_dev.ini" (relative), which does
-    # not exist at the repo root, so game_config stays None.
-    mgr = _bare_manager(monkeypatch)
+def test_load_game_config_default_missing_file(monkeypatch, tmp_path):
+    """Default config_dev.ini path does not exist — game_config stays None."""
+    monkeypatch.setenv("CONFIG_FILE", str(tmp_path / "nonexistent_config.ini"))
+    mgr = SessionManager()
     assert mgr.game_config is None
 
 

@@ -34,7 +34,7 @@
                     "events_before": [],
                     "events_after": [],
                     "teleport_map": "eastern-descent-nomad-camp",
-                    "teleport_tile": [2, 0],
+                    "teleport_tile": [3, 0],
                     "persist": true
                 }
             }

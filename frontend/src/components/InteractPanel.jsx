@@ -189,8 +189,12 @@ function InteractPanel({
             return
         }
 
-        // Open LLM chat panel for talk action on LLM-capable NPCs
-        if (action.toLowerCase() === 'talk' && selectedTarget?.llm_chat_enabled && selectedTarget?.loquacity_available !== false) {
+        // Open LLM chat panel for talk or chat action on LLM-capable NPCs
+        if (
+            (action.toLowerCase() === 'talk' || action.toLowerCase() === 'chat') &&
+            selectedTarget?.llm_chat_enabled &&
+            selectedTarget?.loquacity_available !== false
+        ) {
             setShowChatPanel(true)
             return
         }
@@ -527,6 +531,29 @@ function InteractPanel({
                     </div>
                 )}
 
+                {/* Loading indicator */}
+                {loading && !interactionOutput && (
+                    <div style={{
+                        display: 'flex',
+                        justifyContent: 'center',
+                        alignItems: 'center',
+                        padding: spacing.xl,
+                        gap: spacing.md,
+                    }}>
+                        <div style={{
+                            width: '24px',
+                            height: '24px',
+                            border: `3px solid ${colors.border.light}`,
+                            borderTopColor: colors.secondary,
+                            borderRadius: '50%',
+                            animation: 'interact-spin 0.8s linear infinite',
+                        }} />
+                        <GameText variant="muted" size="sm" style={{ fontStyle: 'italic' }}>
+                            ...
+                        </GameText>
+                    </div>
+                )}
+
                 {/* Interaction Output & History */}
                 {(interactionOutput || interactionHistory.length > 0) && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: spacing.sm }}>
@@ -625,6 +652,20 @@ function InteractPanel({
         )}
     </>
     )
+}
+
+const spinKeyframes = `
+@keyframes interact-spin {
+  to { transform: rotate(360deg); }
+}
+`
+
+// Inject keyframes once
+if (typeof document !== 'undefined' && !document.getElementById('interact-panel-styles')) {
+    const style = document.createElement('style')
+    style.id = 'interact-panel-styles'
+    style.textContent = spinKeyframes
+    document.head.appendChild(style)
 }
 
 export default React.memo(InteractPanel)
