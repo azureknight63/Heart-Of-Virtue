@@ -160,13 +160,23 @@ class TestKeepAway:
     def test_evaluate_sets_power_with_weapon(self):
         user = _make_user("Spear")
         move = KeepAway(user)
-        # power should be set to something non-zero after evaluate
+        # Keep Away applies a 45% damage reduction to the evaluated power
+        # (issue #397): power = int(20 * 0.55) = 11.
         with patch.object(
             move, "standard_evaluate_attack", return_value=(20, "piercing")
         ):
             move.evaluate()
-            assert move.power == 20
+            assert move.power == 11
             assert move.base_damage_type == "piercing"
+
+    def test_evaluate_real_weapon_deals_nonzero_damage(self):
+        """Regression for #397: the old percent-string mod_power ("-45%")
+        multiplied power by a negative factor, clamping damage to 0. With a real
+        weapon the move must retain positive power after the 45% reduction."""
+        user = _make_user("Spear")
+        move = KeepAway(user)
+        move.evaluate()
+        assert move.power > 0
 
     def test_execute_hit_reduces_target_hp(self, monkeypatch):
         user = _make_user("Spear")
@@ -1287,6 +1297,34 @@ class TestDeathsHarvest:
 
         # heal = 30% of 30 = 9
         assert user.hp == 59
+
+    def test_execute_absorbed_hit_grants_no_heal(self, monkeypatch):
+        """Regression for #420: lifesteal must be based on post-absorption damage.
+        A target under Blood of Martyrs absorption takes no net damage, so
+        Death's Harvest must heal nothing (previously it healed from the
+        pre-absorption damage — health from nowhere)."""
+        user = _make_user("Scythe")
+        tgt = _make_target(finesse=0, protection=0)
+        absorb_state = MagicMock()
+        absorb_state._absorbing = True
+        tgt.states = [absorb_state]
+        user.hp = 50
+        user.maxhp = 100
+        move = DeathsHarvest(user)
+        move.target = tgt
+        move.power = 30
+        move.base_damage_type = "slashing"
+
+        monkeypatch.setattr(random, "randint", lambda a, b: 0)
+        monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
+        with patch("src.moves._scythe.functions.check_parry", return_value=False), \
+             patch.object(move, "hit"), \
+             patch.object(move, "viable", return_value=True), \
+             patch("src.moves._scythe.cprint"), \
+             patch("src.moves._scythe.colored", side_effect=lambda t, *a, **k: t):
+            move.execute(user)
+
+        assert user.hp == 50  # damage fully absorbed -> no lifesteal
 
     def test_execute_miss_no_heal(self, monkeypatch):
         user = _make_user("Scythe")

@@ -158,17 +158,28 @@ class EventSerializer:
             except Exception:
                 pass
 
-        # Check by event class name (known input-requiring events)
-        # NPCSpawnerEvent is intentionally excluded: it spawns NPCs silently and
-        # never sets needs_input=True, so it must not be treated as interactive.
+        # Structural opt-in: an event class can declare an ``awaits_input`` truthy
+        # class/instance attribute to be treated as interactive without being
+        # named here. Prefer this on new events — correctness then no longer
+        # depends on maintaining a string list. Existing resolve-on-first-call
+        # story events (WhisperingStatue, StMichael) live in src/story/effects.py
+        # and don't yet carry the flag; setting it there is the follow-up to
+        # fully retire the name fallback below (issue #434).
+        if getattr(event, "awaits_input", False):
+            return True
+
+        # Name fallback for legacy events that resolve immediately on their first
+        # process(None) call instead of prompting, so they must be forced to be
+        # treated as input-needing. Only classes that actually exist are listed —
+        # the previous list had drifted, naming four classes that never existed
+        # anywhere in the repo (DialogueChoice, MerchantNegotiation, PuzzleEvent,
+        # RiddleEvent). NPCSpawnerEvent is intentionally excluded: it spawns NPCs
+        # silently and never sets needs_input=True, so it must not be treated as
+        # interactive.
         event_type = type(event).__name__
         input_requiring_events = [
             "WhisperingStatue",
             "StMichael",
-            "DialogueChoice",
-            "MerchantNegotiation",
-            "PuzzleEvent",
-            "RiddleEvent",
             "CombatEvent",
         ]
 

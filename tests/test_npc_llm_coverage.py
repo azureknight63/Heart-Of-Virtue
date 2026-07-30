@@ -311,16 +311,12 @@ class TestGetLlmAdapter:
 
         with patch.dict(os.environ, {"MYNX_LLM_ENABLED": "1"}):
             with patch("src.npc._llm.Path", side_effect=self._fake_root(tmp_path)):
-                with patch("importlib.util.spec_from_file_location") as mock_spec:
-                    spec = MagicMock()
-                    spec.loader = MagicMock()
-                    mock_spec.return_value = spec
-                    mod_mock = MagicMock()
-                    mod_mock.MynxLLMAdapter = MagicMock(return_value=fake_adapter_inst)
-                    with patch(
-                        "importlib.util.module_from_spec", return_value=mod_mock
-                    ):
-                        result = m._get_llm_adapter()
+                mod_mock = MagicMock()
+                mod_mock.MynxLLMAdapter = MagicMock(return_value=fake_adapter_inst)
+                with patch(
+                    "src.npc._llm._load_llm_client_module", return_value=mod_mock
+                ):
+                    result = m._get_llm_adapter()
         assert result is fake_adapter_inst
 
     def test_available_check_exception_returns_none(self, tmp_path):
@@ -1111,20 +1107,14 @@ class TestGetLlmAdapterDebugBranches:
             os.environ, {"MYNX_LLM_ENABLED": "1", "MYNX_LLM_DEBUG": "1"}
         ):
             with patch("src.npc._llm.Path", side_effect=self._fake_root(tmp_path)):
+                mod_mock = MagicMock()
+                mod_mock.MynxLLMAdapter = MagicMock(
+                    return_value=fake_adapter_inst
+                )
                 with patch(
-                    "importlib.util.spec_from_file_location"
-                ) as mock_spec:
-                    spec = MagicMock()
-                    spec.loader = MagicMock()
-                    mock_spec.return_value = spec
-                    mod_mock = MagicMock()
-                    mod_mock.MynxLLMAdapter = MagicMock(
-                        return_value=fake_adapter_inst
-                    )
-                    with patch(
-                        "importlib.util.module_from_spec", return_value=mod_mock
-                    ):
-                        result = m._get_llm_adapter()
+                    "src.npc._llm._load_llm_client_module", return_value=mod_mock
+                ):
+                    result = m._get_llm_adapter()
         assert result is fake_adapter_inst
 
     def test_unavailable_with_debug_status_narrates(self, tmp_path):

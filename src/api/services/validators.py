@@ -82,24 +82,6 @@ def validate_item_index(item_index: Any, max_items: int) -> Tuple[bool, Optional
         return False, "Item index must be a valid integer"
 
 
-def validate_npc_id(npc_id: str) -> Tuple[bool, Optional[str]]:
-    """Validate NPC identifier.
-
-    Args:
-        npc_id: NPC identifier to validate
-
-    Returns:
-        Tuple of (is_valid, error_message)
-    """
-    if not isinstance(npc_id, str):
-        return False, "NPC ID must be a string"
-    if not npc_id:
-        return False, "NPC ID cannot be empty"
-    if len(npc_id) > 100:
-        return False, "NPC ID must be 100 characters or less"
-    return True, None
-
-
 def ensure_dict(value: Any) -> Dict[str, Any]:
     """Return ``value`` if it is a dict, otherwise an empty dict.
 

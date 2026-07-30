@@ -305,22 +305,26 @@ def test_clean_initialization(mock_cprint, mock_target):
 
 
 @patch('src.states.cprint')
-def test_clean_on_application(mock_cprint, mock_target):
-    """Test Clean announces application"""
+@patch('src.states.functions.refresh_stat_bonuses')
+def test_clean_on_application(mock_refresh, mock_cprint, mock_target):
+    """Test Clean announces application and refreshes stat bonuses"""
     state = Clean(mock_target)
     state.on_application(mock_target)
 
+    assert mock_refresh.called
     assert mock_cprint.called
     call_args = mock_cprint.call_args[0][0]
     assert "clean" in call_args.lower()
 
 
 @patch('src.states.cprint')
-def test_clean_on_removal(mock_cprint, mock_target):
-    """Test Clean announces removal"""
+@patch('src.states.functions.refresh_stat_bonuses')
+def test_clean_on_removal(mock_refresh, mock_cprint, mock_target):
+    """Test Clean announces removal and refreshes stat bonuses"""
     state = Clean(mock_target)
     state.on_removal(mock_target)
 
+    assert mock_refresh.called
     assert mock_cprint.called
 
 

@@ -678,20 +678,31 @@ class TestLoadHistoryFromPersistence:
 class TestSaveExchangeToPersistence:
     """Test _save_exchange_to_persistence."""
 
-    def test_save_exchange_no_persistence_attr(self):
-        """Test saving when player has no npc_chat_histories."""
+    def test_save_exchange_initializes_missing_persistence_attr(self):
+        """A fresh Player has no npc_chat_histories (same gotcha as
+        player.reputation — see CLAUDE.md). This used to make the save
+        silently no-op forever; it must now initialize the dict in place and
+        actually persist the exchange, whether the attribute was never set
+        or was explicitly None.
+        """
         class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
                 self.loquacity_current = 50
                 self.loquacity_max = 100
                 self._chat_npc_key = "test_key"
+                self._chat_personality = None
 
         npc = TestNPC()
         player = MagicMock(spec=["universe"])
         player.npc_chat_histories = None
         npc._save_exchange_to_persistence(player, "NPC text", "Jean text", 10, "1")
-        # Should exit silently
+
+        assert player.npc_chat_histories is not None
+        entry = player.npc_chat_histories["test_key"]
+        assert entry["exchanges"] == [
+            {"npc": "NPC text", "jean": "Jean text", "game_tick": 10, "chapter": "1"}
+        ]
 
     def test_save_exchange_creates_entry(self):
         """Test creating new history entry."""
@@ -840,6 +851,65 @@ class TestBuildSystemPrompt:
         assert "Crusaders" in prompt
 
 
+class TestBuildJeanContextBlock:
+    """Test _build_jean_context_block — chapter-gates Jean's own dialogue options."""
+
+    class _Universe:
+        def __init__(self, story):
+            self.story = story
+
+    class _Player:
+        def __init__(self, story):
+            self.universe = TestBuildJeanContextBlock._Universe(story)
+
+    def _npc(self):
+        class TestNPC(ConversationalNPCMixin):
+            def __init__(self):
+                self.name = "TestNPC"
+        return TestNPC()
+
+    def test_includes_chapter_number(self):
+        npc = self._npc()
+        player = self._Player({})
+        block = npc._build_jean_context_block(player, "2")
+        assert "chapter 2" in block
+
+    def test_defaults_to_no_unusual_developments(self):
+        npc = self._npc()
+        player = self._Player({})
+        block = npc._build_jean_context_block(player, "1")
+        assert "Nothing unusual beyond ordinary travel" in block
+
+    def test_includes_gorran_language_flag_when_set(self):
+        npc = self._npc()
+        player = self._Player({"gorran_language_stage": "2"})
+        block = npc._build_jean_context_block(player, "1")
+        assert "Gorran" in block
+        assert "words rather than only gesture" in block
+
+    def test_omits_gorran_flag_at_stage_zero(self):
+        npc = self._npc()
+        player = self._Player({"gorran_language_stage": "0"})
+        block = npc._build_jean_context_block(player, "1")
+        assert "words rather than only gesture" not in block
+
+    def test_included_in_full_system_prompt(self):
+        """The Jean-context block must actually be wired into the system prompt
+        the adapter receives, not just callable in isolation."""
+        class TestNPC(ConversationalNPCMixin):
+            def __init__(self):
+                self.name = "TestNPC"
+                self._chat_world_facts = {}
+                self._chat_char_config = None
+                self._chat_personality = {"given_name": "Ren", "voice": "sparse"}
+
+        npc = TestNPC()
+        player = self._Player({"gorran_language_stage": "1"})
+        prompt = npc._build_system_prompt(player)
+        assert "JEAN'S KNOWN CONTEXT" in prompt
+        assert "words rather than only gesture" in prompt
+
+
 class TestEnsurePersonality:
     """Test _ensure_personality generation."""
 
@@ -950,8 +1020,8 @@ class TestQCNpcText:
         result = npc._qc_npc_text("", [])
         assert result is None
 
-    def test_qc_too_short_text(self):
-        """Test QC rejects text under 10 chars."""
+    def test_qc_rejects_single_char_noise(self):
+        """QC still rejects genuinely near-empty noise (below the 2-char floor)."""
         class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
@@ -959,8 +1029,36 @@ class TestQCNpcText:
                 self._prohibited_patterns = []
 
         npc = TestNPC()
-        result = npc._qc_npc_text("short", [])
-        assert result is None
+        assert npc._qc_npc_text("k", []) is None
+
+    def test_qc_rejects_punctuation_only_noise(self):
+        """QC rejects text with no actual word content, regardless of length."""
+        class TestNPC(ConversationalNPCMixin):
+            def __init__(self):
+                self.name = "TestNPC"
+                self._chat_world_facts = {}
+                self._prohibited_patterns = []
+
+        npc = TestNPC()
+        assert npc._qc_npc_text("-- ...", []) is None
+
+    def test_qc_allows_terse_in_character_replies(self):
+        """Regression test: several NPCs are authored with terse, economical
+        voices (Mara: "Says half of what she means") and can legitimately
+        reply with something under 10 characters. A flat length floor used to
+        reject these in-character replies on every single turn.
+        """
+        class TestNPC(ConversationalNPCMixin):
+            def __init__(self):
+                self.name = "TestNPC"
+                self._chat_world_facts = {}
+                self._prohibited_patterns = []
+
+        npc = TestNPC()
+        for terse in ["No.", "I see.", "Not now.", "Fine."]:
+            result = npc._qc_npc_text(terse, [])
+            assert result is not None, f"{terse!r} should have passed QC"
+            assert result == terse
 
     def test_qc_valid_text(self):
         """Test QC passes valid text."""
@@ -1348,7 +1446,7 @@ class TestChatRespond:
             def _get_adapter(self):
                 return None
 
-            def _get_fallback_npc_line(self, is_opening, player):
+            def _get_fallback_npc_line(self, is_opening, player, exhausted=False):
                 return "Response from fallback."
 
             def _get_fallback_jean_options(self):
@@ -1419,7 +1517,7 @@ class TestChatRespond:
             def _get_adapter(self):
                 return None
 
-            def _get_fallback_npc_line(self, is_opening, player):
+            def _get_fallback_npc_line(self, is_opening, player, exhausted=False):
                 return "Response from fallback."
 
             def _get_fallback_jean_options(self):
@@ -1645,6 +1743,96 @@ class TestGetFallbackNpcLine:
         line = npc._get_fallback_npc_line(is_opening=True, player=player)
         assert line == "Nothing to say right now."
 
+    def test_get_fallback_npc_line_rotates_through_pool(self):
+        """Repeated fallback calls must not return the same line every time.
+
+        Regression test: the fallback used to always index [0], which made an
+        NPC repeat the exact same line on every turn when the LLM was
+        unavailable.
+        """
+        class TestNPC(ConversationalNPCMixin):
+            def __init__(self):
+                self.name = "Gorran"
+                self._chat_char_config = {
+                    "conversation_starters_by_chapter": {
+                        "1": ["First line.", "Second line.", "Third line."]
+                    }
+                }
+
+            def _get_chapter(self, player):
+                return "1"
+
+        npc = TestNPC()
+        player = MagicMock()
+        lines = [
+            npc._get_fallback_npc_line(is_opening=True, player=player)
+            for _ in range(3)
+        ]
+        assert lines == ["First line.", "Second line.", "Third line."]
+        # Rotation wraps back to the start rather than raising.
+        assert npc._get_fallback_npc_line(is_opening=True, player=player) == "First line."
+
+    def test_get_fallback_npc_line_exhausted_uses_closing(self):
+        """When the conversation is actually ending, use the closing pool."""
+        class TestNPC(ConversationalNPCMixin):
+            def __init__(self):
+                self.name = "Gorran"
+                self._chat_char_config = {
+                    "conversation_starters_by_chapter": {"1": ["Hello, friend!"]},
+                    "closing_lines_when_exhausted": ["Farewell."],
+                }
+
+            def _get_chapter(self, player):
+                return "1"
+
+        npc = TestNPC()
+        player = MagicMock()
+        line = npc._get_fallback_npc_line(is_opening=False, player=player, exhausted=True)
+        assert line == "Farewell."
+
+    def test_get_fallback_npc_line_mid_conversation_prefers_starters(self):
+        """A non-exhausted mid-conversation LLM hiccup must not claim the NPC
+        is done talking — it should reuse chapter-flavor starters instead of
+        the 'done talking' closing lines.
+        """
+        class TestNPC(ConversationalNPCMixin):
+            def __init__(self):
+                self.name = "Gorran"
+                self._chat_char_config = {
+                    "conversation_starters_by_chapter": {"1": ["Hello, friend!"]},
+                    "closing_lines_when_exhausted": ["Farewell."],
+                }
+
+            def _get_chapter(self, player):
+                return "1"
+
+        npc = TestNPC()
+        player = MagicMock()
+        line = npc._get_fallback_npc_line(is_opening=False, player=player, exhausted=False)
+        assert line == "Hello, friend!"
+
+    def test_get_fallback_npc_line_generic_rotates(self):
+        """Generic-nomad fallback must vary rather than repeat the speech sample."""
+        class TestNPC(ConversationalNPCMixin):
+            def __init__(self):
+                self.name = "GenericNomad"
+                self._chat_char_config = None
+                self._chat_personality = {
+                    "given_name": "Ren",
+                    "speech_sample": "The river's cold.",
+                    "knowledge": ["river crossings"],
+                }
+
+            def _get_chapter(self, player):
+                return "1"
+
+        npc = TestNPC()
+        player = MagicMock()
+        first = npc._get_fallback_npc_line(is_opening=False, player=player)
+        second = npc._get_fallback_npc_line(is_opening=False, player=player)
+        assert first == "The river's cold."
+        assert second != first
+
 
 class TestGetFallbackJeanOptions:
     """Test _get_fallback_jean_options."""
@@ -1764,7 +1952,7 @@ class TestIntegrationChatFlow:
             def _get_adapter(self):
                 return None
 
-            def _get_fallback_npc_line(self, is_opening, player):
+            def _get_fallback_npc_line(self, is_opening, player, exhausted=False):
                 return "Response from fallback."
 
             def _get_fallback_jean_options(self):
@@ -2321,7 +2509,7 @@ class TestHistoryUpdating:
             def _get_adapter(self):
                 return None
 
-            def _get_fallback_npc_line(self, is_opening, player):
+            def _get_fallback_npc_line(self, is_opening, player, exhausted=False):
                 return "Response."
 
             def _get_fallback_jean_options(self):
@@ -2824,8 +3012,145 @@ class TestHistoryPersistenceAppend:
         assert len(player.npc_chat_histories["test_key"]["exchanges"]) == 2
 
 
-if __name__ == "__main__":
-    pytest.main([__file__, "-v", "-s"])
+class TestChatRespondHistoryIntegrity:
+    """End-to-end regression coverage for a full chat_open -> chat_respond*
+    conversation against a player object that (like a real Player, unlike
+    MinimalPlayer) has no npc_chat_histories attribute to start with.
+
+    This is the exact scenario a live conversation with a story NPC (e.g.
+    Mara) exercises: it caught two real bugs that unit tests calling
+    _save_exchange_to_persistence directly couldn't see — (1)
+    player.npc_chat_histories was never initialized on a real Player, so
+    persistence silently no-opped every call, and (2) chat_respond's history
+    bookkeeping double-appended a row every single turn once persistence
+    actually worked.
+    """
+
+    def _make_npc(self, starters, closing):
+        class TestNPC(ConversationalNPCMixin):
+            def __init__(self):
+                self.name = "Mara"
+                self.charisma = 10
+                self.wisdom = 10
+                self.keywords = []
+                self._chat_config_path = None
+                self._chat_char_config = {
+                    "conversation_starters_by_chapter": {"1": starters},
+                    "closing_lines_when_exhausted": closing,
+                }
+                self._chat_world_facts = {}
+                self._chat_personality = None
+                self._chat_history = []
+                self._chat_npc_key = None
+                self._chat_fallback_idx = 0
+                self._chat_npc_fallback_idx = 0
+                self._prohibited_patterns = []
+                self.loquacity_current = 0
+                self.loquacity_max = 0
+                self.loquacity_threshold = 0
+                self.loquacity_recovery = 2
+
+            def _get_adapter(self):
+                return None  # force the deterministic fallback path
+
+            def _get_chapter(self, player):
+                return "1"
+
+        return TestNPC()
+
+    def _make_player(self):
+        player = MagicMock(spec=["universe", "reputation", "charisma", "equipped", "allies"])
+        player.universe.game_tick = 0
+        player.universe.story = {}
+        player.reputation = {}
+        player.charisma = 10
+        player.equipped = {}
+        player.allies = []
+        # Deliberately no npc_chat_histories attribute — matches a real
+        # Player, which never initializes it (unlike MinimalPlayer).
+        assert not hasattr(player, "npc_chat_histories")
+        return player
+
+    def test_full_conversation_creates_one_row_per_round(self):
+        npc = self._make_npc(
+            starters=["Line A.", "Line B.", "Line C."],
+            closing=["Goodbye now."],
+        )
+        player = self._make_player()
+
+        opened = npc.chat_open(player)
+        assert hasattr(player, "npc_chat_histories")
+
+        npc.chat_respond(player, "Q1", "direct")
+        npc.chat_respond(player, "Q2", "direct")
+
+        entry = player.npc_chat_histories["Mara"]
+        # Opening + 2 respond rounds = 3 rows, never more (no double-append).
+        assert len(entry["exchanges"]) == 3
+        assert entry["conversation_count"] == 2
+
+    def test_full_conversation_never_repeats_an_npc_line(self):
+        """Regression test for the exact bug reported against this feature:
+        a conversation that outlasts the authored fallback pool must end
+        gracefully instead of visibly repeating a line already said.
+        """
+        npc = self._make_npc(
+            starters=["Line A.", "Line B."],
+            closing=["Goodbye now."],
+        )
+        player = self._make_player()
+
+        opened = npc.chat_open(player)
+        lines_said = [opened["npc_opening"]]
+
+        for i in range(6):
+            resp = npc.chat_respond(player, f"Question {i}", "direct")
+            lines_said.append(resp["npc_response"])
+            if resp["conversation_ended"]:
+                break
+
+        assert len(lines_said) == len(set(lines_said)), (
+            f"NPC repeated a line within one conversation: {lines_said}"
+        )
+
+    def test_single_line_pool_ends_immediately_instead_of_repeating(self):
+        """A one-line authored pool is the tightest case for the duplicate
+        guard: rotation alone can never help (idx % 1 is always 0), so the
+        very first respond turn must detect the repeat against the opening
+        line itself and end there rather than echo it back.
+        """
+        npc = self._make_npc(
+            starters=["Only line."],
+            closing=["Goodbye now."],
+        )
+        player = self._make_player()
+
+        opened = npc.chat_open(player)
+        assert opened["npc_opening"] == "Only line."
+
+        resp = npc.chat_respond(player, "Question", "direct")
+        assert resp["npc_response"] != "Only line."
+        assert resp["conversation_ended"] is True
+
+    def test_conversation_history_is_chronologically_ordered(self):
+        """Each persisted row must pair an NPC line with Jean's reply TO it,
+        not with the reply that prompted the NEXT line — otherwise the
+        formatted transcript handed to the LLM reads out of order.
+        """
+        npc = self._make_npc(
+            starters=["Line A.", "Line B.", "Line C."],
+            closing=["Goodbye now."],
+        )
+        player = self._make_player()
+
+        npc.chat_open(player)
+        npc.chat_respond(player, "Q1", "direct")
+        npc.chat_respond(player, "Q2", "direct")
+
+        exchanges = player.npc_chat_histories["Mara"]["exchanges"]
+        assert exchanges[0]["jean"] == "Q1"
+        assert exchanges[1]["jean"] == "Q2"
+        assert exchanges[0]["npc"] != exchanges[1]["npc"]
 
 
 if __name__ == "__main__":

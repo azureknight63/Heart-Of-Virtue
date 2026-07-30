@@ -126,6 +126,21 @@ class NPC(NPCCombatMixin, NPCLootMixin, Combatant):
         )
         self.ai_config = None  # Initialized during combat
 
+    def _init_idle_moves(self):
+        """Set ``known_moves`` to a lone idle move, falling back to an empty
+        list if the move cannot be constructed.
+
+        Shared by every non-combat NPC/Friend that previously inlined an
+        identical ``NpcIdle`` try/except block. The fallback is defensive
+        (the required attributes are set before subclasses call this), but is
+        retained so a construction failure degrades gracefully rather than
+        crashing NPC setup.
+        """
+        try:
+            self.known_moves = [moves.NpcIdle(self)]
+        except Exception:
+            self.known_moves = []
+
 
 class Friend(AllyProgressionMixin, NPC):
     def __init__(

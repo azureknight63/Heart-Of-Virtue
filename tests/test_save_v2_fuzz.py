@@ -63,6 +63,7 @@ def test_apply_rejects_nan_and_inf_hp():
     player.hp = 123
     doc = {
         "format_version": sf.SAVE_FORMAT_VERSION,
+        "schema_version": sf.SAVE_SCHEMA_VERSION,
         "player": {"name": "Jean", "level": 1, "hp": float("nan"),
                    "maxhp": float("inf")},
         "world": {"map_name": "m"},
@@ -77,6 +78,7 @@ def test_apply_clamps_negatives_to_floor():
     player = _fresh_player()
     doc = {
         "format_version": sf.SAVE_FORMAT_VERSION,
+        "schema_version": sf.SAVE_SCHEMA_VERSION,
         "player": {"name": "Jean", "level": -50, "hp": -999, "maxhp": -1},
         "world": {"map_name": "m"},
     }
@@ -90,6 +92,7 @@ def test_apply_clamps_overflow_to_ceiling():
     player = _fresh_player()
     doc = {
         "format_version": sf.SAVE_FORMAT_VERSION,
+        "schema_version": sf.SAVE_SCHEMA_VERSION,
         "player": {"name": "Jean", "level": 10 ** 40, "hp": 100, "maxhp": 100},
         "world": {"map_name": "m"},
     }
@@ -102,6 +105,7 @@ def test_apply_rejects_non_string_name():
     player.name = "Jean"
     doc = {
         "format_version": sf.SAVE_FORMAT_VERSION,
+        "schema_version": sf.SAVE_SCHEMA_VERSION,
         "player": {"name": ["not", "a", "string"], "level": 1, "hp": 1,
                    "maxhp": 1},
         "world": {"map_name": "m"},
@@ -114,6 +118,7 @@ def test_apply_ignores_unexpected_stat_keys():
     player = _fresh_player()
     doc = {
         "format_version": sf.SAVE_FORMAT_VERSION,
+        "schema_version": sf.SAVE_SCHEMA_VERSION,
         "player": {"name": "Jean", "level": 1, "hp": 1, "maxhp": 1,
                    "stats": {"__evil__": 999, "strength": 20}},
         "world": {"map_name": "m"},
@@ -128,6 +133,7 @@ def test_apply_rejects_string_stat_value():
     player.strength = 12
     doc = {
         "format_version": sf.SAVE_FORMAT_VERSION,
+        "schema_version": sf.SAVE_SCHEMA_VERSION,
         "player": {"name": "Jean", "level": 1, "hp": 1, "maxhp": 1,
                    "stats": {"strength": "notanumber"}},
         "world": {"map_name": "m"},
@@ -140,6 +146,7 @@ def test_apply_survives_non_dict_stats():
     player = _fresh_player()
     doc = {
         "format_version": sf.SAVE_FORMAT_VERSION,
+        "schema_version": sf.SAVE_SCHEMA_VERSION,
         "player": {"name": "Jean", "level": 1, "hp": 1, "maxhp": 1,
                    "stats": [1, 2, 3]},
         "world": {"map_name": "m"},

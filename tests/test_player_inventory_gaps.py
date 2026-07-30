@@ -195,8 +195,10 @@ def test_equip_item_too_heavy_returns_to_candidates(capsys):
     with patch("src.player._inventory.cprint"):
         p.equip_item(phrase="testsword")
 
-    # Since it was too heavy and was in candidates, it goes back to the room
+    # Since it was too heavy, it remains in the room — and must appear exactly
+    # once (the failure path previously duplicated it into items_here).
     assert heavy in p.current_room.items_here
+    assert p.current_room.items_here.count(heavy) == 1
 
 
 # ---------------------------------------------------------------------------
@@ -581,6 +583,37 @@ def test_add_items_to_inventory_weight_exceeded():
 
     assert heavy not in p.inventory
     assert heavy in p.current_room.items_here
+
+
+def test_add_items_to_inventory_batch_respects_running_weight():
+    """A batch cannot collectively exceed weight_tolerance.
+
+    Two 15-weight items under a 20 capacity: the first is accepted, the second
+    must be dropped once the running weight is accounted for (regression for the
+    stale-weight-cap bug where both passed against the original free capacity).
+    """
+    p = _make_player()
+    p.weight_tolerance = 20.0
+    p.weight_current = 0.0
+    p.inventory = []
+    p.current_room.items_here = []
+
+    first = MagicMock()
+    first.name = "Boulder A"
+    first.weight = 15.0
+    del first.count
+    second = MagicMock()
+    second.name = "Boulder B"
+    second.weight = 15.0
+    del second.count
+
+    with patch("src.player._inventory.cprint"):
+        with patch("src.player._inventory.narrate"):
+            p.add_items_to_inventory([first, second])
+
+    assert first in p.inventory
+    assert second not in p.inventory
+    assert second in p.current_room.items_here
 
 
 def test_add_items_to_inventory_already_in_inventory():

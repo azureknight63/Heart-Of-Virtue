@@ -424,7 +424,7 @@ class TestInitializeCombatReinitResumesMove:
         ) as mock_exec:
             result = adapter.initialize_combat([enemy], reinit=True)
 
-        mock_exec.assert_called_once_with(move)
+        mock_exec.assert_called_once_with(move, resume=True)
         assert result == {"resumed": True}
 
 
@@ -540,7 +540,7 @@ class TestHandleCombinedSelectionTargetResolution:
         with patch.object(ApiCombatAdapter, "_get_available_targets", return_value=[]):
             result = adapter._handle_combined_selection("Slash", None)
 
-        assert result == {"error": "No viable targets available for this move."}
+        assert result == {"error": "No valid targets available for this move"}
 
 
 # ---------------------------------------------------------------------------

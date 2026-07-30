@@ -203,7 +203,14 @@ class ShootBow(
     def evaluate(
         self,
     ):  # adjusts the move's attributes to match the current game state
-        power = 0
+        # Derive power from the currently-selected arrow rather than resetting it
+        # to 0 (issue #414). advance() calls evaluate() every beat, including the
+        # beat between prep() (which loads the arrow's power) and execute(); a
+        # hard reset here wiped the arrow's contribution so only the finesse term
+        # ever reached the damage calc. self.arrow defaults to a WoodenArrow set
+        # in __init__ and is replaced with the chosen arrow in prep().
+        arrow = getattr(self, "arrow", None)
+        power = getattr(arrow, "power", 0) if arrow is not None else 0
         prep = int(
             100 / ((self.user.speed * 0.7) + (self.user.strength * 0.3))
         )  # starting prep of 10

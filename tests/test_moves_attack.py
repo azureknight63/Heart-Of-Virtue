@@ -127,6 +127,30 @@ def test_move_base_process_stage_no_errors():
     assert move.current_stage == 0
 
 
+def test_attack_applies_blade_mastery_fatigue_discount():
+    """Regression for #395: the purchasable Blade Mastery passive gives a 15%
+    fatigue discount to every sword-specific move via standard_evaluate_attack,
+    but basic Attack hand-rolls its math and used to ignore it — so a player who
+    bought Blade Mastery paid full fatigue on their most-used move."""
+    from src.moves import BladeMastery
+
+    player = Player()
+    sword = items.Longsword()
+    sword.isequipped = True
+    player.eq_weapon = sword
+    attack = get_attack_move(player)
+
+    attack.evaluate()
+    baseline_fatigue = attack.fatigue_cost
+
+    player.known_moves.append(BladeMastery(player))
+    attack.evaluate()
+    discounted_fatigue = attack.fatigue_cost
+
+    assert discounted_fatigue < baseline_fatigue
+    assert discounted_fatigue == max(10, int(baseline_fatigue * 0.85))
+
+
 @pytest.mark.parametrize("weapon_cls", [items.Rock, items.RustedDagger, items.Dagger, items.Hammer])
 def test_attack_evaluate_various_weapons(weapon_cls):
     player = Player()

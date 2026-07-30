@@ -246,9 +246,11 @@ class Clean(State):
         self.add_maxfatigue = 10
 
     def on_application(self, target):
+        functions.refresh_stat_bonuses(target)
         cprint("{} is now clean!".format(target.name), "magenta")
 
     def on_removal(self, target):
+        functions.refresh_stat_bonuses(target)
         cprint("{} is no longer quite so clean!".format(target.name), "white")
 
 

@@ -10,17 +10,18 @@ All 0% coverage modules have been addressed.
 This file ensures all service methods have test coverage.
 """
 
-import sys
 import pytest
-
-pytestmark = pytest.mark.skip(reason="Tier 4 tests - coverage requirements already met")
-from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock
-
+from unittest.mock import patch
 
 from src.api.services.auth_service import AuthService
 from src.api.services.session_manager import SessionManager
-from src.api.services.validators import *
+from src.api.services.validators import (
+    validate_required_fields,
+    validate_direction,
+    validate_item_index,
+)
+
+pytestmark = pytest.mark.skip(reason="Tier 4 tests - coverage requirements already met")
 
 
 class TestAuthService:
@@ -40,7 +41,7 @@ class TestAuthService:
         """Test create_user async method"""
         with patch('api.services.auth_service.db'):
             try:
-                result = await auth_service.create_user("newuser", "password123", "user@example.com")
+                await auth_service.create_user("newuser", "password123", "user@example.com")
                 # Should return user or raise
             except Exception:
                 pass
@@ -50,7 +51,7 @@ class TestAuthService:
         """Test authenticate_user with credentials"""
         with patch('api.services.auth_service.db'):
             try:
-                result = await auth_service.authenticate_user("user", "pass")
+                await auth_service.authenticate_user("user", "pass")
                 # Should return user or None
             except Exception:
                 pass
@@ -60,7 +61,7 @@ class TestAuthService:
         """Test get_user_by_id retrieves user"""
         with patch('api.services.auth_service.db'):
             try:
-                result = await auth_service.get_user_by_id("user123")
+                await auth_service.get_user_by_id("user123")
             except Exception:
                 pass
 
@@ -69,14 +70,14 @@ class TestAuthService:
         """Test update_user_timezone"""
         with patch('api.services.auth_service.db'):
             try:
-                result = await auth_service.update_user_timezone("user123", "UTC")
+                await auth_service.update_user_timezone("user123", "UTC")
             except Exception:
                 pass
 
     def test_decrypt_email(self, auth_service):
         """Test decrypt_email method"""
         try:
-            result = auth_service.decrypt_email("encrypted_email_data")
+            auth_service.decrypt_email("encrypted_email_data")
             # Should return decrypted email or handle error
         except Exception:
             pass
@@ -106,7 +107,7 @@ class TestSessionManager:
     def test_create_session_empty_username(self, session_manager):
         """Test create_session with empty username"""
         try:
-            session = session_manager.create_session("")
+            session_manager.create_session("")
         except Exception:
             pass
 
@@ -117,14 +118,14 @@ class TestSessionManager:
             if session:
                 session_id = session[0] if isinstance(session, tuple) else session.get('session_id')
                 if session_id:
-                    result = session_manager.validate_session(session_id)
+                    session_manager.validate_session(session_id)
         except Exception:
             pass
 
     def test_validate_session_invalid(self, session_manager):
         """Test validate_session with invalid session"""
         try:
-            result = session_manager.validate_session("invalid_session_xyz")
+            session_manager.validate_session("invalid_session_xyz")
             # Should return None or False
         except Exception:
             pass
@@ -136,7 +137,7 @@ class TestSessionManager:
             if session:
                 session_id = session[0] if isinstance(session, tuple) else session.get('session_id')
                 if session_id and hasattr(session_manager, 'delete_session'):
-                    result = session_manager.delete_session(session_id)
+                    session_manager.delete_session(session_id)
         except Exception:
             pass
 
@@ -146,7 +147,7 @@ class TestSessionManager:
             session = session_manager.create_session()
             session_id = session.get('session_id') or session.get('token')
             if session_id:
-                player = session_manager.get_player_from_session(session_id)
+                session_manager.get_player_from_session(session_id)
                 # May return player or None
 
     def test_update_session_data(self, session_manager):
@@ -155,12 +156,12 @@ class TestSessionManager:
             session = session_manager.create_session()
             session_id = session.get('session_id') or session.get('token')
             if session_id:
-                result = session_manager.update_session_data(session_id, {})
+                session_manager.update_session_data(session_id, {})
 
     def test_session_timeout(self, session_manager):
         """Test session timeout handling"""
         if hasattr(session_manager, 'cleanup_expired_sessions'):
-            result = session_manager.cleanup_expired_sessions()
+            session_manager.cleanup_expired_sessions()
             # Should handle expired sessions
 
 
@@ -187,11 +188,6 @@ class TestValidators:
     def test_validate_item_index(self):
         """Test validate_item_index"""
         result = validate_item_index(0, 5)
-        assert isinstance(result, tuple)
-
-    def test_validate_npc_id(self):
-        """Test validate_npc_id"""
-        result = validate_npc_id("npc_123")
         assert isinstance(result, tuple)
 
 

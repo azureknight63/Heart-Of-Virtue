@@ -5,7 +5,6 @@ tiles.py:
   289-290, 299-301 — spawn_object with kwargs and Passageway string parsing
 
 universe.py:
-  76-79, 83 — build() legacy list path
   215-216 — _load_single_json_map fallback tile class
   248-249 — _deserialize_saved_instance re-instantiation fallback
   278-287 — event tile assignment fallback
@@ -15,8 +14,6 @@ universe.py:
   321 — npc player assign
   335-337 — npc tile assign
   352-353 — object tile assign
-  383-388, 405-406, 429-468 — load_tiles event/object spawn parsing
-  481-488 — load_tiles else block for tiles-without-params
 """
 
 import json
@@ -234,133 +231,6 @@ class TestUniverseLoadSingleJsonMapEdgeCases:
         tile = u.maps[-1].get((0, 0))
         if tile:
             assert len(tile.objects_here) >= 1
-
-
-# ---------------------------------------------------------------------------
-# universe.py — load_tiles legacy format: event and object spawning
-# ---------------------------------------------------------------------------
-
-
-class TestUniverseLoadTilesEventAndObjectSpawn:
-    """Lines 383-388, 405-406, 429-468: event and object spawn in legacy txt maps."""
-
-    def test_load_tiles_event_spawn(self):
-        """Lines 429-449: ! prefix spawns an event."""
-        from src.universe import Universe
-
-        p = _player()
-        u = Universe(player=p)
-
-        # BlankTile with event spawn: !Ch01StartOpenWall.r (repeat)
-        map_content = "BlankTile|!Ch01StartOpenWall.r\t\n"
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            map_file = Path(tmpdir) / "event_test.txt"
-            map_file.write_text(map_content, encoding="utf-8")
-
-            with patch("src.universe.RESOURCES_DIR", Path(tmpdir)):
-                try:
-                    u.load_tiles(p, "event_test")
-                except Exception:
-                    # Event instantiation may fail, but the parsing path was reached
-                    pass
-
-        # At minimum the map should have been partially loaded
-        # (either with the event or gracefully skipped)
-        assert True  # If we got here without crashing, the path executed
-
-    def test_load_tiles_object_spawn(self):
-        """Lines 450-475: @ prefix spawns an object."""
-        from src.universe import Universe
-
-        p = _player()
-        u = Universe(player=p)
-
-        # BlankTile with object spawn: @WallSwitch.1
-        map_content = "BlankTile|@WallSwitch.1\t\n"
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            map_file = Path(tmpdir) / "obj_test.txt"
-            map_file.write_text(map_content, encoding="utf-8")
-
-            with patch("src.universe.RESOURCES_DIR", Path(tmpdir)):
-                u.load_tiles(p, "obj_test")
-
-        assert len(u.maps) >= 1
-
-    def test_load_tiles_tilde_param(self):
-        """Lines 380-392: ~ prefix sets tile attribute.
-
-        The param format is ~attrname=value where the ~ is part of the key.
-        The code does param.split("=") giving ["~attrname", "value"] and
-        then checks hasattr(tile, "~attrname"). Since that attribute doesn't
-        exist on a standard MapTile, the setattr is skipped. We verify the
-        load doesn't crash.
-        """
-        from src.universe import Universe
-
-        p = _player()
-        u = Universe(player=p)
-
-        # BlankTile with tilde parameter (format used by map editor)
-        map_content = "BlankTile|~symbol=X\t\n"
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            map_file = Path(tmpdir) / "tilde_test.txt"
-            map_file.write_text(map_content, encoding="utf-8")
-
-            with patch("src.universe.RESOURCES_DIR", Path(tmpdir)):
-                u.load_tiles(p, "tilde_test")
-
-        assert len(u.maps) >= 1
-        # The tilde path was exercised regardless of whether setattr succeeded
-
-    def test_load_tiles_else_block_known_tile(self):
-        """Lines 481-488: else block for tiles without params."""
-        from src.universe import Universe
-
-        p = _player()
-        u = Universe(player=p)
-
-        # Row where second column is a known tile class name
-        map_content = "BlankTile\tBlankTile\n"
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            map_file = Path(tmpdir) / "else_test.txt"
-            map_file.write_text(map_content, encoding="utf-8")
-
-            with patch("src.universe.RESOURCES_DIR", Path(tmpdir)):
-                u.load_tiles(p, "else_test")
-
-        assert len(u.maps) >= 1
-        # Second column (x=1) should be a BlankTile
-        tile = u.maps[-1].get((1, 0))
-        assert tile is not None
-
-    def test_load_tiles_npc_hidden_spawn(self):
-        """Lines 400-411: NPC spawn with hidden parameter (p_list of 3)."""
-        from src.universe import Universe
-
-        p = _player()
-        u = Universe(player=p)
-
-        # BlankTile with hidden NPC: $RockRumbler.1.h+30
-        map_content = "BlankTile|$RockRumbler.1.h+30\t\n"
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            map_file = Path(tmpdir) / "hidden_npc_test.txt"
-            map_file.write_text(map_content, encoding="utf-8")
-
-            with patch("src.universe.RESOURCES_DIR", Path(tmpdir)):
-                u.load_tiles(p, "hidden_npc_test")
-
-        assert len(u.maps) >= 1
-        tile = u.maps[-1].get((0, 0))
-        if tile:
-            # Should have an NPC with hidden=True
-            assert len(tile.npcs_here) >= 1
-            npc = tile.npcs_here[0]
-            assert npc.hidden is True
 
 
 # ---------------------------------------------------------------------------

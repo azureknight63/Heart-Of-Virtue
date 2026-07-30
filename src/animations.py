@@ -69,9 +69,10 @@ def main():
             file_to_play = animation.replace(".gif", "")
             Screen.wrapper(func=play_gif, arguments=[file_to_play])
         else:
-            if function_exists("animations.py", animation):
+            module = sys.modules[__name__]
+            if function_exists(module, animation):
                 Screen.wrapper(
-                    getattr("animations.py", animation)
+                    getattr(module, animation)
                 )  # execute the animation
             else:
                 print("### Animation not found!")

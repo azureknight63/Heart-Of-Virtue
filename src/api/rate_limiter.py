@@ -75,16 +75,38 @@ class RateLimiter:
         for key in stale:
             del self._store[key]
 
-    def _enforce_cap_locked(self) -> None:
-        while len(self._store) > self.max_keys:
-            self._store.popitem(last=False)  # evict least-recently-touched
+    def _enforce_cap_locked(self, now: float) -> None:
+        """Evict least-recently-touched keys down to ``max_keys``.
+
+        Never evicts a key that is *currently at/over the limit*: doing so
+        would silently reset a throttled key's window, which an attacker
+        could weaponize by flooding the store with ``max_keys`` distinct
+        throwaway keys to LRU-evict a targeted victim and re-enable brute
+        force against it (issue #410). Expired timestamps are pruned per
+        candidate so a key that only *looks* limited (stale hits) is still
+        eligible for eviction. If every remaining key is genuinely limited
+        the store may briefly exceed the cap — that population is bounded by
+        real throttled traffic, not by attacker-controlled key spray.
+        """
+        if len(self._store) <= self.max_keys:
+            return
+        cutoff = now - self.window_seconds
+        for key in list(self._store):  # least-recently-touched first
+            if len(self._store) <= self.max_keys:
+                break
+            fresh = [t for t in self._store[key] if t > cutoff]
+            if len(fresh) >= self.limit:
+                # Currently limited — keep it, and refresh its pruned list.
+                self._store[key] = fresh
+                continue
+            del self._store[key]
 
     def _maybe_sweep_locked(self, now: float) -> None:
         self._writes_since_sweep += 1
         if self._writes_since_sweep >= _SWEEP_INTERVAL:
             self._sweep_locked(now)
             self._writes_since_sweep = 0
-        self._enforce_cap_locked()
+        self._enforce_cap_locked(now)
 
     def is_limited(self, key: str) -> bool:
         """Return True if `key` is currently at/over the limit.

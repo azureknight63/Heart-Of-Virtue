@@ -276,6 +276,22 @@ def test_update_goods_orchestration(monkeypatch):
     assert '_values' in calls
 
 
+def test_update_goods_stacks_duplicate_container_items():
+    """#356: restock places items straight into live container inventories,
+    which can land the same item class in a container more than once. update_goods
+    must re-stack afterwards so duplicates collapse into a single stacked entry."""
+    m, room, _ = make_merchant(stock_count=0, always=[Restorative, Restorative])
+    cont = Container(name='Cabinet', merchant=m, items=[], allowed_subtypes=(Restorative,))
+    cont.stock_count = 2
+    room.objects.append(cont)
+
+    m.update_goods()
+
+    restoratives = [it for it in cont.inventory if type(it).__name__ == 'Restorative']
+    assert len(restoratives) == 1, "duplicate Restorative entries should have stacked"
+    assert restoratives[0].count == 2
+
+
 def test_apply_value_conditions_container_items(monkeypatch):
     m, room, _ = make_merchant()
     cont = Container(name='Chest', merchant=m, items=[Restorative(merchandise=True)])

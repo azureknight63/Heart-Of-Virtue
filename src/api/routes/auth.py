@@ -3,6 +3,7 @@
 import logging
 
 from flask import Blueprint, request, jsonify
+from src.api.middleware.auth import resolve_session
 from src.api.rate_limiter import RateLimiter
 from src.api.services.auth_service import auth_service
 from functools import wraps
@@ -22,89 +23,114 @@ _LOGIN_RATE_LIMIT = 10
 _LOGIN_RATE_WINDOW = 900  # 15 minutes
 _login_limiter = RateLimiter(limit=_LOGIN_RATE_LIMIT, window_seconds=_LOGIN_RATE_WINDOW)
 
+# Second, independent throttle keyed on IP alone. The username+IP limiter above
+# resets its budget every time the username changes, so a single IP can spray
+# thousands of distinct usernames (credential stuffing) without ever tripping
+# it. This IP-only limiter catches that horizontal attack. The threshold is set
+# far above what a legitimate human — even several sharing one NAT'd IP — would
+# fail in the window, so it's defense-in-depth against spray, not a per-account
+# gate. Same per-worker caveat as above (issue #284): the effective limit is
+# _IP_RATE_LIMIT * worker_count, so treat it as raising the cost of spray, not
+# an airtight cap. It keys on request.remote_addr, which is the direct client
+# IP by default (no proxy/load balancer in this deployment) and automatically
+# becomes the real client IP if the opt-in ProxyFix is ever configured (see
+# _apply_proxy_fix / TRUSTED_PROXY_COUNT and tests/test_proxy_fix.py).
+_IP_RATE_LIMIT = 60
+_IP_RATE_WINDOW = 900  # 15 minutes
+_ip_limiter = RateLimiter(limit=_IP_RATE_LIMIT, window_seconds=_IP_RATE_WINDOW)
+
+
+def _client_ip() -> str:
+    """The client's IP, collapsed to a /64 prefix for IPv6.
+
+    Full IPv6 addresses (/128) are cheap for an attacker to rotate within their
+    allocation, which would defeat an IP-keyed throttle; a typical end-site is a
+    /64, so keying on that prefix throttles the whole allocation. IPv4 and
+    unparseable values are used verbatim. Returns ``"unknown"`` when called
+    outside a request context (e.g. direct helper calls in tests).
+    """
+    try:
+        ip = request.remote_addr or "unknown"
+    except RuntimeError:  # working outside of request context
+        return "unknown"
+    if ":" in ip:  # IPv6
+        try:
+            import ipaddress
+
+            network = ipaddress.ip_network(f"{ip}/64", strict=False)
+            return str(network.network_address)
+        except ValueError:
+            return ip
+    return ip
+
 
 def _login_rate_limit_key(username: str) -> str:
-    ip = request.remote_addr or "unknown"
-    return f"{(username or '').strip().lower()}:{ip}"
+    return f"{(username or '').strip().lower()}:{request.remote_addr or 'unknown'}"
 
 
 def _is_login_rate_limited(key: str) -> bool:
-    return _login_limiter.is_limited(key)
+    """True if either the username+IP or the IP-only throttle is tripped."""
+    return _login_limiter.is_limited(key) or _ip_limiter.is_limited(_client_ip())
 
 
 def _record_failed_login(key: str) -> None:
     _login_limiter.record(key)
+    _ip_limiter.record(_client_ip())
 
 
 def _clear_login_attempts(key: str) -> None:
+    # Clear only the per-account key on success. The IP counter is left to decay
+    # naturally so a single valid login mid-spray doesn't wipe the accumulated
+    # IP-level evidence of an ongoing attack.
     _login_limiter.clear(key)
 
 
+# Substrings that mark an internal config/infrastructure error whose text must
+# never reach the client (avoids leaking env-var names, connection URLs, etc).
+_CONFIG_LEAK_MARKERS = ("_URL", "_KEY", "_TOKEN", "not set", "os.environ")
+
+
+def _is_config_leak(msg: str) -> bool:
+    """True if an error message would expose internal config/infra details."""
+    return any(marker in msg for marker in _CONFIG_LEAK_MARKERS)
+
+
+def _establish_session_for_user(session_manager, username, user):
+    """Create a session for ``username`` and link it to the DB user record.
+
+    Shared by register and login so the session-creation + linkage contract
+    (db_user_id, timezone default) lives in exactly one place.
+    """
+    session_id, player_id = session_manager.create_session(username)
+    session = session_manager.get_session(session_id)
+    session.db_user_id = user["id"]
+    session.data["timezone"] = user.get("timezone", "America/New_York")
+    return session_id, player_id
+
+
 def require_auth(f):
+    """Require a valid session for the wrapped route.
+
+    Resolves the session via the shared ``resolve_session`` helper (session
+    only — no player is fetched) and stashes it on ``request.session_obj`` /
+    ``request.session_manager`` for the handler. Works for both sync and async
+    routes.
+    """
+
     @wraps(f)
     async def async_decorated(*args, **kwargs):
-        auth_header = request.headers.get("Authorization", "")
-        if not auth_header.startswith("Bearer "):
-            return (
-                jsonify(
-                    {
-                        "success": False,
-                        "error": "Missing or invalid Authorization header",
-                    }
-                ),
-                401,
-            )
-        session_id = auth_header[7:]
-        from flask import current_app
-
-        session_manager = current_app.session_manager
-        if not session_manager:
-            return (
-                jsonify({"success": False, "error": "Session manager not initialized"}),
-                500,
-            )
-        session = session_manager.get_session(session_id)
-        if not session:
-            return (
-                jsonify(
-                    {"success": False, "error": "Session not found or already expired"}
-                ),
-                401,
-            )
+        session_manager, session, error = resolve_session()
+        if error:
+            return error
         request.session_obj = session
         request.session_manager = session_manager
         return await f(*args, **kwargs)
 
     @wraps(f)
     def sync_decorated(*args, **kwargs):
-        auth_header = request.headers.get("Authorization", "")
-        if not auth_header.startswith("Bearer "):
-            return (
-                jsonify(
-                    {
-                        "success": False,
-                        "error": "Missing or invalid Authorization header",
-                    }
-                ),
-                401,
-            )
-        session_id = auth_header[7:]
-        from flask import current_app
-
-        session_manager = current_app.session_manager
-        if not session_manager:
-            return (
-                jsonify({"success": False, "error": "Session manager not initialized"}),
-                500,
-            )
-        session = session_manager.get_session(session_id)
-        if not session:
-            return (
-                jsonify(
-                    {"success": False, "error": "Session not found or already expired"}
-                ),
-                401,
-            )
+        session_manager, session, error = resolve_session()
+        if error:
+            return error
         request.session_obj = session
         request.session_manager = session_manager
         return f(*args, **kwargs)
@@ -179,9 +205,7 @@ async def register():
         except ValueError as ve:
             msg = str(ve)
             # Don't expose internal config/infrastructure details to users
-            if any(
-                kw in msg for kw in ("_URL", "_KEY", "_TOKEN", "not set", "os.environ")
-            ):
+            if _is_config_leak(msg):
                 return (
                     jsonify(
                         {
@@ -221,12 +245,10 @@ async def register():
 
         session_manager = current_app.session_manager
 
-        # Create session with the DB user ID
-        session_id, player_id = session_manager.create_session(username)
-        # Link session to DB user ID
-        session = session_manager.get_session(session_id)
-        session.db_user_id = user["id"]
-        session.data["timezone"] = user.get("timezone", "America/New_York")
+        # Create session and link it to the DB user record.
+        session_id, player_id = _establish_session_for_user(
+            session_manager, username, user
+        )
 
         return (
             jsonify(
@@ -343,12 +365,10 @@ async def login():
 
         session_manager = current_app.session_manager
 
-        # Create session
-        session_id, player_id = session_manager.create_session(username)
-        # Link session to DB user ID
-        session = session_manager.get_session(session_id)
-        session.db_user_id = user["id"]
-        session.data["timezone"] = user.get("timezone", "America/New_York")
+        # Create session and link it to the DB user record.
+        session_id, player_id = _establish_session_for_user(
+            session_manager, username, user
+        )
 
         return (
             jsonify(
@@ -367,7 +387,7 @@ async def login():
         logger.exception("Unhandled error in login")
         msg = str(e)
         # Don't expose internal config/infrastructure details to users
-        if any(kw in msg for kw in ("_URL", "_KEY", "_TOKEN", "not set", "os.environ")):
+        if _is_config_leak(msg):
             return (
                 jsonify(
                     {
@@ -448,42 +468,39 @@ def validate_session():
         Authorization: Bearer <session_id>
 
     Returns:
-        {
-            "valid": bool,
-            "username": "str or null",
-            "player_id": "str or null"
-        }
+        On success (200):
+            {
+                "valid": true,
+                "player_id": "str"
+            }
+        On failure (401):
+            {
+                "valid": false,
+                "username": null,
+                "player_id": null
+            }
     """
     try:
-        auth_header = request.headers.get("Authorization", "")
-        if not auth_header.startswith("Bearer "):
+        session_manager, session, error = resolve_session()
+        if error:
+            # Re-shape the shared helper's {success, error} response into this
+            # route's own {valid, username, player_id} contract, preserving the
+            # helper's status code (401 for missing/invalid auth or session).
+            _, status = error
             return (
                 jsonify({"valid": False, "username": None, "player_id": None}),
-                401,
+                status,
             )
 
-        session_id = auth_header[7:]
-
-        from flask import current_app
-
-        session_manager = current_app.session_manager
-        session = session_manager.get_session(session_id)
-
-        if session:
-            return (
-                jsonify(
-                    {
-                        "valid": True,
-                        "player_id": session.player_id,
-                    }
-                ),
-                200,
-            )
-        else:
-            return (
-                jsonify({"valid": False, "username": None, "player_id": None}),
-                401,
-            )
+        return (
+            jsonify(
+                {
+                    "valid": True,
+                    "player_id": session.player_id,
+                }
+            ),
+            200,
+        )
 
     except Exception:
         logger.exception("Unhandled error in validate_session")

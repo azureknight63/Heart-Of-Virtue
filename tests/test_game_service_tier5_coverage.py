@@ -489,6 +489,35 @@ class TestProcessEventInputExtra:
         # A new UUID key should now be present
         assert len(session_data["pending_events"]) == 1
 
+    def test_stage_requeue_carries_tile_coords_forward(self, game_service, mock_player):
+        # Regression for #327: when a multi-stage event advances to a new stage
+        # under a fresh UUID, the originating tile_x/tile_y must be preserved so
+        # the next round-trip resolves event.tile from the correct tile.
+        event = MagicMock(spec=["process", "completed", "player", "tile", "api_event_id"])
+        event.completed = False
+        event.process = MagicMock()
+        session_data = {
+            "pending_events": {
+                "evt-1": {
+                    "event": event,
+                    "event_data": {"name": "Test"},
+                    "tile_x": 7,
+                    "tile_y": 3,
+                }
+            }
+        }
+
+        with patch(
+            "src.api.serializers.event_serializer.EventSerializer.serialize_with_input",
+            return_value={"needs_input": True, "name": "Test"},
+        ):
+            game_service.process_event_input(mock_player, "evt-1", "yes", session_data)
+
+        assert "evt-1" not in session_data["pending_events"]
+        new_entry = next(iter(session_data["pending_events"].values()))
+        assert new_entry["tile_x"] == 7
+        assert new_entry["tile_y"] == 3
+
     def test_event_uses_check_conditions_when_no_process(self, game_service, mock_player):
         event = MagicMock(spec=["check_conditions", "completed", "player", "tile"])
         event.completed = True
@@ -877,6 +906,33 @@ class TestMovePlayerExtra:
         assert result["combat_started"] is False
         assert mock_player._combat_deferred_enemies == [enemy]
 
+    def test_move_clears_stale_active_chat_flag(self, game_service, mock_player):
+        """Regression test for #336: abandoning an NPC chat without hitting
+        /npc/chat/end (closing the dialog via the X button/overlay, or a
+        chat_open failure) must not permanently disable loquacity recovery.
+        A genuine move can only happen once the chat dialog isn't blocking
+        the client, so move_player self-heals by clearing the stale flag.
+        """
+        new_tile = MagicMock()
+        new_tile.x, new_tile.y = 5, 4
+        new_tile.is_passable = True
+        new_tile.events_here = []
+        new_tile.name = "NewArea"
+
+        mock_player.universe.get_tile = MagicMock(return_value=new_tile)
+        mock_player.universe.game_tick_events = MagicMock()
+        mock_player.__dict__["_active_chat_npc_id"] = "Gorran"
+
+        with patch.object(
+            game_service, "_calculate_exits", return_value={"north": {"x": 5, "y": 4}}
+        ), patch(
+            "src.api.services.game_service.check_for_combat", return_value=[]
+        ):
+            result = game_service.move_player(mock_player, "north")
+
+        assert result["success"] is True
+        assert "_active_chat_npc_id" not in mock_player.__dict__
+
     def test_combat_initialized_with_adapter_state(self, game_service, mock_player):
         new_tile = MagicMock()
         new_tile.x, new_tile.y = 5, 4
@@ -1114,6 +1170,23 @@ class TestInteractWithTargetExtra:
         result = game_service.interact_with_target(mock_player, str(id(obj)), "dance")
         assert result["success"] is False
         assert "cannot" in result["message"].lower()
+
+    def test_arbitrary_public_method_not_invokable(self, game_service, mock_player):
+        # Regression for #334: a public method that exists on the target but is
+        # NOT a curated keyword nor an allowed interaction verb (e.g. NPC.die)
+        # must be rejected instead of being dispatched via getattr.
+        npc = MagicMock(spec=["keywords", "name", "die"])
+        npc.keywords = ["talk"]
+        npc.name = "Quest Giver"
+        npc.die = MagicMock()
+        tile = self._tile(mock_player)
+        tile.npcs_here = [npc]
+
+        result = game_service.interact_with_target(mock_player, str(id(npc)), "die")
+
+        assert result["success"] is False
+        assert "cannot" in result["message"].lower()
+        npc.die.assert_not_called()
 
     def test_item_found_in_open_container(self, game_service, mock_player):
         from src.objects import Container
@@ -1562,6 +1635,35 @@ class TestGetCombatStatusExtra:
         mock_adapter.refresh_suggestions.assert_called_once()
         assert result == {"battle_state": {}}
 
+    def test_deferred_enemies_resume_threads_session_data(self, game_service, mock_player):
+        """Regression test for #335: the deferred-combat resume branch must
+        build the new adapter's on_event_callback with the current request's
+        session_data, not a bare `lambda p: self.trigger_combat_events(p)`
+        that silently drops it (permanently binding session_data=None).
+        """
+        enemy = MagicMock()
+        mock_player._combat_deferred_enemies = [enemy]
+        mock_player.pending_attribute_points = 0
+        mock_player.in_combat = True
+        mock_player.combat_list = [enemy]
+        # Skip the refresh_suggestions() call to keep the test focused.
+        mock_player.suggestions_loading = True
+
+        session_data = {"marker": "deferred-resume-session"}
+
+        with patch.object(game_service, "_initialize_combat"), patch(
+            "src.api.combat_adapter.ApiCombatAdapter"
+        ) as mock_adapter_cls:
+            mock_adapter_cls.return_value._get_available_moves.return_value = []
+            game_service.get_combat_status(
+                mock_player, session_id="resume-sess", session_data=session_data
+            )
+
+            callback = mock_adapter_cls.call_args.kwargs["on_event_callback"]
+            with patch.object(game_service, "trigger_combat_events") as mock_trigger:
+                callback(mock_player)
+            mock_trigger.assert_called_once_with(mock_player, session_data=session_data)
+
     def test_deferred_enemies_but_not_in_combat_after_init(self, game_service, mock_player):
         enemy = MagicMock()
         mock_player._combat_deferred_enemies = [enemy]
@@ -1846,6 +1948,58 @@ class TestNpcChat:
         result = game_service.npc_chat_open(mock_player, "Gorran")
         assert result["success"] is False
         assert "Failed to open chat" in result["error"]
+
+    def test_npc_chat_open_exception_clears_active_chat_flag(self, game_service, mock_player):
+        """Regression test for #336: a chat_open() failure must not leave
+        _active_chat_npc_id set, or NPC loquacity recovery is disabled for
+        the rest of the session.
+        """
+        npc = MagicMock()
+        npc.name = "Gorran"
+        npc.chat_open = MagicMock(side_effect=RuntimeError("no llm"))
+        mock_player.current_room.npcs_here = [npc]
+
+        game_service.npc_chat_open(mock_player, "Gorran")
+
+        assert "_active_chat_npc_id" not in mock_player.__dict__
+
+    def test_npc_chat_open_brush_off_clears_active_chat_flag(self, game_service, mock_player):
+        """Regression test for #336: an immediate brush-off (loquacity
+        exhausted, conversation_ended=True returned from a *successful*
+        chat_open) must clear the flag too — mirroring npc_chat_respond —
+        otherwise the "conversation" that never really started leaves
+        loquacity recovery permanently disabled.
+        """
+        npc = MagicMock()
+        npc.name = "Gorran"
+        npc.chat_open = MagicMock(
+            return_value={
+                "success": True,
+                "conversation_ended": True,
+                "npc_opening": "Not now.",
+            }
+        )
+        mock_player.current_room.npcs_here = [npc]
+
+        result = game_service.npc_chat_open(mock_player, "Gorran")
+
+        assert result["success"] is True
+        assert "_active_chat_npc_id" not in mock_player.__dict__
+
+    def test_npc_chat_open_success_keeps_active_chat_flag(self, game_service, mock_player):
+        """A genuinely opened conversation (conversation_ended=False) must
+        keep the flag set so loquacity recovery stays suppressed mid-chat.
+        """
+        npc = MagicMock()
+        npc.name = "Gorran"
+        npc.chat_open = MagicMock(
+            return_value={"success": True, "conversation_ended": False}
+        )
+        mock_player.current_room.npcs_here = [npc]
+
+        game_service.npc_chat_open(mock_player, "Gorran")
+
+        assert mock_player.__dict__.get("_active_chat_npc_id") == "Gorran"
 
     def test_npc_chat_respond_npc_not_found(self, game_service, mock_player):
         mock_player.current_room.npcs_here = []

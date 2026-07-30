@@ -2,6 +2,9 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { usePlayer, useWorld, useCombat, useExploration, useAutosave } from '../hooks/useApi'
 import { useEventManager } from '../hooks/useEventManager'
 import { useCombatCoordinator } from '../hooks/useCombatCoordinator'
+import { useCombatSocket } from '../hooks/useCombatSocket'
+import { combatSocketEnabled } from '../utils/featureFlags'
+import { beatToAnimations } from '../utils/combatStreamAdapter'
 import { useMobile } from '../hooks/useMobile'
 import { colors, spacing, fonts } from '../styles/theme'
 import { combat as combatApi } from '../api/endpoints'
@@ -25,10 +28,46 @@ export default function GamePage() {
   const { player, loading: playerLoading, refetch: refetchPlayer } = usePlayer()
   const { location, loading: worldLoading, moveToLocation, refetch: refetchWorld } = useWorld()
   const { exploredTiles, setExploredTiles, refetch: refetchExploration } = useExploration()
-  const { combat, inCombat, fetchCombatStatus, performAction } = useCombat()
+  const { combat, inCombat, fetchCombatStatus, performAction, applyCombatState } = useCombat()
   const { playBGM, playSFX, playSting } = useAudio()
   const { triggerTick } = useAutosave(player)
   const { error: showError } = useToast()
+
+  // Engine-driven combat streaming (issue #436). Off by default; when the
+  // VITE_COMBAT_SOCKET flag is on, per-beat animations arrive over the socket
+  // and drive BattlefieldGrid; combat:resolved/ended apply state (performAction
+  // becomes ack-only in useCombat).
+  const streaming = combatSocketEnabled()
+  const [streamedAnimations, setStreamedAnimations] = useState([])
+  // Note: `combatSpeed` is deliberately NOT wired from here — the downstream
+  // Battlefield/RightPanel/BattlefieldGrid chain defaults it to 1x until the
+  // combat-speed control ships (issue #460).
+  const combatRef = useRef(combat)
+  combatRef.current = combat
+
+  useCombatSocket({
+    sessionId: localStorage.getItem('authToken'),
+    enabled: streaming && inCombat,
+    // Accumulate cumulatively via a functional updater: BattlefieldGrid consumes
+    // this buffer through an absolute-index cursor, and appending to `prev`
+    // guarantees no beat is dropped even if SocketIO updates coalesce. The buffer
+    // resets to [] on every combat end (below), so its length is bounded per
+    // fight — the per-beat copy is O(fight length), not session-wide growth.
+    onBeat: (beat) =>
+      setStreamedAnimations((prev) => [
+        ...prev,
+        ...beatToAnimations(beat, combatRef.current),
+      ]),
+    onResolved: applyCombatState,
+    onEnded: applyCombatState,
+    fetchStatus: fetchCombatStatus,
+  })
+
+  // Reset the streamed-animation buffer when a combat ends so the next fight
+  // starts fresh.
+  useEffect(() => {
+    if (!inCombat) setStreamedAnimations([])
+  }, [inCombat])
 
   // Debug logging for combat data
   useEffect(() => {
@@ -611,6 +650,8 @@ export default function GamePage() {
           showDescription={isMobile}
           onDescriptionInteract={isMobile ? () => setActiveMobileTab('character') : undefined}
           onAnimatingChange={setIsBattlefieldAnimating}
+          streaming={streaming}
+          streamedAnimations={streamedAnimations}
         />
       </div>
 

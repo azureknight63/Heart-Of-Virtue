@@ -235,11 +235,11 @@ class TestContainer:
             c.take_all(p)
         mock_transfer.assert_called()
 
-    def test_loot_opens_closed_container(self):
-        """loot() opens a closed container (transfer is handled by LootEvent)."""
+    def test_open_reveals_closed_container(self):
+        """open() reveals a closed container (transfer is handled by LootEvent)."""
         c, p, _ = self._make_container()
         with patch("builtins.print"):
-            c.loot()
+            c.open()
         assert c.state == "opened"
 
     def test_stack_items_merges_duplicates(self):

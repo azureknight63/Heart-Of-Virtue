@@ -302,6 +302,14 @@ class FeintAndPivot(Move):
         # Ensure facing is a Direction enum value
         user_facing = user_pos.facing
 
+        # Clamp against the active dynamic combat grid size, not a hardcoded 0-50
+        # square (issue #405). CombatPosition._max_bound tracks the encounter's
+        # grid bound (widened up to 100x100 for large fights by
+        # initialize_combat_positions); using it keeps repositioning inside the
+        # real grid instead of over-constraining large fights or letting small
+        # ones land out of bounds.
+        grid_bound = getattr(positions.CombatPosition, "_max_bound", 50)
+
         if current_position == "front":
             # Move to flank: 90° perpendicular to target's facing
             target_facing_angle = target_facing.value
@@ -313,8 +321,8 @@ class FeintAndPivot(Move):
             offset_x = math.cos(flank_rad) * distance
             offset_y = math.sin(flank_rad) * distance
 
-            new_x = max(0, min(50, int(round(target_pos.x + offset_x))))
-            new_y = max(0, min(50, int(round(target_pos.y + offset_y))))
+            new_x = max(0, min(grid_bound, int(round(target_pos.x + offset_x))))
+            new_y = max(0, min(grid_bound, int(round(target_pos.y + offset_y))))
 
             # Create new position - pass Direction directly
             new_pos = positions.CombatPosition(x=new_x, y=new_y, facing=user_facing)
@@ -332,8 +340,8 @@ class FeintAndPivot(Move):
             offset_x = math.cos(angle_rad) * distance
             offset_y = math.sin(angle_rad) * distance
 
-            new_x = max(0, min(50, int(round(target_pos.x + offset_x))))
-            new_y = max(0, min(50, int(round(target_pos.y + offset_y))))
+            new_x = max(0, min(grid_bound, int(round(target_pos.x + offset_x))))
+            new_y = max(0, min(grid_bound, int(round(target_pos.y + offset_y))))
 
             new_pos = positions.CombatPosition(x=new_x, y=new_y, facing=user_facing)
             return new_pos
@@ -349,8 +357,8 @@ class FeintAndPivot(Move):
             offset_x = math.cos(angle_rad) * distance
             offset_y = math.sin(angle_rad) * distance
 
-            new_x = max(0, min(50, int(round(target_pos.x + offset_x))))
-            new_y = max(0, min(50, int(round(target_pos.y + offset_y))))
+            new_x = max(0, min(grid_bound, int(round(target_pos.x + offset_x))))
+            new_y = max(0, min(grid_bound, int(round(target_pos.y + offset_y))))
 
             new_pos = positions.CombatPosition(x=new_x, y=new_y, facing=user_facing)
             return new_pos
@@ -361,18 +369,41 @@ class FeintAndPivot(Move):
             cprint("Target is no longer available!", "red")
             return
 
-        # Calculate and deal damage
-        base_damage = max(1, int(self.power - self.target.protection))
+        self.prep_colors()
+
+        # Route damage through the shared pipeline (issue #402): resistances,
+        # heat scaling, and self.hit()/miss()/parry() bookkeeping (which also
+        # awards combat exp for the wielder).
+        base_damage_type = getattr(self, "base_damage_type", "slashing")
+        damage = (
+            (
+                (self.power * functions.combat_resistance(self.target, base_damage_type))
+                - self.target.protection
+            )
+            * self.user.heat
+        ) * random.uniform(0.8, 1.2)
+        damage = max(0, damage)
+
         hit_chance = int(90 - self.target.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3))
         roll = random.randint(0, 100)
+        glance = False
+        if hit_chance >= roll and hit_chance - roll < 10:
+            damage /= 2
+            glance = True
+        damage = int(damage)
+
+        if hasattr(self.user, "eq_weapon") and self.user.eq_weapon:
+            _ensure_weapon_exp(self.user)
+            self.user.combat_exp[self.user.eq_weapon.subtype] += 5
+        self.user.combat_exp["Basic"] += 5
 
         if hit_chance >= roll:
-            if not functions.check_parry(self.target):
-                self.target.hp = max(0, self.target.hp - base_damage)
-                cprint(
-                    f"{user.name} feints and strikes {self.target.name} for {base_damage} damage!",
-                    "yellow",
-                )
+            if functions.check_parry(self.target):
+                self.parry()
+            else:
+                self.hit(damage, glance)
+        else:
+            self.miss()
 
         # Reposition strategically based on current relative position
         try:

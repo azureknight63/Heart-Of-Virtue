@@ -1189,8 +1189,13 @@ class NpcChatLLMAdapter(GenericLLMClient):
             "For the opening line set reputation_delta and loquacity_delta to 0.\n"
             "The three jean_options are Jean's possible replies (he/him, a cautious, "
             "measured traveler): direct=brief and to the point, guarded=deflects or keeps "
-            "distance, open=engages with warmth or curiosity. Each 8-20 words. Never have "
-            "Jean reveal information he would not know, and none may echo the history above."
+            "distance, open=engages with warmth or curiosity. Each 8-20 words. Ground every "
+            "option in the specific thing the NPC just said and in the conversation history "
+            "above — react to concrete details, don't default to generic pleasantries. "
+            "Jean's knowledge is strictly bounded by the JEAN'S KNOWN CONTEXT block and the "
+            "WORLD facts in the system prompt, plus this conversation: never let him "
+            "reference people, places, events, or revelations outside that scope, and no "
+            "option may echo a line from the history above."
         )
 
         temp = float(os.getenv("NPC_CHAT_TEMP_TURN", "0.7"))

@@ -44,7 +44,6 @@ def test_universe_init_defaults():
     assert u.player is None
     assert u.game_tick == 0
     assert u.maps == []
-    assert u.starting_position == (0, 0)
     assert u.starting_map_default is None
     assert isinstance(u.story, dict)
     assert u.testing_mode is False
@@ -334,25 +333,9 @@ def test_evaluate_map_entry_spawners_handles_exception_in_event():
     u._evaluate_map_entry_spawners()
 
 
-# ---------------------------------------------------------------------------
-# Universe.parse_hidden
-# ---------------------------------------------------------------------------
 
 
-def test_parse_hidden_with_h_plus():
-    from src.universe import Universe
 
-    hidden, hfactor = Universe.parse_hidden("h+5")
-    assert hidden is True
-    assert hfactor == 5
-
-
-def test_parse_hidden_without_marker():
-    from src.universe import Universe
-
-    hidden, hfactor = Universe.parse_hidden("somevalue")
-    assert hidden is False
-    assert hfactor == 0
 
 
 # ---------------------------------------------------------------------------

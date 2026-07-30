@@ -194,6 +194,22 @@ class CombatantSerializer:
     """Serialize individual combatant state (player or NPC in combat)."""
 
     @staticmethod
+    def stream_id(combatant: Any) -> str:
+        """Canonical wire id for a combatant: ``player`` / ``ally_<id>`` /
+        ``enemy_<id>``.
+
+        Single source of truth for the combatant-id scheme so the serialized
+        combat state and the beat streamer (issue #436) can never diverge.
+        """
+        from src.player import Player
+
+        if isinstance(combatant, Player):
+            return "player"
+        if getattr(combatant, "friend", False):
+            return f"ally_{id(combatant)}"
+        return f"enemy_{id(combatant)}"
+
+    @staticmethod
     def serialize_combatant(combatant: Any, reference: Any = None) -> Dict[str, Any]:
         """
         Serialize combatant information during combat.
@@ -208,18 +224,13 @@ class CombatantSerializer:
         from src.player import Player
 
         is_player = isinstance(combatant, Player)
-        is_ally = not is_player and getattr(combatant, "friend", False)
         # Derive in_range from distance to the reference (player). Allies within 5 ft
         # are targetable with healing items; enemies within range are attackable.
         distance_to_ref = CombatantSerializer._get_distance(combatant, reference)
         in_range = distance_to_ref <= ITEM_USE_RANGE if reference is not None else True
 
         return {
-            "id": (
-                "player"
-                if is_player
-                else (f"ally_{id(combatant)}" if is_ally else f"enemy_{id(combatant)}")
-            ),
+            "id": CombatantSerializer.stream_id(combatant),
             "in_range": in_range,
             "name": getattr(combatant, "name", "Unknown"),
             "battle_symbol": getattr(combatant, "battle_symbol", None),

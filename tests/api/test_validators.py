@@ -11,7 +11,6 @@ from src.api.services.validators import (
     validate_required_fields,
     validate_direction,
     validate_item_index,
-    validate_npc_id,
 )
 
 
@@ -80,23 +79,3 @@ def test_validate_item_index_out_of_range():
     is_valid, error = validate_item_index(10, 10)
     assert is_valid is False
     assert "Invalid item index" in error or "must be between" in error
-
-
-def test_validate_npc_id_valid():
-    """Test a valid NPC id."""
-    is_valid, error = validate_npc_id("gorran_01")
-    assert is_valid is True
-    assert error is None
-
-
-def test_validate_npc_id_empty():
-    """Test an empty NPC id."""
-    is_valid, error = validate_npc_id("")
-    assert is_valid is False
-
-
-def test_validate_npc_id_non_string():
-    """Test a non-string NPC id."""
-    is_valid, error = validate_npc_id(42)
-    assert is_valid is False
-    assert "string" in error

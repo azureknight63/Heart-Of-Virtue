@@ -11,6 +11,39 @@ from src.api.services import SessionManager, GameService
 import src.universe as universe_module
 
 
+def _apply_proxy_fix(app):
+    """Wrap the WSGI app with Werkzeug's ProxyFix when trusted proxies exist.
+
+    Issue #409. **Off by default** (0 trusted hops): with no trusting,
+    ``request.remote_addr`` keeps reflecting the direct peer, so an untrusted
+    client cannot spoof ``X-Forwarded-For`` to forge the per-IP login
+    rate-limit key. Set ``TRUSTED_PROXY_COUNT`` (Flask config or environment)
+    to the number of trusted reverse-proxy hops in front of the app — e.g. 1
+    for a single platform proxy — so ProxyFix rewrites ``remote_addr`` from the
+    corresponding ``X-Forwarded-For`` entry and the rate limiter buckets by the
+    real client again.
+
+    Returns True if ProxyFix was installed, False otherwise.
+    """
+    raw = app.config.get(
+        "TRUSTED_PROXY_COUNT", os.environ.get("TRUSTED_PROXY_COUNT", 0)
+    )
+    try:
+        count = int(raw)
+    except (TypeError, ValueError):
+        count = 0
+
+    if count <= 0:
+        return False
+
+    from werkzeug.middleware.proxy_fix import ProxyFix
+
+    app.wsgi_app = ProxyFix(
+        app.wsgi_app, x_for=count, x_proto=count, x_host=count, x_port=count
+    )
+    return True
+
+
 def create_app(config_class=None):
     """Create and configure Flask application.
 
@@ -26,6 +59,11 @@ def create_app(config_class=None):
     app = Flask(__name__)
     app.config.from_object(config_class)
 
+    # Honor a reverse proxy's X-Forwarded-* headers so request.remote_addr (and
+    # thus the login rate-limit key) reflects the real client. Off by default —
+    # see _apply_proxy_fix (issue #409).
+    _apply_proxy_fix(app)
+
     # Initialize CORS - with explicit support for all methods
     CORS(
         app,
@@ -35,10 +73,16 @@ def create_app(config_class=None):
         supports_credentials=True,
     )
 
-    # Initialize SocketIO for real-time updates
+    # Initialize SocketIO for real-time updates. Honor the dedicated SocketIO
+    # config keys (issue #436): SOCKETIO_CORS_ALLOWED_ORIGINS falls back to the
+    # HTTP CORS origins, and SOCKETIO_MESSAGE_QUEUE (e.g. a Redis URL) fans emits
+    # out across workers when set — None keeps the single-process in-memory queue.
     socketio = SocketIO(
         app,
-        cors_allowed_origins=app.config["CORS_ORIGINS"],
+        cors_allowed_origins=app.config.get(
+            "SOCKETIO_CORS_ALLOWED_ORIGINS", app.config["CORS_ORIGINS"]
+        ),
+        message_queue=app.config.get("SOCKETIO_MESSAGE_QUEUE"),
         async_mode="threading",
         logger=app.debug,
         engineio_logger=app.debug,

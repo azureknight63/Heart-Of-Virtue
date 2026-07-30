@@ -1148,7 +1148,6 @@ class Consumable(Item):
         self.maintype = maintype
         self.subtype = subtype
         self.count = count
-        self.interactions = ["take", "use", "drop"]
         self.stack_key = name
         super().__init__(
             name,
@@ -1161,6 +1160,11 @@ class Consumable(Item):
             enchantment_level=enchantment_level,
             aliases=aliases,
         )
+        # Set after super().__init__() so it isn't overwritten by Item.__init__
+        # (which unconditionally resets self.interactions). This makes the base
+        # Consumable behavior live: subclasses that don't override interactions
+        # still get "take"/"use"/"drop" instead of the bare Item default.
+        self.interactions = ["take", "use", "drop"]
 
     def stack_grammar(self) -> None:
         """Checks the stack count for the item and changes the verbiage accordingly"""

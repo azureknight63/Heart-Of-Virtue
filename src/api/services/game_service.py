@@ -58,6 +58,26 @@ class GameService:
     and exposes clean methods for REST endpoints to call.
     """
 
+    # Interaction verbs that are always permitted, independent of a target's
+    # curated ``keywords``. These are the inspect/pickup verbs the dispatch in
+    # ``interact_with_target`` understands. Restricting the fallback to this
+    # explicit allow-list (rather than ``hasattr(target, action)``) prevents a
+    # client from invoking arbitrary public methods — e.g. ``NPC.die`` — through
+    # the interaction API. See issue #334.
+    _ALLOWED_INTERACTION_VERBS = frozenset(
+        {
+            "loot",
+            "check",
+            "view",
+            "examine",
+            "inspect",
+            "peruse",
+            "look",
+            "take",
+            "equip",
+        }
+    )
+
     def __init__(self):
         """Initialize GameService.
 
@@ -713,6 +733,27 @@ class GameService:
 
         session_data["tile_modifications"][tile_key][modification_type] = data
 
+    def persist_tile_state(self, session_data: Optional[Dict[str, Any]], tile) -> None:
+        """Persist a tile's mutable state into session data after events run.
+
+        Single source of truth for capturing tile modifications (currently the
+        blocked-exit set) so callers — move_player, interact_with_target, and the
+        /world/events route — don't each hand-roll the same store sequence. New
+        modification types (e.g. objects_removed, #328) should be added here so
+        every caller picks them up. No-op when there's no session to persist to.
+
+        Args:
+            session_data: The session data dictionary, or None.
+            tile: The MapTile whose state should be captured.
+        """
+        if session_data is None or tile is None:
+            return
+
+        block_exit = tile.block_exit.copy() if hasattr(tile, "block_exit") else []
+        self.store_tile_modification(
+            session_data, tile.x, tile.y, "block_exit", block_exit
+        )
+
     def apply_tile_modifications(self, tile, session_data: Dict[str, Any]) -> None:
         """Apply stored modifications to a tile.
 
@@ -804,6 +845,12 @@ class GameService:
         if hasattr(new_tile, "is_passable") and not new_tile.is_passable:
             return {"error": f"Cannot move {direction_lower} - path is blocked"}
 
+        # Record the tile Jean is leaving before we move him. Some story events
+        # (e.g. GorranGestureEvent) gate on player.previous_tile to detect that
+        # the player arrived from another tile; the engine otherwise only tracks
+        # prev_location_x/y, so this attribute would never be set. See #377.
+        player.previous_tile = tile
+
         # Update player position
         player.location_x = new_x
         player.location_y = new_y
@@ -835,23 +882,21 @@ class GameService:
 
             _logging.getLogger(__name__).warning("game_tick_events failed: %s", e)
 
+        # A move only reaches this point when the client isn't blocked by an open
+        # chat dialog, so landing here means any previously "active" chat was
+        # abandoned without an explicit /npc/chat/end call (dialog dismissed via
+        # the X button, the overlay, or a chat_open failure — see #336). Self-heal
+        # by clearing the stale marker on this genuine non-chat action so loquacity
+        # recovery resumes instead of being disabled for the rest of the session.
+        player.__dict__.pop("_active_chat_npc_id", None)
+
         # Recover NPC loquacity on world beats (mirrors the terminal loop's intent
         # for ConversationalNPCMixin.loquacity_tick, which had no caller). Guarded so it
         # only ticks on genuine movement beats, never during an active conversation.
         self._recover_npc_loquacity(player)
 
         # Store tile modifications after entry events have processed to capture state changes
-        if session_data is not None:
-            current_block_exit = (
-                new_tile.block_exit.copy() if hasattr(new_tile, "block_exit") else []
-            )
-            self.store_tile_modification(
-                session_data,
-                new_tile.x,
-                new_tile.y,
-                "block_exit",
-                current_block_exit,
-            )
+        self.persist_tile_state(session_data, new_tile)
 
         # Check for combat initiation
         combat_enemies = check_for_combat(player)
@@ -1140,12 +1185,25 @@ class GameService:
             new_event_id = str(uuid.uuid4())
             event.api_event_id = new_event_id
             updated_event_data["event_id"] = new_event_id
+            # Carry the originating tile coordinates forward so the next
+            # process_event_input call resolves event.tile from the same tile
+            # the event was first queued on, rather than falling back to
+            # player.current_room (which is often None in the API). See #327.
+            carry_tile_x = pending.get("tile_x")
+            carry_tile_y = pending.get("tile_y")
+            if carry_tile_x is None or carry_tile_y is None:
+                event_tile = getattr(event, "tile", None)
+                if event_tile is not None:
+                    carry_tile_x = getattr(event_tile, "x", carry_tile_x)
+                    carry_tile_y = getattr(event_tile, "y", carry_tile_y)
             # Move the session entry from the old id to the new id
             if "pending_events" in session_data:
                 session_data["pending_events"].pop(old_event_id, None)
                 session_data["pending_events"][new_event_id] = {
                     "event": event,
                     "event_data": updated_event_data,
+                    "tile_x": carry_tile_x,
+                    "tile_y": carry_tile_y,
                 }
             result["event"] = updated_event_data
             result["needs_input"] = True
@@ -1532,8 +1590,10 @@ class GameService:
         is_valid = False
         if hasattr(target, "keywords") and action in target.keywords:
             is_valid = True
-        elif hasattr(target, action):
-            # Allow calling method if it exists, even if not in keywords (fallback)
+        elif action in self._ALLOWED_INTERACTION_VERBS:
+            # Fallback restricted to an explicit allow-list of interaction
+            # verbs. Never dispatch on arbitrary attribute names — that would
+            # expose every public method on the target (e.g. NPC.die). See #334.
             is_valid = True
 
         if not is_valid:
@@ -1752,21 +1812,7 @@ class GameService:
                     events_triggered.append(new_event)
 
         # Store tile modifications AFTER all events have processed to capture state changes
-        if session_data is not None:
-            # 1. Store blocked exits
-            current_block_exit = (
-                tile.block_exit.copy() if hasattr(tile, "block_exit") else []
-            )
-            self.store_tile_modification(
-                session_data, tile.x, tile.y, "block_exit", current_block_exit
-            )
-
-            # 2. Store removed objects (using object names as stable identifiers)
-            if hasattr(tile, "objects_here"):
-                # We need to consider what was there originally vs now
-                # This is a bit complex in a stateless environment, but for now
-                # we'll trust that the event removed what it needed to.
-                pass
+        self.persist_tile_state(session_data, tile)
 
         # Check for combat initiation
         combat_enemies = check_for_combat(player)
@@ -2244,10 +2290,26 @@ class GameService:
             return adapter.process_command(command)
 
         elif move_type == "attack":
-            return self.execute_move(player, "move", "Attack", target_id, direction)
+            return self.execute_move(
+                player,
+                "move",
+                "Attack",
+                target_id,
+                direction,
+                session_id=session_id,
+                session_data=session_data,
+            )
 
         elif move_type == "defend":
-            return self.execute_move(player, "move", "Wait", target_id, direction)
+            return self.execute_move(
+                player,
+                "move",
+                "Wait",
+                target_id,
+                direction,
+                session_id=session_id,
+                session_data=session_data,
+            )
 
         elif move_type == "cancel":
             command = {"type": "cancel_selection"}
@@ -2322,7 +2384,7 @@ class GameService:
 
                 # Ensure the new adapter has the event callback
                 def event_callback(p):
-                    return self.trigger_combat_events(p)
+                    return self.trigger_combat_events(p, session_data=session_data)
 
                 player._combat_adapter = ApiCombatAdapter(
                     player,
@@ -3257,8 +3319,17 @@ class GameService:
             player._combat_adapter = ApiCombatAdapter(
                 player, session_id=session_id, on_event_callback=event_callback
             )
-        elif session_id:
-            player._combat_adapter.session_id = session_id
+        else:
+            # Update the existing adapter's callback to ensure it has access to the
+            # current session_data (mirrors the execute_move pattern above) — without
+            # this, an adapter created earlier with session_data=None permanently
+            # loses the ability to persist interactive combat events.
+            def event_callback(p):
+                return self.trigger_combat_events(p, session_data=session_data)
+
+            player._combat_adapter.on_event_callback = event_callback
+            if session_id:
+                player._combat_adapter.session_id = session_id
 
         # Reset post-combat state so events fire correctly after this combat's
         # victory even when the adapter object is reused across fights.
@@ -3443,9 +3514,21 @@ class GameService:
         # Call NPC's chat_open method
         try:
             result = npc.chat_open(player)
-            return self._enrich_chat_result_with_relationship(result, npc)
         except Exception as e:
+            # The conversation never actually started — clear the flag so
+            # loquacity recovery isn't stuck disabled for the rest of the
+            # session (see #336).
+            player.__dict__.pop("_active_chat_npc_id", None)
             return {"success": False, "error": f"Failed to open chat: {str(e)}"}
+
+        # Mirror npc_chat_respond's teardown: a failed open or an immediate
+        # brush-off (loquacity exhausted) ends the "conversation" before it
+        # really begins, so clear the active-chat marker here too — otherwise
+        # it would permanently suppress loquacity recovery on future moves.
+        if not result.get("success") or result.get("conversation_ended"):
+            player.__dict__.pop("_active_chat_npc_id", None)
+
+        return self._enrich_chat_result_with_relationship(result, npc)
 
     def npc_chat_respond(
         self,

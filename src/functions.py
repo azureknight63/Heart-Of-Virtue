@@ -1,6 +1,7 @@
 import math
 import os
 import inspect
+import logging
 import re
 import random
 import importlib
@@ -20,6 +21,8 @@ from os.path import isfile, join
 """
 This module contains general functions to use throughout the game
 """
+
+logger = logging.getLogger(__name__)
 
 # Primary stats whose *_base counterpart drives reset_stats() and which must
 # never go negative after bonus summation in refresh_stat_bonuses(). Pools
@@ -627,7 +630,24 @@ def _safe_pickle_load(fp):
             return _patch_player_integrity(o)
 
         return _walk(data)
-    except Exception:
+    except SaveIntegrityError as e:
+        # Checksum/tamper failure -- the HOVS header did not validate. This is a
+        # security-relevant signal (deliberate tampering or bit-rot), distinct
+        # from ordinary corruption; log it loudly.
+        logger.error("Save integrity check failed: %s", e)
+        return None
+    except SaveTooLargeError as e:
+        # Oversized payload rejected before unpickling (allocation-DoS guard).
+        logger.error("Save rejected as too large: %s", e)
+        return None
+    except RestrictedUnpicklingError as e:
+        # Strict-mode allow-list rejection: an off-list class was referenced.
+        logger.warning("Save rejected by strict-mode allow-list: %s", e)
+        return None
+    except Exception as e:
+        # Ordinary corruption / truncation / unexpected error. Log so it is not
+        # silently indistinguishable from the security-relevant cases above.
+        logger.warning("Failed to load save data: %s", e)
         return None
 
 
@@ -872,8 +892,11 @@ def add_random_enchantments(item: "Item", count: int) -> None:
         if hasattr(cls, "tier"):
             class_by_tier.setdefault(int(cls.tier), []).append(cls)
 
+    group_names = {0: "Prefix", 1: "Suffix"}
+
     while ench_pool > 0:
         group = random.randrange(2)  # 0 = "Prefix", 1 = "Suffix"
+        expected_group = group_names[group]
         enchantment_level[group] += 1
         tier = enchantment_level[group]
 
@@ -882,6 +905,11 @@ def add_random_enchantments(item: "Item", count: int) -> None:
         for cls in class_by_tier.get(tier, ()):
             try:
                 ench = cls(item)
+                # Only consider enchantments belonging to this slot's group
+                # (Prefix vs. Suffix) so a slot never draws the wrong kind
+                # (e.g. a "prefix" slot pulling a Suffix class).
+                if getattr(ench, "group", None) != expected_group:
+                    continue
                 req = getattr(ench, "requirements", None)
                 # Normalize the optional `requirements` attribute. It may be:
                 # - a callable returning bool

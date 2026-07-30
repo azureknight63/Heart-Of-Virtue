@@ -33,7 +33,8 @@
   },
   "scripts": {
     "dev": "vite",
-    "prebuild": "node scripts/check-changelog-freshness.mjs",
+    "sfx:durations": "node scripts/generate-sfx-durations.mjs",
+    "prebuild": "node scripts/check-changelog-freshness.mjs && node scripts/generate-sfx-durations.mjs --check",
     "build": "vite build",
     "preview": "vite preview",
     "lint": "eslint src --ext .jsx,.js",

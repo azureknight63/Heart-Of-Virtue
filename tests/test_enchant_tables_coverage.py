@@ -22,7 +22,14 @@ def _all_enchantment_classes():
     return [
         obj
         for name, obj in vars(enchant_tables).items()
-        if inspect.isclass(obj) and issubclass(obj, Enchantment) and obj is not Enchantment
+        if inspect.isclass(obj)
+        and issubclass(obj, Enchantment)
+        and obj is not Enchantment
+        # Exclude internal shared-logic base classes (e.g.
+        # _DamagePercentBoostEnchantment, added for #424) that don't define
+        # their own __init__ and therefore aren't independently constructible
+        # concrete enchantments the way every real subclass below is.
+        and "__init__" in vars(obj)
     ]
 
 
