@@ -6,6 +6,14 @@ that an agent shouldn't invent. Everything else was dispatched to fix agents.
 
 Grouped by the kind of decision needed.
 
+**Status:** 51 issues have since been verified and closed (47 in the first pass, plus
+#373–#376). **26 remain below.** A decision question has been posted as a comment on each
+one, so the specific blocking choice is recorded on the issue itself.
+
+**Removed from this list:** #433 (dead-serializer surface) was listed here in error — the
+deletion had already landed in commit `4707a81` on 2026-07-19, eleven days before this
+triage. It was stale on the tracker, not a pending decision, and has been closed.
+
 ---
 
 ## A. Game-balance decisions (numbers you have to choose)
@@ -140,13 +148,6 @@ Routes build JSON errors inline; the 400/401/403/422/429/503 handlers never fire
 real 401 body doesn't match what the handler would produce. **Pick a convention** — route
 everything through `abort()`/handlers, or delete the handlers and keep the inline style.
 Either is fine; the mixture isn't.
-
-### #433 — Large dead-serializer surface
-`MoveSerializer`, the whole `npc_ai.py` module (~395 lines, 3 classes), and a dozen unused
-`serialize_*` methods across NPC/event/item/object serializers — all written against a data
-model the engine doesn't have, none wired to a route. Deleting is straightforward but it's
-~600+ lines and inflates the coverage numbers you're tracking. **Confirm you want it gone**
-(vs. rewritten against real attributes and wired up).
 
 ### #450 — Large config surface parsed but never consumed
 Three findings: most of `GameConfig` (display/logging/debug groups, `starting_story_flags`,
