@@ -66,7 +66,6 @@ from src.positions import (
     CombatPosition,
     CombatScenario,
     distance_from_coords,
-    distance_squared,
     angle_to_target,
     attack_angle_difference,
     get_damage_modifier,
@@ -777,12 +776,6 @@ class TestDistanceEdgeCases:
         pos1 = CombatPosition(x=10, y=10)
         pos2 = CombatPosition(x=10, y=11)
         assert distance_from_coords(pos1, pos2) == 1
-
-    def test_distance_squared_symmetry(self):
-        """Test distance_squared is symmetric."""
-        pos1 = CombatPosition(x=10, y=20)
-        pos2 = CombatPosition(x=30, y=40)
-        assert distance_squared(pos1, pos2) == distance_squared(pos2, pos1)
 
 
 class TestAngleCalculationEdgeCases:

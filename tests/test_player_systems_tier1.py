@@ -610,6 +610,27 @@ class TestPlayerAttributePointAllocation:
         # Should remain unchanged
         assert player.skill_exp.get("Basic", 0) == initial_basic_exp
 
+    def test_apply_starting_experience_levels_up_below_the_cap(self, player):
+        """A modest starting_exp still drives normal level-ups."""
+        player.apply_starting_experience(5000)
+
+        assert 1 < player.level < 100
+
+    def test_apply_starting_experience_respects_level_100_cap(self, player):
+        """Issue #362: the config-driven starting-exp loop must honour the same
+        level-100 cap that gain_exp enforces.
+
+        A large ``starting_exp`` (plausible via config_combat_testing.ini) would
+        otherwise push Jean well past the cap the rest of the engine assumes.
+        The leftover-exp assertion is what pins the cap specifically: the loop
+        stopped while exp was still enough for another level, so it stopped
+        because of the guard rather than exhaustion.
+        """
+        player.apply_starting_experience(10_000_000)
+
+        assert player.level == 100
+        assert player.exp >= player.exp_to_level
+
 
 class TestPlayerWeightAndCapacity:
     """Additional weight management tests."""

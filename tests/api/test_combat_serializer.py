@@ -28,6 +28,54 @@ except ImportError:
     SERIALIZERS_AVAILABLE = False
 
 
+class FakeCombatant:
+    """Stand-in for a Player/NPC using only attributes the engine really defines.
+
+    Player/NPC/Combatant have no ``armor``/``defense``/``evasion``/``accuracy``/
+    ``attack_power`` attributes, no ``equipped`` dict and no plural
+    ``resistances`` (issue #430) — the serializer derives combat stats from
+    ``protection``/``finesse``/``intelligence``/``eq_weapon`` and reads the
+    singular ``resistance`` dict. Mocks that hand-set the old names are exactly
+    why the always-default bug shipped, so this fake deliberately omits them.
+    """
+
+    def __init__(
+        self,
+        name="Goblin",
+        level=5,
+        hp=20,
+        maxhp=30,
+        damage=8,
+        protection=1,
+        speed=5,
+        finesse=10,
+        intelligence=10,
+        strength=10,
+        endurance=10,
+        combat_proximity=1,
+        resistance=None,
+        inventory=None,
+        eq_weapon=None,
+    ):
+        self.name = name
+        self.level = level
+        self.hp = hp
+        self.maxhp = maxhp
+        self.damage = damage
+        self.protection = protection
+        self.speed = speed
+        self.finesse = finesse
+        self.intelligence = intelligence
+        self.strength = strength
+        self.endurance = endurance
+        self.combat_proximity = combat_proximity
+        self.resistance = {} if resistance is None else resistance
+        self.inventory = [] if inventory is None else inventory
+        self.states = []
+        if eq_weapon is not None:
+            self.eq_weapon = eq_weapon
+
+
 @pytest.mark.skipif(
     not SERIALIZERS_AVAILABLE, reason="Combat serializers not available"
 )

@@ -1013,6 +1013,29 @@ def test_create_player_starting_experience_error_is_caught(monkeypatch):
     assert sum(isinstance(i, _FakeGold) for i in player.inventory) == 2
 
 
+def test_create_player_god_mode_error_is_caught(monkeypatch):
+    """supersaiyan() is wrapped in its own try/except (issue #361): a failing
+    god_mode step must not discard the fully-built player for a MinimalPlayer."""
+    mgr = _bare_manager(monkeypatch)
+    mgr.game_config = _make_game_config(god_mode=True)
+    game_map = {(1, 1): {}, "name": "test-map"}
+    mgr.starting_map_name = "test-map"
+    mgr.start_x, mgr.start_y = 1, 1
+
+    universe = _make_universe([game_map], default=game_map)
+    player = _make_player()
+    player.combat_list_allies = []
+    player.supersaiyan.side_effect = RuntimeError("boom")
+
+    with _fake_modules(player, universe):
+        result = mgr._create_player_for_session("heidi")
+
+    # Error was caught internally; the real player survives (not a fallback).
+    assert result is player
+    assert not isinstance(result, MinimalPlayer)
+    player.supersaiyan.assert_called_once()
+
+
 def test_create_player_applies_starting_gold_and_config_items(monkeypatch):
     mgr = _bare_manager(monkeypatch)
     mgr.starting_gold = 100
