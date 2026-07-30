@@ -815,6 +815,9 @@ class GameService:
             tile: The MapTile object to modify
             session_data: The session data dictionary containing modifications
         """
+        if tile is None:
+            return
+
         # Snapshot the pristine roster before any filtering below mutates it.
         self.capture_tile_object_baseline(session_data, tile)
 

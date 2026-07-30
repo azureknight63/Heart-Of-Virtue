@@ -1093,41 +1093,48 @@ class TestInventorySerializer:
         result = self.EquipmentSlotSerializer.serialize("head", None)
         assert result["equipped"] is False
         assert result["slot"] == "head"
-        assert result["armor"] == 0
+        # Real gear exposes `protection`; there is no `.armor` attribute (#411).
+        assert result["protection"] == 0
 
     def test_equipment_slot_serializer_with_item(self):
         item = MagicMock()
         item.__class__.__name__ = "Helm"
         item.name = "Iron Helm"
-        item.armor = 5.0
+        item.protection = 5.0
         item.damage = 0.0
         item.weight = 1.5
         item.value = 80
-        item.stat_bonuses = {}
         item.resistance_bonuses = {}
         item.rarity = "common"
         result = self.EquipmentSlotSerializer.serialize("head", item)
         assert result["equipped"] is True
         assert result["item_name"] == "Iron Helm"
-        assert result["armor"] == 5
+        assert result["protection"] == 5
 
-    def test_equipment_serializer_with_equipped_dict(self):
+    def test_equipment_serializer_derives_slots_from_inventory(self):
+        """Equipment comes from inventory `isequipped` + `maintype` (#411).
+
+        The real Player has no `equipped`/`equipment` dict and no per-slot
+        attributes, and stat bonuses are scalar `add_*` fields, not a
+        `stat_bonuses` mapping.
+        """
         player = MagicMock()
         weapon = MagicMock()
         weapon.name = "Sword"
         weapon.__class__.__name__ = "Weapon"
-        weapon.armor = 0.0
+        weapon.maintype = "Weapon"
+        weapon.isequipped = True
+        weapon.protection = 0.0
         weapon.damage = 10.0
         weapon.weight = 2.0
         weapon.value = 100
-        weapon.stat_bonuses = {"attack": 5}
+        weapon.add_str = 5
         weapon.resistance_bonuses = {}
         weapon.rarity = "uncommon"
-        player.equipped = {"weapon": weapon}
-        player.inventory_list = []
+        player.inventory_list = [weapon]
         result = self.EquipmentSerializer.serialize(player)
         assert "weapon" in result["equipped"]
-        assert result["total_stat_bonuses"]["attack"] == 5
+        assert result["total_stat_bonuses"]["strength"] == 5
 
     def test_equipment_serializer_empty_equipment_fallback(self):
         player = MagicMock()
@@ -1170,10 +1177,14 @@ class TestInventorySerializer:
         player.hands = None
         player.accessory_1 = None
         player.accessory_2 = None
-        equippable = MagicMock()
-        equippable.equip = MagicMock()
-        equippable.equipped_state = False
-        player.inventory_list = [equippable]
+        # Equippability is `hasattr(item, "isequipped")` — `equip` lives on base
+        # Item, so it counted potions and gold before (#411). A non-equippable
+        # item alongside the real one proves the filter works.
+        equippable = MagicMock(spec=["isequipped", "name", "maintype"])
+        equippable.isequipped = False
+        equippable.maintype = "Helm"
+        potion = MagicMock(spec=["name", "use"])
+        player.inventory_list = [equippable, potion]
         result = self.EquipmentSerializer.serialize(player)
         assert result["unequipped_equippable_count"] == 1
 

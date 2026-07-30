@@ -375,69 +375,26 @@ class EquipmentSerializer:
         Returns:
             Dictionary with all equipment slots and calculated bonuses
         """
+        equipment_dict = _collect_equipped_items(player)
+
         equipped = {}
-        total_bonuses = {
-            "attack": 0,
-            "defense": 0,
-            "magic_attack": 0,
-            "magic_defense": 0,
-            "speed": 0,
-            "accuracy": 0,
-            "evasion": 0,
-            "crit_chance": 0,
-        }
+        # Keyed by real player-stat label (see _BONUS_ATTRS); starts empty
+        # because the set of stats an item can boost is data-driven.
+        total_bonuses: Dict[str, float] = {}
+        equipment_value = 0
 
-        # Get equipped items from player (handle both equipped and equipment attributes)
-        equipment_dict = getattr(player, "equipped", None) or getattr(
-            player, "equipment", {}
-        )
-
-        # Fallback: check individual attributes if dict is empty
-        if not equipment_dict:
-            slot_mapping = {
-                "weapon": "eq_weapon",
-                "shield": "shield",
-                "head": "head",
-                "body": "body",
-                "legs": "legs",
-                "feet": "feet",
-                "hands": "hands",
-                "accessory_1": "accessory_1",
-                "accessory_2": "accessory_2",
-            }
-            equipment_dict = {}
-            for slot, attr in slot_mapping.items():
-                item = getattr(player, attr, None)
-                if item:
-                    # Only include if specifically marked as equipped, or if it's a weapon (always have a weapon)
-                    # Use isequipped flag to distinguish real equipped items from defaults if needed
-                    if getattr(item, "isequipped", False) or (
-                        slot == "weapon" and item
-                    ):
-                        equipment_dict[slot] = item
-
-        if equipment_dict:
-            for slot_name, item in equipment_dict.items():
-                equipped[slot_name] = EquipmentSlotSerializer.serialize(slot_name, item)
-
-                # Accumulate bonuses
-                if item and hasattr(item, "stat_bonuses"):
-                    for stat, bonus in item.stat_bonuses.items():
-                        if stat in total_bonuses:
-                            total_bonuses[stat] += bonus
+        for slot_name, item in equipment_dict.items():
+            equipped[slot_name] = EquipmentSlotSerializer.serialize(slot_name, item)
+            equipment_value += getattr(item, "value", 0)
+            for stat, bonus in _collect_item_bonuses(item).items():
+                total_bonuses[stat] = total_bonuses.get(stat, 0) + bonus
 
         # Count unequipped equippable items (handle both inventory_list and inventory)
-        unequipped_equippable = 0
-        inventory_list = get_inventory_list(player)
-        for item in inventory_list:
-            if hasattr(item, "equip") and not getattr(item, "equipped_state", False):
-                unequipped_equippable += 1
-
-        # Calculate equipment value
-        equipment_value = 0
-        for item in equipment_dict.values() if equipment_dict else []:
-            if item:
-                equipment_value += getattr(item, "value", 0)
+        unequipped_equippable = sum(
+            1
+            for item in get_inventory_list(player)
+            if is_equippable(item) and not getattr(item, "isequipped", False)
+        )
 
         return {
             "equipped": equipped,

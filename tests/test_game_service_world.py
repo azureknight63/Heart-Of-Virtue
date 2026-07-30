@@ -417,15 +417,52 @@ class TestGameServiceApplyTileModifications:
         assert mock_tile.objects_here == [sentinel]
 
     def test_apply_tile_modifications_removes_object(self, game_service, mock_tile):
-        """objects_removed filters matching objects out of objects_here by id."""
+        """objects_removed filters objects out of objects_here by stable name (#328).
+
+        Identifiers are object names, not id() memory addresses, so a removal
+        recorded in one session still applies after the tile is rehydrated.
+        """
         keep = MagicMock()
+        keep.name = "Lever"
         drop = MagicMock()
+        drop.name = "Rubble"
         mock_tile.objects_here = [keep, drop]
         session_data = {
-            "tile_modifications": {"5,5": {"objects_removed": [id(drop)]}}
+            "tile_modifications": {
+                "5,5": {
+                    "objects_baseline": ["Lever", "Rubble"],
+                    "objects_removed": ["Rubble"],
+                }
+            }
         }
         game_service.apply_tile_modifications(mock_tile, session_data)
         assert mock_tile.objects_here == [keep]
+
+    def test_apply_tile_modifications_removal_is_idempotent(
+        self, game_service, mock_tile
+    ):
+        """Re-applying an existing removal must not consume another duplicate.
+
+        The allowance is 'how many may remain', not 'drop N more', so a tile with
+        two identically-named objects and one recorded removal keeps exactly one
+        no matter how many times modifications are re-applied.
+        """
+        first = MagicMock()
+        first.name = "Rock"
+        second = MagicMock()
+        second.name = "Rock"
+        mock_tile.objects_here = [first, second]
+        session_data = {
+            "tile_modifications": {
+                "5,5": {
+                    "objects_baseline": ["Rock", "Rock"],
+                    "objects_removed": ["Rock"],
+                }
+            }
+        }
+        game_service.apply_tile_modifications(mock_tile, session_data)
+        game_service.apply_tile_modifications(mock_tile, session_data)
+        assert mock_tile.objects_here == [first]
 
     def test_apply_tile_modifications_restores_block_exit(self, game_service, mock_tile):
         """block_exit is restored as an independent copy of the stored list."""

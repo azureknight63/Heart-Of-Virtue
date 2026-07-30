@@ -90,6 +90,18 @@ def get_base_damage_type(item: Any) -> str:
     return damagetype
 
 
+def _as_number(value):
+    """Return `value` as a float, or None if it isn't a real number.
+
+    Guards weight/capacity arithmetic against attributes that aren't numeric
+    (absent on MinimalPlayer, stubbed in tests), so a bad value degrades to
+    "no capacity limit" instead of raising or comparing nonsense.
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return float(value)
+
+
 class Item:
     """The base class for all items"""
 
@@ -265,14 +277,19 @@ class Item:
         player's carried weight over their capacity. Shared by both
         branches of take() so the check can't drift out of sync between
         them (see issue #329/#332)."""
-        capacity = getattr(
-            player,
-            "weight_tolerance",
-            getattr(player, "carrying_capacity", None),
+        capacity = _as_number(
+            getattr(
+                player,
+                "weight_tolerance",
+                getattr(player, "carrying_capacity", None),
+            )
         )
-        if capacity is None or not hasattr(player, "weight_current"):
+        carried = _as_number(getattr(player, "weight_current", None))
+        if capacity is None or carried is None:
+            # Players without a real weight model (MinimalPlayer, partially built
+            # sessions) are never blocked on capacity.
             return False
-        return player.weight_current + (getattr(self, "weight", 0) * count) > capacity
+        return carried + (_as_number(getattr(self, "weight", 0)) or 0) * count > capacity
 
     def take(self, player: "Player", quantity: Optional[int] = None) -> None:
         """Take the item from the ground."""
