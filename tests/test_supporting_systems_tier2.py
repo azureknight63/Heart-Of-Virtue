@@ -22,6 +22,7 @@ from src.player import Player
 import src.items as items  # pragma: no cover - ensures module is imported for coverage
 import src.functions as functions
 import src.states as states
+import src.moves as moves
 
 
 # ============================================================================
@@ -871,6 +872,40 @@ class TestGetBaseDamageType:
 
         dtype = items.get_base_damage_type(item)
         assert dtype == "pure"
+
+    def test_halberd_is_slashing_not_piercing(self):
+        """Regression test for issue #337: the Halberd's description ("an axe
+        mounted on top of a large pole") implies slashing, but it used to be
+        built with subtype="Spear", which maps to piercing. It must use the
+        dedicated "Halberd" slashing subtype instead."""
+        halberd = items.Halberd()
+        assert halberd.subtype == "Halberd"
+        dtype = items.get_base_damage_type(halberd)
+        assert dtype == "slashing"
+
+
+class TestHalberdSkilltree:
+    """Issue #337: the "Halberd" taxonomy entry used to be dead — no weapon
+    used it and the skilltree had no purchasable moves for it. Now that
+    items.Halberd is subtype="Halberd", it needs a real skill tree (mirrors
+    Axe's, since the Halberd is "essentially an axe on a pole") and Slash
+    needs to accept the new subtype."""
+
+    def test_halberd_skilltree_entry_exists(self):
+        player = Player()
+        assert "Halberd" in player.skilltree.subtypes
+        halberd_skills = player.skilltree.subtypes["Halberd"]
+        assert any(skill.__class__.__name__ == "Slash" for skill in halberd_skills)
+        assert any(
+            skill.__class__.__name__ == "CleaveInstinct" for skill in halberd_skills
+        )
+
+    def test_slash_viable_with_halberd_equipped(self):
+        player = Player()
+        player.eq_weapon = items.Halberd()
+        player.combat_proximity = {MagicMock(is_alive=lambda: True): 3}
+        slash = moves.Slash(player)
+        assert slash.viable() is True
 
 
 # ============================================================================

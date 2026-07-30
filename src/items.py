@@ -1651,7 +1651,7 @@ class Halberd(Weapon):
             fin_mod=1,
             weight=4,
             maintype="Weapon",
-            subtype="Spear",
+            subtype="Halberd",
             wpnrange=(3, 8),
             merchandise=merchandise,
             enchantment_level=enchantment_level,
