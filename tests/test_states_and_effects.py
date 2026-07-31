@@ -12,7 +12,7 @@ import pytest
 from unittest.mock import Mock, patch, MagicMock
 from src.states import (
     State, Disoriented, Slimed, Resonant, Petrified, Hollowed, Fervent,
-    Poisoned, Enflamed
+    Poisoned, Enflamed, ENFLAMED_MIN_DAMAGE_PER_BEAT
 )
 
 
@@ -417,10 +417,14 @@ def test_petrified_fatigue_drain_scaling(mock_cprint, mock_refresh, realistic_ta
 def test_enflamed_damage_per_beat_matches_formula(mock_cprint, realistic_target):
     """Issue #343: Enflamed deals a flat ENFLAMED_DAMAGE_PCT_PER_BEAT% of maxhp
     every beat (not an escalating tick-based curve), reduced by fire resistance.
-    realistic_target's resistance["enflamed"] is 1.0, so extinguish early --
-    silence that by zeroing it out for this damage-only assertion."""
+    maxhp is high enough here that the formula itself governs, above the
+    ENFLAMED_MIN_DAMAGE_PER_BEAT floor (see test_enflamed_damage_floor_for_weak_targets
+    for the floor case). realistic_target's resistance["enflamed"] is 1.0, so
+    extinguish early -- silence that by zeroing it out for this damage-only
+    assertion."""
     realistic_target.in_combat = True
-    realistic_target.hp = 1000  # High HP to survive multiple hits
+    realistic_target.maxhp = 1000
+    realistic_target.hp = 1000
     realistic_target.status_resistance["enflamed"] = 0.0  # isolate damage from early burnout
 
     state = Enflamed(realistic_target)
@@ -434,14 +438,17 @@ def test_enflamed_damage_per_beat_matches_formula(mock_cprint, realistic_target)
     second_damage = hp_before - realistic_target.hp
 
     expected = int(realistic_target.maxhp * 0.01 * 1 * 1.0)  # 1 stack, neutral fire resistance
+    assert expected > 5  # sanity: make sure this test is actually above the floor
     assert first_damage == expected
     assert second_damage == expected  # flat per beat, not escalating
 
 
 @patch('src.states.cprint')
 def test_enflamed_damage_scales_with_stacks(mock_cprint, realistic_target):
-    """Stacking Enflamed (via compound()) should multiply per-beat damage."""
+    """Stacking Enflamed (via compound()) should multiply per-beat damage.
+    maxhp is high enough that the floor doesn't mask the scaling."""
     realistic_target.in_combat = True
+    realistic_target.maxhp = 1000
     realistic_target.hp = 1000
     realistic_target.status_resistance["enflamed"] = 0.0
 
@@ -452,7 +459,46 @@ def test_enflamed_damage_scales_with_stacks(mock_cprint, realistic_target):
     state.effect(realistic_target)
     damage = hp_before - realistic_target.hp
 
-    assert damage == int(realistic_target.maxhp * 0.01 * 3 * 1.0)
+    expected = int(realistic_target.maxhp * 0.01 * 3 * 1.0)
+    assert expected > 5  # sanity: make sure this test is actually above the floor
+    assert damage == expected
+
+
+@patch('src.states.cprint')
+def test_enflamed_damage_floor_for_weak_targets(mock_cprint, realistic_target):
+    """Issue #343 follow-up: per-beat damage is floored at
+    ENFLAMED_MIN_DAMAGE_PER_BEAT so FlareArrows stay an effective weapon
+    against low-maxhp enemies, where 1% alone would round to almost nothing."""
+    realistic_target.in_combat = True
+    realistic_target.maxhp = 20  # e.g. a Slime -- 1% would be 0.2, far under the floor
+    realistic_target.hp = 20
+    realistic_target.status_resistance["enflamed"] = 0.0
+
+    state = Enflamed(realistic_target)
+
+    hp_before = realistic_target.hp
+    state.effect(realistic_target)
+    damage = hp_before - realistic_target.hp
+
+    assert damage == ENFLAMED_MIN_DAMAGE_PER_BEAT
+
+
+@patch('src.states.cprint')
+def test_enflamed_no_floor_when_immune_to_fire_damage(mock_cprint, realistic_target):
+    """The floor only kicks in once fire is dealing *some* damage -- a target
+    with 0 fire resistance multiplier (immune to fire damage) still takes
+    nothing, rather than being forced up to the floor."""
+    realistic_target.in_combat = True
+    realistic_target.hp = 100
+    realistic_target.status_resistance["enflamed"] = 0.0
+    realistic_target.resistance["fire"] = 0.0  # immune to fire damage specifically
+
+    state = Enflamed(realistic_target)
+
+    hp_before = realistic_target.hp
+    state.effect(realistic_target)
+
+    assert realistic_target.hp == hp_before
 
 
 @patch('src.states.cprint')

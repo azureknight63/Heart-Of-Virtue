@@ -168,6 +168,7 @@ class Poisoned(State):
 # Balance constants for Enflamed (issue #343) -- tune here rather than
 # scattering magic numbers through effect()/compound().
 ENFLAMED_DAMAGE_PCT_PER_BEAT = 0.01  # fraction of target maxhp dealt per beat, before fire resistance
+ENFLAMED_MIN_DAMAGE_PER_BEAT = 5  # floor once the target is taking any fire damage at all
 ENFLAMED_MAX_BEATS = 25
 ENFLAMED_MAX_STACKS = 3
 
@@ -216,11 +217,13 @@ class Enflamed(
         raw_damage = (
             target.maxhp * ENFLAMED_DAMAGE_PCT_PER_BEAT * self.stacks * resistance_mult
         )
-        # Round up rather than truncate: 1% of a low-maxhp fodder enemy (e.g. a
-        # 20 HP Slime) is well under 1 before rounding, and int()-truncating
-        # would make Enflamed a complete no-op against exactly the enemies
-        # most likely to be shot with a FlareArrow.
-        damage = max(0, math.ceil(raw_damage))
+        # Floor at ENFLAMED_MIN_DAMAGE_PER_BEAT rather than the raw percentage:
+        # 1% of a low-maxhp fodder enemy (e.g. a 20 HP Slime) is well under 5,
+        # and Enflamed should stay a meaningful threat against exactly the
+        # weak enemies most likely to be shot with a FlareArrow. Only applies
+        # once fire is dealing *any* damage -- a target with 0 or negative
+        # fire resistance (immune/healed by it) still takes nothing.
+        damage = max(ENFLAMED_MIN_DAMAGE_PER_BEAT, math.ceil(raw_damage)) if raw_damage > 0 else 0
         if damage > 0:
             cprint(
                 "{} writhes in the flames, suffering {} damage!".format(
