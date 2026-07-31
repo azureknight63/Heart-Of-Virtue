@@ -42,6 +42,7 @@ from src.items import (
     Armor,
     Weapon,
     Arrow,
+    Relic,
 )
 from src.objects import Container  # type: ignore
 from src.narration import narrate
@@ -395,6 +396,10 @@ class MerchantShopMixin:
             Armor,
             Weapon,
             Arrow,
+            # Relic is a single-use, story-locked memento (granted in Jean's
+            # starting inventory) — it must never appear as random merchant
+            # stock, and its value=0 would make it sell for free anyway.
+            Relic,
         }
         candidates: list[type[Item]] = []
         for _nm, obj in inspect.getmembers(items_module, inspect.isclass):

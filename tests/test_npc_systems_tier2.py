@@ -268,7 +268,9 @@ class TestEnemySubclasses:
         if extra_checks.get('has_resistances'):
             assert len(enemy.resistance_base) > 0
         if extra_checks.get('has_loot'):
-            assert enemy.loot == loot.lev1
+            # Superset check: some enemies (e.g. KingSlime) layer extra
+            # status-cure drops on top of the lev1 base table (#340).
+            assert loot.lev1.items() <= enemy.loot.items()
         if extra_checks.get('has_status_resistance'):
             assert 'death' in enemy.status_resistance_base
         if extra_checks.get('all_neutral_resistances'):
@@ -512,10 +514,10 @@ class TestNPCLootSystem:
     """Test NPC loot initialization and management."""
 
     def test_npc_loot_initialization(self):
-        """Test NPC loot is initialized."""
+        """Test NPC loot is initialized: lev0 plus a Slime Flask chance (#340)."""
         npc = Slime()
         assert npc.loot is not None
-        assert npc.loot == loot.lev0
+        assert npc.loot == {**loot.lev0, "SlimeFlask": {"chance": 20, "qty": 1}}
 
     def test_lurker_loot_is_lev1(self):
         """Test Lurker has better loot."""
@@ -523,9 +525,9 @@ class TestNPCLootSystem:
         assert lurker.loot == loot.lev1
 
     def test_king_slime_loot_is_lev1(self):
-        """Test KingSlime has lev1 loot."""
+        """Test KingSlime has lev1 loot plus a Slime Flask chance (#340)."""
         king = KingSlime()
-        assert king.loot == loot.lev1
+        assert king.loot == {**loot.lev1, "SlimeFlask": {"chance": 25, "qty": "r1-2"}}
 
 
 class TestNPCResistances:

@@ -29,6 +29,7 @@ class Slime(NPC):
             idle_message=" is glopping about.",
             alert_message="burbles angrily at Jean!",
         )
+        self.loot = {**loot.lev0, "SlimeFlask": {"chance": 20, "qty": 1}}
         self.add_move(moves.NpcAttack(self), 5)
         self.add_move(moves.Advance(self), 4)
         self.add_move(moves.NpcIdle(self))
@@ -215,6 +216,7 @@ class ElderSlime(NPC):
         self.resistance_base["earth"] = 0.85
         self.status_resistance_base["poison"] = 1.0
         self.status_resistance_base["slimed"] = 1.0
+        self.loot = {**loot.lev0, "SlimeFlask": {"chance": 20, "qty": 1}}
         self.add_move(moves.NpcAttack(self), 3)
         self.add_move(moves.SlimeVolley(self), 4)
         self.add_move(moves.Advance(self), 3)
@@ -254,7 +256,7 @@ class KingSlime(NPC):
         self.resistance_base["earth"] = 0.9
         self.status_resistance_base["poison"] = 1.0
         self.status_resistance_base["slimed"] = 1.0
-        self.loot = loot.lev1
+        self.loot = {**loot.lev1, "SlimeFlask": {"chance": 25, "qty": "r1-2"}}
         self.add_move(moves.NpcAttack(self), 5)
         self.add_move(moves.TidalSurge(self), 3)
         self.add_move(moves.Advance(self), 4)
@@ -532,6 +534,7 @@ class CorruptedStoneCreature(NPC):
         self.resistance_base["earth"] = 0.5
         self.status_resistance_base["stone"] = 1.0  # immune to its own petrification
         self.status_resistance_base["slow"] = -0.5  # extra vulnerable to slow-type states
+        self.loot = {**loot.lev0, "MineralSolvent": {"chance": 25, "qty": 1}}
         self.add_move(moves.NpcAttack(self), 4)
         self.add_move(moves.MineralSpit(self), 3)
         self.add_move(moves.Advance(self), 4)

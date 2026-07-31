@@ -2831,7 +2831,10 @@ class Relic(Consumable):
 
     It has no power except the weight of what it remembers.
     Some things are healed not by medicine but by the act of holding still.
-    Single use. Story-locked.
+    Single use. Story-locked: granted in Jean's starting inventory
+    (``Player.__init__``) rather than sold or dropped by enemies — it is a
+    personal memento, not Grondelith merchandise. Excluded from merchant
+    restock via ``disallowed_classes`` in ``src/npc/_shop.py``.
     """
 
     def __init__(self, count: int = 1, merchandise: bool = False) -> None:
@@ -3087,35 +3090,49 @@ class AncientRelic(Special):
 
 
 class DragonHeartGem(Special):
-    """Crystallized residue of a dragon's heart flame."""
+    """Crystallized residue of a dragon's heart flame.
+
+    An equippable relic accessory (subtype "Relic"): only one relic of this
+    subtype may be equipped at a time (see the equip-swap rule in
+    ``PlayerInventoryMixin.equip_item``), and it does not compete with rings,
+    bracelets, or necklaces, which use their own Accessory subtypes.
+    """
 
     def __init__(self, merchandise: bool = True) -> None:
+        self.isequipped = False
         super().__init__(
             name="Dragon Heart Gem",
             description="A pulsing crimson gem that's warm to the touch. It hums faintly with residual "
             "draconic vitality.",
             value=15000,
             weight=0.3,
-            maintype="Relic",
-            subtype="Gem",
+            maintype="Accessory",
+            subtype="Relic",
             merchandise=merchandise,
         )
         setattr(self, "unique", True)
-        self.add_resistance = {"fire": 0.30}  # example bonus for future systems
+        self.add_resistance = {"fire": 0.30}
 
 
 class CrystalTear(Special):
-    """Prismatic tear-like crystal said to form where realities brush together."""
+    """Prismatic tear-like crystal said to form where realities brush together.
+
+    An equippable relic accessory (subtype "Relic"): only one relic of this
+    subtype may be equipped at a time (see the equip-swap rule in
+    ``PlayerInventoryMixin.equip_item``), and it does not compete with rings,
+    bracelets, or necklaces, which use their own Accessory subtypes.
+    """
 
     def __init__(self, merchandise: bool = True) -> None:
+        self.isequipped = False
         super().__init__(
             name="Crystal Tear",
             description="A prismatic, tear-shaped crystal that refracts light into impossible spectrums."
             " It evokes a sense of distant memories.",
             value=12000,
             weight=0.2,
-            maintype="Relic",
-            subtype="Crystal",
+            maintype="Accessory",
+            subtype="Relic",
             merchandise=merchandise,
         )
         setattr(self, "unique", True)
