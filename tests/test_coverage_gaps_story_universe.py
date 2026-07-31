@@ -1759,7 +1759,13 @@ class TestLissObservingEvent:
         ):
             ev.process()
         assert mock_print.called
-        assert mock_say.called
+        mock_say.assert_any_call("I'll probably ask again sometime.", "Liss", "neutral")
+        mock_say.assert_any_call(
+            "He's not going to answer that one either.", "Jean", "neutral"
+        )
+        # 9 spoken lines (7 Liss, 2 Jean) across 3 curiosity bursts — Gorran never
+        # gets a line here; his half of the exchange is narrated stillness only.
+        assert mock_say.call_count == 9
         assert player.universe.story.get("liss_gorran_done") == "1"
 
     def test_set_gate_with_no_universe(self):

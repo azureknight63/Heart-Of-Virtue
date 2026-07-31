@@ -15,6 +15,11 @@ _JEAN_MARA_GORRAN = [
     ("Gorran", None, "neutral"),
 ]
 _JEAN_DEVET = [("Jean", "left", "neutral"), ("Devet", None, "neutral")]
+_JEAN_GORRAN_LISS = [
+    ("Jean", "left", "neutral"),
+    ("Gorran", None, "neutral"),
+    ("Liss", "right", "neutral"),
+]
 
 
 class GorranGestureEvent(Event):
@@ -391,7 +396,13 @@ class DevetIntroEvent(Event):
 class LissObservingEvent(Event):
     """
     Fires once on Jean's first entry to CampFarEdge (2,1) in the nomad camp sub-map.
-    Liss is not-approaching Gorran at the camp's boundary. Direct, literal curiosity.
+    Liss is not-approaching Gorran at the camp's boundary — three rapid-fire bursts
+    of unfiltered curiosity, each met with total Gorran stillness (the comedic
+    engine here: her chatter against his total silence — he is Stage 1 language
+    and does not speak outside hurt-combat, so his half of every "exchange" stays
+    narrated gesture/non-reaction, never a line). Jean gets two short, dry asides.
+    Closes on the small, wordless moment where she gives up asking and just sits
+    near him — the seed of the friendship, not its arrival.
     Sets story gate 'liss_gorran_done'.
     """
 
@@ -413,34 +424,90 @@ class LissObservingEvent(Event):
             narrate("\n")
             time.sleep(0.3)
             print_slow(
-                "A girl was at the camp's far corner — young, dark-haired. Not approaching "
-                "Gorran. Just standing at a distance that was technically not approaching, "
-                "watching him with the focused intensity of someone conducting serious research."
+                "A girl was at the camp's far corner — young, dark-haired, turning a stone over "
+                "in one hand out of habit. Not approaching Gorran. Just standing at a distance "
+                "that was technically not approaching, watching him with the focused intensity "
+                "of someone conducting serious research."
             )
             time.sleep(1)
-            # Gorran does not react to Liss (the prose is explicit: he gives no
-            # indication of having heard her) — no reaction is authored here.
-            begin_conversation(
-                [
-                    ("Jean", "left", "neutral"),
-                    ("Gorran", None, "neutral"),
-                    ("Liss", "right", "neutral"),
-                ]
-            )
+
+            # Gorran does not react to Liss anywhere in this scene — the prose is
+            # explicit that he gives no indication of having heard her.
+            begin_conversation(_JEAN_GORRAN_LISS)
+
+            # Burst 1 — sleep
             say(
-                "Does the Golemite sleep? He doesn't look like he's sleeping. But I think he might be.",
+                "Does he sleep? He doesn't look like he's sleeping, but maybe that's just what "
+                "it looks like when he does — do Golemites even close their eyes, or— "
+                "sorry. Does he sleep? Yes or no.",
                 "Liss",
                 "curious",
             )
-            time.sleep(0.5)
+            time.sleep(1)
             print_slow(
-                "She said this to no one in particular. Or perhaps to Gorran directly — it was "
-                "hard to say."
+                "Gorran didn't answer. Didn't move. His stillness could have meant anything, "
+                "including no, including yes, including that he'd heard the question and elected "
+                "not to dignify it with the effort of a response."
+            )
+            time.sleep(1)
+            say("I've been trying to figure that out for weeks.", "Jean", "neutral")
+            time.sleep(1)
+
+            # Burst 2 — the stone, held up for comparison
+            print_slow(
+                "She held the stone from her hand up next to his forearm, comparing the color, "
+                "tilting her head like a jeweler."
+            )
+            time.sleep(1)
+            say(
+                "Does it hurt? When you crack, I mean. Not that you look cracked. You don't. I "
+                "just mean — a rock cracks and it doesn't feel it, because it's a rock, but "
+                "you're not just a rock, so—",
+                "Liss",
+                "curious",
             )
             time.sleep(1)
             print_slow(
-                "Gorran gave no indication of having heard this. He allowed her attention with "
-                "the patient forbearance of a very old, very large thing being studied by a small one."
+                "Gorran's eyes moved once — not to her, to the stone in her hand — the way "
+                "something very old regards something very new. Then away again. Nothing else."
+            )
+            time.sleep(1)
+            say("Okay. Filing that as 'unknown.'", "Liss", "happy")
+            time.sleep(1)
+
+            # Burst 3 — cold and bone (canonical exchange)
+            say(
+                "You're made of stone — does the cold feel different because of that? Devet "
+                "says it settles in his bones, and I thought, if you're basically already bone, "
+                "does it feel like anything, or is it just cold the same as everything else?",
+                "Liss",
+                "curious",
+            )
+            time.sleep(1)
+            print_slow("Gorran kept looking at the fire.")
+            time.sleep(0.8)
+            say("You don't have to answer.", "Liss", "neutral")
+            time.sleep(0.8)
+            print_slow("He didn't.")
+            time.sleep(0.8)
+            say("I'll probably ask again sometime.", "Liss", "neutral")
+            time.sleep(1)
+            say("He's not going to answer that one either.", "Jean", "neutral")
+            time.sleep(0.8)
+            say("I know. I keep asking anyway.", "Liss", "happy")
+            time.sleep(1)
+
+            # The seed, not the arrival
+            print_slow(
+                "Something in her ran out of questions before it ran out of curiosity. She "
+                "stopped talking, came a few steps closer than she'd allowed herself before, "
+                "and sat, watching the river instead of him."
+            )
+            time.sleep(1.5)
+            print_slow(
+                "Gorran allowed this without acknowledging it. Neither of them said anything "
+                "else. It was, without a word exchanged, one of the warmer moments Jean had "
+                "seen since arriving."
             )
             time.sleep(1)
         self._set_gate()
