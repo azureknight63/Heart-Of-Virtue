@@ -9,6 +9,11 @@ import time
 
 # Recurring conversation cast, to avoid retyping the same tuple at every stage.
 _JEAN_MARA = [("Jean", "left", "neutral"), ("Mara", None, "neutral")]
+_JEAN_MARA_GORRAN = [
+    ("Jean", "left", "neutral"),
+    ("Mara", None, "neutral"),
+    ("Gorran", None, "neutral"),
+]
 
 
 class GorranGestureEvent(Event):
@@ -149,7 +154,16 @@ class MaraFirstContactEvent(Event):
     """
     Fires once on Jean's first entry to RiversEdge (1,0) in the nomad camp sub-map.
     Mara clocked them fifty paces out, already back to her pack by the time Jean arrives.
-    "Crossing west?" Names a price. Not a greeting.
+
+    Beat 1: "Crossing west?" — the fee, named flat, not negotiated.
+    Beat 2: Her extracting gaze moves to Gorran for the first time; he answers with a
+            rumble, not words (he is Stage 1 — spoken words only in hurt-combat
+            contexts, so this stays narrated gesture/sound, never a spoken line).
+    Beat 3: The crucifix — Jean notices it, notices himself noticing it, and looks
+            away. Mara notices both and files them without comment. Nothing spoken.
+    Beat 4: The guide-service offer, stated flat, not sold.
+    Beat 5: She ties it off — the raft isn't ready; walk the camp, come back later.
+
     Sets story gate 'mara_intro_done'.
     """
 
@@ -180,13 +194,101 @@ class MaraFirstContactEvent(Event):
             time.sleep(1)
             print_slow("She didn't look up.")
             time.sleep(0.5)
+
+            # Beat 1 — the fee
             begin_conversation(_JEAN_MARA)
             say("Crossing west?", "Mara", "neutral")
+            time.sleep(0.8)
+            print_slow("Not a greeting. A question with a purpose.")
             time.sleep(0.5)
+            say("That's the idea.", "Jean", "neutral")
+            time.sleep(0.8)
+            say(
+                "Ten gold. Raft holds his weight fine — current's slow this time of year.",
+                "Mara",
+                "neutral",
+            )
+            time.sleep(0.8)
+            say("You're sure that's fair?", "Jean", "skeptical")
+            time.sleep(0.8)
+            say(
+                "It's not padded and it's not haggling weather. Take it or don't.",
+                "Mara",
+                "neutral",
+            )
+            time.sleep(1)
+
+            # Beat 2 — Gorran, appraised aloud; he answers with a rumble, not words
+            print_slow("For the first time, her attention moved past Jean to Gorran.")
+            time.sleep(0.8)
+            begin_conversation(_JEAN_MARA_GORRAN)
+            say(
+                "Never had one this close. He's not going to take my raft apart, is he?",
+                "Mara",
+                "curious",
+            )
+            time.sleep(0.8)
+            say("No.", "Jean", "neutral")
+            time.sleep(0.8)
             print_slow(
-                "Not a greeting. A question with a purpose. When Jean said yes, she named a number. "
-                "Flat, fair, not open to discussion. She was already back to the pack before the "
-                "last word had settled."
+                "A low rumble moved up through Gorran's chest — not aggressive, more the sound "
+                "of something very old and very large deciding whether a conversation concerned "
+                "it. The mooring post hummed faintly with it."
+            )
+            time.sleep(1)
+            say(
+                "That's either agreement or he's warming up to eat something. "
+                "I've stopped trying to tell the difference.",
+                "Mara",
+                "skeptical",
+            )
+            time.sleep(0.8)
+            say("That's what I tell myself too.", "Jean", "neutral")
+            time.sleep(1)
+
+            # Beat 3 — the crucifix, nothing spoken
+            print_slow(
+                "She turned back to her pack, and for a moment the cord at her throat caught the "
+                "light — a small, tarnished crucifix, worn smooth with handling. Something in Jean "
+                "snagged on it, a wrongness he couldn't place, and he looked away before he understood "
+                "why. She noticed him notice it. She noticed him look away. She filed both without "
+                "comment and went back to sorting."
+            )
+            time.sleep(1.5)
+
+            # Beat 4 — the guide offer, stated flat
+            begin_conversation(_JEAN_MARA)
+            say(
+                "I'm headed that way myself, next couple of days. Caves, not the Badlands — I don't "
+                "go that far without a better reason than I've got right now. Fee's separate from "
+                "the crossing, but I'll cut it since you're already paying for the raft.",
+                "Mara",
+                "neutral",
+            )
+            time.sleep(0.8)
+            say("What's in it for you?", "Jean", "neutral")
+            time.sleep(0.8)
+            say(
+                "Company that doesn't talk unless it means something. And I catalog things. "
+                "You're worth a look.",
+                "Mara",
+                "neutral",
+            )
+            time.sleep(0.8)
+            say("Alright.", "Jean", "neutral")
+            time.sleep(1)
+
+            # Beat 5 — tied off; sends Jean around the camp
+            say(
+                "Not yet, though. Raft needs restrung and I want another hour of light before I "
+                "commit anyone's weight to it. Walk the camp, eat something. Come back when the "
+                "sun's lower and I'll have it sorted.",
+                "Mara",
+                "neutral",
+            )
+            time.sleep(0.8)
+            print_slow(
+                "She was already back to the pack before the last word had settled."
             )
             time.sleep(1)
         self._set_gate()

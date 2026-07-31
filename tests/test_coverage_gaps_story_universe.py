@@ -1635,7 +1635,11 @@ class TestMaraFirstContactEvent:
         ):
             ev.process()
         assert mock_print.called
-        mock_say.assert_called_once_with("Crossing west?", "Mara", "neutral")
+        mock_say.assert_any_call("Crossing west?", "Mara", "neutral")
+        mock_say.assert_any_call("Alright.", "Jean", "neutral")
+        # 14 spoken lines across 4 of the scene's 5 beats (fee, Gorran appraisal,
+        # guide offer, close) — Beat 3, the crucifix, is narration-only by design.
+        assert mock_say.call_count == 14
         assert player.universe.story.get("mara_intro_done") == "1"
 
     def test_set_gate_with_no_universe(self):
