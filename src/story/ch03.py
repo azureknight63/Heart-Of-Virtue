@@ -218,7 +218,7 @@ class MaraFirstContactEvent(Event):
             say("You're sure that's fair?", "Jean", "skeptical")
             time.sleep(0.8)
             say(
-                "It's not padded and it's not haggling weather. Take it or don't.",
+                "It's not padded and I'm not in the mood for haggling. Take it or don't.",
                 "Mara",
                 "neutral",
             )
@@ -234,22 +234,22 @@ class MaraFirstContactEvent(Event):
                 "curious",
             )
             time.sleep(0.8)
-            say("No.", "Jean", "neutral")
+            say("He'll be fine.", "Jean", "neutral")
             time.sleep(0.8)
             print_slow(
                 "A low rumble moved up through Gorran's chest — not aggressive, more the sound "
-                "of something very old and very large deciding whether a conversation concerned "
-                "it. The mooring post hummed faintly with it."
+                "of a rockslide pausing to consider participating in a conversation. "
+                "The mooring post hummed faintly with it."
             )
             time.sleep(1)
             say(
                 "That's either agreement or he's warming up to eat something. "
-                "I've stopped trying to tell the difference.",
+                "How can you tell the difference?",
                 "Mara",
                 "skeptical",
             )
             time.sleep(0.8)
-            say("That's what I tell myself too.", "Jean", "neutral")
+            say("No idea. At least he only eats rocks. Small consolation. \n\nWe're headed to a place called the Wailing Badlands.", "Jean", "neutral")
             time.sleep(1)
 
             # Beat 3 — the crucifix, nothing spoken
@@ -257,7 +257,7 @@ class MaraFirstContactEvent(Event):
                 "She turned back to her pack, and for a moment the cord at her throat caught the "
                 "light — a small, tarnished crucifix, worn smooth with handling. Something in Jean "
                 "snagged on it, a wrongness he couldn't place, and he looked away before he understood "
-                "why. She noticed him notice it. She noticed him look away. She filed both without "
+                "why. She noticed him notice it. She noticed him look away. She filed both in her mind without "
                 "comment and went back to sorting."
             )
             time.sleep(1.5)
@@ -266,22 +266,25 @@ class MaraFirstContactEvent(Event):
             begin_conversation(_JEAN_MARA)
             say(
                 "I'm headed that way myself, next couple of days. Caves, not the Badlands — I don't "
-                "go that far without a better reason than I've got right now. Fee's separate from "
-                "the crossing, but I'll cut it since you're already paying for the raft.",
+                "go that far without a better reason than I've got right now. I'll guide you that far. Fee's normally "
+                "separate from the crossing, but I'll cut it since it won't be out of my way.",
                 "Mara",
                 "neutral",
             )
             time.sleep(0.8)
-            say("What's in it for you?", "Jean", "neutral")
+            say("What takes you to the... Caves?", "Jean", "curious")
             time.sleep(0.8)
+            print_slow(
+                "She turns back to Jean, holding his gaze for an uncomfortable moment."
+            )
+            time.sleep(1.5)
             say(
-                "Company that doesn't talk unless it means something. And I catalog things. "
-                "You're worth a look.",
+                "Business. My business.",
                 "Mara",
                 "neutral",
             )
             time.sleep(0.8)
-            say("Alright.", "Jean", "neutral")
+            say("Alright, fair enough. I accept your terms.", "Jean", "neutral")
             time.sleep(1)
 
             # Beat 5 — tied off; sends Jean around the camp
@@ -352,13 +355,16 @@ class DevetIntroEvent(Event):
             say("Eat.", "Devet", "neutral")
             time.sleep(0.5)
             print_slow(
-                "He filled a bowl from the pot and held it out. It was not a question."
+                "He filled a bowl from the pot and held it out. It was not a question. "
+                "Root vegetables, some kind of meat, with an enthralling aroma making Jean's stomach growl. "
+                "He began to realize how long it had been since he'd eaten a warm meal. "
+                "More accurately, he wondered just how long that really had been."
             )
             time.sleep(0.8)
             say("Thank you.", "Jean", "neutral")
             time.sleep(0.5)
             print_slow(
-                "He'd already turned back to the fire. The thanks hadn't needed an answer."
+                "The old man had already turned back to the fire. The thanks hadn't needed an answer."
             )
             time.sleep(1)
 
@@ -370,19 +376,22 @@ class DevetIntroEvent(Event):
                 "neutral",
             )
             time.sleep(1)
+            print_slow(
+                "A quiet pause settled in between the two for a moment."
+            )
             say("Probably something less useful.", "Devet", "neutral")
             time.sleep(0.5)
-            print_slow("It took Jean a second to realize that had been a joke.")
+            print_slow("It took Jean a second to realize that had been a joke. He lifted the bowl and took a careful sip.")
             time.sleep(1)
 
-            say("It's good.", "Jean", "neutral")
+            say("It's good.", "Jean", "happy")
             time.sleep(0.8)
             say("It's food.", "Devet", "neutral")
             time.sleep(1)
 
             print_slow(
-                "Gorran stood where Jean had left him, still. His presence had settled into the "
-                "camp's edge the way large stones settle: without effort, without apology."
+                "Gorran stood where Jean had left him, still. Gradually, he rumbled and sat on the ground while Jean ate."
+                "His presence had settled into the campfire's edge the way large stones settle: without effort, without apology."
             )
             time.sleep(1)
         self._set_gate()
@@ -459,7 +468,7 @@ class LissObservingEvent(Event):
             time.sleep(1)
             print_slow(
                 "She reached out and poked his shin once, experimentally — the way you'd poke "
-                "something to check whether it was asleep or just very good at pretending."
+                "a small animal to check whether it was asleep or just very good at pretending."
             )
             time.sleep(0.8)
             say("I've been trying to figure that out for weeks.", "Jean", "neutral")
@@ -486,7 +495,7 @@ class LissObservingEvent(Event):
                 "something very old regards something very new. Then away again. Nothing else."
             )
             time.sleep(1)
-            say("Okay. Filing that as 'unknown.'", "Liss", "happy")
+            say("Okay. Well, that was more than just standing there. I guess you don't talk much.", "Liss", "happy")
             time.sleep(1)
 
             # Burst 3 — cold and bone (canonical exchange)
@@ -504,7 +513,9 @@ class LissObservingEvent(Event):
                 "curious",
             )
             time.sleep(1)
-            print_slow("Gorran kept looking at the fire.")
+            say("Oh, but not bone. STONE. Still hard and cold. But maybe different?", "Liss", "happy")
+            time.sleep(1)
+            print_slow("Gorran regarded the nearby river, watching the current weave between boulders.")
             time.sleep(0.8)
             say("You don't have to answer.", "Liss", "neutral")
             time.sleep(0.8)
@@ -514,7 +525,7 @@ class LissObservingEvent(Event):
             time.sleep(1)
             say("He's not going to answer that one either.", "Jean", "neutral")
             time.sleep(0.8)
-            say("I know. I keep asking anyway.", "Liss", "happy")
+            say("I know. I'll keep asking anyway. Mara says I ask too much, but I think it's fine.", "Liss", "happy")
             time.sleep(1)
 
             # The seed, not the arrival
@@ -538,10 +549,11 @@ class LissObservingEvent(Event):
             )
             time.sleep(1.2)
             print_slow(
-                "Jean watched them — the girl and the old stone thing, both turned toward the "
-                "water instead of each other — and found he was smiling before he'd decided to."
+                "Jean watched them — the girl and the old stone thing, both passively mesmerized by the "
+                "undulating water — and found he was smiling before he'd decided to."
             )
             time.sleep(1.2)
+            say("...", "Jean", "concerned")
             print_slow(
                 "Then something moved under it, low and sudden — a tightness in his chest that "
                 "had no name and offered no explanation for itself. It was gone as quickly as it "
@@ -561,8 +573,7 @@ class MaraObservationEvent(Event):
     Fires once on Jean's re-entry to RiversEdge (1,0) after all three character
     introduction gates are set (mara_intro_done, devet_intro_done, liss_gorran_done).
     Mara makes her observation about Jean's background — religious kit or posture.
-    Jean: "It was."
-    Sets story gate 'nomad_camp_reached' (the main chapter completion gate).
+    Sets story gate 'nomad_ferry_ready' (the main chapter completion gate).
     """
 
     def __init__(
@@ -574,7 +585,7 @@ class MaraObservationEvent(Event):
 
     def check_conditions(self):
         story = getattr(getattr(self.player, "universe", None), "story", {})
-        if story.get("nomad_camp_reached") == "1":
+        if story.get("nomad_ferry_ready") == "1":
             if self in self.tile.events_here:
                 self.tile.events_here.remove(self)
             return
@@ -600,8 +611,7 @@ class MaraObservationEvent(Event):
             )
             print_slow(
                 "A while later — Jean was sitting with the bowl, Gorran nearby, the fire "
-                "between them and the river — Mara spoke without looking up from what she "
-                "was sorting."
+                "between them and the river — Mara looked up from what she was sorting."
             )
             time.sleep(1)
             begin_conversation(_JEAN_MARA)
@@ -610,27 +620,36 @@ class MaraObservationEvent(Event):
                     "Her eyes tracked to Jean's mace for just a moment. Then back to her work."
                 )
                 time.sleep(0.5)
-                say("That's religious kit.", "Mara", "neutral")
+                say("That's religious kit. You are - or were - a man of the church.", "Mara", "neutral")
             else:
                 print_slow(
                     "Her eyes moved across Jean — his posture, his hands, the way his weight "
                     "sat — and returned to her work."
                 )
                 time.sleep(0.5)
-                say("You were a man of the church.", "Mara", "neutral")
+                say("You are - or were - a man of the church.", "Mara", "neutral")
             time.sleep(0.5)
             print_slow("Not a question.")
             time.sleep(1)
-            say("It was.", "Jean", "neutral")
+            say("Not a priest, if that's what you mean.", "Jean", "neutral")
             time.sleep(1)
-            print_slow("She didn't follow up. She filed it. The sorting continued.")
+            print_slow(
+                "Jean looked up at the sky with consternation. Why had he said that? "
+                "He was trying to remember something just out of reach."
+            )
+            print_slow("Confused, Mara watched Jean for a moment. She filed the exchange. The sorting continued.")
             time.sleep(1)
+            say(
+                "When you're ready, head to the ferry landing and we'll be off. "
+                "Don't wait too long - crossing in the dark is unpleasant for everyone.", "Mara", "neutral"
+            )
+
         self._set_gate()
 
     def _set_gate(self):
         story = getattr(getattr(self.player, "universe", None), "story", None)
         if story is not None:
-            story["nomad_camp_reached"] = "1"
+            story["nomad_ferry_ready"] = "1"
 
 
 class CampEntryGreetingEvent(Event):
@@ -695,7 +714,7 @@ class CampEntryGreetingEvent(Event):
             )
             time.sleep(1.5)
             print_slow(
-                "Jean watched her go. He didn't know what to make of that. He filed it."
+                "Jean watched her go. He didn't know what to make of that. No time for it, anyway."
             )
             time.sleep(0.5)
         self._set_gate()
@@ -721,7 +740,11 @@ class DemoEndEvent(Event):
         )
 
     def check_conditions(self):
-        """Always fires when the ferry landing is interacted with."""
+        """Only fires after the second conversation with Mara (ferry is ready.)"""
+        story = getattr(getattr(self.player, "universe", None), "story", {})
+        # Only fire after the ferry is ready
+        if story.get("nomad_ferry_ready") != "1":
+            return
         self.pass_conditions_to_process()
 
     def process(self):
@@ -734,16 +757,12 @@ class DemoEndEvent(Event):
             time.sleep(1)
             print_slow("But beyond the river is where the demo ends.")
             time.sleep(0.5)
-            print_slow("\n[The full journey continues in the complete release.]\n")
+            print_slow("\n[The full journey continues in the complete release. You may continue exploring the area, but can go no further in the story.]\n")
             time.sleep(1)
-        self._set_gate()
+            print_slow("\n[Be sure to submit feedback using the Feedback button at the top of the UI, next to 'Account'. Thank you for helping to make this game better! -Alex]\n")
+            time.sleep(1)
 
-    def _set_gate(self):
-        story = getattr(getattr(self.player, "universe", None), "story", None)
-        if story is not None:
-            story["demo_ended"] = "1"
-
-
+ 
 class IronAndOathIntroEvent(Event):
     """
     Fires once on Jean's first entry to Tradepost (4,3) in the nomad camp sub-map.
