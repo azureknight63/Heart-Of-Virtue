@@ -428,9 +428,9 @@ class LissObservingEvent(Event):
             time.sleep(0.3)
             print_slow(
                 "A girl was at the camp's far corner — young, dark-haired, turning a stone over "
-                "in one hand out of habit. Not approaching Gorran. Just standing at a distance "
-                "that was technically not approaching, watching him with the focused intensity "
-                "of someone conducting serious research."
+                "in one hand out of habit. Not approaching Gorran. Orbiting him instead, in loose, "
+                "unhurried circles, hands clasped behind her back like someone sizing up a fact "
+                "she wasn't sure she believed yet."
             )
             time.sleep(1)
 
@@ -439,6 +439,10 @@ class LissObservingEvent(Event):
             begin_conversation(_JEAN_GORRAN_LISS)
 
             # Burst 1 — sleep
+            print_slow(
+                "She spun a half-turn on one heel, already talking before she'd fully stopped."
+            )
+            time.sleep(0.6)
             say(
                 "Does he sleep? He doesn't look like he's sleeping, but maybe that's just what "
                 "it looks like when he does — do Golemites even close their eyes, or— "
@@ -453,13 +457,20 @@ class LissObservingEvent(Event):
                 "not to dignify it with the effort of a response."
             )
             time.sleep(1)
+            print_slow(
+                "She reached out and poked his shin once, experimentally — the way you'd poke "
+                "something to check whether it was asleep or just very good at pretending."
+            )
+            time.sleep(0.8)
             say("I've been trying to figure that out for weeks.", "Jean", "neutral")
             time.sleep(1)
 
             # Burst 2 — the stone, held up for comparison
             print_slow(
                 "She held the stone from her hand up next to his forearm, comparing the color, "
-                "tilting her head like a jeweler."
+                "tilting her head like a jeweler. Then she crouched and tapped it twice against "
+                "the toe of his foot — stone on stone, a small testing sound, like she expected "
+                "a different note back."
             )
             time.sleep(1)
             say(
@@ -479,6 +490,12 @@ class LissObservingEvent(Event):
             time.sleep(1)
 
             # Burst 3 — cold and bone (canonical exchange)
+            print_slow(
+                "A new thought visibly arrived. She clapped once, delighted with herself, and "
+                "bounced up onto her toes, hopping a half-step closer without seeming to notice "
+                "she'd moved."
+            )
+            time.sleep(0.8)
             say(
                 "You're made of stone — does the cold feel different because of that? Devet "
                 "says it settles in his bones, and I thought, if you're basically already bone, "
@@ -501,6 +518,14 @@ class LissObservingEvent(Event):
             time.sleep(1)
 
             # The seed, not the arrival
+            print_slow(
+                "Turning to say something else to Jean, she caught her own foot on nothing at "
+                "all and overbalanced — one arm windmilling before she caught herself on the "
+                "nearest solid thing, which happened to be Gorran's leg. He didn't shift his "
+                "weight. He didn't need to. She held on a moment longer than the stumble required, "
+                "then let go, a little sheepish, and didn't try to explain it."
+            )
+            time.sleep(1.2)
             print_slow(
                 "Something in her ran out of questions before it ran out of curiosity. She "
                 "stopped talking, came a few steps closer than she'd allowed herself before, "
