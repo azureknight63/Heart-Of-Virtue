@@ -402,7 +402,10 @@ class LissObservingEvent(Event):
     and does not speak outside hurt-combat, so his half of every "exchange" stays
     narrated gesture/non-reaction, never a line). Jean gets two short, dry asides.
     Closes on the small, wordless moment where she gives up asking and just sits
-    near him — the seed of the friendship, not its arrival.
+    near him — the seed of the friendship, not its arrival. Jean's reaction stays
+    oblique: an unexamined smile, then an unnamed ache in his chest — grief
+    surfacing beneath his notice rather than a stated observation that the moment
+    was warm.
     Sets story gate 'liss_gorran_done'.
     """
 
@@ -506,8 +509,18 @@ class LissObservingEvent(Event):
             time.sleep(1.5)
             print_slow(
                 "Gorran allowed this without acknowledging it. Neither of them said anything "
-                "else. It was, without a word exchanged, one of the warmer moments Jean had "
-                "seen since arriving."
+                "else."
+            )
+            time.sleep(1.2)
+            print_slow(
+                "Jean watched them — the girl and the old stone thing, both turned toward the "
+                "water instead of each other — and found he was smiling before he'd decided to."
+            )
+            time.sleep(1.2)
+            print_slow(
+                "Then something moved under it, low and sudden — a tightness in his chest that "
+                "had no name and offered no explanation for itself. It was gone as quickly as it "
+                "came. He didn't chase it. He turned back to the fire."
             )
             time.sleep(1)
         self._set_gate()
