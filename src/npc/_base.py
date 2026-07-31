@@ -21,6 +21,15 @@ from ._loot import NPCLootMixin, loot
 from ._progression import AllyProgressionMixin
 from src.narration import narrate
 
+# Combatant._init_resistances() seeds every status resistance at 1.0 (immune to
+# everything). That's correct for Jean (Player zeroes his own subset), but left
+# unset it made every ordinary NPC immune to poison/stun/disorient/etc — see
+# issue #391. These are the non-immune baselines applied to all NPCs; bosses
+# keep a higher baseline since they're meant to shrug off crowd control more
+# than fodder does.
+_STATUS_RESISTANCE_BASELINE_COMMON = 0.3
+_STATUS_RESISTANCE_BASELINE_BOSS = 0.15
+
 
 class NPC(NPCCombatMixin, NPCLootMixin, Combatant):
     alert_message = "appears!"
@@ -52,6 +61,7 @@ class NPC(NPCCombatMixin, NPCLootMixin, Combatant):
         discovery_message="something interesting.",
         target=None,
         friend=False,
+        is_boss=False,
     ):
         self.name = name
         self.description = description
@@ -73,6 +83,17 @@ class NPC(NPCCombatMixin, NPCLootMixin, Combatant):
         self.finesse_base = finesse
         # Resistance dicts are defined canonically in Combatant (combatant.py).
         self._init_resistances()
+        # Apply the non-immune status-resistance baseline (see module docstring
+        # above). Subclasses that need a genuine immunity (e.g. GiantSpider's own
+        # poison) set that key back to 1.0 after calling super().__init__(), so
+        # those explicit overrides still win.
+        self.is_boss = is_boss
+        _status_baseline = (
+            _STATUS_RESISTANCE_BASELINE_BOSS if is_boss else _STATUS_RESISTANCE_BASELINE_COMMON
+        )
+        for _stype in self.status_resistance_base:
+            self.status_resistance_base[_stype] = _status_baseline
+        self.status_resistance = dict(self.status_resistance_base)
         self.awareness = awareness  # used when a player enters the room to see if npc spots the player
         self.aggro = aggro
         self.exp_award = exp_award

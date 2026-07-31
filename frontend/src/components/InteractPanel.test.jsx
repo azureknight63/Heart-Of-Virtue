@@ -26,6 +26,25 @@ vi.mock('./NpcChatPanel', () => ({
   ),
 }));
 
+// Mock BookReaderDialog — its own pagination/keyboard-nav behavior is covered
+// by BookReaderDialog.test.jsx; here we only need to verify InteractPanel
+// opens it with the right (unwrapped) title/text and can close it.
+// stripBookWrapper is re-exported for real (not mocked) — InteractPanel calls
+// it directly, and BookReaderDialog.test.jsx already covers its own behavior.
+vi.mock('./BookReaderDialog', async (importOriginal) => {
+  const actual = await importOriginal()
+  return {
+    ...actual,
+    default: ({ title, text, onClose }) => (
+      <div data-testid="book-reader-dialog">
+        <span data-testid="book-reader-title">{title}</span>
+        <span data-testid="book-reader-text">{text}</span>
+        <button onClick={onClose}>Close Book</button>
+      </div>
+    ),
+  }
+});
+
 describe('InteractPanel', () => {
   const mockLocation = {
     name: 'Town Square',
@@ -579,6 +598,75 @@ describe('InteractPanel', () => {
 
       expect(screen.queryByTestId('npc-chat-panel')).not.toBeInTheDocument();
       expect(apiEndpoints.world.interact).toHaveBeenCalled();
+    });
+  });
+
+  describe('Book read (issue #326)', () => {
+    const bookLocation = {
+      ...mockLocation,
+      objects: [
+        { id: 'book1', name: 'A Weathered Journal', description: 'A worn leather journal.', keywords: ['Read'] },
+      ],
+    };
+
+    it('opens the Read panel with the unwrapped text instead of the interaction log', async () => {
+      apiEndpoints.world.interact.mockResolvedValue({
+        data: { success: true, message: '--- A Weathered Journal ---\n\nThe river rose twice that spring.\n\n--- A Weathered Journal ---' },
+      });
+      const { container } = render(<InteractPanel location={bookLocation} onClose={mockOnClose} />);
+      fireEvent.click(screen.getAllByText(/A Weathered Journal/i)[0]);
+      fireEvent.click(screen.getByText(/^Read$/i));
+
+      await waitFor(() => {
+        expect(screen.getByTestId('book-reader-dialog')).toBeInTheDocument();
+      });
+      expect(screen.getByTestId('book-reader-title').textContent).toBe('A Weathered Journal');
+      expect(screen.getByTestId('book-reader-text').textContent).toBe('The river rose twice that spring.');
+      // The raw wrapped message must not also be dumped into the interaction log
+      expect(container.textContent).not.toContain('---');
+    });
+
+    it('opens the Read panel even when the response omits a message', async () => {
+      apiEndpoints.world.interact.mockResolvedValue({
+        data: { success: true },
+      });
+      render(<InteractPanel location={bookLocation} onClose={mockOnClose} />);
+      fireEvent.click(screen.getAllByText(/A Weathered Journal/i)[0]);
+      fireEvent.click(screen.getByText(/^Read$/i));
+
+      await waitFor(() => {
+        expect(screen.getByTestId('book-reader-dialog')).toBeInTheDocument();
+      });
+      expect(screen.getByTestId('book-reader-title').textContent).toBe('A Weathered Journal');
+    });
+
+    it('does not open the Read panel when the interaction fails', async () => {
+      apiEndpoints.world.interact.mockResolvedValue({
+        data: { success: false, error: 'Too dark to read.' },
+      });
+      render(<InteractPanel location={bookLocation} onClose={mockOnClose} />);
+      fireEvent.click(screen.getAllByText(/A Weathered Journal/i)[0]);
+      fireEvent.click(screen.getByText(/^Read$/i));
+
+      await waitFor(() => {
+        expect(screen.getByText(/Too dark to read\./i)).toBeInTheDocument();
+      });
+      expect(screen.queryByTestId('book-reader-dialog')).not.toBeInTheDocument();
+    });
+
+    it('closes the Read panel via its onClose callback', async () => {
+      apiEndpoints.world.interact.mockResolvedValue({
+        data: { success: true, message: 'Just some notes, no wrapper this time.' },
+      });
+      render(<InteractPanel location={bookLocation} onClose={mockOnClose} />);
+      fireEvent.click(screen.getAllByText(/A Weathered Journal/i)[0]);
+      fireEvent.click(screen.getByText(/^Read$/i));
+
+      await waitFor(() => {
+        expect(screen.getByTestId('book-reader-dialog')).toBeInTheDocument();
+      });
+      fireEvent.click(screen.getByText('Close Book'));
+      expect(screen.queryByTestId('book-reader-dialog')).not.toBeInTheDocument();
     });
   });
 

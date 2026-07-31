@@ -124,6 +124,24 @@ class Skilltree:
                 ): 520,  # HV-1 Tier 2: Swap with ally (defensive formation)
                 moves.CleaveInstinct(user): 350,  # passive: reduced prep after a kill
             },
+            "Halberd": {
+                # Essentially an axe on a pole (see items.Halberd) — mirrors the Axe
+                # tree; the extra reach comes from the weapon's own wpnrange, not a
+                # dedicated mastery.
+                moves.Slash(user): 50,
+                moves.Parry(user): 100,
+                moves.BullCharge(user): 350,  # HV-1: Charge with momentum
+                moves.WhirlAttack(
+                    user
+                ): 650,  # HV-1: Spin strike hitting nearby enemies
+                moves.VertigoSpin(
+                    user
+                ): 750,  # HV-1: Attack with knockback and rotation
+                moves.QuickSwap(
+                    user
+                ): 520,  # HV-1 Tier 2: Swap with ally (defensive formation)
+                moves.CleaveInstinct(user): 350,  # passive: reduced prep after a kill
+            },
             "Bludgeon": {
                 moves.Parry(
                     user

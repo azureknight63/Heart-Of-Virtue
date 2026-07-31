@@ -435,6 +435,8 @@ class TestShootBowPrep:
         move = ShootBow(user)
         move.prep(user)
         prep_effect.process.assert_called_once()
+        # Issue #343: rebind before firing (see test_execute_arrow_effect_on_hit).
+        assert prep_effect.move is move
 
     def test_prep_no_effects(self):
         """Arrow with no effects: prep completes without error."""
@@ -577,6 +579,10 @@ class TestShootBowExecute:
         ):
             move.execute(user)
         exec_effect.process.assert_called_once()
+        # Issue #343: the effect must be rebound to the live move before firing
+        # so FlareArrowImpact-style effects see the real target/user via
+        # self.move, not whatever (or nothing) it was constructed with.
+        assert exec_effect.move is move
 
     def test_execute_arrow_recovery_spawns_item(self):
         """When arrow_recovery >= random: spawn arrow on tile."""

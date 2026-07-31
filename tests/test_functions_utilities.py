@@ -101,6 +101,29 @@ def test_inflict_force_bypasses_resistance():
     assert st in victim.states
 
 
+def test_inflict_min_chance_floors_full_resistance(monkeypatch):
+    """Issue #343: FlareArrow needs "always some chance, even at full
+    resistance" without bypassing resistance entirely via force=True."""
+    st = DummyState()
+    victim = DummyVictim()
+    victim.status_resistance["generic"] = 1.0  # would normally be 0% (immune)
+    monkeypatch.setattr(random, "random", lambda: 0.2)  # roll succeeds against a 0.25 floor
+    result = functions.inflict(st, victim, chance=0.75, force=False, min_chance=0.25)
+    assert result is not False
+    assert st in victim.states
+
+
+def test_inflict_min_chance_does_not_change_default_behavior(monkeypatch):
+    """min_chance defaults to 0.0, so callers that don't pass it see the
+    original all-or-nothing-at-full-resistance behavior unchanged."""
+    st = DummyState()
+    victim = DummyVictim()
+    victim.status_resistance["generic"] = 1.0
+    result = functions.inflict(st, victim, chance=1.0, force=False)
+    assert result is False
+    assert len(victim.states) == 0
+
+
 # ----------------- add_random_enchantments tests -----------------
 
 class DummyWeapon:

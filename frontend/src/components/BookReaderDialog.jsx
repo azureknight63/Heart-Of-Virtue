@@ -3,6 +3,23 @@ import { useState, useEffect, useCallback } from 'react'
 const CHARS_PER_PAGE = 800
 // ASCII sentinel — angle-bracket sequences never appear in game prose.
 const SEP = '<<<SPLIT>>>'
+const WRAPPER_RE = /^---\s.+\s---$/
+
+/**
+ * Strip the "--- Title ---" header/footer the backend wraps around book text
+ * (see items.Book.use()/read()). Shared by every caller that reads a book
+ * through a route returning that same wrapped format — inventory
+ * (ItemDetailDialog) and room objects (InteractPanel) alike.
+ */
+export function stripBookWrapper(message) {
+  const lines = (message || '').split('\n')
+  let start = 0
+  let end = lines.length - 1
+  if (WRAPPER_RE.test(lines[start]?.trim())) start++
+  if (WRAPPER_RE.test(lines[end]?.trim())) end--
+  const cleanText = lines.slice(start, end + 1).join('\n').trim()
+  return cleanText || message
+}
 
 export function paginateText(text) {
   if (!text || text.length <= CHARS_PER_PAGE) {
@@ -82,7 +99,11 @@ export default function BookReaderDialog({ title, text, onClose }) {
       display: 'flex',
       justifyContent: 'center',
       alignItems: 'center',
-      zIndex: 1800,
+      // Must sit above InteractPanel's BaseDialog (zIndex 2000) too, now that
+      // reading a book from a room object opens this same dialog — matches
+      // NpcChatPanel's 2100, which solves the identical layering problem for
+      // InteractPanel's other special-cased action (talk/chat).
+      zIndex: 2100,
     }}>
       <div style={{
         backgroundColor: 'rgba(5, 3, 0, 0.98)',

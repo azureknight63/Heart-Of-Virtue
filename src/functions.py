@@ -711,7 +711,7 @@ def await_input():
     return None
 
 
-def inflict(state, target, chance=1.0, force=False):
+def inflict(state, target, chance=1.0, force=False, min_chance=0.0):
     """
     Attempt to inflict a state on a target player or NPC.
 
@@ -720,6 +720,10 @@ def inflict(state, target, chance=1.0, force=False):
         target: The entity that may receive the state (must have `states` and `status_resistance`).
         chance (float): Base chance of success; modified by target resistance. (1.0 = 100%).
         force (bool): If True, bypasses resistance & chance rolls and always applies/compounds.
+        min_chance (float): Floor applied after the resistance reduction, so a source that
+            wants "always some chance, even at full resistance" (e.g. FlareArrow, issue #343)
+            doesn't need to bypass resistance entirely with `force`. Default 0.0 preserves the
+            original all-or-nothing-at-full-resistance behavior for every other caller.
 
     Returns:
         The active state object (either the newly applied instance or the pre-existing compounded one)
@@ -733,7 +737,7 @@ def inflict(state, target, chance=1.0, force=False):
     # Fast-fail path unless forcing
     if not force:
         resistance = target.status_resistance.get(getattr(state, "statustype", ""), 0.0)
-        effective_chance = chance * (1 - resistance)
+        effective_chance = max(min_chance, chance * (1 - resistance))
         if effective_chance <= 0:
             return False  # Immune
         if effective_chance < 1.0:

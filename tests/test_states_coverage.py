@@ -44,40 +44,31 @@ def patch_refresh(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# Enflamed.compound() — lines 207-221
+# Enflamed.compound() — issue #343: stacks (capped) + duration refresh,
+# replacing the old escalating tick/duration-multiplier design.
 # ---------------------------------------------------------------------------
-def test_enflamed_compound():
+def test_enflamed_compound_adds_stack_and_refreshes_duration():
     target = FakeTarget()
     state = Enflamed(target)
-    # Set up starting values to verify compound math
-    state.tick = 10
-    state.beats_max = 40
-    state.beats_left = 40
-    state.steps_max = 0
-    state.steps_left = 0
+    state.beats_left = 5  # simulate partway through the burn
 
     with patch('src.states.cprint'):
         state.compound(target)
 
-    # tick *= 1.25 → int(10 * 1.25) = 12
-    assert state.tick == 12
-    # beats_max *= 1.1 → int(40 * 1.1) = 44
-    assert state.beats_max == 44
+    assert state.stacks == 2
+    assert state.beats_left == state.beats_max
 
 
-def test_enflamed_compound_steps_left_cap():
-    """Ensure steps_left > steps_max cap (line 221) is exercised."""
+def test_enflamed_compound_caps_at_max_stacks():
+    """Reapplying beyond ENFLAMED_MAX_STACKS keeps stacks capped, not unbounded."""
     target = FakeTarget()
     state = Enflamed(target)
-    # Pre-fill steps values so steps_left will exceed new steps_max after compound
-    state.steps_max = 10
-    state.steps_left = 100  # already way over; after compound, still over → capped
 
     with patch('src.states.cprint'):
-        state.compound(target)
+        for _ in range(states.ENFLAMED_MAX_STACKS + 2):
+            state.compound(target)
 
-    # steps_left should be capped at steps_max
-    assert state.steps_left == state.steps_max
+    assert state.stacks == states.ENFLAMED_MAX_STACKS
 
 
 

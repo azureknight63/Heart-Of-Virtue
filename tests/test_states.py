@@ -263,8 +263,8 @@ def test_enflamed_initialization(mock_cprint, mock_target):
     assert state.world is False  # combat-only; world=True caused fire to fire once then self-remove outside combat
     assert state.statustype == "enflamed"
     assert state.persistent is False
-    assert state.tick == 0
-    assert state.execute_on == 3
+    assert state.stacks == 1
+    assert state.beats_max == 25
 
 
 @patch('src.states.cprint')
@@ -472,12 +472,12 @@ def test_poisoned_duration_range(mock_cprint):
 
 
 @patch('src.states.cprint')
-def test_enflamed_duration_range(mock_cprint):
-    """Test Enflamed has variable duration"""
+def test_enflamed_duration_is_fixed(mock_cprint):
+    """Enflamed's duration is a fixed cap (issue #343), not randomized --
+    variability now comes from the per-beat early-removal chance instead."""
     target = Mock()
 
     states = [Enflamed(target) for _ in range(10)]
     beats_values = [s.beats_max for s in states]
 
-    # Should have variation
-    assert len(set(beats_values)) > 1
+    assert all(v == 25 for v in beats_values)

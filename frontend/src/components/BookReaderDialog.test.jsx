@@ -1,6 +1,27 @@
 import { render, screen, fireEvent } from '@testing-library/react'
 import { describe, it, expect, vi } from 'vitest'
-import BookReaderDialog, { paginateText } from './BookReaderDialog'
+import BookReaderDialog, { paginateText, stripBookWrapper } from './BookReaderDialog'
+
+// ---------------------------------------------------------------------------
+// stripBookWrapper unit tests
+// ---------------------------------------------------------------------------
+describe('stripBookWrapper', () => {
+  it('strips a matching "--- Title ---" header and footer', () => {
+    const wrapped = '--- A Weathered Journal ---\n\nThe river rose twice that spring.\n\n--- A Weathered Journal ---'
+    expect(stripBookWrapper(wrapped)).toBe('The river rose twice that spring.')
+  })
+
+  it('returns the original message when there is no wrapper', () => {
+    expect(stripBookWrapper('Just some notes, no wrapper this time.')).toBe(
+      'Just some notes, no wrapper this time.'
+    )
+  })
+
+  it('falls back to the raw message when stripping leaves nothing', () => {
+    expect(stripBookWrapper('')).toBe('')
+    expect(stripBookWrapper(undefined)).toBe(undefined)
+  })
+})
 
 // ---------------------------------------------------------------------------
 // paginateText unit tests

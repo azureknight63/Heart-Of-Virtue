@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import apiClient from '../api/client'
 import { player as playerApi } from '../api/endpoints'
-import BookReaderDialog from './BookReaderDialog'
+import BookReaderDialog, { stripBookWrapper } from './BookReaderDialog'
 
 // Display labels for the scalar stat-bonus keys the backend emits (see
 // inventory.py's _BONUS_ATTRS) — keep in sync if new bonus stats are added.
@@ -221,15 +221,7 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
       const response = await apiClient.post('/inventory/use', { item_id: item.id })
       const data = response.data || response
       if (data.success) {
-        // Strip the "--- Title ---" header/footer the backend wraps around book text
-        const lines = (data.message || '').split('\n')
-        const wrapperRe = /^---\s.+\s---$/
-        let start = 0
-        let end = lines.length - 1
-        if (wrapperRe.test(lines[start]?.trim())) start++
-        if (wrapperRe.test(lines[end]?.trim())) end--
-        const cleanText = lines.slice(start, end + 1).join('\n').trim()
-        setBookReaderData({ title: item.name, text: cleanText || data.message })
+        setBookReaderData({ title: item.name, text: stripBookWrapper(data.message) })
       } else {
         setActionMessage('✗ ' + (data.error || 'Cannot read this item'))
       }

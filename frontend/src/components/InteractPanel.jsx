@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { useWorldInteract } from '../hooks/useWorldInteract'
 import BaseDialog from './BaseDialog'
 import NpcChatPanel from './NpcChatPanel'
+import BookReaderDialog, { stripBookWrapper } from './BookReaderDialog'
 import GameButton from './GameButton'
 import GameText from './GameText'
 import GamePanel from './GamePanel'
@@ -33,6 +34,7 @@ function InteractPanel({
     const [showQuantityInput, setShowQuantityInput] = useState(false)
     const [pendingAction, setPendingAction] = useState(null)
     const [showChatPanel, setShowChatPanel] = useState(false)
+    const [bookReaderData, setBookReaderData] = useState(null)
     const [searchHovered, setSearchHovered] = useState(false)
 
     const {
@@ -196,6 +198,18 @@ function InteractPanel({
             selectedTarget?.loquacity_available !== false
         ) {
             setShowChatPanel(true)
+            return
+        }
+
+        // Reading a book (or other readable object) lying in a room should
+        // open the same dedicated Read panel as reading from inventory,
+        // instead of dumping the full text into the interaction log (issue #326).
+        if (action.toLowerCase() === 'read' && selectedTarget) {
+            const data = await runInteract(selectedTarget, action, qty)
+            if (data?.success) {
+                setBookReaderData({ title: selectedTarget.name, text: stripBookWrapper(data.message) })
+                resetInteraction()
+            }
             return
         }
 
@@ -648,6 +662,13 @@ function InteractPanel({
                     setShowChatPanel(false)
                     if (onRefetch) onRefetch()
                 }}
+            />
+        )}
+        {bookReaderData && (
+            <BookReaderDialog
+                title={bookReaderData.title}
+                text={bookReaderData.text}
+                onClose={() => setBookReaderData(null)}
             />
         )}
     </>

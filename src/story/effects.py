@@ -11,6 +11,7 @@ import time
 from src.npc import NPC
 import src.functions as functions
 import src.states as states
+import src.positions as positions
 from src.events import Event
 import src.animations as animations
 
@@ -227,7 +228,10 @@ class Effect(Event):
         super().__init__(
             name=name,
             player=player,
-            tile=player.tile,
+            # getattr rather than player.tile: item-attached effects (e.g.
+            # FlareArrowImpact) are constructed at Item-creation time with no
+            # player/combat context yet -- see MoveEffect below.
+            tile=getattr(player, "tile", None),
             repeat=False,
             params=None,
         )
@@ -245,26 +249,93 @@ class MoveEffect(Effect):  # Generic class for move-based effects.
         self.announcement = announcement
 
 
+# Balance constants for FlareArrow's ignite-on-impact effect (issue #343).
+FLARE_ARROW_BASE_IGNITE_CHANCE = 0.75  # base chance the primary target catches fire
+FLARE_ARROW_MIN_IGNITE_CHANCE = 0.25  # floor chance even at full fire resistance
+FLARE_ARROW_SPREAD_CHANCE = 0.75  # base chance to ignite each nearby combatant
+FLARE_ARROW_SPREAD_RADIUS = 3  # feet from the primary target
+
+
+def _nearby_combatants(target, max_distance):
+    """Return living combatants (friend or foe) within `max_distance` feet of `target`.
+
+    `target.combat_list`/`combat_list_allies` together enumerate the whole
+    encounter roster relative to `target` (see combat_adapter's side
+    assignment). Distance prefers `combat_position` (authoritative, symmetric)
+    and falls back to whichever side's `combat_proximity` dict has the entry,
+    mirroring the pattern already used by Sweep/KeepAway.
+    """
+    combat_list = getattr(target, "combat_list", None)
+    combat_list = combat_list if isinstance(combat_list, list) else []
+    combat_list_allies = getattr(target, "combat_list_allies", None)
+    combat_list_allies = combat_list_allies if isinstance(combat_list_allies, list) else []
+    roster = combat_list + combat_list_allies
+
+    target_pos = getattr(target, "combat_position", None)
+    nearby = []
+    for combatant in roster:
+        if combatant is target:
+            continue
+        if hasattr(combatant, "is_alive") and not combatant.is_alive():
+            continue
+        combatant_pos = getattr(combatant, "combat_position", None)
+        if target_pos is not None and combatant_pos is not None:
+            distance = positions.distance_from_coords(target_pos, combatant_pos)
+        else:
+            target_proximity = getattr(target, "combat_proximity", None) or {}
+            distance = target_proximity.get(combatant)
+            if distance is None:
+                combatant_proximity = getattr(combatant, "combat_proximity", None) or {}
+                distance = combatant_proximity.get(target)
+            if distance is None:
+                continue
+        if distance <= max_distance:
+            nearby.append(combatant)
+    return nearby
+
+
 class FlareArrowImpact(MoveEffect):
-    def __init__(self, player, move):
+    """On-impact fire effect for FlareArrow (see items.FlareArrow).
+
+    Constructed once with no real move bound (player=None, move=None) and
+    stored directly on the arrow's `effects` list at Item-construction time --
+    arrows have no player/combat context at that point. `src/moves/_ranged.py`
+    rebinds `.move` to the live ShootBow instance immediately before calling
+    `process()`, which is why `process()` re-derives everything (target,
+    announcement) from `self.move` rather than trusting whatever was captured
+    at __init__ time.
+    """
+
+    def __init__(self, player=None, move=None):
         super().__init__(
             player=player,
             move=move,
-            target=move.target,
+            target=getattr(move, "target", None),
             name="FlareArrowImpact",
             trigger="execute",
-            announcement="{}'s arrow bursts into flames on impact!".format(
-                move.user.name
-            ),
+            announcement="An arrow bursts into flames on impact!",
         )
 
     def process(self):
-        self.target = self.move.target
+        move = self.move
+        self.target = move.target
         self.announcement = "{}'s arrow bursts into flames on impact!".format(
-            self.move.user.name
+            move.user.name
         )
         status = states.Enflamed(self.target)
-        functions.inflict(status, self.target, chance=0.75)
+        functions.inflict(
+            status,
+            self.target,
+            chance=FLARE_ARROW_BASE_IGNITE_CHANCE,
+            min_chance=FLARE_ARROW_MIN_IGNITE_CHANCE,
+        )
+        # The burst itself happens at the point of impact regardless of
+        # whether the primary target catches fire, so nearby combatants
+        # (friend or foe) get their own independent ignite roll.
+        for nearby in _nearby_combatants(self.target, FLARE_ARROW_SPREAD_RADIUS):
+            functions.inflict(
+                states.Enflamed(nearby), nearby, chance=FLARE_ARROW_SPREAD_CHANCE
+            )
 
 
 class GoldFromHeaven(
