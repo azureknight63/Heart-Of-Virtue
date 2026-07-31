@@ -11,7 +11,7 @@ from unittest.mock import MagicMock, patch
 
 import src.states as states
 from src.states import (
-    Enflamed, Slimed, Resonant, Petrified, Hollowed, Fervent, PhoenixRevive
+    Enflamed, Slimed, Resonant, Petrified, Hollowed, Fervent, PhoenixRevive, Death
 )
 
 
@@ -242,3 +242,32 @@ def test_fervent_compound():
     assert state.add_endurance == original_add_endurance - 2
     # beats_left capped at beats_max
     assert state.beats_left <= state.beats_max
+
+
+# ---------------------------------------------------------------------------
+# Death — issue #350, the WailWraith's Death Knell execute
+# ---------------------------------------------------------------------------
+def test_death_on_application_zeroes_hp():
+    """Death is a one-shot kill, not a DoT: on_application sets hp straight
+    to 0 rather than ticking damage over beats."""
+    target = FakeTarget()
+    target.hp = 87
+    state = Death(target)
+    assert state.statustype == "death"
+
+    with patch('src.states.cprint'):
+        state.on_application(target)
+
+    assert target.hp == 0
+
+
+def test_death_has_no_ongoing_effect():
+    """effect() is a no-op (inherited from State) — Death does all its work
+    in on_application, so a stray process() call after application (e.g. if
+    combat continues for a beat before the defeat check runs) must not do
+    anything further."""
+    target = FakeTarget()
+    target.hp = 0
+    state = Death(target)
+    state.effect(target)  # should not raise or change hp
+    assert target.hp == 0

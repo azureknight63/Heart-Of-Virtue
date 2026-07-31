@@ -910,7 +910,15 @@
     },
     {
       "module": "src.moves._npc",
+      "name": "DeathKnell"
+    },
+    {
+      "module": "src.moves._npc",
       "name": "GorranClub"
+    },
+    {
+      "module": "src.moves._npc",
+      "name": "KeeningToll"
     },
     {
       "module": "src.moves._npc",
@@ -1257,6 +1265,10 @@
       "name": "Testexp"
     },
     {
+      "module": "src.npc._enemies",
+      "name": "WailWraith"
+    },
+    {
       "module": "src.npc._friends",
       "name": "Devet"
     },
@@ -1527,6 +1539,10 @@
     {
       "module": "src.states",
       "name": "Clean"
+    },
+    {
+      "module": "src.states",
+      "name": "Death"
     },
     {
       "module": "src.states",
@@ -1969,6 +1985,6 @@
       "name": "UUID"
     }
   ],
-  "count": 492,
+  "count": 496,
   "header_version": 1
 }

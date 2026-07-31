@@ -1086,18 +1086,19 @@ class SoulDrain(NpcAttack):
         self.user.fatigue -= self.fatigue_cost
 
 
-class WailStrike(NpcAttack):
-    """A sonic attack channelling the Wailing Badlands, used by the WailWraith.
-
-    The creature doesn't scream at you. It opens its chest cavity and lets the
-    wail through. The sound arrives inside before it arrives outside.
+class KeeningToll(NpcAttack):
+    """The WailWraith's primary attack — a wearing note that saps fatigue
+    rather than dealing raw damage. This is what grinds the target down
+    toward the <10% max FP threshold that opens up Death Knell, so it's
+    given a higher move weight than WailStrike: this is the wail the
+    WailWraith reaches for most often.
     """
 
-    web_animation = "shockwave"
+    web_animation = "drain"
 
     def __init__(self, npc):
         super().__init__(npc)
-        self.name = "Wail Strike"
+        self.name = "Keening Toll"
         self.mvrange = (1, 4)
         # Preserve this ranged mvrange across per-beat evaluate() calls (#349).
         self.custom_mvrange = True
@@ -1106,16 +1107,81 @@ class WailStrike(NpcAttack):
         target_name = self.target.name if self.target else "its target"
         self.stage_announce = [
             colored(
-                f"{npc.name} opens wide — the wail floods through it toward {target_name}.",
-                "yellow",
+                f"{npc.name} keens — a low, wearing note aimed at {target_name}.",
+                "magenta",
             ),
             colored(
-                f"The wail tears through {target_name} — armor is no shelter from this!",
-                "yellow",
+                f"The toll settles into {target_name}'s bones, sapping the strength to go on.",
+                "magenta",
             ),
-            f"{npc.name} closes itself, the wail receding.",
+            f"{npc.name} falls quiet, the note spent.",
             "",
         ]
+
+    def execute(self, npc):
+        self.refresh_announcements(npc)
+        narrate(self.stage_announce[1])
+        self.prep_colors()
+        if self.viable():
+            hit_chance = int(95 - self.target.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3))
+            if hit_chance <= 0:
+                hit_chance = 1
+        else:
+            hit_chance = -1
+        roll = random.randint(0, 100)
+        drain = max(1, int(self.power * 0.5))
+        if hit_chance >= roll:
+            if functions.check_parry(self.target):
+                self.parry()
+            else:
+                if hit_chance - roll < 10:
+                    drain = drain // 2
+                self.target.fatigue = max(0, self.target.fatigue - drain)
+                narrate(
+                    colored(self.user.name, self.usercolor)
+                    + colored(" drains ", "yellow")
+                    + colored(str(drain), "red")
+                    + colored(" fatigue from ", "yellow")
+                    + colored(self.target.name, self.targetcolor)
+                    + colored("!", "yellow")
+                )
+        else:
+            self.miss()
+        self.user.fatigue -= self.fatigue_cost
+
+
+class WailStrike(TelegraphedSurge):
+    """A sonic attack channelling the Wailing Badlands, used by the WailWraith.
+
+    The creature doesn't scream at you. It opens its chest cavity and lets the
+    wail through. The sound arrives inside before it arrives outside.
+
+    Telegraphed secondary: the WailWraith's real pressure comes from Keening
+    Toll (fatigue drain, higher move weight); WailStrike is the harder-
+    hitting, slower follow-up — the extended prep phase gives the player a
+    genuine window to Dodge before it lands.
+    """
+
+    web_animation = "shockwave"
+
+    _DAMAGE_MULTIPLIER = 1.8
+    _EXTRA_PREP_BEATS = 3
+
+    def __init__(self, npc):
+        super().__init__(npc)
+        self.name = "Wail Strike"
+        self.mvrange = (1, 4)
+        # Preserve this ranged mvrange across per-beat evaluate() calls (#349).
+        self.custom_mvrange = True
+
+    def _prep_text(self, npc):
+        return f"{npc.name} opens wide — the wail floods through it, building."
+
+    def _hit_text(self, npc, target_name):
+        return f"The wail tears through {target_name} — armor is no shelter from this!"
+
+    def _recoil_text(self, npc):
+        return f"{npc.name} closes itself, the wail receding."
 
     def execute(self, npc):
         self.refresh_announcements(npc)
@@ -1141,6 +1207,77 @@ class WailStrike(NpcAttack):
                 self.hit(damage, glance)
                 status = states.Resonant(self.target)
                 functions.inflict(status, self.target, chance=0.45)
+        else:
+            self.miss()
+        self.user.fatigue -= self.fatigue_cost
+
+
+class DeathKnell(NpcAttack):
+    """The WailWraith's execute. Only viable once the target's fatigue has
+    already been worn down below 10% of max (Keening Toll is what gets them
+    there) — this move can't even be selected outside that window.
+
+    A successful, unparried hit inflicts states.Death: an immediate, forced
+    kill. Per design discussion on issue #350, this bypasses the target's own
+    "death" status resistance entirely (functions.inflict(..., force=True))
+    rather than depending on it — changing Jean's default resistance to the
+    "death" statustype was ruled out of scope, so the move must not rely on
+    it landing normally.
+    """
+
+    web_animation = "death"
+
+    FP_THRESHOLD = 0.10
+
+    def __init__(self, npc):
+        super().__init__(npc)
+        self.name = "Death Knell"
+
+    def viable(self):
+        if not super().viable():
+            return False
+        target = getattr(self, "target", None)
+        if (
+            target is None
+            or not hasattr(target, "fatigue")
+            or not getattr(target, "maxfatigue", 0)
+        ):
+            return False
+        return target.fatigue < self.FP_THRESHOLD * target.maxfatigue
+
+    def refresh_announcements(self, npc):
+        target_name = self.target.name if self.target else "its target"
+        self.stage_announce = [
+            colored(
+                f"{npc.name} draws itself up — {target_name} has nothing left to answer with.",
+                "magenta",
+            ),
+            colored(
+                f"{npc.name} tolls once, final, straight through {target_name}!",
+                "red",
+            ),
+            f"{npc.name} settles, the toll rung.",
+            "",
+        ]
+
+    def execute(self, npc):
+        self.refresh_announcements(npc)
+        narrate(self.stage_announce[1])
+        self.prep_colors()
+        if self.viable():
+            hit_chance = int(95 - self.target.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3))
+            if hit_chance <= 0:
+                hit_chance = 1
+        else:
+            hit_chance = -1
+        roll = random.randint(0, 100)
+        if hit_chance >= roll:
+            if functions.check_parry(self.target):
+                self.parry()
+            else:
+                functions.inflict(
+                    states.Death(self.target), self.target, chance=1.0, force=True
+                )
         else:
             self.miss()
         self.user.fatigue -= self.fatigue_cost

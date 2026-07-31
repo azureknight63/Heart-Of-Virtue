@@ -403,6 +403,39 @@ class Resonant(State):
             target.hp -= damage  # bypasses protection intentionally
 
 
+class Death(State):
+    """A final, absolute stillness. Not a wound — an ending.
+
+    Inflicted by the WailWraith's Death Knell once its prey has nothing left
+    to give (below 10% max FP). This is a one-shot execute, not a
+    damage-over-time effect: on_application reduces HP to 0 directly and lets
+    the ordinary defeat pipeline take it from there (is_alive()/check_revive()
+    still run as normal, so a revive-capable state can still save the target).
+    """
+
+    def __init__(self, target):
+        super().__init__(
+            name="Death",
+            target=target,
+            beats_max=1,
+            compounding=False,
+            combat=True,
+            world=False,
+            statustype="death",
+            persistent=False,
+            description="A final stillness.",
+        )
+
+    def on_application(self, target):
+        cprint(
+            "{} goes still. The wail has claimed what it was owed.".format(
+                target.name
+            ),
+            "magenta",
+        )
+        target.hp = 0
+
+
 class Petrified(State):
     """Mineral sediment from the corrupted pools settles into joints and sinew.
 

@@ -540,3 +540,56 @@ class CorruptedStoneCreature(NPC):
         self.add_move(moves.Advance(self), 4)
         self.add_move(moves.Withdraw(self), 1)
         self.add_move(moves.NpcIdle(self), 2)
+
+
+class WailWraith(NPC):
+    """
+    A ghastly presence native to the Wailing Badlands — the source of the
+    Keening Canyon's Auditory Strain, not merely a hazard alongside it.
+    Immune to conventional (physical) damage; only Pure/Light/Dark/Fire/etc.
+    damage and outlasting its attrition mechanic can bring it down. See
+    docs/lore/enemies/wailwraith.md and issue #350 for full design notes.
+    """
+
+    def __init__(self):
+        description = (
+            "A ragged shape woven from sound and absence, more heard than seen. "
+            "It does not walk so much as arrive, trailing the low, wearing note "
+            "that gives the canyon its name."
+        )
+        super().__init__(
+            name="WailWraith " + genericng.generate(2, 4),
+            description=description,
+            maxhp=190,
+            damage=30,
+            protection=0,
+            awareness=55,
+            speed=35,
+            finesse=40,
+            endurance=15,
+            aggro=True,
+            exp_award=650,
+            idle_message=" drifts at the edge of hearing.",
+            alert_message=" turns toward Jean, and the keening begins.",
+        )
+        self.can_yield = False
+        self.loot = loot.lev1
+        # Immune to conventional (physical) damage.
+        self.resistance_base["slashing"] = 0.0
+        self.resistance_base["piercing"] = 0.0
+        self.resistance_base["crushing"] = 0.0
+        # 2x weakness to Pure and Light; dark lands at half effect.
+        self.resistance_base["pure"] = 2.0
+        self.resistance_base["light"] = 2.0
+        self.resistance_base["dark"] = 0.5
+        # Fully resistant to death/doom being inflicted on the Wraith itself —
+        # unrelated to Death Knell, which the Wraith inflicts on its target.
+        self.status_resistance_base["death"] = 1.0
+        self.status_resistance_base["doom"] = 1.0
+        self.add_move(moves.KeeningToll(self), 5)
+        self.add_move(moves.WailStrike(self), 3)
+        self.add_move(moves.DeathKnell(self), 4)
+        self.add_move(moves.Advance(self), 3)
+        self.add_move(moves.Withdraw(self))
+        self.add_move(moves.NpcIdle(self))
+        self.add_move(moves.Dodge(self), 2)

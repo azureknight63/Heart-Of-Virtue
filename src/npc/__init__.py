@@ -40,6 +40,7 @@ from ._enemies import (
     CorruptedStoneCreature,
     TalusHound,
     ScarpAdder,
+    WailWraith,
 )
 from ._merchants import Merchant, MiloCurioDealer, JamboHealsU, Kaelen, Vespera
 from ._friends import (
@@ -79,6 +80,7 @@ __all__ = [
     "CorruptedStoneCreature",
     "TalusHound",
     "ScarpAdder",
+    "WailWraith",
     # Merchant NPCs
     "Merchant",
     "MiloCurioDealer",
