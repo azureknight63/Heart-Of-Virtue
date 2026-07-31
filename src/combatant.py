@@ -85,6 +85,19 @@ class Combatant:
         self.status_resistance = dict(_DEFAULT_STATUS_RESISTANCE)
         self.status_resistance_base = dict(_DEFAULT_STATUS_RESISTANCE)
 
+    def _set_status_resistance(self, key, value):
+        """Override a status-resistance value on both the base and live dicts.
+
+        `status_resistance` is only re-synced from `status_resistance_base` on
+        the next `reset_stats()`/`refresh_stat_bonuses()` call (combat start,
+        item equip, etc.) — a subclass `__init__` that only sets the `_base`
+        dict leaves the live value stale (e.g. immune-to-own-effect checks run
+        via `functions.inflict()` right after construction, before any combat
+        loop has had a chance to sync it).
+        """
+        self.status_resistance_base[key] = value
+        self.status_resistance[key] = value
+
     # ── Shared methods ────────────────────────────────────────────────────────
 
     def is_alive(self):

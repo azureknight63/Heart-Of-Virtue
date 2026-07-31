@@ -142,6 +142,80 @@ def test_flare_arrow_impact():
         assert mock_inflict.called
         assert isinstance(mock_inflict.call_args[0][0], states.Enflamed)
 
+
+def test_flare_arrow_impact_landing_floor_at_full_resistance():
+    """Issue #343: even at full resistance to the enflamed status, FlareArrow
+    keeps a floor chance (25%) to ignite -- the general inflict() formula
+    alone would make this a guaranteed no-op at resistance=1.0."""
+    player = FakePlayer()
+
+    class DummyTarget:
+        def __init__(self):
+            self.name = "TargetNPC"
+            self.states = []
+            self.status_resistance = {"enflamed": 1.0}  # would normally be 0% chance
+            self.combat_list = []
+            self.combat_list_allies = []
+
+    class DummyMove:
+        def __init__(self):
+            self.user = player
+            self.target = DummyTarget()
+
+    move = DummyMove()
+    ev = FlareArrowImpact(player, move)
+
+    with patch('random.random', return_value=0.2):  # under the 0.25 floor
+        ev.process()
+
+    assert any(isinstance(s, states.Enflamed) for s in move.target.states)
+
+
+def test_flare_arrow_impact_spreads_to_nearby_combatants():
+    """Issue #343: the fire burst can catch nearby combatants (friend or foe)
+    within FLARE_ARROW_SPREAD_RADIUS feet of the primary target, but not ones
+    further away."""
+    player = FakePlayer()
+
+    class DummyCombatant:
+        def __init__(self, name):
+            self.name = name
+            self.states = []
+            self.status_resistance = {"enflamed": 0.0}
+
+        def is_alive(self):
+            return True
+
+    class DummyTarget(DummyCombatant):
+        def __init__(self):
+            super().__init__("TargetNPC")
+            self.combat_proximity = {}
+            self.combat_list = []
+            self.combat_list_allies = []
+
+    target = DummyTarget()
+    near_ally = DummyCombatant("NearAlly")
+    far_enemy = DummyCombatant("FarEnemy")
+    target.combat_proximity = {far_enemy: 10}  # outside FLARE_ARROW_SPREAD_RADIUS (3)
+    target.combat_list = [far_enemy]
+    target.combat_list_allies = [near_ally]
+    near_ally.combat_proximity = {target: 2}  # within radius
+
+    class DummyMove:
+        def __init__(self):
+            self.user = player
+            self.target = target
+
+    move = DummyMove()
+    ev = FlareArrowImpact(player, move)
+
+    with patch('random.random', return_value=0.0):  # guarantee every roll succeeds
+        ev.process()
+
+    assert any(isinstance(s, states.Enflamed) for s in near_ally.states)
+    assert not any(isinstance(s, states.Enflamed) for s in far_enemy.states)
+
+
 def test_gold_from_heaven():
     player = FakePlayer()
     tile = player.tile

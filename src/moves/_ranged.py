@@ -198,6 +198,10 @@ class ShootBow(
         if self.arrow.effects:
             for effect in self.arrow.effects:
                 if effect.trigger == "prep":
+                    # Arrow effects are constructed once, with no player/move
+                    # context (see FlareArrowImpact) -- rebind to this live
+                    # shot before firing so process() sees the real target/user.
+                    effect.move = self
                     effect.process()
 
     def evaluate(
@@ -296,6 +300,9 @@ class ShootBow(
                 if self.arrow.effects:
                     for effect in self.arrow.effects:
                         if effect.trigger == "execute":
+                            # See prep()'s "prep" branch for why this rebind
+                            # is needed before process() runs.
+                            effect.move = self
                             effect.process()
         else:
             arrow_recovery *= 1.8

@@ -593,6 +593,55 @@ class TestNPCResistances:
         # Status resistances should be 0.0
         for key, val in dummy.status_resistance_base.items():
             assert val == 0.0
+        # Live dict must be synced too — dummy is used for direct inflict()
+        # checks (arena testing), not just after a combat-start resync.
+        for key, val in dummy.status_resistance.items():
+            assert val == 0.0
+
+    def test_common_npc_status_resistance_baseline(self):
+        """Ordinary (non-boss) NPCs default to 0.3 status resistance, not 1.0
+        immunity — issue #391: Combatant seeds every status resistance at 1.0,
+        which made every enemy immune to every status effect by default."""
+        slime = Slime()
+        assert slime.is_boss is False
+        for key, val in slime.status_resistance_base.items():
+            assert val == 0.3
+        for key, val in slime.status_resistance.items():
+            assert val == 0.3
+
+    def test_boss_npc_status_resistance_baseline(self):
+        """Boss NPCs (is_boss=True) get a lower, but still non-immune, 0.15
+        baseline — bosses resist crowd control more than fodder without being
+        flatly immune to it."""
+        npc = NPC(
+            name="Test Boss",
+            description="test",
+            damage=10,
+            aggro=True,
+            exp_award=1,
+            is_boss=True,
+        )
+        assert npc.is_boss is True
+        for key, val in npc.status_resistance_base.items():
+            assert val == 0.15
+        for key, val in npc.status_resistance.items():
+            assert val == 0.15
+
+    def test_kingslime_and_lurker_are_flagged_as_bosses(self):
+        """KingSlime and Lurker are the arena's designated 'boss-tier' enemies
+        (see CLAUDE.md's combat-testing-arena table) and should get the lower
+        boss status-resistance baseline rather than the common-enemy one."""
+        assert KingSlime().is_boss is True
+        assert Lurker().is_boss is True
+
+    def test_poison_lands_on_ordinary_slime(self):
+        """Direct regression test for issue #391's reproduction: a fresh Slime
+        called with functions.inflict(Poisoned, chance=1.0) used to return
+        False (guaranteed immunity) because the pre-fix baseline was 1.0."""
+        from src.functions import inflict
+        slime = Slime()
+        status = Poisoned(slime)
+        assert inflict(status, slime, chance=1.0) is not False
 
 
 class TestNPCStateManagement:

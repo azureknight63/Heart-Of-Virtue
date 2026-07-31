@@ -100,6 +100,7 @@ class Lurker(NPC):
             endurance=20,
             aggro=True,
             exp_award=950,
+            is_boss=True,
         )
         self.can_yield = False
         self.loot = loot.lev1
@@ -108,8 +109,8 @@ class Lurker(NPC):
         # a negative value here would mean fire damage *heals* it, the opposite of intent.
         self.resistance_base["fire"] = 1.5
         self.resistance_base["light"] = 2.0
-        self.status_resistance_base["death"] = 1
-        self.status_resistance_base["doom"] = 1
+        self._set_status_resistance("death", 1)
+        self._set_status_resistance("doom", 1)
         self.add_move(moves.NpcAttack(self), 5)
         self.add_move(moves.VenomClaw(self), 5)
         self.add_move(moves.SoulDrain(self), 3)
@@ -141,7 +142,7 @@ class GiantSpider(NPC):
         # Vulnerable to fire (heat/flames damage the creature) — >1 means increased
         # damage taken; a negative value here would mean fire damage *heals* it.
         self.resistance_base["fire"] = 1.5
-        self.status_resistance_base["poison"] = 1
+        self._set_status_resistance("poison", 1)
         self.add_move(moves.NpcAttack(self), 3)
         self.add_move(moves.SpiderBite(self), 6)
         self.add_move(moves.Advance(self), 4)
@@ -173,7 +174,7 @@ class CaveBat(NPC):
         self.resistance_base["light"] = 0.8
         self.resistance_base["earth"] = 1.1
         # Some variants may have a small life-drain implemented elsewhere; leave hooks in status_resistance
-        self.status_resistance_base["poison"] = 1.0
+        self._set_status_resistance("poison", 1.0)
         # Movement and combat style
         self.add_move(moves.NpcAttack(self), 5)
         self.add_move(moves.BatBite(self), 5)
@@ -213,8 +214,8 @@ class ElderSlime(NPC):
         self.resistance_base["crushing"] = 1.25
         self.resistance_base["fire"] = 1.4
         self.resistance_base["earth"] = 0.85
-        self.status_resistance_base["poison"] = 1.0
-        self.status_resistance_base["slimed"] = 1.0
+        self._set_status_resistance("poison", 1.0)
+        self._set_status_resistance("slimed", 1.0)
         self.add_move(moves.NpcAttack(self), 3)
         self.add_move(moves.SlimeVolley(self), 4)
         self.add_move(moves.Advance(self), 3)
@@ -245,6 +246,7 @@ class KingSlime(NPC):
             exp_award=500,
             idle_message=" pulses at the centre of the pool.",
             alert_message=" rears upward with a deep, resonant churn!",
+            is_boss=True,
         )
         self.can_yield = False
         self.resistance_base["slashing"] = 0.65
@@ -252,8 +254,8 @@ class KingSlime(NPC):
         self.resistance_base["crushing"] = 1.2
         self.resistance_base["fire"] = 1.5
         self.resistance_base["earth"] = 0.9
-        self.status_resistance_base["poison"] = 1.0
-        self.status_resistance_base["slimed"] = 1.0
+        self._set_status_resistance("poison", 1.0)
+        self._set_status_resistance("slimed", 1.0)
         self.loot = loot.lev1
         self.add_move(moves.NpcAttack(self), 5)
         self.add_move(moves.TidalSurge(self), 3)
@@ -491,7 +493,7 @@ class StatusDummy(NPC):
         )
         # Strip all status resistances so effects land reliably
         for key in self.status_resistance_base:
-            self.status_resistance_base[key] = 0.0
+            self._set_status_resistance(key, 0.0)
         # Strip all damage resistances to neutral
         for key in self.resistance_base:
             self.resistance_base[key] = 1.0
@@ -530,8 +532,8 @@ class CorruptedStoneCreature(NPC):
         self.resistance_base["crushing"] = 1.6
         self.resistance_base["fire"] = 1.4
         self.resistance_base["earth"] = 0.5
-        self.status_resistance_base["stone"] = 1.0  # immune to its own petrification
-        self.status_resistance_base["slow"] = -0.5  # extra vulnerable to slow-type states
+        self._set_status_resistance("stone", 1.0)  # immune to its own petrification
+        self._set_status_resistance("slow", -0.5)  # extra vulnerable to slow-type states
         self.add_move(moves.NpcAttack(self), 4)
         self.add_move(moves.MineralSpit(self), 3)
         self.add_move(moves.Advance(self), 4)

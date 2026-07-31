@@ -1914,6 +1914,96 @@ class TestMaraObservationEvent:
         ev._set_gate()  # should not raise
 
 
+class TestCampEntryGreetingEvent:
+    """CampEntryGreetingEvent — the full Jean/Gorran/Liss conversation at
+    CampEntry (3,0), gated behind NomadCampSmellEvent (issue #326)."""
+
+    def setup_method(self):
+        from src.story.ch03 import CampEntryGreetingEvent
+
+        self.cls = CampEntryGreetingEvent
+
+    def _make(self, smell_done=True):
+        player = _make_player()
+        player.universe.story = {}
+        if smell_done:
+            player.universe.story["nomad_camp_entered"] = "1"
+        tile = _make_tile()
+        return self.cls(player=player, tile=tile), player, tile
+
+    def test_instantiate(self):
+        ev, *_ = self._make()
+        assert ev.name == "CampEntryGreeting"
+        assert ev.repeat is False
+
+    def test_conditions_pass_once_smell_event_done(self):
+        ev, player, tile = self._make(smell_done=True)
+        with patch.object(ev, "pass_conditions_to_process") as mock_pass:
+            ev.check_conditions()
+            mock_pass.assert_called_once()
+
+    def test_conditions_wait_until_smell_event_done(self):
+        """Should not fire before NomadCampSmellEvent sets its gate."""
+        ev, player, tile = self._make(smell_done=False)
+        with patch.object(ev, "pass_conditions_to_process") as mock_pass:
+            ev.check_conditions()
+            mock_pass.assert_not_called()
+
+    def test_conditions_skip_when_gate_already_set(self):
+        ev, player, tile = self._make(smell_done=True)
+        player.universe.story["camp_entry_greeting_done"] = "1"
+        tile.events_here = [ev]
+        with patch.object(ev, "pass_conditions_to_process") as mock_pass:
+            ev.check_conditions()
+            mock_pass.assert_not_called()
+        assert ev not in tile.events_here
+
+    def test_process_skip_dialog_still_sets_gate(self):
+        ev, player, tile = self._make()
+        player.skip_dialog = True
+        ev.process()
+        assert player.universe.story.get("camp_entry_greeting_done") == "1"
+
+    def test_process_full_conversation_and_sets_gate(self):
+        ev, player, tile = self._make()
+        player.skip_dialog = False
+        with (
+            patch("src.story.ch03.print_slow") as mock_print,
+            patch("src.story.ch03.say") as mock_say,
+            patch("src.story.ch03.time.sleep"),
+        ):
+            ev.process()
+        assert mock_print.called
+        # Jean's spoken observations about the camp
+        mock_say.assert_any_call("Tents.", "Jean", "curious")
+        # Liss enters, notices Jean then Gorran, and is staged with an enter op
+        liss_enter_calls = [
+            c
+            for c in mock_say.call_args_list
+            if c.args[:2] == ("Oh — hi! You're new. Are you—", "Liss")
+        ]
+        assert len(liss_enter_calls) == 1
+        assert liss_enter_calls[0].kwargs["enter"]["id"] == "Liss"
+        liss_exit_calls = [
+            c for c in mock_say.call_args_list if c.args[1] == "Liss" and "leave" in c.kwargs
+        ]
+        assert len(liss_exit_calls) == 1
+        assert liss_exit_calls[0].kwargs["leave"]["id"] == "Liss"
+        # Jean's closing question and the stated goal (issue #326: player should
+        # come away knowing to ask around camp for a way across the river)
+        mock_say.assert_any_call("What exactly was that about?", "Jean", "skeptical")
+        assert any(
+            "ask around" in c.args[0] and c.args[1] == "Jean"
+            for c in mock_say.call_args_list
+        )
+        assert player.universe.story.get("camp_entry_greeting_done") == "1"
+
+    def test_set_gate_with_no_universe(self):
+        ev, player, tile = self._make()
+        player.universe = None
+        ev._set_gate()  # should not raise
+
+
 # ===========================================================================
 # GORRAN FLAVOR TESTS
 # ===========================================================================

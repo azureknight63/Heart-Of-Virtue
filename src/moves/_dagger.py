@@ -18,7 +18,7 @@ from ._base import (
 
 class Slash(
     Move
-):  # Slashing-type attack using the equipped weapon; available to Daggers, Swords, Stars, and Axes.
+):  # Slashing-type attack using the equipped weapon; available to Daggers, Swords, Stars, Axes, and Halberds.
     web_animation = "attack"
 
     def __init__(self, player):
@@ -58,7 +58,7 @@ class Slash(
         viability = False
         has_weapon = False
         enemy_near = False
-        allowed_subtypes = ["Dagger", "Sword", "Stars", "Axe"]
+        allowed_subtypes = ["Dagger", "Sword", "Stars", "Axe", "Halberd"]
 
         # Defensive check: ensure self.user is actually an NPC object with combat_proximity
         if not hasattr(self.user, "combat_proximity"):
