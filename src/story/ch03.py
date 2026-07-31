@@ -156,6 +156,79 @@ class NomadCampSmellEvent(Event):
             story["nomad_camp_entered"] = "1"
 
 
+class CampEntryGreetingEvent(Event):
+    """
+    Fires once on Jean's first entry to CampEntry (3,0) after the smell event fires.
+
+    Jean and Gorran stand at the camp's east edge. A quiet beat of arrival — not
+    triumphant, just present. Then from across the camp, Liss spots Gorran for the
+    first time and scurries off. Jean watches her go.
+
+    Gate: 'nomad_camp_entered' must be '1' (smell event already fired).
+    Sets: 'camp_entry_greeting_done'.
+    """
+
+    def __init__(
+        self, player, tile, params=None, repeat=False, name="CampEntryGreeting"
+    ):
+        super().__init__(
+            name=name, player=player, tile=tile, repeat=repeat, params=params
+        )
+
+    def check_conditions(self):
+        story = getattr(getattr(self.player, "universe", None), "story", {})
+        if story.get("camp_entry_greeting_done") == "1":
+            if self in self.tile.events_here:
+                self.tile.events_here.remove(self)
+            return
+        # Only fire after the smell event has run
+        if story.get("nomad_camp_entered") != "1":
+            return
+        self.pass_conditions_to_process()
+
+    def process(self):
+        if not self.player.skip_dialog:
+            narrate("\n")
+            time.sleep(0.3)
+            print_slow(
+                "Jean stopped at the edge of the camp and let himself take it in — the fire, "
+                "the packed earth, the smell of food. The river was close enough to hear."
+            )
+            time.sleep(1)
+            print_slow("Gorran stood beside him. Said nothing. That was usual.")
+            time.sleep(0.5)
+            begin_conversation(
+                [
+                    ("Jean", "left", "neutral"),
+                    ("Gorran", None, "neutral"),
+                ]
+            )
+            say("Not bad.", "Jean", "neutral", thought=True)
+            time.sleep(0.5)
+            print_slow(
+                "Gorran made the low sound he sometimes made — not agreement exactly, "
+                "but not disagreement either. Jean had stopped trying to classify it."
+            )
+            time.sleep(1)
+            # Liss spots Gorran and scurries off
+            print_slow(
+                "From somewhere in the interior of the camp, a girl spotted them — "
+                "dark-haired, young. Her eyes went wide. She made a sound — half-squeal, "
+                "half-gasp — and scurried off toward the fire ring, hair flying."
+            )
+            time.sleep(1.5)
+            print_slow(
+                "Jean watched her go. He didn't know what to make of that. No time for it, anyway."
+            )
+            time.sleep(0.5)
+        self._set_gate()
+
+    def _set_gate(self):
+        story = getattr(getattr(self.player, "universe", None), "story", None)
+        if story is not None:
+            story["camp_entry_greeting_done"] = "1"
+
+
 class MaraFirstContactEvent(Event):
     """
     Fires once on Jean's first entry to RiversEdge (1,0) in the nomad camp sub-map.
@@ -568,201 +641,6 @@ class LissObservingEvent(Event):
             story["liss_gorran_done"] = "1"
 
 
-class MaraObservationEvent(Event):
-    """
-    Fires once on Jean's re-entry to RiversEdge (1,0) after all three character
-    introduction gates are set (mara_intro_done, devet_intro_done, liss_gorran_done).
-    Mara makes her observation about Jean's background — religious kit or posture.
-    Sets story gate 'nomad_ferry_ready' (the main chapter completion gate).
-    """
-
-    def __init__(
-        self, player, tile, params=None, repeat=False, name="MaraObservation"
-    ):
-        super().__init__(
-            name=name, player=player, tile=tile, repeat=repeat, params=params
-        )
-
-    def check_conditions(self):
-        story = getattr(getattr(self.player, "universe", None), "story", {})
-        if story.get("nomad_ferry_ready") == "1":
-            if self in self.tile.events_here:
-                self.tile.events_here.remove(self)
-            return
-        # Wait until all three character beats are complete
-        if not (
-            story.get("mara_intro_done") == "1"
-            and story.get("devet_intro_done") == "1"
-            and story.get("liss_gorran_done") == "1"
-        ):
-            return
-        self.pass_conditions_to_process()
-
-    def process(self):
-        if not self.player.skip_dialog:
-            narrate("\n")
-            time.sleep(0.3)
-            # Match any bludgeon/mace (RustedIronMace, Mace, …) — they are
-            # sibling Weapon subclasses sharing subtype "Bludgeon", so an exact
-            # class-name check missed Jean's starting RustedIronMace.
-            has_mace = any(
-                getattr(item, "subtype", None) == "Bludgeon"
-                for item in self.player.inventory
-            )
-            print_slow(
-                "A while later — Jean was sitting with the bowl, Gorran nearby, the fire "
-                "between them and the river — Mara looked up from what she was sorting."
-            )
-            time.sleep(1)
-            begin_conversation(_JEAN_MARA)
-            if has_mace:
-                print_slow(
-                    "Her eyes tracked to Jean's mace for just a moment. Then back to her work."
-                )
-                time.sleep(0.5)
-                say("That's religious kit. You are - or were - a man of the church.", "Mara", "neutral")
-            else:
-                print_slow(
-                    "Her eyes moved across Jean — his posture, his hands, the way his weight "
-                    "sat — and returned to her work."
-                )
-                time.sleep(0.5)
-                say("You are - or were - a man of the church.", "Mara", "neutral")
-            time.sleep(0.5)
-            print_slow("Not a question.")
-            time.sleep(1)
-            say("Not a priest, if that's what you mean.", "Jean", "neutral")
-            time.sleep(1)
-            print_slow(
-                "Jean looked up at the sky with consternation. Why had he said that? "
-                "He was trying to remember something just out of reach."
-            )
-            print_slow("Confused, Mara watched Jean for a moment. She filed the exchange. The sorting continued.")
-            time.sleep(1)
-            say(
-                "When you're ready, head to the ferry landing and we'll be off. "
-                "Don't wait too long - crossing in the dark is unpleasant for everyone.", "Mara", "neutral"
-            )
-
-        self._set_gate()
-
-    def _set_gate(self):
-        story = getattr(getattr(self.player, "universe", None), "story", None)
-        if story is not None:
-            story["nomad_ferry_ready"] = "1"
-
-
-class CampEntryGreetingEvent(Event):
-    """
-    Fires once on Jean's first entry to CampEntry (3,0) after the smell event fires.
-
-    Jean and Gorran stand at the camp's east edge. A quiet beat of arrival — not
-    triumphant, just present. Then from across the camp, Liss spots Gorran for the
-    first time and scurries off. Jean watches her go.
-
-    Gate: 'nomad_camp_entered' must be '1' (smell event already fired).
-    Sets: 'camp_entry_greeting_done'.
-    """
-
-    def __init__(
-        self, player, tile, params=None, repeat=False, name="CampEntryGreeting"
-    ):
-        super().__init__(
-            name=name, player=player, tile=tile, repeat=repeat, params=params
-        )
-
-    def check_conditions(self):
-        story = getattr(getattr(self.player, "universe", None), "story", {})
-        if story.get("camp_entry_greeting_done") == "1":
-            if self in self.tile.events_here:
-                self.tile.events_here.remove(self)
-            return
-        # Only fire after the smell event has run
-        if story.get("nomad_camp_entered") != "1":
-            return
-        self.pass_conditions_to_process()
-
-    def process(self):
-        if not self.player.skip_dialog:
-            narrate("\n")
-            time.sleep(0.3)
-            print_slow(
-                "Jean stopped at the edge of the camp and let himself take it in — the fire, "
-                "the packed earth, the smell of food. The river was close enough to hear."
-            )
-            time.sleep(1)
-            print_slow("Gorran stood beside him. Said nothing. That was usual.")
-            time.sleep(0.5)
-            begin_conversation(
-                [
-                    ("Jean", "left", "neutral"),
-                    ("Gorran", None, "neutral"),
-                ]
-            )
-            say("Not bad.", "Jean", "neutral", thought=True)
-            time.sleep(0.5)
-            print_slow(
-                "Gorran made the low sound he sometimes made — not agreement exactly, "
-                "but not disagreement either. Jean had stopped trying to classify it."
-            )
-            time.sleep(1)
-            # Liss spots Gorran and scurries off
-            print_slow(
-                "From somewhere in the interior of the camp, a girl spotted them — "
-                "dark-haired, young. Her eyes went wide. She made a sound — half-squeal, "
-                "half-gasp — and scurried off toward the fire ring, hair flying."
-            )
-            time.sleep(1.5)
-            print_slow(
-                "Jean watched her go. He didn't know what to make of that. No time for it, anyway."
-            )
-            time.sleep(0.5)
-        self._set_gate()
-
-    def _set_gate(self):
-        story = getattr(getattr(self.player, "universe", None), "story", None)
-        if story is not None:
-            story["camp_entry_greeting_done"] = "1"
-
-
-class DemoEndEvent(Event):
-    """
-    Fires when Jean interacts with the Ferry Landing passageway (via events_before).
-
-    Shows a narrated message that the crossing is visible but the demo ends here.
-    Blocks the passageway interaction from completing — Jean is not teleported.
-    Sets story gate 'demo_ended'.
-    """
-
-    def __init__(self, player, tile, params=None, repeat=True, name="DemoEnd"):
-        super().__init__(
-            name=name, player=player, tile=tile, repeat=repeat, params=params
-        )
-
-    def check_conditions(self):
-        """Only fires after the second conversation with Mara (ferry is ready.)"""
-        story = getattr(getattr(self.player, "universe", None), "story", {})
-        # Only fire after the ferry is ready
-        if story.get("nomad_ferry_ready") != "1":
-            return
-        self.pass_conditions_to_process()
-
-    def process(self):
-        if not self.player.skip_dialog:
-            narrate("\n")
-            time.sleep(0.3)
-            print_slow(
-                "The ferry is ready. The crossing is short — you can see the far bank clearly."
-            )
-            time.sleep(1)
-            print_slow("But beyond the river is where the demo ends.")
-            time.sleep(0.5)
-            print_slow("\n[The full journey continues in the complete release. You may continue exploring the area, but can go no further in the story.]\n")
-            time.sleep(1)
-            print_slow("\n[Be sure to submit feedback using the Feedback button at the top of the UI, next to 'Account'. Thank you for helping to make this game better! -Alex]\n")
-            time.sleep(1)
-
- 
 class IronAndOathIntroEvent(Event):
     """
     Fires once on Jean's first entry to Tradepost (4,3) in the nomad camp sub-map.
@@ -951,3 +829,125 @@ class IronAndOathIntroEvent(Event):
         story = getattr(getattr(self.player, "universe", None), "story", None)
         if story is not None:
             story["iron_and_oath_intro_done"] = "1"
+
+
+class MaraObservationEvent(Event):
+    """
+    Fires once on Jean's re-entry to RiversEdge (1,0) after all three character
+    introduction gates are set (mara_intro_done, devet_intro_done, liss_gorran_done).
+    Mara makes her observation about Jean's background — religious kit or posture.
+    Sets story gate 'nomad_ferry_ready' (the main chapter completion gate).
+    """
+
+    def __init__(
+        self, player, tile, params=None, repeat=False, name="MaraObservation"
+    ):
+        super().__init__(
+            name=name, player=player, tile=tile, repeat=repeat, params=params
+        )
+
+    def check_conditions(self):
+        story = getattr(getattr(self.player, "universe", None), "story", {})
+        if story.get("nomad_ferry_ready") == "1":
+            if self in self.tile.events_here:
+                self.tile.events_here.remove(self)
+            return
+        # Wait until all three character beats are complete
+        if not (
+            story.get("mara_intro_done") == "1"
+            and story.get("devet_intro_done") == "1"
+            and story.get("liss_gorran_done") == "1"
+        ):
+            return
+        self.pass_conditions_to_process()
+
+    def process(self):
+        if not self.player.skip_dialog:
+            narrate("\n")
+            time.sleep(0.3)
+            # Match any bludgeon/mace (RustedIronMace, Mace, …) — they are
+            # sibling Weapon subclasses sharing subtype "Bludgeon", so an exact
+            # class-name check missed Jean's starting RustedIronMace.
+            has_mace = any(
+                getattr(item, "subtype", None) == "Bludgeon"
+                for item in self.player.inventory
+            )
+            print_slow(
+                "A while later — Jean was sitting with the bowl, Gorran nearby, the fire "
+                "between them and the river — Mara looked up from what she was sorting."
+            )
+            time.sleep(1)
+            begin_conversation(_JEAN_MARA)
+            if has_mace:
+                print_slow(
+                    "Her eyes tracked to Jean's mace for just a moment. Then back to her work."
+                )
+                time.sleep(0.5)
+                say("That's religious kit. You are - or were - a man of the church.", "Mara", "neutral")
+            else:
+                print_slow(
+                    "Her eyes moved across Jean — his posture, his hands, the way his weight "
+                    "sat — and returned to her work."
+                )
+                time.sleep(0.5)
+                say("You are - or were - a man of the church.", "Mara", "neutral")
+            time.sleep(0.5)
+            print_slow("Not a question.")
+            time.sleep(1)
+            say("Not a priest, if that's what you mean.", "Jean", "neutral")
+            time.sleep(1)
+            print_slow(
+                "Jean looked up at the sky with consternation. Why had he said that? "
+                "He was trying to remember something just out of reach."
+            )
+            print_slow("Confused, Mara watched Jean for a moment. She filed the exchange. The sorting continued.")
+            time.sleep(1)
+            say(
+                "When you're ready, head to the ferry landing and we'll be off. "
+                "Don't wait too long - crossing in the dark is unpleasant for everyone.", "Mara", "neutral"
+            )
+
+        self._set_gate()
+
+    def _set_gate(self):
+        story = getattr(getattr(self.player, "universe", None), "story", None)
+        if story is not None:
+            story["nomad_ferry_ready"] = "1"
+
+
+class DemoEndEvent(Event):
+    """
+    Fires when Jean interacts with the Ferry Landing passageway (via events_before).
+
+    Shows a narrated message that the crossing is visible but the demo ends here.
+    Blocks the passageway interaction from completing — Jean is not teleported.
+    Sets story gate 'demo_ended'.
+    """
+
+    def __init__(self, player, tile, params=None, repeat=True, name="DemoEnd"):
+        super().__init__(
+            name=name, player=player, tile=tile, repeat=repeat, params=params
+        )
+
+    def check_conditions(self):
+        """Only fires after the second conversation with Mara (ferry is ready.)"""
+        story = getattr(getattr(self.player, "universe", None), "story", {})
+        # Only fire after the ferry is ready
+        if story.get("nomad_ferry_ready") != "1":
+            return
+        self.pass_conditions_to_process()
+
+    def process(self):
+        if not self.player.skip_dialog:
+            narrate("\n")
+            time.sleep(0.3)
+            print_slow(
+                "The ferry is ready. The crossing is short — you can see the far bank clearly."
+            )
+            time.sleep(1)
+            print_slow("But beyond the river is where the demo ends.")
+            time.sleep(0.5)
+            print_slow("\n[The full journey continues in the complete release. You may continue exploring the area, but can go no further in the story.]\n")
+            time.sleep(1)
+            print_slow("\n[Be sure to submit feedback using the Feedback button at the top of the UI, next to 'Account'. Thank you for helping to make this game better! -Alex]\n")
+            time.sleep(1)
