@@ -1692,10 +1692,16 @@ class TestDevetIntroEvent:
         player.skip_dialog = False
         with (
             patch("src.story.ch03.print_slow") as mock_print,
+            patch("src.story.ch03.say") as mock_say,
             patch("src.story.ch03.time.sleep"),
         ):
             ev.process()
         assert mock_print.called
+        mock_say.assert_any_call("Eat.", "Devet", "neutral")
+        mock_say.assert_any_call("It's food.", "Devet", "neutral")
+        # 7 spoken lines (4 Devet, 3 Jean) — terser than Mara's scene by design,
+        # but still two real exchanges plus the wordless food offer.
+        assert mock_say.call_count == 7
         assert player.universe.story.get("devet_intro_done") == "1"
 
     def test_set_gate_with_no_universe(self):

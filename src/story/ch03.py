@@ -14,6 +14,7 @@ _JEAN_MARA_GORRAN = [
     ("Mara", None, "neutral"),
     ("Gorran", None, "neutral"),
 ]
+_JEAN_DEVET = [("Jean", "left", "neutral"), ("Devet", None, "neutral")]
 
 
 class GorranGestureEvent(Event):
@@ -302,7 +303,12 @@ class MaraFirstContactEvent(Event):
 class DevetIntroEvent(Event):
     """
     Fires once on Jean's first entry to FireRing (1,1) in the nomad camp sub-map.
-    Devet tends the fire, wordless. Hands Jean a bowl — not a question. Gorran settles.
+    Devet tends the fire. He offers food wordlessly — not a question — then two
+    short, dry exchanges give the player a sense of him without breaking his
+    terseness: he deflects a direct question about himself and declines a
+    compliment in the same minimal register. He offers no commentary on Jean
+    ("heading west" look) or on Gorran — that restraint is the character, so it
+    stays narrated rather than spoken. Gorran settles at the camp's edge.
     Sets story gate 'devet_intro_done'.
     """
 
@@ -331,10 +337,44 @@ class DevetIntroEvent(Event):
             )
             time.sleep(1.5)
             print_slow(
-                "He didn't offer this observation aloud. He picked up a bowl and filled it from "
-                "the pot and held it out. It was not a question."
+                "He didn't offer this observation aloud. His eyes moved to Gorran once — a brief, "
+                "unhurried assessment, the same one he'd have given an unfamiliar dog — and returned "
+                "to the pot. If a Golemite unsettled him, nothing in his face admitted it."
             )
             time.sleep(1)
+
+            begin_conversation(_JEAN_DEVET)
+            say("Eat.", "Devet", "neutral")
+            time.sleep(0.5)
+            print_slow(
+                "He filled a bowl from the pot and held it out. It was not a question."
+            )
+            time.sleep(0.8)
+            say("Thank you.", "Jean", "neutral")
+            time.sleep(0.5)
+            print_slow(
+                "He'd already turned back to the fire. The thanks hadn't needed an answer."
+            )
+            time.sleep(1)
+
+            say("How long have you been doing this?", "Jean", "curious")
+            time.sleep(0.8)
+            say(
+                "Long enough I don't remember what I was doing before.",
+                "Devet",
+                "neutral",
+            )
+            time.sleep(1)
+            say("Probably something less useful.", "Devet", "neutral")
+            time.sleep(0.5)
+            print_slow("It took Jean a second to realize that had been a joke.")
+            time.sleep(1)
+
+            say("It's good.", "Jean", "neutral")
+            time.sleep(0.8)
+            say("It's food.", "Devet", "neutral")
+            time.sleep(1)
+
             print_slow(
                 "Gorran stood where Jean had left him, still. His presence had settled into the "
                 "camp's edge the way large stones settle: without effort, without apology."
