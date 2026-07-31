@@ -153,6 +153,74 @@ describe('BattlefieldGrid', () => {
         expect(jeanInPanel.length).toBeLessThanOrEqual(1);
     });
 
+    describe('combat speed scaling (issue #460)', () => {
+        beforeEach(() => {
+            vi.useFakeTimers();
+            mockPlaySFX.mockClear();
+        });
+
+        afterEach(() => {
+            vi.useRealTimers();
+        });
+
+        const combatWithAnimation = {
+            ...mockCombat,
+            log: [
+                {
+                    animation: {
+                        type: 'attack',
+                        source_id: 'player',
+                        target_id: 'enemy_goblin',
+                        outcome: 'hit'
+                    }
+                }
+            ]
+        };
+
+        it('finishes the animation in half the time at 2x combat speed', () => {
+            const onAnimatingChange = vi.fn();
+            render(
+                <BattlefieldGrid
+                    combat={combatWithAnimation}
+                    tab="overview"
+                    zoom={1}
+                    onAnimatingChange={onAnimatingChange}
+                    displayedLogCount={1}
+                    combatSpeed={2}
+                />
+            );
+            onAnimatingChange.mockClear();
+
+            const fullDuration = getAnimationDuration('attack');
+
+            // Just under half the natural duration: still animating.
+            act(() => vi.advanceTimersByTime(fullDuration / 2 - 20));
+            expect(onAnimatingChange).not.toHaveBeenCalledWith(false);
+
+            // Past half the natural duration: the 2x-scaled animation has finished.
+            act(() => vi.advanceTimersByTime(40));
+            expect(onAnimatingChange).toHaveBeenCalledWith(false);
+        });
+
+        it('passes the combat-speed multiplier into playSFX for phase-aligned cues', () => {
+            render(
+                <BattlefieldGrid
+                    combat={combatWithAnimation}
+                    tab="overview"
+                    zoom={1}
+                    displayedLogCount={1}
+                    combatSpeed={1.5}
+                />
+            );
+
+            // 'attack's windup phase is 200ms natural; at 1.5x it elapses in ~133ms,
+            // after which the 'strike' phase fires its attack_swipe cue.
+            act(() => vi.advanceTimersByTime(150));
+
+            expect(mockPlaySFX).toHaveBeenCalledWith('attack_swipe', 1.5);
+        });
+    });
+
     describe('onAnimatingChange callback', () => {
         beforeEach(() => {
             vi.useFakeTimers();
@@ -348,7 +416,7 @@ describe('BattlefieldGrid', () => {
 
             // Finish the attack animation — the chained death animation should begin
             act(() => vi.advanceTimersByTime(800 + 50));
-            expect(mockPlaySFX).toHaveBeenCalledWith('enemy_death');
+            expect(mockPlaySFX).toHaveBeenCalledWith('enemy_death', 1);
             expect(container.querySelector('svg[viewBox="-100 -100 200 200"]')).not.toBeNull();
 
             // Let the death animation finish completely

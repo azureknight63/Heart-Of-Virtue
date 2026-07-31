@@ -14,6 +14,8 @@ class MockAudio {
         this.volume = 1;
         this.loop = false;
         this.currentTime = 0;
+        this.playbackRate = 1;
+        this.preservesPitch = false;
         global.__audioInstances = global.__audioInstances || [];
         global.__audioInstances.push(this);
     }
@@ -318,6 +320,82 @@ describe('AudioContext', () => {
         expect(() => sfxInstance.onended()).not.toThrow();
     });
 
+    it('defaults SFX playbackRate to 1x with pitch preserved', () => {
+        const wrapper = ({ children }) => <AudioProvider>{children}</AudioProvider>;
+        const { result } = renderHook(() => useAudio(), { wrapper });
+
+        act(() => { result.current.playSFX('click'); });
+        const sfxInstance = global.__audioInstances[global.__audioInstances.length - 1];
+
+        expect(sfxInstance.playbackRate).toBe(1);
+        expect(sfxInstance.preservesPitch).toBe(true);
+    });
+
+    it('sets playbackRate from the passed combat-speed multiplier (issue #460)', () => {
+        const wrapper = ({ children }) => <AudioProvider>{children}</AudioProvider>;
+        const { result } = renderHook(() => useAudio(), { wrapper });
+
+        act(() => { result.current.playSFX('attack_swipe', 2); });
+        const sfxInstance = global.__audioInstances[global.__audioInstances.length - 1];
+
+        expect(sfxInstance.playbackRate).toBe(2);
+        expect(sfxInstance.preservesPitch).toBe(true);
+    });
+
+    it('normalizes an invalid speed to 1x rather than setting a zero/negative playbackRate', () => {
+        const wrapper = ({ children }) => <AudioProvider>{children}</AudioProvider>;
+        const { result } = renderHook(() => useAudio(), { wrapper });
+
+        act(() => { result.current.playSFX('attack_swipe', 0); });
+        expect(global.__audioInstances[global.__audioInstances.length - 1].playbackRate).toBe(1);
+
+        act(() => { result.current.playSFX('attack_swipe', -2); });
+        expect(global.__audioInstances[global.__audioInstances.length - 1].playbackRate).toBe(1);
+    });
+
+    it('defaults combatSpeed to 1x and persists changes via setCombatSpeed', () => {
+        const wrapper = ({ children }) => <AudioProvider>{children}</AudioProvider>;
+        const { result } = renderHook(() => useAudio(), { wrapper });
+
+        expect(result.current.combatSpeed).toBe(1);
+
+        act(() => { result.current.setCombatSpeed(1.5); });
+        expect(result.current.combatSpeed).toBe(1.5);
+
+        const saved = JSON.parse(localStorage.getItem('audioPreferences'));
+        expect(saved.combatSpeed).toBe(1.5);
+    });
+
+    it('normalizes a corrupted stored combatSpeed (0/negative/non-numeric) to the 1x default', () => {
+        localStorage.setItem('audioPreferences', JSON.stringify({
+            musicVolume: 0.5,
+            sfxVolume: 0.5,
+            isMusicMuted: false,
+            isSfxMuted: false,
+            combatSpeed: 0
+        }));
+
+        const wrapper = ({ children }) => <AudioProvider>{children}</AudioProvider>;
+        const { result } = renderHook(() => useAudio(), { wrapper });
+
+        expect(result.current.combatSpeed).toBe(1);
+    });
+
+    it('loads combatSpeed from localStorage', () => {
+        localStorage.setItem('audioPreferences', JSON.stringify({
+            musicVolume: 0.5,
+            sfxVolume: 0.5,
+            isMusicMuted: false,
+            isSfxMuted: false,
+            combatSpeed: 2
+        }));
+
+        const wrapper = ({ children }) => <AudioProvider>{children}</AudioProvider>;
+        const { result } = renderHook(() => useAudio(), { wrapper });
+
+        expect(result.current.combatSpeed).toBe(2);
+    });
+
     it('exposes no-op defaults when used outside an AudioProvider', () => {
         const { result } = renderHook(() => useAudio());
 
@@ -326,6 +404,7 @@ describe('AudioContext', () => {
         expect(result.current.isMusicMuted).toBe(false);
         expect(result.current.isSfxMuted).toBe(false);
         expect(result.current.currentBGM).toBeNull();
+        expect(result.current.combatSpeed).toBe(1);
 
         expect(() => result.current.playBGM('adventure')).not.toThrow();
         expect(() => result.current.stopBGM()).not.toThrow();
@@ -335,5 +414,6 @@ describe('AudioContext', () => {
         expect(() => result.current.setSfxVolume(0.2)).not.toThrow();
         expect(() => result.current.setIsMusicMuted(true)).not.toThrow();
         expect(() => result.current.setIsSfxMuted(true)).not.toThrow();
+        expect(() => result.current.setCombatSpeed(2)).not.toThrow();
     });
 });

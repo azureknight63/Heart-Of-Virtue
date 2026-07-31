@@ -56,9 +56,9 @@ describe('BattlefieldGrid streaming mode', () => {
     );
     // attack_swipe @0, attack_hit @0.75*200=150ms
     act(() => vi.advanceTimersByTime(0));
-    expect(mockPlaySFX).toHaveBeenCalledWith('attack_swipe');
+    expect(mockPlaySFX).toHaveBeenCalledWith('attack_swipe', 1);
     act(() => vi.advanceTimersByTime(150));
-    expect(mockPlaySFX).toHaveBeenCalledWith('attack_hit');
+    expect(mockPlaySFX).toHaveBeenCalledWith('attack_hit', 1);
     // No phase 'attack_swipe' double-fire from the config path: exactly the chain.
     const cues = mockPlaySFX.mock.calls.map((c) => c[0]);
     expect(cues).toEqual(['attack_swipe', 'attack_hit']);
@@ -116,7 +116,7 @@ describe('BattlefieldGrid streaming mode', () => {
       />
     );
     act(() => vi.advanceTimersByTime(0));
-    expect(mockPlaySFX).toHaveBeenCalledWith('attack_swipe');
+    expect(mockPlaySFX).toHaveBeenCalledWith('attack_swipe', 1);
   });
 
   it('ignores the log-spooler path when streaming (no phase SFX from the log)', () => {

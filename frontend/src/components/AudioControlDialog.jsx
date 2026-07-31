@@ -1,5 +1,6 @@
 import { useAudio } from '../context/AudioContext'
 import { colors } from '../styles/theme'
+import { COMBAT_SPEED_STEPS } from '../utils/combatTiming'
 import BaseDialog from './BaseDialog'
 import GameButton from './GameButton'
 
@@ -12,7 +13,9 @@ export default function AudioControlDialog({ onClose }) {
         isMusicMuted,
         setIsMusicMuted,
         isSfxMuted,
-        setIsSfxMuted
+        setIsSfxMuted,
+        combatSpeed,
+        setCombatSpeed
     } = useAudio()
 
     return (
@@ -119,6 +122,35 @@ export default function AudioControlDialog({ onClose }) {
                     </div>
                     <div style={{ textAlign: 'center', color: colors.primary, fontSize: '12px', marginTop: '5px' }}>
                         {Math.round(sfxVolume * 100)}%
+                    </div>
+                </div>
+
+                {/* Combat Speed Control (issue #460) */}
+                <div style={{ marginBottom: '15px' }}>
+                    <div style={{ color: colors.accent, fontSize: '14px', fontWeight: 'bold', marginBottom: '10px' }}>
+                        COMBAT SPEED
+                    </div>
+                    <div style={{ display: 'flex', gap: '6px' }}>
+                        {COMBAT_SPEED_STEPS.map((step) => (
+                            <button
+                                key={step}
+                                onClick={() => setCombatSpeed(step)}
+                                aria-pressed={combatSpeed === step}
+                                style={{
+                                    flex: 1,
+                                    padding: '6px 4px',
+                                    backgroundColor: combatSpeed === step ? colors.primary : colors.primaryDark,
+                                    color: combatSpeed === step ? '#000000' : colors.text.inverse,
+                                    border: `1px solid ${colors.text.inverse}`,
+                                    borderRadius: '4px',
+                                    cursor: 'pointer',
+                                    fontSize: '12px',
+                                    fontWeight: 'bold',
+                                }}
+                            >
+                                {step}x
+                            </button>
+                        ))}
                     </div>
                 </div>
 

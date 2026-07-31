@@ -13,6 +13,13 @@ export function normalizeSpeed(speed) {
   return typeof speed === 'number' && speed > 0 ? speed : 1;
 }
 
+/**
+ * Stepped combat-speed choices (issue #460) — kept discrete rather than a
+ * continuous slider so SFX time-stretch stays inside a clean-sounding band.
+ */
+export const COMBAT_SPEED_STEPS = [0.5, 0.75, 1, 1.5, 2];
+export const DEFAULT_COMBAT_SPEED = 1;
+
 /** A base duration (ms) scaled by the combat-speed multiplier. */
 export function effectiveDuration(baseMs, speed = 1) {
   return (baseMs || 0) / normalizeSpeed(speed);
