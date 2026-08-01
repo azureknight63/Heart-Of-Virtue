@@ -1813,18 +1813,6 @@
       "name": "EmptyCave"
     },
     {
-      "module": "src.tilesets.dark_grotto",
-      "name": "StartingRoom"
-    },
-    {
-      "module": "src.tilesets.general",
-      "name": "BlankTile"
-    },
-    {
-      "module": "src.tilesets.general",
-      "name": "Boundary"
-    },
-    {
       "module": "src.tilesets.grondelith_mineral_pools",
       "name": "GrondelithAlcove"
     },
@@ -1897,82 +1885,6 @@
       "name": "GrondelithRitualChamber"
     },
     {
-      "module": "src.tilesets.grondia",
-      "name": "GrondelithMineralPoolsEntrance"
-    },
-    {
-      "module": "src.tilesets.grondia",
-      "name": "GrondiaAntechamber"
-    },
-    {
-      "module": "src.tilesets.grondia",
-      "name": "GrondiaArcology"
-    },
-    {
-      "module": "src.tilesets.grondia",
-      "name": "GrondiaCitadel"
-    },
-    {
-      "module": "src.tilesets.grondia",
-      "name": "GrondiaConclave"
-    },
-    {
-      "module": "src.tilesets.grondia",
-      "name": "GrondiaEcumerium"
-    },
-    {
-      "module": "src.tilesets.grondia",
-      "name": "GrondiaFabricarium"
-    },
-    {
-      "module": "src.tilesets.grondia",
-      "name": "GrondiaGateEast"
-    },
-    {
-      "module": "src.tilesets.grondia",
-      "name": "GrondiaGateSouth"
-    },
-    {
-      "module": "src.tilesets.grondia",
-      "name": "GrondiaGateWest"
-    },
-    {
-      "module": "src.tilesets.grondia",
-      "name": "GrondiaPassage"
-    },
-    {
-      "module": "src.tilesets.grondia",
-      "name": "GrondiaResidences"
-    },
-    {
-      "module": "src.tilesets.test_chest",
-      "name": "ChestRoom"
-    },
-    {
-      "module": "src.tilesets.verdette_caverns",
-      "name": "VerdetteRoom"
-    },
-    {
-      "module": "src.tilesets.verdette_caverns",
-      "name": "VerdetteRoom2"
-    },
-    {
-      "module": "src.tilesets.verdette_caverns",
-      "name": "VerdetteRoom3"
-    },
-    {
-      "module": "src.tilesets.verdette_caverns",
-      "name": "VerdetteRoom4"
-    },
-    {
-      "module": "src.tilesets.verdette_caverns",
-      "name": "VerdetteRoom5"
-    },
-    {
-      "module": "src.tilesets.verdette_caverns",
-      "name": "VerdetteSpring"
-    },
-    {
       "module": "src.universe",
       "name": "Universe"
     },
@@ -1985,6 +1897,6 @@
       "name": "UUID"
     }
   ],
-  "count": 496,
+  "count": 474,
   "header_version": 1
 }

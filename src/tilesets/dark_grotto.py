@@ -1,23 +1,6 @@
 from src.tiles import MapTile
 
 
-class StartingRoom(MapTile):
-    def __init__(self, universe, current_map, x, y, description: str = None):
-        super().__init__(
-            universe,
-            current_map,
-            x,
-            y,
-            description="""
-        Jean finds himself in a gloomy cavern. Cold grey stone surrounds him. In the center of the room is a large
-        rock resembling a table. A silver beam of light falls through a small hole in the ceiling - the only source
-        of light in the room. Jean can make out a few beds of moss and mushrooms littering the cavern floor. The
-        darkness seems to extend endlessly in all directions.
-        """,
-        )
-        self.symbol = "#"
-
-
 class EmptyCave(MapTile):
     def __init__(
         self, universe=None, current_map=None, x=None, y=None, description=None
