@@ -424,9 +424,13 @@ class NomadBoy(ConversationalNPCMixin, Friend):
         ),
     ]
 
-    def __init__(self):
-        description = random.choice(self._DESCRIPTIONS)
-        personality = random.choice(_YOUNG_NOMAD_PERSONALITIES)
+    # Issue #463: lets a map author pin a specific nomad's flavor text and
+    # personality instead of always getting the random draw below.
+    MAP_AUTHORED_PARAMS = {"description", "personality"}
+
+    def __init__(self, description=None, personality=None):
+        description = description or random.choice(self._DESCRIPTIONS)
+        personality = personality or random.choice(_YOUNG_NOMAD_PERSONALITIES)
 
         super().__init__(
             name="Nomad Boy",
@@ -458,9 +462,14 @@ class NomadBoy(ConversationalNPCMixin, Friend):
             self.known_moves = []
         self._chat_config_path = None
         self._init_chat_attrs()
-        # Override with randomized personality (set after _init_chat_attrs so
-        # _ensure_personality finds it already populated and skips LLM/fallback).
+        # Override with randomized (or authored) personality, set after
+        # _init_chat_attrs so _ensure_personality finds it already populated
+        # and skips LLM/fallback. `self.personality` is a plain public mirror
+        # of the same value, purely so it can round-trip through the
+        # authored-placeholder format (map_placeholders.to_placeholder reads
+        # attributes by their constructor-kwarg name, not the private one).
         self._chat_personality = personality
+        self.personality = personality
 
     def talk(self, player):
         """Terminal fallback — static dialogue. Web uses chat_open/chat_respond via the API."""
@@ -573,9 +582,13 @@ class NomadGirl(ConversationalNPCMixin, Friend):
         ),
     ]
 
-    def __init__(self):
-        description = random.choice(self._DESCRIPTIONS)
-        personality = random.choice(_YOUNG_NOMAD_PERSONALITIES)
+    # Issue #463: lets a map author pin a specific nomad's flavor text and
+    # personality instead of always getting the random draw below.
+    MAP_AUTHORED_PARAMS = {"description", "personality"}
+
+    def __init__(self, description=None, personality=None):
+        description = description or random.choice(self._DESCRIPTIONS)
+        personality = personality or random.choice(_YOUNG_NOMAD_PERSONALITIES)
 
         super().__init__(
             name="Nomad Girl",
@@ -607,9 +620,14 @@ class NomadGirl(ConversationalNPCMixin, Friend):
             self.known_moves = []
         self._chat_config_path = None
         self._init_chat_attrs()
-        # Override with randomized personality (set after _init_chat_attrs so
-        # _ensure_personality finds it already populated and skips LLM/fallback).
+        # Override with randomized (or authored) personality, set after
+        # _init_chat_attrs so _ensure_personality finds it already populated
+        # and skips LLM/fallback. `self.personality` is a plain public mirror
+        # of the same value, purely so it can round-trip through the
+        # authored-placeholder format (map_placeholders.to_placeholder reads
+        # attributes by their constructor-kwarg name, not the private one).
         self._chat_personality = personality
+        self.personality = personality
 
     def talk(self, player):
         """Terminal fallback — static dialogue. Web uses chat_open/chat_respond via the API."""

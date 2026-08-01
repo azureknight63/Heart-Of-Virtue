@@ -16,6 +16,15 @@ from src.items import Item  # noqa; This is used in type hints
 
 
 class Object:
+    # Issue #463: authored-placeholder metadata. `tile`/`player` are always
+    # runtime backrefs injected by the loader, never authored -- deliberately
+    # absent from both sets below.
+    MAP_AUTHORED_PARAMS = {
+        "name", "description", "hidden", "hide_factor", "idle_message",
+        "discovery_message", "aliases",
+    }
+    MAP_AUTHORED_OVERRIDES = {"hidden", "hide_factor", "name", "description"}
+
     def __init__(
         self,
         name,
@@ -157,6 +166,14 @@ class WallSwitch(Object):
     A wall switch that does something when pressed.
     """
 
+    # Issue #463: `event_on`/`event_off` are populated via the legacy
+    # bang-string `params` mini-language today, not a direct constructor
+    # kwarg -- declared as overrides (nested-placeholder Event references
+    # applied via setattr) so an authored map can attach them directly
+    # instead of round-tripping through bang-string parsing.
+    MAP_AUTHORED_PARAMS = {"position"}
+    MAP_AUTHORED_OVERRIDES = {"event_on", "event_off"}
+
     def __init__(self, player, tile, params=None, position: bool = False):
         description = "A small depression in the wall. You may be able to PRESS on it."
         super().__init__(
@@ -192,10 +209,18 @@ class WallSwitch(Object):
             self.position = True
             if self.event_on is not None:
                 self.event_on.process()
+                # Clear a consumed non-repeat event so it isn't left dangling
+                # (mirrors StreetLantern.light/douse's event_on/event_off
+                # handling -- every other one-shot-attached-event object in
+                # this file already does this; WallSwitch previously didn't).
+                if not getattr(self.event_on, "repeat", False):
+                    self.event_on = None
         else:
             self.position = False
             if self.event_off is not None:
                 self.event_off.process()
+                if not getattr(self.event_off, "repeat", False):
+                    self.event_off = None
 
     def push(self):
         self.press()
@@ -257,6 +282,27 @@ class Container(Object):
 
     # Class constants for better performance and memory usage
     _POSSIBLE_STATES = ("closed", "opened")
+
+    # Issue #463: `inventory` is the nested-placeholder case the issue calls
+    # out explicitly -- each element is itself an authored Item placeholder,
+    # resolved recursively. `state`/`revealed`/`possible_states` are
+    # deliberately excluded: state is derived from start_open then mutated at
+    # runtime (the classic "already opened" trap) and possible_states is a
+    # copied class constant -- none of these are authored data.
+    # `allowed_item_types` is stored under a different name than its
+    # constructor kwarg (`allowed_subtypes`), so it's an override rather than
+    # a param -- setattr doesn't care about the constructor's own names.
+    # `inventory` is declared in both buckets: Crate/Shelf don't expose it as
+    # a constructor kwarg at all (they hardcode name/description/nickname),
+    # so their starting stock can only reach the instance via the override
+    # (post-construction setattr) path, while plain Container accepts it
+    # directly as a constructor kwarg.
+    MAP_AUTHORED_PARAMS = {
+        "name", "description", "hidden", "hide_factor", "start_open",
+        "idle_message", "discovery_message", "nickname", "locked",
+        "inventory", "events", "merchant", "stock_count",
+    }
+    MAP_AUTHORED_OVERRIDES = {"allowed_item_types", "inventory"}
 
     @property
     def start_open(self) -> bool:
@@ -615,6 +661,11 @@ class Shrine(Object):
     game effects should only happen once.
     """
 
+    # Issue #463: `event` is populated via the bang-string `params` mini
+    # language today -- an override (nested-placeholder Event reference) lets
+    # an authored map attach it directly instead.
+    MAP_AUTHORED_OVERRIDES = {"event"}
+
     def __init__(self, player=None, tile=None, params=None):
         description = "A beautiful shrine depicting a variety of saints praying to God."
         super().__init__(
@@ -655,6 +706,9 @@ class HealingSpring(Object):
     A spring that restores Jean's health when he drinks from it. He can also WASH or CLEAN himself in it,
     which provides a small, temporary boost to charisma and max fatigue.
     """
+
+    # Issue #463: same rationale as Shrine.
+    MAP_AUTHORED_OVERRIDES = {"event"}
 
     def __init__(self, player, tile, params=None):
         description = "A burbling spring with fresh smelling water. It is clean and very inviting."
@@ -713,6 +767,14 @@ class Passageway(Object):
     A passageway that takes Jean to a different location. This can either be a location in the same map or a
     different map entirely.
     """
+
+    # Issue #463: the cleanest class in the file -- every field is already a
+    # real, directly-stored constructor kwarg, no override bucket needed.
+    MAP_AUTHORED_PARAMS = {
+        "events_before", "events_after", "teleport_map", "teleport_tile",
+        "persist", "hidden", "hide_factor", "passthrough", "name",
+        "description", "idle_message", "discovery_message",
+    }
 
     def __init__(
         self,
@@ -821,6 +883,8 @@ class MarketBell(Object):
     trigger a configured event. The bell provides feedback when rung and can optionally process an attached event.
     """
 
+    MAP_AUTHORED_PARAMS = {"event"}
+
     def __init__(self, player: Player, tile: MapTile, event: Event = None):
         description = "A small metal bell hangs from a short iron hook; it looks like it can be RUNG to draw attention."
         super().__init__(
@@ -862,6 +926,8 @@ class Fountain(Object):
     """A decorative stone fountain providing simple ambiance. Jean can DRINK (minor refresh) or LISTEN/ADMIRE it.
     Optionally an event may be attached which triggers the first time it is drunk from.
     """
+
+    MAP_AUTHORED_PARAMS = {"event"}
 
     def __init__(self, player: Player, tile: MapTile, event: Event = None):
         description = (
@@ -906,6 +972,13 @@ class Fountain(Object):
 
 class StreetLantern(Object):
     """A wrought iron street lantern that can be LIGHTed or DOUSEd. Optional events may trigger on state change."""
+
+    # Issue #463: `lit` is a real ctor kwarg. event_when_lighting/dousing are
+    # stored under different attribute names (event_on/event_off) than their
+    # constructor kwargs, so they're declared as overrides (setattr doesn't
+    # care about the constructor's own parameter names).
+    MAP_AUTHORED_PARAMS = {"lit"}
+    MAP_AUTHORED_OVERRIDES = {"event_on", "event_off"}
 
     def __init__(
         self,
@@ -980,6 +1053,10 @@ class NoticeBoard(Object):
     triggers on first READ.
     """
 
+    # Issue #463: `_read_once` is a private "already triggered" runtime flag
+    # (always starts False) and is deliberately not declared here.
+    MAP_AUTHORED_PARAMS = {"event", "notes"}
+
     def __init__(
         self,
         player: Player,
@@ -1029,6 +1106,8 @@ class NoticeBoard(Object):
 class PrayerCandleRack(Object):
     """A rack of small votive candles. Jean can LIGHT a candle (increments count) or PRAY. Optional single event on PRAY."""
 
+    MAP_AUTHORED_PARAMS = {"lit_candles", "event"}
+
     def __init__(
         self,
         player: Player,
@@ -1077,6 +1156,8 @@ class PrayerCandleRack(Object):
 
 class MarketGong(Object):
     """A larger bronze gong used to signal openings or special sales. Jean can STRIKE/HIT it; optional event triggers."""
+
+    MAP_AUTHORED_PARAMS = {"event"}
 
     def __init__(self, player: Player, tile: MapTile, event: Event = None):
         description = "A wide bronze gong is suspended from a stout frame. A padded mallet invites someone to STRIKE it."  # noqa: E501
@@ -1220,6 +1301,11 @@ class GeminateGeode(Object):
 class Campfire(Object):
     """A campfire at the nomad camp. Can be LIT, used to WARM oneself, STOKEd, or SAT beside for a narrative moment.
     """
+
+    # Issue #463: `lit` is the *starting* state; it's also mutated by
+    # light() at runtime, same ambiguity as Container.state -- the template
+    # only ever represents the starting condition.
+    MAP_AUTHORED_PARAMS = {"lit"}
 
     def __init__(self, player=None, tile=None, lit: bool = True):
         description = (

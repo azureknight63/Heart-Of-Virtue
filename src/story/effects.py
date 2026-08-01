@@ -81,6 +81,15 @@ class MemoryFlash(Event):
         name: Event name for tracking
     """
 
+    # Issue #463: declared for forward-compatibility -- every shipped
+    # subclass (Ch01_Memory_Amelia, Ch02KingSlimeMemoryFlash) hardcodes these
+    # in its own __init__ rather than forwarding them as kwargs, so they're
+    # filtered out for those concrete classes today (sig-check against the
+    # subclass's own __init__), leaving a bare class reference. A future
+    # data-driven MemoryFlash subclass that does forward them starts working
+    # automatically, no further metadata edit needed.
+    MAP_AUTHORED_PARAMS = {"memory_lines", "aftermath_text", "cast"}
+
     def __init__(
         self,
         player,
@@ -441,6 +450,10 @@ class Teleport(Event):
         name (str): Name of the event.
     """
 
+    # Issue #463: adds the typed destination fields on top of Event's base
+    # authored set (name/repeat/params/...).
+    MAP_AUTHORED_PARAMS = {"target_map_name", "target_coordinates"}
+
     def __init__(
         self,
         player,
@@ -624,6 +637,12 @@ class NPCSpawnerEvent(Event):
     Removal:
     - Event removes itself after spawning unless repeat=True (repeat use not generally recommended).
     """
+
+    # Issue #463: already the precedent pattern the whole placeholder format
+    # generalizes -- npc_cls (string, class object, or the pre-existing
+    # {"__class_type__": "npc:ClassName"} marker) + count, both real
+    # constructor kwargs. name/repeat/params inherited from Event.
+    MAP_AUTHORED_PARAMS = {"npc_cls", "count"}
 
     def __init__(
         self,
