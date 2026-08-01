@@ -301,6 +301,90 @@ class TestMoveCast:
 
 
 # ---------------------------------------------------------------------------
+# Move.advance — interrupt handling (issue #417)
+#
+# WarCry sets move.interrupted = True on a target's in-progress move, but
+# nothing previously read the flag. advance() now checks it first: abort
+# immediately, skip straight to cooldown (forfeiting spent prep/execute
+# progress), and consume the flag so it doesn't linger on a reused Move
+# instance the next time it's cast.
+# ---------------------------------------------------------------------------
+
+
+class TestMoveAdvanceInterrupt:
+    def test_interrupt_skips_to_cooldown_and_forfeits_progress(self):
+        user = _make_combatant()
+        move = _make_move(user)
+        move.stage_beat = [5, 1, 2, 7]
+        move.current_stage = 0
+        move.beats_left = 3  # mid-prep, 3 beats already spent
+        move.interrupted = True
+        user.current_move = move
+
+        move.advance(user)
+
+        assert move.current_stage == 3
+        assert move.beats_left == 7  # the move's own cooldown duration
+        assert move.interrupted is False  # flag consumed, not left stale
+        assert move.initialized is False
+        assert user.current_move is None
+
+    def test_interrupt_does_not_run_prep_or_execute(self):
+        user = _make_combatant()
+        move = _make_move(user)
+        move.stage_beat = [5, 1, 2, 7]
+        move.current_stage = 1  # mid-execute
+        move.beats_left = 1
+        move.interrupted = True
+        user.current_move = move
+
+        with patch.object(move, "prep") as mock_prep, \
+             patch.object(move, "execute") as mock_execute:
+            move.advance(user)
+
+        mock_prep.assert_not_called()
+        mock_execute.assert_not_called()
+
+    def test_interrupt_does_not_clobber_a_different_active_move(self):
+        """An interrupt firing on a move that's already detached (mid-cooldown
+        from a prior beat) must not blow away whatever move the user has since
+        selected."""
+        user = _make_combatant()
+        move = _make_move(user)
+        move.stage_beat = [5, 1, 2, 7]
+        move.current_stage = 2
+        move.beats_left = 1
+        move.interrupted = True
+        other_move = MagicMock()
+        user.current_move = other_move
+
+        move.advance(user)
+
+        assert user.current_move is other_move
+
+    def test_interrupt_cooldown_continues_ticking_on_next_beat(self):
+        """Regression: current_stage > 0 (not user.current_move) is what keeps
+        advance() processing a detached move's cooldown countdown — confirms
+        the interrupt path plugs into that existing mechanism correctly."""
+        user = _make_combatant()
+        move = _make_move(user)
+        move.stage_beat = [5, 1, 2, 3]
+        move.current_stage = 0
+        move.beats_left = 2
+        move.interrupted = True
+        user.current_move = move
+
+        move.advance(user)  # interrupt beat: jumps to cooldown (3 beats)
+        assert move.current_stage == 3
+        assert move.beats_left == 3
+        assert user.current_move is None
+
+        move.advance(user)  # next beat: cooldown ticks down normally
+        assert move.beats_left == 2
+        assert move.current_stage == 3  # unchanged until beats_left hits 0
+
+
+# ---------------------------------------------------------------------------
 # Move.parry
 # ---------------------------------------------------------------------------
 

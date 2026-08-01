@@ -573,6 +573,41 @@ class TestWarCryExecute:
             move.execute(player)
         assert winding.interrupted is True
 
+    def test_interrupted_move_actually_aborts_on_its_next_advance(self):
+        """End-to-end for issue #417: WarCry sets .interrupted, and the
+        target's move now actually honors it on its next advance() -- it used
+        to be a flag nothing read."""
+        from src.moves._base import Move
+
+        player, enemies, move = self._setup_with_enemies(1)
+        enemy = enemies[0]
+        winding = Move(
+            name="Winding Move",
+            description="",
+            xp_gain=0,
+            current_stage=0,
+            beats_left=3,
+            stage_announce=["", "", "", ""],
+            target=enemy,
+            user=enemy,
+            stage_beat=[5, 1, 2, 8],
+            targeted=False,
+        )
+        enemy.current_move = winding
+
+        with patch("src.moves._mastery.functions.inflict"), \
+             patch("builtins.print"):
+            move.execute(player)  # sets winding.interrupted = True
+
+        assert winding.interrupted is True
+
+        winding.advance(enemy)  # the target's own next beat
+
+        assert winding.interrupted is False  # consumed
+        assert winding.current_stage == 3  # skipped straight to cooldown
+        assert winding.beats_left == 8  # the move's own cooldown duration
+        assert enemy.current_move is None  # freed up before the cooldown ends
+
     def test_skips_dead_enemies(self):
         player, enemies, move = self._setup_with_enemies(2)
         enemies[0].is_alive.return_value = False

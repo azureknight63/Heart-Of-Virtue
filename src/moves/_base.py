@@ -342,6 +342,20 @@ class Move:  # master class for all moves
 
     def advance(self, user):
         self.user = user  # Ensure user is always current
+        if self.interrupted:
+            # WarCry-style interrupt (issue #417): abort immediately, skipping
+            # whatever prep/execute progress was made, straight to cooldown.
+            # Mirrors the stage-3 transition below (current_stage > 0 keeps
+            # advance() ticking this move's cooldown down on future beats even
+            # after user.current_move is cleared) so the interrupted actor
+            # still pays the move's normal cooldown before acting again.
+            self.interrupted = False
+            self.current_stage = 3
+            self.beats_left = self.stage_beat[3]
+            if user.current_move == self:
+                user.current_move = None
+            self.initialized = False
+            return
         self.evaluate()
         if (
             user.current_move == self or self.current_stage > 0
