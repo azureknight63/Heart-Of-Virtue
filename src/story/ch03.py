@@ -4,7 +4,7 @@ Chapter 03 events
 
 from src.events import Event
 from src.functions import print_slow
-from src.narration import narrate, say, begin_conversation
+from src.narration import narrate, say, begin_conversation, enter_op, exit_op
 import time
 
 # Recurring conversation cast, to avoid retyping the same tuple at every stage.
@@ -160,9 +160,12 @@ class CampEntryGreetingEvent(Event):
     """
     Fires once on Jean's first entry to CampEntry (3,0) after the smell event fires.
 
-    Jean and Gorran stand at the camp's east edge. A quiet beat of arrival — not
-    triumphant, just present. Then from across the camp, Liss spots Gorran for the
-    first time and scurries off. Jean watches her go.
+    Jean and Gorran stand at the camp's east edge. Jean notices aloud how thoroughly
+    human this place is — tents built for people, laundry on a line, food cooking
+    that's meant for human mouths. Gorran rumbles knowingly. Then Liss comes tearing
+    around the fire ring, spots Jean, then Gorran, and flees in a fluster. Jean closes
+    by asking Gorran what that was about, then names the actual goal: ask around the
+    camp for a way across the river.
 
     Gate: 'nomad_camp_entered' must be '1' (smell event already fired).
     Sets: 'camp_entry_greeting_done'.
@@ -203,22 +206,77 @@ class CampEntryGreetingEvent(Event):
                     ("Gorran", None, "neutral"),
                 ]
             )
-            say("Not bad.", "Jean", "neutral", thought=True)
+            say("Tents.", "Jean", "curious")
+            time.sleep(0.4)
+            say(
+                "Real ones, too — sized for people. Not lean-tos, not burrows. "
+                "Somebody built this to last.",
+                "Jean",
+                "curious",
+            )
+            time.sleep(0.6)
+            say(
+                "Clothes on a line, over there. Someone's doing laundry like the world "
+                "hasn't ended.",
+                "Jean",
+                "neutral",
+            )
+            time.sleep(0.6)
+            say(
+                "And whatever's cooking on that fire smells like real food. For real, "
+                "human mouths.",
+                "Jean",
+                "happy",
+            )
             time.sleep(0.5)
             print_slow(
                 "Gorran made the low sound he sometimes made — not agreement exactly, "
-                "but not disagreement either. Jean had stopped trying to classify it."
+                "but not disagreement either. Jean had come to recognize it as a kind "
+                "of knowing."
             )
             time.sleep(1)
-            # Liss spots Gorran and scurries off
+            # Liss spots Jean, then Gorran, and flees in a fluster
             print_slow(
-                "From somewhere in the interior of the camp, a girl spotted them — "
-                "dark-haired, young. Her eyes went wide. She made a sound — half-squeal, "
-                "half-gasp — and scurried off toward the fire ring, hair flying."
+                "A girl came around the fire ring at a half-run, dark hair flying, and "
+                "pulled up short when she saw Jean."
+            )
+            time.sleep(0.8)
+            say(
+                "Oh — hi! You're new. Are you—",
+                "Liss",
+                "surprised",
+                enter=enter_op("Liss", side="right", emotion="surprised"),
+            )
+            time.sleep(0.5)
+            print_slow("Her eyes slid past Jean's shoulder and found Gorran.")
+            time.sleep(0.5)
+            say(
+                "Oh! OH. You're— he's— that's a real one, isn't it, that's—",
+                "Liss",
+                "surprised",
+                leave=exit_op("Liss", transition="fade"),
+            )
+            time.sleep(0.5)
+            print_slow(
+                "Whatever she meant to say next dissolved into a half-squeal, half-gasp. "
+                "She backed up two steps, spun, and bolted for the fire ring, hair "
+                "streaming behind her."
             )
             time.sleep(1.5)
+            print_slow("Jean watched her go, then glanced at Gorran.")
+            time.sleep(0.5)
+            say("What exactly was that about?", "Jean", "skeptical")
+            time.sleep(0.7)
             print_slow(
-                "Jean watched her go. He didn't know what to make of that. No time for it, anyway."
+                "Gorran didn't answer. Of course he didn't. Jean was fairly sure that "
+                "not-answering was itself an answer."
+            )
+            time.sleep(1)
+            say(
+                "Well — we're not getting anywhere standing here. Let's ask around, "
+                "see if anyone knows a way across that river.",
+                "Jean",
+                "neutral",
             )
             time.sleep(0.5)
         self._set_gate()
