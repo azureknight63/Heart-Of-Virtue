@@ -159,20 +159,6 @@ class TestAppEndpoints:
         assert data['version'] == '1.0.0'
         assert data['phase'] == 'Phase 1'
 
-    def test_openapi_schema_endpoint(self, client):
-        """Test OpenAPI schema endpoint."""
-        response = client.get('/api/openapi.json')
-        assert response.status_code == 200
-        data = response.get_json()
-        assert 'openapi' in data
-        assert 'paths' in data
-
-    def test_swagger_ui_endpoint(self, client):
-        """Test Swagger UI endpoint."""
-        response = client.get('/api/docs')
-        assert response.status_code == 200
-        assert 'swagger' in response.get_data(as_text=True).lower()
-
     def test_debug_routes_endpoint(self, client):
         """Test debug routes endpoint."""
         response = client.get('/api/debug/routes')

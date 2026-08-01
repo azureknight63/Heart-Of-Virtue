@@ -639,11 +639,19 @@ class TestNPCResistances:
     def test_poison_lands_on_ordinary_slime(self):
         """Direct regression test for issue #391's reproduction: a fresh Slime
         called with functions.inflict(Poisoned, chance=1.0) used to return
-        False (guaranteed immunity) because the pre-fix baseline was 1.0."""
+        False (guaranteed immunity) because the pre-fix baseline was 1.0.
+
+        With the fixed 0.3 baseline, effective_chance is 0.7 (not 1.0), so
+        inflict() still rolls RNG internally — the roll itself isn't what
+        this test is regression-checking. Pin it to a guaranteed-success
+        roll so the assertion verifies the resistance value (0.3, not the
+        old 1.0 immunity), not the luck of an unseeded random.random() call.
+        """
         from src.functions import inflict
         slime = Slime()
         status = Poisoned(slime)
-        assert inflict(status, slime, chance=1.0) is not False
+        with patch("src.functions.random.random", return_value=0.0):
+            assert inflict(status, slime, chance=1.0) is not False
 
 
 class TestNPCStateManagement:

@@ -17,7 +17,6 @@ This directory contains technical documentation for the Heart of Virtue project.
 
 - **[DEPLOYMENT_ROADMAP.md](DEPLOYMENT_ROADMAP.md)** - Deployment planning and procedures
 - **[FINAL_TEST_RESULTS.md](FINAL_TEST_RESULTS.md)** - Test results and coverage reports
-- **[OPENAPI_SCHEMA_TESTING.md](OPENAPI_SCHEMA_TESTING.md)** - OpenAPI schema validation
 
 ### Feature Documentation
 
@@ -64,7 +63,7 @@ New to the project? Start here:
 - **Frontend Development**: See FRONTEND_DOCUMENTATION.md and frontend/README.md
 - **Architecture**: See ARCHITECTURE_DIAGRAM.md and BACKEND_API_ARCHITECTURE.md
 - **Deployment**: See DEPLOYMENT_ROADMAP.md
-- **Testing**: See FINAL_TEST_RESULTS.md and OPENAPI_SCHEMA_TESTING.md
+- **Testing**: See FINAL_TEST_RESULTS.md
 - **Historical Info**: Check the archive/ subdirectory
 
 ---
