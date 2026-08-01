@@ -33,6 +33,15 @@ vi.mock('./LootDialog', () => ({
   ),
 }))
 
+vi.mock('./PreVictoryNarrativeDialog', () => ({
+  default: ({ text, onClose }) => (
+    <div data-testid="pre-victory-narrative-dialog">
+      <p>{text}</p>
+      <button onClick={() => onClose()}>Continue</button>
+    </div>
+  ),
+}))
+
 describe('CombatManager', () => {
   const mockCallbacks = {
     onAllocatePoints: vi.fn(),
@@ -41,6 +50,7 @@ describe('CombatManager', () => {
     onContinueToLoot: vi.fn(),
     onCollectLoot: vi.fn(),
     onSkipLoot: vi.fn(),
+    onPreVictoryNarrativeClose: vi.fn(),
   }
 
   const mockVictoryEndState = {
@@ -571,6 +581,81 @@ describe('CombatManager', () => {
         />
       )
       expect(screen.getByText(/250 EXP/)).toBeInTheDocument()
+    })
+  })
+
+  describe('Pre-Victory Narrative Dialog', () => {
+    const endStateWithNarrative = {
+      ...mockVictoryEndState,
+      pre_victory_narrative: 'The camp erupts in cheers.',
+    }
+
+    it('renders the narrative dialog when showPreVictoryNarrative is true and text is present', () => {
+      render(
+        <CombatManager
+          showVictoryDialog={false}
+          showDefeatDialog={false}
+          showLootDialog={false}
+          showPreVictoryNarrative={true}
+          endState={endStateWithNarrative}
+          playerWeight={0}
+          weightLimit={100}
+          {...mockCallbacks}
+        />
+      )
+      expect(screen.getByTestId('pre-victory-narrative-dialog')).toBeInTheDocument()
+      expect(screen.getByText('The camp erupts in cheers.')).toBeInTheDocument()
+      expect(screen.queryByTestId('victory-dialog')).not.toBeInTheDocument()
+    })
+
+    it('does not render when showPreVictoryNarrative is false', () => {
+      render(
+        <CombatManager
+          showVictoryDialog={true}
+          showDefeatDialog={false}
+          showLootDialog={false}
+          showPreVictoryNarrative={false}
+          endState={endStateWithNarrative}
+          playerWeight={0}
+          weightLimit={100}
+          {...mockCallbacks}
+        />
+      )
+      expect(screen.queryByTestId('pre-victory-narrative-dialog')).not.toBeInTheDocument()
+      expect(screen.getByTestId('victory-dialog')).toBeInTheDocument()
+    })
+
+    it('does not render when endState has no pre_victory_narrative', () => {
+      render(
+        <CombatManager
+          showVictoryDialog={false}
+          showDefeatDialog={false}
+          showLootDialog={false}
+          showPreVictoryNarrative={true}
+          endState={mockVictoryEndState}
+          playerWeight={0}
+          weightLimit={100}
+          {...mockCallbacks}
+        />
+      )
+      expect(screen.queryByTestId('pre-victory-narrative-dialog')).not.toBeInTheDocument()
+    })
+
+    it('calls onPreVictoryNarrativeClose when dismissed', () => {
+      render(
+        <CombatManager
+          showVictoryDialog={false}
+          showDefeatDialog={false}
+          showLootDialog={false}
+          showPreVictoryNarrative={true}
+          endState={endStateWithNarrative}
+          playerWeight={0}
+          weightLimit={100}
+          {...mockCallbacks}
+        />
+      )
+      screen.getByText('Continue').click()
+      expect(mockCallbacks.onPreVictoryNarrativeClose).toHaveBeenCalled()
     })
   })
 

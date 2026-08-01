@@ -104,6 +104,7 @@ export default function GamePage() {
     showVictoryDialog,
     showDefeatDialog,
     showLootDialog,
+    showPreVictoryNarrative,
     endState,
     lastEndStateId,
     endStatePendingRef,
@@ -120,7 +121,8 @@ export default function GamePage() {
     setHoveredTargetId,
     handleSuggestedMoveClick,
     handleCombatAction,
-    handleInteractionComplete
+    handleInteractionComplete,
+    handlePreVictoryNarrativeClose
   } = useCombatCoordinator({
     combat,
     inCombat,
@@ -683,6 +685,7 @@ export default function GamePage() {
         showVictoryDialog={showVictoryDialog}
         showDefeatDialog={showDefeatDialog}
         showLootDialog={showLootDialog}
+        showPreVictoryNarrative={showPreVictoryNarrative}
         endState={endState}
         playerWeight={player?.weight_current ?? 0}
         weightLimit={player?.carrying_capacity ?? 100}
@@ -692,10 +695,11 @@ export default function GamePage() {
         onContinueToLoot={handleContinueToLoot}
         onCollectLoot={handleCollectLoot}
         onSkipLoot={handleSkipLoot}
+        onPreVictoryNarrativeClose={handlePreVictoryNarrativeClose}
       />
 
       {/* Level-up modal — waits for initial event check to prevent racing with EventDialog on load */}
-      {!showVictoryDialog && !showDefeatDialog && eventsChecked && !currentEvent && (player?.pending_attribute_points ?? 0) > 0 && (
+      {!showVictoryDialog && !showDefeatDialog && !showPreVictoryNarrative && eventsChecked && !currentEvent && (player?.pending_attribute_points ?? 0) > 0 && (
         <LevelUpModal
           player={player}
           onAllocatePoints={handleAllocatePoints}

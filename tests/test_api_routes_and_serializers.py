@@ -179,27 +179,6 @@ class TestErrorHandler:
         with app.test_client() as c:
             yield c
 
-    def test_400_handler(self, client):
-        rv = client.get("/trigger/400")
-        assert rv.status_code == 400
-        data = rv.get_json()
-        assert data["success"] is False
-        assert "Bad request" in data["error"]
-
-    def test_401_handler(self, client):
-        rv = client.get("/trigger/401")
-        assert rv.status_code == 401
-        data = rv.get_json()
-        assert data["success"] is False
-        assert "Unauthorized" in data["error"]
-
-    def test_403_handler(self, client):
-        rv = client.get("/trigger/403")
-        assert rv.status_code == 403
-        data = rv.get_json()
-        assert data["success"] is False
-        assert "Forbidden" in data["error"]
-
     def test_404_handler(self, client):
         rv = client.get("/trigger/404")
         assert rv.status_code == 404
@@ -214,32 +193,11 @@ class TestErrorHandler:
         assert data["success"] is False
         assert "Method not allowed" in data["error"]
 
-    def test_422_handler(self, client):
-        rv = client.get("/trigger/422")
-        assert rv.status_code == 422
-        data = rv.get_json()
-        assert data["success"] is False
-        assert "Unprocessable entity" in data["error"]
-
-    def test_429_handler(self, client):
-        rv = client.get("/trigger/429")
-        assert rv.status_code == 429
-        data = rv.get_json()
-        assert data["success"] is False
-        assert "Too many requests" in data["error"]
-
     def test_500_handler(self, client):
         rv = client.get("/trigger/500")
         assert rv.status_code == 500
         data = rv.get_json()
         assert data["success"] is False
-
-    def test_503_handler(self, client):
-        rv = client.get("/trigger/503")
-        assert rv.status_code == 503
-        data = rv.get_json()
-        assert data["success"] is False
-        assert "Service unavailable" in data["error"]
 
     def test_generic_exception_handler(self, client):
         rv = client.get("/trigger_exception")

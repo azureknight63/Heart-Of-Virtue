@@ -36,6 +36,9 @@ export function useCombatCoordinator({
     const [showVictoryDialog, setShowVictoryDialog] = useState(false)
     const [showDefeatDialog, setShowDefeatDialog] = useState(false)
     const [showLootDialog, setShowLootDialog] = useState(false)
+    // A CombatEventConfig-scripted encounter (issue #427) may attach a one-off
+    // narration beat (endState.pre_victory_narrative) to show before VictoryDialog.
+    const [showPreVictoryNarrative, setShowPreVictoryNarrative] = useState(false)
     const [endState, setEndState] = useState(null)
     // In-memory only (not sessionStorage): this only needs to dedupe repeated
     // effect runs within the *current* mount while the same end_state is
@@ -94,13 +97,22 @@ export function useCombatCoordinator({
                 setLastEndStateId(maybeEnd.id)
 
                 const isVictory = maybeEnd.status === 'victory'
+                const narrative = maybeEnd.pre_victory_narrative
+                const hasPreVictoryNarrative =
+                    isVictory && typeof narrative === 'string' && narrative.trim().length > 0
                 endStateTimerRef.current = setTimeout(() => {
                     endStateTimerRef.current = null
                     endStatePendingRef.current = false
                     if (isVictory) {
-                        setShowVictoryDialog(true)
-                        // Play fanfare as a one-shot sting (non-looping)
-                        if (playSting) playSting('fanfare')
+                        if (hasPreVictoryNarrative) {
+                            // VictoryDialog (and its fanfare) is deferred until the
+                            // narration beat is dismissed — see handlePreVictoryNarrativeClose.
+                            setShowPreVictoryNarrative(true)
+                        } else {
+                            setShowVictoryDialog(true)
+                            // Play fanfare as a one-shot sting (non-looping)
+                            if (playSting) playSting('fanfare')
+                        }
                     } else {
                         setShowDefeatDialog(true)
                     }
@@ -191,12 +203,23 @@ export function useCombatCoordinator({
         fetchCombatStatus()
     }
 
+    /**
+     * Dismiss the pre-victory narration beat and advance to VictoryDialog.
+     */
+    const handlePreVictoryNarrativeClose = () => {
+        setShowPreVictoryNarrative(false)
+        setShowVictoryDialog(true)
+        // Play fanfare as a one-shot sting (non-looping)
+        if (playSting) playSting('fanfare')
+    }
+
     return {
         // State
         combatDialogShown,
         showVictoryDialog,
         showDefeatDialog,
         showLootDialog,
+        showPreVictoryNarrative,
         endState,
         lastEndStateId,
         endStatePendingRef,
@@ -209,6 +232,7 @@ export function useCombatCoordinator({
         setShowVictoryDialog,
         setShowDefeatDialog,
         setShowLootDialog,
+        setShowPreVictoryNarrative,
         setEndState,
         setIsCombatLogProcessing,
         setCurrentLogIndex,
@@ -217,6 +241,7 @@ export function useCombatCoordinator({
         // Handlers
         handleSuggestedMoveClick,
         handleCombatAction,
-        handleInteractionComplete
+        handleInteractionComplete,
+        handlePreVictoryNarrativeClose
     }
 }

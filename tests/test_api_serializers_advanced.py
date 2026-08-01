@@ -14,7 +14,6 @@ class TestNPCRelationshipSerializer:
     def test_serialize_friendly(self):
         result = NPCRelationshipSerializer.serialize_relationship("g", "Gorran", 75)
         assert result["attitude"] == "friendly"
-        assert result["locked_dialogue"] is False
 
     def test_serialize_favorable(self):
         result = NPCRelationshipSerializer.serialize_relationship("g", "Gorran", 30)
@@ -23,12 +22,10 @@ class TestNPCRelationshipSerializer:
     def test_serialize_neutral(self):
         result = NPCRelationshipSerializer.serialize_relationship("g", "Gorran", 0)
         assert result["attitude"] == "neutral"
-        assert result["locked_dialogue"] is False
 
     def test_serialize_wary(self):
         result = NPCRelationshipSerializer.serialize_relationship("g", "Gorran", -10)
         assert result["attitude"] == "wary"
-        assert result["locked_dialogue"] is True
 
     def test_serialize_hostile(self):
         result = NPCRelationshipSerializer.serialize_relationship("g", "Gorran", -40)

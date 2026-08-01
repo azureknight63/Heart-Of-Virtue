@@ -187,6 +187,79 @@ describe('useCombatCoordinator', () => {
             expect(playSting).toHaveBeenCalledWith('fanfare')
         })
 
+        it('shows the pre-victory narration beat instead of VictoryDialog when endState.pre_victory_narrative is set', () => {
+            const playSting = vi.fn()
+            const combat = {
+                end_state: {
+                    id: 'victory-narrative-1',
+                    status: 'victory',
+                    message: 'You won!',
+                    pre_victory_narrative: 'The camp erupts in cheers.'
+                },
+                log: []
+            }
+
+            const { result } = renderHook(() =>
+                useCombatCoordinator({ ...defaultParams, combat, inCombat: false, playSting })
+            )
+
+            act(() => vi.advanceTimersByTime(5000))
+
+            expect(result.current.showPreVictoryNarrative).toBe(true)
+            expect(result.current.showVictoryDialog).toBe(false)
+            // Fanfare is deferred until the narrative is dismissed, not played immediately.
+            expect(playSting).not.toHaveBeenCalled()
+        })
+
+        it('handlePreVictoryNarrativeClose advances from narration to VictoryDialog and plays fanfare', () => {
+            const playSting = vi.fn()
+            const combat = {
+                end_state: {
+                    id: 'victory-narrative-2',
+                    status: 'victory',
+                    message: 'You won!',
+                    pre_victory_narrative: 'The camp erupts in cheers.'
+                },
+                log: []
+            }
+
+            const { result } = renderHook(() =>
+                useCombatCoordinator({ ...defaultParams, combat, inCombat: false, playSting })
+            )
+
+            act(() => vi.advanceTimersByTime(5000))
+            expect(result.current.showPreVictoryNarrative).toBe(true)
+
+            act(() => {
+                result.current.handlePreVictoryNarrativeClose()
+            })
+
+            expect(result.current.showPreVictoryNarrative).toBe(false)
+            expect(result.current.showVictoryDialog).toBe(true)
+            expect(playSting).toHaveBeenCalledWith('fanfare')
+        })
+
+        it('skips the narration beat and shows VictoryDialog directly when pre_victory_narrative is blank', () => {
+            const combat = {
+                end_state: {
+                    id: 'victory-no-narrative',
+                    status: 'victory',
+                    message: 'You won!',
+                    pre_victory_narrative: '   '
+                },
+                log: []
+            }
+
+            const { result } = renderHook(() =>
+                useCombatCoordinator({ ...defaultParams, combat, inCombat: false })
+            )
+
+            act(() => vi.advanceTimersByTime(5000))
+
+            expect(result.current.showPreVictoryNarrative).toBe(false)
+            expect(result.current.showVictoryDialog).toBe(true)
+        })
+
         it('should not call playSting for defeat', () => {
             const playSting = vi.fn()
             const combat = {

@@ -257,6 +257,76 @@ class TestInitializeCombatScenarioTypes:
             result = adapter.initialize_combat([enemy], reinit=True)
         assert result is not None
 
+    def test_pending_scenario_type_override_used_and_cleared(self):
+        """Issue #427: a CombatEventConfig-scripted scenario_type stashed on
+        the player (via events.CombatEvent) overrides the count heuristic and
+        is consumed (cleared) so it doesn't leak into the next combat."""
+        player = _make_player()
+        enemy = _make_enemy()
+        player.combat_list = [enemy]
+        # Would normally heuristic to "pincer" (3 enemies, 1 ally) — the
+        # override should win instead.
+        player.combat_list = [enemy, _make_enemy("E2"), _make_enemy("E3")]
+        player._pending_scenario_type = "ambush"
+        adapter = _make_adapter(player)
+
+        with (
+            patch(
+                "src.api.combat_adapter.positions.initialize_combat_positions"
+            ) as mock_init_positions,
+            patch("src.coordinate_config.CoordinateSystemConfig") as MockCoord,
+        ):
+            MockCoord.return_value.get_dynamic_grid_size.return_value = (10, 10)
+            adapter.initialize_combat(player.combat_list)
+
+        assert mock_init_positions.call_args.kwargs["scenario_type"] == "ambush"
+        assert not hasattr(player, "_pending_scenario_type")
+
+    def test_pending_grid_size_override_used_and_cleared(self):
+        """Issue #427: a CombatEventConfig-scripted grid_size_override stashed
+        on the player is used instead of the dynamic grid sizer, and cleared."""
+        player = _make_player()
+        enemy = _make_enemy()
+        player.combat_list = [enemy]
+        player._pending_grid_size_override = (7, 9)
+        adapter = _make_adapter(player)
+
+        with (
+            patch(
+                "src.api.combat_adapter.positions.initialize_combat_positions"
+            ) as mock_init_positions,
+            patch("src.coordinate_config.CoordinateSystemConfig") as MockCoord,
+        ):
+            adapter.initialize_combat([enemy])
+            # The dynamic sizer must never be consulted when an override is present.
+            MockCoord.return_value.get_dynamic_grid_size.assert_not_called()
+
+        assert mock_init_positions.call_args.kwargs["grid_width"] == 7
+        assert mock_init_positions.call_args.kwargs["grid_height"] == 9
+        assert adapter.combat_grid_size == (7, 9)
+        assert not hasattr(player, "_pending_grid_size_override")
+
+    def test_no_pending_overrides_falls_back_to_heuristic(self):
+        """A player with no stashed overrides (e.g. every non-scripted fight)
+        must be unaffected — MagicMock auto-vivification of unset attributes
+        must not accidentally trip the override branch."""
+        player = _make_player()
+        enemy = _make_enemy()
+        player.combat_list = [enemy]
+        adapter = _make_adapter(player)
+
+        with (
+            patch(
+                "src.api.combat_adapter.positions.initialize_combat_positions"
+            ) as mock_init_positions,
+            patch("src.coordinate_config.CoordinateSystemConfig") as MockCoord,
+        ):
+            MockCoord.return_value.get_dynamic_grid_size.return_value = (10, 10)
+            adapter.initialize_combat([enemy])
+            MockCoord.return_value.get_dynamic_grid_size.assert_called_once()
+
+        assert mock_init_positions.call_args.kwargs["scenario_type"] == "boss_arena"
+
 
 # ---------------------------------------------------------------------------
 # _handle_combined_selection

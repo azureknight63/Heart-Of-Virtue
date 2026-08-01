@@ -127,14 +127,17 @@ class CombatScenario:
     This allows varied tactical situations (standard, pincer, melee, boss arena, etc.)
     """
 
-    scenario_type: str  # "standard", "pincer", "melee", "boss_arena", "custom"
+    scenario_type: str  # "standard", "pincer", "melee", "ambush", "boss_arena", "custom"
     ally_spawn_zone: Tuple[
         Tuple[int, int], Tuple[int, int]
-    ]  # ((x_min, y_min), (x_max, y_max))
+    ]  # ((x_min, y_min), (x_max, y_max)) -- primary/fallback ally zone
     enemy_spawn_zones: List[Tuple[Tuple[int, int], Tuple[int, int]]]  # List of zones
     formation_type: str  # "spread", "cluster", "random"
     min_spacing: int = 1  # Minimum grid squares between units
     seed: Optional[int] = None  # For reproducible positioning
+    # Multiple ally spawn zones (e.g. "ambush" splits allies to left/right
+    # flanks). When None, allies spawn entirely within ally_spawn_zone.
+    ally_spawn_zones: Optional[List[Tuple[Tuple[int, int], Tuple[int, int]]]] = None
 
 
 def get_combat_scenario(
@@ -148,7 +151,7 @@ def get_combat_scenario(
     Dynamically scales zones based on grid size.
 
     Args:
-        scenario_type: "standard", "pincer", "melee", "boss_arena", "custom"
+        scenario_type: "standard", "pincer", "melee", "ambush", "boss_arena", "custom"
         grid_width: Width of the battlefield
         grid_height: Height of the battlefield
         seed: Optional random seed
@@ -207,6 +210,36 @@ def get_combat_scenario(
             seed=seed,
         )
 
+    elif scenario_type == "ambush":
+        # Opposite of pincer: enemies spring from the center, allies caught
+        # off guard and split to the left and right flanks.
+        center_x = grid_width // 2
+        center_y = grid_height // 2
+        center_w = max(2, int(grid_width * 0.15))
+        center_h = max(2, int(grid_height * 0.15))
+
+        enemy_zone = (
+            (center_x - center_w, center_y - center_h),
+            (center_x + center_w, center_y + center_h),
+        )
+
+        flank_width = max(2, int(grid_width * 0.15))
+        left_flank = ((0, 0), (flank_width, grid_height))
+        right_flank = (
+            (grid_width - flank_width, 0),
+            (grid_width, grid_height),
+        )
+
+        return CombatScenario(
+            scenario_type="ambush",
+            ally_spawn_zone=left_flank,
+            ally_spawn_zones=[left_flank, right_flank],
+            enemy_spawn_zones=[enemy_zone],
+            formation_type="cluster",
+            min_spacing=1,
+            seed=seed,
+        )
+
     elif scenario_type in ["melee", "random"]:
         # Everyone scattered everywhere
         full_map = ((0, 0), (grid_width, grid_height))
@@ -248,6 +281,7 @@ COMBAT_SCENARIOS = {
     "standard": get_combat_scenario("standard", 50, 50),
     "pincer": get_combat_scenario("pincer", 50, 50),
     "melee": get_combat_scenario("melee", 50, 50),
+    "ambush": get_combat_scenario("ambush", 50, 50),
     "boss_arena": get_combat_scenario("boss_arena", 50, 50),
 }
 
@@ -796,7 +830,7 @@ def initialize_combat_positions(
     Args:
         allies: List of allied units (player party)
         enemies: List of enemy units
-        scenario_type: Name of scenario ("standard", "pincer", "melee", "boss_arena", "custom")
+        scenario_type: Name of scenario ("standard", "pincer", "melee", "ambush", "boss_arena", "custom")
         grid_width: Width of the battlefield
         grid_height: Height of the battlefield
         seed: Optional random seed
@@ -809,16 +843,25 @@ def initialize_combat_positions(
 
     scenario = get_combat_scenario(scenario_type, grid_width, grid_height, seed)
 
-    # Spawn allies in their zone
-    _spawn_units_in_zone(
-        units=allies,
-        zone=scenario.ally_spawn_zone,
-        formation_type=scenario.formation_type,
-        min_spacing=scenario.min_spacing,
-        grid_width=grid_width,
-        grid_height=grid_height,
-        seed=scenario.seed,
-    )
+    # Spawn allies across their zone(s). Most scenarios use a single zone
+    # (ally_spawn_zones is None); "ambush" splits allies across two flanks the
+    # same way multi-zone enemy scenarios (pincer) already work.
+    ally_zones = scenario.ally_spawn_zones or [scenario.ally_spawn_zone]
+    for zone_index, zone in enumerate(ally_zones):
+        allies_for_zone = _distribute_units_across_zones(
+            units=allies,
+            total_zones=len(ally_zones),
+            zone_index=zone_index,
+        )
+        _spawn_units_in_zone(
+            units=allies_for_zone,
+            zone=zone,
+            formation_type=scenario.formation_type,
+            min_spacing=scenario.min_spacing,
+            grid_width=grid_width,
+            grid_height=grid_height,
+            seed=scenario.seed,
+        )
 
     # Spawn enemies in their zones
     for zone_index, zone in enumerate(scenario.enemy_spawn_zones):

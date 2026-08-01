@@ -950,6 +950,22 @@ class TestCombatScenario:
         assert scenario.scenario_type == "boss_arena"
         assert scenario.formation_type == "spread"
 
+    def test_combat_scenario_ambush(self):
+        """Issue #427: ambush is the opposite of pincer — allies split to the
+        left/right flanks, enemies cluster in the center."""
+        scenario = COMBAT_SCENARIOS["ambush"]
+        assert scenario.scenario_type == "ambush"
+        assert scenario.formation_type == "cluster"
+        assert scenario.ally_spawn_zones is not None
+        assert len(scenario.ally_spawn_zones) == 2
+        assert len(scenario.enemy_spawn_zones) == 1
+
+    def test_combat_scenario_pincer_has_no_multi_ally_zones(self):
+        """Every other scenario keeps the single-zone ally_spawn_zone path —
+        ally_spawn_zones defaults to None so behavior is unchanged."""
+        scenario = COMBAT_SCENARIOS["pincer"]
+        assert scenario.ally_spawn_zones is None
+
 
 class TestDistanceFunctions:
     """Test suite for distance calculation functions."""
@@ -1433,6 +1449,34 @@ class TestInitializeCombatPositions:
 
         assert ally.combat_position is not None
         assert enemy.combat_position is not None
+
+    def test_initialize_combat_positions_ambush_splits_allies_across_flanks(self):
+        """Issue #427: with 4 allies, ambush must distribute them across BOTH
+        flank zones (round-robin), not dump everyone in a single zone."""
+        allies = [Mock() for _ in range(4)]
+        enemies = [Mock() for _ in range(2)]
+
+        initialize_combat_positions(
+            allies, enemies, scenario_type="ambush", grid_width=50, grid_height=50
+        )
+
+        for ally in allies:
+            assert ally.combat_position is not None
+        for enemy in enemies:
+            assert enemy.combat_position is not None
+
+        # Flank width is 15% of grid_width=50 -> 7 (left flank: x in [0,7],
+        # right flank: x in [43,50]). Every ally should land in one flank or
+        # the other, and (with round-robin across 4 allies) both flanks used.
+        xs = sorted(a.combat_position.x for a in allies)
+        assert all(x <= 7 or x >= 43 for x in xs)
+        assert any(x <= 7 for x in xs)
+        assert any(x >= 43 for x in xs)
+
+        # Enemies cluster near the center.
+        center_x = 25
+        for enemy in enemies:
+            assert abs(enemy.combat_position.x - center_x) <= 8
 
     def test_initialize_combat_positions_facing_direction(self):
         """Test that combatants face toward opponents."""
