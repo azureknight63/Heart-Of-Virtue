@@ -24,12 +24,16 @@ _ROOT = pathlib.Path(__file__).resolve().parent.parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
+from src.positions import CombatPosition, Direction
+
 from src.moves._base import (
     Move,
     PassiveMove,
     _apply_blade_mastery_discount,
     _apply_carry_fatigue,
+    _apply_facing_accuracy,
     _apply_haunting_presence,
+    _apply_to_hit_modifiers,
     _apply_work_the_gap,
     _ensure_weapon_exp,
     select_weighted_target,
@@ -878,3 +882,125 @@ class TestApplyHauntingPresence:
         defender.known_moves = [haunting]
 
         assert _apply_haunting_presence(attacker, defender, 100) == 100
+
+
+# ---------------------------------------------------------------------------
+# _apply_facing_accuracy (issue #394)
+#
+# Mirrors positions.get_damage_modifier (already wired into Backstab's
+# damage) on the accuracy side, applied to every attack path.
+# ---------------------------------------------------------------------------
+
+
+class TestApplyFacingAccuracy:
+    def test_front_attack_reduces_hit_chance(self):
+        attacker = _make_combatant(name="Jean")
+        attacker.combat_position = CombatPosition(x=10, y=10)
+        defender = _make_combatant(name="Goblin")
+        # to_pos south of from_pos -> attack_angle ~= 0 (see positions.py's own
+        # angle_to_target tests); facing N (0) -> diff=0 -> front quarter -> 0.95x
+        defender.combat_position = CombatPosition(x=10, y=50, facing=Direction.N)
+
+        assert _apply_facing_accuracy(attacker, defender, 100) == 95
+
+    def test_rear_attack_increases_hit_chance(self):
+        attacker = _make_combatant(name="Jean")
+        attacker.combat_position = CombatPosition(x=10, y=10)
+        defender = _make_combatant(name="Goblin")
+        # Same geometry, but facing S (180) -> diff=180 -> rear -> 1.30x
+        defender.combat_position = CombatPosition(x=10, y=50, facing=Direction.S)
+
+        assert _apply_facing_accuracy(attacker, defender, 50) == 65  # int(50 * 1.30)
+
+    def test_rear_attack_bonus_is_capped_at_100(self):
+        attacker = _make_combatant(name="Jean")
+        attacker.combat_position = CombatPosition(x=10, y=10)
+        defender = _make_combatant(name="Goblin")
+        defender.combat_position = CombatPosition(x=10, y=50, facing=Direction.S)
+
+        # 100 * 1.30 = 130, must clamp to 100 (a hit_chance is a percentage)
+        assert _apply_facing_accuracy(attacker, defender, 100) == 100
+
+    def test_no_op_without_attacker_combat_position(self):
+        attacker = _make_combatant(name="Jean")
+        attacker.combat_position = None
+        defender = _make_combatant(name="Goblin")
+        defender.combat_position = CombatPosition(x=10, y=50, facing=Direction.S)
+
+        assert _apply_facing_accuracy(attacker, defender, 50) == 50
+
+    def test_no_op_without_defender_combat_position(self):
+        attacker = _make_combatant(name="Jean")
+        attacker.combat_position = CombatPosition(x=10, y=10)
+        defender = _make_combatant(name="Goblin")
+        defender.combat_position = None
+
+        assert _apply_facing_accuracy(attacker, defender, 50) == 50
+
+    def test_auto_miss_sentinel_survives_unchanged(self):
+        """Regression: Python's int() truncates toward zero, so a naive
+        int(-1 * 0.95) would produce 0, not -1 -- turning a guaranteed
+        out-of-range miss into a ~1% chance to hit on a roll of 0."""
+        attacker = _make_combatant(name="Jean")
+        attacker.combat_position = CombatPosition(x=10, y=10)
+        defender = _make_combatant(name="Goblin")
+        defender.combat_position = CombatPosition(x=10, y=50, facing=Direction.N)
+
+        assert _apply_facing_accuracy(attacker, defender, -1) == -1
+
+    def test_zero_hit_chance_survives_unchanged(self):
+        attacker = _make_combatant(name="Jean")
+        attacker.combat_position = CombatPosition(x=10, y=10)
+        defender = _make_combatant(name="Goblin")
+        defender.combat_position = CombatPosition(x=10, y=50, facing=Direction.N)
+
+        assert _apply_facing_accuracy(attacker, defender, 0) == 0
+
+    def test_exception_during_computation_returns_unchanged(self):
+        attacker = _make_combatant(name="Jean")
+        attacker.combat_position = CombatPosition(x=10, y=10)
+        defender = _make_combatant(name="Goblin")
+        defender.combat_position = MagicMock()
+        defender.combat_position.facing = object()  # no .value -> AttributeError inside attack_angle_difference
+
+        assert _apply_facing_accuracy(attacker, defender, 50) == 50
+
+
+# ---------------------------------------------------------------------------
+# _apply_to_hit_modifiers — the combinator every attack path now calls
+# instead of _apply_facing_accuracy + _apply_haunting_presence separately.
+# ---------------------------------------------------------------------------
+
+
+class TestApplyToHitModifiers:
+    def test_chains_facing_accuracy_then_haunting_presence(self):
+        attacker = _make_combatant(name="Jean")
+        attacker.combat_position = CombatPosition(x=10, y=10)
+        haunting = MagicMock()
+        haunting.name = "Haunting Presence"
+        defender = _make_combatant(name="Goblin", known_moves=[haunting])
+        # Rear attack (facing S, diff=180 -> 1.30x) AND within HauntingPresence range.
+        defender.combat_position = CombatPosition(x=10, y=50, facing=Direction.S)
+        defender.combat_proximity = {attacker: 2}
+
+        # int(50 * 1.30) = 65, then int(65 * 0.85) = 55
+        assert _apply_to_hit_modifiers(attacker, defender, 50) == 55
+
+    def test_no_op_when_neither_modifier_applies(self):
+        attacker = _make_combatant(name="Jean")
+        attacker.combat_position = None
+        defender = _make_combatant(name="Goblin")
+        defender.combat_position = None
+
+        assert _apply_to_hit_modifiers(attacker, defender, 50) == 50
+
+    def test_auto_miss_sentinel_survives_both_modifiers(self):
+        attacker = _make_combatant(name="Jean")
+        attacker.combat_position = CombatPosition(x=10, y=10)
+        haunting = MagicMock()
+        haunting.name = "Haunting Presence"
+        defender = _make_combatant(name="Goblin", known_moves=[haunting])
+        defender.combat_position = CombatPosition(x=10, y=50, facing=Direction.S)
+        defender.combat_proximity = {attacker: 2}
+
+        assert _apply_to_hit_modifiers(attacker, defender, -1) == -1

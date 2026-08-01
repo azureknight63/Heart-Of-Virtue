@@ -14,7 +14,7 @@ from ._base import (
     default_animations,
     _apply_carry_fatigue,
     _apply_blade_mastery_discount,
-    _apply_haunting_presence,
+    _apply_to_hit_modifiers,
 )  # noqa: F401
 
 
@@ -524,10 +524,10 @@ class Attack(Move):  # basic attack function, always uses equipped weapon, playe
                 -1
             )  # if attacking is no longer viable (enemy is out of range), then auto miss
 
-        # HauntingPresence passive: defender's unsettling aura rattles close-range
-        # attackers (issue #395 — mirrors Move.standard_execute_attack, which the
+        # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence
+        # (issue #395/#421 — mirrors Move.standard_execute_attack, which the
         # hand-rolled basic Attack path bypasses).
-        hit_chance = _apply_haunting_presence(self.user, self.target, hit_chance)
+        hit_chance = _apply_to_hit_modifiers(self.user, self.target, hit_chance)
 
         roll = random.randint(0, 100)
         damage = (

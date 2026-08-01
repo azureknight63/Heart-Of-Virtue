@@ -11,7 +11,7 @@ from src.animations import animate_to_main_screen as animate  # noqa: F401
 from ._base import (
     Move,
     PassiveMove,
-    _apply_haunting_presence,
+    _apply_to_hit_modifiers,
 )  # noqa: F401
 
 
@@ -223,8 +223,8 @@ class Sweep(Move):
 
             base_dmg = max(1, int(self.power - enemy.protection))
             hit_chance = max(5, int(85 - enemy.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3)))
-            # HauntingPresence passive: defender's unsettling aura rattles close-range attackers (issue #421).
-            hit_chance = _apply_haunting_presence(self.user, enemy, hit_chance)
+            # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
+            hit_chance = _apply_to_hit_modifiers(self.user, enemy, hit_chance)
             if random.randint(0, 100) <= hit_chance:
                 if functions.check_parry(enemy):
                     cprint(f"{enemy.name} blocked the sweep!", "yellow")
@@ -403,8 +403,8 @@ class HalberdSpin(Move):
 
             base_dmg = max(1, int(self.power - enemy.protection))
             hit_chance = max(5, int(85 - enemy.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3)))
-            # HauntingPresence passive: defender's unsettling aura rattles close-range attackers (issue #421).
-            hit_chance = _apply_haunting_presence(self.user, enemy, hit_chance)
+            # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
+            hit_chance = _apply_to_hit_modifiers(self.user, enemy, hit_chance)
             if random.randint(0, 100) <= hit_chance:
                 if functions.check_parry(enemy):
                     cprint(f"{enemy.name} parried the spin!", "yellow")

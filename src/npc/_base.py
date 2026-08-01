@@ -146,6 +146,8 @@ class NPC(NPCCombatMixin, NPCLootMixin, Combatant):
             None  # Will be set during combat initialization for config access
         )
         self.ai_config = None  # Initialized during combat
+        self.embedded_arrows = []  # Class names of arrows that hit and stuck;
+        # 100% recoverable from the corpse on death (see NPCLootMixin, issue #418)
 
     def _init_idle_moves(self):
         """Set ``known_moves`` to a lone idle move, falling back to an empty

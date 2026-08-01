@@ -9,6 +9,7 @@ class MockNPC(NPCLootMixin):
         self.loot = None
         self.current_room = None
         self.player_ref = None
+        self.embedded_arrows = []
 
 def test_stack_items_list_called():
     npc = MockNPC()
@@ -56,6 +57,52 @@ def test_drop_inventory_various_branches():
         assert hasattr(player, "combat_drops")
         assert len(player.combat_drops) == 1
         assert player.combat_drops[0]["quantity"] == 2
+
+def test_drop_embedded_arrows_spawns_each_and_clears_list():
+    """Issue #418: arrows that hit and stuck are 100% recoverable from the
+    corpse -- no randomized survival roll, unlike drop_inventory()."""
+    npc = MockNPC()
+    npc.current_room = MagicMock()
+    npc.embedded_arrows = ["WoodenArrow", "WoodenArrow", "FireArrow"]
+
+    npc.drop_embedded_arrows()
+
+    assert npc.current_room.spawn_item.call_count == 3
+    npc.current_room.spawn_item.assert_any_call("WoodenArrow")
+    npc.current_room.spawn_item.assert_any_call("FireArrow")
+    assert npc.embedded_arrows == []
+
+
+def test_drop_embedded_arrows_noop_when_empty():
+    npc = MockNPC()
+    npc.current_room = MagicMock()
+    npc.embedded_arrows = []
+
+    npc.drop_embedded_arrows()
+
+    npc.current_room.spawn_item.assert_not_called()
+
+
+def test_drop_embedded_arrows_noop_without_current_room():
+    npc = MockNPC()
+    npc.current_room = None
+    npc.embedded_arrows = ["WoodenArrow"]
+
+    npc.drop_embedded_arrows()  # must not raise
+
+    assert npc.embedded_arrows == ["WoodenArrow"]  # left untouched, nothing spawned
+
+
+def test_before_death_calls_drop_embedded_arrows():
+    npc = MockNPC()
+    npc.current_room = MagicMock()
+    npc.current_room.items_here = []
+
+    with patch.object(npc, "drop_embedded_arrows") as mock_drop:
+        npc.before_death()
+
+    mock_drop.assert_called_once()
+
 
 def test_roll_loot_equipment_branches():
     npc = MockNPC()

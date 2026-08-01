@@ -13,7 +13,7 @@ from ._base import (
     PassiveMove,
     _ensure_weapon_exp,
     _apply_carry_fatigue,
-    _apply_haunting_presence,
+    _apply_to_hit_modifiers,
 )  # noqa: F401
 
 
@@ -120,8 +120,8 @@ class ShootBow(
                 hit_chance = 2
             if hit_chance > 100:  # Maximum hit chance
                 hit_chance = 100
-        # HauntingPresence passive: defender's unsettling aura rattles close-range attackers (issue #421).
-        hit_chance = _apply_haunting_presence(self.user, enemy, hit_chance)
+        # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
+        hit_chance = _apply_to_hit_modifiers(self.user, enemy, hit_chance)
         return hit_chance
 
     def viable(self):
@@ -297,6 +297,10 @@ class ShootBow(
             else:
                 self.hit(damage, glance)
                 arrow_location = "target"
+                # Stuck arrows aren't recoverable mid-fight (issue #418) — only
+                # from the corpse if the target dies (see NPCLootMixin).
+                if hasattr(self.target, "embedded_arrows"):
+                    self.target.embedded_arrows.append(self.arrow.__class__.__name__)
                 if self.arrow.effects:
                     for effect in self.arrow.effects:
                         if effect.trigger == "execute":
@@ -309,7 +313,10 @@ class ShootBow(
             self.miss()
         self.user.fatigue -= self.fatigue_cost
         if arrow_recovery >= random.random():
-            # arrow survived the shot; spawn one
+            # arrow survived the shot; spawn one. Only the "tile" case is handled
+            # here — a "target" arrow is embedded in a living creature and is
+            # recovered separately (guaranteed) if that creature later dies; see
+            # NPC.drop_embedded_arrows (issue #418).
             if arrow_location == "tile":
                 self.user.current_room.spawn_item(
                     self.arrow.__class__.__name__,
@@ -458,8 +465,8 @@ class ShootCrossbow(Move):
                     hit_chance -= accuracy_decay
                     if hit_chance < 2:
                         hit_chance = 2
-            # HauntingPresence passive: defender's unsettling aura rattles close-range attackers (issue #421).
-            hit_chance = _apply_haunting_presence(self.user, self.target, hit_chance)
+            # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
+            hit_chance = _apply_to_hit_modifiers(self.user, self.target, hit_chance)
 
         roll = random.randint(0, 100)
         damage = (
@@ -606,8 +613,8 @@ class BroadheadBolt(Move):
                         hit_chance = 2
         else:
             hit_chance = -1
-        # HauntingPresence passive: defender's unsettling aura rattles close-range attackers (issue #421).
-        hit_chance = _apply_haunting_presence(self.user, self.target, hit_chance)
+        # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
+        hit_chance = _apply_to_hit_modifiers(self.user, self.target, hit_chance)
 
         roll = random.randint(0, 100)
         damage = (
@@ -763,8 +770,8 @@ class AimedShot(Move):
                     hit_chance -= accuracy_decay
                     if hit_chance < 2:
                         hit_chance = 2
-            # HauntingPresence passive: defender's unsettling aura rattles close-range attackers (issue #421).
-            hit_chance = _apply_haunting_presence(self.user, self.target, hit_chance)
+            # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
+            hit_chance = _apply_to_hit_modifiers(self.user, self.target, hit_chance)
 
         roll = random.randint(0, 100)
         damage = (
@@ -914,8 +921,8 @@ class PinningBolt(Move):
                     hit_chance -= accuracy_decay
                     if hit_chance < 2:
                         hit_chance = 2
-            # HauntingPresence passive: defender's unsettling aura rattles close-range attackers (issue #421).
-            hit_chance = _apply_haunting_presence(self.user, self.target, hit_chance)
+            # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
+            hit_chance = _apply_to_hit_modifiers(self.user, self.target, hit_chance)
 
         roll = random.randint(0, 100)
         damage = (
