@@ -50,8 +50,6 @@
 │                                                                 │
 │  ┌────────────────────────────────────────────────────────────┐ │
 │  │  DOCUMENTATION & DISCOVERY                                 │ │
-│  │  - OpenAPI 3.0 Schema (/api/openapi.json)                 │ │
-│  │  - Swagger UI (/api/docs)                                 │ │
 │  │  - Health Check (/health)                                 │ │
 │  └────────────────────────────────────────────────────────────┘ │
 └─────────────────────────────────────────────────────────────────┘
@@ -183,8 +181,7 @@ Heart-Of-Virtue/
 │   │   │   └── error_handler.py     # Global error handlers (8)
 │   │   │
 │   │   ├── schemas/
-│   │   │   ├── __init__.py
-│   │   │   └── openapi.py           # OpenAPI 3.0 schema
+│   │   │   └── __init__.py
 │   │   │
 │   │   ├── middleware/               # Placeholder
 │   │   │
@@ -233,7 +230,6 @@ Heart-Of-Virtue/
 ║  🔌 Endpoints              17 REST endpoints                ║
 ║  🛡️  Error Handlers        8 HTTP status codes              ║
 ║  ✔️  Validators            10 validation functions          ║
-║  📊 API Documentation      OpenAPI 3.0 schema               ║
 ║  💾 Git Commits            5 commits                        ║
 ║  📊 Total Insertions       5,604 insertions                 ║
 ║                                                             ║
@@ -282,9 +278,8 @@ SAVES (4)
   POST   /saves/<id>/load         → Load save
   DELETE /saves/<id>              → Delete save
 
-UTILITY (2)
+UTILITY (1)
   GET    /health                  → Server status
-  GET    /api/docs                → Swagger UI
 ```
 
 ## 📋 10 Validator Functions

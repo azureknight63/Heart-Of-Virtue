@@ -228,16 +228,6 @@ npm run dev
 #         ➜  Local:   http://localhost:3000/
 ```
 
-## 🔗 API Documentation
-
-**Swagger UI** (if available):
-- URL: http://localhost:5000/api/docs
-- Provides interactive API testing
-
-**OpenAPI Schema**:
-- URL: http://localhost:5000/api/openapi.json
-- Machine-readable API specification
-
 ## 🐛 Debugging
 
 ### Enable Debug Logging

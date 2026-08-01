@@ -398,21 +398,6 @@ def create_app(config_class=None):
             }
         )
 
-    # OpenAPI schema endpoint
-    @app.route("/api/openapi.json", methods=["GET"])
-    def openapi_schema():
-        from flask import jsonify
-        from src.api.schemas.openapi import generate_openapi_schema
-
-        return jsonify(generate_openapi_schema())
-
-    # Swagger UI endpoint
-    @app.route("/api/docs", methods=["GET"])
-    def swagger_ui():
-        from src.api.schemas.openapi import generate_swagger_ui_html
-
-        return generate_swagger_ui_html()
-
     # Debug: List all routes (test-only — avoids leaking the URL map in prod)
     @app.route("/api/debug/routes", methods=["GET"])
     def list_routes():
