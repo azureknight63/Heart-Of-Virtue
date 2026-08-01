@@ -139,8 +139,7 @@ src/api/
 │   ├── __init__.py
 │   └── error_handler.py      # Global error handlers (8)
 └── schemas/
-    ├── __init__.py
-    └── openapi.py            # OpenAPI 3.0 schema generator
+    └── __init__.py
 
 tests/api/
 ├── conftest.py              # Flask test fixtures
@@ -1032,20 +1031,6 @@ curl -X GET http://localhost:5000/api/player/status `
 4. Use `Authorization: Bearer {{session_id}}` in headers
 5. Test endpoints
 
-### Swagger UI
-
-Interactive API documentation:
-
-```
-http://localhost:5000/api/docs
-```
-
-OpenAPI schema:
-
-```
-http://localhost:5000/api/openapi.json
-```
-
 ---
 
 ## Troubleshooting
@@ -1134,7 +1119,6 @@ Before deploying, verify:
 
 ## Support
 
-- **API Docs**: See Swagger UI at http://localhost:5000/api/docs
 - **Code**: `src/api/` directory
 - **Tests**: `tests/api/` directory
 - **Configuration**: `src/api/config.py`

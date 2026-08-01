@@ -344,7 +344,7 @@ def test_evaluate_map_entry_spawners_handles_exception_in_event():
 
 
 def test_universe_build_with_game_config():
-    """Universe.build creates ScenarioConfig and CoordinateSystemConfig when game_config exists."""
+    """Universe.build creates CoordinateSystemConfig when game_config exists."""
     from src.universe import Universe
 
     u = Universe()
@@ -354,12 +354,10 @@ def test_universe_build_with_game_config():
     player.game_config = MagicMock()  # non-None
     player.game_config.coordinate_mode = "absolute"
 
-    with patch("src.universe.ScenarioConfig") as mock_sc:
-        with patch("src.universe.CoordinateSystemConfig") as mock_cc:
-            with patch.object(u, "_load_all_json_maps"):
-                u.build(player)
+    with patch("src.universe.CoordinateSystemConfig") as mock_cc:
+        with patch.object(u, "_load_all_json_maps"):
+            u.build(player)
 
-    mock_sc.assert_called_once_with(player)
     mock_cc.assert_called_once_with(player)
 
 

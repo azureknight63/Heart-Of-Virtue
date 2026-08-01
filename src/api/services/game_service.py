@@ -10,6 +10,7 @@ from src.api.constants import ITEM_USE_RANGE
 from src.functions import check_for_combat
 from src.inventory_utils import get_gold
 from src.narration import capture_narration, narrate
+from src.story import gorran_flavor
 
 if TYPE_CHECKING:
     from src import player as player_module
@@ -998,6 +999,11 @@ class GameService:
         # for ConversationalNPCMixin.loquacity_tick, which had no caller). Guarded so it
         # only ticks on genuine movement beats, never during an active conversation.
         self._recover_npc_loquacity(player)
+
+        # Gorran's ambient exploration flavor text (issue #367) — no-op when
+        # Gorran isn't in the party; self-manages its own cooldown via the
+        # story dict, so no extra state needed here.
+        gorran_flavor.maybe_explore_flavor(player)
 
         # Store tile modifications after entry events have processed to capture state changes
         self.persist_tile_state(session_data, new_tile)
@@ -3104,7 +3110,7 @@ class GameService:
         name: str,
         user_id: str,
         is_autosave: bool = False,
-    ) -> str:
+    ) -> Optional[str]:
         """Save the game to Turso database.
 
         Args:
@@ -3114,11 +3120,20 @@ class GameService:
             is_autosave: Whether this is an autosave
 
         Returns:
-            Save ID
+            Save ID, or None if this was an autosave skipped because
+            GameConfig.autosave_enabled is False.
         """
         import uuid
         from src.secure_pickle import serialize_for_save
         from src.api.db import db
+
+        # GameConfig.autosave_enabled (issue #450): lets autosave be turned off
+        # entirely. Manual saves (is_autosave=False) are never gated by this.
+        # Defaults True (see the field's docstring in config_manager.py) so a
+        # player with no explicit setting keeps today's always-on behavior.
+        game_config = getattr(player, "game_config", None)
+        if is_autosave and game_config is not None and not game_config.autosave_enabled:
+            return None
 
         # 1. Enforcement of manual save limit
         if not is_autosave:

@@ -242,6 +242,11 @@ friendly enough to Jean.
             self.current_room.universe.story["gorran_first"] = "1"
             return
 
+        # gorran_language_stage only ever reaches "1" today — Ch01GorranFirstWord
+        # (ch01.py) is the sole writer beyond the "0" default set in universe.py.
+        # Stages 2-4 below are intentionally staged-for-future-chapters content:
+        # the dialogue is written and reachable by construction, but nothing yet
+        # advances the flag past "1" to unlock it. See issue #384.
         stage = int(self.current_room.universe.story.get("gorran_language_stage", "0"))
 
         if stage == 0:

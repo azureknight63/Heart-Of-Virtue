@@ -26,7 +26,7 @@ src/api/
 │   └── error_handler.py
 ├── middleware/            # Request/response middleware
 │   └── auth_middleware.py
-└── schemas/               # OpenAPI schemas
+└── schemas/               # Shared schema definitions
 ```
 
 ## Milestone 1: Flask Foundation (HV-37)
@@ -44,7 +44,6 @@ src/api/
 - [x] Error handling middleware
 - [x] Request validation helpers
 - [x] Unit tests for GameService & SessionManager (27 tests)
-- [x] OpenAPI/Swagger configuration
 - [ ] Install dependencies & full integration testing
 - [ ] CI/CD ready
 
@@ -66,7 +65,6 @@ src/api/
 | `src/api/routes/equipment.py` | Equipment system | ✅ |
 | `src/api/routes/combat.py` | Combat endpoints | ✅ |
 | `src/api/routes/saves.py` | Save management | ✅ |
-| `src/api/schemas/openapi.py` | OpenAPI schema generator | ✅ |
 | `tests/api/test_session_manager.py` | SessionManager tests (12) | ✅ |
 | `tests/api/test_game_service.py` | GameService tests (15) | ✅ |
 | `tests/api/test_routes_integration.py` | Integration tests (27) | ✅ |
@@ -96,8 +94,6 @@ pytest tests/api/test_validators.py -v
 ```
 GET /health                     # Server health status
 GET /api/info                   # API information
-GET /api/openapi.json           # OpenAPI 3.0 schema
-GET /api/docs                   # Swagger UI
 ```
 
 **Authentication** (3 endpoints)
@@ -235,20 +231,6 @@ curl -X POST http://localhost:5000/saves/ \
   -d '{"save_name": "After Boss Fight"}'
 ```
 
-## API Documentation
-
-### Swagger UI
-Once the server is running, access interactive API documentation at:
-```
-http://localhost:5000/api/docs
-```
-
-### OpenAPI Schema
-Download the complete OpenAPI 3.0 schema at:
-```
-http://localhost:5000/api/openapi.json
-```
-
 ## Running the API Server
 
 ```bash
@@ -342,8 +324,7 @@ All request data is validated using helper functions in `services/validators.py`
 4. **WebSocket**: Real-time combat updates via SocketIO
 5. **Rate Limiting**: Throttle API endpoints
 6. **Logging**: Centralized request/response logging
-7. **Documentation**: Generate OpenAPI schema from code
-8. **Performance**: Load testing and optimization
+7. **Performance**: Load testing and optimization
 
 ## Jira Tracking
 

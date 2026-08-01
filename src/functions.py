@@ -58,6 +58,11 @@ def check_for_combat(
     player,
 ):  # returns a list of angry enemies who are ready to fight
     enemy_combat_list = []
+    # GameConfig.skip_combat (issue #450): dev/QA flag to bypass combat
+    # initiation entirely -- aggro NPCs are simply never engaged.
+    game_config = getattr(player, "game_config", None)
+    if game_config is not None and getattr(game_config, "skip_combat", False):
+        return enemy_combat_list
     npcs = getattr(getattr(player, "current_room", None), "npcs_here", []) or []
     if not npcs:
         return enemy_combat_list

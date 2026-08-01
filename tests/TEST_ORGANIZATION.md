@@ -37,7 +37,6 @@ Tests for configuration and settings:
 - `test_coordinate_config.py` - Coordinate system configuration
 - `test_display_config.py` - Display settings
 - `test_debug_manager.py` - Debug utilities
-- `test_scenario_config.py` - Scenario setup
 - `test_shop_conditions.py` - Shop conditions
 
 **Run config tests:**

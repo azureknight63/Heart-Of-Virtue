@@ -86,6 +86,21 @@ async def create_save():
             # Handle the 20 manual save limit
             return jsonify({"success": False, "error": str(ve)}), 403
 
+        # save_game returns None only for an autosave skipped because
+        # GameConfig.autosave_enabled is False (issue #450) -- not an error,
+        # just nothing to report.
+        if save_id is None:
+            return (
+                jsonify(
+                    {
+                        "success": True,
+                        "skipped": True,
+                        "message": "Autosave disabled",
+                    }
+                ),
+                200,
+            )
+
         from datetime import datetime
 
         return (

@@ -19,6 +19,11 @@ Stage 1 — "Back!" in hurt contexts only; otherwise still silent
 Stage 2 — single-word directions in general rotation; name possible
 Stage 3 — short functional phrases; physical vocabulary for emotion
 Stage 4 — shorthand, very sparse, each line earned
+
+Stages 2-4 are staged-for-future-chapters content (issue #384): nothing in the
+story currently advances gorran_language_stage past "1" (set once, by
+Ch01GorranFirstWord). The pools above are fully written and reachable by
+construction the moment a future chapter's story beat bumps the flag further.
 """
 
 import logging
@@ -265,7 +270,7 @@ def maybe_combat_flavor(player, beat, cooldown):
     try:
         stage = get_gorran_stage(player)
 
-        hp_ratio = player.hp / max(player.max_hp, 1)
+        hp_ratio = player.hp / max(player.maxhp, 1)
         gorran_hp = getattr(gorran, "hp", None)
         gorran_prev_hp = getattr(gorran, "_prev_hp_for_flavor", gorran_hp)
 

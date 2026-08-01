@@ -4,7 +4,7 @@ from src.narration import colored, cprint, narrate
 import random
 import src.states as states
 import src.functions as functions
-from ._base import Move, _ensure_weapon_exp, _apply_haunting_presence
+from ._base import Move, _ensure_weapon_exp, _apply_to_hit_modifiers
 
 
 def _all_stats(p):
@@ -60,8 +60,8 @@ class Pulverize(Move):
         narrate(self.stage_announce[1])
         target = self.target
         hit_chance = max(5, int(98 - target.finesse + player.finesse * 0.7 + player.intelligence * 0.3))
-        # HauntingPresence passive: defender's unsettling aura rattles close-range attackers (issue #421).
-        hit_chance = _apply_haunting_presence(player, target, hit_chance)
+        # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
+        hit_chance = _apply_to_hit_modifiers(player, target, hit_chance)
         roll = random.randint(0, 100)
         power = int(player.eq_weapon.damage * 1.8 + player.strength * 3.0)
         # Ignores ALL protection — no protection subtraction
@@ -187,8 +187,8 @@ class LightningAssault(Move):
         narrate(self.stage_announce[1])
         target = self.target
         hit_chance = max(5, int(98 - target.finesse + player.finesse * 0.7 + player.intelligence * 0.3))
-        # HauntingPresence passive: defender's unsettling aura rattles close-range attackers (issue #421).
-        hit_chance = _apply_haunting_presence(player, target, hit_chance)
+        # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
+        hit_chance = _apply_to_hit_modifiers(player, target, hit_chance)
         _ensure_weapon_exp(player)
         player.combat_exp[player.eq_weapon.subtype] += 5
         player.combat_exp["Basic"] += 5
