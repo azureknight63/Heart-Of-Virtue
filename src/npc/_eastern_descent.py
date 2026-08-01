@@ -1,16 +1,18 @@
 """
 Eastern Descent — Nomad Camp NPCs.
 
-Generic background characters for the nomad camp on the river's east bank.
-These are ambient presences — not story principals — and follow the same
+Generic background characters for the nomad camp on the river's east bank,
+plus Anvil, Kaelen & Vespera's named Scree Strider pack animal. These are
+ambient presences — not story principals — and follow the same
 narrated-exchange pattern as the Grondite citizen classes in _friends.py.
 
-All communicate in brief, practical terms. None overreach their tier.
+All communicate in brief, practical terms (Anvil communicates only through
+gesture and sound — he's an animal, not a person). None overreach their tier.
 """
 
 import random
 
-from ._base import Friend
+from ._base import Friend, NonCombatantMixin
 from ._chat_llm import ConversationalNPCMixin
 from src.narration import narrate
 import src.moves as moves
@@ -18,6 +20,104 @@ import src.moves as moves
 # ─────────────────────────────────────────────────────────────────────────────
 # Eastern Descent — Nomad Camp NPCs
 # ─────────────────────────────────────────────────────────────────────────────
+
+
+class Anvil(NonCombatantMixin, Friend):
+    """Kaelen & Vespera's Scree Strider — the pack bird that hauls Iron &
+    Oath's anvil, weapon racks, armor stock, and canvas whenever the Nomad
+    Camp relocates along the river route. See
+    ``docs/lore/character-profiles/anvil.md`` and
+    ``docs/lore/creatures/scree-strider.md`` for the full lore.
+
+    Non-speaking, non-combatant — communicates through gesture and sound
+    only, following the same narrated-exchange pattern as the Grondite
+    citizen classes in this module. Cannot be drawn into combat (see
+    ``NonCombatantMixin``), the same design used for Mynx.
+    """
+
+    _TALK_LINES = [
+        "Anvil's head swings toward Jean, quill ridge lifting a fraction — "
+        "not alarm, just assessment. He decides Jean isn't touching the "
+        "harness and goes back to tearing at a patch of scrub.",
+        "Vespera rests a hand against Anvil's neck without looking up from "
+        "her ledger. He leans into it, eyes half-closed, radiating the "
+        "specific contentment of an animal that trusts exactly one person "
+        "completely.",
+        "Kaelen pats Anvil's flank on his way past the stall. Anvil tolerates "
+        "it with the flat, unimpressed patience of a very old grudge.",
+        "A low, chest-deep boom rolls out of Anvil — the same subsonic call "
+        "his wild cousins use to keep track of each other across broken "
+        "ground. Here, it just means he's noticed something worth noticing.",
+        "Anvil's splayed feet shift against the packed dirt, testing it the "
+        "way he tests riverbed silt before committing weight. Habit, not "
+        "necessity — the ground here isn't going anywhere.",
+        "His quill ridge is lying flat. Whatever Jean is doing, Anvil has "
+        "decided it isn't worth the effort of caring.",
+        "Anvil watches Jean's hands more than his face — an old instinct, "
+        "the kind that keeps a pack animal's cargo intact for years.",
+        "Kaelen calls over, 'Careful — he's not fond of strangers near the "
+        "crates.' Anvil, for his part, hasn't moved, but one eye has fixed "
+        "on Jean with unmistakable attention.",
+    ]
+
+    _PET_LINES = [
+        "Anvil allows it — a brief, tolerant stillness rather than any real "
+        "warmth — then shifts his weight to signal he's done being touched.",
+        "Anvil's quill ridge rises sharply and a low hiss builds in his "
+        "throat. Vespera doesn't look up. 'He doesn't do that for anyone "
+        "but me,' she says, not unkindly. Jean gets the message.",
+        "He tolerates the contact for exactly as long as it takes him to "
+        "decide it isn't food, then turns his attention back to the scrub "
+        "at his feet.",
+        "Anvil goes very still — the particular stillness of an animal "
+        "deciding whether something is worth reacting to. He decides it isn't.",
+    ]
+
+    def __init__(self):
+        description = (
+            "A heavy-boned Scree Strider, dust-brown and ochre in his "
+            "mottled plumage, standing taller than Kaelen at the shoulder "
+            "when his neck is raised. A harness of oiled leather straps runs "
+            "across his back and flanks, anchoring crated tools and folded "
+            "canvas. His quill ridge lies flat while he's at ease, but it "
+            "rises the instant someone gets careless near the straps."
+        )
+        super().__init__(
+            name="Anvil",
+            description=description,
+            damage=0,
+            aggro=False,
+            exp_award=0,
+            maxhp=150,
+            protection=8,
+            speed=6,
+            finesse=6,
+            awareness=15,
+            maxfatigue=120,
+            endurance=14,
+            strength=18,
+            charisma=6,
+            combat_range=(0, 0),
+            idle_message=" is tearing at a patch of scrub, harness creaking.",
+            alert_message=" swings his head around, quill ridge lifting.",
+            discovery_message="a heavy-set pack bird harnessed with crates and folded canvas.",
+        )
+        self.keywords = ["talk", "pet"]
+        self.pronouns = {
+            "personal": "he",
+            "possessive": "his",
+            "reflexive": "himself",
+            "intensive": "himself",
+        }
+        self._init_idle_moves()
+        # Cargo infrastructure, not a combatant — never enters combat, see NonCombatantMixin.
+        self.in_combat = False
+
+    def talk(self, player):
+        narrate(random.choice(self._TALK_LINES))
+
+    def pet(self, player=None):
+        narrate(random.choice(self._PET_LINES))
 
 
 class NomadCamper(ConversationalNPCMixin, Friend):
