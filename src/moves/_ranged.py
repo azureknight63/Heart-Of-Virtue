@@ -120,9 +120,6 @@ class ShootBow(
                 hit_chance = 2
             if hit_chance > 100:  # Maximum hit chance
                 hit_chance = 100
-        for state in self.user.states:
-            if state.name == "Hawkeye":
-                hit_chance *= 1.4
         # HauntingPresence passive: defender's unsettling aura rattles close-range attackers (issue #421).
         hit_chance = _apply_haunting_presence(self.user, enemy, hit_chance)
         return hit_chance

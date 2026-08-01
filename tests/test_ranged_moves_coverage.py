@@ -277,26 +277,6 @@ class TestShootBowCalculateHitChance:
         # With distraction should be lower
         assert result_with_distraction < result_without
 
-    def test_hawkeye_state_boosts_hit_chance(self):
-        user, arrow = _make_bow_user(finesse=10, intelligence=5)
-        move = ShootBow(user)
-        move.mvrange = (6, 50)
-        move.decay = 0.05
-        enemy = _make_enemy(finesse=8)
-        user.combat_proximity = {enemy: 15}
-        user.eq_weapon.range_base = 20
-
-        # First without Hawkeye
-        user.states = []
-        base_hit = move.calculate_hit_chance(enemy)
-
-        # Now add Hawkeye state
-        hawkeye_state = MagicMock()
-        hawkeye_state.name = "Hawkeye"
-        user.states = [hawkeye_state]
-        hawk_hit = move.calculate_hit_chance(enemy)
-        assert hawk_hit > base_hit
-
     def test_target_beyond_range_base_decays_accuracy(self):
         user, arrow = _make_bow_user(finesse=10, intelligence=5)
         move = ShootBow(user)
