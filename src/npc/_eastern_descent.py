@@ -118,10 +118,32 @@ class Anvil(NonCombatantMixin, Friend):
         # Cargo infrastructure, not a combatant — never enters combat, see NonCombatantMixin.
         self.in_combat = False
 
+    # Set by the first talk()/pet() call; AnvilIntroEvent (src/story/ch03.py)
+    # picks this up via the normal post-action tile-event check and runs the
+    # staged first-meeting conversation instead of the ambient flavor line.
+    _CONVERSATION_READY_FLAG = "anvil_conversation_ready"
+
+    def _first_encounter(self, player):
+        """Mark this interaction as having happened; return True the first time.
+
+        Subsequent calls (including after AnvilIntroEvent has already run)
+        return False, so the ambient flavor lines take over as normal.
+        """
+        story = getattr(getattr(player, "universe", None), "story", None)
+        if story is None:
+            return False
+        already = story.get(self._CONVERSATION_READY_FLAG) == "1"
+        story[self._CONVERSATION_READY_FLAG] = "1"
+        return not already
+
     def talk(self, player):
+        if self._first_encounter(player):
+            return
         narrate(random.choice(self._TALK_LINES))
 
     def pet(self, player=None):
+        if self._first_encounter(player):
+            return
         narrate(random.choice(self._PET_LINES))
 
 

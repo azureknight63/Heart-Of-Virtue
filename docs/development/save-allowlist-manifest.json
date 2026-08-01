@@ -1722,6 +1722,10 @@
     },
     {
       "module": "src.story.ch03",
+      "name": "AnvilIntroEvent"
+    },
+    {
+      "module": "src.story.ch03",
       "name": "CampEntryGreetingEvent"
     },
     {
@@ -1993,6 +1997,6 @@
       "name": "UUID"
     }
   ],
-  "count": 498,
+  "count": 499,
   "header_version": 1
 }
