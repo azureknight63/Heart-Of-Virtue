@@ -25,6 +25,7 @@ from src.api.constants import ITEM_USE_RANGE, ALLY_HEAL_THRESHOLD
 from src.api.combat_beat_stream import CombatBeatStreamer
 from ai.combat_strategist import CombatStrategist
 from src.moves._base import select_weighted_target
+from src.story import gorran_flavor
 
 if TYPE_CHECKING:
     from src.player import Player
@@ -1459,6 +1460,21 @@ class ApiCombatAdapter:
         for ally in self.player.combat_list_allies:
             if ally != self.player and ally.is_alive():
                 self._process_npc(ally)
+
+        # Gorran's ambient combat flavor text (issue #367) — no-op when Gorran
+        # isn't in the party. The cooldown must persist across beats, so it's
+        # carried on the player between calls (mirrors the module's own
+        # _prev_hp_for_flavor dynamic-attribute pattern on the NPC side). Never
+        # let flavor text take down NPC turn processing — wrapped the same way
+        # move_player() wraps game_tick_events()/recall_friends().
+        try:
+            cooldown = int(getattr(self.player, "_gorran_flavor_cooldown", 0) or 0)
+            self.player._gorran_flavor_cooldown = gorran_flavor.maybe_combat_flavor(
+                self.player, self.player.combat_beat, cooldown
+            )
+        except Exception as e:
+            logger.warning("gorran_flavor combat hook failed: %s", e)
+            self.player._gorran_flavor_cooldown = 0
 
         # Process enemies
         # Use a copy of the list because we might modify it (remove dead enemies)

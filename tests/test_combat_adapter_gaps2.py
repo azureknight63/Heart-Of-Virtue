@@ -732,6 +732,66 @@ class TestProcessNpcTurnsDeathHandling:
 
 
 # ---------------------------------------------------------------------------
+# _process_npc_turns — Gorran ambient combat flavor (issue #367)
+# ---------------------------------------------------------------------------
+
+
+class TestProcessNpcTurnsGorranFlavor:
+    def test_calls_maybe_combat_flavor_with_beat_and_cooldown(self):
+        player = _make_player()
+        player.combat_beat = 7
+        player._gorran_flavor_cooldown = 0  # explicit: MagicMock auto-vivifies
+        # any unset attribute, so leaving this implicit would pass a fresh
+        # MagicMock (truthy, int()'d to a meaningless value) instead of 0.
+
+        with patch("src.functions.refresh_stat_bonuses"), \
+             patch("src.api.combat_adapter.gorran_flavor.maybe_combat_flavor", return_value=4) as mock_flavor:
+            adapter = _make_adapter(player)
+            adapter._process_npc_turns()
+
+        mock_flavor.assert_called_once_with(player, 7, 0)
+        assert player._gorran_flavor_cooldown == 4
+
+    def test_cooldown_persists_across_beats(self):
+        player = _make_player()
+
+        with patch("src.functions.refresh_stat_bonuses"), \
+             patch(
+                 "src.api.combat_adapter.gorran_flavor.maybe_combat_flavor",
+                 side_effect=[4, 3],
+             ) as mock_flavor:
+            adapter = _make_adapter(player)
+            adapter._process_npc_turns()
+            adapter._process_npc_turns()
+
+        # Second call must receive the cooldown the first call returned, not 0.
+        assert mock_flavor.call_args_list[1].args[2] == 4
+        assert player._gorran_flavor_cooldown == 3
+
+    def test_exception_does_not_break_npc_turn_processing(self):
+        """Flavor text must never take down enemy death handling or the rest
+        of the beat -- mirrors move_player()'s defensive wrapping around
+        game_tick_events()/recall_friends()."""
+        player = _make_player()
+        enemy = _make_enemy(alive=False)
+        player.combat_list = [enemy]
+        player.combat_proximity = {enemy: 5}
+        player.current_room = MagicMock()
+        player.current_room.npcs_here = [enemy]
+
+        with patch("src.functions.refresh_stat_bonuses"), \
+             patch(
+                 "src.api.combat_adapter.gorran_flavor.maybe_combat_flavor",
+                 side_effect=RuntimeError("boom"),
+             ):
+            adapter = _make_adapter(player)
+            adapter._process_npc_turns()  # must not raise
+
+        assert enemy not in player.combat_list
+        assert player._gorran_flavor_cooldown == 0
+
+
+# ---------------------------------------------------------------------------
 # _process_npc — friend targeting
 # ---------------------------------------------------------------------------
 

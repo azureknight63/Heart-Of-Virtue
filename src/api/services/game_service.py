@@ -10,6 +10,7 @@ from src.api.constants import ITEM_USE_RANGE
 from src.functions import check_for_combat
 from src.inventory_utils import get_gold
 from src.narration import capture_narration, narrate
+from src.story import gorran_flavor
 
 if TYPE_CHECKING:
     from src import player as player_module
@@ -998,6 +999,11 @@ class GameService:
         # for ConversationalNPCMixin.loquacity_tick, which had no caller). Guarded so it
         # only ticks on genuine movement beats, never during an active conversation.
         self._recover_npc_loquacity(player)
+
+        # Gorran's ambient exploration flavor text (issue #367) — no-op when
+        # Gorran isn't in the party; self-manages its own cooldown via the
+        # story dict, so no extra state needed here.
+        gorran_flavor.maybe_explore_flavor(player)
 
         # Store tile modifications after entry events have processed to capture state changes
         self.persist_tile_state(session_data, new_tile)
