@@ -9,6 +9,17 @@ import time
 
 # Recurring conversation cast, to avoid retyping the same tuple at every stage.
 _JEAN_MARA = [("Jean", "left", "neutral"), ("Mara", None, "neutral")]
+_JEAN_MARA_GORRAN = [
+    ("Jean", "left", "neutral"),
+    ("Mara", None, "neutral"),
+    ("Gorran", None, "neutral"),
+]
+_JEAN_DEVET = [("Jean", "left", "neutral"), ("Devet", None, "neutral")]
+_JEAN_GORRAN_LISS = [
+    ("Jean", "left", "neutral"),
+    ("Gorran", None, "neutral"),
+    ("Liss", "right", "neutral"),
+]
 
 
 class GorranGestureEvent(Event):
@@ -145,247 +156,6 @@ class NomadCampSmellEvent(Event):
             story["nomad_camp_entered"] = "1"
 
 
-class MaraFirstContactEvent(Event):
-    """
-    Fires once on Jean's first entry to RiversEdge (1,0) in the nomad camp sub-map.
-    Mara clocked them fifty paces out, already back to her pack by the time Jean arrives.
-    "Crossing west?" Names a price. Not a greeting.
-    Sets story gate 'mara_intro_done'.
-    """
-
-    def __init__(
-        self, player, tile, params=None, repeat=False, name="MaraFirstContact"
-    ):
-        super().__init__(
-            name=name, player=player, tile=tile, repeat=repeat, params=params
-        )
-
-    def check_conditions(self):
-        story = getattr(getattr(self.player, "universe", None), "story", {})
-        if story.get("mara_intro_done") == "1":
-            if self in self.tile.events_here:
-                self.tile.events_here.remove(self)
-            return
-        self.pass_conditions_to_process()
-
-    def process(self):
-        if not self.player.skip_dialog:
-            narrate("\n")
-            time.sleep(0.3)
-            print_slow(
-                "A woman at the camp's western edge had clocked them while they were still fifty "
-                "paces out — Jean was sure of it. By the time he reached her she was back to what "
-                "she'd been doing: crouched over a pack, sorting something with methodical attention."
-            )
-            time.sleep(1)
-            print_slow("She didn't look up.")
-            time.sleep(0.5)
-            begin_conversation(_JEAN_MARA)
-            say("Crossing west?", "Mara", "neutral")
-            time.sleep(0.5)
-            print_slow(
-                "Not a greeting. A question with a purpose. When Jean said yes, she named a number. "
-                "Flat, fair, not open to discussion. She was already back to the pack before the "
-                "last word had settled."
-            )
-            time.sleep(1)
-        self._set_gate()
-
-    def _set_gate(self):
-        story = getattr(getattr(self.player, "universe", None), "story", None)
-        if story is not None:
-            story["mara_intro_done"] = "1"
-
-
-class DevetIntroEvent(Event):
-    """
-    Fires once on Jean's first entry to FireRing (1,1) in the nomad camp sub-map.
-    Devet tends the fire, wordless. Hands Jean a bowl — not a question. Gorran settles.
-    Sets story gate 'devet_intro_done'.
-    """
-
-    def __init__(self, player, tile, params=None, repeat=False, name="DevetIntro"):
-        super().__init__(
-            name=name, player=player, tile=tile, repeat=repeat, params=params
-        )
-
-    def check_conditions(self):
-        story = getattr(getattr(self.player, "universe", None), "story", {})
-        if story.get("devet_intro_done") == "1":
-            if self in self.tile.events_here:
-                self.tile.events_here.remove(self)
-            return
-        self.pass_conditions_to_process()
-
-    def process(self):
-        if not self.player.skip_dialog:
-            narrate("\n")
-            time.sleep(0.3)
-            print_slow(
-                "An older man was tending the fire — unhurried, each movement economical in the "
-                "way of someone who has done this ten thousand times. He gave Jean one look when "
-                "Jean approached: the look of someone who had seen desperate people cross this "
-                "river before, heading west, and knew most of them weren't running toward something."
-            )
-            time.sleep(1.5)
-            print_slow(
-                "He didn't offer this observation aloud. He picked up a bowl and filled it from "
-                "the pot and held it out. It was not a question."
-            )
-            time.sleep(1)
-            print_slow(
-                "Gorran stood where Jean had left him, still. His presence had settled into the "
-                "camp's edge the way large stones settle: without effort, without apology."
-            )
-            time.sleep(1)
-        self._set_gate()
-
-    def _set_gate(self):
-        story = getattr(getattr(self.player, "universe", None), "story", None)
-        if story is not None:
-            story["devet_intro_done"] = "1"
-
-
-class LissObservingEvent(Event):
-    """
-    Fires once on Jean's first entry to CampFarEdge (2,1) in the nomad camp sub-map.
-    Liss is not-approaching Gorran at the camp's boundary. Direct, literal curiosity.
-    Sets story gate 'liss_gorran_done'.
-    """
-
-    def __init__(self, player, tile, params=None, repeat=False, name="LissObserving"):
-        super().__init__(
-            name=name, player=player, tile=tile, repeat=repeat, params=params
-        )
-
-    def check_conditions(self):
-        story = getattr(getattr(self.player, "universe", None), "story", {})
-        if story.get("liss_gorran_done") == "1":
-            if self in self.tile.events_here:
-                self.tile.events_here.remove(self)
-            return
-        self.pass_conditions_to_process()
-
-    def process(self):
-        if not self.player.skip_dialog:
-            narrate("\n")
-            time.sleep(0.3)
-            print_slow(
-                "A girl was at the camp's far corner — young, dark-haired. Not approaching "
-                "Gorran. Just standing at a distance that was technically not approaching, "
-                "watching him with the focused intensity of someone conducting serious research."
-            )
-            time.sleep(1)
-            # Gorran does not react to Liss (the prose is explicit: he gives no
-            # indication of having heard her) — no reaction is authored here.
-            begin_conversation(
-                [
-                    ("Jean", "left", "neutral"),
-                    ("Gorran", None, "neutral"),
-                    ("Liss", "right", "neutral"),
-                ]
-            )
-            say(
-                "Does the Golemite sleep? He doesn't look like he's sleeping. But I think he might be.",
-                "Liss",
-                "curious",
-            )
-            time.sleep(0.5)
-            print_slow(
-                "She said this to no one in particular. Or perhaps to Gorran directly — it was "
-                "hard to say."
-            )
-            time.sleep(1)
-            print_slow(
-                "Gorran gave no indication of having heard this. He allowed her attention with "
-                "the patient forbearance of a very old, very large thing being studied by a small one."
-            )
-            time.sleep(1)
-        self._set_gate()
-
-    def _set_gate(self):
-        story = getattr(getattr(self.player, "universe", None), "story", None)
-        if story is not None:
-            story["liss_gorran_done"] = "1"
-
-
-class MaraObservationEvent(Event):
-    """
-    Fires once on Jean's re-entry to RiversEdge (1,0) after all three character
-    introduction gates are set (mara_intro_done, devet_intro_done, liss_gorran_done).
-    Mara makes her observation about Jean's background — religious kit or posture.
-    Jean: "It was."
-    Sets story gate 'nomad_camp_reached' (the main chapter completion gate).
-    """
-
-    def __init__(
-        self, player, tile, params=None, repeat=False, name="MaraObservation"
-    ):
-        super().__init__(
-            name=name, player=player, tile=tile, repeat=repeat, params=params
-        )
-
-    def check_conditions(self):
-        story = getattr(getattr(self.player, "universe", None), "story", {})
-        if story.get("nomad_camp_reached") == "1":
-            if self in self.tile.events_here:
-                self.tile.events_here.remove(self)
-            return
-        # Wait until all three character beats are complete
-        if not (
-            story.get("mara_intro_done") == "1"
-            and story.get("devet_intro_done") == "1"
-            and story.get("liss_gorran_done") == "1"
-        ):
-            return
-        self.pass_conditions_to_process()
-
-    def process(self):
-        if not self.player.skip_dialog:
-            narrate("\n")
-            time.sleep(0.3)
-            # Match any bludgeon/mace (RustedIronMace, Mace, …) — they are
-            # sibling Weapon subclasses sharing subtype "Bludgeon", so an exact
-            # class-name check missed Jean's starting RustedIronMace.
-            has_mace = any(
-                getattr(item, "subtype", None) == "Bludgeon"
-                for item in self.player.inventory
-            )
-            print_slow(
-                "A while later — Jean was sitting with the bowl, Gorran nearby, the fire "
-                "between them and the river — Mara spoke without looking up from what she "
-                "was sorting."
-            )
-            time.sleep(1)
-            begin_conversation(_JEAN_MARA)
-            if has_mace:
-                print_slow(
-                    "Her eyes tracked to Jean's mace for just a moment. Then back to her work."
-                )
-                time.sleep(0.5)
-                say("That's religious kit.", "Mara", "neutral")
-            else:
-                print_slow(
-                    "Her eyes moved across Jean — his posture, his hands, the way his weight "
-                    "sat — and returned to her work."
-                )
-                time.sleep(0.5)
-                say("You were a man of the church.", "Mara", "neutral")
-            time.sleep(0.5)
-            print_slow("Not a question.")
-            time.sleep(1)
-            say("It was.", "Jean", "neutral")
-            time.sleep(1)
-            print_slow("She didn't follow up. She filed it. The sorting continued.")
-            time.sleep(1)
-        self._set_gate()
-
-    def _set_gate(self):
-        story = getattr(getattr(self.player, "universe", None), "story", None)
-        if story is not None:
-            story["nomad_camp_reached"] = "1"
-
-
 class CampEntryGreetingEvent(Event):
     """
     Fires once on Jean's first entry to CampEntry (3,0) after the smell event fires.
@@ -517,22 +287,36 @@ class CampEntryGreetingEvent(Event):
             story["camp_entry_greeting_done"] = "1"
 
 
-class DemoEndEvent(Event):
+class MaraFirstContactEvent(Event):
     """
-    Fires when Jean interacts with the Ferry Landing passageway (via events_before).
+    Fires once on Jean's first entry to RiversEdge (1,0) in the nomad camp sub-map.
+    Mara clocked them fifty paces out, already back to her pack by the time Jean arrives.
 
-    Shows a narrated message that the crossing is visible but the demo ends here.
-    Blocks the passageway interaction from completing — Jean is not teleported.
-    Sets story gate 'demo_ended'.
+    Beat 1: "Crossing west?" — the fee, named flat, not negotiated.
+    Beat 2: Her extracting gaze moves to Gorran for the first time; he answers with a
+            rumble, not words (he is Stage 1 — spoken words only in hurt-combat
+            contexts, so this stays narrated gesture/sound, never a spoken line).
+    Beat 3: The crucifix — Jean notices it, notices himself noticing it, and looks
+            away. Mara notices both and files them without comment. Nothing spoken.
+    Beat 4: The guide-service offer, stated flat, not sold.
+    Beat 5: She ties it off — the raft isn't ready; walk the camp, come back later.
+
+    Sets story gate 'mara_intro_done'.
     """
 
-    def __init__(self, player, tile, params=None, repeat=True, name="DemoEnd"):
+    def __init__(
+        self, player, tile, params=None, repeat=False, name="MaraFirstContact"
+    ):
         super().__init__(
             name=name, player=player, tile=tile, repeat=repeat, params=params
         )
 
     def check_conditions(self):
-        """Always fires when the ferry landing is interacted with."""
+        story = getattr(getattr(self.player, "universe", None), "story", {})
+        if story.get("mara_intro_done") == "1":
+            if self in self.tile.events_here:
+                self.tile.events_here.remove(self)
+            return
         self.pass_conditions_to_process()
 
     def process(self):
@@ -540,19 +324,379 @@ class DemoEndEvent(Event):
             narrate("\n")
             time.sleep(0.3)
             print_slow(
-                "The ferry is ready. The crossing is short — you can see the far bank clearly."
+                "A woman at the camp's western edge had clocked them while they were still fifty "
+                "paces out — Jean was sure of it. By the time he reached her she was back to what "
+                "she'd been doing: crouched over a pack, sorting something with methodical attention."
             )
             time.sleep(1)
-            print_slow("But beyond the river is where the demo ends.")
+            print_slow("She didn't look up.")
             time.sleep(0.5)
-            print_slow("\n[The full journey continues in the complete release.]\n")
+
+            # Beat 1 — the fee
+            begin_conversation(_JEAN_MARA)
+            say("Crossing west?", "Mara", "neutral")
+            time.sleep(0.8)
+            print_slow("Not a greeting. A question with a purpose.")
+            time.sleep(0.5)
+            say("That's the idea.", "Jean", "neutral")
+            time.sleep(0.8)
+            say(
+                "Ten gold. Raft holds his weight fine — current's slow this time of year.",
+                "Mara",
+                "neutral",
+            )
+            time.sleep(0.8)
+            say("You're sure that's fair?", "Jean", "skeptical")
+            time.sleep(0.8)
+            say(
+                "It's not padded and I'm not in the mood for haggling. Take it or don't.",
+                "Mara",
+                "neutral",
+            )
+            time.sleep(1)
+
+            # Beat 2 — Gorran, appraised aloud; he answers with a rumble, not words
+            print_slow("For the first time, her attention moved past Jean to Gorran.")
+            time.sleep(0.8)
+            begin_conversation(_JEAN_MARA_GORRAN)
+            say(
+                "Never had one this close. He's not going to take my raft apart, is he?",
+                "Mara",
+                "curious",
+            )
+            time.sleep(0.8)
+            say("He'll be fine.", "Jean", "neutral")
+            time.sleep(0.8)
+            print_slow(
+                "A low rumble moved up through Gorran's chest — not aggressive, more the sound "
+                "of a rockslide pausing to consider participating in a conversation. "
+                "The mooring post hummed faintly with it."
+            )
+            time.sleep(1)
+            say(
+                "That's either agreement or he's warming up to eat something. "
+                "How can you tell the difference?",
+                "Mara",
+                "skeptical",
+            )
+            time.sleep(0.8)
+            say("No idea. At least he only eats rocks. Small consolation. \n\nWe're headed to a place called the Wailing Badlands.", "Jean", "neutral")
+            time.sleep(1)
+
+            # Beat 3 — the crucifix, nothing spoken
+            print_slow(
+                "She turned back to her pack, and for a moment the cord at her throat caught the "
+                "light — a small, tarnished crucifix, worn smooth with handling. Something in Jean "
+                "snagged on it, a wrongness he couldn't place, and he looked away before he understood "
+                "why. She noticed him notice it. She noticed him look away. She filed both in her mind without "
+                "comment and went back to sorting."
+            )
+            time.sleep(1.5)
+
+            # Beat 4 — the guide offer, stated flat
+            begin_conversation(_JEAN_MARA)
+            say(
+                "I'm headed that way myself, next couple of days. Caves, not the Badlands — I don't "
+                "go that far without a better reason than I've got right now. I'll guide you that far. Fee's normally "
+                "separate from the crossing, but I'll cut it since it won't be out of my way.",
+                "Mara",
+                "neutral",
+            )
+            time.sleep(0.8)
+            say("What takes you to the... Caves?", "Jean", "curious")
+            time.sleep(0.8)
+            print_slow(
+                "She turns back to Jean, holding his gaze for an uncomfortable moment."
+            )
+            time.sleep(1.5)
+            say(
+                "Business. My business.",
+                "Mara",
+                "neutral",
+            )
+            time.sleep(0.8)
+            say("Alright, fair enough. I accept your terms.", "Jean", "neutral")
+            time.sleep(1)
+
+            # Beat 5 — tied off; sends Jean around the camp
+            say(
+                "Not yet, though. Raft needs restrung and I want another hour of light before I "
+                "commit anyone's weight to it. Walk the camp, eat something. Come back when the "
+                "sun's lower and I'll have it sorted.",
+                "Mara",
+                "neutral",
+            )
+            time.sleep(0.8)
+            print_slow(
+                "She was already back to the pack before the last word had settled."
+            )
             time.sleep(1)
         self._set_gate()
 
     def _set_gate(self):
         story = getattr(getattr(self.player, "universe", None), "story", None)
         if story is not None:
-            story["demo_ended"] = "1"
+            story["mara_intro_done"] = "1"
+
+
+class DevetIntroEvent(Event):
+    """
+    Fires once on Jean's first entry to FireRing (1,1) in the nomad camp sub-map.
+    Devet tends the fire. He offers food wordlessly — not a question — then two
+    short, dry exchanges give the player a sense of him without breaking his
+    terseness: he deflects a direct question about himself and declines a
+    compliment in the same minimal register. He offers no commentary on Jean
+    ("heading west" look) or on Gorran — that restraint is the character, so it
+    stays narrated rather than spoken. Gorran settles at the camp's edge.
+    Sets story gate 'devet_intro_done'.
+    """
+
+    def __init__(self, player, tile, params=None, repeat=False, name="DevetIntro"):
+        super().__init__(
+            name=name, player=player, tile=tile, repeat=repeat, params=params
+        )
+
+    def check_conditions(self):
+        story = getattr(getattr(self.player, "universe", None), "story", {})
+        if story.get("devet_intro_done") == "1":
+            if self in self.tile.events_here:
+                self.tile.events_here.remove(self)
+            return
+        self.pass_conditions_to_process()
+
+    def process(self):
+        if not self.player.skip_dialog:
+            narrate("\n")
+            time.sleep(0.3)
+            print_slow(
+                "An older man was tending the fire — unhurried, each movement economical in the "
+                "way of someone who has done this ten thousand times. He gave Jean one look when "
+                "Jean approached: the look of someone who had seen desperate people cross this "
+                "river before, heading west, and knew most of them weren't running toward something."
+            )
+            time.sleep(1.5)
+            print_slow(
+                "He didn't offer this observation aloud. His eyes moved to Gorran once — a brief, "
+                "unhurried assessment, the same one he'd have given an unfamiliar dog — and returned "
+                "to the pot. If a Golemite unsettled him, nothing in his face admitted it."
+            )
+            time.sleep(1)
+
+            begin_conversation(_JEAN_DEVET)
+            say("Eat.", "Devet", "neutral")
+            time.sleep(0.5)
+            print_slow(
+                "He filled a bowl from the pot and held it out. It was not a question. "
+                "Root vegetables, some kind of meat, with an enthralling aroma making Jean's stomach growl. "
+                "He began to realize how long it had been since he'd eaten a warm meal. "
+                "More accurately, he wondered just how long that really had been."
+            )
+            time.sleep(0.8)
+            say("Thank you.", "Jean", "neutral")
+            time.sleep(0.5)
+            print_slow(
+                "The old man had already turned back to the fire. The thanks hadn't needed an answer."
+            )
+            time.sleep(1)
+
+            say("How long have you been doing this?", "Jean", "curious")
+            time.sleep(0.8)
+            say(
+                "Long enough I don't remember what I was doing before.",
+                "Devet",
+                "neutral",
+            )
+            time.sleep(1)
+            print_slow(
+                "A quiet pause settled in between the two for a moment."
+            )
+            say("Probably something less useful.", "Devet", "neutral")
+            time.sleep(0.5)
+            print_slow("It took Jean a second to realize that had been a joke. He lifted the bowl and took a careful sip.")
+            time.sleep(1)
+
+            say("It's good.", "Jean", "happy")
+            time.sleep(0.8)
+            say("It's food.", "Devet", "neutral")
+            time.sleep(1)
+
+            print_slow(
+                "Gorran stood where Jean had left him, still. Gradually, he rumbled and sat on the ground while Jean ate."
+                "His presence had settled into the campfire's edge the way large stones settle: without effort, without apology."
+            )
+            time.sleep(1)
+        self._set_gate()
+
+    def _set_gate(self):
+        story = getattr(getattr(self.player, "universe", None), "story", None)
+        if story is not None:
+            story["devet_intro_done"] = "1"
+
+
+class LissObservingEvent(Event):
+    """
+    Fires once on Jean's first entry to CampFarEdge (2,1) in the nomad camp sub-map.
+    Liss is not-approaching Gorran at the camp's boundary — three rapid-fire bursts
+    of unfiltered curiosity, each met with total Gorran stillness (the comedic
+    engine here: her chatter against his total silence — he is Stage 1 language
+    and does not speak outside hurt-combat, so his half of every "exchange" stays
+    narrated gesture/non-reaction, never a line). Jean gets two short, dry asides.
+    Closes on the small, wordless moment where she gives up asking and just sits
+    near him — the seed of the friendship, not its arrival. Jean's reaction stays
+    oblique: an unexamined smile, then an unnamed ache in his chest — grief
+    surfacing beneath his notice rather than a stated observation that the moment
+    was warm.
+    Sets story gate 'liss_gorran_done'.
+    """
+
+    def __init__(self, player, tile, params=None, repeat=False, name="LissObserving"):
+        super().__init__(
+            name=name, player=player, tile=tile, repeat=repeat, params=params
+        )
+
+    def check_conditions(self):
+        story = getattr(getattr(self.player, "universe", None), "story", {})
+        if story.get("liss_gorran_done") == "1":
+            if self in self.tile.events_here:
+                self.tile.events_here.remove(self)
+            return
+        self.pass_conditions_to_process()
+
+    def process(self):
+        if not self.player.skip_dialog:
+            narrate("\n")
+            time.sleep(0.3)
+            print_slow(
+                "A girl was at the camp's far corner — young, dark-haired, turning a stone over "
+                "in one hand out of habit. Not approaching Gorran. Orbiting him instead, in loose, "
+                "unhurried circles, hands clasped behind her back like someone sizing up a fact "
+                "she wasn't sure she believed yet."
+            )
+            time.sleep(1)
+
+            # Gorran does not react to Liss anywhere in this scene — the prose is
+            # explicit that he gives no indication of having heard her.
+            begin_conversation(_JEAN_GORRAN_LISS)
+
+            # Burst 1 — sleep
+            print_slow(
+                "She spun a half-turn on one heel, already talking before she'd fully stopped."
+            )
+            time.sleep(0.6)
+            say(
+                "Does he sleep? He doesn't look like he's sleeping, but maybe that's just what "
+                "it looks like when he does — do Golemites even close their eyes, or— "
+                "sorry. Does he sleep? Yes or no.",
+                "Liss",
+                "curious",
+            )
+            time.sleep(1)
+            print_slow(
+                "Gorran didn't answer. Didn't move. His stillness could have meant anything, "
+                "including no, including yes, including that he'd heard the question and elected "
+                "not to dignify it with the effort of a response."
+            )
+            time.sleep(1)
+            print_slow(
+                "She reached out and poked his shin once, experimentally — the way you'd poke "
+                "a small animal to check whether it was asleep or just very good at pretending."
+            )
+            time.sleep(0.8)
+            say("I've been trying to figure that out for weeks.", "Jean", "neutral")
+            time.sleep(1)
+
+            # Burst 2 — the stone, held up for comparison
+            print_slow(
+                "She held the stone from her hand up next to his forearm, comparing the color, "
+                "tilting her head like a jeweler. Then she crouched and tapped it twice against "
+                "the toe of his foot — stone on stone, a small testing sound, like she expected "
+                "a different note back."
+            )
+            time.sleep(1)
+            say(
+                "Does it hurt? When you crack, I mean. Not that you look cracked. You don't. I "
+                "just mean — a rock cracks and it doesn't feel it, because it's a rock, but "
+                "you're not just a rock, so—",
+                "Liss",
+                "curious",
+            )
+            time.sleep(1)
+            print_slow(
+                "Gorran's eyes moved once — not to her, to the stone in her hand — the way "
+                "something very old regards something very new. Then away again. Nothing else."
+            )
+            time.sleep(1)
+            say("Okay. Well, that was more than just standing there. I guess you don't talk much.", "Liss", "happy")
+            time.sleep(1)
+
+            # Burst 3 — cold and bone (canonical exchange)
+            print_slow(
+                "A new thought visibly arrived. She clapped once, delighted with herself, and "
+                "bounced up onto her toes, hopping a half-step closer without seeming to notice "
+                "she'd moved."
+            )
+            time.sleep(0.8)
+            say(
+                "You're made of stone — does the cold feel different because of that? Devet "
+                "says it settles in his bones, and I thought, if you're basically already bone, "
+                "does it feel like anything, or is it just cold the same as everything else?",
+                "Liss",
+                "curious",
+            )
+            time.sleep(1)
+            say("Oh, but not bone. STONE. Still hard and cold. But maybe different?", "Liss", "happy")
+            time.sleep(1)
+            print_slow("Gorran regarded the nearby river, watching the current weave between boulders.")
+            time.sleep(0.8)
+            say("You don't have to answer.", "Liss", "neutral")
+            time.sleep(0.8)
+            print_slow("He didn't.")
+            time.sleep(0.8)
+            say("I'll probably ask again sometime.", "Liss", "neutral")
+            time.sleep(1)
+            say("He's not going to answer that one either.", "Jean", "neutral")
+            time.sleep(0.8)
+            say("I know. I'll keep asking anyway. Mara says I ask too much, but I think it's fine.", "Liss", "happy")
+            time.sleep(1)
+
+            # The seed, not the arrival
+            print_slow(
+                "Turning to say something else to Jean, she caught her own foot on nothing at "
+                "all and overbalanced — one arm windmilling before she caught herself on the "
+                "nearest solid thing, which happened to be Gorran's leg. He didn't shift his "
+                "weight. He didn't need to. She held on a moment longer than the stumble required, "
+                "then let go, a little sheepish, and didn't try to explain it."
+            )
+            time.sleep(1.2)
+            print_slow(
+                "Something in her ran out of questions before it ran out of curiosity. She "
+                "stopped talking, came a few steps closer than she'd allowed herself before, "
+                "and sat, watching the river instead of him."
+            )
+            time.sleep(1.5)
+            print_slow(
+                "Gorran allowed this without acknowledging it. Neither of them said anything "
+                "else."
+            )
+            time.sleep(1.2)
+            print_slow(
+                "Jean watched them — the girl and the old stone thing, both passively mesmerized by the "
+                "undulating water — and found he was smiling before he'd decided to."
+            )
+            time.sleep(1.2)
+            say("...", "Jean", "concerned")
+            print_slow(
+                "Then something moved under it, low and sudden — a tightness in his chest that "
+                "had no name and offered no explanation for itself. It was gone as quickly as it "
+                "came. He didn't chase it. He turned back to the fire."
+            )
+            time.sleep(1)
+        self._set_gate()
+
+    def _set_gate(self):
+        story = getattr(getattr(self.player, "universe", None), "story", None)
+        if story is not None:
+            story["liss_gorran_done"] = "1"
 
 
 class IronAndOathIntroEvent(Event):
@@ -743,3 +887,125 @@ class IronAndOathIntroEvent(Event):
         story = getattr(getattr(self.player, "universe", None), "story", None)
         if story is not None:
             story["iron_and_oath_intro_done"] = "1"
+
+
+class MaraObservationEvent(Event):
+    """
+    Fires once on Jean's re-entry to RiversEdge (1,0) after all three character
+    introduction gates are set (mara_intro_done, devet_intro_done, liss_gorran_done).
+    Mara makes her observation about Jean's background — religious kit or posture.
+    Sets story gate 'nomad_ferry_ready' (the main chapter completion gate).
+    """
+
+    def __init__(
+        self, player, tile, params=None, repeat=False, name="MaraObservation"
+    ):
+        super().__init__(
+            name=name, player=player, tile=tile, repeat=repeat, params=params
+        )
+
+    def check_conditions(self):
+        story = getattr(getattr(self.player, "universe", None), "story", {})
+        if story.get("nomad_ferry_ready") == "1":
+            if self in self.tile.events_here:
+                self.tile.events_here.remove(self)
+            return
+        # Wait until all three character beats are complete
+        if not (
+            story.get("mara_intro_done") == "1"
+            and story.get("devet_intro_done") == "1"
+            and story.get("liss_gorran_done") == "1"
+        ):
+            return
+        self.pass_conditions_to_process()
+
+    def process(self):
+        if not self.player.skip_dialog:
+            narrate("\n")
+            time.sleep(0.3)
+            # Match any bludgeon/mace (RustedIronMace, Mace, …) — they are
+            # sibling Weapon subclasses sharing subtype "Bludgeon", so an exact
+            # class-name check missed Jean's starting RustedIronMace.
+            has_mace = any(
+                getattr(item, "subtype", None) == "Bludgeon"
+                for item in self.player.inventory
+            )
+            print_slow(
+                "A while later — Jean was sitting with the bowl, Gorran nearby, the fire "
+                "between them and the river — Mara looked up from what she was sorting."
+            )
+            time.sleep(1)
+            begin_conversation(_JEAN_MARA)
+            if has_mace:
+                print_slow(
+                    "Her eyes tracked to Jean's mace for just a moment. Then back to her work."
+                )
+                time.sleep(0.5)
+                say("That's religious kit. You are - or were - a man of the church.", "Mara", "neutral")
+            else:
+                print_slow(
+                    "Her eyes moved across Jean — his posture, his hands, the way his weight "
+                    "sat — and returned to her work."
+                )
+                time.sleep(0.5)
+                say("You are - or were - a man of the church.", "Mara", "neutral")
+            time.sleep(0.5)
+            print_slow("Not a question.")
+            time.sleep(1)
+            say("Not a priest, if that's what you mean.", "Jean", "neutral")
+            time.sleep(1)
+            print_slow(
+                "Jean looked up at the sky with consternation. Why had he said that? "
+                "He was trying to remember something just out of reach."
+            )
+            print_slow("Confused, Mara watched Jean for a moment. She filed the exchange. The sorting continued.")
+            time.sleep(1)
+            say(
+                "When you're ready, head to the ferry landing and we'll be off. "
+                "Don't wait too long - crossing in the dark is unpleasant for everyone.", "Mara", "neutral"
+            )
+
+        self._set_gate()
+
+    def _set_gate(self):
+        story = getattr(getattr(self.player, "universe", None), "story", None)
+        if story is not None:
+            story["nomad_ferry_ready"] = "1"
+
+
+class DemoEndEvent(Event):
+    """
+    Fires when Jean interacts with the Ferry Landing passageway (via events_before).
+
+    Shows a narrated message that the crossing is visible but the demo ends here.
+    Blocks the passageway interaction from completing — Jean is not teleported.
+    Sets story gate 'demo_ended'.
+    """
+
+    def __init__(self, player, tile, params=None, repeat=True, name="DemoEnd"):
+        super().__init__(
+            name=name, player=player, tile=tile, repeat=repeat, params=params
+        )
+
+    def check_conditions(self):
+        """Only fires after the second conversation with Mara (ferry is ready.)"""
+        story = getattr(getattr(self.player, "universe", None), "story", {})
+        # Only fire after the ferry is ready
+        if story.get("nomad_ferry_ready") != "1":
+            return
+        self.pass_conditions_to_process()
+
+    def process(self):
+        if not self.player.skip_dialog:
+            narrate("\n")
+            time.sleep(0.3)
+            print_slow(
+                "The ferry is ready. The crossing is short — you can see the far bank clearly."
+            )
+            time.sleep(1)
+            print_slow("But beyond the river is where the demo ends.")
+            time.sleep(0.5)
+            print_slow("\n[The full journey continues in the complete release. You may continue exploring the area, but can go no further in the story.]\n")
+            time.sleep(1)
+            print_slow("\n[Be sure to submit feedback using the Feedback button at the top of the UI, next to 'Account'. Thank you for helping to make this game better! -Alex]\n")
+            time.sleep(1)

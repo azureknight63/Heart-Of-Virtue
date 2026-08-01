@@ -1635,7 +1635,13 @@ class TestMaraFirstContactEvent:
         ):
             ev.process()
         assert mock_print.called
-        mock_say.assert_called_once_with("Crossing west?", "Mara", "neutral")
+        mock_say.assert_any_call("Crossing west?", "Mara", "neutral")
+        mock_say.assert_any_call(
+            "Alright, fair enough. I accept your terms.", "Jean", "neutral"
+        )
+        # 14 spoken lines across 4 of the scene's 5 beats (fee, Gorran appraisal,
+        # guide offer, close) — Beat 3, the crucifix, is narration-only by design.
+        assert mock_say.call_count == 14
         assert player.universe.story.get("mara_intro_done") == "1"
 
     def test_set_gate_with_no_universe(self):
@@ -1688,10 +1694,16 @@ class TestDevetIntroEvent:
         player.skip_dialog = False
         with (
             patch("src.story.ch03.print_slow") as mock_print,
+            patch("src.story.ch03.say") as mock_say,
             patch("src.story.ch03.time.sleep"),
         ):
             ev.process()
         assert mock_print.called
+        mock_say.assert_any_call("Eat.", "Devet", "neutral")
+        mock_say.assert_any_call("It's food.", "Devet", "neutral")
+        # 7 spoken lines (4 Devet, 3 Jean) — terser than Mara's scene by design,
+        # but still two real exchanges plus the wordless food offer.
+        assert mock_say.call_count == 7
         assert player.universe.story.get("devet_intro_done") == "1"
 
     def test_set_gate_with_no_universe(self):
@@ -1749,7 +1761,14 @@ class TestLissObservingEvent:
         ):
             ev.process()
         assert mock_print.called
-        assert mock_say.called
+        mock_say.assert_any_call("I'll probably ask again sometime.", "Liss", "neutral")
+        mock_say.assert_any_call(
+            "He's not going to answer that one either.", "Jean", "neutral"
+        )
+        # 11 spoken lines (8 Liss, 3 Jean — including one wordless "...") across
+        # 3 curiosity bursts — Gorran never gets a line here; his half of the
+        # exchange is narrated stillness only.
+        assert mock_say.call_count == 11
         assert player.universe.story.get("liss_gorran_done") == "1"
 
     def test_set_gate_with_no_universe(self):
@@ -1810,10 +1829,10 @@ class TestEasternRoadTurnbackEvent:
 
 
 class TestMaraObservationEvent:
-    """MaraObservationEvent — sets the 'nomad_camp_reached' completion gate.
+    """MaraObservationEvent — sets the 'nomad_ferry_ready' completion gate.
 
-    (Formerly NomadCampArrivalEvent; renamed when the nomad-camp beats were
-    split across dedicated events.)
+    (Formerly NomadCampArrivalEvent, then keyed off 'nomad_camp_reached';
+    renamed to 'nomad_ferry_ready' when the ferry-landing send-off was added.)
     """
 
     def setup_method(self):
@@ -1825,7 +1844,7 @@ class TestMaraObservationEvent:
         player = _make_player()
         player.universe.story = {}
         if already_reached:
-            player.universe.story["nomad_camp_reached"] = "1"
+            player.universe.story["nomad_ferry_ready"] = "1"
         else:
             # Conditions only pass once the three character beats are complete.
             player.universe.story.update(
@@ -1869,7 +1888,7 @@ class TestMaraObservationEvent:
         ev, player, tile = self._make()
         player.skip_dialog = True
         ev.process()
-        assert player.universe.story.get("nomad_camp_reached") == "1"
+        assert player.universe.story.get("nomad_ferry_ready") == "1"
 
     def test_process_full_sets_gate(self):
         ev, player, tile = self._make()
@@ -1877,11 +1896,14 @@ class TestMaraObservationEvent:
         # has_mace=False branch
         with (
             patch("src.story.ch03.print_slow"),
-            patch("src.story.ch03.say"),
+            patch("src.story.ch03.say") as mock_say,
             patch("src.story.ch03.time.sleep"),
         ):
             ev.process()
-        assert player.universe.story.get("nomad_camp_reached") == "1"
+        mock_say.assert_any_call(
+            "You are - or were - a man of the church.", "Mara", "neutral"
+        )
+        assert player.universe.story.get("nomad_ferry_ready") == "1"
 
     def test_process_full_with_mace(self):
         """has_mace=True branch — matched by `subtype == "Bludgeon"`, not by
@@ -1899,8 +1921,15 @@ class TestMaraObservationEvent:
             patch("src.story.ch03.time.sleep"),
         ):
             ev.process()
-        mock_say.assert_any_call("That's religious kit.", "Mara", "neutral")
-        assert player.universe.story.get("nomad_camp_reached") == "1"
+        mock_say.assert_any_call(
+            "That's religious kit. You are - or were - a man of the church.",
+            "Mara",
+            "neutral",
+        )
+        mock_say.assert_any_call(
+            "Not a priest, if that's what you mean.", "Jean", "neutral"
+        )
+        assert player.universe.story.get("nomad_ferry_ready") == "1"
 
     def test_set_gate_with_no_universe(self):
         ev, player, tile = self._make()
