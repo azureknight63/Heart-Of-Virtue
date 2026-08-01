@@ -127,7 +127,6 @@ class GameConfig:
     log_file: str = "combat.log"
 
     # === [game] section: Scenarios ===
-    test_scenario: str = "standard"
     max_enemies_standard: int = 3
     max_enemies_pincer: int = 4
     max_enemies_melee: int = 6
@@ -147,11 +146,6 @@ class GameConfig:
     skip_combat: bool = False
 
     # === [combat_testing] section ===
-    enable_scenario_rotation: bool = False
-    current_scenario: str = "standard"
-    starting_difficulty: int = 3
-    difficulty_scaling: float = 0.5
-    max_rounds_before_auto_victory: int = 50
     npc_decision_delay: float = 0.5
     npc_flanking_threshold: float = 45.0
     npc_retreat_health_threshold: float = 0.3
@@ -394,7 +388,6 @@ class ConfigManager:
         self.config.log_file = _safe_get(section, "log_file", "combat.log")
 
         # Scenarios
-        self.config.test_scenario = _safe_get(section, "test_scenario", "standard")
         self.config.max_enemies_standard = _safe_getint(
             section, "max_enemies_standard", 3
         )
@@ -434,21 +427,6 @@ class ConfigManager:
             return
 
         section = self.parser["combat_testing"]
-        self.config.enable_scenario_rotation = _safe_getboolean(
-            section, "enable_scenario_rotation", False
-        )
-        self.config.current_scenario = _safe_get(
-            section, "current_scenario", "standard"
-        )
-        self.config.starting_difficulty = _safe_getint(
-            section, "starting_difficulty", 3
-        )
-        self.config.difficulty_scaling = _safe_getfloat(
-            section, "difficulty_scaling", 0.5
-        )
-        self.config.max_rounds_before_auto_victory = _safe_getint(
-            section, "max_rounds_before_auto_victory", 50
-        )
         self.config.npc_decision_delay = _safe_getfloat(
             section, "npc_decision_delay", 0.5
         )

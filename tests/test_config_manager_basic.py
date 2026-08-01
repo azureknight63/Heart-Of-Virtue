@@ -80,11 +80,6 @@ def test_config_manager_parses_combat_testing_section(tmp_path):
     config_file = tmp_path / "test.ini"
     config_file.write_text("""
 [combat_testing]
-enable_scenario_rotation = true
-current_scenario = pincer
-starting_difficulty = 5
-difficulty_scaling = 0.75
-max_rounds_before_auto_victory = 100
 npc_decision_delay = 1.5
 npc_flanking_threshold = 60.0
 npc_retreat_health_threshold = 0.5
@@ -95,11 +90,6 @@ validate_distance_calc = false
     mgr = ConfigManager(str(config_file))
     config = mgr.load()
 
-    assert config.enable_scenario_rotation is True
-    assert config.current_scenario == "pincer"
-    assert config.starting_difficulty == 5
-    assert config.difficulty_scaling == 0.75
-    assert config.max_rounds_before_auto_victory == 100
     assert config.npc_decision_delay == 1.5
     assert config.npc_flanking_threshold == 60.0
     assert config.npc_retreat_health_threshold == 0.5
@@ -191,7 +181,6 @@ log_distance_calculations = true
 log_angle_calculations = true
 log_npc_decisions = true
 log_file = combat.log
-test_scenario = standard
 max_enemies_standard = 3
 max_enemies_pincer = 4
 max_enemies_melee = 6
@@ -209,11 +198,6 @@ god_mode = false
 skip_combat = false
 
 [combat_testing]
-enable_scenario_rotation = false
-current_scenario = standard
-starting_difficulty = 3
-difficulty_scaling = 0.5
-max_rounds_before_auto_victory = 50
 npc_decision_delay = 0.5
 npc_flanking_threshold = 45.0
 npc_retreat_health_threshold = 0.3
@@ -249,7 +233,6 @@ boss_start_distance = 30
     # Verify all major settings loaded
     assert config.debug_mode is True
     assert config.coordinate_grid_size == (50, 50)
-    assert config.enable_scenario_rotation is False
     assert config.standard_player_x == 25
     assert config.standard_player_y == 10
     assert config.show_all_items is False

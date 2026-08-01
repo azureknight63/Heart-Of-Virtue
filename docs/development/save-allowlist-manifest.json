@@ -1489,14 +1489,6 @@
       "name": "Direction"
     },
     {
-      "module": "src.scenario_config",
-      "name": "ScenarioConfig"
-    },
-    {
-      "module": "src.scenario_config",
-      "name": "ScenarioType"
-    },
-    {
       "module": "src.secure_pickle",
       "name": "RestrictedUnpicklingError"
     },
@@ -1897,6 +1889,6 @@
       "name": "UUID"
     }
   ],
-  "count": 474,
+  "count": 472,
   "header_version": 1
 }

@@ -258,7 +258,6 @@ class TestUniverseInit:
         assert u.locked_chests == []
         assert u.testing_mode is False
         assert u.game_config is None
-        assert u.scenario_config is None
         assert u.coordinate_config is None
 
     def test_universe_init_with_player(self):
@@ -648,7 +647,7 @@ class TestUniverseBuild:
 
     @patch('src.universe.Universe._load_all_json_maps')
     def test_build_initializes_configs(self, mock_load):
-        """Test build initializes scenario and coordinate configs."""
+        """Test build initializes coordinate config."""
         u = Universe()
         player = Mock()
         player.saveuniv = None
@@ -657,7 +656,6 @@ class TestUniverseBuild:
 
         u.build(player)
 
-        assert u.scenario_config is not None
         assert u.coordinate_config is not None
 
 

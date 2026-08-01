@@ -100,8 +100,7 @@ def test_universe_config_can_be_set_from_gameconfig(tmp_path):
 testmode = true
 
 [combat_testing]
-enable_scenario_rotation = true
-current_scenario = pincer
+npc_flanking_threshold = 60.0
 """)
 
     # Load config
@@ -117,8 +116,7 @@ current_scenario = pincer
     # Verify settings applied
     assert universe.testing_mode is True
     assert universe.game_config is not None
-    assert universe.game_config.enable_scenario_rotation is True
-    assert universe.game_config.current_scenario == "pincer"
+    assert universe.game_config.npc_flanking_threshold == 60.0
 
 
 def test_config_coordinate_grid_size_as_tuple(tmp_path):
@@ -325,32 +323,20 @@ def test_scenario_settings_accessible(tmp_path):
     config_file = tmp_path / "test.ini"
     config_file.write_text("""
 [game]
-test_scenario = pincer
 max_enemies_standard = 5
 max_enemies_pincer = 8
 max_enemies_melee = 10
 max_enemies_boss = 2
-
-[combat_testing]
-enable_scenario_rotation = true
-current_scenario = melee
-starting_difficulty = 5
-difficulty_scaling = 0.75
 """)
 
     mgr = ConfigManager(str(config_file))
     config = mgr.load()
 
     # Verify scenario settings
-    assert config.test_scenario == "pincer"
     assert config.max_enemies_standard == 5
     assert config.max_enemies_pincer == 8
     assert config.max_enemies_melee == 10
     assert config.max_enemies_boss == 2
-    assert config.enable_scenario_rotation is True
-    assert config.current_scenario == "melee"
-    assert config.starting_difficulty == 5
-    assert config.difficulty_scaling == 0.75
 
 
 def test_logging_settings_accessible(tmp_path):
