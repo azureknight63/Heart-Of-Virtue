@@ -35,7 +35,7 @@ from src.npc import NPC, Friend
 from src.npc._enemies import (
     Slime, Testexp, RockRumbler, Lurker, GiantSpider, CaveBat,
     ElderSlime, KingSlime, TalusHound, ScarpAdder, StatusDummy,
-    CorruptedStoneCreature
+    CorruptedStoneCreature, WailWraith
 )
 from src.npc._friends import Mynx, Gorran
 from src.npc._combat import NPCCombatMixin
@@ -268,7 +268,9 @@ class TestEnemySubclasses:
         if extra_checks.get('has_resistances'):
             assert len(enemy.resistance_base) > 0
         if extra_checks.get('has_loot'):
-            assert enemy.loot == loot.lev1
+            # Superset check: some enemies (e.g. KingSlime) layer extra
+            # status-cure drops on top of the lev1 base table (#340).
+            assert loot.lev1.items() <= enemy.loot.items()
         if extra_checks.get('has_status_resistance'):
             assert 'death' in enemy.status_resistance_base
         if extra_checks.get('all_neutral_resistances'):
@@ -512,10 +514,10 @@ class TestNPCLootSystem:
     """Test NPC loot initialization and management."""
 
     def test_npc_loot_initialization(self):
-        """Test NPC loot is initialized."""
+        """Test NPC loot is initialized: lev0 plus a Slime Flask chance (#340)."""
         npc = Slime()
         assert npc.loot is not None
-        assert npc.loot == loot.lev0
+        assert npc.loot == {**loot.lev0, "SlimeFlask": {"chance": 20, "qty": 1}}
 
     def test_lurker_loot_is_lev1(self):
         """Test Lurker has better loot."""
@@ -523,9 +525,9 @@ class TestNPCLootSystem:
         assert lurker.loot == loot.lev1
 
     def test_king_slime_loot_is_lev1(self):
-        """Test KingSlime has lev1 loot."""
+        """Test KingSlime has lev1 loot plus a Slime Flask chance (#340)."""
         king = KingSlime()
-        assert king.loot == loot.lev1
+        assert king.loot == {**loot.lev1, "SlimeFlask": {"chance": 25, "qty": "r1-2"}}
 
 
 class TestNPCResistances:
@@ -1139,6 +1141,52 @@ class TestEnemyResistancePatterns:
         """Test Lurker has doom immunity."""
         lurker = Lurker()
         assert lurker.status_resistance_base["doom"] == 1
+
+
+class TestWailWraith:
+    """Issue #350: the WailWraith is immune to conventional (physical)
+    damage, weak to Pure/Light, resistant to Dark, and carries the
+    Keening Toll / Wail Strike / Death Knell move kit."""
+
+    def test_immune_to_physical_damage_types(self):
+        wraith = WailWraith()
+        assert wraith.resistance_base["slashing"] == 0.0
+        assert wraith.resistance_base["piercing"] == 0.0
+        assert wraith.resistance_base["crushing"] == 0.0
+
+    def test_weak_to_pure_and_light(self):
+        wraith = WailWraith()
+        assert wraith.resistance_base["pure"] == 2.0
+        assert wraith.resistance_base["light"] == 2.0
+
+    def test_resistant_to_dark(self):
+        wraith = WailWraith()
+        assert wraith.resistance_base["dark"] == 0.5
+
+    def test_other_damage_types_land_normally(self):
+        """Fire/ice/shock/earth/spiritual should be unaffected — only the
+        types explicitly called out in the #350 design get overridden."""
+        wraith = WailWraith()
+        for damage_type in ("fire", "ice", "shock", "earth", "spiritual"):
+            assert wraith.resistance_base[damage_type] == 1.0
+
+    def test_own_death_doom_resistance_is_full(self):
+        """The Wraith's own resistance to death/doom is unrelated to Death
+        Knell, which it inflicts on its target, not on itself."""
+        wraith = WailWraith()
+        assert wraith.status_resistance_base["death"] == 1.0
+        assert wraith.status_resistance_base["doom"] == 1.0
+
+    def test_cannot_yield(self):
+        wraith = WailWraith()
+        assert wraith.can_yield is False
+
+    def test_move_kit(self):
+        wraith = WailWraith()
+        move_names = [m.name for m in wraith.known_moves if hasattr(m, 'name')]
+        assert "Keening Toll" in move_names
+        assert "Wail Strike" in move_names
+        assert "Death Knell" in move_names
 
 
 class TestWeaponTypeSpecificEnemies:

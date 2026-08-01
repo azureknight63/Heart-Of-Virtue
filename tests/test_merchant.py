@@ -216,6 +216,27 @@ def test_fill_remaining_stock_respects_container_capacity(monkeypatch):
     assert (len(m.inventory) + len(cont.inventory)) <= 3
 
 
+def test_relic_excluded_from_random_restock(monkeypatch):
+    """Relic (issue #340) is a story-locked grief cure granted in Jean's starting
+    inventory (see Player.__init__) — it must never appear as random merchant
+    stock. Restrict the candidate pool to just {Relic, Restorative}: if Relic
+    weren't filtered by disallowed_classes, it would win roughly half the
+    weighted draws; instead every slot should deterministically resolve to
+    the only remaining candidate, Restorative.
+    """
+    from src.items import Relic
+    m, room, _ = make_merchant(stock_count=5)
+
+    def fake_getmembers(module, predicate):
+        return [("Relic", Relic), ("Restorative", Restorative)]
+
+    monkeypatch.setattr('inspect.getmembers', fake_getmembers)
+    monkeypatch.setattr('random.uniform', lambda a, b: a)
+    m._fill_remaining_stock([])
+    assert len(m.inventory) == 5
+    assert all(type(item).__name__ == 'Restorative' for item in m.inventory)
+
+
 def test_update_shop_conditions_value_applies(monkeypatch):
     m, room, _ = make_merchant(stock_count=0)
     # Prepare inventory with base_value

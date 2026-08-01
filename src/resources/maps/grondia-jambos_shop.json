@@ -310,6 +310,72 @@
                                 "gives_exp": false,
                                 "power": 15
                             }
+                        },
+                        {
+                            "__class__": "SlimeFlask",
+                            "__module__": "items",
+                            "props": {
+                                "weight": 0.2,
+                                "maintype": "Consumable",
+                                "subtype": "Potion",
+                                "count": 2,
+                                "stack_key": "Slime Flask",
+                                "name": "Slime Flask",
+                                "description": "A small vial of water drawn from the Grondelith Grotto.\nThe mineral-clean water cuts through slime residue where\nordinary water would not.",
+                                "value": 80,
+                                "type": "Consumable",
+                                "hidden": false,
+                                "hide_factor": 0,
+                                "merchandise": true,
+                                "discovery_message": "a useful item.",
+                                "announce": "A small glass vial of luminous water with a hand-drawn label reading 'Slime Flask.'",
+                                "aliases": [],
+                                "action_aliases": [],
+                                "interactions": [
+                                    "use",
+                                    "drink",
+                                    "drop"
+                                ],
+                                "skills": null,
+                                "owner": null,
+                                "equip_states": [],
+                                "add_resistance": {},
+                                "add_status_resistance": {},
+                                "gives_exp": false
+                            }
+                        },
+                        {
+                            "__class__": "MineralSolvent",
+                            "__module__": "items",
+                            "props": {
+                                "weight": 0.25,
+                                "maintype": "Consumable",
+                                "subtype": "Potion",
+                                "count": 2,
+                                "stack_key": "Mineral Solvent",
+                                "name": "Mineral Solvent",
+                                "description": "A corked bottle of milky-blue water from the Grondelith Grotto.\nApplied to hardened mineral crust, it dissolves the sediment\nand restores normal movement.",
+                                "value": 120,
+                                "type": "Consumable",
+                                "hidden": false,
+                                "hide_factor": 0,
+                                "merchandise": true,
+                                "discovery_message": "a useful item.",
+                                "announce": "A corked bottle of pale, milky-blue liquid. The label reads 'Mineral Solvent.'",
+                                "aliases": [],
+                                "action_aliases": [],
+                                "interactions": [
+                                    "use",
+                                    "drink",
+                                    "drop"
+                                ],
+                                "skills": null,
+                                "owner": null,
+                                "equip_states": [],
+                                "add_resistance": {},
+                                "add_status_resistance": {},
+                                "gives_exp": false
+                            }
                         }
                     ],
                     "base_gold": 800,

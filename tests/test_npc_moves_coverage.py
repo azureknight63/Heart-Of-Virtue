@@ -1007,7 +1007,10 @@ class TestWailStrike:
 
     def test_wail_strike_execute(self):
         """Lines 1053-1079: execute runs wail attack, dealing power*0.7 damage
-        while ignoring the target's protection entirely (sonic damage)."""
+        while ignoring the target's protection entirely (sonic damage).
+        WailStrike is now a TelegraphedSurge (issue #350 — the WailWraith's
+        telegraphed secondary), so power is amplified by _DAMAGE_MULTIPLIER
+        (1.8) during evaluate() before this 0.7 scalar is applied."""
         import src.moves as moves
 
         p = _make_player_target()
@@ -1028,8 +1031,10 @@ class TestWailStrike:
             patch("random.random", return_value=0.99),
         ):
             ws.execute(npc)
-        # power fixed at 8 (uniform patched to 1.0); damage = int(8*0.7) = 5, unaffected by protection
-        assert p.hp == hp_before - 5
+        # power fixed at 8*1.8=14.4 (uniform patched to 1.0, TelegraphedSurge
+        # multiplier applied in evaluate()); damage = int(14.4*0.7) = 10,
+        # unaffected by protection
+        assert p.hp == hp_before - 10
         assert npc.fatigue == fatigue_before - ws.fatigue_cost
 
     def test_wail_strike_refresh_announcements(self):
@@ -1061,6 +1066,245 @@ class TestWailStrike:
             ws.evaluate()
         assert ws.mvrange == (1, 4)
         assert tuple(npc.combat_range) != ws.mvrange
+
+
+class TestKeeningToll:
+    """The WailWraith's primary attack (issue #350) — drains fatigue instead
+    of dealing HP damage."""
+
+    def test_keening_toll_init(self):
+        import src.moves as moves
+
+        p = _make_player_target()
+        npc = _make_npc()
+        npc.target = p
+        kt = moves.KeeningToll(npc)
+        assert kt.name == "Keening Toll"
+        assert kt.mvrange == (1, 4)
+        assert kt.custom_mvrange is True
+
+    def test_keening_toll_execute_drains_fatigue_not_hp(self):
+        import src.moves as moves
+
+        p = _make_player_target()
+        p.finesse = 0
+        npc = _make_npc(damage=8, finesse=10, intelligence=5)
+        npc.target = p
+        npc.combat_proximity[p] = 2
+        with patch("random.uniform", return_value=1.0):
+            kt = moves.KeeningToll(npc)
+        kt.target = p
+        hp_before = p.hp
+        fatigue_before = p.fatigue
+        # hit_chance = int(95 - 0 + 10*0.7 + 5*0.3) = 103; roll=0 -> diff=103 (not glancing)
+        with (
+            patch("builtins.print"),
+            patch("random.randint", return_value=0),
+            patch("random.random", return_value=0.99),
+        ):
+            kt.execute(npc)
+        # power fixed at 8 (uniform patched to 1.0); drain = max(1, int(8*0.5)) = 4
+        assert p.hp == hp_before  # no HP damage — the whole point of the move
+        assert p.fatigue == fatigue_before - 4
+
+    def test_keening_toll_glancing_halves_drain(self):
+        import src.moves as moves
+
+        p = _make_player_target()
+        p.finesse = 50
+        npc = _make_npc(finesse=10, intelligence=5, damage=20)
+        npc.target = p
+        npc.combat_proximity[p] = 2
+        with patch("random.uniform", return_value=1.0):
+            kt = moves.KeeningToll(npc)
+        kt.target = p
+        fatigue_before = p.fatigue
+        # hit_chance = int(95 - 50 + 10*0.7 + 5*0.3) = 53; roll=48 -> diff=5 < 10 (glancing)
+        with patch("builtins.print"), patch("random.randint", return_value=48):
+            kt.execute(npc)
+        # power fixed at 20; base drain = max(1, int(20*0.5)) = 10, halved -> 5
+        assert p.fatigue == fatigue_before - 5
+
+    def test_keening_toll_miss_no_drain(self):
+        import src.moves as moves
+
+        p = _make_player_target()
+        p.finesse = 200  # very high finesse forces a miss
+        npc = _make_npc(finesse=10, intelligence=5, damage=8)
+        npc.target = p
+        npc.combat_proximity[p] = 2
+        kt = moves.KeeningToll(npc)
+        kt.target = p
+        fatigue_before = p.fatigue
+        with patch("builtins.print"), patch("random.randint", return_value=99):
+            kt.execute(npc)
+        assert p.fatigue == fatigue_before
+
+    def test_keening_toll_parry_no_drain(self):
+        import src.moves as moves
+
+        p = _make_player_target()
+        npc = _make_npc(damage=8, finesse=10, intelligence=5)
+        npc.target = p
+        npc.combat_proximity[p] = 2
+        kt = moves.KeeningToll(npc)
+        kt.target = p
+        fatigue_before = p.fatigue
+        with (
+            patch("builtins.print"),
+            patch("random.randint", return_value=0),
+            patch("src.moves._npc.functions.check_parry", return_value=True),
+        ):
+            kt.execute(npc)
+        assert p.fatigue == fatigue_before
+
+
+class TestDeathKnell:
+    """The WailWraith's execute (issue #350) — only viable below 10% max FP,
+    and inflicts states.Death through the ordinary functions.inflict()
+    resistance check (not a forced bypass). Jean's default "death" status
+    resistance is left untouched per the #350 design decision, so this move
+    does not currently land on him — see test_execute_respects_full_death_resistance."""
+
+    def test_death_knell_init(self):
+        import src.moves as moves
+
+        p = _make_player_target()
+        npc = _make_npc()
+        npc.target = p
+        dk = moves.DeathKnell(npc)
+        assert dk.name == "Death Knell"
+
+    def test_not_viable_above_fp_threshold(self):
+        import src.moves as moves
+
+        p = _make_player_target()
+        p.fatigue = 50
+        p.maxfatigue = 100
+        npc = _make_npc()
+        npc.target = p
+        npc.combat_proximity[p] = 2
+        dk = moves.DeathKnell(npc)
+        dk.target = p
+        assert dk.viable() is False
+
+    def test_viable_below_fp_threshold(self):
+        import src.moves as moves
+
+        p = _make_player_target()
+        p.fatigue = 5
+        p.maxfatigue = 100
+        npc = _make_npc()
+        npc.target = p
+        npc.combat_proximity[p] = 2
+        dk = moves.DeathKnell(npc)
+        dk.target = p
+        assert dk.viable() is True
+
+    def test_viable_false_when_out_of_range(self):
+        """The FP-threshold check augments — never replaces — the base
+        range check inherited from NpcAttack.viable()."""
+        import src.moves as moves
+
+        p = _make_player_target()
+        p.fatigue = 5
+        p.maxfatigue = 100
+        npc = _make_npc()
+        npc.target = p
+        npc.combat_proximity[p] = 999  # far outside default mvrange
+        dk = moves.DeathKnell(npc)
+        dk.target = p
+        assert dk.viable() is False
+
+    def test_execute_kills_target_with_no_death_resistance(self):
+        """A landed, unparried hit kills a target with zero resistance to the
+        "death" statustype — the ordinary functions.inflict() resistance
+        check, not a forced bypass (see #350 design correction)."""
+        import src.moves as moves
+
+        p = _make_player_target()
+        p.fatigue = 5
+        p.maxfatigue = 100
+        p.hp = 42
+        p.status_resistance["death"] = 0.0
+        p.status_resistance_base["death"] = 0.0
+        npc = _make_npc(damage=8, finesse=10, intelligence=5)
+        npc.target = p
+        npc.combat_proximity[p] = 2
+        dk = moves.DeathKnell(npc)
+        dk.target = p
+        with (
+            patch("builtins.print"),
+            patch("random.randint", return_value=0),
+        ):
+            dk.execute(npc)
+        assert p.hp == 0
+        assert p.is_alive() is False
+
+    def test_execute_respects_full_death_resistance(self):
+        """A landed, unparried hit against a target with full "death"
+        resistance does nothing — Death Knell does not bypass resistance.
+        (functions.inflict's effective_chance = chance * (1 - resistance)
+        is 0 at resistance=1.0, so the state never applies.) Jean's own
+        default death resistance is left untouched by this issue, so this
+        is also what currently happens against him."""
+        import src.moves as moves
+
+        p = _make_player_target()
+        p.fatigue = 5
+        p.maxfatigue = 100
+        p.hp = 42
+        p.status_resistance["death"] = 1.0
+        p.status_resistance_base["death"] = 1.0
+        npc = _make_npc(damage=8, finesse=10, intelligence=5)
+        npc.target = p
+        npc.combat_proximity[p] = 2
+        dk = moves.DeathKnell(npc)
+        dk.target = p
+        with (
+            patch("builtins.print"),
+            patch("random.randint", return_value=0),
+        ):
+            dk.execute(npc)
+        assert p.hp == 42
+        assert p.is_alive() is True
+
+    def test_execute_miss_leaves_target_alive(self):
+        import src.moves as moves
+
+        p = _make_player_target()
+        p.fatigue = 5
+        p.maxfatigue = 100
+        p.hp = 42
+        p.finesse = 200  # forces a miss
+        npc = _make_npc(finesse=10, intelligence=5, damage=8)
+        npc.target = p
+        npc.combat_proximity[p] = 2
+        dk = moves.DeathKnell(npc)
+        dk.target = p
+        with patch("builtins.print"), patch("random.randint", return_value=99):
+            dk.execute(npc)
+        assert p.hp == 42
+
+    def test_execute_parry_leaves_target_alive(self):
+        import src.moves as moves
+
+        p = _make_player_target()
+        p.fatigue = 5
+        p.maxfatigue = 100
+        p.hp = 42
+        npc = _make_npc(damage=8, finesse=10, intelligence=5)
+        npc.target = p
+        npc.combat_proximity[p] = 2
+        dk = moves.DeathKnell(npc)
+        dk.target = p
+        with (
+            patch("builtins.print"),
+            patch("random.randint", return_value=0),
+            patch("src.moves._npc.functions.check_parry", return_value=True),
+        ):
+            dk.execute(npc)
+        assert p.hp == 42
 
 
 # ---------------------------------------------------------------------------
@@ -1967,7 +2211,9 @@ class TestWailStrikeEdgeCases:
         assert npc.fatigue == fatigue_before - ws.fatigue_cost
 
     def test_execute_glancing_blow_deterministic(self):
-        """Lines 1067-1068: glancing blow branch halves damage."""
+        """Lines 1067-1068: glancing blow branch halves damage. WailStrike is
+        a TelegraphedSurge (issue #350), so power is amplified by
+        _DAMAGE_MULTIPLIER (1.8) during evaluate() before this scalar."""
         import src.moves as moves
 
         p = _make_player_target()
@@ -1982,8 +2228,8 @@ class TestWailStrikeEdgeCases:
         # hit_chance = int(95 - 50 + 10*0.7 + 5*0.3) = 53; roll=48 -> diff=5 < 10 (glancing)
         with patch("builtins.print"), patch("random.randint", return_value=48):
             ws.execute(npc)
-        # power fixed at 20; base damage = int(20*0.7) = 14, halved -> 7
-        assert p.hp == hp_before - 7
+        # power fixed at 20*1.8=36; base damage = int(36*0.7) = 25, halved -> 12
+        assert p.hp == hp_before - 12
 
     def test_execute_parry_path(self):
         """Line 1072: functions.check_parry True routes to self.parry() instead

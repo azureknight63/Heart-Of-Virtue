@@ -751,6 +751,77 @@ class TestRelic:
 
 
 # ---------------------------------------------------------------------------
+# DragonHeartGem / CrystalTear — equip path + resistance bonus (issue #342)
+# ---------------------------------------------------------------------------
+
+
+class TestDragonHeartGemCrystalTearEquip:
+    def test_gem_is_equippable_and_applies_resistance_bonus(self):
+        player = _fresh_player()
+        gem = items.DragonHeartGem(merchandise=False)
+        player.inventory.append(gem)
+
+        assert hasattr(gem, "isequipped")
+        assert gem.isequipped is False
+        assert player.resistance["fire"] == 1.0
+
+        player.equip_item(item_object=gem)
+
+        assert gem.isequipped is True
+        assert player.resistance["fire"] == 1.3
+
+    def test_tear_applies_spiritual_resistance_bonus(self):
+        player = _fresh_player()
+        tear = items.CrystalTear(merchandise=False)
+        player.inventory.append(tear)
+
+        player.equip_item(item_object=tear)
+
+        assert tear.isequipped is True
+        assert player.resistance["spiritual"] == 1.25
+
+    def test_only_one_relic_subtype_accessory_equipped_at_a_time(self):
+        """Equipping a second Relic-subtype accessory unequips the first (#342)."""
+        player = _fresh_player()
+        gem = items.DragonHeartGem(merchandise=False)
+        tear = items.CrystalTear(merchandise=False)
+        player.inventory.append(gem)
+        player.inventory.append(tear)
+
+        player.equip_item(item_object=gem)
+        player.equip_item(item_object=tear)
+
+        assert gem.isequipped is False
+        assert tear.isequipped is True
+        # The fire bonus should have reverted when the gem was swapped out.
+        assert player.resistance["fire"] == 1.0
+        assert player.resistance["spiritual"] == 1.25
+
+    def test_relic_accessory_does_not_conflict_with_rings(self):
+        """Relic-subtype accessories coexist with Ring/Bracelet/Necklace subtypes (#342)."""
+        player = _fresh_player()
+        gem = items.DragonHeartGem(merchandise=False)
+        ring = items.SilverRing(merchandise=False)
+        player.inventory.append(gem)
+        player.inventory.append(ring)
+
+        player.equip_item(item_object=gem)
+        player.equip_item(item_object=ring)
+
+        assert gem.isequipped is True
+        assert ring.isequipped is True
+
+    def test_merchandise_gem_cannot_be_equipped(self):
+        player = _fresh_player()
+        gem = items.DragonHeartGem(merchandise=True)
+        player.inventory.append(gem)
+
+        player.equip_item(item_object=gem)
+
+        assert gem.isequipped is False
+
+
+# ---------------------------------------------------------------------------
 # Arrow — stack_grammar (singular) and prefer()
 # ---------------------------------------------------------------------------
 
