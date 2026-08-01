@@ -208,6 +208,97 @@ class TestHauntingPresence:
 
         mock_hit.assert_called_once()
 
+    def test_reduces_hit_chance_for_basic_attack(self, monkeypatch):
+        """Issue #421 closure: basic Attack used to hand-roll its own hit-chance
+        math and never applied HauntingPresence at all."""
+        from src.moves import Attack
+
+        user = _make_user("Sword")
+        tgt = _make_target(known_moves=[_known_move("Haunting Presence")])
+        tgt.combat_proximity = {user: 2}
+
+        move = Attack(user)
+        move.target = tgt
+        move.power = 30
+        move.base_damage_type = "crushing"
+
+        monkeypatch.setattr(random, "randint", lambda a, b: 100)
+        monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
+
+        with patch("src.moves._utility.functions.check_parry", return_value=False), \
+             patch.object(move, "hit") as mock_hit, \
+             patch.object(move, "miss") as mock_miss, \
+             patch.object(move, "viable", return_value=True), \
+             patch("src.moves._utility.narrate"):
+            move.execute(user)
+
+        # hit_chance without the aura is ~108, beating a roll of 100; with the
+        # 15% penalty it drops to ~91, below the roll.
+        mock_miss.assert_called_once()
+        mock_hit.assert_not_called()
+
+    def test_reduces_hit_chance_for_feint_and_pivot(self, monkeypatch):
+        """Issue #421 closure: FeintAndPivot hand-rolled the attack pipeline
+        (issue #402) but never picked up HauntingPresence."""
+        from src.moves._dagger import FeintAndPivot
+
+        user = _make_user("Dagger")
+        tgt = _make_target(known_moves=[_known_move("Haunting Presence")])
+        tgt.combat_proximity = {user: 2}
+
+        move = FeintAndPivot(user)
+        move.target = tgt
+        move.power = 30
+        move.base_damage_type = "slashing"
+
+        monkeypatch.setattr(random, "randint", lambda a, b: 90)
+        monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
+
+        with patch("src.moves._dagger.functions.check_parry", return_value=False), \
+             patch.object(move, "hit") as mock_hit, \
+             patch.object(move, "miss") as mock_miss, \
+             patch("src.moves._dagger.cprint"):
+            move.execute(user)
+
+        # hit_chance without the aura is 100, beating a roll of 90; with the
+        # 15% penalty it drops to 85, below the roll.
+        mock_miss.assert_called_once()
+        mock_hit.assert_not_called()
+
+    def test_reduces_hit_chance_for_npc_attack(self, monkeypatch):
+        """Issue #421 closure: NPC attacks (the majority of attacks landed
+        against the player) never checked the defender's HauntingPresence."""
+        from src.moves._npc import NpcAttack
+
+        tgt = _make_target(known_moves=[_known_move("Haunting Presence")])
+        npc = _make_user(
+            "Sword",
+            name="Goblin",
+            target=tgt,
+            combat_range=(0, 5),
+            damage=20,
+        )
+        tgt.combat_proximity = {npc: 2}
+
+        move = NpcAttack(npc)
+        move.target = tgt
+        move.power = 30
+
+        monkeypatch.setattr(random, "randint", lambda a, b: 95)
+        monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
+
+        with patch("src.moves._npc.functions.check_parry", return_value=False), \
+             patch.object(move, "hit") as mock_hit, \
+             patch.object(move, "miss") as mock_miss, \
+             patch.object(move, "viable", return_value=True), \
+             patch("src.moves._npc.narrate"):
+            move.execute(npc)
+
+        # hit_chance without the aura is 105, beating a roll of 95; with the
+        # 15% penalty it drops to 89, below the roll.
+        mock_miss.assert_called_once()
+        mock_hit.assert_not_called()
+
 
 # ---------------------------------------------------------------------------
 # SentinelsVigil
@@ -361,3 +452,75 @@ class TestReapersMarkWiring:
             move.execute(user)
 
         assert tgt._reapers_mark is True
+
+
+# ---------------------------------------------------------------------------
+# Fatigue floor-at-0 clamp (issue #464)
+#
+# FeintAndPivot, WhirlAttack, and VertigoSpin hand-roll their own attack
+# pipeline (issue #402) and each deducted fatigue at the end of execute()
+# without the floor-at-0 clamp every other attack path has, letting a
+# high-cost move push a low-fatigue combatant's fatigue negative. Nothing
+# elsewhere in the engine clamps fatigue back to 0.
+# ---------------------------------------------------------------------------
+
+
+class TestSpecialMoveFatigueFloor:
+    def test_feint_and_pivot_does_not_go_negative(self, monkeypatch):
+        from src.moves._dagger import FeintAndPivot
+
+        user = _make_user("Dagger", fatigue=10)
+        tgt = _make_target()
+        tgt.combat_position = None  # skip the repositioning branch
+
+        move = FeintAndPivot(user)
+        move.target = tgt
+        move.fatigue_cost = 999
+
+        monkeypatch.setattr(random, "randint", lambda a, b: 999)  # force a miss
+        monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
+
+        with patch("src.moves._dagger.functions.check_parry", return_value=False), \
+             patch.object(move, "miss"), \
+             patch("src.moves._dagger.cprint"):
+            move.execute(user)
+
+        assert user.fatigue == 0
+
+    def test_whirl_attack_does_not_go_negative(self, monkeypatch):
+        from src.moves._sword import WhirlAttack
+        from unittest.mock import MagicMock
+
+        user = _make_user("Sword", fatigue=10, combat_position=MagicMock())
+        # No enemies in range -> the per-enemy loop is a no-op; only the
+        # trailing facing/fatigue bookkeeping runs.
+        user.combat_proximity = {}
+
+        move = WhirlAttack(user)
+        move.fatigue_cost = 999
+
+        with patch("src.moves._sword.cprint"):
+            move.execute(user)
+
+        assert user.fatigue == 0
+
+    def test_vertigo_spin_does_not_go_negative(self, monkeypatch):
+        from src.moves._sword import VertigoSpin
+
+        user = _make_user("Sword", fatigue=10)
+        tgt = _make_target()
+        tgt.combat_position = None  # skip the disorient/facing branch
+
+        move = VertigoSpin(user)
+        move.target = tgt
+        move.fatigue_cost = 999
+
+        monkeypatch.setattr(random, "randint", lambda a, b: 999)  # force a miss
+        monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
+
+        with patch("src.moves._sword.functions.check_parry", return_value=False), \
+             patch.object(move, "miss"), \
+             patch("src.moves._sword.cprint"):
+            move.execute(user)
+
+        assert user.fatigue == 0

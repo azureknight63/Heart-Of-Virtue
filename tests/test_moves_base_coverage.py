@@ -27,7 +27,9 @@ if str(_ROOT) not in sys.path:
 from src.moves._base import (
     Move,
     PassiveMove,
+    _apply_blade_mastery_discount,
     _apply_carry_fatigue,
+    _apply_haunting_presence,
     _apply_work_the_gap,
     _ensure_weapon_exp,
     select_weighted_target,
@@ -769,3 +771,110 @@ class TestStandardExecuteAttackAdditional:
              patch.object(move, "miss") as mock_miss:
             move.standard_execute_attack(user, power=40, base_damage_type="crushing")
         mock_miss.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# _apply_blade_mastery_discount / _apply_haunting_presence (issue #464)
+#
+# Extracted out of standard_evaluate_attack/standard_execute_attack so every
+# hand-rolled attack (Attack, FeintAndPivot, WhirlAttack, VertigoSpin, every
+# NPC attack, ...) can share the exact same passive-check logic instead of
+# maintaining their own drifting copies. Tested here in isolation since ~40
+# call sites across the moves package now depend on their exact contract.
+# ---------------------------------------------------------------------------
+
+
+class TestApplyBladeMasteryDiscount:
+    def test_discounts_sword_wielder_with_passive(self):
+        user = _make_combatant()
+        user.eq_weapon = _make_weapon(subtype="Sword")
+        blade_mastery = MagicMock()
+        blade_mastery.name = "Blade Mastery"
+        user.known_moves = [blade_mastery]
+
+        result = _apply_blade_mastery_discount(user, 100, floor_fatigue=10)
+
+        assert result == max(10, int(100 * 0.85))
+
+    def test_no_discount_without_passive(self):
+        user = _make_combatant()
+        user.eq_weapon = _make_weapon(subtype="Sword")
+        user.known_moves = []
+
+        assert _apply_blade_mastery_discount(user, 100, floor_fatigue=10) == 100
+
+    def test_no_discount_for_non_sword_weapon(self):
+        user = _make_combatant()
+        user.eq_weapon = _make_weapon(subtype="Dagger")
+        blade_mastery = MagicMock()
+        blade_mastery.name = "Blade Mastery"
+        user.known_moves = [blade_mastery]
+
+        assert _apply_blade_mastery_discount(user, 100, floor_fatigue=10) == 100
+
+    def test_discount_respects_floor(self):
+        user = _make_combatant()
+        user.eq_weapon = _make_weapon(subtype="Sword")
+        blade_mastery = MagicMock()
+        blade_mastery.name = "Blade Mastery"
+        user.known_moves = [blade_mastery]
+
+        # 15 * 0.85 = 12.75 -> would floor to 12, but floor_fatigue clamps to 20
+        assert _apply_blade_mastery_discount(user, 15, floor_fatigue=20) == 20
+
+    def test_default_floor_fatigue_is_ten(self):
+        user = _make_combatant()
+        user.eq_weapon = _make_weapon(subtype="Sword")
+        blade_mastery = MagicMock()
+        blade_mastery.name = "Blade Mastery"
+        user.known_moves = [blade_mastery]
+
+        assert _apply_blade_mastery_discount(user, 1) == 10
+
+
+class TestApplyHauntingPresence:
+    def test_reduces_hit_chance_within_close_range(self):
+        attacker = _make_combatant(name="Jean")
+        haunting = MagicMock()
+        haunting.name = "Haunting Presence"
+        defender = _make_combatant(name="Goblin", known_moves=[haunting])
+        defender.combat_proximity = {attacker: 3}
+
+        assert _apply_haunting_presence(attacker, defender, 100) == int(100 * 0.85)
+
+    def test_no_penalty_outside_close_range(self):
+        attacker = _make_combatant(name="Jean")
+        haunting = MagicMock()
+        haunting.name = "Haunting Presence"
+        defender = _make_combatant(name="Goblin", known_moves=[haunting])
+        defender.combat_proximity = {attacker: 4}
+
+        assert _apply_haunting_presence(attacker, defender, 100) == 100
+
+    def test_no_penalty_without_passive(self):
+        attacker = _make_combatant(name="Jean")
+        defender = _make_combatant(name="Goblin")
+        defender.combat_proximity = {attacker: 1}
+
+        assert _apply_haunting_presence(attacker, defender, 100) == 100
+
+    def test_no_penalty_when_hit_chance_already_non_positive(self):
+        """Auto-miss (-1, from viable()=False) must stay untouched — the
+        passive only matters for attacks that had a chance to land."""
+        attacker = _make_combatant(name="Jean")
+        haunting = MagicMock()
+        haunting.name = "Haunting Presence"
+        defender = _make_combatant(name="Goblin", known_moves=[haunting])
+        defender.combat_proximity = {attacker: 1}
+
+        assert _apply_haunting_presence(attacker, defender, -1) == -1
+
+    def test_no_penalty_without_combat_proximity_attribute(self):
+        attacker = _make_combatant(name="Jean")
+        haunting = MagicMock()
+        haunting.name = "Haunting Presence"
+        defender = MagicMock(spec=["name", "known_moves"])
+        defender.name = "Goblin"
+        defender.known_moves = [haunting]
+
+        assert _apply_haunting_presence(attacker, defender, 100) == 100

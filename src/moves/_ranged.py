@@ -13,6 +13,7 @@ from ._base import (
     PassiveMove,
     _ensure_weapon_exp,
     _apply_carry_fatigue,
+    _apply_haunting_presence,
 )  # noqa: F401
 
 
@@ -122,6 +123,8 @@ class ShootBow(
         for state in self.user.states:
             if state.name == "Hawkeye":
                 hit_chance *= 1.4
+        # HauntingPresence passive: defender's unsettling aura rattles close-range attackers (issue #421).
+        hit_chance = _apply_haunting_presence(self.user, enemy, hit_chance)
         return hit_chance
 
     def viable(self):
@@ -458,6 +461,8 @@ class ShootCrossbow(Move):
                     hit_chance -= accuracy_decay
                     if hit_chance < 2:
                         hit_chance = 2
+            # HauntingPresence passive: defender's unsettling aura rattles close-range attackers (issue #421).
+            hit_chance = _apply_haunting_presence(self.user, self.target, hit_chance)
 
         roll = random.randint(0, 100)
         damage = (
@@ -604,6 +609,8 @@ class BroadheadBolt(Move):
                         hit_chance = 2
         else:
             hit_chance = -1
+        # HauntingPresence passive: defender's unsettling aura rattles close-range attackers (issue #421).
+        hit_chance = _apply_haunting_presence(self.user, self.target, hit_chance)
 
         roll = random.randint(0, 100)
         damage = (
@@ -759,6 +766,8 @@ class AimedShot(Move):
                     hit_chance -= accuracy_decay
                     if hit_chance < 2:
                         hit_chance = 2
+            # HauntingPresence passive: defender's unsettling aura rattles close-range attackers (issue #421).
+            hit_chance = _apply_haunting_presence(self.user, self.target, hit_chance)
 
         roll = random.randint(0, 100)
         damage = (
@@ -908,6 +917,8 @@ class PinningBolt(Move):
                     hit_chance -= accuracy_decay
                     if hit_chance < 2:
                         hit_chance = 2
+            # HauntingPresence passive: defender's unsettling aura rattles close-range attackers (issue #421).
+            hit_chance = _apply_haunting_presence(self.user, self.target, hit_chance)
 
         roll = random.randint(0, 100)
         damage = (
