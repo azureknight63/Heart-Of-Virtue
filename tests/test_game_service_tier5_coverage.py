@@ -2482,6 +2482,60 @@ class TestSaveGame:
         assert save_id == "existing-save-id"
 
     @pytest.mark.asyncio
+    async def test_autosave_skipped_when_disabled(self, game_service, mock_player):
+        """Issue #450: GameConfig.autosave_enabled=False skips the autosave
+        entirely -- no DB call, returns None instead of a save id."""
+        from src.config_manager import GameConfig
+
+        db_mock = AsyncMock()
+        mock_player.game_config = GameConfig(autosave_enabled=False)
+
+        with patch("src.api.db.db", db_mock):
+            save_id = await game_service.save_game(mock_player, "Autosave", "user123", is_autosave=True)
+
+        assert save_id is None
+        db_mock.execute.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_autosave_enabled_still_saves(self, game_service, mock_player):
+        """autosave_enabled=True (the default) must not change existing
+        autosave behavior."""
+        from src.config_manager import GameConfig
+
+        db_mock = AsyncMock()
+        check_result = MagicMock()
+        check_result.rows = []
+        insert_result = MagicMock()
+        db_mock.execute.side_effect = [check_result, insert_result]
+        mock_player.game_config = GameConfig(autosave_enabled=True)
+        mock_player.map = None
+        mock_player.current_room = None
+
+        with patch("src.api.db.db", db_mock), patch("pickle.dumps", return_value=b"pickled"):
+            save_id = await game_service.save_game(mock_player, "Autosave", "user123", is_autosave=True)
+
+        assert isinstance(save_id, str)
+
+    @pytest.mark.asyncio
+    async def test_manual_save_not_gated_by_autosave_enabled(self, game_service, mock_player):
+        """autosave_enabled=False must never block an explicit manual save
+        (is_autosave=False) -- the flag only governs autosaves."""
+        from src.config_manager import GameConfig
+
+        db_mock = AsyncMock()
+        count_result = MagicMock()
+        count_result.rows = [[1]]
+        insert_result = MagicMock()
+        db_mock.execute.side_effect = [count_result, insert_result]
+        mock_player.game_config = GameConfig(autosave_enabled=False)
+        mock_player.map = {"name": "Dark Grotto"}
+
+        with patch("src.api.db.db", db_mock), patch("pickle.dumps", return_value=b"pickled"):
+            save_id = await game_service.save_game(mock_player, "MySave", "user123", is_autosave=False)
+
+        assert isinstance(save_id, str)
+
+    @pytest.mark.asyncio
     async def test_save_strips_and_restores_combat_adapter(self, game_service, mock_player):
         db_mock = AsyncMock()
         count_result = MagicMock()

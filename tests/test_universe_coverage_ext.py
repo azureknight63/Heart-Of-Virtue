@@ -446,10 +446,10 @@ class TestUniverseBuild:
         assert u.player is player
 
     def test_build_with_game_config_initializes_configs(self):
-        """When player.game_config is set, scenario and coordinate configs are created."""
+        """When player.game_config is set, coordinate config is created."""
         u = Universe()
         player = _make_player()
-        # A truthy game_config triggers ScenarioConfig/CoordinateSystemConfig init
+        # A truthy game_config triggers CoordinateSystemConfig init
         game_cfg = MagicMock()
         game_cfg.debug_mode = False
         player.game_config = game_cfg
@@ -457,8 +457,7 @@ class TestUniverseBuild:
         with patch.object(u, "_load_all_json_maps", return_value=0):
             u.build(player)
 
-        # Both config objects should be initialised (non-None) when game_config exists
-        assert u.scenario_config is not None
+        # Config object should be initialised (non-None) when game_config exists
         assert u.coordinate_config is not None
 
 

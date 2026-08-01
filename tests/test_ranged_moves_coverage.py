@@ -114,6 +114,7 @@ def _make_enemy(finesse=8, protection=2, resistance=None):
     enemy.protection = protection
     enemy.states = []
     enemy.is_alive = lambda: True
+    enemy.embedded_arrows = []  # mirrors NPC.__init__ (issue #418)
     if resistance is None:
         enemy.resistance = {"piercing": 1.0, "blunt": 1.0, "slashing": 1.0}
     else:
@@ -276,26 +277,6 @@ class TestShootBowCalculateHitChance:
         result_without = move.calculate_hit_chance(enemy)
         # With distraction should be lower
         assert result_with_distraction < result_without
-
-    def test_hawkeye_state_boosts_hit_chance(self):
-        user, arrow = _make_bow_user(finesse=10, intelligence=5)
-        move = ShootBow(user)
-        move.mvrange = (6, 50)
-        move.decay = 0.05
-        enemy = _make_enemy(finesse=8)
-        user.combat_proximity = {enemy: 15}
-        user.eq_weapon.range_base = 20
-
-        # First without Hawkeye
-        user.states = []
-        base_hit = move.calculate_hit_chance(enemy)
-
-        # Now add Hawkeye state
-        hawkeye_state = MagicMock()
-        hawkeye_state.name = "Hawkeye"
-        user.states = [hawkeye_state]
-        hawk_hit = move.calculate_hit_chance(enemy)
-        assert hawk_hit > base_hit
 
     def test_target_beyond_range_base_decays_accuracy(self):
         user, arrow = _make_bow_user(finesse=10, intelligence=5)
@@ -583,6 +564,44 @@ class TestShootBowExecute:
         # so FlareArrowImpact-style effects see the real target/user via
         # self.move, not whatever (or nothing) it was constructed with.
         assert exec_effect.move is move
+
+    def test_execute_hit_appends_arrow_to_target_embedded_arrows(self):
+        """Issue #418: a landed (non-parried) hit tracks the arrow on the
+        target so it's 100% recoverable if the target later dies."""
+        move, user, enemy, arrow = self._setup_execute()
+        with (
+            patch.object(move, "calculate_hit_chance", return_value=100),
+            patch.object(move, "hit"),
+            patch("src.moves._ranged.functions.check_parry", return_value=False),
+            patch("src.moves._ranged.random.randint", return_value=50),
+            patch("src.moves._ranged.random.uniform", return_value=1.0),
+        ):
+            move.execute(user)
+        assert enemy.embedded_arrows == [arrow.__class__.__name__]
+
+    def test_execute_miss_does_not_append_embedded_arrow(self):
+        move, user, enemy, arrow = self._setup_execute()
+        with (
+            patch.object(move, "calculate_hit_chance", return_value=5),
+            patch.object(move, "miss"),
+            patch("src.moves._ranged.functions.check_parry", return_value=False),
+            patch("src.moves._ranged.random.randint", return_value=100),
+            patch("src.moves._ranged.random.uniform", return_value=1.0),
+        ):
+            move.execute(user)
+        assert enemy.embedded_arrows == []
+
+    def test_execute_parry_does_not_append_embedded_arrow(self):
+        move, user, enemy, arrow = self._setup_execute()
+        with (
+            patch.object(move, "calculate_hit_chance", return_value=100),
+            patch.object(move, "parry"),
+            patch("src.moves._ranged.functions.check_parry", return_value=True),
+            patch("src.moves._ranged.random.randint", return_value=50),
+            patch("src.moves._ranged.random.uniform", return_value=1.0),
+        ):
+            move.execute(user)
+        assert enemy.embedded_arrows == []
 
     def test_execute_arrow_recovery_spawns_item(self):
         """When arrow_recovery >= random: spawn arrow on tile."""

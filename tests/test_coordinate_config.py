@@ -1,220 +1,46 @@
-"""Tests for coordinate system configuration (Phase 2.3)."""
+"""Tests for coordinate system configuration.
 
-import sys
-import math
-from pathlib import Path
-
-# Ensure the project's src directory is on sys.path
-ROOT = Path(__file__).resolve().parent.parent
-
+Pruned per issue #450: CoordinateSystemConfig was cut down to just
+get_dynamic_grid_size, the only method with any production callers. The rest
+(get_grid_size, is_coordinate_valid, clamp_coordinate, get_zone_bounds, ...)
+read a `coordinate_grid_size` GameConfig attribute that doesn't exist on the
+real dataclass, or a `[testing_locations]` config section no shipped config
+defines -- dead on both ends.
+"""
 
 from src.coordinate_config import CoordinateSystemConfig  # type: ignore
-from src.config_manager import GameConfig  # type: ignore
 from src.player import Player  # type: ignore
 
 
-def test_coordinate_system_config_default_grid_size():
-    """Test default grid size is 50x50."""
+def test_get_dynamic_grid_size_scales_with_combatant_count():
     player = Player()
     coord_config = CoordinateSystemConfig(player)
 
-    assert coord_config.get_grid_size() == (50, 50)
-    assert coord_config.get_grid_width() == 50
-    assert coord_config.get_grid_height() == 50
+    assert coord_config.get_dynamic_grid_size(0) == (9, 9)
+    assert coord_config.get_dynamic_grid_size(1) == (9, 9)
+    assert coord_config.get_dynamic_grid_size(5) == (18, 18)
 
 
-def test_coordinate_system_config_from_game_config():
-    """Test that grid size comes from GameConfig."""
+def test_get_dynamic_grid_size_floors_at_nine():
     player = Player()
-    config = GameConfig()
-    config.coordinate_grid_size = (100, 150)
-    player.game_config = config
-
     coord_config = CoordinateSystemConfig(player)
 
-    assert coord_config.get_grid_size() == (100, 150)
-    assert coord_config.get_grid_width() == 100
-    assert coord_config.get_grid_height() == 150
+    # combatant_count * 3 + 3 would be below 9 for very small counts
+    assert coord_config.get_dynamic_grid_size(0)[0] >= 9
 
 
-def test_coordinate_system_config_is_coordinate_valid():
-    """Test coordinate validation."""
+def test_get_dynamic_grid_size_caps_at_one_hundred():
     player = Player()
-    config = GameConfig()
-    config.coordinate_grid_size = (50, 50)
-    player.game_config = config
-
     coord_config = CoordinateSystemConfig(player)
 
-    # Valid coordinates (0-indexed grid: valid range is [0, width) / [0, height))
-    assert coord_config.is_coordinate_valid(0, 0) is True
-    assert coord_config.is_coordinate_valid(25, 25) is True
-    assert coord_config.is_coordinate_valid(49, 49) is True
-
-    # Invalid coordinates
-    assert coord_config.is_coordinate_valid(-1, 0) is False
-    assert coord_config.is_coordinate_valid(50, 25) is False
-    assert coord_config.is_coordinate_valid(25, 50) is False
+    width, height = coord_config.get_dynamic_grid_size(1000)
+    assert width == 100
+    assert height == 100
 
 
-def test_coordinate_system_config_clamp_coordinate():
-    """Test coordinate clamping."""
+def test_get_dynamic_grid_size_returns_square():
     player = Player()
-    config = GameConfig()
-    config.coordinate_grid_size = (50, 50)
-    player.game_config = config
-
     coord_config = CoordinateSystemConfig(player)
 
-    # Should clamp to bounds (0-indexed grid: max valid index is width-1/height-1)
-    assert coord_config.clamp_coordinate(-10, 25) == (0, 25)
-    assert coord_config.clamp_coordinate(60, 25) == (49, 25)
-    assert coord_config.clamp_coordinate(25, -5) == (25, 0)
-    assert coord_config.clamp_coordinate(25, 60) == (25, 49)
-
-    # Valid coordinates unchanged
-    assert coord_config.clamp_coordinate(25, 25) == (25, 25)
-
-
-def test_coordinate_system_config_grid_center():
-    """Test grid center calculation."""
-    player = Player()
-    config = GameConfig()
-    config.coordinate_grid_size = (50, 50)
-    player.game_config = config
-
-    coord_config = CoordinateSystemConfig(player)
-
-    center = coord_config.get_grid_center()
-    assert center == (25.0, 25.0)
-
-
-def test_coordinate_system_config_grid_center_asymmetric():
-    """Test grid center with asymmetric grid."""
-    player = Player()
-    config = GameConfig()
-    config.coordinate_grid_size = (100, 200)
-    player.game_config = config
-
-    coord_config = CoordinateSystemConfig(player)
-
-    center = coord_config.get_grid_center()
-    assert center == (50.0, 100.0)
-
-
-def test_coordinate_system_config_grid_area():
-    """Test grid area calculation."""
-    player = Player()
-    config = GameConfig()
-    config.coordinate_grid_size = (50, 50)
-    player.game_config = config
-
-    coord_config = CoordinateSystemConfig(player)
-
-    assert coord_config.get_grid_area() == 2500
-
-
-def test_coordinate_system_config_distance_between_points():
-    """Test Euclidean distance calculation."""
-    player = Player()
-    config = GameConfig()
-    config.coordinate_grid_size = (50, 50)
-    player.game_config = config
-
-    coord_config = CoordinateSystemConfig(player)
-
-    # Distance from (0,0) to (3,4) should be 5
-    distance = coord_config.get_distance_between_points(0, 0, 3, 4)
-    assert abs(distance - 5.0) < 0.001
-
-    # Distance from same point should be 0
-    distance = coord_config.get_distance_between_points(10, 10, 10, 10)
-    assert distance == 0
-
-
-def test_coordinate_system_config_angle_between_points():
-    """Test angle calculation between points."""
-    player = Player()
-    config = GameConfig()
-    config.coordinate_grid_size = (50, 50)
-    player.game_config = config
-
-    coord_config = CoordinateSystemConfig(player)
-
-    # Angle south (0° in this system - y decreasing)
-    angle = coord_config.get_angle_between_points(25, 25, 25, 50)
-    assert abs(angle - 0.0) < 1
-
-    # Angle east (90°)
-    angle = coord_config.get_angle_between_points(25, 25, 50, 25)
-    assert abs(angle - 90.0) < 1
-
-    # Angle north (180° in this system - y increasing)
-    angle = coord_config.get_angle_between_points(25, 25, 25, 0)
-    assert abs(angle - 180.0) < 1
-
-    # Angle west (270°)
-    angle = coord_config.get_angle_between_points(25, 25, 0, 25)
-    assert abs(angle - 270.0) < 1
-
-
-def test_coordinate_system_config_zone_bounds():
-    """Test zone bounds retrieval."""
-    player = Player()
-    config = GameConfig()
-    config.standard_player_x = 10
-    config.standard_player_y = 20
-    player.game_config = config
-
-    coord_config = CoordinateSystemConfig(player)
-
-    bounds = coord_config.get_zone_bounds('standard_player')
-    assert bounds == ((10, 20), (10, 20))
-
-
-def test_coordinate_system_config_scale_distance_to_grid():
-    """Test distance scaling based on grid size."""
-    player = Player()
-    config = GameConfig()
-    config.coordinate_grid_size = (100, 100)  # Double the default 50x50
-    player.game_config = config
-
-    coord_config = CoordinateSystemConfig(player)
-
-    # Distance of 10 on 50x50 grid should scale to 20 on 100x100 grid
-    scaled = coord_config.scale_distance_to_grid(10, reference_grid_size=50)
-    assert abs(scaled - 20.0) < 0.001
-
-
-def test_coordinate_system_config_grid_info_string():
-    """Test grid info string generation."""
-    player = Player()
-    config = GameConfig()
-    config.coordinate_grid_size = (50, 50)
-    player.game_config = config
-
-    coord_config = CoordinateSystemConfig(player)
-
-    info = coord_config.get_grid_info_string()
-    assert "50" in info
-    assert "2500" in info
-    assert "25.0" in info
-
-
-def test_coordinate_system_config_respects_config_changes():
-    """Test that config changes are reflected."""
-    player = Player()
-    config = GameConfig()
-    config.coordinate_grid_size = (50, 50)
-    player.game_config = config
-
-    coord_config = CoordinateSystemConfig(player)
-
-    # Initial check
-    assert coord_config.get_grid_width() == 50
-
-    # Change config
-    config.coordinate_grid_size = (100, 100)
-
-    # Should reflect change
-    assert coord_config.get_grid_width() == 100
+    width, height = coord_config.get_dynamic_grid_size(10)
+    assert width == height

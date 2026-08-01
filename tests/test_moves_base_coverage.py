@@ -24,12 +24,16 @@ _ROOT = pathlib.Path(__file__).resolve().parent.parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
+from src.positions import CombatPosition, Direction
+
 from src.moves._base import (
     Move,
     PassiveMove,
     _apply_blade_mastery_discount,
     _apply_carry_fatigue,
+    _apply_facing_accuracy,
     _apply_haunting_presence,
+    _apply_to_hit_modifiers,
     _apply_work_the_gap,
     _ensure_weapon_exp,
     select_weighted_target,
@@ -294,6 +298,90 @@ class TestMoveCast:
         move.cast()
         # prep = max(1, round(10*0.8)) = 8
         assert move.beats_left == 8
+
+
+# ---------------------------------------------------------------------------
+# Move.advance — interrupt handling (issue #417)
+#
+# WarCry sets move.interrupted = True on a target's in-progress move, but
+# nothing previously read the flag. advance() now checks it first: abort
+# immediately, skip straight to cooldown (forfeiting spent prep/execute
+# progress), and consume the flag so it doesn't linger on a reused Move
+# instance the next time it's cast.
+# ---------------------------------------------------------------------------
+
+
+class TestMoveAdvanceInterrupt:
+    def test_interrupt_skips_to_cooldown_and_forfeits_progress(self):
+        user = _make_combatant()
+        move = _make_move(user)
+        move.stage_beat = [5, 1, 2, 7]
+        move.current_stage = 0
+        move.beats_left = 3  # mid-prep, 3 beats already spent
+        move.interrupted = True
+        user.current_move = move
+
+        move.advance(user)
+
+        assert move.current_stage == 3
+        assert move.beats_left == 7  # the move's own cooldown duration
+        assert move.interrupted is False  # flag consumed, not left stale
+        assert move.initialized is False
+        assert user.current_move is None
+
+    def test_interrupt_does_not_run_prep_or_execute(self):
+        user = _make_combatant()
+        move = _make_move(user)
+        move.stage_beat = [5, 1, 2, 7]
+        move.current_stage = 1  # mid-execute
+        move.beats_left = 1
+        move.interrupted = True
+        user.current_move = move
+
+        with patch.object(move, "prep") as mock_prep, \
+             patch.object(move, "execute") as mock_execute:
+            move.advance(user)
+
+        mock_prep.assert_not_called()
+        mock_execute.assert_not_called()
+
+    def test_interrupt_does_not_clobber_a_different_active_move(self):
+        """An interrupt firing on a move that's already detached (mid-cooldown
+        from a prior beat) must not blow away whatever move the user has since
+        selected."""
+        user = _make_combatant()
+        move = _make_move(user)
+        move.stage_beat = [5, 1, 2, 7]
+        move.current_stage = 2
+        move.beats_left = 1
+        move.interrupted = True
+        other_move = MagicMock()
+        user.current_move = other_move
+
+        move.advance(user)
+
+        assert user.current_move is other_move
+
+    def test_interrupt_cooldown_continues_ticking_on_next_beat(self):
+        """Regression: current_stage > 0 (not user.current_move) is what keeps
+        advance() processing a detached move's cooldown countdown — confirms
+        the interrupt path plugs into that existing mechanism correctly."""
+        user = _make_combatant()
+        move = _make_move(user)
+        move.stage_beat = [5, 1, 2, 3]
+        move.current_stage = 0
+        move.beats_left = 2
+        move.interrupted = True
+        user.current_move = move
+
+        move.advance(user)  # interrupt beat: jumps to cooldown (3 beats)
+        assert move.current_stage == 3
+        assert move.beats_left == 3
+        assert user.current_move is None
+
+        move.advance(user)  # next beat: cooldown ticks down normally
+        assert move.beats_left == 2
+        assert move.current_stage == 3  # unchanged until beats_left hits 0
 
 
 # ---------------------------------------------------------------------------
@@ -878,3 +966,125 @@ class TestApplyHauntingPresence:
         defender.known_moves = [haunting]
 
         assert _apply_haunting_presence(attacker, defender, 100) == 100
+
+
+# ---------------------------------------------------------------------------
+# _apply_facing_accuracy (issue #394)
+#
+# Mirrors positions.get_damage_modifier (already wired into Backstab's
+# damage) on the accuracy side, applied to every attack path.
+# ---------------------------------------------------------------------------
+
+
+class TestApplyFacingAccuracy:
+    def test_front_attack_reduces_hit_chance(self):
+        attacker = _make_combatant(name="Jean")
+        attacker.combat_position = CombatPosition(x=10, y=10)
+        defender = _make_combatant(name="Goblin")
+        # to_pos south of from_pos -> attack_angle ~= 0 (see positions.py's own
+        # angle_to_target tests); facing N (0) -> diff=0 -> front quarter -> 0.95x
+        defender.combat_position = CombatPosition(x=10, y=50, facing=Direction.N)
+
+        assert _apply_facing_accuracy(attacker, defender, 100) == 95
+
+    def test_rear_attack_increases_hit_chance(self):
+        attacker = _make_combatant(name="Jean")
+        attacker.combat_position = CombatPosition(x=10, y=10)
+        defender = _make_combatant(name="Goblin")
+        # Same geometry, but facing S (180) -> diff=180 -> rear -> 1.30x
+        defender.combat_position = CombatPosition(x=10, y=50, facing=Direction.S)
+
+        assert _apply_facing_accuracy(attacker, defender, 50) == 65  # int(50 * 1.30)
+
+    def test_rear_attack_bonus_is_capped_at_100(self):
+        attacker = _make_combatant(name="Jean")
+        attacker.combat_position = CombatPosition(x=10, y=10)
+        defender = _make_combatant(name="Goblin")
+        defender.combat_position = CombatPosition(x=10, y=50, facing=Direction.S)
+
+        # 100 * 1.30 = 130, must clamp to 100 (a hit_chance is a percentage)
+        assert _apply_facing_accuracy(attacker, defender, 100) == 100
+
+    def test_no_op_without_attacker_combat_position(self):
+        attacker = _make_combatant(name="Jean")
+        attacker.combat_position = None
+        defender = _make_combatant(name="Goblin")
+        defender.combat_position = CombatPosition(x=10, y=50, facing=Direction.S)
+
+        assert _apply_facing_accuracy(attacker, defender, 50) == 50
+
+    def test_no_op_without_defender_combat_position(self):
+        attacker = _make_combatant(name="Jean")
+        attacker.combat_position = CombatPosition(x=10, y=10)
+        defender = _make_combatant(name="Goblin")
+        defender.combat_position = None
+
+        assert _apply_facing_accuracy(attacker, defender, 50) == 50
+
+    def test_auto_miss_sentinel_survives_unchanged(self):
+        """Regression: Python's int() truncates toward zero, so a naive
+        int(-1 * 0.95) would produce 0, not -1 -- turning a guaranteed
+        out-of-range miss into a ~1% chance to hit on a roll of 0."""
+        attacker = _make_combatant(name="Jean")
+        attacker.combat_position = CombatPosition(x=10, y=10)
+        defender = _make_combatant(name="Goblin")
+        defender.combat_position = CombatPosition(x=10, y=50, facing=Direction.N)
+
+        assert _apply_facing_accuracy(attacker, defender, -1) == -1
+
+    def test_zero_hit_chance_survives_unchanged(self):
+        attacker = _make_combatant(name="Jean")
+        attacker.combat_position = CombatPosition(x=10, y=10)
+        defender = _make_combatant(name="Goblin")
+        defender.combat_position = CombatPosition(x=10, y=50, facing=Direction.N)
+
+        assert _apply_facing_accuracy(attacker, defender, 0) == 0
+
+    def test_exception_during_computation_returns_unchanged(self):
+        attacker = _make_combatant(name="Jean")
+        attacker.combat_position = CombatPosition(x=10, y=10)
+        defender = _make_combatant(name="Goblin")
+        defender.combat_position = MagicMock()
+        defender.combat_position.facing = object()  # no .value -> AttributeError inside attack_angle_difference
+
+        assert _apply_facing_accuracy(attacker, defender, 50) == 50
+
+
+# ---------------------------------------------------------------------------
+# _apply_to_hit_modifiers — the combinator every attack path now calls
+# instead of _apply_facing_accuracy + _apply_haunting_presence separately.
+# ---------------------------------------------------------------------------
+
+
+class TestApplyToHitModifiers:
+    def test_chains_facing_accuracy_then_haunting_presence(self):
+        attacker = _make_combatant(name="Jean")
+        attacker.combat_position = CombatPosition(x=10, y=10)
+        haunting = MagicMock()
+        haunting.name = "Haunting Presence"
+        defender = _make_combatant(name="Goblin", known_moves=[haunting])
+        # Rear attack (facing S, diff=180 -> 1.30x) AND within HauntingPresence range.
+        defender.combat_position = CombatPosition(x=10, y=50, facing=Direction.S)
+        defender.combat_proximity = {attacker: 2}
+
+        # int(50 * 1.30) = 65, then int(65 * 0.85) = 55
+        assert _apply_to_hit_modifiers(attacker, defender, 50) == 55
+
+    def test_no_op_when_neither_modifier_applies(self):
+        attacker = _make_combatant(name="Jean")
+        attacker.combat_position = None
+        defender = _make_combatant(name="Goblin")
+        defender.combat_position = None
+
+        assert _apply_to_hit_modifiers(attacker, defender, 50) == 50
+
+    def test_auto_miss_sentinel_survives_both_modifiers(self):
+        attacker = _make_combatant(name="Jean")
+        attacker.combat_position = CombatPosition(x=10, y=10)
+        haunting = MagicMock()
+        haunting.name = "Haunting Presence"
+        defender = _make_combatant(name="Goblin", known_moves=[haunting])
+        defender.combat_position = CombatPosition(x=10, y=50, facing=Direction.S)
+        defender.combat_proximity = {attacker: 2}
+
+        assert _apply_to_hit_modifiers(attacker, defender, -1) == -1

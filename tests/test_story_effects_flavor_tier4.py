@@ -1078,7 +1078,7 @@ class TestMaybeCombatFlavor(unittest.TestCase):
         """Set up test fixtures."""
         self.player = Mock()
         self.player.hp = 80
-        self.player.max_hp = 100
+        self.player.maxhp = 100
         self.player.combat_list_allies = [self.player]
         self.player.universe = Mock()
         self.player.universe.story = {}
@@ -1308,7 +1308,7 @@ class TestGorranFlavorStageProgression(unittest.TestCase):
         """Set up test fixtures."""
         self.player = Mock()
         self.player.hp = 100
-        self.player.max_hp = 100
+        self.player.maxhp = 100
         self.player.universe = Mock()
         self.player.universe.story = {}
         self.player.universe.game_tick = 100
