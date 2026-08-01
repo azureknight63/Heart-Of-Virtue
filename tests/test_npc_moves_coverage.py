@@ -1161,9 +1161,10 @@ class TestKeeningToll:
 
 class TestDeathKnell:
     """The WailWraith's execute (issue #350) — only viable below 10% max FP,
-    and inflicts states.Death with force=True (bypassing the target's own
-    "death" status resistance entirely, per the #350 design decision to
-    leave Jean's default resistance untouched)."""
+    and inflicts states.Death through the ordinary functions.inflict()
+    resistance check (not a forced bypass). Jean's default "death" status
+    resistance is left untouched per the #350 design decision, so this move
+    does not currently land on him — see test_execute_respects_full_death_resistance."""
 
     def test_death_knell_init(self):
         import src.moves as moves
@@ -1215,17 +1216,18 @@ class TestDeathKnell:
         dk.target = p
         assert dk.viable() is False
 
-    def test_execute_kills_target_bypassing_default_death_resistance(self):
+    def test_execute_kills_target_with_no_death_resistance(self):
+        """A landed, unparried hit kills a target with zero resistance to the
+        "death" statustype — the ordinary functions.inflict() resistance
+        check, not a forced bypass (see #350 design correction)."""
         import src.moves as moves
 
         p = _make_player_target()
         p.fatigue = 5
         p.maxfatigue = 100
         p.hp = 42
-        # Explicit, maximal resistance — proves force=True bypasses it rather
-        # than depending on the target being vulnerable.
-        p.status_resistance["death"] = 1.0
-        p.status_resistance_base["death"] = 1.0
+        p.status_resistance["death"] = 0.0
+        p.status_resistance_base["death"] = 0.0
         npc = _make_npc(damage=8, finesse=10, intelligence=5)
         npc.target = p
         npc.combat_proximity[p] = 2
@@ -1238,6 +1240,34 @@ class TestDeathKnell:
             dk.execute(npc)
         assert p.hp == 0
         assert p.is_alive() is False
+
+    def test_execute_respects_full_death_resistance(self):
+        """A landed, unparried hit against a target with full "death"
+        resistance does nothing — Death Knell does not bypass resistance.
+        (functions.inflict's effective_chance = chance * (1 - resistance)
+        is 0 at resistance=1.0, so the state never applies.) Jean's own
+        default death resistance is left untouched by this issue, so this
+        is also what currently happens against him."""
+        import src.moves as moves
+
+        p = _make_player_target()
+        p.fatigue = 5
+        p.maxfatigue = 100
+        p.hp = 42
+        p.status_resistance["death"] = 1.0
+        p.status_resistance_base["death"] = 1.0
+        npc = _make_npc(damage=8, finesse=10, intelligence=5)
+        npc.target = p
+        npc.combat_proximity[p] = 2
+        dk = moves.DeathKnell(npc)
+        dk.target = p
+        with (
+            patch("builtins.print"),
+            patch("random.randint", return_value=0),
+        ):
+            dk.execute(npc)
+        assert p.hp == 42
+        assert p.is_alive() is True
 
     def test_execute_miss_leaves_target_alive(self):
         import src.moves as moves

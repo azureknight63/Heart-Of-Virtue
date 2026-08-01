@@ -20,7 +20,7 @@ A ghastly presence native to the Wailing Badlands — not a hazard alongside the
 ## Special Abilities & Traits
 - **Keening Toll** (primary): a wearing note that saps fatigue directly rather than dealing HP damage. Higher move weight than Wail Strike — this is what the WailWraith reaches for most, and it's the real threat: attrition, not burst damage
 - **Wail Strike** (telegraphed secondary): a harder, slower, more visible sonic attack — extended wind-up gives a genuine dodge window, but landing it hits hard and ignores protection entirely (sonic damage bypasses armor), with a chance to leave the target Resonant (armor-bypassing damage-over-time, Finesse -25%)
-- **Death Knell** (execute): only usable once the target's fatigue has already been worn down below 10% of max FP by Keening Toll. A landed, unparried Death Knell is an immediate, forced kill — not a chance-based status effect the target might resist
+- **Death Knell** (execute): only usable once the target's fatigue has already been worn down below 10% of max FP by Keening Toll. A landed, unparried Death Knell attempts to inflict an immediate kill, subject to the target's own "death" status resistance like any other status effect — it is not a forced, unresistable hit
 - **Conventional immunity**: slashing, piercing, and crushing damage do nothing. Physical weapons alone cannot bring it down
 - **Elemental/magical vulnerability**: Pure and Light damage land at double effect; Dark lands at half; Fire, Ice, Shock, Earth, and Spiritual all land normally. The player needs an appropriately enchanted weapon (or the right spell/ability) to make real progress — this is not a fight brute force wins
 
@@ -57,7 +57,7 @@ A ghastly presence native to the Wailing Badlands — not a hazard alongside the
 - **Fire, Ice, Shock, Earth, Spiritual (1.0 each)**: Land normally — no special-case, these are viable if the player has nothing better
 
 ### Status Resistances
-- **Death (1.0)**: Fully resistant to death being inflicted *on the WailWraith* — unrelated to Death Knell, which it inflicts on its target. The move's own effect bypasses the target's resistance entirely (`force=True`) rather than depending on it, so this stat only matters if something else ever tries to kill the Wraith via a death-type effect
+- **Death (1.0)**: Fully resistant to death being inflicted *on the WailWraith* — unrelated to Death Knell, which it inflicts on its target. This stat only matters if something else ever tries to kill the Wraith via a death-type effect
 - **Doom (1.0)**: Fully resistant, same reasoning as above
 
 ## Encounter & Lore Notes
@@ -69,6 +69,8 @@ A ghastly presence native to the Wailing Badlands — not a hazard alongside the
 **Anger Stage of Grief**: the Wailing Badlands embody the Anger stage of Jean's grief arc. The WailWraith fits that register precisely: it is not cruelty, not malice, not a monster with a plan. It is grief that never resolved into anything else, still making the same sound, still taking from whoever gets close enough to hear it. Fighting it is not a contest of strength — it's an argument about whether raw force is ever going to be enough to make grief stop, and the game's mechanics (immune to conventional damage, weak only to Pure/Light) answer that question before the player even swings.
 
 **Why the target must already be weary**: Death Knell's gate — under 10% max FP — means the WailWraith cannot simply end the fight on its own terms from full health. The player has to already be spent for the execute to become live. Thematically: grief doesn't kill the strong outright. It waits for exhaustion.
+
+**Open design gap — Jean's default death resistance**: Death Knell inflicts `states.Death` through the normal `functions.inflict()` resistance check, not a forced bypass (this was corrected during #350's design review — an earlier draft force-bypassed the check, which was explicitly rejected). Every `Combatant`, Jean included, defaults `status_resistance_base["death"]` to 1.0 (fully resistant), and nothing in `Player.__init__` currently lowers it. As implemented today, **Death Knell will not land on Jean** no matter how low his FP drops — the FP gate and the hit/parry roll both still function, but the resistance check zeroes it out at the last step. Making this a real threat requires a follow-up decision (lower Jean's default death resistance the way `"slimed"` is already lowered, or something narrower — a specific vulnerability window, a gear check, etc.) that is intentionally out of scope for this pass.
 
 ## DM / Designer Tips
 - **Gear/ability check, not a DPS check**: signal early (dialogue, environmental description, a failed physical hit that visibly does nothing) that conventional weapons won't work here, so the player isn't left guessing why their sword swings through it

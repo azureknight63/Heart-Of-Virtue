@@ -1217,12 +1217,14 @@ class DeathKnell(NpcAttack):
     already been worn down below 10% of max (Keening Toll is what gets them
     there) — this move can't even be selected outside that window.
 
-    A successful, unparried hit inflicts states.Death: an immediate, forced
-    kill. Per design discussion on issue #350, this bypasses the target's own
-    "death" status resistance entirely (functions.inflict(..., force=True))
-    rather than depending on it — changing Jean's default resistance to the
-    "death" statustype was ruled out of scope, so the move must not rely on
-    it landing normally.
+    A successful, unparried hit attempts to inflict states.Death: a one-shot
+    kill. Per design discussion on issue #350, this goes through the normal
+    functions.inflict() resistance check like any other status effect — it is
+    not forced through. Jean's default "death" status resistance is left
+    untouched (changing player-side resistance defaults was ruled out of
+    scope), so as things stand today this will not land on him; a future
+    change to Jean's resistance (gear, a story beat, etc.) is what would make
+    it a real threat, not a bypass baked into the move itself.
     """
 
     web_animation = "death"
@@ -1275,9 +1277,7 @@ class DeathKnell(NpcAttack):
             if functions.check_parry(self.target):
                 self.parry()
             else:
-                functions.inflict(
-                    states.Death(self.target), self.target, chance=1.0, force=True
-                )
+                functions.inflict(states.Death(self.target), self.target, chance=1.0)
         else:
             self.miss()
         self.user.fatigue -= self.fatigue_cost
