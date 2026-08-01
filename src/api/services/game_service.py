@@ -3110,7 +3110,7 @@ class GameService:
         name: str,
         user_id: str,
         is_autosave: bool = False,
-    ) -> str:
+    ) -> Optional[str]:
         """Save the game to Turso database.
 
         Args:
@@ -3120,11 +3120,20 @@ class GameService:
             is_autosave: Whether this is an autosave
 
         Returns:
-            Save ID
+            Save ID, or None if this was an autosave skipped because
+            GameConfig.autosave_enabled is False.
         """
         import uuid
         from src.secure_pickle import serialize_for_save
         from src.api.db import db
+
+        # GameConfig.autosave_enabled (issue #450): lets autosave be turned off
+        # entirely. Manual saves (is_autosave=False) are never gated by this.
+        # Defaults True (see the field's docstring in config_manager.py) so a
+        # player with no explicit setting keeps today's always-on behavior.
+        game_config = getattr(player, "game_config", None)
+        if is_autosave and game_config is not None and not game_config.autosave_enabled:
+            return None
 
         # 1. Enforcement of manual save limit
         if not is_autosave:

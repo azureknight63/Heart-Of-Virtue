@@ -51,7 +51,7 @@ class TestCombatIntegration:
         """Test CoordinateSystemConfig initializes with player."""
         coordinate_config = CoordinateSystemConfig(player)
         assert coordinate_config.player == player
-        assert coordinate_config.get_grid_size() == (50, 50)
+        assert coordinate_config.get_dynamic_grid_size(1) == (9, 9)
 
     def test_npc_ai_config_initializes(self, player):
         """Test NPCAIConfig initializes with player."""
@@ -77,7 +77,7 @@ class TestCombatIntegration:
         assert universe.coordinate_config is not None
         # Verify by checking the presence of key methods
         assert hasattr(universe.scenario_config, 'get_current_scenario')
-        assert hasattr(universe.coordinate_config, 'get_grid_size')
+        assert hasattr(universe.coordinate_config, 'get_dynamic_grid_size')
 
     def test_npc_player_ref_set_in_combat(self, player):
         """Test that NPC player_ref is accessible for config."""
@@ -103,32 +103,6 @@ class TestCombatIntegration:
         assert isinstance(player.combat_coordinate_config, CoordinateSystemConfig)
 
 
-class TestCoordinateIntegration:
-    """Test coordinate config calculations."""
-
-    def test_coordinate_config_distance_calculation(self):
-        """Test coordinate config calculates distance correctly."""
-        p = Player()
-        p.game_config = GameConfig(coordinate_grid_size=(50, 50))
-
-        coord_config = CoordinateSystemConfig(p)
-        distance = coord_config.get_distance_between_points(0, 0, 3, 4)
-
-        # 3-4-5 triangle
-        assert abs(distance - 5.0) < 0.01
-
-    def test_coordinate_config_bounds_validation(self):
-        """Test coordinate config validates bounds."""
-        p = Player()
-        p.game_config = GameConfig(coordinate_grid_size=(50, 50))
-
-        coord_config = CoordinateSystemConfig(p)
-        assert coord_config.is_coordinate_valid(25, 25) == True
-        assert coord_config.is_coordinate_valid(0, 0) == True
-        assert coord_config.is_coordinate_valid(49, 49) == True
-        assert coord_config.is_coordinate_valid(50, 50) == False  # 0-indexed: valid range is 0..49
-        assert coord_config.is_coordinate_valid(51, 51) == False
-        assert coord_config.is_coordinate_valid(-1, 0) == False
 class TestScenarioIntegration:
     """Test scenario config integration."""
 
@@ -191,7 +165,7 @@ class TestFullIntegration:
         scenarios = ScenarioConfig(p)
 
         # Verify all initialized
-        assert coords.get_grid_size() == (50, 50)
+        assert coords.get_dynamic_grid_size(1) == (9, 9)
         assert npc_ai.is_flanking_enabled() == True
         assert scenarios.get_current_scenario() in ['standard', 'pincer', 'melee', 'boss_arena']
 

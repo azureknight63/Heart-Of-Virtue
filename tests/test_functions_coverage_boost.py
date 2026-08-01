@@ -202,6 +202,47 @@ class TestCheckForCombat:
         result = functions.check_for_combat(p)
         assert isinstance(result, list)
 
+    def test_skip_combat_config_bypasses_entirely(self):
+        """Issue #450: GameConfig.skip_combat=True short-circuits before any
+        aggro/finesse logic runs, even for a guaranteed-trigger enemy."""
+        from src.config_manager import GameConfig
+
+        p = _player()
+        p.finesse = 1  # would otherwise guarantee a trigger below
+        p.game_config = GameConfig(skip_combat=True)
+        enemy = MagicMock()
+        enemy.friend = False
+        enemy.aggro = True
+        enemy.awareness = 9999
+        enemy.in_combat = False
+        p.current_room = MagicMock()
+        p.current_room.npcs_here = [enemy]
+
+        result = functions.check_for_combat(p)
+
+        assert result == []
+        assert enemy.in_combat is False
+
+    def test_skip_combat_config_false_behaves_normally(self):
+        """GameConfig present but skip_combat=False (the default) must not
+        change behavior."""
+        from src.config_manager import GameConfig
+
+        p = _player()
+        p.finesse = 1
+        p.game_config = GameConfig()
+        enemy = MagicMock()
+        enemy.friend = False
+        enemy.aggro = True
+        enemy.awareness = 9999
+        enemy.in_combat = False
+        p.current_room = MagicMock()
+        p.current_room.npcs_here = [enemy]
+
+        result = functions.check_for_combat(p)
+
+        assert enemy in result
+
     def test_nearby_ally_joins_combat(self):
         """Lines 289-298: nearby aggro ally joins when alarm raised."""
         p = _player()

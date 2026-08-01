@@ -89,7 +89,13 @@ class GameConfig:
     ai_difficulty: int = 3
 
     # === [game] section: Save/Load ===
-    autosave_enabled: bool = False
+    # Defaults True (issue #450): the cloud autosave has always run
+    # unconditionally in production (every 20 ticks, frontend-triggered).
+    # This flag was previously parsed but never consulted; now that
+    # GameService.save_game() actually gates on it, the default must match
+    # the existing de facto behavior or every player without an explicit
+    # `autosave_enabled = true` in their config would silently lose autosave.
+    autosave_enabled: bool = True
     allow_quicksave: bool = True
     auto_load_latest: bool = False
     learn_all_skills: bool = False
@@ -343,9 +349,9 @@ class ConfigManager:
         )
         self.config.ai_difficulty = _safe_getint(section, "ai_difficulty", 3)
 
-        # Save/Load
+        # Save/Load. Default True — see the field's docstring above.
         self.config.autosave_enabled = _safe_getboolean(
-            section, "autosave_enabled", False
+            section, "autosave_enabled", True
         )
         self.config.allow_quicksave = _safe_getboolean(section, "allow_quicksave", True)
         self.config.auto_load_latest = _safe_getboolean(
