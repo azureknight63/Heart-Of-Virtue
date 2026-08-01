@@ -83,6 +83,44 @@ def _ensure_weapon_exp(user):
         pass
 
 
+def _apply_blade_mastery_discount(user, fatigue_cost, floor_fatigue=10):
+    """BladeMastery passive: sword attacks cost less fatigue.
+
+    Shared by the standard attack pipeline and any hand-rolled attack (e.g.
+    basic Attack) that wants the same discount applied to its own fatigue math.
+    """
+    if (
+        getattr(getattr(user, "eq_weapon", None), "subtype", None) == "Sword"
+        and any(
+            getattr(m, "name", "") == "Blade Mastery"
+            for m in getattr(user, "known_moves", [])
+        )
+    ):
+        fatigue_cost = max(floor_fatigue, int(fatigue_cost * 0.85))
+    return fatigue_cost
+
+
+def _apply_haunting_presence(attacker, defender, hit_chance):
+    """HauntingPresence passive: defender's unsettling aura rattles close-range attackers.
+
+    No-op (returns hit_chance unchanged) unless the defender knows the passive,
+    the attack was already going to have a chance to land, and the attacker is
+    within 3 units of proximity. Shared by every attack path so the passive
+    isn't limited to whichever moves happen to call standard_execute_attack.
+    """
+    if (
+        hit_chance > 0
+        and any(
+            getattr(m, "name", "") == "Haunting Presence"
+            for m in getattr(defender, "known_moves", [])
+        )
+        and hasattr(defender, "combat_proximity")
+        and defender.combat_proximity.get(attacker, 9999) <= 3
+    ):
+        hit_chance = int(hit_chance * 0.85)
+    return hit_chance
+
+
 def select_weighted_target(candidates):
     """Pick a random combat target, weighting down targets with Shadow Step.
 
@@ -557,14 +595,7 @@ class Move:  # master class for all moves
         fatigue_cost = _apply_carry_fatigue(self.user, fatigue_cost)
 
         # BladeMastery passive: sword attacks cost less fatigue
-        if (
-            getattr(self.user.eq_weapon, "subtype", None) == "Sword"
-            and any(
-                getattr(m, "name", "") == "Blade Mastery"
-                for m in getattr(self.user, "known_moves", [])
-            )
-        ):
-            fatigue_cost = max(floor_fatigue, int(fatigue_cost * 0.85))
+        fatigue_cost = _apply_blade_mastery_discount(self.user, fatigue_cost, floor_fatigue)
 
         # Range calculation
         mvrange = (
@@ -610,16 +641,7 @@ class Move:  # master class for all moves
             )  # if attacking is no longer viable (enemy is out of range), then auto miss
 
         # HauntingPresence passive: defender's unsettling aura rattles close-range attackers
-        if (
-            hit_chance > 0
-            and any(
-                getattr(m, "name", "") == "Haunting Presence"
-                for m in getattr(self.target, "known_moves", [])
-            )
-            and hasattr(self.target, "combat_proximity")
-            and self.target.combat_proximity.get(self.user, 9999) <= 3
-        ):
-            hit_chance = int(hit_chance * 0.85)
+        hit_chance = _apply_haunting_presence(self.user, self.target, hit_chance)
 
         roll = random.randint(0, 100)
         damage = (

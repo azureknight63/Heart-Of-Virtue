@@ -12,6 +12,7 @@ from ._base import (
     Move,
     PassiveMove,
     _apply_carry_fatigue,
+    _apply_haunting_presence,
 )  # noqa: F401
 
 
@@ -151,6 +152,8 @@ class PowerStrike(Move):
                 hit_chance = 1
         else:
             hit_chance = -1
+        # HauntingPresence passive: defender's unsettling aura rattles close-range attackers (issue #421).
+        hit_chance = _apply_haunting_presence(self.user, self.target, hit_chance)
         roll = random.randint(0, 100)
         damage = self.power - self.target.protection
         if damage <= 0:
@@ -285,6 +288,8 @@ class Jab(Move):
                 hit_chance = 1
         else:
             hit_chance = -1
+        # HauntingPresence passive: defender's unsettling aura rattles close-range attackers (issue #421).
+        hit_chance = _apply_haunting_presence(self.user, self.target, hit_chance)
         roll = random.randint(0, 100)
         damage = self.power - self.target.protection
         if damage <= 0:

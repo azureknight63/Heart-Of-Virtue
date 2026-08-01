@@ -13,6 +13,8 @@ from ._base import (
     PassiveMove,
     default_animations,
     _apply_carry_fatigue,
+    _apply_blade_mastery_discount,
+    _apply_haunting_presence,
 )  # noqa: F401
 
 
@@ -480,14 +482,7 @@ class Attack(Move):  # basic attack function, always uses equipped weapon, playe
         # Move.standard_evaluate_attack, so the discount that every sword-specific
         # move gets must be mirrored here too — otherwise a purchased passive
         # silently fails to affect the player's most-used move.
-        if (
-            getattr(self.user.eq_weapon, "subtype", None) == "Sword"
-            and any(
-                getattr(m, "name", "") == "Blade Mastery"
-                for m in getattr(self.user, "known_moves", [])
-            )
-        ):
-            fatigue_cost = max(10, int(fatigue_cost * 0.85))
+        fatigue_cost = _apply_blade_mastery_discount(self.user, fatigue_cost, 10)
 
         mvrange = self.user.eq_weapon.wpnrange
 
@@ -532,16 +527,7 @@ class Attack(Move):  # basic attack function, always uses equipped weapon, playe
         # HauntingPresence passive: defender's unsettling aura rattles close-range
         # attackers (issue #395 — mirrors Move.standard_execute_attack, which the
         # hand-rolled basic Attack path bypasses).
-        if (
-            hit_chance > 0
-            and any(
-                getattr(m, "name", "") == "Haunting Presence"
-                for m in getattr(self.target, "known_moves", [])
-            )
-            and hasattr(self.target, "combat_proximity")
-            and self.target.combat_proximity.get(self.user, 9999) <= 3
-        ):
-            hit_chance = int(hit_chance * 0.85)
+        hit_chance = _apply_haunting_presence(self.user, self.target, hit_chance)
 
         roll = random.randint(0, 100)
         damage = (

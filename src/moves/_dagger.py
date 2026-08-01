@@ -13,6 +13,7 @@ from ._base import (
     PassiveMove,
     _ensure_weapon_exp,
     _apply_carry_fatigue,
+    _apply_haunting_presence,
 )  # noqa: F401
 
 
@@ -152,6 +153,8 @@ class Slash(
             hit_chance = (
                 -1
             )  # if attacking is no longer viable (enemy is out of range), then auto miss
+        # HauntingPresence passive: defender's unsettling aura rattles close-range attackers (issue #421).
+        hit_chance = _apply_haunting_presence(self.user, self.target, hit_chance)
         roll = random.randint(0, 100)
         damage = (
             (
@@ -385,6 +388,8 @@ class FeintAndPivot(Move):
         damage = max(0, damage)
 
         hit_chance = int(90 - self.target.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3))
+        # HauntingPresence passive: defender's unsettling aura rattles close-range attackers (issue #421).
+        hit_chance = _apply_haunting_presence(self.user, self.target, hit_chance)
         roll = random.randint(0, 100)
         glance = False
         if hit_chance >= roll and hit_chance - roll < 10:
@@ -449,6 +454,8 @@ class FeintAndPivot(Move):
 
         # Deduct fatigue
         user.fatigue -= self.fatigue_cost
+        if user.fatigue < 0:
+            user.fatigue = 0
 
 
 class ShadowStep(PassiveMove):
@@ -578,6 +585,8 @@ class Backstab(Move):
                 hit_chance = 5
         else:
             hit_chance = -1
+        # HauntingPresence passive: defender's unsettling aura rattles close-range attackers (issue #421).
+        hit_chance = _apply_haunting_presence(self.user, self.target, hit_chance)
 
         roll = random.randint(0, 100)
         damage = (

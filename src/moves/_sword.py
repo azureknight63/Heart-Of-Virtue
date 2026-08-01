@@ -12,6 +12,7 @@ from ._base import (
     Move,
     PassiveMove,
     _ensure_weapon_exp,
+    _apply_haunting_presence,
 )  # noqa: F401
 
 
@@ -208,6 +209,8 @@ class WhirlAttack(Move):
                         damage = max(0, damage)
 
                         hit_chance = int(85 - enemy.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3))
+                        # HauntingPresence passive: defender's unsettling aura rattles close-range attackers (issue #421).
+                        hit_chance = _apply_haunting_presence(self.user, enemy, hit_chance)
                         roll = random.randint(0, 100)
                         glance = False
                         if hit_chance >= roll and hit_chance - roll < 10:
@@ -232,6 +235,8 @@ class WhirlAttack(Move):
 
         # Deduct fatigue
         user.fatigue -= self.fatigue_cost
+        if user.fatigue < 0:
+            user.fatigue = 0
         cprint(f"{user.name} ends facing {random_facing.name}!", "cyan")
 
 
@@ -337,6 +342,8 @@ class VertigoSpin(Move):
         damage = max(0, damage)
 
         hit_chance = int(85 - self.target.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3))
+        # HauntingPresence passive: defender's unsettling aura rattles close-range attackers (issue #421).
+        hit_chance = _apply_haunting_presence(self.user, self.target, hit_chance)
         roll = random.randint(0, 100)
         glance = False
         if hit_chance >= roll and hit_chance - roll < 10:
@@ -375,6 +382,8 @@ class VertigoSpin(Move):
 
         # Deduct fatigue
         user.fatigue -= self.fatigue_cost
+        if user.fatigue < 0:
+            user.fatigue = 0
 
 
 # This file contains the QuickSwap move to be added to src/moves.py
@@ -539,6 +548,8 @@ class DisarmingSlash(Move):
             hit_chance = max(5, int(98 - self.target.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3)))
         else:
             hit_chance = -1
+        # HauntingPresence passive: defender's unsettling aura rattles close-range attackers (issue #421).
+        hit_chance = _apply_haunting_presence(self.user, self.target, hit_chance)
 
         roll = random.randint(0, 100)
         damage = (
@@ -681,6 +692,8 @@ class Riposte(Move):
             hit_chance = max(5, int(98 - self.target.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3)))
         else:
             hit_chance = -1
+        # HauntingPresence passive: defender's unsettling aura rattles close-range attackers (issue #421).
+        hit_chance = _apply_haunting_presence(self.user, self.target, hit_chance)
 
         roll = random.randint(0, 100)
 

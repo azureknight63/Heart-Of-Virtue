@@ -12,6 +12,7 @@ from ._base import (
     Move,
     PassiveMove,
     _ensure_weapon_exp,
+    _apply_haunting_presence,
 )  # noqa: F401
 
 
@@ -129,6 +130,8 @@ class Reap(Move):
             if marked:
                 base_dmg = int(base_dmg * 1.25)
             hit_chance = max(5, int(85 - enemy.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3)))
+            # HauntingPresence passive: defender's unsettling aura rattles close-range attackers (issue #421).
+            hit_chance = _apply_haunting_presence(self.user, enemy, hit_chance)
             if random.randint(0, 100) <= hit_chance:
                 if functions.check_parry(enemy):
                     cprint(f"{enemy.name} parried the sweep!", "yellow")
@@ -294,6 +297,8 @@ class DeathsHarvest(Move):
             hit_chance = max(5, int(98 - self.target.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3)))
         else:
             hit_chance = -1
+        # HauntingPresence passive: defender's unsettling aura rattles close-range attackers (issue #421).
+        hit_chance = _apply_haunting_presence(self.user, self.target, hit_chance)
 
         roll = random.randint(0, 100)
         damage = (
