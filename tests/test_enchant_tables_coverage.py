@@ -121,7 +121,7 @@ def test_requirements_true_and_false_branches_for_accessory_enchantments():
 def test_add_resistance_creates_dict_when_item_has_no_resistance_attr():
     item = _FakeItem(maintype="Armor")
     del item.add_resistance  # simulate an item that never had this attribute
-    e = Enchantment(item, name="Test", rarity=0, group="Prefix", value=1)
+    e = Enchantment(item, name="Test", group="Prefix", value=1)
     e._add_resistance("poison", 0.4)
     assert item.add_resistance == {"poison": 0.4}
 
@@ -129,7 +129,7 @@ def test_add_resistance_creates_dict_when_item_has_no_resistance_attr():
 def test_add_resistance_dict_branch_increments_existing_key():
     item = _FakeItem(maintype="Armor")
     item.add_resistance = {"poison": 0.2}
-    e = Enchantment(item, name="Test", rarity=0, group="Prefix", value=1)
+    e = Enchantment(item, name="Test", group="Prefix", value=1)
     e._add_resistance("poison", 0.3)
     assert item.add_resistance["poison"] == 0.5
 
@@ -142,7 +142,7 @@ def test_add_resistance_object_branch_increments_existing_attribute():
     res_obj = ResObj()
     res_obj.fire = 0.1
     item.add_resistance = res_obj
-    e = Enchantment(item, name="Test", rarity=0, group="Prefix", value=1)
+    e = Enchantment(item, name="Test", group="Prefix", value=1)
     e._add_resistance("fire", 0.2)
     assert abs(item.add_resistance.fire - 0.3) < 1e-9
 
@@ -153,7 +153,7 @@ def test_add_resistance_object_branch_sets_new_attribute():
 
     item = _FakeItem(maintype="Armor")
     item.add_resistance = ResObj()
-    e = Enchantment(item, name="Test", rarity=0, group="Prefix", value=1)
+    e = Enchantment(item, name="Test", group="Prefix", value=1)
     e._add_resistance("cold", 0.25)
     assert item.add_resistance.cold == 0.25
 
@@ -256,6 +256,6 @@ def test_of_relief_increments_existing_weight_tolerance_as_decimal():
 
 def test_base_enchantment_modify_and_requirements_are_noops():
     item = _FakeItem()
-    e = Enchantment(item, name="Base", rarity=0, group="Prefix", value=1)
+    e = Enchantment(item, name="Base", group="Prefix", value=1)
     assert e.modify() is None
     assert e.requirements() is True

@@ -1,4 +1,14 @@
-"""Error handling middleware."""
+"""Error handling middleware.
+
+Only 404/405 (raised by Flask's own routing) and 500/generic exceptions
+(raised by unhandled errors) are ever reached through Flask's error-handler
+dispatch. Every other error status (400/401/403/422/429/503) is produced by
+routes and middleware building their own JSON response inline — see
+`src/api/middleware/auth.py` for the 401 convention — so no handler is
+registered for those; a registered-but-unreachable handler is worse than no
+handler, since it invites drift between two response shapes for the same
+status code.
+"""
 
 from flask import jsonify
 
@@ -9,48 +19,6 @@ def register_error_handlers(app):
     Args:
         app: Flask application instance
     """
-
-    @app.errorhandler(400)
-    def bad_request(error):
-        """Handle 400 Bad Request errors."""
-        return (
-            jsonify(
-                {
-                    "success": False,
-                    "error": "Bad request",
-                    "message": str(error),
-                }
-            ),
-            400,
-        )
-
-    @app.errorhandler(401)
-    def unauthorized(error):
-        """Handle 401 Unauthorized errors."""
-        return (
-            jsonify(
-                {
-                    "success": False,
-                    "error": "Unauthorized",
-                    "message": "Invalid or missing session",
-                }
-            ),
-            401,
-        )
-
-    @app.errorhandler(403)
-    def forbidden(error):
-        """Handle 403 Forbidden errors."""
-        return (
-            jsonify(
-                {
-                    "success": False,
-                    "error": "Forbidden",
-                    "message": "You do not have permission to access this resource",
-                }
-            ),
-            403,
-        )
 
     @app.errorhandler(404)
     def not_found(error):
@@ -80,34 +48,6 @@ def register_error_handlers(app):
             405,
         )
 
-    @app.errorhandler(422)
-    def unprocessable_entity(error):
-        """Handle 422 Unprocessable Entity errors."""
-        return (
-            jsonify(
-                {
-                    "success": False,
-                    "error": "Unprocessable entity",
-                    "message": "The request could not be processed",
-                }
-            ),
-            422,
-        )
-
-    @app.errorhandler(429)
-    def too_many_requests(error):
-        """Handle 429 Too Many Requests errors."""
-        return (
-            jsonify(
-                {
-                    "success": False,
-                    "error": "Too many requests",
-                    "message": "Rate limit exceeded. Please try again later.",
-                }
-            ),
-            429,
-        )
-
     @app.errorhandler(500)
     def internal_error(error):
         """Handle 500 Internal Server Error."""
@@ -124,20 +64,6 @@ def register_error_handlers(app):
                 }
             ),
             500,
-        )
-
-    @app.errorhandler(503)
-    def service_unavailable(error):
-        """Handle 503 Service Unavailable errors."""
-        return (
-            jsonify(
-                {
-                    "success": False,
-                    "error": "Service unavailable",
-                    "message": "The service is temporarily unavailable",
-                }
-            ),
-            503,
         )
 
     # Handle all other HTTP exceptions

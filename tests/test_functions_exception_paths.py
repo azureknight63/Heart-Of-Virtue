@@ -498,7 +498,6 @@ class _BadInitEnch:
 
 class _GoodEnch:
     tier = 1
-    rarity = 0
 
     def __init__(self, item):
         self.item = item
@@ -512,7 +511,6 @@ class _GoodEnch:
 
 class _ModifyRaisesEnch:
     tier = 1
-    rarity = 0
 
     def __init__(self, item):
         self.item = item
@@ -528,11 +526,10 @@ def _install_fake_enchant_tables(monkeypatch, **classes):
     for name, cls in classes.items():
         setattr(mod, name, cls)
     monkeypatch.setitem(sys.modules, "enchant_tables", mod)
-    # Force a single deterministic roll: group 0 (prefix), rarity always passes.
+    # Force a single deterministic roll: group 0 (prefix).
     import random
 
     monkeypatch.setattr(random, "randrange", lambda n: 0)
-    monkeypatch.setattr(random, "randint", lambda a, b: b)
 
 
 class _NoEquipStatesItem:

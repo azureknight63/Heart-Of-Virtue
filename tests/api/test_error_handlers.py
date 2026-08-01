@@ -1,4 +1,11 @@
-"""Integration tests for error handlers."""
+"""Integration tests for error handlers.
+
+Only 404/405 (raised by Flask's own routing) and 500/generic-exception
+handlers are registered — see `src/api/handlers/error_handler.py`. Every
+other status code (400/401/403/422/429/503) is produced by routes/middleware
+building their own JSON response inline (issue #437), so there is no global
+handler to test for those; asserting on them here would test dead code.
+"""
 
 import sys
 from pathlib import Path
@@ -29,41 +36,11 @@ class TestErrorHandlers:
         app.config["TESTING"] = True
         register_error_handlers(app)
 
-        @app.route("/test_400")
-        def test_400():
-            from flask import abort
-
-            abort(400)
-
-        @app.route("/test_401")
-        def test_401():
-            from flask import abort
-
-            abort(401)
-
-        @app.route("/test_403")
-        def test_403():
-            from flask import abort
-
-            abort(403)
-
         @app.route("/test_404")
         def test_404():
             from flask import abort
 
             abort(404)
-
-        @app.route("/test_422")
-        def test_422():
-            from flask import abort
-
-            abort(422)
-
-        @app.route("/test_429")
-        def test_429():
-            from flask import abort
-
-            abort(429)
 
         @app.route("/test_500")
         def test_500():
@@ -81,12 +58,6 @@ class TestErrorHandlers:
                 description="secret-db-password=hunter2 at /etc/private/config.py"
             )
 
-        @app.route("/test_503")
-        def test_503():
-            from flask import abort
-
-            abort(503)
-
         @app.route("/test_exception")
         def test_exception():
             raise Exception("Test exception")
@@ -98,31 +69,6 @@ class TestErrorHandlers:
         """Create Flask test client."""
         return app.test_client()
 
-    def test_400_error_response(self, client):
-        """Test 400 Bad Request error response format."""
-        response = client.get("/test_400")
-        assert response.status_code == 400
-        data = response.get_json()
-        assert data["success"] is False
-        assert "error" in data
-        assert "Bad request" in data["error"]
-
-    def test_401_error_response(self, client):
-        """Test 401 Unauthorized error response format."""
-        response = client.get("/test_401")
-        assert response.status_code == 401
-        data = response.get_json()
-        assert data["success"] is False
-        assert "Unauthorized" in data["error"]
-
-    def test_403_error_response(self, client):
-        """Test 403 Forbidden error response format."""
-        response = client.get("/test_403")
-        assert response.status_code == 403
-        data = response.get_json()
-        assert data["success"] is False
-        assert "Forbidden" in data["error"]
-
     def test_404_error_response(self, client):
         """Test 404 Not Found error response format."""
         response = client.get("/test_404")
@@ -130,14 +76,6 @@ class TestErrorHandlers:
         data = response.get_json()
         assert data["success"] is False
         assert "Not found" in data["error"]
-
-    def test_422_error_response(self, client):
-        """Test 422 Unprocessable Entity error response format."""
-        response = client.get("/test_422")
-        assert response.status_code == 422
-        data = response.get_json()
-        assert data["success"] is False
-        assert "Unprocessable" in data["error"]
 
     def test_500_error_response(self, client):
         """Test 500 Internal Server Error response format."""
@@ -161,26 +99,10 @@ class TestErrorHandlers:
 
     def test_error_contains_message_field(self, client):
         """Test that all error responses contain a message field."""
-        response = client.get("/test_400")
+        response = client.get("/test_404")
         data = response.get_json()
         assert "message" in data
         assert isinstance(data["message"], str)
-
-    def test_429_error_response(self, client):
-        """Test 429 Too Many Requests error response format."""
-        response = client.get("/test_429")
-        assert response.status_code == 429
-        data = response.get_json()
-        assert data["success"] is False
-        assert "Too many requests" in data["error"]
-
-    def test_503_error_response(self, client):
-        """Test 503 Service Unavailable error response format."""
-        response = client.get("/test_503")
-        assert response.status_code == 503
-        data = response.get_json()
-        assert data["success"] is False
-        assert "Service unavailable" in data["error"]
 
     def test_generic_exception_handler(self, client):
         """Test generic exception handler for unhandled exceptions."""

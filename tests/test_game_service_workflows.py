@@ -701,6 +701,23 @@ class TestFleeCombatCleanup:
         assert dead not in in_combat_player.combat_list_allies
         assert living.in_combat is False
 
+    def test_flee_drops_event_temp_ally(self, game_service, in_combat_player):
+        """Issue #427: allies spawned via CombatEventConfig.ally_list
+        (event_temp_ally=True) are scoped to this one fight — fleeing must
+        not carry them forward like a persistent party member."""
+        persistent = MagicMock()
+        persistent.is_alive.return_value = True
+        persistent.in_combat = True
+        temp_ally = MagicMock()
+        temp_ally.is_alive.return_value = True
+        temp_ally.in_combat = True
+        temp_ally.event_temp_ally = True
+        in_combat_player.combat_list_allies = [in_combat_player, persistent, temp_ally]
+
+        game_service.flee_combat(in_combat_player)
+
+        assert in_combat_player.combat_list_allies == [in_combat_player, persistent]
+
     def test_flee_blocked_when_enemy_too_close(self, game_service, player_with_universe, mock_enemy):
         """flee_combat returns an error when any enemy is within 20 ft."""
         player_with_universe.in_combat = True
