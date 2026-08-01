@@ -109,6 +109,35 @@ class CombatEvent(Event):
                             # Force aggro and in_combat so they are picked up immediately
                             npc.aggro = True
 
+            # Spawn configured allies as full AI-controlled combatants for this
+            # fight only (issue #427) — not the player's persistent party.
+            # `event_temp_ally` marks them so post-combat cleanup drops them
+            # from combat_list_allies instead of letting them follow Jean.
+            if self.config and getattr(self.config, "ally_list", None):
+                if not hasattr(self.player, "combat_list_allies"):
+                    self.player.combat_list_allies = [self.player]
+                for ally_name, count in self.config.ally_list:
+                    for _ in range(count):
+                        ally = self.tile.spawn_npc(ally_name)
+                        if ally:
+                            ally.friend = True
+                            ally.aggro = False
+                            ally.event_temp_ally = True
+                            if ally not in self.player.combat_list_allies:
+                                self.player.combat_list_allies.append(ally)
+
+            # Stash this encounter's scenario/grid overrides on the player so
+            # ApiCombatAdapter.initialize_combat can honor them instead of its
+            # usual heuristic (issue #427). Cleared after use.
+            if self.config and getattr(self.config, "scenario_type", None):
+                self.player._pending_scenario_type = self.config.scenario_type
+            if self.config and getattr(self.config, "grid_size_override", None):
+                self.player._pending_grid_size_override = (
+                    self.config.grid_size_override
+                )
+            if self.config and getattr(self.config, "on_victory_text", None):
+                self.player._pending_victory_narrative = self.config.on_victory_text
+
             # Return a signal that combat is ready to be initialized
             if not self.repeat:
                 if self in self.tile.events_here:

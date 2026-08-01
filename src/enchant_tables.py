@@ -9,10 +9,9 @@ from src.states import Poisoned, PhoenixRevive
 
 
 class Enchantment:
-    def __init__(self, item, name, rarity, group, value):
+    def __init__(self, item, name, group, value):
         self.item = item  # item to be modified by the enchantment
         self.name = name  # will be added to the item's base name as either a prefix or suffix, depending on group
-        self.rarity = rarity  # likelihood of this enchantment being selected
         self.group = group  # prefix or suffix
         self.value = value  # multiplier against the item's base value; 1.5 = 50% increase in gold value
         self.equip_states = (
@@ -108,7 +107,7 @@ class Sharp(_DamagePercentBoostEnchantment):
     _mod_low, _mod_high = 1.05, 1.15
 
     def __init__(self, item):
-        super().__init__(item, name="Sharp", rarity=0, group="Prefix", value=1)
+        super().__init__(item, name="Sharp", group="Prefix", value=1)
 
     def requirements(self):
         allowed_subtypes = item_types["weapons"]["archetypes"]["Blade"]
@@ -125,7 +124,7 @@ class Weighted(_DamagePercentBoostEnchantment):
     _value_scale = 1.0
 
     def __init__(self, item):
-        super().__init__(item, name="Weighted", rarity=0, group="Prefix", value=1)
+        super().__init__(item, name="Weighted", group="Prefix", value=1)
 
     def requirements(self):
         allowed_subtypes = item_types["weapons"]["archetypes"]["Blunt"]
@@ -140,7 +139,7 @@ class Balanced(_DamagePercentBoostEnchantment):
     _mod_low, _mod_high = 1.05, 1.15
 
     def __init__(self, item):
-        super().__init__(item, name="Balanced", rarity=0, group="Prefix", value=1)
+        super().__init__(item, name="Balanced", group="Prefix", value=1)
 
     def requirements(self):
         allowed_subtypes = item_types["weapons"]["archetypes"]["Ranged"]
@@ -154,7 +153,7 @@ class Hollow(Enchantment):  # reduced weight and damage
     tier = 1
 
     def __init__(self, item):
-        super().__init__(item, name="Hollow", rarity=0, group="Prefix", value=1.1)
+        super().__init__(item, name="Hollow", group="Prefix", value=1.1)
 
     def modify(self):
         self.item.weight *= 0.5
@@ -176,7 +175,7 @@ class Polished(Enchantment):  # it's shiny! 10% increase in gold value
     tier = 1
 
     def __init__(self, item):
-        super().__init__(item, name="Polished", rarity=0, group="Prefix", value=1.1)
+        super().__init__(item, name="Polished", group="Prefix", value=1.1)
 
     def modify(self):
         self.item.value *= self.value
@@ -192,7 +191,7 @@ class Encrusted(Enchantment):  # encrusted with gems; +30% gold value
     tier = 2
 
     def __init__(self, item):
-        super().__init__(item, name="Encrusted", rarity=0, group="Prefix", value=1.3)
+        super().__init__(item, name="Encrusted", group="Prefix", value=1.3)
 
     def modify(self):
         self.item.value *= 1.3
@@ -208,7 +207,7 @@ class Dirty(Enchantment):  # it's dirty! 10% decrease in gold value
     tier = 1
 
     def __init__(self, item):
-        super().__init__(item, name="Dirty", rarity=0, group="Prefix", value=0.9)
+        super().__init__(item, name="Dirty", group="Prefix", value=0.9)
 
     def modify(self):
         self.item.value *= self.value
@@ -224,7 +223,7 @@ class Studded(Enchantment):  # improves protection rating of armor by 1-3
     tier = 1
 
     def __init__(self, item):
-        super().__init__(item, name="Studded", rarity=0, group="Prefix", value=1)
+        super().__init__(item, name="Studded", group="Prefix", value=1)
 
     def modify(self):
         mod = random.randint(1, 3)
@@ -246,7 +245,7 @@ class Reinforced(Enchantment):  # improves protection rating of armor by 3-5
     tier = 2
 
     def __init__(self, item):
-        super().__init__(item, name="Reinforced", rarity=0, group="Prefix", value=1)
+        super().__init__(item, name="Reinforced", group="Prefix", value=1)
 
     def modify(self):
         mod = random.randint(3, 5)
@@ -268,7 +267,7 @@ class Plated(Enchantment):  # improves protection rating of armor by 5-10
     tier = 3
 
     def __init__(self, item):
-        super().__init__(item, name="Plated", rarity=0, group="Prefix", value=1)
+        super().__init__(item, name="Plated", group="Prefix", value=1)
 
     def modify(self):
         mod = random.randint(5, 10)
@@ -292,13 +291,13 @@ class Poisonous(
     tier = 2
 
     def __init__(self, item):
-        super().__init__(item, name="Poisonous", rarity=0, group="Prefix", value=1)
+        super().__init__(item, name="Poisonous", group="Prefix", value=1.3)
         self.equip_states = [Poisoned(None)]
 
     def modify(self):
         # safely add/increment poison resistance (works if add_resistance is dict or object)
         self._add_resistance("poison", 0.4)
-        self.item.value *= 1.3
+        self.item.value *= self.value
         self.item.value = int(self.item.value)
         self.item.name = self.name + " " + self.item.name
         self.item.announce = "There's a {} here.".format(self.item.name)
@@ -349,7 +348,7 @@ class Dousing(_ResistanceEnchantment):  # grants resistance to fire when equippe
     _announce_template = "There's a {} here, treated against flame."
 
     def __init__(self, item):
-        super().__init__(item, name="Dousing", rarity=0, group="Prefix", value=1.25)
+        super().__init__(item, name="Dousing", group="Prefix", value=1.25)
 
 
 class Flaming(_DamagePercentBoostEnchantment):
@@ -359,7 +358,7 @@ class Flaming(_DamagePercentBoostEnchantment):
     _announce_template = "There's a {} here, crackling with heat."
 
     def __init__(self, item):
-        super().__init__(item, name="Flaming", rarity=0, group="Prefix", value=1.3)
+        super().__init__(item, name="Flaming", group="Prefix", value=1.3)
 
     def requirements(self):
         return getattr(self.item, "maintype", None) == "Weapon"
@@ -372,7 +371,7 @@ class Icy(_DamagePercentBoostEnchantment):
     _announce_template = "There's a {} here, rimed in frost."
 
     def __init__(self, item):
-        super().__init__(item, name="Icy", rarity=0, group="Prefix", value=1.25)
+        super().__init__(item, name="Icy", group="Prefix", value=1.25)
 
     def requirements(self):
         return getattr(self.item, "maintype", None) == "Weapon"
@@ -385,7 +384,7 @@ class Shocking(_DamagePercentBoostEnchantment):
     _announce_template = "There's a {} here, humming with electricity."
 
     def __init__(self, item):
-        super().__init__(item, name="Shocking", rarity=0, group="Prefix", value=1.35)
+        super().__init__(item, name="Shocking", group="Prefix", value=1.35)
 
     def requirements(self):
         return getattr(self.item, "maintype", None) == "Weapon"
@@ -398,7 +397,7 @@ class Earthen(_DamagePercentBoostEnchantment):
     _announce_template = "There's a {} here, bound with the weight of the earth."
 
     def __init__(self, item):
-        super().__init__(item, name="Earthen", rarity=0, group="Prefix", value=1.2)
+        super().__init__(item, name="Earthen", group="Prefix", value=1.2)
 
     def requirements(self):
         return getattr(self.item, "maintype", None) == "Weapon"
@@ -411,7 +410,7 @@ class Radiant(_DamagePercentBoostEnchantment):
     _announce_template = "There's a {} here, glowing with a pure light."
 
     def __init__(self, item):
-        super().__init__(item, name="Radiant", rarity=0, group="Prefix", value=1.5)
+        super().__init__(item, name="Radiant", group="Prefix", value=1.5)
 
     def requirements(self):
         return getattr(self.item, "maintype", None) == "Weapon"
@@ -424,7 +423,7 @@ class Umbral(_DamagePercentBoostEnchantment):
     _announce_template = "There's a {} here, cloaked in shadow."
 
     def __init__(self, item):
-        super().__init__(item, name="Umbral", rarity=0, group="Prefix", value=1.5)
+        super().__init__(item, name="Umbral", group="Prefix", value=1.5)
 
     def requirements(self):
         return getattr(self.item, "maintype", None) == "Weapon"
@@ -437,7 +436,7 @@ class Spiritual(_DamagePercentBoostEnchantment):
     _announce_template = "There's a {} here, suffused with otherworldly power."
 
     def __init__(self, item):
-        super().__init__(item, name="Spiritual", rarity=0, group="Prefix", value=1.4)
+        super().__init__(item, name="Spiritual", group="Prefix", value=1.4)
 
     def requirements(self):
         return getattr(self.item, "maintype", None) == "Weapon"
@@ -451,7 +450,7 @@ class Pure(_DamagePercentBoostEnchantment):
     _announce_template = "There's a {} here, its edge humming with uncompromising force."
 
     def __init__(self, item):
-        super().__init__(item, name="Pure", rarity=0, group="Prefix", value=1.4)
+        super().__init__(item, name="Pure", group="Prefix", value=1.4)
 
     def requirements(self):
         return getattr(self.item, "maintype", None) == "Weapon"
@@ -509,7 +508,7 @@ class OfHealth(_StatBoostEnchantment):  # it's healthy! Increase maxhp by 10-30
     _value_mult = 2
 
     def __init__(self, item):
-        super().__init__(item, name="of Health", rarity=0, group="Suffix", value=1)
+        super().__init__(item, name="of Health", group="Suffix", value=1)
 
 
 class OfVigor(_StatBoostEnchantment):  # it's strong! Increase strength by 1-3
@@ -519,7 +518,7 @@ class OfVigor(_StatBoostEnchantment):  # it's strong! Increase strength by 1-3
     _value_mult = 20
 
     def __init__(self, item):
-        super().__init__(item, name="of Vigor", rarity=0, group="Suffix", value=1)
+        super().__init__(item, name="of Vigor", group="Suffix", value=1)
 
 
 class OfPerseverance(_StatBoostEnchantment):  # Increase max fatigue by 10-30
@@ -530,7 +529,7 @@ class OfPerseverance(_StatBoostEnchantment):  # Increase max fatigue by 10-30
 
     def __init__(self, item):
         super().__init__(
-            item, name="of Perseverance", rarity=0, group="Suffix", value=1
+            item, name="of Perseverance", group="Suffix", value=1
         )
 
 
@@ -541,7 +540,7 @@ class OfTempo(_StatBoostEnchantment):  # it's fast! Increase speed by 1-3
     _value_mult = 20
 
     def __init__(self, item):
-        super().__init__(item, name="of Tempo", rarity=0, group="Suffix", value=1)
+        super().__init__(item, name="of Tempo", group="Suffix", value=1)
 
 
 class OfGrit(_StatBoostEnchantment):  # Increase endurance by 1-3
@@ -551,7 +550,7 @@ class OfGrit(_StatBoostEnchantment):  # Increase endurance by 1-3
     _value_mult = 20
 
     def __init__(self, item):
-        super().__init__(item, name="of Grit", rarity=0, group="Suffix", value=1)
+        super().__init__(item, name="of Grit", group="Suffix", value=1)
 
 
 class OfCharms(_StatBoostEnchantment):  # Increase charisma by 1-3
@@ -561,7 +560,7 @@ class OfCharms(_StatBoostEnchantment):  # Increase charisma by 1-3
     _value_mult = 20
 
     def __init__(self, item):
-        super().__init__(item, name="of Charms", rarity=0, group="Suffix", value=1)
+        super().__init__(item, name="of Charms", group="Suffix", value=1)
 
 
 class OfInsight(_StatBoostEnchantment):  # Increase intelligence by 1-3
@@ -571,7 +570,7 @@ class OfInsight(_StatBoostEnchantment):  # Increase intelligence by 1-3
     _value_mult = 20
 
     def __init__(self, item):
-        super().__init__(item, name="of Insight", rarity=0, group="Suffix", value=1)
+        super().__init__(item, name="of Insight", group="Suffix", value=1)
 
 
 class OfSupplication(_StatBoostEnchantment):  # Increase faith by 1-3
@@ -582,7 +581,7 @@ class OfSupplication(_StatBoostEnchantment):  # Increase faith by 1-3
 
     def __init__(self, item):
         super().__init__(
-            item, name="of Supplication", rarity=0, group="Suffix", value=1
+            item, name="of Supplication", group="Suffix", value=1
         )
 
 
@@ -594,14 +593,14 @@ class OfRelief(_StatBoostEnchantment):  # Increase weight tolerance slightly
     _stat_wrap = decimal.Decimal  # weight tolerance is stored as a Decimal
 
     def __init__(self, item):
-        super().__init__(item, name="of Relief", rarity=0, group="Suffix", value=1)
+        super().__init__(item, name="of Relief", group="Suffix", value=1)
 
 
 class OfThePhoenix(Enchantment):  # Grants a chance to revive on death once per combat
     tier = 3
 
     def __init__(self, item):
-        super().__init__(item, name="of the Phoenix", rarity=0, group="Suffix", value=2)
+        super().__init__(item, name="of the Phoenix", group="Suffix", value=2)
         self.equip_states = [PhoenixRevive(None)]
 
     def modify(self):
@@ -626,7 +625,7 @@ class Purifying(_ResistanceEnchantment):  # grants resistance to pure damage
     )
 
     def __init__(self, item):
-        super().__init__(item, name="Purifying", rarity=0, group="Prefix", value=1.5)
+        super().__init__(item, name="Purifying", group="Prefix", value=1.5)
 
 
 class Needleproof(_ResistanceEnchantment):  # grants resistance to piercing attacks
@@ -637,7 +636,7 @@ class Needleproof(_ResistanceEnchantment):  # grants resistance to piercing atta
     )
 
     def __init__(self, item):
-        super().__init__(item, name="Needleproof", rarity=0, group="Prefix", value=1.2)
+        super().__init__(item, name="Needleproof", group="Prefix", value=1.2)
 
 
 class Edgebound(_ResistanceEnchantment):  # reduces slashing damage
@@ -648,7 +647,7 @@ class Edgebound(_ResistanceEnchantment):  # reduces slashing damage
     )
 
     def __init__(self, item):
-        super().__init__(item, name="Edgebound", rarity=0, group="Prefix", value=1.25)
+        super().__init__(item, name="Edgebound", group="Prefix", value=1.25)
 
 
 class Bulwark(_ResistanceEnchantment):  # toughened against crushing impacts
@@ -659,4 +658,4 @@ class Bulwark(_ResistanceEnchantment):  # toughened against crushing impacts
     )
 
     def __init__(self, item):
-        super().__init__(item, name="Bulwark", rarity=0, group="Prefix", value=1.35)
+        super().__init__(item, name="Bulwark", group="Prefix", value=1.35)

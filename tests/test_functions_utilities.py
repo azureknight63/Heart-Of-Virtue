@@ -149,10 +149,10 @@ class DummyArmor:
 def test_add_random_enchantments_prefers_poisonous(monkeypatch):
     armor = DummyArmor()
 
-    # Force group 0 (prefix) twice; ensure rarity passes
+    # Force group 0 (prefix) twice
     seq = [0, 0]
     monkeypatch.setattr(random, "randrange", lambda n: seq.pop(0))
-    monkeypatch.setattr(random, "randint", lambda a, b: b)  # max rarity pass
+    monkeypatch.setattr(random, "randint", lambda a, b: b)  # deterministic modify() rolls
 
     def choose_poisonous(candidates):
         # pick Poisonous if available
@@ -176,7 +176,7 @@ def test_add_random_enchantments_elemental_weapon(monkeypatch):
     # Need two rolls to reach tier 2 (Flaming is tier 2)
     seq = [0, 0]
     monkeypatch.setattr(random, "randrange", lambda n: seq.pop(0))
-    monkeypatch.setattr(random, "randint", lambda a, b: b)
+    monkeypatch.setattr(random, "randint", lambda a, b: b)  # deterministic modify() rolls
 
     def choose_flaming(candidates):
         for c in candidates:
@@ -201,7 +201,7 @@ def test_add_random_enchantments_candidate_pools_are_group_filtered(monkeypatch)
     seen_groups = []
     seq = [0, 1]  # slot 0 = prefix, slot 1 = suffix
     monkeypatch.setattr(random, "randrange", lambda n: seq.pop(0))
-    monkeypatch.setattr(random, "randint", lambda a, b: b)  # max rarity, everything passes
+    monkeypatch.setattr(random, "randint", lambda a, b: b)  # deterministic modify() rolls
 
     def record_and_pick_first(candidates):
         seen_groups.append({c.group for c in candidates})
@@ -223,7 +223,7 @@ def test_add_random_enchantments_no_duplicate_suffix_regression(monkeypatch):
     weapon = DummyWeapon()
     seq = [0, 1]  # slot 0 = prefix, slot 1 = suffix
     monkeypatch.setattr(random, "randrange", lambda n: seq.pop(0))
-    monkeypatch.setattr(random, "randint", lambda a, b: b)  # max rarity, everything passes
+    monkeypatch.setattr(random, "randint", lambda a, b: b)  # deterministic modify() rolls
 
     def choose_of_vigor_if_present(candidates):
         for c in candidates:

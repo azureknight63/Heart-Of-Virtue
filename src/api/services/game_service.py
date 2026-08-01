@@ -3284,11 +3284,14 @@ class GameService:
                 player.in_combat = False
                 player.combat_list = []
                 # Preserve only living allies — dead allies must not be re-injected into
-                # rooms via recall_friends or re-enrolled in the next combat.
+                # rooms via recall_friends or re-enrolled in the next combat. Fight-scoped
+                # allies (CombatEventConfig.ally_list, issue #427) don't survive either.
                 existing_allies = [
                     a
                     for a in getattr(player, "combat_list_allies", [])
-                    if a is not player and a.is_alive()
+                    if a is not player
+                    and a.is_alive()
+                    and getattr(a, "event_temp_ally", False) is not True
                 ]
                 for ally in existing_allies:
                     ally.in_combat = False
@@ -3497,9 +3500,13 @@ class GameService:
         player.in_combat = False
         player.combat_list = []
 
-        # Clear ally combat state — filter to living allies first, then clear their flags
+        # Clear ally combat state — filter to living allies first, then clear their flags.
+        # Fight-scoped allies (CombatEventConfig.ally_list, issue #427) are dropped here
+        # too — fleeing ends their one-fight enrollment same as victory/defeat would.
         living_allies = [
-            a for a in getattr(player, "combat_list_allies", [])[1:] if a.is_alive()
+            a
+            for a in getattr(player, "combat_list_allies", [])[1:]
+            if a.is_alive() and getattr(a, "event_temp_ally", False) is not True
         ]
         for ally in living_allies:
             ally.in_combat = False

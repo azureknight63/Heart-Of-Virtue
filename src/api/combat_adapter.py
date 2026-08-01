@@ -390,26 +390,51 @@ class ApiCombatAdapter:
             if not reinit:
                 self.player.heat = 1.0
 
-            # Initialize positions
-            scenario_type = "standard"
-            if len(self.player.combat_list) > 1 and len(
-                self.player.combat_list_allies
-            ) < len(self.player.combat_list):
-                scenario_type = "pincer"
-            elif (
-                len(self.player.combat_list_allies) == 1
-                and len(self.player.combat_list) == 1
-            ):
-                scenario_type = "boss_arena"
+            # Initialize positions. A CombatEventConfig-scripted encounter may
+            # have stashed an explicit scenario_type override (issue #427) —
+            # honor it in place of the usual heuristic, then clear it so it
+            # doesn't leak into the next (unrelated) combat. isinstance-checked
+            # (rather than a plain truthiness check) so test doubles that don't
+            # set this attribute at all (e.g. MagicMock, which auto-vivifies
+            # any attribute access) can't accidentally trip the override.
+            pending_scenario_type = getattr(
+                self.player, "_pending_scenario_type", None
+            )
+            if isinstance(pending_scenario_type, str) and pending_scenario_type:
+                scenario_type = pending_scenario_type
+                del self.player._pending_scenario_type
+            else:
+                scenario_type = "standard"
+                if len(self.player.combat_list) > 1 and len(
+                    self.player.combat_list_allies
+                ) < len(self.player.combat_list):
+                    scenario_type = "pincer"
+                elif (
+                    len(self.player.combat_list_allies) == 1
+                    and len(self.player.combat_list) == 1
+                ):
+                    scenario_type = "boss_arena"
 
             try:
-                from src.coordinate_config import CoordinateSystemConfig
-
-                coord_config = CoordinateSystemConfig(self.player)
-                total_combatants = len(self.player.combat_list_allies) + len(
-                    self.player.combat_list
+                pending_grid_override = getattr(
+                    self.player, "_pending_grid_size_override", None
                 )
-                grid_w, grid_h = coord_config.get_dynamic_grid_size(total_combatants)
+                if (
+                    isinstance(pending_grid_override, (tuple, list))
+                    and len(pending_grid_override) == 2
+                ):
+                    grid_w, grid_h = pending_grid_override
+                    del self.player._pending_grid_size_override
+                else:
+                    from src.coordinate_config import CoordinateSystemConfig
+
+                    coord_config = CoordinateSystemConfig(self.player)
+                    total_combatants = len(self.player.combat_list_allies) + len(
+                        self.player.combat_list
+                    )
+                    grid_w, grid_h = coord_config.get_dynamic_grid_size(
+                        total_combatants
+                    )
                 self.combat_grid_size = (grid_w, grid_h)
 
                 positions.initialize_combat_positions(
@@ -1278,10 +1303,14 @@ class ApiCombatAdapter:
             # Clear enemies after the state snapshot so the defeat payload shows who killed
             # the player rather than an empty battlefield. Preserve only living allies
             # (e.g. Gorran) so dead allies don't haunt subsequent rooms via recall_friends.
+            # event_temp_ally combatants (CombatEventConfig.ally_list, issue #427) are
+            # scoped to this one fight and never carried forward either.
             self.player.combat_list = []
             existing_allies = [
                 a for a in self.player.combat_list_allies
-                if a is not self.player and a.is_alive()
+                if a is not self.player
+                and a.is_alive()
+                and getattr(a, "event_temp_ally", False) is not True
             ]
             for ally in existing_allies:
                 ally.in_combat = False
@@ -1980,11 +2009,24 @@ class ApiCombatAdapter:
             if qty > 0
         ]
 
+        # A CombatEventConfig-scripted encounter may have stashed narration to
+        # show as its own conversation dialog immediately before the victory
+        # dialog (issue #427). Consumed once so it doesn't leak into the next
+        # (unrelated) fight's summary. isinstance-checked so MagicMock test
+        # doubles (which auto-vivify any attribute access) can't trip this.
+        pending_narrative = getattr(self.player, "_pending_victory_narrative", "")
+        pre_victory_narrative = (
+            pending_narrative if isinstance(pending_narrative, str) else ""
+        )
+        if pre_victory_narrative:
+            del self.player._pending_victory_narrative
+
         # Capture a structured end-of-combat summary for the frontend
         self.player.combat_end_summary = {
             "id": str(uuid.uuid4()),
             "status": "victory",
             "message": "Victory!",
+            "pre_victory_narrative": pre_victory_narrative,
             "exp_gained": exp_gained,
             "items_dropped": items_dropped,
             "level_ups": level_ups,
@@ -2051,11 +2093,15 @@ class ApiCombatAdapter:
         # fight without dead NPCs haunting recall_friends or the next combat's grid sizing.
         # Also clear in_combat on surviving allies — the tile-reset loop above only touches
         # non-friend NPCs, leaving friend=True allies with in_combat=True after every fight.
+        # event_temp_ally combatants (CombatEventConfig.ally_list, issue #427) are scoped
+        # to this one fight and never carried forward into the party roster either.
         # Invariant: combat_list_allies[0] is always the player.
         self.player.combat_list = []
         existing_allies = [
             a for a in self.player.combat_list_allies
-            if a is not self.player and a.is_alive()
+            if a is not self.player
+            and a.is_alive()
+            and getattr(a, "event_temp_ally", False) is not True
         ]
         for ally in existing_allies:
             ally.in_combat = False

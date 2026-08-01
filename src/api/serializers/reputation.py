@@ -55,7 +55,6 @@ class NPCRelationshipSerializer:
             "attitude": attitude,
             "emoji": emoji,
             "trust_level": NPCRelationshipSerializer._calculate_trust_level(reputation),
-            "locked_dialogue": reputation < 0,  # Dialogue locked at negative reputation
         }
 
     @staticmethod

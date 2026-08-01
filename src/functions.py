@@ -784,7 +784,7 @@ def add_random_enchantments(item: "Item", count: int) -> None:
       - Performs `count` enchantment rolls, choosing between prefix (0) and suffix (1)
         groups and incrementing that group's tier each time it is selected.
       - Instantiates candidate enchantments for the computed tier and filters them
-        by their `requirements()` and `rarity` attributes.
+        by their `requirements()`.
       - Applies the chosen enchantments by calling `modify()` and merging any
         `equip_states` into `item.equip_states`.
 
@@ -817,7 +817,6 @@ def add_random_enchantments(item: "Item", count: int) -> None:
         enchantment_level[group] += 1
         tier = enchantment_level[group]
 
-        rarity = random.randint(0, 100)
         candidates: list[Any] = []
         for cls in class_by_tier.get(tier, ()):
             try:
@@ -835,7 +834,7 @@ def add_random_enchantments(item: "Item", count: int) -> None:
                 requirements_ok = (
                     req() if callable(req) else (bool(req) if req is not None else True)
                 )
-                if requirements_ok and rarity >= int(getattr(ench, "rarity", 0)):
+                if requirements_ok:
                     candidates.append(ench)
             except Exception:
                 # Skip classes that fail instantiation or checks

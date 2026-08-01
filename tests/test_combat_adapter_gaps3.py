@@ -993,6 +993,38 @@ class TestDefeatHandling:
         assert player.in_combat is False
         assert adapter.awaiting_input is False
 
+    def test_defeat_drops_event_temp_ally_from_party(self):
+        """Issue #427: allies spawned via CombatEventConfig.ally_list
+        (event_temp_ally=True) are scoped to this one fight — a defeat must
+        not carry them forward like a persistent party member."""
+        move = _make_move("Wait", instant=False)
+        player = _make_player()
+        player.is_alive.return_value = False
+        player.check_revive.return_value = False
+        enemy = _make_enemy()
+        persistent_ally = _make_enemy("Gorran", friend=True)
+        persistent_ally.is_alive.return_value = True
+        temp_ally = _make_enemy("Surprise Friend", friend=True)
+        temp_ally.is_alive.return_value = True
+        temp_ally.event_temp_ally = True
+        player.known_moves = []
+        player.combat_list = [enemy]
+        player.combat_list_allies = [player, persistent_ally, temp_ally]
+        player.current_move = move
+        move.target = player
+        adapter = _make_adapter(player)
+
+        with (
+            patch("src.functions.refresh_stat_bonuses"),
+            patch(
+                "src.api.combat_adapter.CombatStateSerializer.serialize_combat_state",
+                return_value=dict(_STUB_BEAT_STATE),
+            ),
+        ):
+            adapter._execute_move_inner(move)
+
+        assert player.combat_list_allies == [player, persistent_ally]
+
     def test_defeat_summary_survives_uuid_failure_on_first_attempt(self):
         """Covers the except branch (1165-1166): if building combat_end_summary
         raises the first time (e.g. a transient uuid failure), the handler
@@ -1608,6 +1640,55 @@ class TestHandleVictoryFullDetails:
         )
         assert ghost_entry.get("type", "") == ""
         assert living_ally.in_combat is False
+
+    def test_pre_victory_narrative_surfaced_and_cleared(self):
+        """Issue #427: a CombatEventConfig.on_victory_text stashed via
+        events.CombatEvent is surfaced in combat_end_summary and consumed
+        (cleared) so it doesn't leak into the next fight's summary."""
+        player = _make_player()
+        player.combat_list = []
+        player.combat_list_allies = [player]
+        player._pending_victory_narrative = "The camp erupts in cheers."
+
+        adapter = _make_adapter(player)
+        adapter._handle_victory()
+
+        assert (
+            player.combat_end_summary["pre_victory_narrative"]
+            == "The camp erupts in cheers."
+        )
+        assert not hasattr(player, "_pending_victory_narrative")
+
+    def test_no_pre_victory_narrative_defaults_to_empty_string(self):
+        """A player with no stashed narrative (the common case) must not trip
+        on MagicMock auto-vivification of the unset attribute."""
+        player = _make_player()
+        player.combat_list = []
+        player.combat_list_allies = [player]
+
+        adapter = _make_adapter(player)
+        adapter._handle_victory()
+
+        assert player.combat_end_summary["pre_victory_narrative"] == ""
+
+    def test_event_temp_ally_dropped_from_party_after_victory(self):
+        """Issue #427: allies spawned via CombatEventConfig.ally_list
+        (event_temp_ally=True) fight this one battle but are not carried
+        forward into the persistent party roster."""
+        player = _make_player()
+        player.combat_list = []
+
+        persistent_ally = _make_enemy("Gorran", friend=True)
+        persistent_ally.is_alive.return_value = True
+        temp_ally = _make_enemy("Surprise Friend", friend=True)
+        temp_ally.is_alive.return_value = True
+        temp_ally.event_temp_ally = True
+        player.combat_list_allies = [player, persistent_ally, temp_ally]
+
+        adapter = _make_adapter(player)
+        adapter._handle_victory()
+
+        assert player.combat_list_allies == [player, persistent_ally]
 
 
 # ---------------------------------------------------------------------------

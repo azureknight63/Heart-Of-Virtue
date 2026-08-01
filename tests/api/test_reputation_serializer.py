@@ -32,7 +32,6 @@ class TestNPCRelationshipSerializer:
         assert result["attitude"] == "friendly"
         assert result["emoji"] == "😊"
         assert result["trust_level"] == "High Trust"
-        assert result["locked_dialogue"] is False
 
     def test_serialize_relationship_neutral(self):
         """Test serializing a neutral relationship."""
@@ -53,7 +52,6 @@ class TestNPCRelationshipSerializer:
         assert result["attitude"] == "hostile"
         assert result["emoji"] == "😠"
         assert result["trust_level"] == "Distrusting"
-        assert result["locked_dialogue"] is True
 
     def test_serialize_relationship_very_hostile(self):
         """Test serializing a very hostile relationship."""

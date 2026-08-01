@@ -61,7 +61,6 @@ describe('NpcChatPanel', () => {
         attitude: 'neutral',
         emoji: '😐',
         trust_level: 'Neutral',
-        locked_dialogue: false,
       },
     },
   }
@@ -510,7 +509,6 @@ describe('NpcChatPanel', () => {
             attitude: 'favorable',
             emoji: '🙂',
             trust_level: 'Good Trust',
-            locked_dialogue: false,
           },
         },
       })

@@ -218,6 +218,122 @@ class TestCombatEvent:
         mock_tile.spawn_npc.assert_not_called()
         assert result == {"combat_ready": True}
 
+    def test_combat_event_process_spawns_ally_list_as_temp_allies(self):
+        """Issue #427: ally_list NPCs join combat_list_allies as friend=True,
+        event_temp_ally=True combatants — not the player's persistent party."""
+        config = CombatEventConfig()
+        config.ally_list = [("Gorran", 2)]
+
+        # A real (non-Mock) player stand-in so list mutation is observable.
+        class _Player:
+            pass
+
+        player = _Player()
+        mock_tile = MagicMock()
+        spawned = [MagicMock(name=f"ally{i}") for i in range(2)]
+        mock_tile.spawn_npc.side_effect = spawned
+
+        event = CombatEvent("TestCombat", player=player, tile=mock_tile, config=config)
+        event.process(user_input="combat_start")
+
+        assert mock_tile.spawn_npc.call_args_list == [(("Gorran",),), (("Gorran",),)]
+        assert player.combat_list_allies == [player] + spawned
+        for ally in spawned:
+            assert ally.friend is True
+            assert ally.aggro is False
+            assert ally.event_temp_ally is True
+
+    def test_combat_event_process_ally_list_appends_to_existing_allies(self):
+        """Ally spawning must not clobber allies already on the player."""
+        config = CombatEventConfig()
+        config.ally_list = [("Reinforcement", 1)]
+
+        class _Player:
+            pass
+
+        player = _Player()
+        existing_ally = MagicMock(name="existing")
+        player.combat_list_allies = [player, existing_ally]
+
+        mock_tile = MagicMock()
+        new_ally = MagicMock(name="new_ally")
+        mock_tile.spawn_npc.return_value = new_ally
+
+        event = CombatEvent("TestCombat", player=player, tile=mock_tile, config=config)
+        event.process(user_input="combat_start")
+
+        assert player.combat_list_allies == [player, existing_ally, new_ally]
+
+    def test_combat_event_process_stashes_scenario_and_grid_overrides(self):
+        """Issue #427: scenario_type and grid_size_override are stashed on the
+        player for ApiCombatAdapter.initialize_combat to consume."""
+        config = CombatEventConfig()
+        config.scenario_type = "ambush"
+        config.grid_size_override = (30, 30)
+        mock_player = MagicMock()
+        mock_tile = MagicMock()
+
+        event = CombatEvent("TestCombat", player=mock_player, tile=mock_tile, config=config)
+        event.process(user_input="combat_start")
+
+        assert mock_player._pending_scenario_type == "ambush"
+        assert mock_player._pending_grid_size_override == (30, 30)
+
+    def test_combat_event_process_default_scenario_type_is_still_stashed(self):
+        """scenario_type defaults to "standard" but is still an explicit,
+        scripted override — it should be stashed like any other value."""
+        config = CombatEventConfig()  # scenario_type == "standard" by default
+        mock_player = MagicMock()
+        mock_tile = MagicMock()
+
+        event = CombatEvent("TestCombat", player=mock_player, tile=mock_tile, config=config)
+        event.process(user_input="combat_start")
+
+        assert mock_player._pending_scenario_type == "standard"
+
+    def test_combat_event_process_no_grid_override_when_unset(self):
+        """grid_size_override defaults to None — nothing should be stashed."""
+        config = CombatEventConfig()
+
+        class _Player:
+            pass
+
+        player = _Player()
+        mock_tile = MagicMock()
+
+        event = CombatEvent("TestCombat", player=player, tile=mock_tile, config=config)
+        event.process(user_input="combat_start")
+
+        assert not hasattr(player, "_pending_grid_size_override")
+
+    def test_combat_event_process_stashes_on_victory_text(self):
+        """Issue #427: on_victory_text is stashed for ApiCombatAdapter._handle_victory
+        to surface as a pre-victory narration dialog."""
+        config = CombatEventConfig()
+        config.on_victory_text = "The camp erupts in cheers."
+        mock_player = MagicMock()
+        mock_tile = MagicMock()
+
+        event = CombatEvent("TestCombat", player=mock_player, tile=mock_tile, config=config)
+        event.process(user_input="combat_start")
+
+        assert mock_player._pending_victory_narrative == "The camp erupts in cheers."
+
+    def test_combat_event_process_no_victory_narrative_when_unset(self):
+        """on_victory_text defaults to "" — nothing should be stashed."""
+        config = CombatEventConfig()
+
+        class _Player:
+            pass
+
+        player = _Player()
+        mock_tile = MagicMock()
+
+        event = CombatEvent("TestCombat", player=player, tile=mock_tile, config=config)
+        event.process(user_input="combat_start")
+
+        assert not hasattr(player, "_pending_victory_narrative")
+
 
 class TestLootEvent:
     """Test the LootEvent class."""
