@@ -1038,6 +1038,10 @@
     },
     {
       "module": "src.moves._ranged",
+      "name": "Hawkeye"
+    },
+    {
+      "module": "src.moves._ranged",
       "name": "MarksmanEye"
     },
     {
@@ -1909,6 +1913,6 @@
       "name": "UUID"
     }
   ],
-  "count": 477,
+  "count": 478,
   "header_version": 1
 }

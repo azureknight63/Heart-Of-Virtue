@@ -116,6 +116,9 @@ class ShootBow(
             if target_distance > wpn_range_base:
                 accuracy_decay = (target_distance - wpn_range_base) * self.decay
                 hit_chance -= accuracy_decay
+            # Hawkeye (#476): +40% hit chance while the buff is active.
+            if any(isinstance(state, states.Hawkeye) for state in getattr(self.user, "states", [])):
+                hit_chance = int(hit_chance * 1.4)
             if hit_chance < 2:  # Minimum hit chance
                 hit_chance = 2
             if hit_chance > 100:  # Maximum hit chance
@@ -323,6 +326,62 @@ class ShootBow(
                     hidden=1,
                     hfactor=random.randint(40, 80),
                 )
+
+
+class Hawkeye(Move):
+    """Bow mastery: a brief, powerful burst of ranged accuracy.
+
+    Quick to call on (prep mirrors Dodge/Parry's snap-cast feel) but gated
+    behind a long cooldown rather than AimedShot's per-use commitment, so the
+    1.4x hit-chance window it grants (states.Hawkeye, 30 beats) can't be kept
+    up continuously. See issue #476 for the balance reasoning.
+    """
+
+    web_animation = "buff"
+
+    def __init__(self, player):
+        description = (
+            "Steady your breath and sharpen your focus. Greatly increases "
+            "hit chance with ranged weapons for a short time."
+        )
+        prep = 3
+        execute = 1
+        recoil = 2
+        cooldown = 60
+        fatigue_cost = _apply_carry_fatigue(player, max(15, 60 - (2 * player.endurance)))
+        super().__init__(
+            name="Hawkeye",
+            description=description,
+            xp_gain=3,
+            current_stage=0,
+            stage_beat=[prep, execute, recoil, cooldown],
+            targeted=False,
+            stage_announce=[
+                colored(f"{player.name} narrows his eyes, tracking the target's every twitch.", "yellow"),
+                colored(f"{player.name}'s vision sharpens to a razor's edge!", "yellow"),
+                "",
+                "",
+            ],
+            fatigue_cost=fatigue_cost,
+            beats_left=prep,
+            target=player,
+            user=player,
+            category="Maneuver",
+        )
+
+    def viable(self):
+        if not getattr(self.user, "in_combat", False):
+            return False
+        wpn = getattr(self.user, "eq_weapon", None)
+        return wpn is not None and getattr(wpn, "subtype", None) == "Bow"
+
+    def execute(self, player):
+        narrate(self.stage_announce[1])
+        for state in list(player.states):
+            if isinstance(state, states.Hawkeye):
+                player.states.remove(state)
+        player.states.append(states.Hawkeye(player))
+        player.fatigue = max(0, player.fatigue - self.fatigue_cost)
 
 
 """

@@ -41,8 +41,13 @@ class Skilltree:
                 moves.ShadowStep(user): 400,  # passive: silent approach
             },
             "Bow": {
-                # moves.Hawkeye(user): 100,  # Focus on surroundings;
-                # increases base accuracy for a duration (adds a status)
+                moves.Hawkeye(
+                    user
+                ): 450,  # Quick-cast, long-cooldown burst: +40% ranged hit chance for
+                # 30 beats (states.Hawkeye). Priced/costed against AimedShot (500 exp,
+                # +15 flat acc, 25-beat commitment per use) — a 1.4x multiplier is a
+                # stronger effect, so it's gated behind a 60-beat cooldown instead of a
+                # slow cast (see issue #476).
                 moves.TacticalPositioning(
                     user
                 ): 300,  # cheaper than Basic (300 vs 1000): repositioning is the core loop for archers

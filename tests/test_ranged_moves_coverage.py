@@ -21,11 +21,13 @@ ROOT = Path(__file__).resolve().parent.parent
 import pytest
 import src.items as items
 import src.positions as positions
+import src.states as states
 from src.moves._ranged import (
     _crossbow_close_range_penalty,
     ShootBow,
     EagleEye,
     MarksmanEye,
+    Hawkeye,
     ShootCrossbow,
     BroadheadBolt,
     AimedShot,
@@ -295,6 +297,38 @@ class TestShootBowCalculateHitChance:
         user.combat_proximity = {enemy: 35}
         far_hit = move.calculate_hit_chance(enemy)
         assert far_hit < base_hit
+
+    def test_hawkeye_state_boosts_hit_chance_by_40_percent(self):
+        """Issue #476: the Hawkeye buff multiplies hit chance by 1.4x."""
+        user, arrow = _make_bow_user(finesse=10, intelligence=5)
+        move = ShootBow(user)
+        move.mvrange = (6, 50)
+        move.decay = 0.05
+        enemy = _make_enemy(finesse=8)
+        user.eq_weapon.range_base = 20
+        user.combat_proximity = {enemy: 15}
+
+        user.states = []
+        base_hit = move.calculate_hit_chance(enemy)
+
+        user.states = [states.Hawkeye(user)]
+        buffed_hit = move.calculate_hit_chance(enemy)
+
+        assert buffed_hit > base_hit
+        assert buffed_hit == min(100, int(base_hit * 1.4))
+
+    def test_hawkeye_state_does_not_push_hit_chance_past_100(self):
+        user, arrow = _make_bow_user(finesse=50, intelligence=20)
+        move = ShootBow(user)
+        move.mvrange = (6, 50)
+        move.decay = 0.05
+        enemy = _make_enemy(finesse=1)
+        user.eq_weapon.range_base = 20
+        user.combat_proximity = {enemy: 15}
+        user.states = [states.Hawkeye(user)]
+
+        result = move.calculate_hit_chance(enemy)
+        assert result <= 100
 
 
 # ---------------------------------------------------------------------------
@@ -655,6 +689,67 @@ class TestMarksmanEye:
         user = _make_crossbow_user()
         move = MarksmanEye(user)
         assert move.viable() is False
+
+
+# ---------------------------------------------------------------------------
+# Hawkeye (issue #476)
+# ---------------------------------------------------------------------------
+
+
+class TestHawkeyeMove:
+    def test_init_defaults(self):
+        user, arrow = _make_bow_user(endurance=10)
+        move = Hawkeye(user)
+        assert move.name == "Hawkeye"
+        assert move.category == "Maneuver"
+        assert move.web_animation == "buff"
+        # prep, execute, recoil, cooldown
+        assert move.stage_beat == [3, 1, 2, 60]
+
+    def test_viable_requires_combat_and_bow(self):
+        user, arrow = _make_bow_user()
+        move = Hawkeye(user)
+
+        user.in_combat = False
+        assert move.viable() is False
+
+        user.in_combat = True
+        assert move.viable() is True
+
+        user.eq_weapon.subtype = "Sword"
+        assert move.viable() is False
+
+    def test_viable_false_without_weapon(self):
+        user, arrow = _make_bow_user()
+        user.in_combat = True
+        user.eq_weapon = None
+        move = Hawkeye(user)
+        assert move.viable() is False
+
+    def test_execute_applies_hawkeye_state_and_spends_fatigue(self):
+        user, arrow = _make_bow_user(endurance=10)
+        user.fatigue = 100
+        move = Hawkeye(user)
+        move.execute(user)
+
+        assert any(isinstance(s, states.Hawkeye) for s in user.states)
+        assert user.fatigue == 100 - move.fatigue_cost
+
+    def test_execute_replaces_existing_hawkeye_state_instead_of_stacking(self):
+        user, arrow = _make_bow_user(endurance=10)
+        user.states = [states.Hawkeye(user)]
+        move = Hawkeye(user)
+        move.execute(user)
+
+        hawkeye_states = [s for s in user.states if isinstance(s, states.Hawkeye)]
+        assert len(hawkeye_states) == 1
+
+    def test_execute_does_not_underflow_fatigue(self):
+        user, arrow = _make_bow_user(endurance=10)
+        move = Hawkeye(user)
+        user.fatigue = move.fatigue_cost - 1
+        move.execute(user)
+        assert user.fatigue == 0
 
 
 # ---------------------------------------------------------------------------
