@@ -1,16 +1,18 @@
 """
 Eastern Descent — Nomad Camp NPCs.
 
-Generic background characters for the nomad camp on the river's east bank.
-These are ambient presences — not story principals — and follow the same
+Generic background characters for the nomad camp on the river's east bank,
+plus Anvil, Kaelen & Vespera's named Shell-back pack animal. These are
+ambient presences — not story principals — and follow the same
 narrated-exchange pattern as the Grondite citizen classes in _friends.py.
 
-All communicate in brief, practical terms. None overreach their tier.
+All communicate in brief, practical terms (Anvil communicates only through
+gesture and sound — he's an animal, not a person). None overreach their tier.
 """
 
 import random
 
-from ._base import Friend
+from ._base import Friend, NonCombatantMixin
 from ._chat_llm import ConversationalNPCMixin
 from src.narration import narrate
 import src.moves as moves
@@ -18,6 +20,131 @@ import src.moves as moves
 # ─────────────────────────────────────────────────────────────────────────────
 # Eastern Descent — Nomad Camp NPCs
 # ─────────────────────────────────────────────────────────────────────────────
+
+
+class Anvil(NonCombatantMixin, Friend):
+    """Kaelen & Vespera's Shell-back — the armored pack mollusk that hauls
+    Iron & Oath's anvil, weapon racks, armor stock, and canvas whenever the
+    Nomad Camp relocates along the river route, sent ahead of the human
+    caravan on its own. See ``docs/lore/character-profiles/anvil.md`` and
+    ``docs/lore/creatures/shell-back.md`` for the full lore.
+
+    Non-speaking, non-combatant — communicates through hiss and shell-creak
+    only, following the same narrated-exchange pattern as the Grondite
+    citizen classes in this module. Cannot be drawn into combat (see
+    ``NonCombatantMixin``), the same design used for Mynx.
+    """
+
+    _TALK_LINES = [
+        "Anvil's sensory stalks swing toward Jean, tracking his hands more "
+        "than his face — an old instinct. He decides Jean isn't reaching "
+        "for the latch and settles back into the scrub at his feet.",
+        "Vespera runs a hand along Anvil's shell plates in the same order "
+        "she always does, checking the hatch seal without needing to look "
+        "at it. His foot eases flat against the ground — the specific "
+        "stillness of an animal that recognizes exactly one routine as safe.",
+        "Kaelen raps a knuckle against Anvil's shell on his way past. Anvil "
+        "doesn't withdraw, doesn't react at all — the flat, unimpressed "
+        "tolerance of a very old, very one-sided arrangement.",
+        "A faint hiss of air vents from somewhere inside Anvil's shell — "
+        "not alarm, just the sound he makes when something's worth "
+        "noticing. He keeps grazing.",
+        "Anvil's foot tests the packed dirt before settling, the way he "
+        "tests riverbed silt before committing weight. Habit, not "
+        "necessity — the ground here isn't going anywhere.",
+        "Anvil is motionless in a way that reads, at a glance, like a "
+        "boulder someone left at the edge of the stall. Only the faint, "
+        "steady creak of shell plates settling gives him away as something "
+        "alive.",
+        "Kaelen calls over, 'Careful — he doesn't care for strangers near "
+        "the latch.' Anvil, for his part, hasn't moved, but his sensory "
+        "stalks have fixed on Jean's hands with unmistakable attention.",
+        "The iron latch at Anvil's hatch catches the light. Whatever's "
+        "sealed inside, he shows no sign of caring who's looking — only "
+        "who's reaching.",
+    ]
+
+    _PET_LINES = [
+        "Anvil doesn't react — a hand on cold, ridged shell gets exactly "
+        "the same stillness a rock would give back.",
+        "A sharp hiss vents from the shell and Anvil's foot draws in "
+        "slightly. Vespera doesn't look up. 'He doesn't settle for anyone "
+        "but me,' she says, not unkindly. Jean gets the message.",
+        "The shell is cool and faintly damp under Jean's hand. Anvil gives "
+        "no indication he's noticed at all, and after a moment there's "
+        "nothing left to do but withdraw the hand.",
+        "Anvil goes very still — the particular stillness of an animal "
+        "deciding whether something is worth reacting to. He decides it isn't.",
+    ]
+
+    def __init__(self):
+        description = (
+            "A low, heavy-bodied Shell-back, his shell banded grey and "
+            "rust-ochre in layered striations that make him look, at rest, "
+            "like a chunk of the scarp itself. Crated tool stock and folded "
+            "canvas ride lashed into grooves worn smooth in the shell's "
+            "terraced plates. An iron collar and hinged latch seal the "
+            "cargo hatch — a stranger's hand anywhere near it gets a sharp "
+            "hiss of vented air before anything else happens."
+        )
+        super().__init__(
+            name="Anvil",
+            description=description,
+            damage=0,
+            aggro=False,
+            exp_award=0,
+            maxhp=180,
+            protection=25,
+            speed=2,
+            finesse=4,
+            awareness=15,
+            maxfatigue=120,
+            endurance=18,
+            strength=18,
+            charisma=6,
+            combat_range=(0, 0),
+            idle_message=" is grazing at a patch of scrub, foot planted.",
+            alert_message=" vents a sharp hiss, sensory stalks tracking movement.",
+            discovery_message="a heavy-set, shelled pack creature lashed with crates and folded canvas.",
+        )
+        self.keywords = ["talk", "pet"]
+        self.pronouns = {
+            "personal": "he",
+            "possessive": "his",
+            "reflexive": "himself",
+            "intensive": "himself",
+        }
+        self._init_idle_moves()
+        # Cargo infrastructure, not a combatant — never enters combat, see NonCombatantMixin.
+        self.in_combat = False
+
+    # Set by the first talk()/pet() call; AnvilIntroEvent (src/story/ch03.py)
+    # picks this up via the normal post-action tile-event check and runs the
+    # staged first-meeting conversation instead of the ambient flavor line.
+    _CONVERSATION_READY_FLAG = "anvil_conversation_ready"
+
+    def _first_encounter(self, player):
+        """Mark this interaction as having happened; return True the first time.
+
+        Subsequent calls (including after AnvilIntroEvent has already run)
+        return False, so the ambient flavor lines take over as normal.
+        """
+        story = getattr(getattr(player, "universe", None), "story", None)
+        if story is None:
+            return False
+        already = story.get(self._CONVERSATION_READY_FLAG) == "1"
+        story[self._CONVERSATION_READY_FLAG] = "1"
+        return not already
+
+    def talk(self, player):
+        if self._first_encounter(player):
+            return
+        narrate(random.choice(self._TALK_LINES))
+
+    def pet(self, player=None):
+        if self._first_encounter(player):
+            return
+        narrate(random.choice(self._PET_LINES))
 
 
 class NomadCamper(ConversationalNPCMixin, Friend):

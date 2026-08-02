@@ -13,7 +13,7 @@ import src.functions as functions  # type: ignore
 import src.genericng as genericng  # type: ignore
 import src.moves as moves  # type: ignore
 from src.narration import colored, narrate  # type: ignore
-from ._base import Friend
+from ._base import Friend, NonCombatantMixin
 from ._chat_llm import ConversationalNPCMixin
 from ._llm import MynxLLMMixin
 
@@ -21,7 +21,7 @@ _HUMAN_NPC_DIR = Path(__file__).resolve().parent.parent.parent / "ai" / "npc" / 
 
 
 # Mynx: a friendly, non-combatant monkey-cat hybrid NPC with LLM-driven interaction hooks.
-class Mynx(MynxLLMMixin, Friend):
+class Mynx(NonCombatantMixin, MynxLLMMixin, Friend):
     """A small, nimble forest creature (mynx) that is friendly to the player and cannot fight.
 
     Behavior and interaction methods are provided as stubs so an LLM can be integrated later.
@@ -71,9 +71,8 @@ class Mynx(MynxLLMMixin, Friend):
         }
         self.keywords = ["talk", "pet", "play"]
 
-        # Ensure the mynx never enters combat
+        # Never enters combat — see NonCombatantMixin
         self.in_combat = False
-        self._combat_disabled = True
 
         # Minimal move set (no attacks)
         self._init_idle_moves()
@@ -86,17 +85,6 @@ class Mynx(MynxLLMMixin, Friend):
         self._jean_advisor = None
         # Short LLM interaction history: list of {'prompt': str, 'response': str}, most recent last
         self._llm_history: list[dict] = []
-
-    def combat_engage(self, player):
-        """Override to prevent the mynx from entering combat.
-        This intentionally does nothing; mynx can never be attacked or enter combat by design.
-        """
-        # Keep flags consistent but do not add to player's combat lists
-        self.in_combat = False
-        return
-
-    def can_enter_combat(self) -> bool:
-        return False
 
     # Override talk to use the interaction framework
     def talk(self, player, prompt: str | None = None, structured: bool = False):

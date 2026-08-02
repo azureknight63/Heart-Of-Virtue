@@ -187,6 +187,26 @@ class NPC(NPCCombatMixin, NPCLootMixin, Combatant):
             self.known_moves = []
 
 
+class NonCombatantMixin:
+    """Mixin for Friend subclasses that must never enter combat — animal
+    companions and similar ambient allies (Mynx, Anvil) rather than fighters.
+
+    Overrides ``combat_engage`` to a no-op and ``can_enter_combat`` to always
+    return False, so the NPC is never added to a player's combat lists
+    regardless of aggro/proximity. Mix in ahead of ``Friend`` so these
+    overrides win over ``NPCCombatMixin``'s combat-capable defaults.
+    """
+
+    _combat_disabled = True
+
+    def combat_engage(self, player):
+        self.in_combat = False
+        return
+
+    def can_enter_combat(self) -> bool:
+        return False
+
+
 class Friend(AllyProgressionMixin, NPC):
     def __init__(
         self,

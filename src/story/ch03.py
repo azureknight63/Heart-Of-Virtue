@@ -889,6 +889,180 @@ class IronAndOathIntroEvent(Event):
             story["iron_and_oath_intro_done"] = "1"
 
 
+class AnvilIntroEvent(Event):
+    """
+    Fires the first time Jean interacts with Anvil (talk or pet) at the
+    Tradepost, provided he's already met Kaelen & Vespera
+    (iron_and_oath_intro_done). Anvil.talk()/pet() set the trigger flag
+    'anvil_conversation_ready' on first use; this event picks it up via the
+    normal post-action tile-event check.
+
+    Jean registers the "boulder" at the stall's edge as a living creature.
+    Kaelen and Vespera introduce Anvil and explain how a Shell-back survives
+    the river route alone — Kaelen technical and proud, Vespera grounding
+    him, then unguarded for a moment describing Anvil's care routine with a
+    warmth that outruns simple animal husbandry. Jean notices it, privately,
+    without either of them naming it.
+
+    Sets story gate 'anvil_conversation_done' so it never repeats.
+    """
+
+    def __init__(self, player, tile, params=None, repeat=False, name="AnvilIntro"):
+        super().__init__(
+            name=name, player=player, tile=tile, repeat=repeat, params=params
+        )
+
+    def check_conditions(self):
+        story = getattr(getattr(self.player, "universe", None), "story", {})
+        if story.get("anvil_conversation_done") == "1":
+            if self in self.tile.events_here:
+                self.tile.events_here.remove(self)
+            return
+        if story.get("iron_and_oath_intro_done") != "1":
+            return
+        if story.get("anvil_conversation_ready") != "1":
+            return
+        self.pass_conditions_to_process()
+
+    def process(self):
+        if not self.player.skip_dialog:
+            narrate("\n")
+            time.sleep(0.3)
+            print_slow(
+                "Jean's attention snagged on the far corner of the stall — a shape "
+                "he'd taken for a heap of stacked stone since he'd arrived. It shifted, "
+                "fractionally, and resolved into something with a shell."
+            )
+            time.sleep(1)
+
+            begin_conversation(
+                [
+                    ("Jean", "left", "surprised"),
+                    ("Gorran", "left", "neutral"),
+                    ("Kaelen", "right", "curious"),
+                    ("Vespera", "right", "happy"),
+                ]
+            )
+
+            say("That's... alive?", "Jean", "surprised")
+            time.sleep(0.8)
+            say(
+                "That's Anvil. Iron & Oath doesn't move an inch without him — every "
+                "rack, every crate, the hearth stones themselves, all of it rides on "
+                "his back when we relocate.",
+                "Vespera",
+                "happy",
+            )
+            time.sleep(1)
+            say(
+                "Named him myself. Seemed fitting — the one thing in the stall that "
+                "doesn't move for anybody.",
+                "Kaelen",
+                "happy",
+            )
+            time.sleep(0.5)
+            say(
+                "Turned out he meant it rather more literally than I did. I've never "
+                "won an argument with that animal.",
+                "Kaelen",
+                "curious",
+            )
+            time.sleep(1)
+
+            print_slow(
+                "A faint hiss vented from somewhere inside the shell — not alarm, "
+                "just acknowledgment — and the thick sensory stalks tracked Jean's "
+                "hands for a long moment before losing interest."
+            )
+            time.sleep(1)
+
+            say(
+                "How does something that slow keep pace with a camp that has to "
+                "tear down and move three, four times a year?",
+                "Jean",
+                "curious",
+            )
+            time.sleep(0.8)
+            say(
+                "Ah — now that's the interesting part. He doesn't keep pace. We send "
+                "him off alone, a day ahead, loaded with everything heavy. No rest "
+                "stops, no feeding stops — he grazes as he walks and simply doesn't "
+                "stop moving.",
+                "Kaelen",
+                "curious",
+            )
+            time.sleep(0.8)
+            say(
+                "And the river doesn't slow him either. Seals that hatch of his shut "
+                "tight as a strongbox and just walks the bottom of the ford, submerged, "
+                "calm as you like. Every other pack animal on this route dreads that "
+                "crossing. Anvil's the only one who's never once minded it.",
+                "Kaelen",
+                "curious",
+            )
+            time.sleep(1)
+            say(
+                "Kaelen. He asked how the animal keeps up, not for the full natural "
+                "history.",
+                "Vespera",
+                "skeptical",
+            )
+            time.sleep(0.5)
+            say("I'm answering the question!", "Kaelen", "happy")
+            time.sleep(1)
+
+            say(
+                "He's not wrong, though. Clean his plates, check the hatch seal, feed "
+                "him — same order, every time, since I first took over his care. Took "
+                "the better part of a year before he'd settle for me the way he "
+                "settles now.",
+                "Vespera",
+                "neutral",
+            )
+            time.sleep(1.2)
+
+            say(
+                "There was something in the way she said it — not the flat, practical "
+                "tone she used for ledgers and armor fittings, but something rounder, "
+                "more careful. The tone of someone describing a routine that mattered "
+                "more than the routine itself.",
+                "Jean",
+                "neutral",
+                thought=True,
+            )
+            time.sleep(1)
+
+            print_slow(
+                "As if in answer, the great shape shifted its weight and settled "
+                "flush against the ground beside her, foot easing down the way it "
+                "never had for anyone else Jean had watched him tolerate."
+            )
+            time.sleep(1)
+
+            say(
+                "Don't let him hear you say that — he'll expect a written apology "
+                "before he moves another inch for me.",
+                "Kaelen",
+                "happy",
+            )
+            time.sleep(0.8)
+            say(
+                "He's spoiled well past reason and I take full responsibility for it. "
+                "Now — did you come here to admire my livestock, or were you after "
+                "something for the road?",
+                "Vespera",
+                "happy",
+            )
+            time.sleep(1)
+
+        self._set_gate()
+
+    def _set_gate(self):
+        story = getattr(getattr(self.player, "universe", None), "story", None)
+        if story is not None:
+            story["anvil_conversation_done"] = "1"
+
+
 class MaraObservationEvent(Event):
     """
     Fires once on Jean's re-entry to RiversEdge (1,0) after all three character
