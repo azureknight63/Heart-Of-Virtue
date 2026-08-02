@@ -453,7 +453,12 @@
         "block_exit": [],
         "events": [],
         "items": [],
-        "npcs": [],
+        "npcs": [
+            {
+                "__class__": "Mynx",
+                "__module__": "npc"
+            }
+        ],
         "objects": [
             {
                 "__class__": "Container",
