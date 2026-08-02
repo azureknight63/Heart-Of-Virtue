@@ -90,6 +90,32 @@ class MapSerializationError(Exception):
         return " | ".join(parts)
 
 
+# 8-direction grid deltas and their opposite-direction mapping, shared by every
+# exit-connecting/adjacency helper in the editor (auto_connect_exits,
+# draw_exits, remove_selected_tile, TileEditorWindow). Order is significant:
+# it drives the display order of the Exits/Blocked listboxes.
+DIRECTION_DELTAS: Dict[str, Tuple[int, int]] = {
+    "north": (0, -1),
+    "south": (0, 1),
+    "west": (-1, 0),
+    "east": (1, 0),
+    "northeast": (1, -1),
+    "northwest": (-1, -1),
+    "southeast": (1, 1),
+    "southwest": (-1, 1),
+}
+RECIPROCAL_DIRECTIONS: Dict[str, str] = {
+    "north": "south",
+    "south": "north",
+    "west": "east",
+    "east": "west",
+    "northeast": "southwest",
+    "northwest": "southeast",
+    "southeast": "northwest",
+    "southwest": "northeast",
+}
+
+
 def parse_type_hint(annotation):
     """
     Parse a type annotation to determine if it's a class type or list of class types.
@@ -676,11 +702,6 @@ class MapEditor:
             controls_frame,
         )
         create_button(
-            "Load Legacy Map",
-            lambda: (self.ensure_add_mode_off(), self.load_legacy_map()),
-            controls_frame,
-        )
-        create_button(
             "Save Map",
             lambda: (self.ensure_add_mode_off(), self.save_map()),
             controls_frame,
@@ -863,16 +884,7 @@ class MapEditor:
                 removed += 1
         # Clean exits on remaining tiles
         if removed:
-            deltas = {
-                "north": (0, -1),
-                "south": (0, 1),
-                "west": (-1, 0),
-                "east": (1, 0),
-                "northeast": (1, -1),
-                "northwest": (-1, -1),
-                "southeast": (1, 1),
-                "southwest": (-1, 1),
-            }
+            deltas = DIRECTION_DELTAS
             for pos_key, tile in self.map_data.items():
 
                 def neighbor_exists(direction):
@@ -940,7 +952,9 @@ class MapEditor:
             self.set_status("No editable objects found on the selected tiles.")
             return
 
-        _open_bulk_class_chooser(self.root, candidates, self.draw_map)
+        _open_bulk_class_chooser(
+            self.root, candidates, self.draw_map, map_data=self.map_data
+        )
 
     def toggle_add_tile_mode(self):
         """
@@ -966,26 +980,8 @@ class MapEditor:
         # Clear existing exits
         for tile in self.map_data.values():
             tile["exits"] = []
-        deltas = {
-            "north": (0, -1),
-            "south": (0, 1),
-            "west": (-1, 0),
-            "east": (1, 0),
-            "northeast": (1, -1),
-            "northwest": (-1, -1),
-            "southeast": (1, 1),
-            "southwest": (-1, 1),
-        }
-        reciprocal = {
-            "north": "south",
-            "south": "north",
-            "west": "east",
-            "east": "west",
-            "northeast": "southwest",
-            "northwest": "southeast",
-            "southeast": "northwest",
-            "southwest": "northeast",
-        }
+        deltas = DIRECTION_DELTAS
+        reciprocal = RECIPROCAL_DIRECTIONS
         for pos, tile in self.map_data.items():
             x, y = pos
             for direction, (dx, dy) in deltas.items():
@@ -1356,26 +1352,8 @@ class MapEditor:
         """
         x_center = pos[0] * self.tile_size + self.tile_size / 2 + self.offset_x
         y_center = pos[1] * self.tile_size + self.tile_size / 2 + self.offset_y
-        deltas = {
-            "north": (0, -1),
-            "south": (0, 1),
-            "west": (-1, 0),
-            "east": (1, 0),
-            "northeast": (1, -1),
-            "northwest": (-1, -1),
-            "southeast": (1, 1),
-            "southwest": (-1, 1),
-        }
-        reciprocal = {
-            "north": "south",
-            "south": "north",
-            "west": "east",
-            "east": "west",
-            "northeast": "southwest",
-            "northwest": "southeast",
-            "southeast": "northwest",
-            "southwest": "northeast",
-        }
+        deltas = DIRECTION_DELTAS
+        reciprocal = RECIPROCAL_DIRECTIONS
         for direction in tile.get("exits", []):
             dx, dy = deltas.get(direction, (0, 0))
             target_pos = (pos[0] + dx, pos[1] + dy)
@@ -1764,6 +1742,7 @@ class MapEditor:
                                 )
                                 return d
                             try:
+                                consumed_keys: set = set()
                                 try:
                                     param_names = [
                                         p.name
@@ -1778,14 +1757,22 @@ class MapEditor:
                                         if k in param_names
                                     }
                                     inst = cls(**init_kwargs)
+                                    # Keys already consumed by the constructor are
+                                    # skipped below -- re-deserializing them would
+                                    # discard the just-constructed nested instances
+                                    # and build fresh duplicates for no benefit.
+                                    consumed_keys = set(init_kwargs)
                                 except Exception:
                                     inst = cls.__new__(cls)
                                     try:
                                         cls.__init__(inst)  # type: ignore
                                     except Exception:
                                         pass
-                                # Recursively set all attributes, not just constructor args
+                                # Recursively set any remaining attributes not covered
+                                # by the constructor call above.
                                 for k2, v2 in props.items():
+                                    if k2 in consumed_keys:
+                                        continue
                                     setattr(inst, k2, deserialize_instance(v2))
                                 # Tagged so save_map's serialize_instance_for_save
                                 # keeps writing legacy shape for this element
@@ -1891,303 +1878,6 @@ class MapEditor:
 
         tk.Button(win, text="Close", command=win.destroy).pack(pady=(0, 10))
         self.set_status(f"Convert Elements: {summary}")
-
-    def load_legacy_map(self, filepath=None):
-        """Load a legacy text-based map (.txt) into the editor.
-        Format assumptions (best-effort based on sample):
-        - File is a tab-delimited grid; each non-empty cell (except 'Boundary') defines a tile.
-        - Cell content tokens are separated by '|'. First plain token is base tile name/title.
-        - Tokens starting with '!Block.' specify blocked directions separated by '.' after '!Block.'.
-        - Tokens starting with '@TileDescription.' then a numeric id then '.' then free text (terminated by optional '~'). Sets tile description.
-        - Tokens starting with '#' define items: #ClassName[:count or :rMin-Max]. Count defaults to 1 or min of range.
-        - Tokens starting with '@' define objects/NPCs/events by class name after '@'. Additional dotted suffixes ignored except embedded item/event markers (# / !).
-        - Tokens starting with '!' (excluding '!Block') treated as events; class name after '!'.
-        After parsing all tiles, exits are auto-derived: any cardinal/diagonal neighbor present and not blocked becomes an exit.
-        Missing classes or instantiation errors fall back to being skipped silently.
-        Additionally, if a tile's title matches a class name inside the src/tilesets package, the description
-        passed to that class's super().__init__ call will be copied into the imported tile (unless a legacy
-        @TileDescription override was provided).
-        """
-        if filepath is None:
-            filepath = filedialog.askopenfilename(
-                defaultextension=".txt",
-                filetypes=[("Text maps", "*.txt"), ("All files", "*.*")],
-            )
-        if not filepath:
-            return
-        try:
-            with open(filepath, "r", encoding="utf-8") as f:
-                lines = f.readlines()
-            grid = [line.rstrip("\n").split("\t") for line in lines]
-            new_map = {}
-            deltas = {
-                "north": (0, -1),
-                "south": (0, 1),
-                "west": (-1, 0),
-                "east": (1, 0),
-                "northeast": (1, -1),
-                "northwest": (-1, -1),
-                "southeast": (1, 1),
-                "southwest": (-1, 1),
-            }
-
-            # --- Build tileset class description lookup once ---
-            def _collect_tileset_descriptions():
-                desc_map = {}
-                tilesets_dir = os.path.join(project_root, "src", "tilesets")
-                if not os.path.isdir(tilesets_dir):
-                    return desc_map
-                for fname in os.listdir(tilesets_dir):
-                    if not fname.endswith(".py") or fname.startswith("__"):
-                        continue
-                    fpath = os.path.join(tilesets_dir, fname)
-                    try:
-                        with open(fpath, "r", encoding="utf-8") as tf:
-                            src = tf.read()
-                        tree = ast.parse(src)
-                        for node in tree.body:
-                            if isinstance(node, ast.ClassDef):
-                                class_name = node.name
-                                # find __init__
-                                for sub in node.body:
-                                    if (
-                                        isinstance(sub, ast.FunctionDef)
-                                        and sub.name == "__init__"
-                                    ):
-                                        # search for super().__init__(..., description="""...""") style call
-                                        for inner in ast.walk(cast(ast.AST, sub)):
-                                            if isinstance(inner, ast.Call):
-                                                # match super().__init__ pattern
-                                                func = inner.func
-                                                if (
-                                                    isinstance(func, ast.Attribute)
-                                                    and func.attr == "__init__"
-                                                    and isinstance(func.value, ast.Call)
-                                                    and isinstance(
-                                                        func.value.func, ast.Name
-                                                    )
-                                                    and func.value.func.id == "super"
-                                                ):
-                                                    # collect first (or longest) string literal arg
-                                                    string_literals = [
-                                                        a.value
-                                                        for a in inner.args
-                                                        if isinstance(a, ast.Constant)
-                                                        and isinstance(a.value, str)
-                                                    ]
-                                                    # also check keywords for 'description='
-                                                    for kw in inner.keywords or []:
-                                                        if (
-                                                            kw.arg == "description"
-                                                            and isinstance(
-                                                                kw.value, ast.Constant
-                                                            )
-                                                            and kw.value.value
-                                                            is not None
-                                                        ):
-                                                            string_literals.append(
-                                                                kw.value.value
-                                                            )
-                                                    if string_literals:
-                                                        # choose the longest (likely the actual description)
-                                                        desc_map[class_name] = max(
-                                                            string_literals, key=len
-                                                        ).strip()
-                                                        break
-                                # end for sub
-                    except Exception:
-                        continue  # ignore parse issues for a single file
-                return desc_map
-
-            tileset_descriptions = _collect_tileset_descriptions()
-
-            # dynamic class loader (unchanged)
-            module_cache = {}
-
-            def load_class(class_name):
-                if not class_name or not re.match(
-                    r"^[A-Za-z_][A-Za-z0-9_]*$", class_name
-                ):
-                    return None
-                search_modules = ["items", "npc", "objects"]
-                # add story modules
-                story_dir = os.path.join(project_root, "src", "story")
-                if os.path.isdir(story_dir):
-                    for fn in os.listdir(story_dir):
-                        if fn.endswith(".py") and not fn.startswith("__"):
-                            mod_path = f"story.{fn[:-3]}"
-                            if mod_path not in search_modules:
-                                search_modules.append(mod_path)
-                for mod_name in search_modules:
-                    try:
-                        if mod_name not in module_cache:
-                            module_cache[mod_name] = importlib.import_module(mod_name)
-                        mod = module_cache[mod_name]
-                        if hasattr(mod, class_name):
-                            return getattr(mod, class_name)
-                    except Exception:
-                        continue
-                return None
-
-            # parse grid
-            for y, row in enumerate(grid):
-                for x, cell in enumerate(row):
-                    raw = cell.strip()
-                    if not raw or raw == "Boundary":
-                        continue
-                    parts = [p for p in raw.split("|") if p]
-                    if not parts:
-                        continue
-                    tile_id = f"tile_{x}_{y}"
-                    tile_title = None
-                    description = ""
-                    exits = []
-                    blocked = []
-                    events = []
-                    items = []
-                    npcs = []
-                    objects_list = []
-
-                    def ensure_instance(cls):
-                        try:
-                            return cls()  # attempt default constructor
-                        except Exception:
-                            try:
-                                inst = cls.__new__(cls)
-                                try:
-                                    cls.__init__(inst)  # type: ignore
-                                except Exception:
-                                    pass
-                                return inst
-                            except Exception:
-                                return None
-
-                    def add_item(class_name, count_spec=None):
-                        cls = load_class(class_name)
-                        if not cls:
-                            return
-                        inst = ensure_instance(cls)
-                        if not inst:
-                            return
-                        if count_spec:
-                            if count_spec.startswith("r"):
-                                m = re.match(r"r(\d+)-(\d+)", count_spec)
-                                if m:
-                                    inst.count = int(m.group(1))  # use min
-                            else:
-                                if count_spec.isdigit():
-                                    inst.count = int(count_spec)
-                        items.append(inst)
-
-                    def add_event(cls_name):
-                        cls = load_class(cls_name)
-                        if not cls:
-                            return
-                        inst = ensure_instance(cls)
-                        if inst:
-                            events.append(inst)
-
-                    def add_entity(cls_name, collection):
-                        cls = load_class(cls_name)
-                        if not cls:
-                            return
-                        inst = ensure_instance(cls)
-                        if inst:
-                            collection.append(inst)
-
-                    for part in parts:
-                        if part.startswith("!Block"):
-                            dirs = part.split(".")[1:] if "." in part else []
-                            for d in dirs:
-                                if d:
-                                    blocked.append(d)
-                            continue
-                        if part.startswith("@TileDescription"):
-                            segs = part.split(".")
-                            if len(segs) >= 3:
-                                text = ".".join(segs[2:])
-                                if text.endswith("~"):
-                                    text = text[:-1]
-                                description = text.replace("~", "").strip()
-                            continue
-                        if part.startswith("#"):
-                            body = part[1:]
-                            name, count_spec = (body.split(":", 1) + [None])[:2]
-                            add_item(name, count_spec)
-                            continue
-                        if part.startswith("@"):
-                            subparts = part.split(".")
-                            head = subparts[0]
-                            cls_name = head[1:]
-                            cls = load_class(cls_name)
-                            inst = ensure_instance(cls) if cls else None
-                            if inst:
-                                target = (
-                                    objects_list
-                                    if any(
-                                        k in cls_name.lower()
-                                        for k in [
-                                            "chest",
-                                            "switch",
-                                            "wall",
-                                            "inscription",
-                                        ]
-                                    )
-                                    else npcs
-                                )
-                                target.append(inst)
-                            for sp in subparts[1:]:
-                                if sp.startswith("#"):
-                                    ibody = sp[1:]
-                                    iname, icount = (ibody.split(":", 1) + [None])[:2]
-                                    add_item(iname, icount)
-                                elif sp.startswith("!") and sp != "!Block":
-                                    add_event(sp[1:])
-                            continue
-                        if part.startswith("!") and part != "!Block":
-                            add_event(part[1:])
-                            continue
-                        if tile_title is None:
-                            tile_title = part
-                    if tile_title is None:
-                        tile_title = tile_id
-                    # If no explicit legacy description, pull from tilesets class if available
-                    if (not description) and tile_title in tileset_descriptions:
-                        description = tileset_descriptions[tile_title]
-                    new_map[(x, y)] = {
-                        "id": tile_id,
-                        "title": tile_title,
-                        "description": (
-                            description
-                            if description
-                            else f"Legacy imported tile {tile_title}"
-                        ),
-                        "exits": exits,
-                        "block_exit": blocked,
-                        "events": events,
-                        "items": items,
-                        "npcs": npcs,
-                        "objects": objects_list,
-                    }
-            # derive exits
-            for pos, tile in new_map.items():
-                x, y = pos
-                exits = []
-                blocked = set(tile.get("block_exit", []))
-                for d, (dx, dy) in deltas.items():
-                    nbr = (x + dx, y + dy)
-                    if nbr in new_map and d not in blocked:
-                        exits.append(d)
-                tile["exits"] = exits
-            self.map_data = new_map
-            self.current_map_filepath = filepath
-            self.selected_tile = None
-            self.draw_map()
-            self.update_map_label()
-            self.set_status(f"Legacy map loaded: {os.path.basename(filepath)}")
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to load legacy map:\n{e}")
-            self.set_status("Error loading legacy map.")
 
     def set_status(self, message):
         """
@@ -2440,7 +2130,7 @@ def _get_editable_properties(obj) -> List[Tuple[str, str]]:
 
 
 class TagListFrame(tk.Frame):
-    def __init__(self, parent, allow_duplicate=True, *args, **kwargs):
+    def __init__(self, parent, allow_duplicate=True, *args, map_data=None, **kwargs):
         super().__init__(parent, *args, **kwargs)
         self.on_edit = edit_element
         self.on_remove = remove_element
@@ -2448,6 +2138,10 @@ class TagListFrame(tk.Frame):
         self._tags: List[Tuple[Any, tk.Frame]] = []
         self._tooltip: Optional[tk.Toplevel] = None
         self.topLevelWidget = self.winfo_toplevel()
+        # Threaded through to edit_element -> open_property_dialog so editing
+        # an existing tag has live map data available (e.g. the merchant
+        # combobox), instead of relying on a module-level `app` global.
+        self.map_data = map_data
 
     def _show_tooltip(self, event, obj):
         self._hide_tooltip()
@@ -2524,11 +2218,15 @@ class TagListFrame(tk.Frame):
         if not is_class_object:
             tag_frame.bind(
                 "<Double-Button-1>",
-                lambda e: self.on_edit(self.topLevelWidget, identifier, lst, self),
+                lambda e: self.on_edit(
+                    self.topLevelWidget, identifier, lst, self, map_data=self.map_data
+                ),
             )
             tag_label.bind(
                 "<Double-Button-1>",
-                lambda e: self.on_edit(self.topLevelWidget, identifier, lst, self),
+                lambda e: self.on_edit(
+                    self.topLevelWidget, identifier, lst, self, map_data=self.map_data
+                ),
             )
             self._bind_tooltip(tag_frame, identifier)
             self._bind_tooltip(tag_label, identifier)
@@ -2584,36 +2282,55 @@ class TagListFrame(tk.Frame):
         return [ident for ident, _ in self._tags]
 
 
-def _get_module_paths_for_class(class_name: str) -> List[str]:
+# Cache for _scan_class_hierarchy: (src_dir_signature, class_bases, class_files).
+# Populated lazily on first call; invalidated whenever the src/ tree's newest
+# mtime changes.
+_CLASS_HIERARCHY_SCAN_CACHE: Optional[
+    Tuple[float, Dict[str, Set[str]], Dict[str, Set[str]]]
+] = None
+
+
+def _src_tree_signature(src_dir: str) -> float:
+    """Cheap staleness signature for the src/ tree: the newest mtime among all
+    .py files under it. A directory walk that only stats each file is far
+    cheaper than reading and AST-parsing every file's contents, so this is
+    used to gate _scan_class_hierarchy's cache without needing to re-run the
+    expensive scan on every call to check whether anything changed.
     """
-    Returns a list of absolute file paths for all modules in src/ that define
-    the given class or any *transitive* descendant of it (not just direct
-    subclasses).
+    newest = 0.0
+    for dirpath, _dirnames, filenames in os.walk(src_dir):
+        for filename in filenames:
+            if not (filename.endswith(".py") and not filename.startswith("__")):
+                continue
+            try:
+                mtime = os.path.getmtime(os.path.join(dirpath, filename))
+            except OSError:
+                continue
+            if mtime > newest:
+                newest = mtime
+    return newest
 
-    A naive single-pass AST scan only catches classes whose bases literally
-    name `class_name` (e.g. `Merchant(NPC, ...)`). That misses descendants
-    reached through an intermediate class -- e.g. concrete Friend NPCs in
-    `src/npc/_friends.py` inherit from `Friend` (defined in
-    `src/npc/_base.py`), not from `NPC` directly, so a direct-base-only scan
-    silently omits `_friends.py` for an `NPC` query (issue #462).
 
-    To fix this we first build a whole-tree map of every class name to its
-    immediate base names and defining file(s), then run a fixpoint over that
-    graph: start with `{class_name}` and repeatedly add any class whose base
-    set intersects the current matched set, until a pass adds nothing new.
-    Because `matched` only ever grows and the class universe is finite, this
-    always terminates -- including in the presence of inheritance cycles
-    (which shouldn't exist in valid Python but a bug/typo elsewhere shouldn't
-    turn into an infinite loop here).
+def _scan_class_hierarchy(
+    src_dir: str,
+) -> Tuple[Dict[str, Set[str]], Dict[str, Set[str]]]:
+    """Walks src/ once, AST-parsing every module to build a class-name ->
+    immediate-base-names map and a class-name -> defining-file-paths map
+    (with aliased-import bases resolved to their original name).
 
-    Aliased imports (`from ._base import Friend as FriendBase`) are also
-    resolved on a best-effort basis: `import`/`from...import` aliases are
-    collected across the tree and each class's base-name set is expanded to
-    include the alias's original name, so a base referenced only by its
-    alias still matches during the fixpoint.
+    This is the expensive part of _get_module_paths_for_class and is
+    independent of which class is being queried, so it's cached process-wide
+    and shared across every "Choose" dialog opened in an editing session --
+    previously the full tree was re-walked and re-parsed on every single
+    button click, regardless of which class_name was requested.
     """
-    this_project_root = os.path.dirname(os.path.dirname(__file__))
-    src_dir = os.path.join(this_project_root, "src")
+    global _CLASS_HIERARCHY_SCAN_CACHE
+    signature = _src_tree_signature(src_dir)
+    if (
+        _CLASS_HIERARCHY_SCAN_CACHE is not None
+        and _CLASS_HIERARCHY_SCAN_CACHE[0] == signature
+    ):
+        return _CLASS_HIERARCHY_SCAN_CACHE[1], _CLASS_HIERARCHY_SCAN_CACHE[2]
 
     # name -> set of immediate base names (by their local, possibly-aliased
     # spelling in that file)
@@ -2650,13 +2367,45 @@ def _get_module_paths_for_class(class_name: str) -> List[str]:
                     class_bases.setdefault(node.name, set()).update(bases)
                     class_files.setdefault(node.name, set()).add(file_path)
 
-    # Resolve aliased bases to their original name so the fixpoint below can
-    # match through an alias (e.g. `class Foo(FriendBase)` where
-    # `FriendBase` is `Friend` imported under an alias).
+    # Resolve aliased bases to their original name so the fixpoint in
+    # _get_module_paths_for_class can match through an alias (e.g.
+    # `class Foo(FriendBase)` where `FriendBase` is `Friend` imported under
+    # an alias).
     for name, bases in class_bases.items():
         aliased = {alias_to_real[b] for b in bases if b in alias_to_real}
         if aliased:
             class_bases[name] = bases | aliased
+
+    _CLASS_HIERARCHY_SCAN_CACHE = (signature, class_bases, class_files)
+    return class_bases, class_files
+
+
+def _get_module_paths_for_class(class_name: str) -> List[str]:
+    """
+    Returns a list of absolute file paths for all modules in src/ that define
+    the given class or any *transitive* descendant of it (not just direct
+    subclasses).
+
+    A naive single-pass AST scan only catches classes whose bases literally
+    name `class_name` (e.g. `Merchant(NPC, ...)`). That misses descendants
+    reached through an intermediate class -- e.g. concrete Friend NPCs in
+    `src/npc/_friends.py` inherit from `Friend` (defined in
+    `src/npc/_base.py`), not from `NPC` directly, so a direct-base-only scan
+    silently omits `_friends.py` for an `NPC` query (issue #462).
+
+    To fix this we first build a whole-tree map of every class name to its
+    immediate base names and defining file(s) (see _scan_class_hierarchy),
+    then run a fixpoint over that graph: start with `{class_name}` and
+    repeatedly add any class whose base set intersects the current matched
+    set, until a pass adds nothing new. Because `matched` only ever grows and
+    the class universe is finite, this always terminates -- including in the
+    presence of inheritance cycles (which shouldn't exist in valid Python but
+    a bug/typo elsewhere shouldn't turn into an infinite loop here).
+    """
+    this_project_root = os.path.dirname(os.path.dirname(__file__))
+    src_dir = os.path.join(this_project_root, "src")
+
+    class_bases, class_files = _scan_class_hierarchy(src_dir)
 
     # Fixpoint: grow the matched set until a full pass adds nothing new.
     matched: Set[str] = {class_name}
@@ -2776,17 +2525,11 @@ class TileEditorWindow:
         self.tile_data: dict = map_data[position]
         self.on_save_callback = on_save_callback
 
-        # Pre-compute adjacency directions
-        self._deltas = {
-            "north": (0, -1),
-            "south": (0, 1),
-            "east": (1, 0),
-            "west": (-1, 0),
-            "northeast": (1, -1),
-            "northwest": (-1, -1),
-            "southeast": (1, 1),
-            "southwest": (-1, 1),
-        }
+        # Pre-compute adjacency directions. Uses the shared DIRECTION_DELTAS
+        # order (north/south/west/east/...) -- previously this window had its
+        # own copy with east and west swapped, which changed the Exits/Blocked
+        # listbox display order relative to every other view in the editor.
+        self._deltas = DIRECTION_DELTAS
         self.valid_directions = [
             d
             for d, (dx, dy) in self._deltas.items()
@@ -2935,13 +2678,14 @@ class TileEditorWindow:
         for obj_class_name, btn_text, frame_attr, element_list_name in tab_configs:
             tab_frame = tk.Frame(notebook, bg="#34495e", padx=10, pady=10)
             notebook.add(tab_frame, text=f"{obj_class_name}s")
-            create_element_frame(self.window, tab_frame, frame_attr)
+            create_element_frame(self.window, tab_frame, frame_attr, map_data=self.map_data)
             btn_cmd = lambda en=element_list_name, fa=frame_attr, this_baseclass_name=obj_class_name: open_chooser(
                 self.window,
                 self.tile_data[en],
                 getattr(self.window, fa),
                 this_baseclass_name,
                 (this_baseclass_name == "Event"),
+                map_data=self.map_data,
             )
             tk.Button(
                 tab_frame,
@@ -3029,7 +2773,10 @@ class TileEditorWindow:
 
 
 def create_element_frame(
-    dialog_object: tk.Toplevel, parent: tk.Frame, attr_string: str
+    dialog_object: tk.Toplevel,
+    parent: tk.Frame,
+    attr_string: str,
+    map_data: Optional[dict] = None,
 ):
     """
     Creates a TagListFrame, packs it into the parent, sets it as an attribute on the dialog_object, and returns it.
@@ -3038,11 +2785,14 @@ def create_element_frame(
         dialog_object: The TileEditorWindow or tk.Toplevel instance to attach the frame to.
         parent: The parent tk.Frame to pack the new TagListFrame into.
         attr_string: The attribute name to set on the dialog_object.
+        map_data: The currently-loaded map, threaded through so double-clicking
+            an existing tag to edit it can open a property dialog with live
+            map data available (e.g. for the merchant-picker combobox).
 
     Returns:
         The created TagListFrame instance.
     """
-    frame = TagListFrame(parent)
+    frame = TagListFrame(parent, map_data=map_data)
     frame.pack(fill="both", expand=True)
     setattr(dialog_object, attr_string, frame)
     return frame
@@ -3157,7 +2907,13 @@ def duplicate_element(inst, lst: List, frame: TagListFrame):
     add_element(new_inst, lst, frame)
 
 
-def edit_element(dialog_object: tk.Toplevel, inst, lst: List, frame: TagListFrame):
+def edit_element(
+    dialog_object: tk.Toplevel,
+    inst,
+    lst: List,
+    frame: TagListFrame,
+    map_data: Optional[dict] = None,
+):
     """
     Opens a property dialog to edit the given element instance.
     Updates or removes the element in the tag list frame based on user action.
@@ -3166,6 +2922,7 @@ def edit_element(dialog_object: tk.Toplevel, inst, lst: List, frame: TagListFram
         inst: The instance to edit.
         lst: The list containing the instance.
         frame: The TagListFrame containing the element.
+        map_data: The currently-loaded map, forwarded to open_property_dialog.
     """
 
     def callback(updated_inst, this_lst, this_frame):
@@ -3179,6 +2936,7 @@ def edit_element(dialog_object: tk.Toplevel, inst, lst: List, frame: TagListFram
         inst.__class__,
         existing=inst,
         callback=lambda updated_inst: callback(updated_inst, lst, frame),
+        map_data=map_data,
     )
 
 
@@ -3213,6 +2971,7 @@ def open_chooser(
     tag_frame: TagListFrame,
     base_class_name: str = None,
     is_event: bool = False,
+    map_data: Optional[dict] = None,
 ):
     paths = []
     if is_event:
@@ -3227,7 +2986,13 @@ def open_chooser(
             messagebox.showerror("Error", "No event files found in src/story.")
             return
         show_hierarchy_chooser(
-            dialog_object, paths, "Choose Event", add_element, lst, tag_frame
+            dialog_object,
+            paths,
+            "Choose Event",
+            add_element,
+            lst,
+            tag_frame,
+            map_data=map_data,
         )
     else:
         # FIX: Previously only modules containing the base class definition were scanned, not those
@@ -3253,26 +3018,34 @@ def open_chooser(
             lst,
             tag_frame,
             base_class_name,
+            map_data=map_data,
         )
 
 
-def show_hierarchy_chooser(
+def _build_hierarchy_chooser(
     dialog_object: tk.Toplevel,
     module_paths,
     dialog_title,
-    add_callback,
-    lst: List,
-    tag_frame: TagListFrame,
-    filter_by_class: str = None,
+    filter_by_class,
+    on_select,
+    geometry: str = "300x430",
 ):
-    """Display hierarchical class chooser for one or more module paths.
+    """Shared hierarchical class-picker dialog behind show_hierarchy_chooser,
+    open_single_class_type_chooser, and show_class_type_hierarchy_chooser.
+    Those three were ~90% identical -- parse module_paths into a unified
+    class hierarchy, build a filterable Listbox dialog over it, resolve the
+    double-clicked entry to a class object -- differing only in dialog
+    geometry and what to do with the resolved class once picked, which is
+    exactly what `on_select` and `geometry` parameterize here.
+
     module_paths: list[str] absolute file system paths.
+    on_select(cls_obj): called with the resolved class on double-click; any
+        exception it raises is reported the same as a resolution failure.
     """
     # Parse modules and build unified class hierarchy across them
-    class_info = (
+    class_info: Dict[str, Any] = (
         {}
     )  # name -> { 'bases': [...], 'children': set(), 'module': import_path }
-    # Determine project root (assumes all paths share same root two levels up from utils)
     for module_path in module_paths:
         if not os.path.isfile(module_path):
             continue
@@ -3297,7 +3070,7 @@ def show_hierarchy_chooser(
     # Build dialog
     dlg = tk.Toplevel(dialog_object)
     dlg.title(dialog_title)
-    dlg.geometry("320x450")
+    dlg.geometry(geometry)
     dlg.transient(dialog_object)
     dlg.grab_set()
     # Filter entry
@@ -3320,11 +3093,18 @@ def show_hierarchy_chooser(
     items_meta: List[Dict[str, str]] = []
 
     # helper to decide if subtree matches filter
-    def update_list(*args):
+    def update_list(*_args):
         search = filter_var.get().lower().strip()
         lb.delete(0, tk.END)
         items_meta.clear()
         visited = set()
+
+        def subtree_matches(cname):
+            if cname not in allowed_classes:
+                return False
+            if not search or search in cname.lower():
+                return True
+            return any(subtree_matches(ch) for ch in class_info[cname]["children"])
 
         def recurse(names, indent=0):
             for n in sorted(names):
@@ -3332,20 +3112,6 @@ def show_hierarchy_chooser(
                     continue
                 visited.add(n)
                 info = class_info[n]
-
-                # determine if this node or any descendant matches filter
-                def subtree_matches(cname):
-                    if cname not in allowed_classes:
-                        return False
-                    if not search:
-                        return True
-                    if search in cname.lower():
-                        return True
-                    for child in class_info[cname]["children"]:
-                        if subtree_matches(child):
-                            return True
-                    return False
-
                 if subtree_matches(n):
                     lb.insert("end", "  " * indent + n)
                     items_meta.append({"name": n, "module": info["module"]})
@@ -3357,28 +3123,59 @@ def show_hierarchy_chooser(
     filter_var.trace_add("write", update_list)
     update_list()
 
-    # double-click to instantiate and edit
-    def on_double(e):
+    # double-click to resolve the class and hand it to on_select
+    def on_double(_event=None):
         if not lb.curselection():
             return
         idx = lb.curselection()[0]
         meta = cast(Dict[str, str], items_meta[idx])
         cls_name = meta.get("name", "")
-        import_module = meta.get("module", "")
+        module_name = meta.get("module", "")
         try:
-            module = importlib.import_module(import_module)
-            cls = getattr(module, cls_name)
-            open_property_dialog(
-                dialog_object,
-                cls,
-                existing=None,
-                callback=lambda inst: add_callback(inst, lst, tag_frame),
-            )
+            module = importlib.import_module(module_name)
+            cls_obj = getattr(module, cls_name)
+            on_select(cls_obj)
         except Exception as ex:
-            messagebox.showerror("Error", f"Could not create instance: {ex}")
+            messagebox.showerror("Error", f"Could not load class: {ex}")
         dlg.destroy()
 
     lb.bind("<Double-Button-1>", on_double)
+    return dlg
+
+
+def show_hierarchy_chooser(
+    dialog_object: tk.Toplevel,
+    module_paths,
+    dialog_title,
+    add_callback,
+    lst: List,
+    tag_frame: TagListFrame,
+    filter_by_class: str = None,
+    map_data: Optional[dict] = None,
+):
+    """Display hierarchical class chooser for one or more module paths.
+    On selection, opens a property dialog to configure the new instance
+    before handing it to add_callback (e.g. add_element).
+    module_paths: list[str] absolute file system paths.
+    """
+
+    def _on_select(cls_obj):
+        open_property_dialog(
+            dialog_object,
+            cls_obj,
+            existing=None,
+            callback=lambda inst: add_callback(inst, lst, tag_frame),
+            map_data=map_data,
+        )
+
+    _build_hierarchy_chooser(
+        dialog_object,
+        module_paths,
+        dialog_title,
+        filter_by_class,
+        _on_select,
+        geometry="320x450",
+    )
 
 
 def open_class_type_chooser(
@@ -3431,95 +3228,16 @@ def open_single_class_type_chooser(
             f"Could not find base class {base_class_name} or its subclasses in src/.",
         )
         return
-    # We inline a lightweight variant of show_class_type_hierarchy_chooser to inject single-select behavior.
-    class_info = {}
-    for module_path in module_paths:
-        if not os.path.isfile(module_path):
-            continue
-        try:
-            ci = parse_module_classes(module_path, project_root)
-            if ci:
-                class_info.update(ci)
-        except Exception:
-            continue
-    class_info = build_class_hierarchy(class_info)
-    allowed = filter_classes(class_info, base_class_name)
-    roots = sorted(
-        [
-            n
-            for n, i in class_info.items()
-            if not any(b in class_info for b in i["bases"]) and n in allowed
-        ]
+
+    def _on_select(cls_obj):
+        # Single-selection enforcement
+        lst.clear()
+        lst.append(cls_obj)
+        refresh_tags(lst, tag_frame)
+
+    _build_hierarchy_chooser(
+        dialog_object, module_paths, f"Choose {base_class_name} Type", base_class_name, _on_select
     )
-    dlg = tk.Toplevel(dialog_object)
-    dlg.title(f"Choose {base_class_name} Type")
-    dlg.geometry("300x430")
-    dlg.transient(dialog_object)
-    dlg.grab_set()
-    filter_frame = tk.Frame(dlg)
-    filter_frame.pack(fill="x", padx=5, pady=5)
-    tk.Label(filter_frame, text="Filter:", anchor="w").pack(side="left")
-    filter_var = tk.StringVar()
-    tk.Entry(filter_frame, textvariable=filter_var).pack(
-        side="left", fill="x", expand=True
-    )
-    frame_lb = tk.Frame(dlg)
-    frame_lb.pack(fill="both", expand=True)
-    lb = tk.Listbox(frame_lb)
-    sb = tk.Scrollbar(frame_lb, orient="vertical", command=lb.yview)
-    lb.configure(yscrollcommand=sb.set)
-    sb.pack(side="right", fill="y")
-    lb.pack(side="left", fill="both", expand=True)
-    metas: List[Dict[str, str]] = []
-
-    def update_list(*_):
-        search = filter_var.get().lower().strip()
-        lb.delete(0, tk.END)
-        metas.clear()
-        visited = set()
-
-        def subtree_matches(cname):
-            if cname not in allowed:
-                return False
-            if not search or search in cname.lower():
-                return True
-            return any(subtree_matches(ch) for ch in class_info[cname]["children"])
-
-        def recurse(names, indent=0):
-            for n in sorted(names):
-                if n in visited or n not in allowed:
-                    continue
-                visited.add(n)
-                if subtree_matches(n):
-                    lb.insert("end", "  " * indent + n)
-                    metas.append({"name": n, "module": class_info[n]["module"]})
-                    if class_info[n]["children"]:
-                        recurse(class_info[n]["children"], indent + 1)
-
-        recurse(roots)
-
-    filter_var.trace_add("write", update_list)
-    update_list()
-
-    def on_double(_):
-        if not lb.curselection():
-            return
-        idx = lb.curselection()[0]
-        meta = metas[idx]
-        cls_name = meta["name"]
-        module_name = meta["module"]
-        try:
-            mod = importlib.import_module(module_name)
-            cls_obj = getattr(mod, cls_name)
-            # Single-selection enforcement
-            lst.clear()
-            lst.append(cls_obj)
-            refresh_tags(lst, tag_frame)
-        except Exception as ex:
-            messagebox.showerror("Error", f"Could not load class: {ex}")
-        dlg.destroy()
-
-    lb.bind("<Double-Button-1>", on_double)
 
 
 def show_class_type_hierarchy_chooser(
@@ -3530,93 +3248,14 @@ def show_class_type_hierarchy_chooser(
     tag_frame: TagListFrame,
     filter_by_class: str = None,
 ):
-    class_info = {}
-    for module_path in module_paths:
-        if not os.path.isfile(module_path):
-            continue
-        try:
-            ci = parse_module_classes(module_path, project_root)
-            if ci:
-                class_info.update(ci)
-        except Exception:
-            continue
-    class_info = build_class_hierarchy(class_info)
-    allowed = filter_classes(class_info, filter_by_class)
-    roots = sorted(
-        [
-            n
-            for n, i in class_info.items()
-            if not any(b in class_info for b in i["bases"]) and n in allowed
-        ]
+    def _on_select(cls_obj):
+        if cls_obj not in lst:
+            lst.append(cls_obj)
+            refresh_tags(lst, tag_frame)
+
+    _build_hierarchy_chooser(
+        dialog_object, module_paths, dialog_title, filter_by_class, _on_select
     )
-    dlg = tk.Toplevel(dialog_object)
-    dlg.title(dialog_title)
-    dlg.geometry("300x430")
-    dlg.transient(dialog_object)
-    dlg.grab_set()
-    filter_frame = tk.Frame(dlg)
-    filter_frame.pack(fill="x", padx=5, pady=5)
-    tk.Label(filter_frame, text="Filter:", anchor="w").pack(side="left")
-    filter_var = tk.StringVar()
-    tk.Entry(filter_frame, textvariable=filter_var).pack(
-        side="left", fill="x", expand=True
-    )
-    frame_lb = tk.Frame(dlg)
-    frame_lb.pack(fill="both", expand=True)
-    lb = tk.Listbox(frame_lb)
-    sb = tk.Scrollbar(frame_lb, orient="vertical", command=lb.yview)
-    lb.configure(yscrollcommand=sb.set)
-    sb.pack(side="right", fill="y")
-    lb.pack(side="left", fill="both", expand=True)
-    metas: List[Dict[str, str]] = []
-
-    def update_list(*_):
-        search = filter_var.get().lower().strip()
-        lb.delete(0, tk.END)
-        metas.clear()
-        visited = set()
-
-        def subtree_matches(cname):
-            if cname not in allowed:
-                return False
-            if not search or search in cname.lower():
-                return True
-            return any(subtree_matches(ch) for ch in class_info[cname]["children"])
-
-        def recurse(names, indent=0):
-            for n in sorted(names):
-                if n in visited or n not in allowed:
-                    continue
-                visited.add(n)
-                if subtree_matches(n):
-                    lb.insert("end", "  " * indent + n)
-                    metas.append({"name": n, "module": class_info[n]["module"]})
-                    if class_info[n]["children"]:
-                        recurse(class_info[n]["children"], indent + 1)
-
-        recurse(roots)
-
-    filter_var.trace_add("write", update_list)
-    update_list()
-
-    def on_double(_):
-        if not lb.curselection():
-            return
-        idx = lb.curselection()[0]
-        meta = metas[idx]
-        cls_name = meta["name"]
-        module_name = meta["module"]
-        try:
-            mod = importlib.import_module(module_name)
-            cls_obj = getattr(mod, cls_name)
-            if cls_obj not in lst:
-                lst.append(cls_obj)
-                refresh_tags(lst, tag_frame)
-        except Exception as ex:
-            messagebox.showerror("Error", f"Could not load class: {ex}")
-        dlg.destroy()
-
-    lb.bind("<Double-Button-1>", on_double)
 
 
 # Human-readable descriptions for property names that recur across many
@@ -3744,7 +3383,10 @@ def _grouped_field_layout(editable_params, col_count: int) -> List[Dict[str, Any
 
 
 def _open_bulk_class_chooser(
-    parent: tk.Tk, candidates: Dict[type, List[Any]], on_save_callback
+    parent: tk.Tk,
+    candidates: Dict[type, List[Any]],
+    on_save_callback,
+    map_data: Optional[dict] = None,
 ):
     """Let the user pick which class to bulk-edit when a multi-tile
     selection contains more than one kind of object, then open a single
@@ -3753,7 +3395,11 @@ def _open_bulk_class_chooser(
     if len(candidates) == 1:
         (cls, instances) = next(iter(candidates.items()))
         open_property_dialog(
-            parent, cls, existing=instances, callback=lambda _: on_save_callback()
+            parent,
+            cls,
+            existing=instances,
+            callback=lambda _: on_save_callback(),
+            map_data=map_data,
         )
         return
 
@@ -3787,7 +3433,11 @@ def _open_bulk_class_chooser(
         cls = ordered_classes[selection[0]]
         dlg.destroy()
         open_property_dialog(
-            parent, cls, existing=candidates[cls], callback=lambda _: on_save_callback()
+            parent,
+            cls,
+            existing=candidates[cls],
+            callback=lambda _: on_save_callback(),
+            map_data=map_data,
         )
 
     lb.bind("<Double-Button-1>", _on_choose)
@@ -3797,7 +3447,11 @@ def _open_bulk_class_chooser(
 
 
 def open_property_dialog(
-    parent_dialog_object: tk.Toplevel, cls, existing=None, callback=None
+    parent_dialog_object: tk.Toplevel,
+    cls,
+    existing=None,
+    callback=None,
+    map_data: Optional[dict] = None,
 ):
     # Bulk-edit support (issue #16): `existing` may be a single instance (the
     # normal case) or a list of instances of the same class collected across
@@ -3851,12 +3505,7 @@ def open_property_dialog(
     all_merchants = None
     if "merchant" in [p.name for p in editable_params]:
         try:
-            # Attempt to use global app instance if present
-            app_map_data = app.map_data  # type: ignore[name-defined]
-        except Exception:
-            app_map_data = {}
-        try:
-            all_merchants = get_all_merchants(app_map_data) if app_map_data else {}
+            all_merchants = get_all_merchants(map_data) if map_data else {}
         except Exception:
             all_merchants = {}
 
@@ -4010,6 +3659,414 @@ def open_property_dialog(
 
                 var.trace_add("write", _make_cb())
 
+        def _build_class_type_field(p, container) -> bool:
+            """Handles Type[Base]/list[Type[Base]] annotations (including
+            Optional[Type[Base]]/Union[Type[Base], None]): a tag-based
+            picker of *classes themselves* rather than instances. Returns
+            True if the field was handled (entries[p.name] was set and the
+            caller should move on to the next parameter), False otherwise
+            (including on any resolution error -- matches the original
+            inline code's blanket except-and-fall-through-to-the-next-
+            specialized-field-check behavior)."""
+            try:
+                # Use resolved annotation if available
+                ann_for_detection = resolved_hints.get(p.name, p.annotation)
+                ann_origin = get_origin(ann_for_detection)
+                ann_args = get_args(ann_for_detection)
+
+                # helper creators to avoid mutable default argument warnings
+                def _make_list_getter(ref_list: List[type]):
+                    return lambda: ref_list
+
+                def _make_single_getter(ref_list: List[type]):
+                    return lambda: (ref_list[0] if ref_list else None)
+
+                def _make_multi_btn_handler(
+                    base_name: str, ref_list: List[type], frame_ref: TagListFrame
+                ):
+                    return lambda: open_class_type_chooser(
+                        dlg, base_name, ref_list, frame_ref
+                    )
+
+                def _make_single_btn_handler(
+                    base_name: str, ref_list: List[type], frame_ref: TagListFrame
+                ):
+                    return lambda: open_single_class_type_chooser(
+                        dlg, base_name, ref_list, frame_ref
+                    )
+
+                # First: list[Type[Base]] existing behavior
+                if ann_origin in (list, List) and ann_args:
+                    inner = ann_args[0]
+                    inner_origin = get_origin(inner)
+                    inner_args = get_args(inner)
+                    if (
+                        inner_origin in (type, Type)
+                        and inner_args
+                        and inspect.isclass(inner_args[0])
+                    ):
+                        base_cls = inner_args[0]
+                        type_list = list(
+                            getattr(existing, p.name, [])
+                            if existing is not None
+                            else []
+                        )
+                        tag_frame = create_element_frame(
+                            dlg, container, f"{p.name}_types_frame", map_data=map_data
+                        )
+                        refresh_tags(type_list, tag_frame)
+                        tk.Button(
+                            container,
+                            text="Choose Types",
+                            command=_make_multi_btn_handler(
+                                base_cls.__name__, type_list, tag_frame
+                            ),
+                        ).pack(fill="x", padx=(5, 0), pady=(2, 2))
+                        entries[p.name] = {
+                            "type": "hierarchical",
+                            "get": _make_list_getter(type_list),
+                        }
+                        return True
+                # NEW: Single Type[Base] support (including Optional/Union[Type[Base], None])
+                target_base_cls = None
+                single_mode = False
+                if (
+                    ann_origin in (type, Type)
+                    and ann_args
+                    and inspect.isclass(ann_args[0])
+                ):
+                    target_base_cls = ann_args[0]
+                    single_mode = True
+                # Optional / Union handling: Union[Type[Base], None]
+                elif ann_origin is Union and ann_args:
+                    for arg in ann_args:
+                        arg_origin = get_origin(arg)
+                        arg_args = get_args(arg)
+                        if (
+                            arg_origin in (type, Type)
+                            and arg_args
+                            and inspect.isclass(arg_args[0])
+                        ):
+                            target_base_cls = arg_args[0]
+                            single_mode = True
+                            break
+                if single_mode and target_base_cls is not None:
+                    existing_val = (
+                        getattr(existing, p.name, None)
+                        if existing is not None
+                        else None
+                    )
+                    single_list: List[type] = (
+                        [existing_val] if isinstance(existing_val, type) else []
+                    )
+                    tag_frame = create_element_frame(
+                        dlg, container, f"{p.name}_type_frame", map_data=map_data
+                    )
+                    refresh_tags(single_list, tag_frame)
+                    tk.Button(
+                        container,
+                        text="Choose Type",
+                        command=_make_single_btn_handler(
+                            target_base_cls.__name__, single_list, tag_frame
+                        ),
+                    ).pack(fill="x", padx=(5, 0), pady=(2, 2))
+                    entries[p.name] = {
+                        "type": "hierarchical",
+                        "get": _make_single_getter(single_list),
+                    }
+                    return True
+            except Exception:
+                pass
+            return False
+
+        def _build_map_name_field(p, container, val):
+            """Specialized combobox for teleport_map/target_map_name fields,
+            populated from the *.json files under src/resources/maps/."""
+            try:
+                from pathlib import Path
+
+                base_dir = Path(__file__).resolve().parent
+                root_dir = base_dir.parent  # project root (utils' parent)
+                candidate_dirs = [
+                    root_dir / "src" / "resources" / "maps",
+                    base_dir / "src" / "resources" / "maps",
+                ]
+                map_names = set()
+                for d in candidate_dirs:
+                    if d.exists():
+                        for jf in d.glob("*.json"):
+                            map_names.add(jf.stem)
+                map_list = sorted(map_names)
+            except Exception:
+                map_list = []
+            if not map_list:
+                tk.Label(
+                    container,
+                    text="No map files (*.json) found.",
+                    font=("Helvetica", 9, "italic"),
+                    bg="#34495e",
+                    fg="#f39c12",
+                ).pack(fill="x")
+            combo_var = tk.StringVar()
+            setattr(combo_var, "_hov_param", p.name)  # tag var with param name
+            if isinstance(val, str) and val in map_list:
+                combo_var.set(val)
+            elif map_list:
+                pass
+            combo = ttk.Combobox(
+                container, textvariable=combo_var, values=map_list, state="readonly"
+            )
+            combo.pack(fill="x", pady=(2, 5))
+
+            def _on_map_change(event=None):
+                # trigger coordinate refreshers then autosave
+                for r in coord_refreshers:
+                    try:
+                        r()
+                    except Exception:
+                        pass
+                auto_save()
+
+            combo.bind("<<ComboboxSelected>>", _on_map_change)
+            _add_map_var(combo_var)
+            entries[p.name] = {
+                "type": "text",
+                "get": lambda v=combo_var: v.get(),
+                "is_map_name": True,
+            }
+            # ensure traces attached after potential list filled
+            _attach_traces()
+
+        def _build_coordinate_field(p, container, val):
+            """Specialized combobox for teleport_tile/target_coordinates
+            fields: lists every tile on the currently-selected map (falling
+            back to the in-progress editor map) as "Title (x,y)" entries."""
+            coord_combo_var = tk.StringVar()
+            tuple_var = tk.StringVar()
+            # UI combobox placeholder; values set in refresh
+            coord_combo = ttk.Combobox(
+                container, textvariable=coord_combo_var, values=[], state="readonly"
+            )
+            coord_combo.pack(fill="x", pady=(2, 5))
+            display_to_coord: Dict[str, Tuple[int, int]] = {}
+            # capture existing value to attempt reselect after refresh
+            existing_coord = None
+            if isinstance(val, (tuple, list)) and len(val) == 2:
+                try:
+                    existing_coord = (int(val[0]), int(val[1]))
+                except Exception:
+                    existing_coord = None
+
+            def refresh_tiles():
+                nonlocal display_to_coord
+                display_to_coord = {}
+                # Determine map name
+                map_name = _get_selected_map_name()
+                tiles_source = None
+                if map_name:
+                    # Attempt to load external map json
+                    try:
+                        from pathlib import Path
+
+                        base_dir = Path(__file__).resolve().parent
+                        root_dir = base_dir.parent  # project root (utils' parent)
+                        candidate_dirs = [
+                            root_dir / "src" / "resources" / "maps",
+                            base_dir / "src" / "resources" / "maps",
+                        ]
+                        for d in candidate_dirs:
+                            jf = d / f"{map_name}.json"
+                            if jf.exists():
+                                with open(jf, "r", encoding="utf-8") as f:
+                                    data = json.load(f)
+                                tiles_source = data
+                                break
+                    except Exception:
+                        tiles_source = None
+                if tiles_source is None:
+                    # fallback to current editor map, threaded in via
+                    # open_property_dialog's map_data parameter
+                    try:
+                        tiles_source = {str(k): v for k, v in (map_data or {}).items()}
+                    except Exception:
+                        tiles_source = {}
+                # Build list
+                for k, tdata in tiles_source.items():
+                    try:
+                        if (
+                            isinstance(k, str)
+                            and k.startswith("(")
+                            and k.endswith(")")
+                        ):
+                            parts = k.strip("()").split(",")
+                            tx, ty = int(parts[0]), int(parts[1])
+                        elif isinstance(k, (list, tuple)) and len(k) == 2:
+                            tx, ty = int(k[0]), int(k[1])
+                        else:
+                            continue
+                        title = (
+                            tdata.get("title") if isinstance(tdata, dict) else None
+                        )
+                        if not title:
+                            # attempt id fallback
+                            if isinstance(tdata, dict):
+                                title = tdata.get("id", f"tile_{tx}_{ty}")
+                            else:
+                                title = f"tile_{tx}_{ty}"
+                        display = f"{title} ({tx},{ty})"
+                        display_to_coord[display] = (tx, ty)
+                    except Exception:
+                        continue
+                # Update combobox values
+                values = sorted(
+                    display_to_coord.keys(),
+                    key=lambda s: (display_to_coord[s][0], display_to_coord[s][1]),
+                )
+                coord_combo.config(values=values)
+                # Preserve selection if still valid
+                if tuple_var.get():
+                    try:
+                        current_tuple = ast.literal_eval(tuple_var.get())
+                    except Exception:
+                        current_tuple = None
+                else:
+                    current_tuple = existing_coord
+                if (
+                    current_tuple
+                    and isinstance(current_tuple, (list, tuple))
+                    and len(current_tuple) == 2
+                ):
+                    for disp, coord in display_to_coord.items():
+                        if coord == (int(current_tuple[0]), int(current_tuple[1])):
+                            coord_combo_var.set(disp)
+                            tuple_var.set(str(coord))
+                            break
+                elif values:
+                    # leave blank until user chooses (do not auto-select)
+                    pass
+
+            def on_coord_select(event=None):
+                disp = coord_combo_var.get()
+                coord = display_to_coord.get(disp)
+                if coord is not None:
+                    tuple_var.set(str(coord))
+                    auto_save()
+
+            coord_combo.bind("<<ComboboxSelected>>", on_coord_select)
+            refresh_tiles()
+            coord_refreshers.append(refresh_tiles)
+            # Ensure traces attached if map vars already exist
+            _attach_traces()
+            entries[p.name] = {
+                "type": "text",
+                "get": lambda v=tuple_var: v.get(),
+                "is_tile_coord": True,
+            }
+
+        def _build_class_chooser_field(p, container, val, base_class, is_list):
+            """Generic tag-based chooser for a class-typed field (an Item/
+            NPC/Object/Event instance or list of them), as opposed to the
+            Type[Base]-picks-a-class-itself field above."""
+            tag_frame = create_element_frame(
+                dlg, container, f"{p.name}_frame", map_data=map_data
+            )
+            if is_list:
+                current_value = (
+                    getattr(existing, p.name, None) if existing is not None else []
+                )
+                # 'items' (Container's legacy inventory alias) never reaches
+                # this point -- get_editable_params() excludes it whenever
+                # 'inventory' is also a constructor param, so this widget is
+                # only ever built for the real, canonical attribute.
+                if current_value is None:
+                    current_value = []
+            else:
+                val = (
+                    getattr(existing, p.name, None)
+                    if existing is not None
+                    else None
+                )
+                current_value = [val] if val is not None else []
+            field_type = "list" if is_list else "single"
+
+            # Initialize tags for any objects already present by default
+            refresh_tags(current_value, tag_frame)
+
+            base_class_name = str(base_class.__name__) if base_class else "Object"
+            is_event = (
+                True if base_class and base_class.__name__ == "Event" else False
+            )
+
+            choose_btn = tk.Button(
+                container,
+                text="Choose",
+                command=lambda this_dlg=dlg, this_base_class_name=base_class_name, this_is_event=is_event, this_tag_frame=tag_frame, this_field_type=field_type: open_chooser(
+                    this_dlg,
+                    (
+                        current_value
+                        if this_field_type == "list"
+                        else (current_value[0] if current_value else [])
+                    ),
+                    this_tag_frame,
+                    base_class_name=this_base_class_name,
+                    is_event=this_is_event,
+                    map_data=map_data,
+                ),
+            )
+            choose_btn.pack(fill="x", padx=(5, 0), pady=(2, 2))
+
+            # Helper to avoid mutable default capture
+            def _make_hier_getter(field_type_local: str, ref_list_local: List[Any]):
+                if field_type_local == "list":
+                    return lambda: ref_list_local
+                return lambda: (ref_list_local[0] if ref_list_local else None)
+
+            entries[p.name] = {
+                "type": "hierarchical",
+                "get": _make_hier_getter(field_type, current_value),
+            }
+
+        def _build_merchant_field(p, container, val):
+            """Combobox listing every Merchant NPC placed on the map, for
+            fields literally named 'merchant' (e.g. a Shop's stock source)."""
+            if not all_merchants:
+                tk.Label(
+                    container,
+                    text="Add a Merchant NPC to this map first.",
+                    font=("Helvetica", 9, "italic"),
+                    bg="#34495e",
+                    fg="#f39c12",
+                ).pack(fill="x")
+                return
+            combo_var = tk.StringVar()
+            # If existing value is a merchant object, get its name
+            if val and _is_merchant_like(val):
+                # Find the name corresponding to the instance
+                for name, inst in all_merchants.items():
+                    if inst is val:
+                        combo_var.set(name)
+                        break
+            elif isinstance(val, str):  # Fallback for name-based storage
+                combo_var.set(val)
+
+            combo = ttk.Combobox(
+                container,
+                textvariable=combo_var,
+                values=list(all_merchants.keys()),
+                state="readonly",
+            )
+            combo.pack(fill="x", pady=(2, 5))
+
+            def on_combo_change(event=None):
+                auto_save()
+
+            combo.bind("<<ComboboxSelected>>", on_combo_change)
+            entries[p.name] = {
+                "type": "text",
+                "get": lambda v=combo_var: v.get(),
+                "is_merchant": True,
+            }
+
         for _layout_entry in _grouped_field_layout(editable_params, col_count):
             if _layout_entry["kind"] == "header":
                 header_lbl = tk.Label(
@@ -4116,298 +4173,18 @@ def open_property_dialog(
             field_label.bind("<Enter>", _tip_show)
             field_label.bind("<Leave>", _tip_hide)
 
-            # --- Class TYPE list detection: list[type[Base]] ---
-            try:
-                # Use resolved annotation if available
-                ann_for_detection = resolved_hints.get(p.name, p.annotation)
-                ann_origin = get_origin(ann_for_detection)
-                ann_args = get_args(ann_for_detection)
-
-                # helper creators to avoid mutable default argument warnings
-                def _make_list_getter(ref_list: List[type]):
-                    return lambda: ref_list
-
-                def _make_single_getter(ref_list: List[type]):
-                    return lambda: (ref_list[0] if ref_list else None)
-
-                def _make_multi_btn_handler(
-                    base_name: str, ref_list: List[type], frame_ref: TagListFrame
-                ):
-                    return lambda: open_class_type_chooser(
-                        dlg, base_name, ref_list, frame_ref
-                    )
-
-                def _make_single_btn_handler(
-                    base_name: str, ref_list: List[type], frame_ref: TagListFrame
-                ):
-                    return lambda: open_single_class_type_chooser(
-                        dlg, base_name, ref_list, frame_ref
-                    )
-
-                # First: list[Type[Base]] existing behavior
-                if ann_origin in (list, List) and ann_args:
-                    inner = ann_args[0]
-                    inner_origin = get_origin(inner)
-                    inner_args = get_args(inner)
-                    if (
-                        inner_origin in (type, Type)
-                        and inner_args
-                        and inspect.isclass(inner_args[0])
-                    ):
-                        base_cls = inner_args[0]
-                        type_list = list(
-                            getattr(existing, p.name, [])
-                            if existing is not None
-                            else []
-                        )
-                        tag_frame = create_element_frame(
-                            dlg, container, f"{p.name}_types_frame"
-                        )
-                        refresh_tags(type_list, tag_frame)
-                        tk.Button(
-                            container,
-                            text="Choose Types",
-                            command=_make_multi_btn_handler(
-                                base_cls.__name__, type_list, tag_frame
-                            ),
-                        ).pack(fill="x", padx=(5, 0), pady=(2, 2))
-                        entries[p.name] = {
-                            "type": "hierarchical",
-                            "get": _make_list_getter(type_list),
-                        }
-                        continue
-                # NEW: Single Type[Base] support (including Optional/Union[Type[Base], None])
-                target_base_cls = None
-                single_mode = False
-                if (
-                    ann_origin in (type, Type)
-                    and ann_args
-                    and inspect.isclass(ann_args[0])
-                ):
-                    target_base_cls = ann_args[0]
-                    single_mode = True
-                # Optional / Union handling: Union[Type[Base], None]
-                elif ann_origin is Union and ann_args:
-                    for arg in ann_args:
-                        arg_origin = get_origin(arg)
-                        arg_args = get_args(arg)
-                        if (
-                            arg_origin in (type, Type)
-                            and arg_args
-                            and inspect.isclass(arg_args[0])
-                        ):
-                            target_base_cls = arg_args[0]
-                            single_mode = True
-                            break
-                if single_mode and target_base_cls is not None:
-                    existing_val = (
-                        getattr(existing, p.name, None)
-                        if existing is not None
-                        else None
-                    )
-                    single_list: List[type] = (
-                        [existing_val] if isinstance(existing_val, type) else []
-                    )
-                    tag_frame = create_element_frame(
-                        dlg, container, f"{p.name}_type_frame"
-                    )
-                    refresh_tags(single_list, tag_frame)
-                    tk.Button(
-                        container,
-                        text="Choose Type",
-                        command=_make_single_btn_handler(
-                            target_base_cls.__name__, single_list, tag_frame
-                        ),
-                    ).pack(fill="x", padx=(5, 0), pady=(2, 2))
-                    entries[p.name] = {
-                        "type": "hierarchical",
-                        "get": _make_single_getter(single_list),
-                    }
-                    continue
-            except Exception:
-                pass
+            # --- Class TYPE list detection: list[type[Base]] (or single Type[Base]) ---
+            if _build_class_type_field(p, container):
+                continue
 
             # NEW: specialized combobox for map name selection
             if p.name in ("teleport_map", "target_map_name"):
-                try:
-                    from pathlib import Path
-
-                    base_dir = Path(__file__).resolve().parent
-                    root_dir = base_dir.parent  # project root (utils' parent)
-                    candidate_dirs = [
-                        root_dir / "src" / "resources" / "maps",
-                        base_dir / "src" / "resources" / "maps",
-                    ]
-                    map_names = set()
-                    for d in candidate_dirs:
-                        if d.exists():
-                            for jf in d.glob("*.json"):
-                                map_names.add(jf.stem)
-                    map_list = sorted(map_names)
-                except Exception:
-                    map_list = []
-                if not map_list:
-                    tk.Label(
-                        container,
-                        text="No map files (*.json) found.",
-                        font=("Helvetica", 9, "italic"),
-                        bg="#34495e",
-                        fg="#f39c12",
-                    ).pack(fill="x")
-                combo_var = tk.StringVar()
-                setattr(combo_var, "_hov_param", p.name)  # tag var with param name
-                if isinstance(val, str) and val in map_list:
-                    combo_var.set(val)
-                elif map_list:
-                    pass
-                combo = ttk.Combobox(
-                    container, textvariable=combo_var, values=map_list, state="readonly"
-                )
-                combo.pack(fill="x", pady=(2, 5))
-
-                def _on_map_change(event=None):
-                    # trigger coordinate refreshers then autosave
-                    for r in coord_refreshers:
-                        try:
-                            r()
-                        except Exception:
-                            pass
-                    auto_save()
-
-                combo.bind("<<ComboboxSelected>>", _on_map_change)
-                _add_map_var(combo_var)
-                entries[p.name] = {
-                    "type": "text",
-                    "get": lambda v=combo_var: v.get(),
-                    "is_map_name": True,
-                }
-                # ensure traces attached after potential list filled
-                _attach_traces()
+                _build_map_name_field(p, container, val)
                 continue  # handled specialized field, move to next parameter
 
             # NEW: specialized combobox for selecting a tile's coordinates on selected map (or current map fallback)
             if p.name in ("teleport_tile", "target_coordinates"):
-                coord_combo_var = tk.StringVar()
-                tuple_var = tk.StringVar()
-                # UI combobox placeholder; values set in refresh
-                coord_combo = ttk.Combobox(
-                    container, textvariable=coord_combo_var, values=[], state="readonly"
-                )
-                coord_combo.pack(fill="x", pady=(2, 5))
-                display_to_coord: Dict[str, Tuple[int, int]] = {}
-                # capture existing value to attempt reselect after refresh
-                existing_coord = None
-                if isinstance(val, (tuple, list)) and len(val) == 2:
-                    try:
-                        existing_coord = (int(val[0]), int(val[1]))
-                    except Exception:
-                        existing_coord = None
-                search_param_order = ("teleport_map", "target_map_name")
-
-                def refresh_tiles():
-                    nonlocal display_to_coord
-                    display_to_coord = {}
-                    # Determine map name
-                    map_name = _get_selected_map_name()
-                    tiles_source = None
-                    if map_name:
-                        # Attempt to load external map json
-                        try:
-                            from pathlib import Path
-
-                            base_dir = Path(__file__).resolve().parent
-                            root_dir = base_dir.parent  # project root (utils' parent)
-                            candidate_dirs = [
-                                root_dir / "src" / "resources" / "maps",
-                                base_dir / "src" / "resources" / "maps",
-                            ]
-                            for d in candidate_dirs:
-                                jf = d / f"{map_name}.json"
-                                if jf.exists():
-                                    with open(jf, "r", encoding="utf-8") as f:
-                                        data = json.load(f)
-                                    tiles_source = data
-                                    break
-                        except Exception:
-                            tiles_source = None
-                    if tiles_source is None:
-                        # fallback to current editor map
-                        try:
-                            tiles_source = {str(k): v for k, v in getattr(app, "map_data", {}).items()}  # type: ignore[name-defined]
-                        except Exception:
-                            tiles_source = {}
-                    # Build list
-                    for k, tdata in tiles_source.items():
-                        try:
-                            if (
-                                isinstance(k, str)
-                                and k.startswith("(")
-                                and k.endswith(")")
-                            ):
-                                parts = k.strip("()").split(",")
-                                tx, ty = int(parts[0]), int(parts[1])
-                            elif isinstance(k, (list, tuple)) and len(k) == 2:
-                                tx, ty = int(k[0]), int(k[1])
-                            else:
-                                continue
-                            title = (
-                                tdata.get("title") if isinstance(tdata, dict) else None
-                            )
-                            if not title:
-                                # attempt id fallback
-                                if isinstance(tdata, dict):
-                                    title = tdata.get("id", f"tile_{tx}_{ty}")
-                                else:
-                                    title = f"tile_{tx}_{ty}"
-                            display = f"{title} ({tx},{ty})"
-                            display_to_coord[display] = (tx, ty)
-                        except Exception:
-                            continue
-                    # Update combobox values
-                    values = sorted(
-                        display_to_coord.keys(),
-                        key=lambda s: (display_to_coord[s][0], display_to_coord[s][1]),
-                    )
-                    coord_combo.config(values=values)
-                    # Preserve selection if still valid
-                    if tuple_var.get():
-                        try:
-                            current_tuple = ast.literal_eval(tuple_var.get())
-                        except Exception:
-                            current_tuple = None
-                    else:
-                        current_tuple = existing_coord
-                    if (
-                        current_tuple
-                        and isinstance(current_tuple, (list, tuple))
-                        and len(current_tuple) == 2
-                    ):
-                        for disp, coord in display_to_coord.items():
-                            if coord == (int(current_tuple[0]), int(current_tuple[1])):
-                                coord_combo_var.set(disp)
-                                tuple_var.set(str(coord))
-                                break
-                    elif values:
-                        # leave blank until user chooses (do not auto-select)
-                        pass
-
-                def on_coord_select(event=None):
-                    disp = coord_combo_var.get()
-                    coord = display_to_coord.get(disp)
-                    if coord is not None:
-                        tuple_var.set(str(coord))
-                        auto_save()
-
-                coord_combo.bind("<<ComboboxSelected>>", on_coord_select)
-                refresh_tiles()
-                coord_refreshers.append(refresh_tiles)
-                # Ensure traces attached if map vars already exist
-                _attach_traces()
-                entries[p.name] = {
-                    "type": "text",
-                    "get": lambda v=tuple_var: v.get(),
-                    "is_tile_coord": True,
-                }
+                _build_coordinate_field(p, container, val)
                 continue
 
             # Check for type hints that should use hierarchical selectors
@@ -4426,100 +4203,9 @@ def open_property_dialog(
                 base_class and inspect.isclass(base_class) and not isinstance(val, bool)
             ):
                 # Use tag-based chooser for class-based type hints
-                tag_frame = create_element_frame(dlg, container, f"{p.name}_frame")
-                if is_list:
-                    current_value = (
-                        getattr(existing, p.name, None) if existing is not None else []
-                    )
-                    # 'items' (Container's legacy inventory alias) never reaches
-                    # this point -- get_editable_params() excludes it whenever
-                    # 'inventory' is also a constructor param, so this widget is
-                    # only ever built for the real, canonical attribute.
-                    if current_value is None:
-                        current_value = []
-                else:
-                    val = (
-                        getattr(existing, p.name, None)
-                        if existing is not None
-                        else None
-                    )
-                    current_value = [val] if val is not None else []
-                field_type = "list" if is_list else "single"
-
-                # Initialize tags for any objects already present by default
-                refresh_tags(current_value, tag_frame)
-
-                base_class_name = str(base_class.__name__) if base_class else "Object"
-                is_event = (
-                    True if base_class and base_class.__name__ == "Event" else False
-                )
-
-                choose_btn = tk.Button(
-                    container,
-                    text="Choose",
-                    command=lambda this_dlg=dlg, this_base_class_name=base_class_name, this_is_event=is_event, this_tag_frame=tag_frame, this_field_type=field_type: open_chooser(
-                        this_dlg,
-                        (
-                            current_value
-                            if this_field_type == "list"
-                            else (current_value[0] if current_value else [])
-                        ),
-                        this_tag_frame,
-                        base_class_name=this_base_class_name,
-                        is_event=this_is_event,
-                    ),
-                )
-                choose_btn.pack(fill="x", padx=(5, 0), pady=(2, 2))
-
-                # Helper to avoid mutable default capture
-                def _make_hier_getter(field_type_local: str, ref_list_local: List[Any]):
-                    if field_type_local == "list":
-                        return lambda: ref_list_local
-                    return lambda: (ref_list_local[0] if ref_list_local else None)
-
-                entries[p.name] = {
-                    "type": "hierarchical",
-                    "get": _make_hier_getter(field_type, current_value),
-                }
+                _build_class_chooser_field(p, container, val, base_class, is_list)
             elif p.name == "merchant":
-                if not all_merchants:
-                    tk.Label(
-                        container,
-                        text="Add a Merchant NPC to this map first.",
-                        font=("Helvetica", 9, "italic"),
-                        bg="#34495e",
-                        fg="#f39c12",
-                    ).pack(fill="x")
-                else:
-                    combo_var = tk.StringVar()
-                    # If existing value is a merchant object, get its name
-                    if val and _is_merchant_like(val):
-                        # Find the name corresponding to the instance
-                        for name, inst in all_merchants.items():
-                            if inst is val:
-                                combo_var.set(name)
-                                break
-                    elif isinstance(val, str):  # Fallback for name-based storage
-                        combo_var.set(val)
-
-                    combo = ttk.Combobox(
-                        container,
-                        textvariable=combo_var,
-                        values=list(all_merchants.keys()),
-                        state="readonly",
-                    )
-                    combo.pack(fill="x", pady=(2, 5))
-
-                    def on_combo_change(event=None):
-                        auto_save()
-
-                    combo.bind("<<ComboboxSelected>>", on_combo_change)
-                    entries[p.name] = {
-                        "type": "text",
-                        "get": lambda v=combo_var: v.get(),
-                        "is_merchant": True,
-                    }
-
+                _build_merchant_field(p, container, val)
             elif isinstance(val, bool):
                 bool_var = create_bool_entry(container, val, auto_save)
                 entries[p.name] = {"type": "bool", "get": lambda v=bool_var: v.get()}
