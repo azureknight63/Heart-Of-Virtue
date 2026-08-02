@@ -70,6 +70,7 @@ from ._ranged import (
     QuickReload,
     EagleEye,
     MarksmanEye,
+    Hawkeye,
 )
 from ._polearm import OverheadSmash, Sweep, BracePosition, HalberdSpin, ReachMastery
 from ._mastery import (
@@ -177,6 +178,7 @@ __all__ = [
     "QuickReload",
     "EagleEye",
     "MarksmanEye",
+    "Hawkeye",
     # Polearm
     "OverheadSmash",
     "Sweep",

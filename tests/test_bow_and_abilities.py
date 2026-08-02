@@ -442,6 +442,26 @@ class TestShootMovesAlwaysKnown:
         ), "ShootCrossbow should reach a target via range_base/range_decay"
 
 
+class TestHawkeyeSkilltree:
+    """Issue #476: Hawkeye is a purchasable Bow skill, not known by default."""
+
+    def test_hawkeye_purchasable_in_bow_skilltree_at_450_exp(self):
+        player = Player()
+
+        bow_skills = player.skilltree.subtypes["Bow"]
+        hawkeye_entry = next(
+            (skill, cost)
+            for skill, cost in bow_skills.items()
+            if skill.__class__.__name__ == "Hawkeye"
+        )
+        assert hawkeye_entry[1] == 450
+
+    def test_hawkeye_not_known_by_default(self):
+        player = Player()
+        assert not any(m.__class__.__name__ == "Hawkeye" for m in player.known_moves), \
+            "Hawkeye must be purchased via the skilltree, not known by default"
+
+
 class TestSpecialAbilities:
     """Test suite for special abilities with coordinate system."""
 
