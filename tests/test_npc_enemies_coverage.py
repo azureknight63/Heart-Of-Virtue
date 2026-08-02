@@ -229,8 +229,8 @@ class TestScarpAdder:
         from src.npc._enemies import ScarpAdder
 
         adder = ScarpAdder()
-        assert adder.maxhp == 38
-        assert adder.damage == 20
+        assert adder.maxhp == 36
+        assert adder.damage == 22
         assert adder.resistance_base["earth"] == 0.8
         assert adder.resistance_base["crushing"] == 1.2
         assert adder.resistance_base["slashing"] == 1.1
