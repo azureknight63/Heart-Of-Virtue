@@ -118,7 +118,7 @@ def parse_type_hint(annotation):
             # Try to import from src modules
             for module_name in ["items", "objects", "npc", "events"]:
                 try:
-                    module = importlib.import_module(f"{module_name}")
+                    module = importlib.import_module(module_name)
                     if hasattr(module, annotation):
                         return getattr(module, annotation), False, False
                 except ImportError:
@@ -170,7 +170,7 @@ def get_class_hierarchy(base_class, module_names=None):
     # Search through specified modules
     for module_name in module_names:
         try:
-            module = importlib.import_module(f"{module_name}")
+            module = importlib.import_module(module_name)
             for attr_name in dir(module):
                 attr = getattr(module, attr_name)
                 if (
@@ -3172,7 +3172,7 @@ def edit_element(dialog_object: tk.Toplevel, inst, lst: List, frame: TagListFram
         if updated_inst is None:  # Delete
             remove_element(updated_inst, this_lst, this_frame)
         else:
-            refresh_tags(this_lst, frame)
+            refresh_tags(this_lst, this_frame)
 
     open_property_dialog(
         dialog_object,
@@ -3885,8 +3885,6 @@ def open_property_dialog(
                 if raw == "":
                     continue
                 try:
-                    import ast as _ast
-
                     if meta.get("is_merchant"):
                         # The combobox value is the merchant's name; store the
                         # name (not the resolved instance) so it matches what
@@ -3894,7 +3892,7 @@ def open_property_dialog(
                         # unchanged-field diffing in auto_save() works.
                         kwargs[field_name] = raw
                     else:
-                        kwargs[field_name] = _ast.literal_eval(raw)
+                        kwargs[field_name] = ast.literal_eval(raw)
                 except Exception:
                     kwargs[field_name] = raw
         return kwargs
@@ -4446,7 +4444,6 @@ def open_property_dialog(
                         else None
                     )
                     current_value = [val] if val is not None else []
-                auto_save = auto_save  # capture in closure
                 field_type = "list" if is_list else "single"
 
                 # Initialize tags for any objects already present by default
@@ -4572,13 +4569,11 @@ def open_property_dialog(
                     if raw == "":
                         continue
                     try:
-                        import ast as _ast
-
                         # Special handling for merchant combobox
                         if meta.get("is_merchant"):
                             kwargs[name] = all_merchants.get(raw)
                         else:
-                            kwargs[name] = _ast.literal_eval(raw)
+                            kwargs[name] = ast.literal_eval(raw)
                     except Exception:
                         kwargs[name] = raw
 
