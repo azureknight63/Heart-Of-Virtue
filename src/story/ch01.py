@@ -894,7 +894,8 @@ class AfterGorranIntro(Event):
             if gorran.name == "Gorran":
                 self.player.combat_list_allies.append(gorran)
                 gorran.friend = True
-                gorran.sync_level(getattr(self.player, "level", 1))
+                if hasattr(gorran, "sync_level"):
+                    gorran.sync_level(getattr(self.player, "level", 1))
                 # Reset moves if joining mid-combat
                 if self.player.in_combat:
                     gorran.reset_combat_moves()

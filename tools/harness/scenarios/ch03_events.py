@@ -214,7 +214,7 @@ class Ch03EventsScenario(Scenario):
         bug = check(resp, "MaraObservationEvent trigger")
         if bug:
             bugs.append(bug)
-        check_flag("nomad_camp_reached", "MaraObservationEvent (beta arc completion gate)")
+        check_flag("nomad_ferry_ready", "MaraObservationEvent (beta arc completion gate)")
 
         # ==================================================================
         # Revisit check — one-shot camp events should not re-fire once their

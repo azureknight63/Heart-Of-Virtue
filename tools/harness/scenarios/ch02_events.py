@@ -270,18 +270,18 @@ class Ch02EventsScenario(Scenario):
         check_flag("king_slime_defeated", "AfterDefeatingKingSlime")
 
         fragment = next(
-            (i for i in tile.items_here if i.__class__.__name__ == "MineralFragment"),
+            (i for i in player.inventory if i.__class__.__name__ == "MineralFragment"),
             None,
         )
         if fragment is None:
             bugs.append(self._bug(
-                title="AfterDefeatingKingSlime did not spawn a MineralFragment",
+                title="AfterDefeatingKingSlime did not grant a MineralFragment to inventory",
                 severity=BugSeverity.MEDIUM,
                 category=BugCategory.WRONG_RESPONSE,
                 endpoint="/api/world/events",
                 method="POST",
-                expected="A MineralFragment item is present on the arena tile",
-                actual=f"tile.items_here = {[type(i).__name__ for i in tile.items_here]}",
+                expected="A MineralFragment item is present in player inventory",
+                actual=f"player.inventory fragments = {[type(i).__name__ for i in player.inventory if 'fragment' in type(i).__name__.lower()]}",
             ))
 
         # ==================================================================
