@@ -8,7 +8,7 @@ import src.functions as functions  # noqa: F401
 import src.items as items  # noqa: F401
 import src.positions as positions  # noqa: F401
 from src.animations import animate_to_main_screen as animate  # noqa: F401
-from ._base import Move, _apply_haunting_presence  # noqa: F401
+from ._base import Move, _apply_to_hit_modifiers  # noqa: F401
 
 
 class NpcAttack(Move):  # basic attack function, NPCs only
@@ -159,8 +159,8 @@ class NpcAttack(Move):  # basic attack function, NPCs only
                 hit_chance = 1
         else:
             hit_chance = -1
-        # HauntingPresence passive: defender's unsettling aura rattles close-range attackers (issue #421).
-        hit_chance = _apply_haunting_presence(self.user, self.target, hit_chance)
+        # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
+        hit_chance = _apply_to_hit_modifiers(self.user, self.target, hit_chance)
         roll = random.randint(0, 100)
         damage = self.power - self.target.protection
         if damage <= 0:
@@ -509,8 +509,8 @@ class GorranClub(Move):  # Gorran's special club attack! Massive damage, long re
                 hit_chance = 1
         else:
             hit_chance = -1
-        # HauntingPresence passive: defender's unsettling aura rattles close-range attackers (issue #421).
-        hit_chance = _apply_haunting_presence(self.user, self.target, hit_chance)
+        # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
+        hit_chance = _apply_to_hit_modifiers(self.user, self.target, hit_chance)
         roll = random.randint(0, 100)
         damage = self.power - self.target.protection
         if damage <= 0:
@@ -654,8 +654,8 @@ class VenomClaw(Move):  # Poisonous attack
                 hit_chance = 1
         else:
             hit_chance = -1
-        # HauntingPresence passive: defender's unsettling aura rattles close-range attackers (issue #421).
-        hit_chance = _apply_haunting_presence(self.user, self.target, hit_chance)
+        # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
+        hit_chance = _apply_to_hit_modifiers(self.user, self.target, hit_chance)
         roll = random.randint(0, 100)
         damage = self.power - self.target.protection
         if damage <= 0:
@@ -801,8 +801,8 @@ class SpiderBite(Move):  # Poisonous attack
                 hit_chance = 1
         else:
             hit_chance = -1
-        # HauntingPresence passive: defender's unsettling aura rattles close-range attackers (issue #421).
-        hit_chance = _apply_haunting_presence(self.user, self.target, hit_chance)
+        # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
+        hit_chance = _apply_to_hit_modifiers(self.user, self.target, hit_chance)
         roll = random.randint(0, 100)
         damage = self.power - self.target.protection
         if damage <= 0:
@@ -948,8 +948,8 @@ class BatBite(Move):  # Vampiric / life-draining bite for bat-type NPCs
                 hit_chance = 1
         else:
             hit_chance = -1
-        # HauntingPresence passive: defender's unsettling aura rattles close-range attackers (issue #421).
-        hit_chance = _apply_haunting_presence(self.user, self.target, hit_chance)
+        # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
+        hit_chance = _apply_to_hit_modifiers(self.user, self.target, hit_chance)
         roll = random.randint(0, 100)
         damage = self.power - self.target.protection
         if damage <= 0:
@@ -1015,8 +1015,8 @@ class MineralSpit(NpcAttack):
                 hit_chance = 1
         else:
             hit_chance = -1
-        # HauntingPresence passive: defender's unsettling aura rattles close-range attackers (issue #421).
-        hit_chance = _apply_haunting_presence(self.user, self.target, hit_chance)
+        # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
+        hit_chance = _apply_to_hit_modifiers(self.user, self.target, hit_chance)
         roll = random.randint(0, 100)
         damage = max(0, int(self.power * 0.4) - self.target.protection)
         if hit_chance >= roll and hit_chance - roll < 10:
@@ -1078,8 +1078,8 @@ class SoulDrain(NpcAttack):
                 hit_chance = 1
         else:
             hit_chance = -1
-        # HauntingPresence passive: defender's unsettling aura rattles close-range attackers (issue #421).
-        hit_chance = _apply_haunting_presence(self.user, self.target, hit_chance)
+        # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
+        hit_chance = _apply_to_hit_modifiers(self.user, self.target, hit_chance)
         roll = random.randint(0, 100)
         damage = max(0, int(self.power * 0.6) - self.target.protection)
         if hit_chance >= roll and hit_chance - roll < 10:
@@ -1142,8 +1142,8 @@ class KeeningToll(NpcAttack):
                 hit_chance = 1
         else:
             hit_chance = -1
-        # HauntingPresence passive: defender's unsettling aura rattles close-range attackers (issue #421).
-        hit_chance = _apply_haunting_presence(self.user, self.target, hit_chance)
+        # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
+        hit_chance = _apply_to_hit_modifiers(self.user, self.target, hit_chance)
         roll = random.randint(0, 100)
         drain = max(1, int(self.power * 0.5))
         if hit_chance >= roll:
@@ -1210,8 +1210,8 @@ class WailStrike(TelegraphedSurge):
                 hit_chance = 1
         else:
             hit_chance = -1
-        # HauntingPresence passive: defender's unsettling aura rattles close-range attackers (issue #421).
-        hit_chance = _apply_haunting_presence(self.user, self.target, hit_chance)
+        # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
+        hit_chance = _apply_to_hit_modifiers(self.user, self.target, hit_chance)
         roll = random.randint(0, 100)
         damage = max(0, int(self.power * 0.7))  # ignores protection (sonic)
         if hit_chance >= roll and hit_chance - roll < 10:
@@ -1290,8 +1290,8 @@ class DeathKnell(NpcAttack):
                 hit_chance = 1
         else:
             hit_chance = -1
-        # HauntingPresence passive: defender's unsettling aura rattles close-range attackers (issue #421).
-        hit_chance = _apply_haunting_presence(self.user, self.target, hit_chance)
+        # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
+        hit_chance = _apply_to_hit_modifiers(self.user, self.target, hit_chance)
         roll = random.randint(0, 100)
         if hit_chance >= roll:
             if functions.check_parry(self.target):
@@ -1418,8 +1418,8 @@ class SeismicSlam(Move):
                 hit_chance = max(
                     5, int(85 - enemy.finesse + (self.user.finesse * 0.7))
                 )
-                # HauntingPresence passive: defender's unsettling aura rattles close-range attackers (issue #421).
-                hit_chance = _apply_haunting_presence(self.user, enemy, hit_chance)
+                # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
+                hit_chance = _apply_to_hit_modifiers(self.user, enemy, hit_chance)
                 if random.randint(0, 100) <= hit_chance:
                     self.target = enemy
                     self.prep_colors()
@@ -1672,8 +1672,8 @@ class TwinFangs(Move):
         hit_chance = max(
             5, int(90 - target.finesse + (self.user.finesse * 0.8))
         )
-        # HauntingPresence passive: defender's unsettling aura rattles close-range attackers (issue #421).
-        hit_chance = _apply_haunting_presence(self.user, target, hit_chance)
+        # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
+        hit_chance = _apply_to_hit_modifiers(self.user, target, hit_chance)
         roll = random.randint(0, 100)
         # Route damage through the shared Move.hit()/miss()/parry() pipeline
         # (issue #351) instead of raw HP subtraction, so damage sanitization,

@@ -36,13 +36,6 @@ try:
     resp = client.get('/api/info')
     print(f"[PASS] GET    /api/info                   [{resp.status_code}] API info available")
 
-    resp = client.get('/api/openapi.json')
-    schema = resp.get_json()
-    print(f"[PASS] GET    /api/openapi.json           [{resp.status_code}] OpenAPI {schema.get('openapi')}")
-
-    resp = client.get('/api/docs')
-    print(f"[PASS] GET    /api/docs                   [{resp.status_code}] Swagger UI available")
-
     print()
 
     # 2. Test authentication endpoints
@@ -203,8 +196,6 @@ try:
 [PASS] System:
    [PASS] Health check endpoint: Working
    [PASS] API info endpoint: Working
-   [PASS] OpenAPI schema: Available (3.0.3)
-   [PASS] Swagger UI: Accessible at /api/docs
 
 [PASS] Authentication:
    [PASS] Login: Working

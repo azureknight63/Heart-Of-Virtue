@@ -30,7 +30,7 @@ src/
 │   ├── serializers/        # Entity → JSON serialization
 │   ├── handlers/           # Error/event handlers
 │   ├── middleware/         # Auth middleware
-│   └── schemas/            # OpenAPI definitions
+│   └── schemas/            # Shared schema definitions (combat beat streaming)
 ├── combat.py               # Core turn-based combat engine
 ├── combatant.py            # Base class for Player + NPC (shared resistance/state logic)
 ├── moves/                  # Combat abilities/moves — package (was moves.py, ~252KB)

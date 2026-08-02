@@ -12,7 +12,7 @@ from ._base import (
     Move,
     PassiveMove,
     _ensure_weapon_exp,
-    _apply_haunting_presence,
+    _apply_to_hit_modifiers,
 )  # noqa: F401
 
 
@@ -209,8 +209,8 @@ class WhirlAttack(Move):
                         damage = max(0, damage)
 
                         hit_chance = int(85 - enemy.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3))
-                        # HauntingPresence passive: defender's unsettling aura rattles close-range attackers (issue #421).
-                        hit_chance = _apply_haunting_presence(self.user, enemy, hit_chance)
+                        # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
+                        hit_chance = _apply_to_hit_modifiers(self.user, enemy, hit_chance)
                         roll = random.randint(0, 100)
                         glance = False
                         if hit_chance >= roll and hit_chance - roll < 10:
@@ -342,8 +342,8 @@ class VertigoSpin(Move):
         damage = max(0, damage)
 
         hit_chance = int(85 - self.target.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3))
-        # HauntingPresence passive: defender's unsettling aura rattles close-range attackers (issue #421).
-        hit_chance = _apply_haunting_presence(self.user, self.target, hit_chance)
+        # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
+        hit_chance = _apply_to_hit_modifiers(self.user, self.target, hit_chance)
         roll = random.randint(0, 100)
         glance = False
         if hit_chance >= roll and hit_chance - roll < 10:
@@ -548,8 +548,8 @@ class DisarmingSlash(Move):
             hit_chance = max(5, int(98 - self.target.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3)))
         else:
             hit_chance = -1
-        # HauntingPresence passive: defender's unsettling aura rattles close-range attackers (issue #421).
-        hit_chance = _apply_haunting_presence(self.user, self.target, hit_chance)
+        # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
+        hit_chance = _apply_to_hit_modifiers(self.user, self.target, hit_chance)
 
         roll = random.randint(0, 100)
         damage = (
@@ -692,8 +692,8 @@ class Riposte(Move):
             hit_chance = max(5, int(98 - self.target.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3)))
         else:
             hit_chance = -1
-        # HauntingPresence passive: defender's unsettling aura rattles close-range attackers (issue #421).
-        hit_chance = _apply_haunting_presence(self.user, self.target, hit_chance)
+        # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
+        hit_chance = _apply_to_hit_modifiers(self.user, self.target, hit_chance)
 
         roll = random.randint(0, 100)
 

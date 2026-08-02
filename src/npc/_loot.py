@@ -42,10 +42,25 @@ class NPCLootMixin:
         if self.loot:
             self.roll_loot()  # checks to see if an item will drop
         self.drop_inventory()
+        self.drop_embedded_arrows()
         # Stack items on the floor immediately after dropping them to prevent duplicates
         if self.current_room and hasattr(self.current_room, "items_here"):
             functions.stack_items_list(self.current_room.items_here)
         return True
+
+    def drop_embedded_arrows(self):
+        """Arrows that hit and stuck in this NPC are 100% recoverable from the
+        corpse (issue #418) — unlike drop_inventory()'s randomized survival
+        chance, every embedded arrow spawns. Visible immediately (not hidden),
+        since an arrow sticking out of a corpse isn't concealed the way
+        scattered inventory contents are.
+        """
+        embedded = getattr(self, "embedded_arrows", None)
+        if not embedded or self.current_room is None:
+            return
+        for arrow_class_name in embedded:
+            self.current_room.spawn_item(arrow_class_name)
+        self.embedded_arrows = []
 
     def drop_inventory(self):
         if len(self.inventory) > 0 and self.current_room is None:

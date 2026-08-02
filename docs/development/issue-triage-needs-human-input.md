@@ -6,8 +6,8 @@ that an agent shouldn't invent. Everything else was dispatched to fix agents.
 
 Grouped by the kind of decision needed.
 
-**Status:** 51 issues have since been verified and closed (47 in the first pass, plus
-#373–#376). **26 remain below.** A decision question has been posted as a comment on each
+**Status:** 52 issues have since been verified and closed (47 in the first pass, plus
+#373–#376, plus #435). **25 remain below.** A decision question has been posted as a comment on each
 one, so the specific blocking choice is recorded on the issue itself.
 
 **Removed from this list:** #433 (dead-serializer surface) was listed here in error — the
@@ -136,12 +136,6 @@ The facing/angle system wires only `get_damage_modifier` into moves; the accurac
 inert despite docstrings claiming attack angle affects accuracy. Wiring it in changes
 hit rates across the board. (The unambiguous half — deleting dead `distance_squared` — is
 already dispatched.) **Decision: wire it in, or delete it?**
-
-### #435 — OpenAPI schema is comprehensively out of sync
-Every documented path 404s (missing `/api` prefix), `/auth/login` bears no resemblance to
-reality, and the shared `Player` schema documents a **mana system that doesn't exist**.
-Approach decision: hand-correct it, or generate it programmatically from the registered
-blueprints so it can't drift again? The second is more work now and permanent after.
 
 ### #437 — Most registered API error handlers are unreachable
 Routes build JSON errors inline; the 400/401/403/422/429/503 handlers never fire, and the

@@ -8,8 +8,6 @@ Tests:
 - CORS preflight OPTIONS handling
 - Health endpoint
 - API info endpoint
-- OpenAPI schema endpoint
-- Swagger UI endpoint
 - Debug routes endpoint
 - Test-only session/heal endpoints (TESTING=True)
 - CONFIG_FILE parsing (valid, missing, malformed)
@@ -167,12 +165,6 @@ class TestBlueprintRegistration:
     def test_api_info_route_registered(self):
         assert "/api/info" in self._all_rules()
 
-    def test_openapi_schema_route_registered(self):
-        assert "/api/openapi.json" in self._all_rules()
-
-    def test_swagger_ui_route_registered(self):
-        assert "/api/docs" in self._all_rules()
-
     def test_debug_routes_route_registered(self):
         assert "/api/debug/routes" in self._all_rules()
 
@@ -235,22 +227,6 @@ class TestBuiltinEndpoints:
         resp = self.client.get("/api/info")
         data = json.loads(resp.data)
         assert data.get("name") == "Heart of Virtue API"
-
-    def test_openapi_schema_returns_200(self):
-        with patch(
-            "src.api.schemas.openapi.generate_openapi_schema",
-            return_value={"openapi": "3.0.0"},
-        ):
-            resp = self.client.get("/api/openapi.json")
-        assert resp.status_code == 200
-
-    def test_swagger_ui_returns_html(self):
-        with patch(
-            "src.api.schemas.openapi.generate_swagger_ui_html",
-            return_value="<html></html>",
-        ):
-            resp = self.client.get("/api/docs")
-        assert resp.status_code == 200
 
     def test_debug_routes_returns_200(self):
         resp = self.client.get("/api/debug/routes")

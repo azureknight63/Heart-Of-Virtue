@@ -301,6 +301,77 @@ class TestHauntingPresence:
 
 
 # ---------------------------------------------------------------------------
+# Facing/angle accuracy (issue #394)
+# ---------------------------------------------------------------------------
+
+
+class TestFacingAccuracy:
+    def test_rear_attack_raises_hit_chance_for_pommel_strike(self, monkeypatch):
+        """Issue #394: get_accuracy_modifier is wired into the shared
+        standard_execute_attack pipeline, universally like #421's fix."""
+        from src.positions import CombatPosition, Direction
+
+        user = _make_user("Sword")
+        user.combat_position = CombatPosition(x=10, y=10)
+        tgt = _make_target()
+        # Same geometry as positions.py's own angle_to_target tests: attack
+        # angle ~= 0; facing S (180) -> diff=180 -> rear -> 1.30x accuracy.
+        tgt.combat_position = CombatPosition(x=10, y=50, facing=Direction.S)
+
+        move = PommelStrike(user)
+        move.target = tgt
+        move.power = 30
+        move.base_damage_type = "crushing"
+
+        # hit_chance without the bonus is 108; the 1.30x rear bonus would be
+        # 140 but clamps to 100, beating a roll of 100.
+        monkeypatch.setattr(random, "randint", lambda a, b: 100)
+        monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
+
+        with patch("src.moves._sword.functions.check_parry", return_value=False), \
+             patch.object(move, "hit") as mock_hit, \
+             patch.object(move, "miss") as mock_miss, \
+             patch.object(move, "viable", return_value=True), \
+             patch("src.moves._sword.cprint"), \
+             patch("src.moves._sword.narrate"):
+            move.execute(user)
+
+        mock_hit.assert_called_once()
+        mock_miss.assert_not_called()
+
+    def test_front_attack_lowers_hit_chance_for_feint_and_pivot(self, monkeypatch):
+        """Issue #394 closure sweep: hand-rolled attacks (the same family
+        fixed for HauntingPresence in #421) get the modifier too."""
+        from src.moves._dagger import FeintAndPivot
+        from src.positions import CombatPosition, Direction
+
+        user = _make_user("Dagger")
+        user.combat_position = CombatPosition(x=10, y=10)
+        tgt = _make_target()
+        # Facing N (0) -> diff=0 -> front quarter -> 0.95x accuracy.
+        tgt.combat_position = CombatPosition(x=10, y=50, facing=Direction.N)
+
+        move = FeintAndPivot(user)
+        move.target = tgt
+        move.power = 30
+        move.base_damage_type = "slashing"
+
+        # FeintAndPivot's base hit_chance here is 100 (90 - 0 + 7 + 3); the
+        # 0.95x front penalty drops it to 95, below a roll of 96.
+        monkeypatch.setattr(random, "randint", lambda a, b: 96)
+        monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
+
+        with patch("src.moves._dagger.functions.check_parry", return_value=False), \
+             patch.object(move, "hit") as mock_hit, \
+             patch.object(move, "miss") as mock_miss, \
+             patch("src.moves._dagger.cprint"):
+            move.execute(user)
+
+        mock_miss.assert_called_once()
+        mock_hit.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
 # SentinelsVigil
 # ---------------------------------------------------------------------------
 

@@ -241,8 +241,8 @@ class TestUniverseLoadSingleJsonMapEdgeCases:
 class TestUniverseBuildWithConfig:
     """Lines 62-64, 76-83: build() initializes configs and handles starting map."""
 
-    def test_build_initializes_scenario_config(self):
-        """Lines 62-64: build() initializes scenario_config when game_config present."""
+    def test_build_initializes_coordinate_config(self):
+        """Lines 62-64: build() initializes coordinate_config when game_config present."""
         from src.universe import Universe
 
         p = _player()
@@ -258,7 +258,6 @@ class TestUniverseBuildWithConfig:
         with patch.object(u, "_load_all_json_maps"):
             u.build(p)
 
-        assert u.scenario_config is not None
         assert u.coordinate_config is not None
 
     def test_build_detects_starting_map(self):

@@ -100,6 +100,37 @@ def _apply_blade_mastery_discount(user, fatigue_cost, floor_fatigue=10):
     return fatigue_cost
 
 
+def _apply_facing_accuracy(attacker, defender, hit_chance):
+    """Facing/angle system: attacks landing on a defender's flank or rear are
+    harder to defend against than a head-on attack (issue #394).
+
+    Mirrors positions.get_damage_modifier (already wired into Backstab's
+    damage) on the accuracy side, applied universally so it isn't limited to
+    whichever moves happen to consult it directly — the same partial-
+    enforcement trap #421 fixed for HauntingPresence. No-op (returns
+    hit_chance unchanged) unless both combatants have a resolved
+    combat_position — i.e. the 2D coordinate combat system is active.
+
+    Requires hit_chance > 0: a non-positive value is either an auto-miss
+    sentinel (-1, out of range) or already zeroed, and must be left alone —
+    Python's int() truncates toward zero, so int(-1 * 0.95) is 0, not -1,
+    which would turn a guaranteed miss into a chance to hit. The result is
+    capped at 100 since the multiplier can exceed 1.0 (rear attacks).
+    """
+    if hit_chance <= 0:
+        return hit_chance
+    try:
+        attacker_pos = getattr(attacker, "combat_position", None)
+        defender_pos = getattr(defender, "combat_position", None)
+        if attacker_pos is None or defender_pos is None:
+            return hit_chance
+        attack_angle = positions.angle_to_target(attacker_pos, defender_pos)
+        angle_diff = positions.attack_angle_difference(attack_angle, defender_pos.facing)
+        return min(100, int(hit_chance * positions.get_accuracy_modifier(angle_diff)))
+    except Exception:
+        return hit_chance
+
+
 def _apply_haunting_presence(attacker, defender, hit_chance):
     """HauntingPresence passive: defender's unsettling aura rattles close-range attackers.
 
@@ -118,6 +149,21 @@ def _apply_haunting_presence(attacker, defender, hit_chance):
         and defender.combat_proximity.get(attacker, 9999) <= 3
     ):
         hit_chance = int(hit_chance * 0.85)
+    return hit_chance
+
+
+def _apply_to_hit_modifiers(attacker, defender, hit_chance):
+    """Apply the shared universal to-hit modifiers, in order: facing/angle
+    accuracy (#394), then HauntingPresence (#421).
+
+    Every attack in the moves package funnels through this single call
+    instead of each hand-rolling the same two-call sequence — the exact
+    duplication #464 was filed over. Adding a future universal to-hit
+    modifier is a one-file change here instead of another sweep across every
+    attack path.
+    """
+    hit_chance = _apply_facing_accuracy(attacker, defender, hit_chance)
+    hit_chance = _apply_haunting_presence(attacker, defender, hit_chance)
     return hit_chance
 
 
@@ -296,6 +342,20 @@ class Move:  # master class for all moves
 
     def advance(self, user):
         self.user = user  # Ensure user is always current
+        if self.interrupted:
+            # WarCry-style interrupt (issue #417): abort immediately, skipping
+            # whatever prep/execute progress was made, straight to cooldown.
+            # Mirrors the stage-3 transition below (current_stage > 0 keeps
+            # advance() ticking this move's cooldown down on future beats even
+            # after user.current_move is cleared) so the interrupted actor
+            # still pays the move's normal cooldown before acting again.
+            self.interrupted = False
+            self.current_stage = 3
+            self.beats_left = self.stage_beat[3]
+            if user.current_move == self:
+                user.current_move = None
+            self.initialized = False
+            return
         self.evaluate()
         if (
             user.current_move == self or self.current_stage > 0
@@ -640,8 +700,8 @@ class Move:  # master class for all moves
                 -1
             )  # if attacking is no longer viable (enemy is out of range), then auto miss
 
-        # HauntingPresence passive: defender's unsettling aura rattles close-range attackers
-        hit_chance = _apply_haunting_presence(self.user, self.target, hit_chance)
+        # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
+        hit_chance = _apply_to_hit_modifiers(self.user, self.target, hit_chance)
 
         roll = random.randint(0, 100)
         damage = (

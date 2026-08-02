@@ -13,7 +13,7 @@ from ._base import (
     PassiveMove,
     _ensure_weapon_exp,
     _apply_work_the_gap,
-    _apply_haunting_presence,
+    _apply_to_hit_modifiers,
 )  # noqa: F401
 
 
@@ -105,8 +105,8 @@ class ChipAway(Move):
             if self.viable()
             else -1
         )
-        # HauntingPresence passive: defender's unsettling aura rattles close-range attackers (issue #421).
-        hit_chance = _apply_haunting_presence(self.user, self.target, hit_chance)
+        # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
+        hit_chance = _apply_to_hit_modifiers(self.user, self.target, hit_chance)
         sub_power = max(1, int(self.power * 0.4))
         total_hits = 0
 
@@ -230,8 +230,8 @@ class ExploitWeakness(Move):
             hit_chance = max(5, int(98 - self.target.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3)))
         else:
             hit_chance = -1
-        # HauntingPresence passive: defender's unsettling aura rattles close-range attackers (issue #421).
-        hit_chance = _apply_haunting_presence(self.user, self.target, hit_chance)
+        # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
+        hit_chance = _apply_to_hit_modifiers(self.user, self.target, hit_chance)
 
         roll = random.randint(0, 100)
         damage = (
@@ -365,8 +365,8 @@ class Stupefy(Move):
             hit_chance = max(5, int(98 - self.target.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3)))
         else:
             hit_chance = -1
-        # HauntingPresence passive: defender's unsettling aura rattles close-range attackers (issue #421).
-        hit_chance = _apply_haunting_presence(self.user, self.target, hit_chance)
+        # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
+        hit_chance = _apply_to_hit_modifiers(self.user, self.target, hit_chance)
 
         roll = random.randint(0, 100)
         damage = (

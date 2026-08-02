@@ -388,6 +388,21 @@ class TestMovePlayerEventCascade:
         # game_tick_events should be called (map-entry spawners)
         mock_player.universe.game_tick_events.assert_called()
 
+    def test_move_player_fires_gorran_explore_flavor(self, game_service, mock_player, mock_adjacent_tiles):
+        """Issue #367: maybe_explore_flavor fires on genuine movement beats,
+        mirroring the existing _recover_npc_loquacity hook right next to it."""
+        def get_tile_side_effect(x, y):
+            if (x, y) == (5, 4):
+                return mock_adjacent_tiles[(5, 4)]
+            return mock_player.current_room
+
+        mock_player.universe.get_tile = MagicMock(side_effect=get_tile_side_effect)
+
+        with patch("src.api.services.game_service.gorran_flavor.maybe_explore_flavor") as mock_flavor:
+            game_service.move_player(mock_player, "north", {})
+
+        mock_flavor.assert_called_once_with(mock_player)
+
 
 # ====================== COMBAT TESTS ======================
 

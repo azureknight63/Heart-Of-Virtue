@@ -126,11 +126,11 @@ def test_float_fields_never_non_finite(tmp_path, value):
     path = tmp_path / "f.ini"
     path.write_text(
         f"[game]\nanimation_speed = {value}\n"
-        f"[combat_testing]\ndifficulty_scaling = {value}\n"
+        f"[combat_testing]\nnpc_decision_delay = {value}\n"
     )
     cfg = ConfigManager(str(path)).load()
     assert math.isfinite(cfg.animation_speed)
-    assert math.isfinite(cfg.difficulty_scaling)
+    assert math.isfinite(cfg.npc_decision_delay)
 
 
 def test_duplicate_keys_and_sections_do_not_crash(tmp_path):

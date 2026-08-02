@@ -2,12 +2,12 @@ __author__ = "Alex Egbert"
 
 import src.functions as functions
 import src.secure_pickle as secure_pickle
+import src.map_placeholders as map_placeholders
 import json
 import inspect
 import importlib
 from pathlib import Path
 from typing import Final
-from src.scenario_config import ScenarioConfig
 from src.coordinate_config import CoordinateSystemConfig
 from src.narration import narrate
 
@@ -50,7 +50,6 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
         self.locked_chests = []
         self.testing_mode = False  # test mode flag from config
         self.game_config = None  # full GameConfig object for access to all settings
-        self.scenario_config = None  # ScenarioConfig for combat scenario management
         self.coordinate_config = None  # CoordinateSystemConfig for grid positioning
 
     def get_tile(self, x, y):
@@ -67,7 +66,6 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
 
         # Initialize config systems if player has game_config
         if hasattr(player, "game_config") and player.game_config:
-            self.scenario_config = ScenarioConfig(player)
             self.coordinate_config = CoordinateSystemConfig(player)
 
         if player.saveuniv is not None and player.savestat is not None:
@@ -121,13 +119,33 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
             return False
         return secure_pickle._is_allowed(mod_name, cls_name)
 
-    def _deserialize_saved_instance(self, payload, _depth=0):
-        """Deserialize an instance saved by map_generator (class+module+props). Returns object or None."""
+    def _deserialize_saved_instance(self, payload, _depth=0, tile=None):
+        """Deserialize an instance saved by map_generator (class+module+props,
+        or the newer authored-placeholder class+params shape). Returns object
+        or None.
+        """
         # Depth-bound the recursion so a nested/cyclic-looking props graph in a
         # hostile map cannot overflow the Python stack (returns None instead).
         if _depth > MAX_DESERIALIZE_DEPTH:
             narrate("ERROR: map deserialization exceeded maximum nesting depth")
             return None
+
+        # Issue #463: authored-placeholder shape ({"class": ..., "params":
+        # ...}) is tried first -- it's structurally distinct from both the
+        # legacy full-dump shape and the bare class-type marker below, so
+        # detection can't collide. Injecting player/tile here (rather than
+        # the post-hoc setattr dance legacy dicts need below) means classes
+        # with mandatory, no-default tile/player constructor args (Crate,
+        # Shelf, GeminateGeode, ...) construct correctly on the first try.
+        if map_placeholders.is_placeholder_payload(payload):
+            try:
+                return map_placeholders.instantiate_placeholder(
+                    payload, player=self.player, tile=tile, _depth=_depth
+                )
+            except map_placeholders.PlaceholderError as e:
+                narrate(f"ERROR: Failed to deserialize placeholder: {e}")
+                return None
+
         # Recursively deserialize nested objects in props, events, etc.
         # Support class-type markers emitted by the map editor (e.g. {'__class_type__': 'items:Item'})
         if isinstance(payload, dict) and "__class_type__" in payload:
@@ -181,7 +199,11 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
             if depth > MAX_DESERIALIZE_DEPTH:
                 return None
             if isinstance(value, dict):
-                if "__class__" in value and "__module__" in value:
+                if map_placeholders.is_placeholder_payload(value):
+                    return self._deserialize_saved_instance(
+                        value, _depth=depth + 1, tile=tile
+                    )
+                elif "__class__" in value and "__module__" in value:
                     return self._deserialize_saved_instance(value, _depth=depth + 1)
                 elif "__class_type__" in value:
                     return self._deserialize_saved_instance(value, _depth=depth + 1)
@@ -328,7 +350,7 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
                 tile_instance.bgm = tile_data["bgm"]
             # events
             for ev_payload in tile_data.get("events", []):
-                inst = self._deserialize_saved_instance(ev_payload)
+                inst = self._deserialize_saved_instance(ev_payload, tile=tile_instance)
                 if inst:
                     try:
                         # Robust handling for events whose __init__ could not be executed (missing required args like 'tile').
@@ -378,7 +400,7 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
                         pass
             # items
             for it_payload in tile_data.get("items", []):
-                inst = self._deserialize_saved_instance(it_payload)
+                inst = self._deserialize_saved_instance(it_payload, tile=tile_instance)
                 if inst:
                     if hasattr(inst, "player"):
                         inst.player = player
@@ -394,7 +416,7 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
                     tile_instance.items_here.append(inst)
             # npcs
             for npc_payload in tile_data.get("npcs", []):
-                inst = self._deserialize_saved_instance(npc_payload)
+                inst = self._deserialize_saved_instance(npc_payload, tile=tile_instance)
                 if inst:
                     if hasattr(inst, "player"):
                         inst.player = player
@@ -417,7 +439,7 @@ class Universe:  # "globals" for the game state can be stored here, as well as a
                     tile_instance.npcs_here.append(inst)
             # objects
             for obj_payload in tile_data.get("objects", []):
-                inst = self._deserialize_saved_instance(obj_payload)
+                inst = self._deserialize_saved_instance(obj_payload, tile=tile_instance)
                 if inst:
                     if hasattr(inst, "player"):
                         inst.player = player

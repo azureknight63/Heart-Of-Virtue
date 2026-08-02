@@ -38,6 +38,29 @@ _HUMAN_NPC_DIR = Path(__file__).resolve().parent.parent.parent / "ai" / "npc" / 
 
 
 class Merchant(NPC, MerchantShopMixin):
+    # Issue #463: adds the shop-specific authored surface on top of NPC's
+    # base set. The *starting* inventory is authored but always superseded by
+    # the next update_goods() restock, matching existing shop behavior.
+    # Every field is declared in BOTH buckets: the base `Merchant` class
+    # itself accepts them as real constructor kwargs (routes via params),
+    # but every concrete merchant subclass shipped today (MiloCurioDealer,
+    # JamboHealsU, Kaelen, Vespera) has its own zero-arg __init__ that
+    # hardcodes these internally rather than forwarding them -- for those,
+    # only the override bucket (post-construction setattr, which doesn't
+    # care about the constructor's own signature) can reach the field.
+    # shop_name/buy_modifier/sell_modifier are plain attributes set by
+    # initialize_shop() (see _shop.py), never constructor kwargs at all, so
+    # they're override-only.
+    MAP_AUTHORED_PARAMS = {
+        "stock_count", "specialties", "enchantment_rate", "always_stock",
+        "base_gold", "inventory",
+    }
+    MAP_AUTHORED_OVERRIDES = {
+        "shop_name", "buy_modifier", "sell_modifier",
+        "stock_count", "specialties", "enchantment_rate", "always_stock",
+        "base_gold", "inventory",
+    }
+
     def __init__(
         self,
         name: str,

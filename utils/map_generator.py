@@ -37,6 +37,13 @@ if src_root not in sys.path:
 from events import Event  # type: ignore
 from npc import Merchant  # type: ignore
 
+# Issue #463: imported canonically (src.*), unlike the two bare imports above
+# -- this module is shared with the game engine's own Universe loader and
+# must resolve to the exact same module object (a bare `import
+# map_placeholders` would create a duplicate with its own class-metadata
+# registry, silently breaking cross-loader consistency).
+import src.map_placeholders as map_placeholders  # type: ignore
+
 
 # Added: custom exception to surface rich context about serialization failures
 class MapSerializationError(Exception):
@@ -442,6 +449,95 @@ def _get_last_map_file():
         return None
 
 
+# Issue #463: attribute names common enough across NPC/Item/Object/Event
+# families that dropping them during Convert Elements is expected and not
+# worth flagging in the review report -- circular backrefs, derived/base
+# stat mirrors, and session-only bookkeeping. Not exhaustive per-class; only
+# used to decide whether a converted element is reported as clean
+# ("converted") or worth a second look ("ambiguous"). It never gates what's
+# actually written to a saved placeholder -- that's governed entirely by
+# each class's own MAP_AUTHORED_PARAMS/MAP_AUTHORED_OVERRIDES declarations.
+_CONVERT_ELEMENTS_EXPECTED_DROPS = frozenset({
+    "tile", "player", "current_room", "player_ref", "target", "owner",
+    "known_moves", "current_move", "states", "in_combat",
+    "combat_proximity", "combat_position", "hp", "fatigue", "ai_config",
+    "shop_conditions", "resistance", "status_resistance",
+    "maxhp_base", "damage_base", "protection_base", "speed_base",
+    "finesse_base", "exp_award_base", "maxfatigue_base", "endurance_base",
+    "strength_base", "charisma_base", "intelligence_base", "faith_base",
+    "keywords", "action_aliases", "interactions", "aliases", "loot",
+    "default_proximity", "can_yield", "pronouns", "isequipped",
+    "equip_states", "add_resistance", "add_status_resistance",
+    "gives_exp", "stack_key", "state", "revealed", "possible_states",
+    "events", "thread", "has_run", "referenceobj", "completed",
+    "api_event_id", "needs_input", "input_type", "input_prompt",
+    "input_options", "description", "presentation", "spawned_npcs",
+    "directions", "available_choices",
+    # Friend/ally progression + tactical config (class-level or runtime, per
+    # the issue #463 audit's NPC bucket findings) -- not per-instance authored.
+    "level", "exp", "knocked_out", "battle_symbol", "bow_range",
+    "dagger_range", "preferred_range", "wisdom",
+})
+
+
+def _dropped_fields_for_conversion(inst):
+    """Return instance attribute names that won't survive Convert Elements
+    for ``inst``, excluding the common runtime/circular names in
+    ``_CONVERT_ELEMENTS_EXPECTED_DROPS`` and any leading-underscore
+    (private/cache) attribute. Used only to flag an element "ambiguous" in
+    the Convert Elements report -- see that constant's docstring.
+    """
+    cls = type(inst)
+    kept = map_placeholders.authored_param_names(cls) | map_placeholders.authored_override_names(cls)
+    dropped = []
+    for name in vars(inst):
+        if name.startswith("_") or name in kept or name in _CONVERT_ELEMENTS_EXPECTED_DROPS:
+            continue
+        dropped.append(name)
+    return sorted(dropped)
+
+
+def compute_convert_elements_report(map_data):
+    """Issue #463: convert every not-yet-placeholder element across the
+    whole map to the authored-placeholder format, in place.
+
+    Tags each converted instance's ``_hov_placeholder_format = True`` so
+    ``save_map``'s ``serialize_instance_for_save`` starts writing the
+    compact shape for it. Nothing here writes to disk -- Convert Elements
+    only changes the in-memory tag; Save Map remains a separate, explicit
+    action, so the user can review this function's report before committing
+    anything (the "whole map, but per-element review" flow).
+
+    Returns a dict with "converted" / "ambiguous" / "skipped" lists of
+    ``(label, detail)`` tuples:
+      - converted: cleanly represented, nothing of note dropped.
+      - ambiguous: converted, but some non-standard attribute was dropped
+        (listed in ``detail``) -- worth a manual look.
+      - skipped: left as legacy shape entirely -- the class has no
+        authored-parameter metadata registered at all yet.
+    """
+    report = {"converted": [], "ambiguous": [], "skipped": []}
+    for pos, tile in map_data.items():
+        for category in ("events", "items", "npcs", "objects"):
+            for inst in tile.get(category, []):
+                if getattr(inst, "_hov_placeholder_format", None) is True:
+                    continue  # already a placeholder; nothing to do
+                label = f"{pos} / {category} / {type(inst).__name__}"
+                cls = type(inst)
+                if not map_placeholders.is_authorable(cls):
+                    report["skipped"].append(
+                        (label, "No authored-parameter metadata registered for this class yet.")
+                    )
+                    continue
+                dropped = _dropped_fields_for_conversion(inst)
+                inst._hov_placeholder_format = True
+                if dropped:
+                    report["ambiguous"].append((label, ", ".join(dropped)))
+                else:
+                    report["converted"].append((label, ""))
+    return report
+
+
 class MapEditor:
     """
     A simple map editor for a text-based adventure game.
@@ -587,6 +683,11 @@ class MapEditor:
         create_button(
             "Save Map",
             lambda: (self.ensure_add_mode_off(), self.save_map()),
+            controls_frame,
+        )
+        create_button(
+            "Convert Elements...",
+            lambda: (self.ensure_add_mode_off(), self.convert_elements()),
             controls_frame,
         )
         create_separator(controls_frame)
@@ -1482,11 +1583,61 @@ class MapEditor:
                     )
                 return {
                     "__class__": inst.__class__.__name__,
-                    "__module__": inst.__class__.__module__,
+                    # Issue #463: strip any "src." prefix before writing.
+                    # load_map() now resolves classes exclusively through
+                    # map_placeholders.resolve_class (canonical-only), so an
+                    # instance reloaded through this editor reports a
+                    # "src."-prefixed __module__ even for legacy-shape
+                    # elements -- writing that verbatim would produce a
+                    # legacy map file Universe's own loader rejects outright
+                    # (it raises on a "src."-prefixed __module__, since
+                    # persisted data must store bare names by contract).
+                    "__module__": map_placeholders.bare_module_name(
+                        inst.__class__.__module__
+                    ),
                     "props": data,
                 }
 
-            serializable_map: Dict[str, Any] = {}
+            def serialize_instance_for_save(inst, *, tile_pos, category, index):
+                """Issue #463: write the compact authored-placeholder shape for
+                any element the editor considers placeholder-eligible, falling
+                back to the legacy full-instance dump above for everything
+                else. Nothing here forces a migration: an element loaded from
+                a legacy map file (see load_map's deserialize_instance) is
+                tagged ``_hov_placeholder_format = False`` and always keeps
+                writing legacy shape until it goes through Convert Elements,
+                even if the class has since gained authored metadata. Newly
+                placed elements (no tag yet) default to placeholder when the
+                class supports it.
+                """
+                use_placeholder = getattr(inst, "_hov_placeholder_format", None)
+                if use_placeholder is not False:
+                    def nested_fallback(value):
+                        return serialize_instance(
+                            value, tile_pos=tile_pos, category=category, index=index
+                        )
+
+                    try:
+                        payload = map_placeholders.to_placeholder(
+                            inst, nested_fallback=nested_fallback
+                        )
+                    except map_placeholders.PlaceholderError as e:
+                        raise MapSerializationError(
+                            tile=tile_pos,
+                            category=category,
+                            index=index,
+                            object_type=type(inst).__name__,
+                            object_repr=repr(inst)[:180],
+                            original=e,
+                            note="Placeholder serialization failure",
+                        )
+                    if payload is not None:
+                        return payload
+                return serialize_instance(
+                    inst, tile_pos=tile_pos, category=category, index=index
+                )
+
+            serializable_map: Dict[str, Any] = {"meta": {"schema_version": map_placeholders.SCHEMA_VERSION}}
             for k, v in self.map_data.items():
                 tile: Dict[str, Any] = dict(v)
                 # Serialize each instance collection with granular error handling
@@ -1496,7 +1647,7 @@ class MapEditor:
                     for idx, inst in enumerate(inst_list):
                         try:
                             serialized_instances.append(
-                                serialize_instance(
+                                serialize_instance_for_save(
                                     inst, tile_pos=k, category=key, index=idx
                                 )
                             )
@@ -1567,30 +1718,52 @@ class MapEditor:
                     data = json.load(f)
 
                 def deserialize_instance(d):
-                    # NEW: restore class objects
-                    if isinstance(d, dict) and "__class_type__" in d:
-                        spec = d["__class_type__"]
+                    # Issue #463: authored-placeholder shape, tried first (see
+                    # save_map's serialize_instance_for_save). Tagged so a
+                    # later save keeps writing the compact shape without
+                    # requiring an explicit Convert Elements pass on it.
+                    if isinstance(d, dict) and map_placeholders.is_placeholder_payload(d):
                         try:
-                            mod_name, cls_name = spec.rsplit(":", 1)
-                            if mod_name and cls_name:
-                                if mod_name.startswith("src."):
-                                    mod_name = mod_name[4:]
-                                module = importlib.import_module(mod_name)
-                                return getattr(module, cls_name)
+                            inst = map_placeholders.instantiate_placeholder(d)
+                        except map_placeholders.PlaceholderError as e:
+                            self.set_status(f"Error loading placeholder: {e}")
+                            return d
+                        try:
+                            inst._hov_placeholder_format = True
                         except Exception:
-                            return spec  # fallback to string spec
-                    # Recursively reconstruct any dict with __class__' and '__module__' as an object
+                            pass
+                        return inst
+                    # Restore class objects. Issue #463: routed through the
+                    # same canonicalize + secure_pickle allow-list gate as
+                    # Universe's game-boot loader (previously ungated here --
+                    # a map file is attacker-influenceable the same way a save
+                    # file is, see the issue #463 audit's "Risks found").
+                    if isinstance(d, dict) and "__class_type__" in d:
+                        try:
+                            return map_placeholders.resolve_class(d["__class_type__"])
+                        except map_placeholders.PlaceholderError as e:
+                            self.set_status(f"Error resolving class reference: {e}")
+                            return d["__class_type__"]  # fallback to string spec
+                    # Recursively reconstruct any dict with '__class__' and '__module__' as an object
                     if isinstance(d, dict):
                         if "__class__" in d and "__module__" in d:
                             cls_name = d.get("__class__")
                             mod_name = d.get("__module__")
-                            # Normalize module name for items, moves, etc.
-                            if mod_name.startswith("src."):
-                                mod_name = mod_name[4:]
-                            props = d.get("props", {})
+                            # `or {}` (not just a .get default) because some
+                            # existing map files have a literal JSON null for
+                            # "props" (a pre-existing serialization gap, not
+                            # introduced here) -- the key is present but the
+                            # value is None, so a plain .get default never
+                            # kicks in and `.items()` below would raise.
+                            props = d.get("props") or {}
                             try:
-                                module = importlib.import_module(mod_name)
-                                cls = getattr(module, cls_name)
+                                cls = map_placeholders.resolve_class(f"{mod_name}:{cls_name}")
+                            except map_placeholders.PlaceholderError as e:
+                                self.set_status(
+                                    f"Error resolving '{mod_name}.{cls_name}': {e}"
+                                )
+                                return d
+                            try:
                                 try:
                                     param_names = [
                                         p.name
@@ -1614,6 +1787,14 @@ class MapEditor:
                                 # Recursively set all attributes, not just constructor args
                                 for k2, v2 in props.items():
                                     setattr(inst, k2, deserialize_instance(v2))
+                                # Tagged so save_map's serialize_instance_for_save
+                                # keeps writing legacy shape for this element
+                                # until it goes through an explicit Convert
+                                # Elements pass -- no forced migration.
+                                try:
+                                    inst._hov_placeholder_format = False
+                                except Exception:
+                                    pass
                                 return inst
                             except Exception:
                                 return d
@@ -1646,6 +1827,70 @@ class MapEditor:
             except Exception as e:
                 messagebox.showerror("Error", f"Could not load map file:\n{e}")
                 self.set_status("Error loading map.")
+
+    def convert_elements(self):
+        """Convert Elements action (issue #463).
+
+        Converts every legacy-shape element on the *currently loaded* map to
+        the compact authored-placeholder format in one pass, then shows a
+        review dialog grouped into converted / needs-review / skipped before
+        anything is written to disk -- Save Map remains a separate, explicit
+        step. See ``compute_convert_elements_report`` for the conversion
+        rules and what each category means.
+        """
+        if not getattr(self, "map_data", None):
+            messagebox.showinfo("Convert Elements", "No map is currently loaded.")
+            return
+        report = compute_convert_elements_report(self.map_data)
+        self._show_convert_elements_report(report)
+
+    def _show_convert_elements_report(self, report):
+        total = (
+            len(report["converted"]) + len(report["ambiguous"]) + len(report["skipped"])
+        )
+        if total == 0:
+            messagebox.showinfo(
+                "Convert Elements",
+                "Every element on this map is already in the compact placeholder format.",
+            )
+            return
+
+        summary = (
+            f"Converted: {len(report['converted'])}   "
+            f"Needs review: {len(report['ambiguous'])}   "
+            f"Skipped: {len(report['skipped'])}"
+        )
+
+        win = tk.Toplevel(self.root)
+        win.title("Convert Elements — Review")
+        win.geometry("640x480")
+
+        tk.Label(win, text=summary, font=("Helvetica", 10, "bold")).pack(pady=(10, 4))
+        tk.Label(
+            win,
+            text="Nothing has been saved yet. Review below, then use Save Map "
+            "to write the compact output.",
+            font=("Helvetica", 9, "italic"),
+        ).pack(pady=(0, 8))
+
+        text_frame = tk.Frame(win)
+        text_frame.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+        scrollbar = tk.Scrollbar(text_frame)
+        scrollbar.pack(side="right", fill="y")
+        report_text = tk.Text(text_frame, wrap="word", yscrollcommand=scrollbar.set)
+        report_text.pack(side="left", fill="both", expand=True)
+        scrollbar.config(command=report_text.yview)
+
+        for label, _detail in report["converted"]:
+            report_text.insert("end", f"[converted] {label}\n")
+        for label, detail in report["ambiguous"]:
+            report_text.insert("end", f"[needs review] {label} — dropped: {detail}\n")
+        for label, detail in report["skipped"]:
+            report_text.insert("end", f"[skipped] {label} — {detail}\n")
+        report_text.config(state="disabled")
+
+        tk.Button(win, text="Close", command=win.destroy).pack(pady=(0, 10))
+        self.set_status(f"Convert Elements: {summary}")
 
     def load_legacy_map(self, filepath=None):
         """Load a legacy text-based map (.txt) into the editor.
@@ -2477,6 +2722,15 @@ def build_class_hierarchy(class_info):
     return class_info
 
 
+# Issue #463: arena/debug-only NPC classes, excluded from the "Add NPC"
+# chooser -- per their own docstrings and the existing
+# ADD_COMBATANT_ALLOWED_CLASSES allow-list in npc/_adjutant.py, none of
+# these are meant to be placed on a real map. The authored-placeholder
+# format still works for them (combat-testing-arena.json keeps loading),
+# this only hides them from the palette.
+_DEBUG_ONLY_NPC_CLASSES = frozenset({"TheAdjutant", "StatusDummy", "Testexp"})
+
+
 def filter_classes(class_info, filter_by_class):
     # Filter classes to include the target class and all its subclasses
     allowed_classes = set(class_info.keys())
@@ -2502,6 +2756,8 @@ def filter_classes(class_info, filter_by_class):
             return check_sub(cname)
 
         allowed_classes = {c for c in class_info if is_subclass_or_same(c)}
+    if filter_by_class == "NPC":
+        allowed_classes -= _DEBUG_ONLY_NPC_CLASSES
     return allowed_classes
 
 
@@ -2819,6 +3075,36 @@ def _is_event_like(obj):
     # Fallback: accept any base simply named 'Event'
     for base in inspect.getmro(cls):
         if base.__name__ == "Event":
+            return True
+
+    return False
+
+
+def _is_merchant_like(obj):
+    """Return True if `obj` is a Merchant instance/class even if Merchant
+    resolves from a different import path (e.g. src.npc._merchants.Merchant
+    vs. this module's bare `npc` import).
+
+    Issue #463: needed once load_map()/instantiate_placeholder started
+    resolving classes exclusively through the canonical `src.*` path (see
+    map_placeholders.resolve_class) -- a plain `isinstance(x, Merchant)`
+    against this file's bare-imported Merchant would silently stop matching
+    placeholder-loaded merchants otherwise. Mirrors the existing
+    `_is_event_like` pattern above.
+    """
+    try:
+        cls = obj if isinstance(obj, type) else obj.__class__
+    except Exception:
+        return False
+
+    for base in inspect.getmro(cls):
+        if base is Merchant:
+            return True
+
+    # Fallback: accept any base simply named 'Merchant', regardless of which
+    # of the npc package's duplicate-module variants it resolved from.
+    for base in inspect.getmro(cls):
+        if base.__name__ == "Merchant":
             return True
 
     return False
@@ -3555,7 +3841,7 @@ def open_property_dialog(
         all_npcs = []
         for tdata in map_data.values():
             all_npcs.extend(tdata.get("npcs", []))
-        merchants = [npc for npc in all_npcs if isinstance(npc, Merchant)]
+        merchants = [npc for npc in all_npcs if _is_merchant_like(npc)]
         merchant_map = {}
         for m in merchants:
             merchant_name = getattr(m, "name", str(m))
@@ -4210,7 +4496,7 @@ def open_property_dialog(
                 else:
                     combo_var = tk.StringVar()
                     # If existing value is a merchant object, get its name
-                    if val and isinstance(val, Merchant):
+                    if val and _is_merchant_like(val):
                         # Find the name corresponding to the instance
                         for name, inst in all_merchants.items():
                             if inst is val:

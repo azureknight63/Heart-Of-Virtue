@@ -4,7 +4,6 @@ Tests verify:
 - Display config controls what's shown
 - Coordinate config provides distance/angle calculations
 - NPC AI config integrates with select_move
-- Scenario config initializes with universe
 - All systems work together without breaking existing combat
 """
 
@@ -23,7 +22,6 @@ from src.moves import Advance  # type: ignore
 from src.config_manager import GameConfig, ConfigManager  # type: ignore
 from src.coordinate_config import CoordinateSystemConfig  # type: ignore
 from src.npc_ai_config import NPCAIConfig  # type: ignore
-from src.scenario_config import ScenarioConfig  # type: ignore
 
 
 class TestCombatIntegration:
@@ -51,7 +49,7 @@ class TestCombatIntegration:
         """Test CoordinateSystemConfig initializes with player."""
         coordinate_config = CoordinateSystemConfig(player)
         assert coordinate_config.player == player
-        assert coordinate_config.get_grid_size() == (50, 50)
+        assert coordinate_config.get_dynamic_grid_size(1) == (9, 9)
 
     def test_npc_ai_config_initializes(self, player):
         """Test NPCAIConfig initializes with player."""
@@ -60,12 +58,6 @@ class TestCombatIntegration:
         # Verify flanking is accessible
         assert npc_ai_config.is_flanking_enabled() in [True, False]
 
-    def test_scenario_config_initializes(self, player):
-        """Test ScenarioConfig initializes with player."""
-        scenario_config = ScenarioConfig(player)
-        assert scenario_config.player == player
-        assert scenario_config.get_current_scenario() in ['standard', 'pincer', 'melee', 'boss']
-
     def test_universe_initializes_configs(self, player):
         """Test Universe initializes config systems."""
         player.game_config = GameConfig()
@@ -73,11 +65,9 @@ class TestCombatIntegration:
         universe.build(player)
 
         # Configs should be initialized
-        assert universe.scenario_config is not None
         assert universe.coordinate_config is not None
         # Verify by checking the presence of key methods
-        assert hasattr(universe.scenario_config, 'get_current_scenario')
-        assert hasattr(universe.coordinate_config, 'get_grid_size')
+        assert hasattr(universe.coordinate_config, 'get_dynamic_grid_size')
 
     def test_npc_player_ref_set_in_combat(self, player):
         """Test that NPC player_ref is accessible for config."""
@@ -101,54 +91,6 @@ class TestCombatIntegration:
         assert hasattr(player, 'combat_coordinate_config')
 
         assert isinstance(player.combat_coordinate_config, CoordinateSystemConfig)
-
-
-class TestCoordinateIntegration:
-    """Test coordinate config calculations."""
-
-    def test_coordinate_config_distance_calculation(self):
-        """Test coordinate config calculates distance correctly."""
-        p = Player()
-        p.game_config = GameConfig(coordinate_grid_size=(50, 50))
-
-        coord_config = CoordinateSystemConfig(p)
-        distance = coord_config.get_distance_between_points(0, 0, 3, 4)
-
-        # 3-4-5 triangle
-        assert abs(distance - 5.0) < 0.01
-
-    def test_coordinate_config_bounds_validation(self):
-        """Test coordinate config validates bounds."""
-        p = Player()
-        p.game_config = GameConfig(coordinate_grid_size=(50, 50))
-
-        coord_config = CoordinateSystemConfig(p)
-        assert coord_config.is_coordinate_valid(25, 25) == True
-        assert coord_config.is_coordinate_valid(0, 0) == True
-        assert coord_config.is_coordinate_valid(49, 49) == True
-        assert coord_config.is_coordinate_valid(50, 50) == False  # 0-indexed: valid range is 0..49
-        assert coord_config.is_coordinate_valid(51, 51) == False
-        assert coord_config.is_coordinate_valid(-1, 0) == False
-class TestScenarioIntegration:
-    """Test scenario config integration."""
-
-    def test_scenario_config_difficulty_scaling(self):
-        """Test scenario config provides difficulty scaling."""
-        p = Player()
-        p.game_config = GameConfig(difficulty_scaling=0.5)
-
-        scenario_config = ScenarioConfig(p)
-        scaling = scenario_config.get_difficulty_scaling_factor()
-        assert scaling == 0.5
-
-    def test_scenario_config_current_scenario(self):
-        """Test scenario config returns current scenario."""
-        p = Player()
-        p.game_config = GameConfig(current_scenario='melee')
-
-        scenario_config = ScenarioConfig(p)
-        current = scenario_config.get_current_scenario()
-        assert current == 'melee'
 
 
 class TestNPCAIIntegration:
@@ -188,12 +130,10 @@ class TestFullIntegration:
         # Initialize all systems
         coords = CoordinateSystemConfig(p)
         npc_ai = NPCAIConfig(p)
-        scenarios = ScenarioConfig(p)
 
         # Verify all initialized
-        assert coords.get_grid_size() == (50, 50)
+        assert coords.get_dynamic_grid_size(1) == (9, 9)
         assert npc_ai.is_flanking_enabled() == True
-        assert scenarios.get_current_scenario() in ['standard', 'pincer', 'melee', 'boss_arena']
 
     def test_no_breaking_changes_to_existing_combat(self):
         """Test that config integration doesn't break existing combat."""

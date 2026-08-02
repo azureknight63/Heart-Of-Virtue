@@ -14,6 +14,15 @@ class CombatEventConfig:
     for a combat encounter initiated via an event.
     """
 
+    # Issue #463: every field here is already authored data with zero
+    # runtime leakage (no player/tile/combat-state references), so the
+    # whole dataclass is authorable as-is. Not a dataclass field itself
+    # (no type annotation), so @dataclass doesn't pick it up.
+    MAP_AUTHORED_PARAMS = {
+        "enemy_list", "ally_list", "grid_size_override", "scenario_type",
+        "narrative_text", "on_victory_text",
+    }
+
     # List of (enemy_type_name, count) tuples
     # e.g. [("RockRumbler", 2), ("FeralWolf", 3)]
     enemy_list: List[Tuple[str, int]] = field(default_factory=list)

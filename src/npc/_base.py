@@ -34,6 +34,28 @@ _STATUS_RESISTANCE_BASELINE_BOSS = 0.15
 class NPC(NPCCombatMixin, NPCLootMixin, Combatant):
     alert_message = "appears!"
 
+    # Issue #463: authored-placeholder metadata. PARAMS are real constructor
+    # kwargs; a concrete subclass only actually receives one at load time if
+    # its own __init__ accepts it (see map_placeholders.to_placeholder /
+    # instantiate_placeholder). OVERRIDES additionally covers the same stat
+    # block so hardcoded-stat enemy subclasses (Slime, Lurker, KingSlime, ...
+    # whose zero-arg __init__ ignores all of this) can still have a map
+    # author tweak an individual placed instance's stats/resistances/hidden
+    # state via post-construction setattr, without a new Python subclass.
+    MAP_AUTHORED_PARAMS = {
+        "name", "description", "damage", "aggro", "exp_award",
+        "maxhp", "protection", "speed", "finesse", "awareness",
+        "maxfatigue", "endurance", "strength", "charisma", "intelligence",
+        "faith", "hidden", "hide_factor", "combat_range", "idle_message",
+        "alert_message", "discovery_message", "friend", "is_boss",
+    }
+    MAP_AUTHORED_OVERRIDES = {
+        "hidden", "hide_factor", "combat_delay",
+        "maxhp", "damage", "protection", "speed", "finesse", "awareness",
+        "maxfatigue", "endurance", "strength", "charisma", "intelligence",
+        "faith", "resistance_base", "status_resistance_base",
+    }
+
     def __init__(
         self,
         name,
@@ -146,6 +168,8 @@ class NPC(NPCCombatMixin, NPCLootMixin, Combatant):
             None  # Will be set during combat initialization for config access
         )
         self.ai_config = None  # Initialized during combat
+        self.embedded_arrows = []  # Class names of arrows that hit and stuck;
+        # 100% recoverable from the corpse on death (see NPCLootMixin, issue #418)
 
     def _init_idle_moves(self):
         """Set ``known_moves`` to a lone idle move, falling back to an empty

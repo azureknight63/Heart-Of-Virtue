@@ -88,12 +88,12 @@ _GAME_KEYS = [
     "use_colour", "enable_animations", "animation_speed", "starting_exp",
     "debug_mode", "coordinate_grid_size", "ai_difficulty",
     "starting_story_flags", "starting_party_members", "log_file",
-    "test_scenario", "max_enemies_standard", "grid_display_interval",
+    "max_enemies_standard", "grid_display_interval",
     "unknown_key_xyz", "STARTPOSITION", "startPosition",
 ]
 
 _COMBAT_TESTING_KEYS = [
-    "starting_difficulty", "difficulty_scaling", "npc_decision_delay",
+    "npc_decision_delay",
     "npc_flanking_threshold", "npc_retreat_health_threshold",
     "npc_flanking_distance_range", "validate_grid_bounds",
 ]
@@ -179,7 +179,7 @@ def _check_grid_size_positive(cfg, seed, i):
 
 
 _FLOAT_FIELDS = (
-    "animation_speed", "difficulty_scaling", "npc_decision_delay",
+    "animation_speed", "npc_decision_delay",
     "npc_flanking_threshold", "npc_retreat_health_threshold",
 )
 
