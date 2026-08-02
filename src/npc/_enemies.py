@@ -69,7 +69,7 @@ class RockRumbler(NPC):
             maxhp=55,
             damage=30,
             protection=30,
-            awareness=25,
+            awareness=46,
             aggro=True,
             exp_award=120,
         )
@@ -285,7 +285,7 @@ class TalusHound(NPC):
             maxhp=50,
             damage=14,
             protection=8,
-            awareness=30,
+            awareness=52,
             aggro=True,
             exp_award=80,
         )
@@ -450,7 +450,7 @@ class ScarpAdder(NPC):
             maxhp=38,
             damage=20,
             protection=5,
-            awareness=40,
+            awareness=56,
             aggro=True,
             exp_award=95,
         )
