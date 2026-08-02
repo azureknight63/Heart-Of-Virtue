@@ -30,6 +30,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from conftest import restore_mapgen_modules, snapshot_and_clear_mapgen_modules
+
 
 @pytest.fixture
 def map_generator_module():
@@ -48,7 +50,7 @@ def map_generator_module():
         "tkinter.font",
     ]
     previous = {name: sys.modules.get(name) for name in tk_module_names}
-    previous_map_generator = sys.modules.get("utils.map_generator")
+    previous_mapgen = snapshot_and_clear_mapgen_modules()
 
     tk_stub = types.ModuleType("tkinter")
     sys.modules["tkinter"] = tk_stub
@@ -62,18 +64,15 @@ def map_generator_module():
         setattr(tk_stub, attr, MagicMock())
 
     try:
-        sys.modules.pop("utils.map_generator", None)
         module = importlib.import_module("utils.map_generator")
         yield module
     finally:
-        sys.modules.pop("utils.map_generator", None)
+        restore_mapgen_modules(previous_mapgen)
         for name, mod in previous.items():
             if mod is None:
                 sys.modules.pop(name, None)
             else:
                 sys.modules[name] = mod
-        if previous_map_generator is not None:
-            sys.modules["utils.map_generator"] = previous_map_generator
 
 
 def _basenames(paths):
@@ -259,13 +258,17 @@ class TestFixpointIsRobustToCyclesAndAliases:
             "    pass\n"
         )
 
-        # _get_module_paths_for_class derives src_dir from
-        # os.path.dirname(os.path.dirname(__file__)) -- point that at our
-        # temp project root by monkeypatching __file__ on the module.
-        monkeypatch.setattr(
-            map_generator_module,
-            "__file__",
-            str(tmp_path / "utils" / "map_generator.py"),
-        )
+        # _get_module_paths_for_class derives src_dir from the shared
+        # project_root constant (utils/mapgen/constants.py) -- not from
+        # __file__ directly, since the map editor was split into the
+        # utils.mapgen package (map_generator.py is now a thin shim that
+        # re-exports _get_module_paths_for_class from
+        # utils.mapgen.class_discovery, which is where project_root
+        # actually lives and gets read from). Point that at our temp
+        # project root directly rather than patching __file__ on a module
+        # the function under test no longer reads it from.
+        import utils.mapgen.class_discovery as class_discovery
+
+        monkeypatch.setattr(class_discovery, "project_root", str(tmp_path))
         result = map_generator_module._get_module_paths_for_class("Friend")
         assert str(src_dir / "alias_mod.py") in result
