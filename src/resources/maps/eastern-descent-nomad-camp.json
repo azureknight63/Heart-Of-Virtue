@@ -3993,6 +3993,26 @@
                     "api_event_id": null,
                     "needs_input": false
                 }
+            },
+            {
+                "__class__": "AnvilIntroEvent",
+                "__module__": "story.ch03",
+                "props": {
+                    "name": "AnvilIntro",
+                    "player": null,
+                    "tile": null,
+                    "repeat": false,
+                    "thread": null,
+                    "has_run": false,
+                    "params": null,
+                    "referenceobj": null,
+                    "combat_effect": false,
+                    "delay_duration": 3000,
+                    "delay_mode": "combat",
+                    "completed": false,
+                    "api_event_id": null,
+                    "needs_input": false
+                }
             }
         ],
         "items": [],
@@ -4906,6 +4926,219 @@
                     "loquacity_max": 0,
                     "loquacity_threshold": 0,
                     "loquacity_recovery": 2
+                }
+            },
+            {
+                "__class__": "Anvil",
+                "__module__": "npc._eastern_descent",
+                "props": {
+                    "name": "Anvil",
+                    "description": "A low, heavy-bodied Shell-back, his shell banded grey and rust-ochre in layered striations that make him look, at rest, like a chunk of the scarp itself. Crated tool stock and folded canvas ride lashed into grooves worn smooth in the shell's terraced plates. An iron collar and hinged latch seal the cargo hatch \u2014 a stranger's hand anywhere near it gets a sharp hiss of vented air before anything else happens.",
+                    "current_room": null,
+                    "inventory": [],
+                    "idle_message": " is grazing at a patch of scrub, foot planted.",
+                    "alert_message": " vents a sharp hiss, sensory stalks tracking movement.",
+                    "maxhp": 180,
+                    "maxhp_base": 180,
+                    "hp": 180,
+                    "damage": 0,
+                    "damage_base": 0,
+                    "protection": 25,
+                    "protection_base": 25,
+                    "speed": 2,
+                    "speed_base": 2,
+                    "finesse": 4,
+                    "finesse_base": 4,
+                    "resistance": {
+                        "fire": 1.0,
+                        "ice": 1.0,
+                        "shock": 1.0,
+                        "earth": 1.0,
+                        "light": 1.0,
+                        "dark": 1.0,
+                        "piercing": 1.0,
+                        "slashing": 1.0,
+                        "crushing": 1.0,
+                        "spiritual": 1.0,
+                        "pure": 1.0
+                    },
+                    "resistance_base": {
+                        "fire": 1.0,
+                        "ice": 1.0,
+                        "shock": 1.0,
+                        "earth": 1.0,
+                        "light": 1.0,
+                        "dark": 1.0,
+                        "piercing": 1.0,
+                        "slashing": 1.0,
+                        "crushing": 1.0,
+                        "spiritual": 1.0,
+                        "pure": 1.0
+                    },
+                    "status_resistance": {
+                        "generic": 0.3,
+                        "stun": 0.3,
+                        "poison": 0.3,
+                        "slimed": 0.3,
+                        "enflamed": 0.3,
+                        "sloth": 0.3,
+                        "apathy": 0.3,
+                        "blind": 0.3,
+                        "incoherence": 0.3,
+                        "mute": 0.3,
+                        "enraged": 0.3,
+                        "enchanted": 0.3,
+                        "ethereal": 0.3,
+                        "berserk": 0.3,
+                        "slow": 0.3,
+                        "sleep": 0.3,
+                        "confusion": 0.3,
+                        "cursed": 0.3,
+                        "stop": 0.3,
+                        "stone": 0.3,
+                        "frozen": 0.3,
+                        "doom": 0.3,
+                        "death": 0.3,
+                        "disoriented": 0.3
+                    },
+                    "status_resistance_base": {
+                        "generic": 0.3,
+                        "stun": 0.3,
+                        "poison": 0.3,
+                        "slimed": 0.3,
+                        "enflamed": 0.3,
+                        "sloth": 0.3,
+                        "apathy": 0.3,
+                        "blind": 0.3,
+                        "incoherence": 0.3,
+                        "mute": 0.3,
+                        "enraged": 0.3,
+                        "enchanted": 0.3,
+                        "ethereal": 0.3,
+                        "berserk": 0.3,
+                        "slow": 0.3,
+                        "sleep": 0.3,
+                        "confusion": 0.3,
+                        "cursed": 0.3,
+                        "stop": 0.3,
+                        "stone": 0.3,
+                        "frozen": 0.3,
+                        "doom": 0.3,
+                        "death": 0.3,
+                        "disoriented": 0.3
+                    },
+                    "is_boss": false,
+                    "awareness": 15,
+                    "aggro": false,
+                    "exp_award": 0,
+                    "exp_award_base": 0,
+                    "maxfatigue": 120,
+                    "maxfatigue_base": 120,
+                    "endurance": 18,
+                    "endurance_base": 18,
+                    "strength": 18,
+                    "strength_base": 18,
+                    "charisma": 6,
+                    "charisma_base": 6,
+                    "intelligence": 10,
+                    "intelligence_base": 10,
+                    "faith": 10,
+                    "faith_base": 10,
+                    "fatigue": 120,
+                    "target": null,
+                    "known_moves": [
+                        {
+                            "__class__": "NpcIdle",
+                            "__module__": "moves._npc",
+                            "props": {
+                                "name": "Idle",
+                                "description": "What?",
+                                "category": "Miscellaneous",
+                                "xp_gain": 0,
+                                "heat_gain": 0,
+                                "current_stage": 0,
+                                "stage_beat": [
+                                    0,
+                                    3,
+                                    0,
+                                    0
+                                ],
+                                "beats_left": 3,
+                                "stage_announce": [
+                                    "",
+                                    "Anvil is grazing at a patch of scrub, foot planted.",
+                                    "",
+                                    ""
+                                ],
+                                "fatigue_cost": 0,
+                                "target": "<circular_ref:Anvil>",
+                                "user": "<circular_ref:Anvil>",
+                                "targeted": false,
+                                "verbose_targeting": false,
+                                "interrupted": false,
+                                "initialized": false,
+                                "usercolor": "white",
+                                "targetcolor": "white",
+                                "mvrange": [
+                                    0,
+                                    9999
+                                ],
+                                "instant": false,
+                                "weight": 1,
+                                "passive": false,
+                                "fatigue_per_beat": 0
+                            }
+                        }
+                    ],
+                    "current_move": null,
+                    "states": [],
+                    "in_combat": false,
+                    "combat_proximity": {},
+                    "combat_position": null,
+                    "default_proximity": 20,
+                    "hidden": false,
+                    "hide_factor": 0,
+                    "discovery_message": "a heavy-set, shelled pack creature lashed with crates and folded canvas.",
+                    "friend": true,
+                    "can_yield": true,
+                    "combat_delay": 0,
+                    "combat_range": [
+                        0,
+                        0
+                    ],
+                    "loot": {
+                        "Gold": {
+                            "chance": 50,
+                            "qty": "r25-50"
+                        },
+                        "Restorative": {
+                            "chance": 25,
+                            "qty": 1
+                        },
+                        "Draught": {
+                            "chance": 25,
+                            "qty": 1
+                        },
+                        "Equipment_0_1": {
+                            "chance": 10,
+                            "qty": 1
+                        }
+                    },
+                    "keywords": [
+                        "talk",
+                        "pet"
+                    ],
+                    "pronouns": {
+                        "personal": "he",
+                        "possessive": "his",
+                        "reflexive": "himself",
+                        "intensive": "himself"
+                    },
+                    "player_ref": null,
+                    "ai_config": null,
+                    "knocked_out": false,
+                    "level": 1,
+                    "exp": 0
                 }
             }
         ],

@@ -9,19 +9,19 @@ Package layout:
     _loot.py            NPCLootMixin    — death hooks, loot table rolls, inventory drops
     _shop.py            MerchantShopMixin — shop inventory management (was npc_shop_mixin.py)
     _llm.py             MynxLLMMixin    — LLM-driven ambient behaviour (was npc_mynx_mixin.py)
-    _base.py            NPC, Friend     — base classes (NPC inherits both mixins + Combatant)
+    _base.py            NPC, Friend, NonCombatantMixin — base classes (NPC inherits both mixins + Combatant)
     _enemies.py         hostile combat NPCs + StatusDummy (arena test target)
     _merchants.py       Merchant and concrete merchant subclasses
     _friends.py         Mynx, Gorran, Grondite citizen NPCs
     _adjutant.py        TheAdjutant     — arena-only configuration NPC
-    _eastern_descent.py NomadCamper, NomadScout, NomadTrader — east-bank camp NPCs
+    _eastern_descent.py Anvil, NomadCamper, NomadScout, NomadTrader — east-bank camp NPCs
 
 All public names are re-exported here so that existing imports of the form
     from src.npc import NPC, Slime, Merchant, ...
 continue to work without any changes in calling code.
 """
 
-from ._base import NPC, Friend
+from ._base import NPC, Friend, NonCombatantMixin
 from ._combat import NPCCombatMixin
 from ._loot import NPCLootMixin
 from ._shop import MerchantShopMixin
@@ -55,12 +55,13 @@ from ._friends import (
     Liss,
 )
 from ._adjutant import TheAdjutant
-from ._eastern_descent import NomadCamper, NomadScout, NomadTrader, NomadBoy, NomadGirl
+from ._eastern_descent import Anvil, NomadCamper, NomadScout, NomadTrader, NomadBoy, NomadGirl
 
 __all__ = [
     # Base classes
     "NPC",
     "Friend",
+    "NonCombatantMixin",
     # Mixins (exported for isinstance checks and direct use)
     "NPCCombatMixin",
     "NPCLootMixin",
@@ -100,6 +101,7 @@ __all__ = [
     # Arena testing NPC
     "TheAdjutant",
     # Eastern Descent — nomad camp NPCs
+    "Anvil",
     "NomadCamper",
     "NomadScout",
     "NomadTrader",

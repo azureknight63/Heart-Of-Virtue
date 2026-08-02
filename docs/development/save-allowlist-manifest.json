@@ -1197,12 +1197,20 @@
       "name": "NPC"
     },
     {
+      "module": "src.npc._base",
+      "name": "NonCombatantMixin"
+    },
+    {
       "module": "src.npc._chat_llm",
       "name": "ConversationalNPCMixin"
     },
     {
       "module": "src.npc._combat",
       "name": "NPCCombatMixin"
+    },
+    {
+      "module": "src.npc._eastern_descent",
+      "name": "Anvil"
     },
     {
       "module": "src.npc._eastern_descent",
@@ -1714,6 +1722,10 @@
     },
     {
       "module": "src.story.ch03",
+      "name": "AnvilIntroEvent"
+    },
+    {
+      "module": "src.story.ch03",
       "name": "CampEntryGreetingEvent"
     },
     {
@@ -1897,6 +1909,6 @@
       "name": "UUID"
     }
   ],
-  "count": 474,
+  "count": 477,
   "header_version": 1
 }

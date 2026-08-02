@@ -1772,6 +1772,92 @@ class TestLissObservingEvent:
         ev._set_gate()  # should not raise
 
 
+class TestAnvilIntroEvent:
+    """AnvilIntroEvent — fires once Jean first talks to/pets Anvil at the
+    Tradepost, provided he's already met Kaelen & Vespera."""
+
+    def setup_method(self):
+        from src.story.ch03 import AnvilIntroEvent
+
+        self.cls = AnvilIntroEvent
+
+    def _make(self, **story):
+        player = _make_player()
+        player.universe.story = {"iron_and_oath_intro_done": "1", **story}
+        tile = _make_tile()
+        return self.cls(player=player, tile=tile), player, tile
+
+    def test_instantiate(self):
+        ev, *_ = self._make()
+        assert ev.name == "AnvilIntro"
+        assert ev.repeat is False
+
+    def test_conditions_blocked_before_iron_and_oath_intro(self):
+        """Shouldn't fire before Jean has even met Kaelen & Vespera."""
+        ev, player, tile = self._make(anvil_conversation_ready="1")
+        player.universe.story.pop("iron_and_oath_intro_done")
+        with patch.object(ev, "pass_conditions_to_process") as mock_pass:
+            ev.check_conditions()
+            mock_pass.assert_not_called()
+
+    def test_conditions_blocked_until_anvil_interaction(self):
+        """Intro done, but Jean hasn't talked to/petted Anvil yet."""
+        ev, player, tile = self._make()
+        with patch.object(ev, "pass_conditions_to_process") as mock_pass:
+            ev.check_conditions()
+            mock_pass.assert_not_called()
+
+    def test_conditions_pass_once_anvil_interaction_flag_set(self):
+        ev, player, tile = self._make(anvil_conversation_ready="1")
+        with patch.object(ev, "pass_conditions_to_process") as mock_pass:
+            ev.check_conditions()
+            mock_pass.assert_called_once()
+
+    def test_conditions_skip_when_gate_already_set(self):
+        ev, player, tile = self._make(
+            anvil_conversation_ready="1", anvil_conversation_done="1"
+        )
+        tile.events_here = [ev]
+        with patch.object(ev, "pass_conditions_to_process") as mock_pass:
+            ev.check_conditions()
+            mock_pass.assert_not_called()
+        assert ev not in tile.events_here
+
+    def test_process_skip_dialog_still_sets_gate(self):
+        ev, player, tile = self._make(anvil_conversation_ready="1")
+        player.skip_dialog = True
+        ev.process()
+        assert player.universe.story.get("anvil_conversation_done") == "1"
+
+    def test_process_full_outputs_dialogue_and_sets_gate(self):
+        ev, player, tile = self._make(anvil_conversation_ready="1")
+        player.skip_dialog = False
+        with (
+            patch("src.story.ch03.print_slow") as mock_print,
+            patch("src.story.ch03.say") as mock_say,
+            patch("src.story.ch03.begin_conversation") as mock_begin,
+            patch("src.story.ch03.time.sleep"),
+        ):
+            ev.process()
+        assert mock_print.called
+        mock_begin.assert_called_once()
+        mock_say.assert_any_call("That's... alive?", "Jean", "surprised")
+        # Jean's private, unvoiced observation about Vespera's tone — the
+        # "almost like a child" subtext must stay implicit, never stated by
+        # any character, so it's carried as a thought beat rather than dialogue.
+        assert any(
+            c.kwargs.get("thought") is True
+            for c in mock_say.call_args_list
+            if c.args and c.args[1] == "Jean"
+        )
+        assert player.universe.story.get("anvil_conversation_done") == "1"
+
+    def test_set_gate_with_no_universe(self):
+        ev, player, tile = self._make()
+        player.universe = None
+        ev._set_gate()  # should not raise
+
+
 class TestEasternRoadTurnbackEvent:
     """EasternRoadTurnbackEvent — always fires, moves player west."""
 
