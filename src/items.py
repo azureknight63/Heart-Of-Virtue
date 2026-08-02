@@ -123,6 +123,20 @@ class Item:
     add_status_resistance: Dict[str, float]
     gives_exp: bool
 
+    # Issue #463: authored-placeholder metadata. Most leaf item subclasses
+    # hardcode name/description/value/etc. in their own __init__ and take no
+    # constructor args at all -- MAP_AUTHORED_PARAMS only actually applies
+    # per-class once filtered against that class's real __init__ signature
+    # (see map_placeholders.to_placeholder). MAP_AUTHORED_OVERRIDES covers
+    # the same handful of fields a map author would plausibly want to tweak
+    # on a specific placed instance (hidden state, a one-off name/description/
+    # announce string) via post-construction setattr instead.
+    MAP_AUTHORED_PARAMS = {
+        "hidden", "hide_factor", "skills", "merchandise", "enchantment_level",
+        "aliases",
+    }
+    MAP_AUTHORED_OVERRIDES = {"hidden", "hide_factor", "name", "description", "announce"}
+
     def __init__(
         self,
         name: str,
@@ -146,6 +160,11 @@ class Item:
         self.hidden = hidden
         self.hide_factor = hide_factor
         self.merchandise = merchandise
+        # Stored (not just consumed locally) so the roll *count* -- never the
+        # randomly rolled result -- can round-trip through the authored
+        # placeholder format (issue #463); re-loading re-rolls, same as a
+        # shop restock already does.
+        self.enchantment_level = enchantment_level
         self.discovery_message = discovery_message
         self.announce = "There's a {} here.".format(self.name)
         self.aliases = aliases or []
@@ -425,6 +444,11 @@ class Item:
 
 class Gold(Item):
     amt: int
+
+    # Issue #463: the authored quantity (or "rMIN-MAX" range syntax, per
+    # functions.randomize_amount) -- not the rolled result for a range, same
+    # non-determinism-is-the-point behavior as enchantment_level.
+    MAP_AUTHORED_PARAMS = {"amt"}
 
     def __init__(self, amt: int = 1) -> None:
         self.amt = functions.randomize_amount(amt)
@@ -1102,6 +1126,10 @@ class Consumable(Item):
     subtype: str
     count: int
 
+    # Issue #463: "count" (starting stack size) is the one genuinely
+    # per-instance authored field most consumable leaf classes expose.
+    MAP_AUTHORED_PARAMS = {"count"}
+
     def __init__(
         self,
         name: str,
@@ -1207,6 +1235,11 @@ class Commodity(Special):
 
     stack_key: str
 
+    # Issue #463: same rationale as Consumable -- Commodity is a sibling
+    # class (extends Special, not Consumable) so it needs its own count
+    # declaration rather than inheriting Consumable's.
+    MAP_AUTHORED_PARAMS = {"count"}
+
     def __init__(
         self,
         name: str,
@@ -1258,6 +1291,13 @@ class Commodity(Special):
 
 class Key(Special):
     lock: Optional[Any]
+
+    # Issue #463: lock_nickname is the "destination" concept from the issue's
+    # own example -- a plain string matched against Container.nickname at
+    # unlock time, not a live object reference. `lock` (the live paired
+    # object) is deliberately NOT declared here: it's always None at author
+    # time and a circular-ref risk if ever wired up.
+    MAP_AUTHORED_PARAMS = {"lock_nickname", "merchandise"}
 
     def __init__(
         self,
@@ -3153,6 +3193,21 @@ class Book(Special):
     A book that Jean can READ. Books are now items that can be carried in inventory.
     Optionally, an event may be tied to reading the book.
     """
+
+    # Issue #463: `event` is supported here as a nested placeholder (a live
+    # Event instance/reference) for forward-compatibility -- no shipped Book
+    # subclass currently uses it, but the mechanism costs nothing to support
+    # now and mirrors how NPCSpawnerEvent already stores a class reference.
+    # `text` reads from the private `_text` cache (not the `text` property)
+    # -- the property lazily loads the whole file from disk on first access,
+    # which would bake the entire book's contents into the placeholder
+    # redundantly alongside `text_file_path` every time a file-backed book
+    # is saved.
+    MAP_AUTHORED_PARAMS = {
+        "name", "description", "value", "weight", "text", "text_file_path",
+        "chars_per_page", "merchandise", "discovery_message", "event",
+    }
+    MAP_AUTHORED_ATTR_ALIASES = {"text": "_text"}
 
     def __init__(
         self,

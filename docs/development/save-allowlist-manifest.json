@@ -809,6 +809,14 @@
       "name": "Loot"
     },
     {
+      "module": "src.map_placeholders",
+      "name": "PlaceholderError"
+    },
+    {
+      "module": "src.map_placeholders",
+      "name": "PlaceholderSecurityError"
+    },
+    {
       "module": "src.moves._base",
       "name": "Move"
     },
@@ -1889,6 +1897,6 @@
       "name": "UUID"
     }
   ],
-  "count": 472,
+  "count": 474,
   "header_version": 1
 }

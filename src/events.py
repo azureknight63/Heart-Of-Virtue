@@ -16,6 +16,18 @@ class Event:  # master class for all events
 
     """
 
+    # Issue #463: authored-placeholder metadata. `player`/`tile` are always
+    # runtime backrefs; `thread`/`has_run`/`referenceobj`/`completed`/
+    # `api_event_id`/`needs_input` are pure session bookkeeping (the exact
+    # set that was leaking into map JSON as a full-instance dump before this
+    # change) and are excluded here, unconditionally, for every Event
+    # subclass -- there is deliberately no MAP_AUTHORED_OVERRIDES entry for
+    # any of them.
+    MAP_AUTHORED_PARAMS = {
+        "name", "repeat", "params", "combat_effect", "delay_duration",
+        "delay_mode",
+    }
+
     def __init__(
         self,
         name,
@@ -71,6 +83,12 @@ class CombatEvent(Event):
     """
     Event that initiates parameterized combat using a CombatEventConfig.
     """
+
+    # Issue #463: `config` is already a clean, fully-authored dataclass (see
+    # CombatEventConfig) with zero runtime leakage -- the best existing
+    # example of the pattern this issue generalizes. name/repeat/etc. are
+    # inherited from Event.
+    MAP_AUTHORED_PARAMS = {"config"}
 
     def __init__(self, name, player=None, tile=None, repeat=False, config=None):
         """
