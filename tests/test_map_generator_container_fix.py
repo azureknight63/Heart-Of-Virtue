@@ -30,6 +30,8 @@ import pytest
 
 from src.objects import Container
 
+from conftest import restore_mapgen_modules, snapshot_and_clear_mapgen_modules
+
 
 @pytest.fixture
 def map_generator_module():
@@ -48,7 +50,7 @@ def map_generator_module():
         "tkinter.font",
     ]
     previous = {name: sys.modules.get(name) for name in tk_module_names}
-    previous_map_generator = sys.modules.get("utils.map_generator")
+    previous_mapgen = snapshot_and_clear_mapgen_modules()
 
     tk_stub = types.ModuleType("tkinter")
     sys.modules["tkinter"] = tk_stub
@@ -64,18 +66,15 @@ def map_generator_module():
         setattr(tk_stub, attr, MagicMock())
 
     try:
-        sys.modules.pop("utils.map_generator", None)
         module = importlib.import_module("utils.map_generator")
         yield module
     finally:
-        sys.modules.pop("utils.map_generator", None)
+        restore_mapgen_modules(previous_mapgen)
         for name, mod in previous.items():
             if mod is None:
                 sys.modules.pop(name, None)
             else:
                 sys.modules[name] = mod
-        if previous_map_generator is not None:
-            sys.modules["utils.map_generator"] = previous_map_generator
 
 
 class TestContainerItemsAliasExcluded:

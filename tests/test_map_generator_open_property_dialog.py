@@ -29,6 +29,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from conftest import restore_mapgen_modules, snapshot_and_clear_mapgen_modules
+
 
 class _FakeVar:
     """Stand-in for tkinter.StringVar/BooleanVar with real get/set/trace_add
@@ -111,7 +113,7 @@ def mg():
         "tkinter.font",
     ]
     previous = {name: sys.modules.get(name) for name in tk_module_names}
-    previous_map_generator = sys.modules.get("utils.map_generator")
+    previous_mapgen = snapshot_and_clear_mapgen_modules()
 
     tk_stub = types.ModuleType("tkinter")
     sys.modules["tkinter"] = tk_stub
@@ -156,18 +158,15 @@ def mg():
     _FakeWidget.registry.clear()
 
     try:
-        sys.modules.pop("utils.map_generator", None)
         module = importlib.import_module("utils.map_generator")
         yield module
     finally:
-        sys.modules.pop("utils.map_generator", None)
+        restore_mapgen_modules(previous_mapgen)
         for name, mod in previous.items():
             if mod is None:
                 sys.modules.pop(name, None)
             else:
                 sys.modules[name] = mod
-        if previous_map_generator is not None:
-            sys.modules["utils.map_generator"] = previous_map_generator
 
 
 class TestMapNameField:
@@ -193,14 +192,12 @@ class TestMapNameField:
             def __init__(self, teleport_map: str = ""):
                 pass
 
-        # Force the "no map files found" branch. _build_map_name_field
-        # locates src/resources/maps/ via Path(__file__).resolve().parent
-        # (map_generator.py's own on-disk location), not the module-level
-        # `project_root` global -- patching that global here would be a
-        # no-op and this test would coincidentally "pass" by exercising the
-        # exact same real-map-files path as the test above, under a
-        # misleading name. Patching Path.exists to always report False is
-        # what actually forces both candidate_dirs to be skipped.
+        # Force the "no map files found" branch. _build_map_name_field builds
+        # candidate_dirs from the shared `project_root` constant (imported
+        # from utils.mapgen.constants), so patching Path.exists to always
+        # report False -- rather than the project_root global itself -- is
+        # what forces both candidate_dirs to be skipped regardless of which
+        # directory they resolve to.
         monkeypatch.setattr("pathlib.Path.exists", lambda self: False)
         mg.open_property_dialog(_FakeWidget(), MapNameHolder, existing=None)
 

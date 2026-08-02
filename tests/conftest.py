@@ -58,6 +58,52 @@ def _no_real_sleep(request, monkeypatch):
     yield
 
 
+# The map editor (utils/map_generator.py) is a thin compatibility shim
+# over the utils.mapgen package (utils/mapgen/{__init__,constants,
+# class_discovery,widgets,property_dialog,tile_editor,editor}.py). Several
+# tests reimport utils.map_generator under a fake tkinter stub (this
+# sandbox has no real tkinter) to exercise otherwise-untestable widget code.
+# Popping only "utils.map_generator" from sys.modules before reimporting is
+# NOT enough to force a fresh import bound to that test's stub: Python's
+# import system returns the already-cached utils.mapgen submodules (if any
+# test already imported them under a *different* stub) without
+# re-executing them, so the "freshly reimported" shim silently re-exports
+# classes/functions still bound to whichever tkinter stub was active the
+# first time utils.mapgen was imported in the test session. Every one of
+# utils.mapgen's own modules must be popped and restored alongside the
+# shim.
+MAPGEN_MODULE_NAMES = (
+    "utils.map_generator",
+    "utils.mapgen",
+    "utils.mapgen.constants",
+    "utils.mapgen.class_discovery",
+    "utils.mapgen.widgets",
+    "utils.mapgen.property_dialog",
+    "utils.mapgen.tile_editor",
+    "utils.mapgen.editor",
+)
+
+
+def snapshot_and_clear_mapgen_modules():
+    """Removes utils.map_generator and every utils.mapgen submodule from
+    sys.modules, returning a snapshot for restore_mapgen_modules() to
+    restore later. Call this (then reimport utils.map_generator) at the
+    start of a tkinter-stub fixture; call restore_mapgen_modules() with the
+    returned snapshot in that fixture's teardown."""
+    return {name: sys.modules.get(name) for name in MAPGEN_MODULE_NAMES}
+
+
+def restore_mapgen_modules(previous):
+    """Undoes snapshot_and_clear_mapgen_modules(): pops whatever got
+    (re)imported during the test and puts back whatever was cached before
+    it ran (or leaves it absent if nothing was cached)."""
+    for name in MAPGEN_MODULE_NAMES:
+        sys.modules.pop(name, None)
+    for name, mod in previous.items():
+        if mod is not None:
+            sys.modules[name] = mod
+
+
 def isinstance_by_class_name(obj, *class_names):
     """
     Check if obj's class name matches any of the given class_names.
