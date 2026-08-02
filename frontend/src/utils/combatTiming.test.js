@@ -4,6 +4,8 @@ import {
   effectiveDuration,
   scheduleSfxChain,
   SFX_OVERLAP,
+  COMBAT_SPEED_STEPS,
+  DEFAULT_COMBAT_SPEED,
 } from './combatTiming';
 
 describe('normalizeSpeed', () => {
@@ -64,5 +66,12 @@ describe('scheduleSfxChain', () => {
     const s = scheduleSfxChain(['a', 'unknown', 'b'], durationOf);
     expect(s[1].startMs).toBe(75); // after a
     expect(s[2].startMs).toBe(75); // unknown adds 0
+  });
+});
+
+describe('COMBAT_SPEED_STEPS', () => {
+  it('is a stepped, ascending list including the 1x default', () => {
+    expect(COMBAT_SPEED_STEPS).toEqual([0.5, 0.75, 1, 1.5, 2]);
+    expect(COMBAT_SPEED_STEPS).toContain(DEFAULT_COMBAT_SPEED);
   });
 });

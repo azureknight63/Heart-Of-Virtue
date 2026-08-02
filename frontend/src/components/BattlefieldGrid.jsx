@@ -6,7 +6,7 @@ import { useAudio } from '../context/AudioContext';
 import { getAnimationConfig, impactSfxFor } from '../utils/animationConfigs';
 import { MOVE_CATEGORY_COLOR, MOVE_CATEGORY_GLOW } from '../utils/categories';
 import { beatSfxFor } from '../utils/combatSfx';
-import { scheduleSfxChain } from '../utils/combatTiming';
+import { scheduleSfxChain, effectiveDuration } from '../utils/combatTiming';
 import { SFX_DURATIONS } from '../utils/sfxDurations';
 
 // Fragment definitions for the death burst — module-level, never recreated
@@ -1226,7 +1226,8 @@ function BattlefieldGrid({
         combatSpeed
       );
       for (const { cue, startMs } of schedule) {
-        trackTimeout(() => playSFX(cue), startMs);
+        // scheduleSfxChain already divides startMs by combatSpeed internally.
+        trackTimeout(() => playSFX(cue, combatSpeed), startMs);
       }
     }
 
@@ -1236,7 +1237,7 @@ function BattlefieldGrid({
       setDyingEntities((prev) => [...prev, { id: animData.target_id, position: animData.position, entity: animData.entity }]);
       // Enemy death SFX — play once per kill (streamed deaths are sounded by the
       // attack beat's SFX chain instead, so they carry suppressSfx).
-      if (!animData.suppressSfx) playSFX('enemy_death');
+      if (!animData.suppressSfx) playSFX('enemy_death', combatSpeed);
     }
 
     let currentPhaseIndex = 0;
@@ -1262,13 +1263,13 @@ function BattlefieldGrid({
       const usesChain = animData.beat || animData.suppressSfx;
       const cue = usesChain ? null : config.sfx?.[phase.name];
       if (cue) {
-        playSFX(cue === 'outcome' ? impactSfxFor(animData.outcome) : cue);
+        playSFX(cue === 'outcome' ? impactSfxFor(animData.outcome) : cue, combatSpeed);
       }
 
       trackTimeout(() => {
         currentPhaseIndex++;
         advancePhase();
-      }, phase.duration);
+      }, effectiveDuration(phase.duration, combatSpeed));
     };
 
     advancePhase();

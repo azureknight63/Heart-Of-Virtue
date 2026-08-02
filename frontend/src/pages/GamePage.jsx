@@ -29,7 +29,7 @@ export default function GamePage() {
   const { location, loading: worldLoading, moveToLocation, refetch: refetchWorld } = useWorld()
   const { exploredTiles, setExploredTiles, refetch: refetchExploration } = useExploration()
   const { combat, inCombat, fetchCombatStatus, performAction, applyCombatState } = useCombat()
-  const { playBGM, playSFX, playSting } = useAudio()
+  const { playBGM, playSFX, playSting, combatSpeed } = useAudio()
   const { triggerTick } = useAutosave(player)
   const { error: showError } = useToast()
 
@@ -39,9 +39,6 @@ export default function GamePage() {
   // becomes ack-only in useCombat).
   const streaming = combatSocketEnabled()
   const [streamedAnimations, setStreamedAnimations] = useState([])
-  // Note: `combatSpeed` is deliberately NOT wired from here — the downstream
-  // Battlefield/RightPanel/BattlefieldGrid chain defaults it to 1x until the
-  // combat-speed control ships (issue #460).
   const combatRef = useRef(combat)
   combatRef.current = combat
 
@@ -654,6 +651,7 @@ export default function GamePage() {
           onAnimatingChange={setIsBattlefieldAnimating}
           streaming={streaming}
           streamedAnimations={streamedAnimations}
+          combatSpeed={combatSpeed}
         />
       </div>
 

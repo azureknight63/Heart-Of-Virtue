@@ -13,6 +13,7 @@ describe('AudioControlDialog', () => {
   const mockSetSfxVolume = vi.fn();
   const mockSetIsMusicMuted = vi.fn();
   const mockSetIsSfxMuted = vi.fn();
+  const mockSetCombatSpeed = vi.fn();
   const mockOnClose = vi.fn();
 
   const mockAudioContext = {
@@ -23,7 +24,9 @@ describe('AudioControlDialog', () => {
     isMusicMuted: false,
     setIsMusicMuted: mockSetIsMusicMuted,
     isSfxMuted: false,
-    setIsSfxMuted: mockSetIsSfxMuted
+    setIsSfxMuted: mockSetIsSfxMuted,
+    combatSpeed: 1,
+    setCombatSpeed: mockSetCombatSpeed
   };
 
   beforeEach(() => {
@@ -99,6 +102,22 @@ describe('AudioControlDialog', () => {
     const closeBtn = screen.getByText('Close');
     fireEvent.click(closeBtn);
     expect(mockOnClose).toHaveBeenCalled();
+  });
+
+  it('renders the combat speed control with the current step active', () => {
+    render(<AudioControlDialog onClose={mockOnClose} />);
+
+    expect(screen.getByText('COMBAT SPEED')).toBeDefined();
+    const activeBtn = screen.getByText('1x');
+    expect(activeBtn.getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByText('0.5x').getAttribute('aria-pressed')).toBe('false');
+  });
+
+  it('sets combat speed when a step is clicked', () => {
+    render(<AudioControlDialog onClose={mockOnClose} />);
+
+    fireEvent.click(screen.getByText('2x'));
+    expect(mockSetCombatSpeed).toHaveBeenCalledWith(2);
   });
 
   it('closes when clicking the overlay', () => {

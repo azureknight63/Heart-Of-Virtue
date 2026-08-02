@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useRef, useEffect, useCallback } from 'react';
+import { DEFAULT_COMBAT_SPEED, normalizeSpeed } from '../utils/combatTiming';
 
 const AudioContext = createContext({
     playBGM: () => {},
@@ -14,6 +15,8 @@ const AudioContext = createContext({
     isSfxMuted: false,
     setIsSfxMuted: () => {},
     currentBGM: null,
+    combatSpeed: DEFAULT_COMBAT_SPEED,
+    setCombatSpeed: () => {},
 });
 
 export const useAudio = () => useContext(AudioContext);
@@ -32,7 +35,8 @@ const loadAudioPreferences = () => {
         musicVolume: 0.5,
         sfxVolume: 0.5,
         isMusicMuted: false,
-        isSfxMuted: false
+        isSfxMuted: false,
+        combatSpeed: DEFAULT_COMBAT_SPEED
     };
 };
 
@@ -73,6 +77,7 @@ export const AudioProvider = ({ children }) => {
     const [sfxVolume, setSfxVolume] = useState(initialPrefs.sfxVolume);
     const [isMusicMuted, setIsMusicMuted] = useState(initialPrefs.isMusicMuted);
     const [isSfxMuted, setIsSfxMuted] = useState(initialPrefs.isSfxMuted);
+    const [combatSpeed, setCombatSpeed] = useState(normalizeSpeed(initialPrefs.combatSpeed));
     const [currentBGM, setCurrentBGM] = useState(null);
 
     const bgmRef = useRef(new Audio());
@@ -90,9 +95,10 @@ export const AudioProvider = ({ children }) => {
             musicVolume,
             sfxVolume,
             isMusicMuted,
-            isSfxMuted
+            isSfxMuted,
+            combatSpeed
         });
-    }, [musicVolume, sfxVolume, isMusicMuted, isSfxMuted]);
+    }, [musicVolume, sfxVolume, isMusicMuted, isSfxMuted, combatSpeed]);
 
     useEffect(() => {
         bgmRef.current.loop = true;
@@ -167,10 +173,20 @@ export const AudioProvider = ({ children }) => {
         setCurrentBGM(null);
     }, []);
 
-    const playSFX = useCallback((sfxName) => {
+    // `speed` (issue #460): combat-speed multiplier for this one-shot cue.
+    // playbackRate scales tempo; preservesPitch keeps it from sounding
+    // chipmunked/slowed — browser-native pitch-preserving time-stretch, no DSP.
+    const playSFX = useCallback((sfxName, speed = 1) => {
         const path = getAssetPath(`/assets/sounds/sfx_${sfxName}.wav`);
         const audio = new Audio(path);
         audio.volume = isSfxMuted ? 0 : sfxVolume;
+        // normalizeSpeed guards against a corrupted/garbage combatSpeed (e.g. a
+        // hand-edited localStorage value of 0 or negative) — playbackRate must
+        // stay a positive finite number or HTMLMediaElement rejects the set.
+        audio.playbackRate = normalizeSpeed(speed);
+        audio.preservesPitch = true;
+        audio.webkitPreservesPitch = true;
+        audio.mozPreservesPitch = true;
         activeSFXRef.current.add(audio);
         audio.onended = () => activeSFXRef.current.delete(audio);
         audio.play().catch(e => {
@@ -222,7 +238,9 @@ export const AudioProvider = ({ children }) => {
         setIsMusicMuted,
         isSfxMuted,
         setIsSfxMuted,
-        currentBGM
+        currentBGM,
+        combatSpeed,
+        setCombatSpeed
     };
 
     return (
