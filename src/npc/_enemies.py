@@ -66,10 +66,10 @@ class RockRumbler(NPC):
         super().__init__(
             name="Rock Rumbler " + genericng.generate(2, 4),
             description=description,
-            maxhp=55,
-            damage=30,
-            protection=30,
-            awareness=25,
+            maxhp=48,
+            damage=28,
+            protection=28,
+            awareness=46,
             aggro=True,
             exp_award=120,
         )
@@ -282,10 +282,10 @@ class TalusHound(NPC):
         super().__init__(
             name="Talus Hound " + genericng.generate(2, 4),
             description=description,
-            maxhp=50,
-            damage=14,
-            protection=8,
-            awareness=30,
+            maxhp=35,
+            damage=16,
+            protection=6,
+            awareness=52,
             aggro=True,
             exp_award=80,
         )
@@ -447,10 +447,10 @@ class ScarpAdder(NPC):
         super().__init__(
             name="Scarp Adder " + genericng.generate(2, 4),
             description=description,
-            maxhp=38,
-            damage=20,
+            maxhp=36,
+            damage=22,
             protection=5,
-            awareness=40,
+            awareness=56,
             aggro=True,
             exp_award=95,
         )

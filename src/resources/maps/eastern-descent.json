@@ -446,15 +446,25 @@
     "(1,4)": {
         "id": "tile_1_4",
         "title": "MossShelf",
-        "description": "A wide horizontal surface of rock, perhaps two metres above the path, extends along the boulder face. Reaching it requires a short scramble. The surface is covered in a thick, damp moss \u2014 vivid green against the grey, incongruous this high on the slope. Something small lives in the moss; the surface is dimpled with tiny burrow-openings.",
+        "description": "A wide horizontal surface of rock, perhaps two metres above the path, extends along the boulder face. Reaching it requires a short scramble. The surface is covered in a thick, damp moss \u2014 vivid green against the grey, incongruous this high on the slope. Something small lives in the moss; the surface is dimpled with tiny burrow-openings. In the rock face's deepest crevice, a small spring bubbles up, the source of the moss's verdant life. The water runs clear and cold, pooling briefly before disappearing down the mountainside.",
         "exits": [
             "east"
         ],
         "block_exit": [],
         "events": [],
         "items": [],
-        "npcs": [],
+        "npcs": [
+            {
+                "__class__": "Mynx",
+                "__module__": "npc"
+            }
+        ],
         "objects": [
+            {
+                "__class__": "HealingSpring",
+                "__module__": "objects",
+                "props": {}
+            },
             {
                 "__class__": "Container",
                 "__module__": "objects",

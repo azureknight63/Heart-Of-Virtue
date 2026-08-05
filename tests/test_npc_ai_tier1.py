@@ -287,7 +287,7 @@ class TestNPCCombatBehavior:
         """Test that RockRumbler has expected combat moves."""
         rumbler = RockRumbler()
         assert len(rumbler.known_moves) > 0
-        assert rumbler.protection == 30
+        assert rumbler.protection == 28
 
     def test_lurker_high_awareness(self):
         """Test that Lurker has high awareness stat."""

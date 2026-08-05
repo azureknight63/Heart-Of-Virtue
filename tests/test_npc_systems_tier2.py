@@ -226,14 +226,14 @@ class TestEnemySubclasses:
     @pytest.mark.parametrize("enemy_class,name_prefix,maxhp,damage,extra_checks", [
         (Slime, "Slime ", 20, 26, {'awareness': 30, 'aggro': True, 'exp_award': 2, 'has_moves': True}),
         (Testexp, "Slime ", 200, 2, {'exp_award': 500}),
-        (RockRumbler, "Rock Rumbler ", 55, 30, {'protection': 30, 'awareness': 25, 'has_resistances': True}),
+        (RockRumbler, "Rock Rumbler ", 48, 28, {'protection': 28, 'awareness': 46, 'has_resistances': True}),
         (Lurker, "Lurker ", 450, 35, {'awareness': 60, 'has_loot': True, 'has_status_resistance': True}),
         (GiantSpider, "Giant Spider ", 110, 22, {'has_resistances': True}),
         (CaveBat, "Cave Bat ", 15, 23, {'speed': 40}),
         (ElderSlime, "Elder Slime ", 70, 28, {'has_resistances': True}),
         (KingSlime, "King Slime", 400, 50, {'exact_name': True, 'has_loot': True, 'exp_award': 500}),
-        (TalusHound, "Talus Hound ", 50, 14, {'awareness': 30}),
-        (ScarpAdder, "Scarp Adder ", 38, None, {}),
+        (TalusHound, "Talus Hound ", 35, 16, {'protection': 6, 'awareness': 52}),
+        (ScarpAdder, "Scarp Adder ", 36, 22, {}),
         (StatusDummy, "Pell", 500, None, {'exact_name': True, 'all_neutral_resistances': True}),
         (CorruptedStoneCreature, "Stone Creature ", 60, None, {}),
     ])
