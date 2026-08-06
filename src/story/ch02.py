@@ -14,6 +14,7 @@ from src.narration import (
     end_conversation,
     enter_op,
     exit_op,
+    react,
 )
 
 # Recurring conversation casts, to avoid retyping the same tuple at every stage.
@@ -250,6 +251,7 @@ class Ch02GuideToCitadel(
                 "lined with age and wisdom. Gorran spoke to them in their language, and they "
                 "regarded Jean with a mixture of curiosity and respect."
             )
+            react("Jean", "surprised")
             narrate(
                 "One of the elders stood and approached Jean. Much to Jean's surprise, the elder "
                 "extended a burly, unyielding hand in greeting. Taking it, Jean had the sensation "
@@ -270,6 +272,7 @@ class Ch02GuideToCitadel(
                 "neutral",
                 enter=enter_op("Elder", side=None),
             )
+            react("Jean", "happy")
             narrate(
                 "Jean nodded, grateful for the warm welcome. He could feel the weight of the "
                 "elder's gaze upon him, and he knew he was in the presence of someone who had "
@@ -283,6 +286,7 @@ class Ch02GuideToCitadel(
                 "Gorran rumbled briefly in reply, then turned and strode out of the chamber.",
                 exit=[exit_op("Gorran", span=2)],
             )
+            react("Elder", "concerned")
             narrate("The elder turned back to Jean, his expression serious.")
             narrate(
                 "Now having gotten a chance to look at the elder, Jean could see he was a bit "
@@ -347,6 +351,7 @@ class Ch02GuideToCitadel(
             )
             narrate("He tilted his great head, just slightly.")
             say("But I notice you did not answer where you are going.", "Votha Krr", "skeptical")
+            react("Jean", "concerned")
             narrate("Jean opened his mouth. Closed it. The chamber was very quiet.")
             say("No. I didn't.", "Jean", "neutral")
             narrate(
@@ -1163,6 +1168,7 @@ class AfterKingSlimeReturn(Event):
                 )
                 narrate("He took the fragment from Jean's hand.")
             else:  # c
+                react("Votha Krr", "skeptical")
                 narrate(
                     "Jean sets the fragment on the armrest of the throne without looking at "
                     "Votha. The Elder watches him do it. Waits. Then reaches out and picks it "
@@ -1199,6 +1205,7 @@ class AfterKingSlimeReturn(Event):
                 "Votha Krr",
                 "neutral",
             )
+            react("Votha Krr", "concerned")
             narrate(
                 "He studied Jean's face. Then — the bleeding finger. He regarded it for a "
                 "moment without comment."

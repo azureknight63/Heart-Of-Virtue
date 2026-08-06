@@ -10,6 +10,7 @@ from src.narration import (
     begin_conversation,
     enter_op,
     exit_op,
+    react,
 )
 import time
 import random
@@ -804,6 +805,7 @@ class AfterTheRumblerFight(Event):
             "Jean",
             "neutral",
         )
+        react("Rock-Man", "concerned")
         narrate(
             "The Rock-Man stands immobile for a long moment, then slowly gestures toward himself. "
             "He begins to speak in low, rumbling tones, little of which Jean can understand."
@@ -828,6 +830,7 @@ class AfterTheRumblerFight(Event):
             "surprised",
             reactions={"Gorran": "happy"},
         )
+        react("Gorran", "neutral")
         narrate(
             "Gorran lets out a deep, low rumble, then gestures toward the wall from which he apparently came."
         )
