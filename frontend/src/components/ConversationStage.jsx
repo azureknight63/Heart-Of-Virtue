@@ -77,6 +77,21 @@ function Portrait({ member, isSpeaker }) {
     // Dim & scale: the speaker is full ink/size; listeners fade, shrink, and
     // desaturate slightly. Fades (enter/exit) multiply the base opacity.
     const baseOpacity = isSpeaker ? 1 : 0.85
+    const imgRef = useRef(null)
+
+    // Keep the same <img> node across emotion changes instead of keying on
+    // emotion (which forced a full unmount/remount and flickered every beat
+    // a speaker's emotion changed). handlePortraitError tracks fallback
+    // progress via dataset.fallback on the node, so it must be cleared here
+    // whenever we swap to a new emotion's src — otherwise a stale
+    // 'placeholder'/'neutral' flag from a previous emotion's failed load
+    // wrongly short-circuits the fallback chain for the new one.
+    useEffect(() => {
+        if (imgRef.current) {
+            delete imgRef.current.dataset.fallback
+        }
+    }, [member.id, member.emotion])
+
     return (
         <div
             style={{
@@ -90,7 +105,7 @@ function Portrait({ member, isSpeaker }) {
             }}
         >
             <img
-                key={`${member.id}:${member.emotion}`}
+                ref={imgRef}
                 src={portraitUrl(member.id, member.emotion)}
                 data-speaker-slug={speakerSlug(member.id)}
                 data-emotion={normalizeEmotion(member.emotion)}
@@ -254,7 +269,8 @@ function ConversationStage({ segments = [], conversation = null, onComplete, spe
                     border: `2px solid ${colors.secondary}`,
                     borderRadius: '8px',
                     backgroundColor: colors.bg.panelDeep,
-                    minHeight: '160px',
+                    minHeight: '220px',
+                    transition: 'min-height 0.3s ease',
                 }}
             >
                 {isDialogue && (

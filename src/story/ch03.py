@@ -4,7 +4,14 @@ Chapter 03 events
 
 from src.events import Event
 from src.functions import print_slow
-from src.narration import narrate, say, begin_conversation, enter_op, exit_op
+from src.narration import (
+    narrate,
+    say,
+    begin_conversation,
+    enter_character,
+    exit_character,
+    react,
+)
 import time
 
 # Recurring conversation cast, to avoid retyping the same tuple at every stage.
@@ -192,14 +199,14 @@ class CampEntryGreetingEvent(Event):
     def process(self):
         if not self.player.skip_dialog:
             narrate("\n")
-            time.sleep(0.3)
+            # time.sleep(0.3)
             print_slow(
                 "Jean stopped at the edge of the camp and let himself take it in — the fire, "
                 "the packed earth, the smell of food. The river was close enough to hear."
             )
-            time.sleep(1)
+            # time.sleep(1)
             print_slow("Gorran stood beside him. Said nothing. That was usual.")
-            time.sleep(0.5)
+            # time.sleep(0.5)
             begin_conversation(
                 [
                     ("Jean", "left", "neutral"),
@@ -207,78 +214,79 @@ class CampEntryGreetingEvent(Event):
                 ]
             )
             say("Tents.", "Jean", "curious")
-            time.sleep(0.4)
+            # time.sleep(0.4)
             say(
                 "Real ones, too — sized for people. Not lean-tos, not burrows. "
                 "Somebody built this to last.",
                 "Jean",
                 "curious",
             )
-            time.sleep(0.6)
+            # time.sleep(0.6)
             say(
                 "Clothes on a line, over there. Someone's doing laundry like the world "
                 "hasn't ended.",
                 "Jean",
                 "neutral",
             )
-            time.sleep(0.6)
+            # time.sleep(0.6)
             say(
                 "And whatever's cooking on that fire smells like real food. For real, "
                 "human mouths.",
                 "Jean",
                 "happy",
             )
-            time.sleep(0.5)
+            # time.sleep(0.5)
             print_slow(
                 "Gorran made the low sound he sometimes made — not agreement exactly, "
                 "but not disagreement either. Jean had come to recognize it as a kind "
                 "of knowing."
             )
-            time.sleep(1)
+            # time.sleep(1)
             # Liss spots Jean, then Gorran, and flees in a fluster
             print_slow(
                 "A girl came around the fire ring at a half-run, dark hair flying, and "
                 "pulled up short when she saw Jean."
             )
-            time.sleep(0.8)
+            # time.sleep(0.8)
+            enter_character("Liss", side="right", emotion="surprised")
             say(
                 "Oh — hi! You're new. Are you—",
                 "Liss",
                 "surprised",
-                enter=enter_op("Liss", side="right", emotion="surprised"),
             )
-            time.sleep(0.5)
+            # time.sleep(0.5)
             print_slow("Her eyes slid past Jean's shoulder and found Gorran.")
-            time.sleep(0.5)
+            # time.sleep(0.5)
             say(
                 "Oh! OH. You're— he's— that's a real one, isn't it, that's—",
                 "Liss",
                 "surprised",
-                leave=exit_op("Liss", transition="fade"),
             )
-            time.sleep(0.5)
+
+            # time.sleep(0.5)
             print_slow(
                 "Whatever she meant to say next dissolved into a half-squeal, half-gasp. "
                 "She backed up two steps, spun, and bolted for the fire ring, hair "
                 "streaming behind her."
             )
-            time.sleep(1.5)
+            exit_character("Liss", transition="fade")
+            # time.sleep(1.5)
             print_slow("Jean watched her go, then glanced at Gorran.")
-            time.sleep(0.5)
+            # time.sleep(0.5)
             say("What exactly was that about?", "Jean", "skeptical")
-            time.sleep(0.7)
+            # time.sleep(0.7)
             print_slow(
                 "Gorran didn't answer. Of course he didn't. Jean was fairly sure that "
                 "not-answering was itself an answer."
             )
-            time.sleep(1)
+            # time.sleep(1)
             say(
                 "Well — we're not getting anywhere standing here. Let's ask around, "
                 "see if anyone knows a way across that river.",
                 "Jean",
                 "neutral",
             )
-            time.sleep(0.5)
+            # time.sleep(0.5)
         self._set_gate()
 
     def _set_gate(self):
@@ -384,6 +392,7 @@ class MaraFirstContactEvent(Event):
             time.sleep(1)
 
             # Beat 3 — the crucifix, nothing spoken
+            react("Jean", "concerned")
             print_slow(
                 "She turned back to her pack, and for a moment the cord at her throat caught the "
                 "light — a small, tarnished crucifix, worn smooth with handling. Something in Jean "
@@ -405,6 +414,7 @@ class MaraFirstContactEvent(Event):
             time.sleep(0.8)
             say("What takes you to the... Caves?", "Jean", "curious")
             time.sleep(0.8)
+            react("Mara", "skeptical")
             print_slow(
                 "She turns back to Jean, holding his gaze for an uncomfortable moment."
             )
@@ -512,6 +522,7 @@ class DevetIntroEvent(Event):
             )
             say("Probably something less useful.", "Devet", "neutral")
             time.sleep(0.5)
+            react("Jean", "happy")
             print_slow("It took Jean a second to realize that had been a joke. He lifted the bowl and took a careful sip.")
             time.sleep(1)
 
@@ -679,6 +690,7 @@ class LissObservingEvent(Event):
                 "else."
             )
             time.sleep(1.2)
+            react("Jean", "happy")
             print_slow(
                 "Jean watched them — the girl and the old stone thing, both passively mesmerized by the "
                 "undulating water — and found he was smiling before he'd decided to."
@@ -767,9 +779,11 @@ class IronAndOathIntroEvent(Event):
                 "curious",
             )
             time.sleep(1)
-            print_slow(
+            say(
                 "A low, subsonic vibration rolled through the gravel underfoot as Gorran shifted his weight. "
-                "The tools hanging from the counter rack chimed softly against one another."
+                "The tools hanging from the counter rack chimed softly against one another.",
+                "Gorran",
+                "neutral",
             )
             time.sleep(1)
             say("Gorran travels with me. He isn't armor.", "Jean", "neutral")
@@ -849,6 +863,7 @@ class IronAndOathIntroEvent(Event):
                 "happy",
             )
             time.sleep(1)
+            react("Vespera", "conc")
             print_slow(
                 "A sudden, somber stillness settled over Vespera. Her smile faded into a quiet, distant stare "
                 "as she watched the spot where Liss had vanished. Her fingers gently traced the leather spine "
@@ -863,6 +878,12 @@ class IronAndOathIntroEvent(Event):
             say("Vespera...", "Kaelen", "concerned")
             time.sleep(0.8)
             say("I'm alright, love.", "Vespera", "sad")
+            time.sleep(1)
+            react("Kaelen", "concerned")
+            print_slow(
+                "Kaelen noticed her shift instantly. He set the fallen spear down, stepped over, and quietly "
+                "rested a warm, soot-stained hand on the small of her back."
+            )
             time.sleep(1)
             say(
                 "Right then. As I was saying — Vespera fits the harness, I balance the blade. "

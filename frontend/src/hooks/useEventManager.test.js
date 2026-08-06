@@ -448,13 +448,16 @@ describe('useEventManager', () => {
 
             await waitFor(() => expect(result.current.currentEvent?.event_id).toBe('evt-1'))
 
-            // Trigger the same event again while it's the current event — the
-            // "isCurrent" check only logs a diagnostic; it does not suppress
-            // the requeue (that's the queue-side dedup, covered separately).
+            // Trigger the same event again while it's the current event — a
+            // re-poll (e.g. checkPendingEvents racing an open confirmation
+            // dialog) must not requeue a second copy of the event already
+            // being displayed. A stray duplicate would later resurface after
+            // the original was consumed server-side, and submitting input
+            // against it would 400 ("Event not found").
             act(() => { result.current.handleEventsTriggered([{ ...event }]) })
 
             expect(result.current.currentEvent?.event_id).toBe('evt-1')
-            expect(result.current.eventQueue).toHaveLength(1)
+            expect(result.current.eventQueue).toHaveLength(0)
         })
 
         it('skips a recently processed event still lingering at the head of the queue', async () => {

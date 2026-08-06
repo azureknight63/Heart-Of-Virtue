@@ -69,6 +69,13 @@ export function useEventManager({
     // Refs for deduplication and delay tracking
     const processedEventIds = useRef(new Set())
     const delayingEventIdRef = useRef(null)
+    // Mirrors currentEvent so handleEventsTriggered (a dependency-free
+    // useCallback) can check it synchronously without racing React's state
+    // update batching.
+    const currentEventRef = useRef(null)
+    useEffect(() => {
+        currentEventRef.current = currentEvent
+    }, [currentEvent])
 
     // Derived state (memoized for performance)
     const isEventDialogActive = useMemo(
@@ -93,48 +100,53 @@ export function useEventManager({
             )
 
             if (displayableEvents.length > 0) {
-                setEventQueue(prev => {
-                    const newQueue = [...prev]
-                    displayableEvents.forEach(newEvent => {
-                        // Check if this event (by ID or name) is already in queue
-                        const existingIndex = newQueue.findIndex(e =>
-                            (e.event_id && e.event_id === newEvent.event_id) ||
-                            (e.id === newEvent.id && e.name === newEvent.name)
-                        )
-
-                        if (existingIndex >= 0) {
-                            // Update existing event with new data (prefer needs_input=true)
-                            console.log(`[DEBUG] Updating existing event in queue: ${newEvent.name}`)
-
-                            // CRITICAL: Preserve local delay value if we've already set it to 0
-                            const currentDelay = newQueue[existingIndex].delay
-                            newQueue[existingIndex] = { ...newQueue[existingIndex], ...newEvent }
-                            if (currentDelay === 0) {
-                                newQueue[existingIndex].delay = 0
-                            }
-                        } else {
-                            console.log(`[DEBUG] Adding new event to queue: ${newEvent.name}`)
-                            newQueue.push(newEvent)
-                        }
-                    })
-                    return newQueue
+                // Drop anything that's already the displayed event before it
+                // ever reaches the queue — a log-only check here previously
+                // let a re-poll (e.g. checkPendingEvents racing a still-open
+                // confirmation dialog) queue a second copy of the same
+                // pending event. That duplicate would later resurface after
+                // the original was already consumed/removed server-side,
+                // and submitting input against it 400'd ("Event not found").
+                const current = currentEventRef.current
+                const eventsToQueue = displayableEvents.filter(newEvent => {
+                    const isCurrent = Boolean(current) && (
+                        (newEvent.event_id && newEvent.event_id === current.event_id) ||
+                        (newEvent.id === current.id && newEvent.name === current.name)
+                    )
+                    if (isCurrent) {
+                        console.log(`[DEBUG] Skipping event already currently displayed: ${newEvent.name}`)
+                    }
+                    return !isCurrent
                 })
 
-                // Also check against current event to prevent duplicates
-                setCurrentEvent(current => {
-                    if (current) {
-                        displayableEvents.forEach(newEvent => {
-                            const isCurrent = (
-                                (newEvent.event_id && newEvent.event_id === current.event_id) ||
-                                (newEvent.id === current.id && newEvent.name === current.name)
+                if (eventsToQueue.length > 0) {
+                    setEventQueue(prev => {
+                        const newQueue = [...prev]
+                        eventsToQueue.forEach(newEvent => {
+                            // Check if this event (by ID or name) is already in queue
+                            const existingIndex = newQueue.findIndex(e =>
+                                (e.event_id && e.event_id === newEvent.event_id) ||
+                                (e.id === newEvent.id && e.name === newEvent.name)
                             )
-                            if (isCurrent) {
-                                console.log(`[DEBUG] Skipping event already currently displayed: ${newEvent.name}`)
+
+                            if (existingIndex >= 0) {
+                                // Update existing event with new data (prefer needs_input=true)
+                                console.log(`[DEBUG] Updating existing event in queue: ${newEvent.name}`)
+
+                                // CRITICAL: Preserve local delay value if we've already set it to 0
+                                const currentDelay = newQueue[existingIndex].delay
+                                newQueue[existingIndex] = { ...newQueue[existingIndex], ...newEvent }
+                                if (currentDelay === 0) {
+                                    newQueue[existingIndex].delay = 0
+                                }
+                            } else {
+                                console.log(`[DEBUG] Adding new event to queue: ${newEvent.name}`)
+                                newQueue.push(newEvent)
                             }
                         })
-                    }
-                    return current
-                })
+                        return newQueue
+                    })
+                }
             }
         }
     }, []) // No dependencies needed - uses functional setState
