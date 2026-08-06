@@ -103,6 +103,32 @@ def test_stage_control_helpers_emit_control_entries():
     assert msgs[2]["span"] == 2
 
 
+def test_react_emits_stage_react_control_entry():
+    from src.narration import capture_narration, react
+
+    with capture_narration() as msgs:
+        react("Amelia", "SAD")  # unknown-case emotion -> normalized
+
+    assert len(msgs) == 1
+    assert msgs[0] == {"type": "stage_react", "reactions": {"Amelia": "sad"}}
+
+
+def test_react_accepts_a_reactions_dict_for_multiple_characters():
+    from src.narration import capture_narration, react
+
+    with capture_narration() as msgs:
+        react(reactions={"Amelia": "happy", "Gorran": "skeptical"})
+
+    assert msgs[0]["reactions"] == {"Amelia": "happy", "Gorran": "skeptical"}
+
+
+def test_react_requires_speaker_or_reactions():
+    from src.narration import react
+
+    with pytest.raises(ValueError):
+        react()
+
+
 # --------------------------------------------------------------------------- #
 # GameService._capture_conversation
 # --------------------------------------------------------------------------- #
@@ -215,6 +241,57 @@ def test_trailing_stage_op_attaches_to_last_segment(game_service):
     _out, segments, _conv = game_service._capture_conversation(msgs, FakePlayer())
     assert len(segments) == 1
     assert segments[-1]["exit"] == [{"id": "Amelia", "transition": "instant"}]
+
+
+def test_react_attaches_to_the_next_beat(game_service):
+    from src.narration import capture_narration, narrate, react
+
+    with capture_narration() as msgs:
+        react("Amelia", "sad")
+        narrate("She looks away.")
+
+    _out, segments, _conv = game_service._capture_conversation(msgs, FakePlayer())
+    assert len(segments) == 1
+    assert segments[0]["reactions"] == {"Amelia": "sad"}
+    assert segments[0]["text"] == "She looks away."
+    assert "speaker" not in segments[0]
+
+
+def test_react_merges_with_a_speaker_beats_own_reactions(game_service):
+    from src.narration import capture_narration, react, say
+
+    with capture_narration() as msgs:
+        react("Gorran", "skeptical")
+        say("It'll be fine.", "Jean", "neutral", reactions={"Amelia": "sad"})
+
+    _out, segments, _conv = game_service._capture_conversation(msgs, FakePlayer())
+    assert len(segments) == 1
+    assert segments[0]["reactions"] == {"Gorran": "skeptical", "Amelia": "sad"}
+
+
+def test_trailing_react_with_no_following_beat_attaches_to_last_segment(game_service):
+    from src.narration import capture_narration, say, react
+
+    with capture_narration() as msgs:
+        say("Farewell.", "Jean", "sad")
+        react("Amelia", "sad")
+
+    _out, segments, _conv = game_service._capture_conversation(msgs, FakePlayer())
+    assert len(segments) == 1
+    assert segments[-1]["reactions"] == {"Amelia": "sad"}
+
+
+def test_react_alone_produces_a_no_text_no_speaker_segment(game_service):
+    from src.narration import capture_narration, react
+
+    with capture_narration() as msgs:
+        react("Amelia", "sad")
+
+    _out, segments, _conv = game_service._capture_conversation(msgs, FakePlayer())
+    assert len(segments) == 1
+    assert segments[0]["text"] == ""
+    assert "speaker" not in segments[0]
+    assert segments[0]["reactions"] == {"Amelia": "sad"}
 
 
 # --------------------------------------------------------------------------- #

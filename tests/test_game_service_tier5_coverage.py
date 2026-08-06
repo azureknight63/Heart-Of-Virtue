@@ -210,13 +210,13 @@ class TestConversationHelpers:
             {
                 "text": "Reacting beat.",
                 "type": "narration",
-                "reactions": ["gasp"],
+                "reactions": {"Gorran": "surprised"},
                 "enter": [{"id": "Gorran"}],
                 "exit": [{"id": "Gorran"}],
             }
         ]
         output_text, segments, conversation = game_service._capture_conversation(msgs, mock_player)
-        assert segments[0]["reactions"] == ["gasp"]
+        assert segments[0]["reactions"] == {"Gorran": "surprised"}
         assert segments[0]["enter"][0]["id"] == "Gorran"
         assert segments[0]["exit"] == [{"id": "Gorran"}]
 

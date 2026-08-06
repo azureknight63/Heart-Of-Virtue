@@ -273,6 +273,35 @@ def exit_character(speaker, transition="fade", span=None):
     _emit_control({"type": "stage_exit", **exit_op(speaker, transition, span)})
 
 
+def react(speaker=None, emotion=None, *, reactions=None):
+    """Shift a character's displayed emotion between beats, with no line of dialogue.
+
+    Use this for a silent reaction — a listener's face changing in response to
+    what was just said, a character calming down before their next line, etc. —
+    where :func:`say`'s inline ``reactions=`` doesn't apply because nobody is
+    speaking on this beat. Like all cast-stage emotions, it persists on the
+    character until changed again.
+
+    Pass either ``speaker`` + ``emotion`` for one character, or
+    ``reactions={char_id: emotion, ...}`` to shift several at once.
+
+    :param emotion: one of :data:`EMOTIONS` — ``"neutral"``, ``"happy"``,
+        ``"sad"``, ``"angry"``, ``"surprised"``, ``"skeptical"``,
+        ``"concerned"``, ``"curious"``. Unknown values normalize to
+        ``"neutral"`` via :func:`_norm_emotion`.
+    """
+    if reactions is None:
+        if speaker is None:
+            raise ValueError("react() requires either (speaker, emotion) or reactions=")
+        reactions = {speaker: emotion}
+    _emit_control(
+        {
+            "type": "stage_react",
+            "reactions": {k: _norm_emotion(v) for k, v in reactions.items()},
+        }
+    )
+
+
 def end_conversation():
     """Close the staged conversation; subsequent beats render without the stage."""
     _emit_control({"type": "conversation_end"})

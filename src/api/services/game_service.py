@@ -333,6 +333,7 @@ class GameService:
         staged_used = False
         pending_enter: List[Dict[str, Any]] = []
         pending_exit: List[Dict[str, Any]] = []
+        pending_react: Dict[str, str] = {}
 
         for m in msgs:
             mtype = m.get("type")
@@ -382,6 +383,10 @@ class GameService:
                 pending_exit.append(op)
                 staged_used = True
                 continue
+            if mtype == "stage_react":
+                pending_react.update(m.get("reactions") or {})
+                staged_used = True
+                continue
 
             # Text beat (narration / dialogue / combat / ...).
             clean = self._clean_event_output(m.get("text", ""))
@@ -391,17 +396,18 @@ class GameService:
             entry_exit = list(m.get("exit") or [])
             enter_ops = pending_enter + entry_enter
             exit_ops = pending_exit + entry_exit
-            pending_enter, pending_exit = [], []
-            if m.get("speaker") or m.get("reactions") or enter_ops or exit_ops:
+            reaction_ops = {**pending_react, **(m.get("reactions") or {})}
+            pending_enter, pending_exit, pending_react = [], [], {}
+            if m.get("speaker") or reaction_ops or enter_ops or exit_ops:
                 staged_used = True
-            if not clean and not enter_ops and not exit_ops:
+            if not clean and not enter_ops and not exit_ops and not reaction_ops:
                 continue
             seg: Dict[str, Any] = {"text": clean, "type": mtype or "narration"}
             if m.get("speaker"):
                 seg["speaker"] = m.get("speaker")
                 seg["emotion"] = m.get("emotion", "neutral")
-            if m.get("reactions"):
-                seg["reactions"] = m.get("reactions")
+            if reaction_ops:
+                seg["reactions"] = reaction_ops
             if m.get("thought"):
                 seg["thought"] = True
             if enter_ops:
@@ -411,12 +417,19 @@ class GameService:
             seg["in_conversation"] = conv_active
             segments.append(seg)
 
-        # Trailing stage ops with no following beat attach to the last segment.
-        if (pending_enter or pending_exit) and segments:
+        # Trailing stage ops with no following beat attach to the last segment
+        # (or seed a bare segment if the stage has no beats at all yet).
+        if pending_enter or pending_exit or pending_react:
+            if not segments:
+                segments.append(
+                    {"text": "", "type": "narration", "in_conversation": conv_active}
+                )
             if pending_enter:
                 segments[-1].setdefault("enter", []).extend(pending_enter)
             if pending_exit:
                 segments[-1].setdefault("exit", []).extend(pending_exit)
+            if pending_react:
+                segments[-1].setdefault("reactions", {}).update(pending_react)
 
         output_text = self._clean_event_output(
             "\n".join(
