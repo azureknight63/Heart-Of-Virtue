@@ -568,5 +568,9 @@ describe('Tactical AI Integration Tests', () => {
             const poisonIcon = screen.queryByText('🧪');
             expect(poisonIcon).toBeTruthy();
         }, { timeout: 10000 });
-    }, 10000);
+        // The test budget must exceed the sum of the waitFor budgets above.
+        // At 10000 it equalled a single wait, so under parallel full-suite load
+        // the test timed out before its own waits could resolve — a flake that
+        // only ever reproduced in a full run, never in isolation.
+    }, 25000);
 });

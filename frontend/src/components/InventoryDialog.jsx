@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import ItemDetailDialog from './ItemDetailDialog'
 import BaseDialog from './BaseDialog'
 import { colors, spacing } from '../styles/theme'
-import { INVENTORY_TABS, categorizeItems, getRarityColor, getItemIcon, RARITY_RANK } from '../utils/itemUtils'
+import { INVENTORY_TABS, categorizeItems, getRarityColor, getItemIcon, RARITY_RANK, formatWeight } from '../utils/itemUtils'
 
 /**
  * InventoryDialog - Main container for the player's inventory
@@ -423,7 +423,7 @@ function ItemCard({ item, onClick, isShop }) {
         color: isShop ? colors.gold : colors.text.main
       }}>
         <span>{isShop ? 'Buy: ' : ''}{item.value}💰</span>
-        <span style={{ fontSize: '10px', color: colors.text.muted, fontWeight: 'normal' }}>{item.weight}kg</span>
+        <span style={{ fontSize: '10px', color: colors.text.muted, fontWeight: 'normal' }}>{formatWeight(item.weight)}</span>
       </div>
     </div>
   )

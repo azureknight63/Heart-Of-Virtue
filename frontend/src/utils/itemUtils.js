@@ -45,6 +45,22 @@ export const categorizeItems = (items) => {
 }
 
 /**
+ * The unit label for every weight the engine reports. The engine itself is
+ * unitless (`weight_tolerance`), so this is the single place the product
+ * decision lives — previously the same value was labelled "kg" in the shop and
+ * inventory, "lb" in the loot dialog, and "w" in the item detail panel.
+ */
+export const WEIGHT_UNIT = 'lb'
+
+/**
+ * formatWeight - Render a weight with consistent precision and unit.
+ * Coerces non-numeric input to 0 so a missing field can't emit "undefinedlb"
+ * or a full float expansion like "0.30000000000000004".
+ */
+export const formatWeight = (weight, decimals = 2) =>
+    `${(Number(weight) || 0).toFixed(decimals)} ${WEIGHT_UNIT}`
+
+/**
  * RARITY_RANK - Canonical ordering for item rarity, lowest to highest.
  * Rarity is a ranked enum, so sorting it lexically is meaningless to the player.
  */

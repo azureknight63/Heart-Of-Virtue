@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback } from 'react'
 import apiClient from '../api/client'
 import { player as playerApi } from '../api/endpoints'
 import BookReaderDialog, { stripBookWrapper } from './BookReaderDialog'
+import { ItemStatGrid, ItemSection } from './ItemStatGrid'
+import { formatWeight } from '../utils/itemUtils'
 
 // Display labels for the scalar stat-bonus keys the backend emits (see
 // inventory.py's _BONUS_ATTRS) — keep in sync if new bonus stats are added.
@@ -345,131 +347,26 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
         gap: '8px',
       }}>
         {/* Properties Grid - Inline */}
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(80px, 1fr))',
-          gap: '1px',
-          backgroundColor: '#664400',
-          padding: '1px',
-          borderRadius: '3px',
-        }}>
-          {/* Type Property */}
-          <div style={{
-            backgroundColor: 'rgba(30, 15, 0, 0.6)',
-            padding: '6px',
-            textAlign: 'center',
-            display: 'flex',
-            flexDirection: 'column',
-            justifyContent: 'center',
-          }}>
-            <div style={{ color: '#ffaa00', fontWeight: 'bold', fontSize: '13px', marginBottom: '3px' }}>Type</div>
-            <div style={{ color: '#ffee99', fontSize: '14px' }}>{item.maintype || item.type}</div>
-          </div>
-
-          {/* Subtype Property */}
-          {item.subtype && (
-            <div style={{
-              backgroundColor: 'rgba(30, 15, 0, 0.6)',
-              padding: '6px',
-              textAlign: 'center',
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'center',
-            }}>
-              <div style={{ color: '#ffaa00', fontWeight: 'bold', fontSize: '13px', marginBottom: '3px' }}>Subtype</div>
-              <div style={{ color: '#ffee99', fontSize: '14px' }}>{item.subtype}</div>
-            </div>
-          )}
-
-          {/* Damage Property (weapons) */}
-          {typeof item.damage === 'number' && (
-            <div style={{
-              backgroundColor: 'rgba(30, 15, 0, 0.6)',
-              padding: '6px',
-              textAlign: 'center',
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'center',
-            }}>
-              <div style={{ color: '#ffaa00', fontWeight: 'bold', fontSize: '13px', marginBottom: '3px' }}>Damage</div>
-              <div style={{ color: '#ff8866', fontSize: '14px' }}>
-                ⚔️ {item.damage}{item.damage_type ? ` (${capitalize(item.damage_type)})` : ''}
-              </div>
-            </div>
-          )}
-
-          {/* Protection Property (armor) */}
-          {typeof item.protection === 'number' && (
-            <div style={{
-              backgroundColor: 'rgba(30, 15, 0, 0.6)',
-              padding: '6px',
-              textAlign: 'center',
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'center',
-            }}>
-              <div style={{ color: '#ffaa00', fontWeight: 'bold', fontSize: '13px', marginBottom: '3px' }}>Protection</div>
-              <div style={{ color: '#88ccff', fontSize: '14px' }}>🛡️ {item.protection}</div>
-            </div>
-          )}
-
-          {/* Weight Property */}
-          <div style={{
-            backgroundColor: 'rgba(30, 15, 0, 0.6)',
-            padding: '6px',
-            textAlign: 'center',
-            display: 'flex',
-            flexDirection: 'column',
-            justifyContent: 'center',
-          }}>
-            <div style={{ color: '#ffaa00', fontWeight: 'bold', fontSize: '13px', marginBottom: '3px' }}>Weight</div>
-            <div style={{ color: '#ffee99', fontSize: '14px' }}>{item.weight?.toFixed(2) || 0}w</div>
-          </div>
-
-          {/* Value Property */}
-          <div style={{
-            backgroundColor: 'rgba(30, 15, 0, 0.6)',
-            padding: '6px',
-            textAlign: 'center',
-            display: 'flex',
-            flexDirection: 'column',
-            justifyContent: 'center',
-          }}>
-            <div style={{ color: '#ffaa00', fontWeight: 'bold', fontSize: '13px', marginBottom: '3px' }}>Value</div>
-            <div style={{ color: '#ffee99', fontSize: '14px' }}>{item.value || 0}g</div>
-          </div>
-
-          {/* Rarity Property */}
-          {item.rarity && (
-            <div style={{
-              backgroundColor: 'rgba(30, 15, 0, 0.6)',
-              padding: '6px',
-              textAlign: 'center',
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'center',
-            }}>
-              <div style={{ color: '#ffaa00', fontWeight: 'bold', fontSize: '13px', marginBottom: '3px' }}>Rarity</div>
-              <div style={{ color: '#ffee99', fontSize: '14px' }}>{item.rarity}</div>
-            </div>
-          )}
-
-          {/* Quantity Property */}
-          {item.quantity > 1 && (
-            <div style={{
-              backgroundColor: 'rgba(30, 15, 0, 0.6)',
-              padding: '6px',
-              textAlign: 'center',
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'center',
-            }}>
-              <div style={{ color: '#ffaa00', fontWeight: 'bold', fontSize: '13px', marginBottom: '3px' }}>Qty</div>
-              <div style={{ color: '#ffee99', fontSize: '14px' }}>×{item.quantity}</div>
-            </div>
-          )}
-
-        </div>
+        <ItemStatGrid stats={[
+          { label: 'Type', value: item.maintype || item.type },
+          { label: 'Subtype', value: item.subtype, show: Boolean(item.subtype) },
+          {
+            label: 'Damage',
+            value: `⚔️ ${item.damage}${item.damage_type ? ` (${capitalize(item.damage_type)})` : ''}`,
+            color: '#ff8866',
+            show: typeof item.damage === 'number',
+          },
+          {
+            label: 'Protection',
+            value: `🛡️ ${item.protection}`,
+            color: '#88ccff',
+            show: typeof item.protection === 'number',
+          },
+          { label: 'Weight', value: formatWeight(item.weight) },
+          { label: 'Value', value: `${item.value || 0}g` },
+          { label: 'Rarity', value: item.rarity, show: Boolean(item.rarity) },
+          { label: 'Qty', value: `×${item.quantity}`, show: item.quantity > 1 },
+        ]} />
 
         {/* Comparison vs. currently equipped item in the same slot */}
         {item.comparison && (
@@ -514,15 +411,7 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
 
         {/* Consumable Effects */}
         {item.effects && item.effects.length > 0 && (
-          <div style={{
-            backgroundColor: 'rgba(30, 15, 0, 0.6)',
-            border: '1px solid #664400',
-            borderRadius: '4px',
-            padding: '8px 10px',
-          }}>
-            <div style={{ color: '#ffaa00', fontWeight: 'bold', fontSize: '13px', textTransform: 'uppercase', marginBottom: '6px' }}>
-              Effects
-            </div>
+          <ItemSection title="Effects">
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
               {item.effects.map((effect, i) => {
                 const text = describeEffect(effect)
@@ -533,40 +422,24 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
                 ) : null
               })}
             </div>
-          </div>
+          </ItemSection>
         )}
 
         {/* Stat Bonuses */}
         {item.bonuses && Object.keys(item.bonuses).length > 0 && (
-          <div style={{
-            backgroundColor: 'rgba(30, 15, 0, 0.6)',
-            border: '1px solid #664400',
-            borderRadius: '4px',
-            padding: '8px 10px',
-          }}>
-            <div style={{ color: '#ffaa00', fontWeight: 'bold', fontSize: '13px', textTransform: 'uppercase', marginBottom: '6px' }}>
-              Bonuses
-            </div>
+          <ItemSection title="Bonuses">
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
               {Object.entries(item.bonuses).map(([stat, value]) => (
                 <DiffChip key={stat} label={BONUS_STAT_LABELS[stat] || capitalize(stat)} value={value} />
               ))}
             </div>
-          </div>
+          </ItemSection>
         )}
 
         {/* Resistances (damage + status) */}
         {((item.resistances && Object.keys(item.resistances).length > 0) ||
           (item.status_resistances && Object.keys(item.status_resistances).length > 0)) && (
-          <div style={{
-            backgroundColor: 'rgba(30, 15, 0, 0.6)',
-            border: '1px solid #664400',
-            borderRadius: '4px',
-            padding: '8px 10px',
-          }}>
-            <div style={{ color: '#ffaa00', fontWeight: 'bold', fontSize: '13px', textTransform: 'uppercase', marginBottom: '6px' }}>
-              Resistances
-            </div>
+          <ItemSection title="Resistances">
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
               {Object.entries(item.resistances || {}).map(([type, value]) => (
                 <DiffChip key={`res-${type}`} label={`${type.toUpperCase()} Res`} value={value} percent />
@@ -575,7 +448,7 @@ export default function ItemDetailDialog({ item, player, onClose, onBack, onRefe
                 <DiffChip key={`sres-${type}`} label={`${capitalize(type)} Resist`} value={value} percent />
               ))}
             </div>
-          </div>
+          </ItemSection>
         )}
 
         {/* Equipped Status — outside the grid to avoid auto-fit column count distortion */}

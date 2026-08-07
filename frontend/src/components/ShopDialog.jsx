@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react'
 import BaseDialog from './BaseDialog'
 import { useShop } from '../hooks/useShop'
 import { colors, spacing, accessibility } from '../styles/theme'
-import { getItemIcon } from '../utils/itemUtils'
+import { getItemIcon, formatWeight, WEIGHT_UNIT } from '../utils/itemUtils'
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
@@ -50,14 +50,14 @@ function WeightBar({ current, max, pendingDelta, isMobile }) {
               </span>
               {!isMobile && (
                 <span style={{ color: colors.text.dim, fontSize: '0.58rem' }}>
-                  → {projectedTotal.toFixed(1)} kg after
+                  → {projectedTotal.toFixed(1)} {WEIGHT_UNIT} after
                 </span>
               )}
             </>
           )}
-          {!isMobile && pendingDelta === 0 && <span style={{ color: colors.text.dim }}>&nbsp;kg</span>}
+          {!isMobile && pendingDelta === 0 && <span style={{ color: colors.text.dim }}>&nbsp;{WEIGHT_UNIT}</span>}
         </div>
-        <span style={{ color: colors.text.dim, fontSize: '0.62rem' }}>max {max.toFixed(1)} kg</span>
+        <span style={{ color: colors.text.dim, fontSize: '0.62rem' }}>max {max.toFixed(1)} {WEIGHT_UNIT}</span>
       </div>
       <div style={{
         width: '100%',
@@ -174,7 +174,7 @@ function ItemRow({ item, isSelected, tab, onClick, isMobile }) {
         {item.subtype || item.type || ''}
       </div>
       <div style={{ textAlign: 'right', fontSize: '0.7rem', color: colors.text.muted }}>
-        {(item.weight || 0).toFixed(2)} kg
+        {formatWeight(item.weight)}
       </div>
       <div style={{ textAlign: 'right', fontSize: '0.78rem', fontWeight: 'bold', color: priceColor }}>
         {tab === 'sell' && (

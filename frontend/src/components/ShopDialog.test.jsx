@@ -7,7 +7,10 @@ vi.mock('../hooks/useShop', () => ({
   useShop: vi.fn(),
 }))
 
-vi.mock('../utils/itemUtils', () => ({
+// Partial mock: only the icon is stubbed. Weight formatting must come from the
+// real module so the tests assert the shipped unit and precision.
+vi.mock('../utils/itemUtils', async (importOriginal) => ({
+  ...(await importOriginal()),
   getItemIcon: vi.fn(() => '⚔️'),
 }))
 
@@ -440,14 +443,14 @@ describe('ShopDialog', () => {
     ).not.toThrow()
   })
 
-  it('defaults a listed item\'s weight to 0 kg when absent', () => {
+  it('defaults a listed item\'s weight to 0 lb when absent', () => {
     useShop.mockReturnValue(makeShopState({
       shopState: {
         stock: [{ id: 'weightless-1', name: 'Feather', price: 1, count: 1 }],
       },
     }))
     render(<ShopDialog npcId="1" npcName="Jambo" player={{}} onClose={onClose} />)
-    expect(screen.getByText('0.00 kg')).toBeInTheDocument()
+    expect(screen.getByText('0.00 lb')).toBeInTheDocument()
   })
 
   it('clears the selected-item panel when the previously selected item disappears from a refreshed list', () => {
