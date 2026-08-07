@@ -2080,25 +2080,30 @@ class TestCampEntryGreetingEvent:
         with (
             patch("src.story.ch03.print_slow") as mock_print,
             patch("src.story.ch03.say") as mock_say,
+            patch("src.story.ch03.enter_character") as mock_enter,
+            patch("src.story.ch03.exit_character") as mock_exit,
             patch("src.story.ch03.time.sleep"),
         ):
             ev.process()
         assert mock_print.called
         # Jean's spoken observations about the camp
         mock_say.assert_any_call("Tents.", "Jean", "curious")
-        # Liss enters, notices Jean then Gorran, and is staged with an enter op
-        liss_enter_calls = [
-            c
-            for c in mock_say.call_args_list
-            if c.args[:2] == ("Oh — hi! You're new. Are you—", "Liss")
+        # Liss enters, notices Jean then Gorran, and leaves in a fluster.
+        #
+        # The entrance/exit are staged with the standalone enter_character /
+        # exit_character helpers rather than say()'s enter=/leave= kwargs. Both
+        # spellings are supported and produce the same payload — GameService
+        # merges a pending stage_enter op into the next segment's enter list
+        # (game_service.py, `enter_ops = pending_enter + entry_enter`) — so this
+        # asserts the staging that happens, not the way it was authored.
+        liss_lines = [c for c in mock_say.call_args_list if c.args[1:2] == ("Liss",)]
+        assert [c.args[0] for c in liss_lines] == [
+            "Oh — hi! You're new. Are you—",
+            "Oh! OH. You're— he's— that's a real one, isn't it, that's—",
         ]
-        assert len(liss_enter_calls) == 1
-        assert liss_enter_calls[0].kwargs["enter"]["id"] == "Liss"
-        liss_exit_calls = [
-            c for c in mock_say.call_args_list if c.args[1] == "Liss" and "leave" in c.kwargs
-        ]
-        assert len(liss_exit_calls) == 1
-        assert liss_exit_calls[0].kwargs["leave"]["id"] == "Liss"
+
+        mock_enter.assert_called_once_with("Liss", side="right", emotion="surprised")
+        mock_exit.assert_called_once_with("Liss", transition="fade")
         # Jean's closing question and the stated goal (issue #326: player should
         # come away knowing to ask around camp for a way across the river)
         mock_say.assert_any_call("What exactly was that about?", "Jean", "skeptical")
