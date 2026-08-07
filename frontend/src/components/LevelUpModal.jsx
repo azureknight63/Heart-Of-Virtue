@@ -1,9 +1,9 @@
-import React, { useMemo, useState, useEffect } from 'react'
-import { useAudio } from '../context/AudioContext'
+import { useMemo } from 'react'
 import BaseDialog from './BaseDialog'
-import GameButton from './GameButton'
 import GameText from './GameText'
-import { colors, spacing, fonts } from '../styles/theme'
+import AttributePointAllocator from './AttributePointAllocator'
+import { useAttributeAllocation } from '../hooks/useAttributeAllocation'
+import { colors, spacing } from '../styles/theme'
 
 /**
  * LevelUpModal - Blocking modal for level-ups that occur outside of combat.
@@ -11,78 +11,15 @@ import { colors, spacing, fonts } from '../styles/theme'
  * Closes automatically once all points are spent.
  */
 export default function LevelUpModal({ player, onAllocatePoints }) {
-  const [selectedAttr, setSelectedAttr] = useState('strength_base')
-  const [amount, setAmount] = useState('1')
-  const [error, setError] = useState('')
-  const [isSubmitting, setIsSubmitting] = useState(false)
-
-  const { playSFX } = useAudio()
-
   const remainingPoints = Number(player?.pending_attribute_points || 0)
   const levelUps = useMemo(() => player?.pending_level_ups || [], [player])
 
-  const attrOptions = useMemo(() => [
-    { key: 'strength_base', label: 'Strength', value: player?.strength_base },
-    { key: 'finesse_base', label: 'Finesse', value: player?.finesse_base },
-    { key: 'speed_base', label: 'Speed', value: player?.speed_base },
-    { key: 'endurance_base', label: 'Endurance', value: player?.endurance_base },
-    { key: 'charisma_base', label: 'Charisma', value: player?.charisma_base },
-    { key: 'intelligence_base', label: 'Intelligence', value: player?.intelligence_base },
-    { key: 'faith_base', label: 'Faith', value: player?.faith_base },
-  ], [player])
-
-  const playSFXRef = React.useRef(playSFX)
-  useEffect(() => { playSFXRef.current = playSFX }, [playSFX])
-
-  useEffect(() => {
-    if (levelUps.length > 0) playSFXRef.current('level_up')
-  }, [levelUps.length])
-
-  const handleAllocate = async () => {
-    setError('')
-    const amt = parseInt(amount, 10)
-    if (Number.isNaN(amt) || amt <= 0) {
-      setError('Enter a valid point amount.')
-      return
-    }
-    if (amt > remainingPoints) {
-      setError('Not enough points available.')
-      return
-    }
-
-    try {
-      setIsSubmitting(true)
-      const result = await onAllocatePoints(selectedAttr, amt)
-      if (result && result.success) {
-        setAmount('1')
-        setError('')
-      } else {
-        setError(result?.error || 'Failed to allocate points.')
-      }
-    } catch (e) {
-      setError(e.response?.data?.error || e.message || 'Failed to allocate points.')
-    } finally {
-      setIsSubmitting(false)
-    }
-  }
-
-  const handleRandomize = async () => {
-    setError('')
-    try {
-      setIsSubmitting(true)
-      const result = await onAllocatePoints('randomize', remainingPoints)
-      if (result && result.success) {
-        setAmount('1')
-        setError('')
-      } else {
-        setError(result?.error || 'Failed to randomize points.')
-      }
-    } catch (e) {
-      setError(e.response?.data?.error || e.message || 'Failed to randomize points.')
-    } finally {
-      setIsSubmitting(false)
-    }
-  }
+  const allocation = useAttributeAllocation({
+    source: player,
+    remainingPoints,
+    onAllocatePoints,
+    levelUpCount: levelUps.length,
+  })
 
   return (
     <BaseDialog
@@ -130,77 +67,18 @@ export default function LevelUpModal({ player, onAllocatePoints }) {
             </GameText>
           </div>
 
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <select
-              value={selectedAttr}
-              onChange={(e) => setSelectedAttr(e.target.value)}
-              style={{
-                flex: 1,
-                padding: '10px',
-                backgroundColor: colors.bg.main,
-                color: colors.text.highlight,
-                border: `1px solid ${colors.border.main}`,
-                borderRadius: '8px',
-                fontFamily: fonts.main,
-                fontSize: '13px',
-                outline: 'none',
-              }}
-            >
-              {attrOptions.map((o) => (
-                <option key={o.key} value={o.key}>
-                  {o.label}{typeof o.value === 'number' ? ` (${o.value})` : ''}
-                </option>
-              ))}
-            </select>
-
-            <input
-              type="number"
-              min="1"
-              max={Math.max(1, remainingPoints)}
-              value={amount}
-              onChange={(e) => {
-                setAmount(e.target.value)
-                if (parseInt(e.target.value, 10) <= remainingPoints) setError('')
-              }}
-              style={{
-                width: '70px',
-                padding: '10px',
-                backgroundColor: colors.bg.main,
-                color: colors.text.highlight,
-                border: `1px solid ${colors.border.main}`,
-                borderRadius: '8px',
-                fontFamily: fonts.main,
-                textAlign: 'center',
-                outline: 'none',
-              }}
-            />
-          </div>
-
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <GameButton
-              onClick={handleAllocate}
-              disabled={isSubmitting || remainingPoints <= 0}
-              variant="primary"
-              style={{ flex: 2, padding: '10px', fontSize: '12px' }}
-            >
-              {isSubmitting ? 'ALLOCATING...' : 'ALLOCATE POINTS'}
-            </GameButton>
-            
-            <GameButton
-              onClick={handleRandomize}
-              disabled={isSubmitting || remainingPoints <= 0}
-              variant="secondary"
-              style={{ flex: 1, padding: '10px', fontSize: '12px' }}
-            >
-              RANDOMIZE
-            </GameButton>
-          </div>
-
-          {error && (
-            <div style={{ color: colors.danger, fontSize: '12px', fontFamily: 'monospace', textAlign: 'center' }}>
-              ⚠️ {error}
-            </div>
-          )}
+          <AttributePointAllocator
+            attrOptions={allocation.attrOptions}
+            selectedAttr={allocation.selectedAttr}
+            onSelectAttr={allocation.setSelectedAttr}
+            amount={allocation.amount}
+            onAmountChange={allocation.handleAmountChange}
+            onAllocate={allocation.handleAllocate}
+            onRandomize={allocation.handleRandomize}
+            remainingPoints={remainingPoints}
+            isSubmitting={allocation.isSubmitting}
+            error={allocation.error}
+          />
 
           <div style={{ color: colors.text.muted, fontSize: '11px', textAlign: 'center', fontStyle: 'italic' }}>
             Must spend all points to continue.

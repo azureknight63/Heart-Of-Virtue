@@ -1,36 +1,19 @@
-import React, { useMemo, useState, useEffect } from 'react'
-import { useAudio } from '../context/AudioContext'
+import { useCallback, useMemo, useState } from 'react'
 import BaseDialog from './BaseDialog'
 import GameButton from './GameButton'
 import GameText from './GameText'
-import { colors, spacing, fonts, shadows } from '../styles/theme'
+import AttributePointAllocator from './AttributePointAllocator'
+import { useAttributeAllocation } from '../hooks/useAttributeAllocation'
+import { colors, spacing, shadows } from '../styles/theme'
 
 /**
  * VictoryDialog - Shown after combat victory
  * Handles EXP display, loot, and attribute point allocation
  */
 export default function VictoryDialog({ endState, onClose, onAllocatePoints, onContinueToLoot }) {
-  const [selectedAttr, setSelectedAttr] = useState('strength_base')
-  const [amount, setAmount] = useState('1')
-  const [error, setError] = useState('')
-  const [isSubmitting, setIsSubmitting] = useState(false)
   const [isMinimized, setIsMinimized] = useState(false)
 
-  const { playSFX } = useAudio()
-
   const remainingPoints = Number(endState?.attribute_points_available || 0)
-
-  const attrOptions = useMemo(() => {
-    return [
-      { key: 'strength_base', label: 'Strength', value: endState?.attributes?.strength_base },
-      { key: 'finesse_base', label: 'Finesse', value: endState?.attributes?.finesse_base },
-      { key: 'speed_base', label: 'Speed', value: endState?.attributes?.speed_base },
-      { key: 'endurance_base', label: 'Endurance', value: endState?.attributes?.endurance_base },
-      { key: 'charisma_base', label: 'Charisma', value: endState?.attributes?.charisma_base },
-      { key: 'intelligence_base', label: 'Intelligence', value: endState?.attributes?.intelligence_base },
-      { key: 'faith_base', label: 'Faith', value: endState?.attributes?.faith_base },
-    ]
-  }, [endState])
 
   const expEntries = useMemo(() => {
     const exp = endState?.exp_gained || {}
@@ -43,64 +26,30 @@ export default function VictoryDialog({ endState, onClose, onAllocatePoints, onC
   const levelUps = useMemo(() => endState?.level_ups || [], [endState])
   const hasLoot = drops.length > 0
 
-  const playSFXRef = React.useRef(playSFX)
-  React.useEffect(() => { playSFXRef.current = playSFX }, [playSFX])
-
-  useEffect(() => {
-    if (levelUps.length > 0) playSFXRef.current('level_up')
-  }, [levelUps.length])
-
   const canClose = remainingPoints <= 0
 
-  const handleAdvance = () => {
+  const handleAdvance = useCallback(() => {
     if (hasLoot && onContinueToLoot) onContinueToLoot()
     else onClose()
-  }
+  }, [hasLoot, onContinueToLoot, onClose])
 
-  const handleAllocate = async () => {
-    setError('')
-
-    const amt = parseInt(amount, 10)
-    if (Number.isNaN(amt) || amt <= 0) {
-      setError('Enter a valid point amount.')
-      return
+  // Once the last point is spent, advance straight to the loot phase (or close
+  // when there is nothing to collect) rather than leaving an empty allocator up.
+  const handleAllocated = useCallback((result) => {
+    if ((result.remaining_points ?? 1) === 0) {
+      handleAdvance()
+      return true
     }
-    if (amt > remainingPoints) {
-      setError('Not enough points available.')
-      return
-    }
+    return false
+  }, [handleAdvance])
 
-    try {
-      setIsSubmitting(true)
-      const result = await onAllocatePoints(selectedAttr, amt)
-
-      // Check for backend success (some APIs might return result directly or result.data)
-      // Based on GamePage.jsx, it returns result.data which should have .success
-      if (result && result.success) {
-        // If all points are now spent, advance to loot phase (or close if no loot).
-        if ((result.remaining_points ?? 1) === 0) {
-          setIsSubmitting(false)
-          if (hasLoot && onContinueToLoot) {
-            onContinueToLoot()
-          } else {
-            onClose()
-          }
-          return
-        }
-        // Success - reset amount to 1 and the parent will refresh endState
-        setAmount('1')
-        setError('')
-      } else {
-        setError(result?.error || 'Failed to allocate points.')
-      }
-    } catch (e) {
-      // Handle axios error specifically if available
-      const apiError = e.response?.data?.error || e.message
-      setError(apiError || 'Failed to allocate points.')
-    } finally {
-      setIsSubmitting(false)
-    }
-  }
+  const allocation = useAttributeAllocation({
+    source: endState?.attributes,
+    remainingPoints,
+    onAllocatePoints,
+    levelUpCount: levelUps.length,
+    onAllocated: handleAllocated,
+  })
 
   // Minimized View (Bottom Bar)
   if (isMinimized) {
@@ -250,106 +199,18 @@ export default function VictoryDialog({ endState, onClose, onAllocatePoints, onC
 
               {remainingPoints > 0 && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                  <div style={{ display: 'flex', gap: '8px' }}>
-                    <select
-                      value={selectedAttr}
-                      onChange={(e) => setSelectedAttr(e.target.value)}
-                      style={{
-                        flex: 1,
-                        padding: '10px',
-                        backgroundColor: colors.bg.main,
-                        color: colors.text.highlight,
-                        border: `1px solid ${colors.border.main}`,
-                        borderRadius: '8px',
-                        fontFamily: fonts.main,
-                        fontSize: '13px',
-                        outline: 'none',
-                      }}
-                    >
-                      {attrOptions.map((o) => (
-                        <option key={o.key} value={o.key}>
-                          {o.label}{typeof o.value === 'number' ? ` (${o.value})` : ''}
-                        </option>
-                      ))}
-                    </select>
-
-                    <input
-                      type="number"
-                      min="1"
-                      max={Math.max(1, remainingPoints)}
-                      value={amount}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        setAmount(val);
-                        // Clear error if they fix the amount
-                        if (parseInt(val, 10) <= remainingPoints) {
-                          setError('');
-                        }
-                      }}
-                      style={{
-                        width: '70px',
-                        padding: '10px',
-                        backgroundColor: colors.bg.main,
-                        color: colors.text.highlight,
-                        border: `1px solid ${colors.border.main}`,
-                        borderRadius: '8px',
-                        fontFamily: fonts.main,
-                        textAlign: 'center',
-                        outline: 'none',
-                      }}
-                    />
-                  </div>
-
-                  <div style={{ display: 'flex', gap: '8px' }}>
-                    <GameButton
-                      onClick={handleAllocate}
-                      disabled={isSubmitting || remainingPoints <= 0}
-                      variant="primary"
-                      style={{ flex: 2, padding: '10px', fontSize: '12px' }}
-                    >
-                      {isSubmitting ? 'ALLOCATING...' : 'ALLOCATE POINTS'}
-                    </GameButton>
-
-                    <GameButton
-                      onClick={async () => {
-                        setError('')
-                        try {
-                          setIsSubmitting(true)
-                          const result = await onAllocatePoints('randomize', remainingPoints)
-                          if (result && result.success) {
-                            if ((result.remaining_points ?? 1) === 0) {
-                              setIsSubmitting(false)
-                              if (hasLoot && onContinueToLoot) {
-                                onContinueToLoot()
-                              } else {
-                                onClose()
-                              }
-                              return
-                            }
-                            setAmount('1')
-                            setError('')
-                          } else {
-                            setError(result?.error || 'Failed to randomize points.')
-                          }
-                        } catch (e) {
-                          setError(e.response?.data?.error || e.message || 'Failed to randomize points.')
-                        } finally {
-                          setIsSubmitting(false)
-                        }
-                      }}
-                      disabled={isSubmitting || remainingPoints <= 0}
-                      variant="secondary"
-                      style={{ flex: 1, padding: '10px', fontSize: '12px' }}
-                    >
-                      RANDOMIZE
-                    </GameButton>
-                  </div>
-                </div>
-              )}
-
-              {error && (
-                <div style={{ marginTop: '12px', color: colors.danger, fontSize: '12px', fontFamily: 'monospace', textAlign: 'center' }}>
-                  ⚠️ {error}
+                  <AttributePointAllocator
+                    attrOptions={allocation.attrOptions}
+                    selectedAttr={allocation.selectedAttr}
+                    onSelectAttr={allocation.setSelectedAttr}
+                    amount={allocation.amount}
+                    onAmountChange={allocation.handleAmountChange}
+                    onAllocate={allocation.handleAllocate}
+                    onRandomize={allocation.handleRandomize}
+                    remainingPoints={remainingPoints}
+                    isSubmitting={allocation.isSubmitting}
+                    error={allocation.error}
+                  />
                 </div>
               )}
 
