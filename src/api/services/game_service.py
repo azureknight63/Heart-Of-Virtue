@@ -469,6 +469,21 @@ class GameService:
             return output_text, [], None
         return output_text, segments, conversation
 
+    @staticmethod
+    def _apply_staged_payload(target, clean_output, segments, conversation):
+        """Copy a :meth:`_capture_conversation` result onto a response/event dict.
+
+        Empty parts are skipped so an unstaged event's payload keeps the exact
+        shape it had before staged conversations existed.
+        """
+        if clean_output:
+            target["output_text"] = clean_output
+        if segments:
+            target["segments"] = segments
+        if conversation:
+            target["conversation"] = conversation
+        return target
+
     def _store_pending_event(
         self,
         event,
@@ -1183,12 +1198,9 @@ class GameService:
                 clean_output, segments, conversation = self._capture_conversation(
                     _msgs, player
                 )
-                if clean_output:
-                    event_data["output_text"] = clean_output
-                if segments:
-                    event_data["segments"] = segments
-                if conversation:
-                    event_data["conversation"] = conversation
+                self._apply_staged_payload(
+                    event_data, clean_output, segments, conversation
+                )
 
             events_triggered.append(event_data)
 
@@ -1298,15 +1310,20 @@ class GameService:
 
         # Capture output + staged conversation segments
         clean_output, segments, conversation = self._capture_conversation(_msgs, player)
-        if clean_output:
-            result["output_text"] = clean_output
-        if segments:
-            result["segments"] = segments
-        if conversation:
-            result["conversation"] = conversation
+        self._apply_staged_payload(result, clean_output, segments, conversation)
 
         # Check if event still needs input (persistent events)
         updated_event_data = EventSerializer.serialize_with_input(event)
+        # Persist the staged payload alongside the serialized event so a client
+        # that re-reads GET /world/events/pending (page reload, or GamePage's
+        # checkPendingEvents on victory/loot) recovers THIS stage's prose and
+        # portraits. serialize_with_input only carries the event's `description`
+        # attribute, which staged events stop updating after their early stages —
+        # replaying it would re-render stale prose and let its Continue button
+        # skip the stage the player is actually on.
+        self._apply_staged_payload(
+            updated_event_data, clean_output, segments, conversation
+        )
 
         if updated_event_data.get("needs_input") and not getattr(
             event, "completed", False

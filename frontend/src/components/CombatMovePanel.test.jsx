@@ -14,10 +14,10 @@ describe('CombatMovePanel', () => {
   const mockOnClose = vi.fn();
 
   const mockMoves = [
-    { name: 'Slash', category: 'Attack', description: 'A basic slash', fatigue_cost: 5, available: true },
-    { name: 'Block', category: 'Defense', description: 'Block incoming attacks', fatigue_cost: 2, available: true },
+    { name: 'Slash', category: 'Offensive', description: 'A basic slash', fatigue_cost: 5, available: true },
+    { name: 'Block', category: 'Defensive', description: 'Block incoming attacks', fatigue_cost: 2, available: true },
     { name: 'Heal', category: 'Miscellaneous', description: 'Heal yourself', fatigue_cost: 10, available: false, reason: 'Not enough mana' },
-    { name: 'Fireball', category: 'Special', description: 'A fiery blast', fatigue_cost: 20, available: true },
+    { name: 'Fireball', category: 'Mastery', description: 'A fiery blast', fatigue_cost: 20, available: true },
     { name: 'Meditate', category: 'Utility', description: 'Recover fatigue', fatigue_cost: 0, available: true }
   ];
 
@@ -30,13 +30,13 @@ describe('CombatMovePanel', () => {
     render(
       <CombatMovePanel 
         moves={mockMoves} 
-        category="Attack" 
+        category="Offensive" 
         onMoveClick={mockOnMoveClick} 
         onClose={mockOnClose} 
       />
     );
 
-    expect(screen.getByText(/Attack/i)).toBeDefined();
+    expect(screen.getByText(/Offensive/i)).toBeDefined();
     expect(screen.getByText(/MOVES/i)).toBeDefined();
     expect(screen.getByText('Slash')).toBeDefined();
     expect(screen.queryByText('Block')).toBeNull();
@@ -58,34 +58,62 @@ describe('CombatMovePanel', () => {
     expect(screen.getByText('Meditate')).toBeDefined();
   });
 
-  it('renders Special, Spiritual, and Supernatural moves together', () => {
+  it('renders Mastery moves under the SPECIAL group', () => {
     const specialMoves = [
       ...mockMoves,
-      { name: 'Spirit Blast', category: 'Spiritual', description: 'Blast of spirit', available: true },
-      { name: 'Ghost Walk', category: 'Supernatural', description: 'Walk through walls', available: true }
+      { name: 'War Cry', category: 'Mastery', description: 'Rally yourself', available: true },
     ];
 
     render(
-      <CombatMovePanel 
-        moves={specialMoves} 
-        category="Special" 
-        onMoveClick={mockOnMoveClick} 
-        onClose={mockOnClose} 
+      <CombatMovePanel
+        moves={specialMoves}
+        category="Special"
+        onMoveClick={mockOnMoveClick}
+        onClose={mockOnClose}
       />
     );
 
     expect(screen.getByText(/Special/i)).toBeDefined();
     expect(screen.getByText(/MOVES/i)).toBeDefined();
     expect(screen.getByText('Fireball')).toBeDefined();
-    expect(screen.getByText('Spirit Blast')).toBeDefined();
-    expect(screen.getByText('Ghost Walk')).toBeDefined();
+    expect(screen.getByText('War Cry')).toBeDefined();
+  });
+
+  it('lists Tactical moves under the MISC group, and nowhere else', () => {
+    const withTactical = [
+      ...mockMoves,
+      { name: "Reaper's Mark", category: 'Tactical', description: 'Mark a target', available: true },
+    ];
+
+    ['Offensive', 'Maneuver', 'Defensive', 'Special'].forEach((group) => {
+      const { unmount } = render(
+        <CombatMovePanel
+          moves={withTactical}
+          category={group}
+          onMoveClick={mockOnMoveClick}
+          onClose={mockOnClose}
+        />
+      );
+      expect(screen.queryByText("Reaper's Mark")).toBeNull();
+      unmount();
+    });
+
+    render(
+      <CombatMovePanel
+        moves={withTactical}
+        category="Miscellaneous"
+        onMoveClick={mockOnMoveClick}
+        onClose={mockOnClose}
+      />
+    );
+    expect(screen.getByText("Reaper's Mark")).toBeDefined();
   });
 
   it('handles move click and plays SFX', () => {
     render(
       <CombatMovePanel 
         moves={mockMoves} 
-        category="Attack" 
+        category="Offensive" 
         onMoveClick={mockOnMoveClick} 
         onClose={mockOnClose} 
       />
@@ -134,7 +162,7 @@ describe('CombatMovePanel', () => {
     render(
       <CombatMovePanel 
         moves={mockMoves} 
-        category="Attack" 
+        category="Offensive" 
         onMoveClick={mockOnMoveClick} 
         onClose={mockOnClose} 
       />
@@ -147,13 +175,13 @@ describe('CombatMovePanel', () => {
 
   it('notifies onTargetHover with the single viable enemy target on hover, and clears it on click/leave', () => {
     const singleTargetMoves = [
-      { name: 'Lunge', category: 'Attack', description: 'A quick lunge', available: true, targeted: true, requires_target_selection: false, viable_targets: [{ id: 'enemy_1' }] },
+      { name: 'Lunge', category: 'Offensive', description: 'A quick lunge', available: true, targeted: true, requires_target_selection: false, viable_targets: [{ id: 'enemy_1' }] },
     ];
     const mockOnTargetHover = vi.fn();
     render(
       <CombatMovePanel
         moves={singleTargetMoves}
-        category="Attack"
+        category="Offensive"
         onMoveClick={mockOnMoveClick}
         onClose={mockOnClose}
         onTargetHover={mockOnTargetHover}
@@ -175,13 +203,13 @@ describe('CombatMovePanel', () => {
   it('does not send a hover target for a non-enemy id or multiple viable targets', () => {
     const mockOnTargetHover = vi.fn();
     const multiTargetMoves = [
-      { name: 'Sweep', category: 'Attack', description: 'Hits everyone', available: true, targeted: true, requires_target_selection: false, viable_targets: [{ id: 'enemy_1' }, { id: 'enemy_2' }] },
-      { name: 'HealAlly', category: 'Attack', description: 'Heals a friend', available: true, targeted: true, requires_target_selection: false, viable_targets: [{ id: 'ally_1' }] },
+      { name: 'Sweep', category: 'Offensive', description: 'Hits everyone', available: true, targeted: true, requires_target_selection: false, viable_targets: [{ id: 'enemy_1' }, { id: 'enemy_2' }] },
+      { name: 'HealAlly', category: 'Offensive', description: 'Heals a friend', available: true, targeted: true, requires_target_selection: false, viable_targets: [{ id: 'ally_1' }] },
     ];
     render(
       <CombatMovePanel
         moves={multiTargetMoves}
-        category="Attack"
+        category="Offensive"
         onMoveClick={mockOnMoveClick}
         onClose={mockOnClose}
         onTargetHover={mockOnTargetHover}
@@ -199,7 +227,7 @@ describe('CombatMovePanel', () => {
     render(
       <CombatMovePanel 
         moves={mockMoves} 
-        category="Attack" 
+        category="Offensive" 
         onMoveClick={mockOnMoveClick} 
         onClose={mockOnClose} 
       />

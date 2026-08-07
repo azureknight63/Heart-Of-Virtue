@@ -218,6 +218,74 @@ def test_explicit_side_overrides_party_rule(game_service):
     assert conversation["cast"][0]["side"] == "left"
 
 
+def test_conversation_carries_the_first_roster_not_the_last(game_service):
+    """A capture with several begin_conversation() calls reports the FIRST cast.
+
+    ConversationStage seeds every member of ``conversation.cast`` with
+    enteredAt = -1 (on stage from beat 0), so a later roster here would put
+    characters on screen before the prose introduces them and would make the
+    enter op emitted for them a no-op.
+    """
+    from src.narration import capture_narration, begin_conversation, say
+
+    with capture_narration() as msgs:
+        begin_conversation([("Jean", "left", "neutral"), ("Mara", "right", "neutral")])
+        say("Crossing west?", "Mara", "neutral")
+        begin_conversation(
+            [
+                ("Jean", "left", "neutral"),
+                ("Mara", "right", "curious"),
+                ("Gorran", "left", "neutral"),
+            ]
+        )
+        say("Never had one this close.", "Mara", "curious")
+
+    _out, segments, conversation = game_service._capture_conversation(
+        msgs, FakePlayer()
+    )
+
+    assert [c["id"] for c in conversation["cast"]] == ["Jean", "Mara"]
+    # Gorran is still fully represented — just via an enter op on the beat that
+    # follows the second begin_conversation, not by being on stage from beat 0.
+    entered = [op["id"] for s in segments for op in s.get("enter", [])]
+    assert entered == ["Gorran"]
+    assert segments[1]["enter"][0]["id"] == "Gorran"
+
+
+def test_sequential_begins_diff_against_the_previous_roster(game_service):
+    """Enter/exit ops diff against the immediately-preceding cast.
+
+    Regression guard for the first-roster fix: diffing against the retained
+    FIRST cast instead would miss the departure of a character who joined in an
+    intermediate begin_conversation (the Liss beat in IronAndOathIntro).
+    """
+    from src.narration import capture_narration, begin_conversation, say
+
+    with capture_narration() as msgs:
+        begin_conversation([("Jean", "left", "neutral"), ("Kaelen", "right", "neutral")])
+        say("Welcome to Iron & Oath.", "Kaelen", "happy")
+        begin_conversation(
+            [
+                ("Jean", "left", "neutral"),
+                ("Kaelen", "right", "neutral"),
+                ("Liss", "right", "surprised"),
+            ]
+        )
+        say("Eek!", "Liss", "surprised")
+        begin_conversation([("Jean", "left", "neutral"), ("Kaelen", "right", "neutral")])
+        say("That girl's got more nerve than sense.", "Kaelen", "happy")
+
+    _out, segments, conversation = game_service._capture_conversation(
+        msgs, FakePlayer()
+    )
+
+    assert [c["id"] for c in conversation["cast"]] == ["Jean", "Kaelen"]
+    entered = [op["id"] for s in segments for op in s.get("enter", [])]
+    exited = [op["id"] for s in segments for op in s.get("exit", [])]
+    assert entered == ["Liss"]
+    assert exited == ["Liss"]
+
+
 def test_capture_propagates_thought_flag_onto_segment(game_service):
     from src.narration import capture_narration, say
 
@@ -485,6 +553,99 @@ def test_after_king_slime_return_stage1_produces_staged_conversation(game_servic
 
     by_speaker = [s for s in segments if s.get("speaker") == "Votha Krr"]
     assert any("done well" in s["text"].lower() for s in by_speaker)
+
+
+# --------------------------------------------------------------------------- #
+# Pending-event recovery (GET /world/events/pending)
+# --------------------------------------------------------------------------- #
+
+
+def _staged_pending_player():
+    """A Ch02GuideToCitadel-ready player stand-in with a live universe mock."""
+    from unittest.mock import Mock
+
+    player = FakePlayer(name="Jean")
+    player.skip_dialog = False
+    player.universe = Mock()
+    player.universe.story = {}
+    player.location_x = 0
+    player.location_y = 0
+    player.current_room = None
+    player.in_combat = False
+    player.pending_attribute_points = 0
+    return player
+
+
+def test_pending_event_data_carries_the_current_stages_segments(game_service):
+    """A mid-conversation stage is recoverable from session pending_events.
+
+    GET /world/events/pending replays ``event_data`` verbatim, so it must hold
+    THIS stage's staged payload. Without it the client falls back to the event's
+    ``description`` attribute — which Ch02GuideToCitadel stops updating after
+    stage 2 — re-rendering stale prose whose Continue button then skips a stage.
+    """
+    from unittest.mock import Mock, patch
+    from src.story.ch02 import Ch02GuideToCitadel
+
+    player = _staged_pending_player()
+    tile = Mock()
+    event = Ch02GuideToCitadel(player=player, tile=tile, params=None)
+    # Enter at stage 3: the first stage that narrates instead of assigning
+    # self.description, with stage 2's prose left stale on the attribute.
+    event._stage = 3
+    stale_description = "Jean stepped through. The cavern beyond was vast"
+    event.description = stale_description
+
+    session_data = {
+        "pending_events": {"evt-stage-3": {"event": event, "event_data": {}}}
+    }
+
+    with patch(
+        "src.api.services.game_service.check_for_combat", return_value=[]
+    ):
+        result = game_service.process_event_input(
+            player, "evt-stage-3", "continue", session_data
+        )
+
+    assert result["needs_input"] is True
+    assert event._stage == 4  # the stage the player is now waiting on
+
+    # world.py's GET /world/events/pending replays this dict verbatim.
+    stored = session_data["pending_events"]
+    assert len(stored) == 1
+    pending = next(iter(stored.values()))["event_data"]
+    assert pending["segments"] == result["segments"]
+    assert pending["conversation"] == result["conversation"]
+    assert pending["output_text"] == result["output_text"]
+
+    # Recovered prose is stage 3's, not the stale stage-2 description.
+    assert stale_description not in pending["output_text"]
+    assert "Gorran turned to Jean" in pending["output_text"]
+    assert any(s.get("speaker") == "Jean" for s in pending["segments"])
+
+
+def test_unstaged_pending_event_data_gains_no_empty_keys(game_service):
+    """An event that emits nothing keeps its pre-staging payload shape."""
+    from unittest.mock import MagicMock, patch
+
+    player = _staged_pending_player()
+    event = MagicMock(spec=["process", "completed", "needs_input", "player", "tile"])
+    event.completed = False
+    event.needs_input = True
+    event.process = lambda user_input=None: None
+    session_data = {
+        "pending_events": {"evt-1": {"event": event, "event_data": {}}}
+    }
+
+    with patch(
+        "src.api.services.game_service.check_for_combat", return_value=[]
+    ):
+        game_service.process_event_input(player, "evt-1", "yes", session_data)
+
+    stored = next(iter(session_data["pending_events"].values()))["event_data"]
+    assert "segments" not in stored
+    assert "conversation" not in stored
+    assert "output_text" not in stored
 
 
 # --------------------------------------------------------------------------- #

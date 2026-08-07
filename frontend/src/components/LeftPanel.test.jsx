@@ -371,13 +371,27 @@ describe('LeftPanel', () => {
                 { id: 1, name: 'Slash', category: 'Offensive' },
                 { id: 2, name: 'Guard', category: 'Defensive' },
                 { id: 3, name: 'Dodge', category: 'Maneuver' },
-                { id: 4, name: 'Pray', category: 'Supernatural' },
+                { id: 4, name: 'War Cry', category: 'Mastery' },
                 { id: 5, name: 'Check', category: 'Utility' },
             ],
             beat_states: [{ enemies: [] }],
         };
         render(<LeftPanel player={mockPlayer} location={mockLocation} mode="combat" combat={combat} />);
         expect(screen.getByTestId('hero-flags')).toHaveTextContent('offensive,defensive,maneuver,misc,special');
+    });
+
+    it('routes Tactical moves to the MISC button and tolerates a nameless move', () => {
+        const combat = {
+            log: [],
+            awaiting_input: true,
+            input_type: 'move_selection',
+            available_options: [
+                { id: 1, category: 'Tactical' },
+            ],
+            beat_states: [{ enemies: [] }],
+        };
+        render(<LeftPanel player={mockPlayer} location={mockLocation} mode="combat" combat={combat} />);
+        expect(screen.getByTestId('hero-flags')).toHaveTextContent('misc');
     });
 
     // useApi's transformCombatData spreads battle_state flat onto the combat
@@ -1038,14 +1052,14 @@ describe('LeftPanel', () => {
         expect(screen.queryByTestId('interact-panel')).not.toBeInTheDocument();
     });
 
-    it('opens the Defensive and Special combat move panels', () => {
+    it('opens the Defensive and Special (Mastery) combat move panels', () => {
         const combat = {
             log: [],
             awaiting_input: true,
             input_type: 'move_selection',
             available_options: [
                 { id: 1, name: 'Dodge', category: 'Defensive', available: true },
-                { id: 2, name: 'Insight', category: 'Special', available: true },
+                { id: 2, name: 'War Cry', category: 'Mastery', available: true },
             ],
             beat_states: [{ enemies: [] }],
         };

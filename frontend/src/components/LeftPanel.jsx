@@ -15,6 +15,7 @@ import CombatMovePanel from './CombatMovePanel'
 import CombatLog from './CombatLog'
 import CombatInputDialog from './CombatInputDialog'
 import { getAnimationDuration } from '../utils/animationConfigs'
+import { groupHasMoves } from '../utils/categories'
 import CombatCheckDialog from './CombatCheckDialog'
 import SuggestedMovesPanel from './SuggestedMovesPanel'
 import FleeButton from './FleeButton'
@@ -325,13 +326,22 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
     hasSpecialMoves,
     hasDefensiveMoves,
     hasMiscellaneousMoves,
-  } = useMemo(() => ({
-    hasOffensiveMoves: mode === 'combat' && (availableMoves.some(m => m.category === 'Offensive') || lastKnownMoves.some(m => m.category === 'Offensive')),
-    hasManeuverMoves: mode === 'combat' && (availableMoves.some(m => m.category === 'Maneuver') || lastKnownMoves.some(m => m.category === 'Maneuver')),
-    hasSpecialMoves: mode === 'combat' && (availableMoves.some(m => m.category === 'Special' || m.category === 'Spiritual' || m.category === 'Supernatural') || lastKnownMoves.some(m => m.category === 'Special')),
-    hasDefensiveMoves: mode === 'combat' && (availableMoves.some(m => m.category === 'Defensive') || lastKnownMoves.some(m => m.category === 'Defensive')),
-    hasMiscellaneousMoves: mode === 'combat' && (availableMoves.some(m => m.category === 'Miscellaneous' || m.category === 'Utility') || lastKnownMoves.some(m => m.category === 'Miscellaneous' || m.category === 'Utility')),
-  }), [mode, availableMoves, lastKnownMoves])
+  } = useMemo(() => {
+    // Which engine categories each radial button collects is defined once, in
+    // utils/categories.js (CATEGORY_GROUPS) — CombatMovePanel filters its list
+    // with the same map, so a button can never appear for moves the panel would
+    // then hide (or vice versa).
+    const hasGroup = (group) => mode === 'combat' && (
+      groupHasMoves(availableMoves, group) || groupHasMoves(lastKnownMoves, group)
+    )
+    return {
+      hasOffensiveMoves: hasGroup('Offensive'),
+      hasManeuverMoves: hasGroup('Maneuver'),
+      hasSpecialMoves: hasGroup('Special'),
+      hasDefensiveMoves: hasGroup('Defensive'),
+      hasMiscellaneousMoves: hasGroup('Miscellaneous'),
+    }
+  }, [mode, availableMoves, lastKnownMoves])
 
   // Auto-scaling logic for HeroPanel
   const heroContainerRef = useRef(null)

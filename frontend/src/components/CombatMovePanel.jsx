@@ -3,23 +3,19 @@ import { useAudio } from '../context/AudioContext';
 import { colors, spacing, shadows, fonts } from '../styles/theme';
 import GamePanel from './GamePanel';
 import GameText from './GameText';
+import { movesInGroup } from '../utils/categories';
 
 // `isProcessing` is passed by LeftPanel while a move submission is in flight.
 // Without it the panel stays live during the API round trip and a double-click
 // submits two actions for one turn.
+// `category` is a radial *button group* key, not an engine move category — the
+// group → category mapping lives in utils/categories.js (CATEGORY_GROUPS), which
+// LeftPanel's button gating reads too, so the two can never drift apart.
 const CombatMovePanel = ({ moves, category, onMoveClick, onClose, onTargetHover, isProcessing = false }) => {
     const { playSFX } = useAudio();
     const [hoveredMoveName, setHoveredMoveName] = useState(null);
 
-    const filteredMoves = useMemo(() => moves.filter(move => {
-        if (category === 'Miscellaneous') {
-            return move.category === 'Miscellaneous' || move.category === 'Utility';
-        }
-        if (category === 'Special') {
-            return move.category === 'Special' || move.category === 'Spiritual' || move.category === 'Supernatural';
-        }
-        return move.category === category;
-    }), [moves, category]);
+    const filteredMoves = useMemo(() => movesInGroup(moves, category), [moves, category]);
 
     return (
         <GamePanel
