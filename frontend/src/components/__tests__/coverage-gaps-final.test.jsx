@@ -1,355 +1,208 @@
 /**
- * Final Coverage Gap Tests - Targeting remaining uncovered branches
- * Focuses on critical path variations and error handling
+ * Behavioural tests for CombatLog and EventManager.
+ *
+ * This file previously held ~26 tests that rendered inline `<div>` literals and
+ * asserted on React's own semantics (`{true && <span/>}`, `{0 && <span/>}`,
+ * destructuring, `??` vs `||`). Those exercised no project code. The
+ * EventManager cases were no better: they passed `events`/`onEvent`, props the
+ * component does not accept, and only asserted `container` was truthy — so they
+ * passed no matter what the component did.
+ *
+ * Everything here now drives the real components through their real contracts.
  */
 
-import React from 'react'
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, within } from '@testing-library/react'
 import CombatLog from '../CombatLog'
 import EventManager from '../EventManager'
 
-describe('Final Coverage Gap Tests', () => {
+vi.mock('../EventDialog', () => ({
+  default: ({ event, history, onClose, onSubmitInput }) => (
+    <div data-testid="event-dialog">
+      <span data-testid="event-text">{event?.output_text}</span>
+      <span data-testid="history-count">{(history || []).length}</span>
+      <button onClick={onClose}>close</button>
+      <button onClick={() => onSubmitInput('answer')}>submit</button>
+    </div>
+  ),
+}))
 
-  describe('EventManager Coverage', () => {
-    const mockOnEvent = vi.fn()
+describe('EventManager', () => {
+  const onClose = vi.fn()
+  const onSubmitInput = vi.fn()
 
-    beforeEach(() => {
-      vi.clearAllMocks()
-    })
+  beforeEach(() => vi.clearAllMocks())
 
-    it('renders with no events', () => {
-      const { container } = render(
-        <EventManager events={[]} onEvent={mockOnEvent} />
-      )
-      expect(container).toBeTruthy()
-    })
-
-    it('renders with single event', () => {
-      const { container } = render(
-        <EventManager
-          events={[{ type: 'test', data: {} }]}
-          onEvent={mockOnEvent}
-        />
-      )
-      expect(container).toBeTruthy()
-    })
-
-    it('renders with multiple events', () => {
-      const { container } = render(
-        <EventManager
-          events={[
-            { type: 'event1', data: {} },
-            { type: 'event2', data: {} },
-            { type: 'event3', data: {} }
-          ]}
-          onEvent={mockOnEvent}
-        />
-      )
-      expect(container).toBeTruthy()
-    })
+  it('renders nothing when there is no current event', () => {
+    const { container } = render(
+      <EventManager currentEvent={null} eventHistory={[]} onClose={onClose} onSubmitInput={onSubmitInput} />
+    )
+    expect(container.firstChild).toBeNull()
+    expect(screen.queryByTestId('event-dialog')).toBeNull()
   })
 
-  describe('Numeric Boundary Cases', () => {
-    it('handles zero values', () => {
-      const values = [0, 0.0, -0]
-      const { container } = render(
-        <div>
-          {values.map((v, i) => <span key={i}>{v}</span>)}
-        </div>
-      )
-      expect(screen.getAllByText('0')).toHaveLength(3)
-    })
-
-    it('handles very large numbers', () => {
-      const { container } = render(
-        <div>{Number.MAX_SAFE_INTEGER}</div>
-      )
-      expect(container).toBeTruthy()
-    })
-
-    it('handles very small numbers', () => {
-      const { container } = render(
-        <div>{Number.MIN_SAFE_INTEGER}</div>
-      )
-      expect(container).toBeTruthy()
-    })
-
-    it('handles infinity', () => {
-      const { container } = render(
-        <div>{Infinity}</div>
-      )
-      expect(container).toBeTruthy()
-    })
-
-    it('handles NaN', () => {
-      const { container } = render(
-        <div>{NaN}</div>
-      )
-      expect(container).toBeTruthy()
-    })
+  it.each([undefined, null, 0, ''])('renders nothing for the falsy currentEvent %p', (value) => {
+    const { container } = render(
+      <EventManager currentEvent={value} eventHistory={[]} onClose={onClose} onSubmitInput={onSubmitInput} />
+    )
+    expect(container.firstChild).toBeNull()
   })
 
-  describe('String Edge Cases', () => {
-    it('handles empty string', () => {
-      const { container } = render(
-        <div>{"" || "fallback"}</div>
-      )
-      expect(screen.getByText('fallback')).toBeInTheDocument()
-    })
-
-    it('handles very long string', () => {
-      const longString = 'A'.repeat(10000)
-      const { container } = render(
-        <div>{longString}</div>
-      )
-      expect(container.textContent).toHaveLength(10000)
-    })
-
-    it('handles string with special characters', () => {
-      const specialString = '!@#$%^&*()_+-=[]{}|;:"\'<>,.?/'
-      const { container } = render(
-        <div>{specialString}</div>
-      )
-      expect(container.textContent).toBe(specialString)
-    })
-
-    it('handles string with unicode', () => {
-      const { container } = render(
-        <div>😀😃😄😁😆😅🤣😂</div>
-      )
-      expect(container).toBeTruthy()
-    })
-
-    it('handles multiline string', () => {
-      const multiline = 'Line 1\nLine 2\nLine 3'
-      const { container } = render(
-        <div>{multiline}</div>
-      )
-      expect(container.textContent).toContain('Line 1')
-      expect(container.textContent).toContain('Line 2')
-    })
+  it('renders the dialog and forwards the event and history when an event exists', () => {
+    render(
+      <EventManager
+        currentEvent={{ output_text: 'A door creaks open.' }}
+        eventHistory={['first', 'second']}
+        onClose={onClose}
+        onSubmitInput={onSubmitInput}
+      />
+    )
+    expect(screen.getByTestId('event-text')).toHaveTextContent('A door creaks open.')
+    expect(screen.getByTestId('history-count')).toHaveTextContent('2')
   })
 
-  describe('Array and Object Edge Cases', () => {
-    it('handles empty array iteration', () => {
-      const arr = []
-      const { container } = render(
-        <ul>
-          {arr.map((item, i) => <li key={i}>{item}</li>)}
-          {arr.length === 0 && <li>No items</li>}
-        </ul>
-      )
-      expect(screen.getByText('No items')).toBeInTheDocument()
-    })
+  it('forwards close and input-submission callbacks to the dialog', () => {
+    render(
+      <EventManager
+        currentEvent={{ output_text: 'Answer the riddle.' }}
+        eventHistory={[]}
+        onClose={onClose}
+        onSubmitInput={onSubmitInput}
+      />
+    )
+    fireEvent.click(screen.getByText('close'))
+    expect(onClose).toHaveBeenCalledTimes(1)
 
-    it('handles array with undefined values', () => {
-      const arr = [1, undefined, undefined, 4, 5]
-      const { container } = render(
-        <ul>
-          {arr.map((item, i) => <li key={i}>{item || 'empty'}</li>)}
-        </ul>
-      )
-      expect(screen.getAllByText('empty')).toHaveLength(2)
-    })
-
-    it('handles nested arrays', () => {
-      const nested = [[1, 2], [3, 4], [5, 6]]
-      const { container } = render(
-        <ul>
-          {nested.map((arr, i) => (
-            <li key={i}>
-              {arr.join(',')}
-            </li>
-          ))}
-        </ul>
-      )
-      expect(screen.getByText('1,2')).toBeInTheDocument()
-    })
-
-    it('handles object with numeric keys', () => {
-      const obj = { '0': 'zero', '1': 'one', '2': 'two' }
-      const { container } = render(
-        <div>
-          {Object.entries(obj).map(([key, value]) => (
-            <span key={key}>{key}:{value}</span>
-          ))}
-        </div>
-      )
-      expect(screen.getByText(/0:zero/)).toBeInTheDocument()
-    })
-
-    it('handles object with symbol keys', () => {
-      const sym = Symbol('test')
-      const obj = { [sym]: 'symbol value' }
-      const { container } = render(
-        <div>Regular object</div>
-      )
-      expect(screen.getByText('Regular object')).toBeInTheDocument()
-    })
+    fireEvent.click(screen.getByText('submit'))
+    expect(onSubmitInput).toHaveBeenCalledWith('answer')
   })
 
-  describe('Function and Callback Coverage', () => {
-    it('handles multiple callback invocations', () => {
-      const callback = vi.fn()
-      const { container } = render(
-        <button onClick={() => { callback(); callback(); callback() }}>
-          Triple Click
-        </button>
-      )
-      fireEvent.click(screen.getByText('Triple Click'))
-      expect(callback).toHaveBeenCalledTimes(3)
-    })
+  it('tolerates a missing eventHistory', () => {
+    render(
+      <EventManager currentEvent={{ output_text: 'No history.' }} onClose={onClose} onSubmitInput={onSubmitInput} />
+    )
+    expect(screen.getByTestId('history-count')).toHaveTextContent('0')
+  })
+})
 
-    it('handles callback with different arguments', () => {
-      const callback = vi.fn()
-      const { container } = render(
-        <div>
-          <button onClick={() => callback('a')}>A</button>
-          <button onClick={() => callback('b')}>B</button>
-          <button onClick={() => callback('c')}>C</button>
-        </div>
-      )
-      fireEvent.click(screen.getByText('A'))
-      fireEvent.click(screen.getByText('B'))
-      fireEvent.click(screen.getByText('C'))
-      expect(callback).toHaveBeenNthCalledWith(1, 'a')
-      expect(callback).toHaveBeenNthCalledWith(2, 'b')
-      expect(callback).toHaveBeenNthCalledWith(3, 'c')
-    })
+describe('CombatLog', () => {
+  const entry = (over = {}) => ({ message: 'Jean strikes.', type: 'combat', timestamp: '10:00:00', ...over })
 
-    it('handles callback error handling', () => {
-      const callback = vi.fn(() => { throw new Error('Test error') })
-      expect(() => callback()).toThrow('Test error')
-    })
-
-    it('handles callback return values', () => {
-      const callback = vi.fn((x) => x * 2)
-      expect(callback(5)).toBe(10)
-      expect(callback).toHaveReturnedWith(10)
-    })
+  it('shows the placeholder when the log is empty', () => {
+    render(<CombatLog log={[]} />)
+    expect(screen.getByText('Combat started...')).toBeInTheDocument()
   })
 
-  describe('Conditional Render Patterns', () => {
-    it('renders Switch-like pattern', () => {
-      const status = 'warning'
-      const { container } = render(
-        <div>
-          {status === 'success' && <span>✓ Success</span>}
-          {status === 'error' && <span>✗ Error</span>}
-          {status === 'warning' && <span>⚠ Warning</span>}
-          {status === 'info' && <span>ℹ Info</span>}
-        </div>
-      )
-      expect(screen.getByText(/⚠ Warning/)).toBeInTheDocument()
-    })
-
-    it('renders guard clause pattern', () => {
-      const user = null
-      const { container } = render(
-        <div>
-          {user ? (
-            <>
-              <span>{user.name}</span>
-            </>
-          ) : (
-            <span>Not logged in</span>
-          )}
-        </div>
-      )
-      expect(screen.getByText('Not logged in')).toBeInTheDocument()
-    })
-
-    it('renders optional property access', () => {
-      const config = { nested: { value: 'found' } }
-      const { container } = render(
-        <div>{config?.nested?.value || 'default'}</div>
-      )
-      expect(screen.getByText('found')).toBeInTheDocument()
-    })
+  it('renders each entry message with its timestamp', () => {
+    render(<CombatLog log={[entry({ message: 'Jean strikes.' }), entry({ message: 'Slime recoils.' })]} />)
+    expect(screen.getByText('Jean strikes.')).toBeInTheDocument()
+    expect(screen.getByText('Slime recoils.')).toBeInTheDocument()
+    expect(screen.getAllByText('[10:00:00]')).toHaveLength(2)
   })
 
-  describe('Data Type Variations', () => {
-    it('renders boolean values', () => {
-      const { container } = render(
-        <div>
-          {true && <span>True</span>}
-          {false && <span>False</span>}
-        </div>
-      )
-      expect(screen.getByText('True')).toBeInTheDocument()
-      expect(screen.queryByText('False')).not.toBeInTheDocument()
-    })
-
-    it('renders different data types in array', () => {
-      const mixed = [1, 'two', true, null, undefined, { key: 'value' }]
-      const { container } = render(
-        <ul>
-          {mixed.map((item, i) => (
-            <li key={i}>
-              {typeof item === 'object' && item !== null
-                ? JSON.stringify(item)
-                : String(item)}
-            </li>
-          ))}
-        </ul>
-      )
-      expect(screen.getByText('1')).toBeInTheDocument()
-      expect(screen.getByText('two')).toBeInTheDocument()
-      expect(screen.getByText('true')).toBeInTheDocument()
-    })
-
-    it('renders after type conversion', () => {
-      const { container } = render(
-        <div>
-          {String(123)}
-          {String(true)}
-          {String(null)}
-          {String(undefined)}
-        </div>
-      )
-      expect(container.textContent).toContain('123')
-      expect(container.textContent).toContain('true')
-      expect(container.textContent).toContain('null')
-      expect(container.textContent).toContain('undefined')
-    })
+  it('omits animation entries, which carry no player-facing text', () => {
+    render(<CombatLog log={[entry({ message: 'visible' }), entry({ message: 'hidden', type: 'animation' })]} />)
+    expect(screen.getByText('visible')).toBeInTheDocument()
+    expect(screen.queryByText('hidden')).toBeNull()
   })
 
-  describe('Performance and Re-render Coverage', () => {
-    it('handles multiple re-renders efficiently', () => {
-      const { rerender } = render(<div>Initial</div>)
-      for (let i = 0; i < 10; i++) {
-        rerender(<div>Render {i}</div>)
-      }
-      expect(screen.getByText('Render 9')).toBeInTheDocument()
-    })
+  it('sanitizes markup in a log message instead of executing it', () => {
+    render(<CombatLog log={[entry({ message: '<img src=x onerror="alert(1)">bit by a bat' })]} />)
+    const img = document.querySelector('img')
+    // DOMPurify keeps the element but strips the event-handler attribute.
+    expect(img?.getAttribute('onerror')).toBeNull()
+    expect(screen.getByText(/bit by a bat/)).toBeInTheDocument()
+  })
 
-    it('handles prop changes', () => {
-      const { rerender } = render(
-        <div data-value={1}>Value: 1</div>
-      )
-      expect(screen.getByText('Value: 1')).toBeInTheDocument()
+  it('keeps safe inline markup in a log message', () => {
+    render(<CombatLog log={[entry({ message: 'a <b>critical</b> hit' })]} />)
+    expect(screen.getByText('critical').tagName).toBe('B')
+  })
 
-      rerender(
-        <div data-value={2}>Value: 2</div>
-      )
-      expect(screen.getByText('Value: 2')).toBeInTheDocument()
-    })
+  it('collapses and expands when the header is clicked', () => {
+    render(<CombatLog log={[entry({ message: 'Jean strikes.' })]} />)
+    const header = screen.getByText('Combat Log').parentElement
 
-    it('handles state updates in children', () => {
-      const { container, rerender } = render(
-        <div>
-          <span>Count: 0</span>
-        </div>
-      )
-      expect(screen.getByText('Count: 0')).toBeInTheDocument()
+    expect(screen.getByText('Jean strikes.')).toBeInTheDocument()
+    expect(within(header).getByText('▼')).toBeInTheDocument()
 
-      rerender(
-        <div>
-          <span>Count: 1</span>
-        </div>
-      )
-      expect(screen.getByText('Count: 1')).toBeInTheDocument()
-    })
+    fireEvent.click(header)
+    expect(screen.queryByText('Jean strikes.')).toBeNull()
+    expect(within(header).getByText('▶')).toBeInTheDocument()
+
+    fireEvent.click(header)
+    expect(screen.getByText('Jean strikes.')).toBeInTheDocument()
+  })
+
+  it('falls back to a generated timestamp when an entry has none', () => {
+    render(<CombatLog log={[{ message: 'no timestamp', type: 'combat' }]} />)
+    // Locale decides 12- vs 24-hour, so match the shape rather than the format.
+    expect(screen.getByText(/^\[\d{2}:\d{2}:\d{2}.*\]$/)).toBeInTheDocument()
+  })
+
+  it('renders distinct entries that share a message and round', () => {
+    // The backend deliberately allows duplicate text from different sources;
+    // both must survive to the DOM rather than collapsing to one node.
+    render(<CombatLog log={[entry({ message: 'The bat bites.', id: 'a' }), entry({ message: 'The bat bites.', id: 'b' })]} />)
+    expect(screen.getAllByText('The bat bites.')).toHaveLength(2)
+  })
+
+  it('applies the applied className to the container', () => {
+    const { container } = render(<CombatLog log={[]} className="my-log" />)
+    expect(container.firstChild).toHaveClass('my-log')
+  })
+
+  it('starts a resize drag only when resizing is allowed', () => {
+    const { container, rerender } = render(<CombatLog log={[entry()]} allowResize />)
+    const handle = container.querySelector('div[style*="ns-resize"]')
+    expect(handle).toBeTruthy()
+
+    rerender(<CombatLog log={[entry()]} allowResize={false} />)
+    expect(container.querySelector('div[style*="ns-resize"]')).toBeNull()
+  })
+
+  it('resizes the panel as the pointer is dragged', () => {
+    const { container } = render(<CombatLog log={[entry()]} allowResize />)
+    const panel = container.firstChild
+    const handle = container.querySelector('div[style*="ns-resize"]')
+
+    panel.getBoundingClientRect = () => ({ bottom: 300 })
+    fireEvent.mouseDown(handle)
+    fireEvent.mouseMove(document, { clientY: 260 })
+
+    // Dragging the bottom edge upward by 40px grows the panel from 150 to 190.
+    expect(panel.style.height).toBe('190px')
+
+    fireEvent.mouseUp(document)
+    fireEvent.mouseMove(document, { clientY: 100 })
+    expect(panel.style.height).toBe('190px')
+  })
+
+  it('clamps the height to the allowed range', () => {
+    const { container } = render(<CombatLog log={[entry()]} allowResize />)
+    const panel = container.firstChild
+    const handle = container.querySelector('div[style*="ns-resize"]')
+
+    panel.getBoundingClientRect = () => ({ bottom: 300 })
+    fireEvent.mouseDown(handle)
+
+    fireEvent.mouseMove(document, { clientY: 5000 })
+    expect(panel.style.height).toBe('50px')
+
+    fireEvent.mouseMove(document, { clientY: -5000 })
+    expect(panel.style.height).toBe('400px')
+  })
+
+  it('tolerates a missing log prop', () => {
+    expect(() => render(<CombatLog />)).not.toThrow()
+  })
+
+  it('auto-scrolls to the newest entry when the log grows', () => {
+    const { container, rerender } = render(<CombatLog log={[entry({ message: 'one' })]} />)
+    const scroller = container.querySelector('div[style*="overflow-y: auto"]')
+    Object.defineProperty(scroller, 'scrollHeight', { value: 900, configurable: true })
+
+    rerender(<CombatLog log={[entry({ message: 'one' }), entry({ message: 'two' })]} />)
+    expect(scroller.scrollTop).toBe(900)
   })
 })
