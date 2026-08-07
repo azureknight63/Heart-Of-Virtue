@@ -1101,8 +1101,7 @@ class GameService:
 
             # If event is already in interactive state, ensure it's in session and skip processing
             event.player = player
-            if hasattr(player, "current_room"):
-                event.tile = player.current_room
+            event.tile = tile
             queued_event = self._queue_interactive_event(
                 event,
                 event_data,
@@ -1138,8 +1137,7 @@ class GameService:
 
                         # Ensure event has current player and room references
                         event.player = player
-                        if hasattr(player, "current_room"):
-                            event.tile = player.current_room
+                        event.tile = tile
 
                         event.check_conditions()
 
@@ -2066,8 +2064,8 @@ class GameService:
             if event_data.get("needs_input") and not getattr(event, "completed", False):
                 # Keep references aligned to the current room for combat-driven events.
                 event.player = player
-                if hasattr(player, "current_room"):
-                    event.tile = player.current_room
+                if tile is not None:
+                    event.tile = tile
 
                 queued_event = self._queue_interactive_event(
                     event,
