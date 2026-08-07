@@ -28,7 +28,13 @@ export default function useTypewriter(text, speed = 30) {
     useEffect(() => {
         reset()
 
-        if (!text) return
+        // Nothing to type — an empty beat is complete the moment it starts.
+        // Bailing out without this leaves isComplete false forever, which stalls
+        // consumers that gate their "continue" affordance or auto-advance on it.
+        if (!text) {
+            setIsComplete(true)
+            return
+        }
 
         const chars = Array.from(text)
         let charsAdded = 0

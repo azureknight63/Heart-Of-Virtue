@@ -66,8 +66,10 @@ describe('computeStage (cast replay)', () => {
         const at2 = computeStage(segments, 2, CAST).members.find((m) => m.id === 'Amelia')
         // span=3 => opacity 2/3, 1/3, then gone
         expect(at0.opacity).toBeCloseTo(2 / 3, 5)
-        expect(at0.leaving).toBe(true)
         expect(at1.opacity).toBeCloseTo(1 / 3, 5)
+        // A member who is not exiting is unaffected by someone else's fade.
+        const jeanAt0 = computeStage(segments, 0, CAST).members.find((m) => m.id === 'Jean')
+        expect(jeanAt0.opacity).toBe(1)
         expect(at2).toBeUndefined()
     })
 

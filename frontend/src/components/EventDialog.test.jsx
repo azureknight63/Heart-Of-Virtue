@@ -88,8 +88,8 @@ describe('EventDialog', () => {
     const numberEvent = {
       ...mockEvent,
       input_type: 'number',
-      min_value: 1,
-      max_value: 10
+      input_min: 1,
+      input_max: 10
     };
 
     render(<EventDialog event={numberEvent} onClose={mockOnClose} onSubmitInput={mockOnSubmitInput} />);
@@ -116,8 +116,8 @@ describe('EventDialog', () => {
     const numberEvent = {
       ...mockEvent,
       input_type: 'number',
-      min_value: 1,
-      max_value: 10
+      input_min: 1,
+      input_max: 10
     };
 
     render(<EventDialog event={numberEvent} onClose={mockOnClose} onSubmitInput={mockOnSubmitInput} />);

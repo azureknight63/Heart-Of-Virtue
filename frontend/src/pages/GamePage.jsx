@@ -280,6 +280,12 @@ export default function GamePage() {
 
   /**
    * Handle event input with special cases
+   *
+   * Returns the event manager's result so EventDialog can tell a successful
+   * submission from a failed one — on failure it must re-enable its controls,
+   * otherwise the dialog is left with every control disabled and no way out.
+   * The `combat_init` branch returns undefined by design: that path unmounts
+   * the dialog, so there is nothing left to re-enable.
    */
   const handleEventInputWrapper = async (eventId, userInput) => {
     // Handle internal/frontend events
@@ -304,7 +310,7 @@ export default function GamePage() {
       if (result.is_game_over) {
         setGameOverMessage(result.output_text || '')
         setPendingGameOver(true)
-        return
+        return result
       }
 
       // Check if event triggered combat
@@ -318,6 +324,8 @@ export default function GamePage() {
       await refetchWorld()
       await fetchCombatStatus()
     }
+
+    return result
   }
 
   /**

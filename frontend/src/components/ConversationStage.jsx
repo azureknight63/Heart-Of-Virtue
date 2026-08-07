@@ -14,7 +14,6 @@ import { portraitUrl, handlePortraitError, speakerSlug, normalizeEmotion } from 
  */
 export function computeStage(segments, idx, initialCast) {
     const members = new Map()
-    const enteredAt = new Map()
     const exits = new Map()
 
     ;(initialCast || []).forEach((c) => {
@@ -24,7 +23,6 @@ export function computeStage(segments, idx, initialCast) {
             side: c.side || 'right',
             emotion: c.emotion || 'neutral',
         })
-        enteredAt.set(c.id, -1)
     })
 
     for (let k = 0; k <= idx && k < segments.length; k++) {
@@ -36,7 +34,6 @@ export function computeStage(segments, idx, initialCast) {
                 side: op.side || 'right',
                 emotion: op.emotion || 'neutral',
             })
-            enteredAt.set(op.id, k)
             exits.delete(op.id)
         })
         if (seg.speaker && members.has(seg.speaker)) {
@@ -55,15 +52,13 @@ export function computeStage(segments, idx, initialCast) {
     const result = []
     members.forEach((mem, id) => {
         let opacity = 1
-        let leaving = false
         if (exits.has(id)) {
             const { tExit, span } = exits.get(id)
             const elapsed = idx - tExit + 1
             if (elapsed >= span) return // fully faded out — drop from stage
             opacity = Math.max(0, 1 - elapsed / span)
-            leaving = true
         }
-        result.push({ ...mem, opacity, leaving, entering: enteredAt.get(id) === idx })
+        result.push({ ...mem, opacity })
     })
 
     const cur = segments[idx] || {}
