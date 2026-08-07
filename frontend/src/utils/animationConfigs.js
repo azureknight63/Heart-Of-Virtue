@@ -43,11 +43,12 @@
 export const impactSfxFor = (outcome) => {
   switch (outcome) {
     case 'miss': return 'attack_miss';
+    // Every negated outcome shares the parry cue. `absorb` belongs here rather
+    // than with 'hit': the damage did not land, so it must not play the
+    // flesh-impact sound the player reads as taking a real hit.
     case 'parry':
     case 'block':
     case 'deflect':
-    // An absorbed hit is negated, so it must not play the flesh-impact cue —
-    // the player needs an audible signal that the damage did not land.
     case 'absorb':
       return 'attack_parry';
     case 'hit':
