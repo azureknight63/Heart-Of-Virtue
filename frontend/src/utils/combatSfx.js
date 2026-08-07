@@ -28,7 +28,9 @@ export function swingCueFor(webAnimation) {
   const cfg = getAnimationConfig(webAnimation);
   const sfx = cfg && cfg.sfx;
   if (sfx) {
-    for (const phase of (cfg.phases || [])) {
+    // Every config declares `phases` — enforced by animationConfigs.test.js,
+    // which sums phase durations for all 16 entries.
+    for (const phase of cfg.phases) {
       if (phase.name === 'impact') break;
       const cue = sfx[phase.name];
       if (cue && cue !== 'outcome') return cue;

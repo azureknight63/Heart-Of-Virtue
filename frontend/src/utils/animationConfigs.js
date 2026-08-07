@@ -391,4 +391,4 @@ export const getAnimationConfig = (type) => ANIMATION_CONFIGS[type] || ANIMATION
  * would let callers that gate on the animation length (e.g. LeftPanel's combat
  * log reveal) race ahead of an animation that is in fact still playing.
  */
-export const getAnimationDuration = (type) => getAnimationConfig(type).duration ?? 0;
+export const getAnimationDuration = (type) => getAnimationConfig(type).duration;
