@@ -45,6 +45,19 @@ export const categorizeItems = (items) => {
 }
 
 /**
+ * RARITY_RANK - Canonical ordering for item rarity, lowest to highest.
+ * Rarity is a ranked enum, so sorting it lexically is meaningless to the player.
+ */
+export const RARITY_RANK = {
+    common: 0,
+    uncommon: 1,
+    rare: 2,
+    epic: 3,
+    legendary: 4,
+    artifact: 5,
+}
+
+/**
  * getRarityColor - Returns color for item rarity
  */
 export const getRarityColor = (rarity) => {

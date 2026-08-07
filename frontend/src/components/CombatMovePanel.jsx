@@ -4,7 +4,10 @@ import { colors, spacing, shadows, fonts } from '../styles/theme';
 import GamePanel from './GamePanel';
 import GameText from './GameText';
 
-const CombatMovePanel = ({ moves, category, onMoveClick, onClose, onTargetHover }) => {
+// `isProcessing` is passed by LeftPanel while a move submission is in flight.
+// Without it the panel stays live during the API round trip and a double-click
+// submits two actions for one turn.
+const CombatMovePanel = ({ moves, category, onMoveClick, onClose, onTargetHover, isProcessing = false }) => {
     const { playSFX } = useAudio();
     const [hoveredMoveName, setHoveredMoveName] = useState(null);
 
@@ -84,7 +87,7 @@ const CombatMovePanel = ({ moves, category, onMoveClick, onClose, onTargetHover 
                             <button
                                 key={move.name}
                                 onClick={() => {
-                                    if (isAvailable) {
+                                    if (isAvailable && !isProcessing) {
                                         playSFX('attack');
                                         if (onTargetHover) onTargetHover(null);
                                         onMoveClick(move);
@@ -104,7 +107,7 @@ const CombatMovePanel = ({ moves, category, onMoveClick, onClose, onTargetHover 
                                         onTargetHover(null);
                                     }
                                 }}
-                                disabled={!isAvailable}
+                                disabled={!isAvailable || isProcessing}
                                 title={!isAvailable ? reason : ''}
                                 style={{
                                     backgroundColor: isHovered ? 'rgba(255, 170, 0, 0.1)' : 'rgba(255, 255, 255, 0.03)',
@@ -112,7 +115,7 @@ const CombatMovePanel = ({ moves, category, onMoveClick, onClose, onTargetHover 
                                     borderRadius: '4px',
                                     padding: spacing.md,
                                     textAlign: 'left',
-                                    cursor: isAvailable ? 'pointer' : 'not-allowed',
+                                    cursor: isProcessing ? 'wait' : (isAvailable ? 'pointer' : 'not-allowed'),
                                     transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
                                     display: 'flex',
                                     flexDirection: 'column',

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import ItemDetailDialog from './ItemDetailDialog'
 import BaseDialog from './BaseDialog'
 import { colors, spacing } from '../styles/theme'
-import { INVENTORY_TABS, categorizeItems, getRarityColor, getItemIcon } from '../utils/itemUtils'
+import { INVENTORY_TABS, categorizeItems, getRarityColor, getItemIcon, RARITY_RANK } from '../utils/itemUtils'
 
 /**
  * InventoryDialog - Main container for the player's inventory
@@ -18,7 +18,6 @@ export default function InventoryDialog({ items, player, onClose, onRefetch, com
     damage: 'off',
     protection: 'off',
     rarity: 'off',
-    subtype: 'off',
   })
 
   // Synchronize local inventory with props
@@ -52,10 +51,19 @@ export default function InventoryDialog({ items, player, onClose, onRefetch, com
     const isDesc = state === 'desc'
 
     sorted.sort((a, b) => {
+      // Rarity is a ranked enum, not a lexical string — comparing it with
+      // localeCompare would order it artifact, common, epic, legendary, rare,
+      // uncommon, which tells the player nothing.
+      if (activeSortKey === 'rarity') {
+        const aRank = RARITY_RANK[a.rarity?.toLowerCase()] ?? -1
+        const bRank = RARITY_RANK[b.rarity?.toLowerCase()] ?? -1
+        return isDesc ? bRank - aRank : aRank - bRank
+      }
+
       let aVal = a[activeSortKey] || 0
       let bVal = b[activeSortKey] || 0
 
-      // Handle strings (rarity, subtype)
+      // Handle genuinely lexical keys
       if (typeof aVal === 'string') {
         const compare = aVal.localeCompare(bVal)
         return isDesc ? -compare : compare
@@ -401,8 +409,8 @@ function ItemCard({ item, onClick, isShop }) {
 
       <div style={{ fontSize: '10px', color: colors.text.muted, display: 'flex', justifyContent: 'space-between' }}>
         <span>{item.subtype || item.maintype}</span>
-        {item.damage && <span style={{ color: colors.danger }}>{getItemIcon(item)}{Math.round(item.damage)}</span>}
-        {item.protection && <span style={{ color: colors.text.highlight }}>🛡️{Math.round(item.protection)}</span>}
+        {item.damage > 0 && <span style={{ color: colors.danger }}>{getItemIcon(item)}{Math.round(item.damage)}</span>}
+        {item.protection > 0 && <span style={{ color: colors.text.highlight }}>🛡️{Math.round(item.protection)}</span>}
       </div>
 
       <div style={{

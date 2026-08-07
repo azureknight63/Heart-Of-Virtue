@@ -812,13 +812,17 @@ const DeathBurst = () => {
   const [phase, setPhase] = useState(0); // 0=hidden, 1=burst, 2=fade
 
   useEffect(() => {
-    let raf1 = requestAnimationFrame(() => {
-      const raf2 = requestAnimationFrame(() => setPhase(1));
-      return () => cancelAnimationFrame(raf2);
+    // raf2 must be hoisted into effect scope: returning a cleanup from inside the
+    // rAF callback discards it, leaving the second frame uncancellable (matches
+    // the TravelDot pattern above).
+    let raf2;
+    const raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => setPhase(1));
     });
     const fadeTimer = setTimeout(() => setPhase(2), 350);
     return () => {
       cancelAnimationFrame(raf1);
+      if (raf2) cancelAnimationFrame(raf2);
       clearTimeout(fadeTimer);
     };
   }, []);
@@ -946,7 +950,22 @@ function BattlefieldGrid({
   const animationTimeoutsRef = useRef([]);
 
   const [hoveredEntity, setHoveredEntity] = useState(null);
-  const [selectedEntity, setSelectedEntity] = useState(null);
+  // Store the id, not the entity object. Every beat replaces `combat` with freshly
+  // deserialized entities, so a stored object reference would freeze the panel on
+  // the stats captured at click time — HP, current action and status effects would
+  // never update, and would keep displaying after the combatant died.
+  const [selectedEntityId, setSelectedEntityId] = useState(null);
+
+  const selectedEntity = useMemo(() => {
+    if (!selectedEntityId) return null;
+    return [combat?.player, ...(combat?.allies || []), ...(combat?.enemies || [])]
+      .find((e) => e?.id === selectedEntityId) || null;
+  }, [selectedEntityId, combat?.player, combat?.allies, combat?.enemies]);
+
+  const setSelectedEntity = useCallback(
+    (entity) => setSelectedEntityId(entity?.id ?? null),
+    []
+  );
 
   const { playSFX } = useAudio();
 
@@ -958,16 +977,27 @@ function BattlefieldGrid({
   // re-renders on every phase. Cleanup resets to false on unmount so GamePage
   // never gets stuck with isBattlefieldAnimating=true.
   const prevAnimatingRef = useRef(false);
+  const onAnimatingChangeRef = useRef(onAnimatingChange);
+  useEffect(() => {
+    onAnimatingChangeRef.current = onAnimatingChange;
+  }, [onAnimatingChange]);
+
+  // Change detection only — deliberately no cleanup here. A cleanup would run on
+  // every dep change, not just unmount, emitting `false` mid-sequence while
+  // prevAnimatingRef still reads `true`, so the guard below would suppress the
+  // corrective `true` and leave the parent believing animation had finished.
   useEffect(() => {
     const isAnimating = activeAnimation !== null || animationQueue.length > 0;
     if (onAnimatingChange && isAnimating !== prevAnimatingRef.current) {
       prevAnimatingRef.current = isAnimating;
       onAnimatingChange(isAnimating)
     }
-    return () => {
-      if (onAnimatingChange) onAnimatingChange(false)
-    }
   }, [activeAnimation, animationQueue, onAnimatingChange]);
+
+  // Unmount-only reset, so the parent never gets stuck with isBattlefieldAnimating=true.
+  useEffect(() => () => {
+    onAnimatingChangeRef.current?.(false)
+  }, []);
 
   // Smooth camera — zoomed mode only. All mutable values live in refs so the
   // RAF loop never needs to be recreated and only drives a React re-render

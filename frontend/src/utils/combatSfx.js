@@ -16,13 +16,21 @@ const DEFAULT_SWING_CUE = 'attack_swipe';
 
 /**
  * The windup/whoosh cue for an animation type: the first non-`'outcome'` cue the
- * animation config authors (e.g. attack -> `attack_swipe`), else a default.
+ * animation config authors on a *pre-impact* phase (e.g. attack -> `attack_swipe`),
+ * else a default.
+ *
+ * Phase order matters. Scanning every value of `cfg.sfx` would pick up cues
+ * attached to the impact phase — `debuff` and `drain` declare only
+ * `sfx: { impact: 'status_hit' }`, so a naive scan returns the status ding as the
+ * windup and plays it twice in the `[swing, impact, status]` chain.
  */
 export function swingCueFor(webAnimation) {
   const cfg = getAnimationConfig(webAnimation);
   const sfx = cfg && cfg.sfx;
   if (sfx) {
-    for (const cue of Object.values(sfx)) {
+    for (const phase of (cfg.phases || [])) {
+      if (phase.name === 'impact') break;
+      const cue = sfx[phase.name];
       if (cue && cue !== 'outcome') return cue;
     }
   }

@@ -53,8 +53,10 @@ describe('getAnimationDuration', () => {
     expect(getAnimationDuration('attack')).toBe(ANIMATION_CONFIGS.attack.duration);
   });
 
-  it('returns 0 for unknown types', () => {
-    expect(getAnimationDuration('nonsense')).toBe(0);
+  it('falls back to the pulse duration for unknown types', () => {
+    // Must match getAnimationConfig's fallback: a caller gating on the
+    // animation length has to wait for what the renderer actually plays.
+    expect(getAnimationDuration('nonsense')).toBe(ANIMATION_CONFIGS.pulse.duration);
   });
 });
 

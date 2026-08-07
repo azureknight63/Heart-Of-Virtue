@@ -151,7 +151,11 @@ export default function VictoryDialog({ endState, onClose, onAllocatePoints, onC
   return (
     <BaseDialog
       title={`✨ ${endState?.message || 'Combat Victory'}`}
-      onClose={canClose ? onClose : () => setIsMinimized(true)}
+      // BaseDialog fires onClose from both the ✕ button and the backdrop click.
+      // Routing those through handleAdvance (rather than the raw onClose) keeps
+      // them loot-aware — otherwise dismissing the dialog skips the loot phase
+      // entirely and the drops become unrecoverable.
+      onClose={canClose ? handleAdvance : () => setIsMinimized(true)}
       maxWidth="720px"
       padding="16px"
       zIndex={2500}

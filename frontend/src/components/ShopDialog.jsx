@@ -288,19 +288,32 @@ export default function ShopDialog({ npcId, npcName, initialTab = 'buy', player,
     return list.find(i => i.id === selectedId) || null
   }, [selectedId, activeTab, allBuyItems, sellInventory])
 
+  // Buyback repurchases the whole stack in one transaction: the serializer sends
+  // the *unit* offer as `price` alongside `count`, and the engine charges
+  // `buyback_price * count` (GameService.shop_buyback). The qty picker is
+  // suppressed for buyback, so `quantity` stays 1 — use `count` as the real
+  // multiplier or the UI quotes a fraction of what the player is actually charged.
+  const effectiveQty = selectedItem?.is_buyback ? (selectedItem.count || 1) : quantity
+
   // ── Weight delta for the weight bar ───────────────────────────────────────
 
   const pendingWeight = useMemo(() => {
     if (!selectedItem) return 0
-    const w = (selectedItem.weight || 0) * quantity
+    const w = (selectedItem.weight || 0) * effectiveQty
     return activeTab === 'buy' ? w : -w
-  }, [selectedItem, quantity, activeTab])
+  }, [selectedItem, effectiveQty, activeTab])
 
   // ── Buy validation ─────────────────────────────────────────────────────────
 
   const playerGold = shopState?.player_gold ?? (player?.gold ?? 0)
   const playerWeightCurrent = shopState?.player_weight_current ?? (player?.weight_current ?? 0)
-  const playerWeightMax = shopState?.player_weight_max ?? (player?.weight_tolerance ?? 100)
+  // The player payload exposes capacity as `max_weight`/`carrying_capacity`
+  // (GameService.get_player_status / get_player_stats). It has no
+  // `weight_tolerance` key — that is the engine-side attribute name only.
+  const playerWeightMax = shopState?.player_weight_max
+    ?? player?.max_weight
+    ?? player?.carrying_capacity
+    ?? 100
   const merchantGold = shopState?.merchant_gold ?? 0
 
   const buyTotal = selectedItem && activeTab === 'buy'
