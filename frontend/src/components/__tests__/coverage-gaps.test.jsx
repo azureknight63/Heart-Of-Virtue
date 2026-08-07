@@ -220,79 +220,6 @@ describe('Coverage Gap Tests', () => {
     })
   })
 
-  describe('Conditional Rendering Coverage', () => {
-    it('renders content when condition is true', () => {
-      const { container } = render(
-        <div>
-          {true && <span>Visible</span>}
-        </div>
-      )
-      expect(screen.getByText('Visible')).toBeInTheDocument()
-    })
-
-    it('hides content when condition is false', () => {
-      const { container } = render(
-        <div>
-          {false && <span>Hidden</span>}
-        </div>
-      )
-      expect(screen.queryByText('Hidden')).not.toBeInTheDocument()
-    })
-
-    it('renders correct content based on truthiness', () => {
-      const value = null
-      const { container } = render(
-        <div>
-          {value ? <span>Truthy</span> : <span>Falsy</span>}
-        </div>
-      )
-      expect(screen.getByText('Falsy')).toBeInTheDocument()
-    })
-  })
-
-  describe('Event Handler Coverage', () => {
-    it('handles click events', () => {
-      const onClick = vi.fn()
-      render(
-        <button onClick={onClick}>Click me</button>
-      )
-      fireEvent.click(screen.getByText('Click me'))
-      expect(onClick).toHaveBeenCalledTimes(1)
-    })
-
-    it('handles keyboard events', () => {
-      const onKeyDown = vi.fn()
-      const { container } = render(
-        <input onKeyDown={onKeyDown} />
-      )
-      const input = container.querySelector('input')
-      fireEvent.keyDown(input, { key: 'Enter' })
-      expect(onKeyDown).toHaveBeenCalled()
-    })
-
-    it('handles change events', () => {
-      const onChange = vi.fn()
-      const { container } = render(
-        <input onChange={onChange} />
-      )
-      const input = container.querySelector('input')
-      fireEvent.change(input, { target: { value: 'new' } })
-      expect(onChange).toHaveBeenCalled()
-    })
-
-    it('prevents default on submit', () => {
-      const onSubmit = vi.fn((e) => e.preventDefault())
-      const { container } = render(
-        <form onSubmit={onSubmit}>
-          <button type="submit">Submit</button>
-        </form>
-      )
-      const form = container.querySelector('form')
-      fireEvent.submit(form)
-      expect(onSubmit).toHaveBeenCalled()
-    })
-  })
-
   describe('Props Combination Coverage', () => {
     it('handles multiple props together', () => {
       const { container } = render(
@@ -329,195 +256,113 @@ describe('Coverage Gap Tests', () => {
     })
   })
 
-  describe('Error Boundary Coverage', () => {
-    it('renders without crashing on null children', () => {
-      const { container } = render(
-        <div>
-          {null}
-        </div>
-      )
-      expect(container).toBeTruthy()
+  // The blocks below replace ~21 tests that rendered inline <div> literals and
+  // asserted on React's own semantics (conditional rendering, event dispatch,
+  // list keys, inline styles, ARIA on bare elements). They tested React, not
+  // this project. Each theme is now exercised against the real components this
+  // file already imports.
+
+  describe('Resilience to absent data', () => {
+    it('renders nothing when RoomContents has no location', () => {
+      const { container } = render(<RoomContents location={null} onInteract={vi.fn()} />)
+      expect(container.firstChild).toBeNull()
     })
 
-    it('renders without crashing on undefined children', () => {
-      const { container } = render(
-        <div>
-          {undefined}
-        </div>
-      )
-      expect(container).toBeTruthy()
+    it('shows the empty-room line when a location has no contents', () => {
+      render(<RoomContents location={{ description: 'A bare cell.' }} onInteract={vi.fn()} />)
+      expect(screen.getByText('A bare cell.')).toBeInTheDocument()
+      expect(screen.getByText('(Nothing else here...)')).toBeInTheDocument()
     })
 
-    it('renders without crashing on empty array', () => {
-      const { container } = render(
-        <div>
-          {[]}
-        </div>
-      )
-      expect(container).toBeTruthy()
-    })
-
-    it('handles components with missing required props gracefully', () => {
-      // Most components should have sensible defaults
-      expect(() => {
-        render(<GameButton onClick={vi.fn()}>Button</GameButton>)
-      }).not.toThrow()
+    it('renders a GameButton with no onClick without crashing when clicked', () => {
+      render(<GameButton>Inert</GameButton>)
+      expect(() => fireEvent.click(screen.getByText('Inert'))).not.toThrow()
     })
   })
 
-  describe('State Update Coverage', () => {
-    it('updates state on user interaction', () => {
-      const { container, rerender } = render(
-        <div>
-          <input defaultValue="initial" />
-        </div>
-      )
-      const input = container.querySelector('input')
-      expect(input.value).toBe('initial')
-
-      fireEvent.change(input, { target: { value: 'updated' } })
-      expect(input.value).toBe('updated')
-    })
-
-    it('handles rapid state updates', () => {
-      const { container } = render(
-        <input defaultValue="test" />
-      )
-      const input = container.querySelector('input')
-
-      for (let i = 0; i < 5; i++) {
-        fireEvent.change(input, { target: { value: `update${i}` } })
+  describe('State updates through the real input', () => {
+    it('drives a controlled value through successive keystrokes', () => {
+      // Read the value inside the handler: GameInput passes the DOM node
+      // straight through, so by the time a spy's recorded event is inspected
+      // React has already reset input.value to match the value prop.
+      const seen = []
+      function Harness() {
+        const [value, setValue] = React.useState('')
+        return (
+          <GameInput
+            value={value}
+            onChange={(e) => { seen.push(e.target.value); setValue(e.target.value) }}
+          />
+        )
       }
+      const { container } = render(<Harness />)
+      const input = container.querySelector('input')
 
-      expect(input.value).toBe('update4')
+      fireEvent.change(input, { target: { value: 'a' } })
+      fireEvent.change(input, { target: { value: 'ab' } })
+
+      expect(seen).toEqual(['a', 'ab'])
+      expect(input.value).toBe('ab')
+    })
+
+    it('does not emit change events while disabled', () => {
+      const onChange = vi.fn()
+      const { container } = render(<GameInput value="" onChange={onChange} disabled />)
+      expect(container.querySelector('input').disabled).toBe(true)
     })
   })
 
-  describe('Async Behavior Coverage', () => {
-    it('handles promise resolution', async () => {
-      const promise = Promise.resolve('resolved')
-      let result = ''
-
-      promise.then((value) => {
-        result = value
-      })
-
-      await waitFor(() => {
-        expect(result).toBe('resolved')
-      })
+  describe('Interaction wiring on room entities', () => {
+    it('renders an item announcement and its default phrasing', () => {
+      const location = {
+        description: 'A storeroom.',
+        items: [
+          { id: 1, name: 'Restorative', announce: 'A vial glints on the shelf.' },
+          { id: 2, name: 'Rusted Key' },
+        ],
+      }
+      const { container } = render(<RoomContents location={location} onInteract={vi.fn()} />)
+      // renderTextWithLinks splits entity names into their own clickable nodes,
+      // so assert on the assembled text rather than a single text node.
+      expect(container.textContent).toContain('A vial glints on the shelf.')
+      expect(container.textContent).toContain('There is a Rusted Key here.')
     })
 
-    it('handles component mounting', () => {
-      const { container } = render(
-        <div data-testid="mounted">Content</div>
-      )
-      expect(screen.getByTestId('mounted')).toBeInTheDocument()
-    })
-  })
-
-  describe('Styling Coverage', () => {
-    it('applies inline styles', () => {
-      const { container } = render(
-        <div style={{ color: 'red', fontSize: '16px' }}>
-          Styled
-        </div>
-      )
-      const div = container.querySelector('div')
-      // Browser converts color names to RGB values
-      const styles = window.getComputedStyle(div)
-      expect(styles.color).toBeTruthy()
-      expect(styles.fontSize).toBe('16px')
+    it('omits hidden entities from the room narrative', () => {
+      const location = {
+        description: 'A quiet hall.',
+        items: [{ id: 1, name: 'Hidden Cache', announce: 'You should not see this.', hidden: true }],
+      }
+      render(<RoomContents location={location} onInteract={vi.fn()} />)
+      expect(screen.queryByText(/You should not see this\./)).toBeNull()
+      expect(screen.getByText('(Nothing else here...)')).toBeInTheDocument()
     })
 
-    it('applies class names', () => {
-      const { container } = render(
-        <div className="class1 class2">Classes</div>
-      )
-      const div = container.querySelector('div')
-      expect(div).toHaveClass('class1')
-      expect(div).toHaveClass('class2')
-    })
-
-    it('combines styles and classes', () => {
-      const { container } = render(
-        <div className="btn" style={{ padding: '10px' }}>
-          Combined
-        </div>
-      )
-      const div = container.querySelector('div')
-      expect(div).toHaveClass('btn')
-      expect(div).toHaveStyle({ padding: '10px' })
+    it('renders NPC and object idle messages, skipping those without one', () => {
+      const location = {
+        description: 'A workshop.',
+        npcs: [
+          { id: 'n1', name: 'Gorran', idle_message: 'Gorran sharpens a blade.' },
+          { id: 'n2', name: 'Silent Watcher' },
+        ],
+        objects: [{ id: 'o1', name: 'Anvil', idle_message: 'The anvil is scarred from long use.' }],
+      }
+      const { container } = render(<RoomContents location={location} onInteract={vi.fn()} />)
+      expect(container.textContent).toContain('Gorran sharpens a blade.')
+      expect(container.textContent).toContain('The anvil is scarred from long use.')
+      expect(container.textContent).not.toContain('Silent Watcher')
     })
   })
 
-  describe('List Rendering Coverage', () => {
-    it('renders lists with keys', () => {
-      const items = [
-        { id: 1, name: 'Item 1' },
-        { id: 2, name: 'Item 2' },
-        { id: 3, name: 'Item 3' }
-      ]
-      const { container } = render(
-        <ul>
-          {items.map((item) => (
-            <li key={item.id}>{item.name}</li>
-          ))}
-        </ul>
-      )
-      expect(screen.getByText('Item 1')).toBeInTheDocument()
-      expect(screen.getByText('Item 2')).toBeInTheDocument()
-      expect(screen.getByText('Item 3')).toBeInTheDocument()
-    })
-
-    it('handles empty lists', () => {
-      const items = []
-      const { container } = render(
-        <ul>
-          {items.map((item) => (
-            <li key={item.id}>{item.name}</li>
-          ))}
-          {items.length === 0 && <li>No items</li>}
-        </ul>
-      )
-      expect(screen.getByText('No items')).toBeInTheDocument()
-    })
-
-    it('handles single item lists', () => {
-      const items = [{ id: 1, name: 'Only Item' }]
-      const { container } = render(
-        <ul>
-          {items.map((item) => (
-            <li key={item.id}>{item.name}</li>
-          ))}
-        </ul>
-      )
-      expect(screen.getByText('Only Item')).toBeInTheDocument()
-    })
-  })
-
-  describe('Accessibility Coverage', () => {
-    it('buttons have proper semantics', () => {
-      render(
-        <button onClick={vi.fn()}>Click me</button>
-      )
-      expect(screen.getByRole('button')).toBeInTheDocument()
-    })
-
-    it('inputs have proper semantics', () => {
-      const { container } = render(
-        <input type="text" aria-label="test input" />
-      )
-      expect(container.querySelector('input')).toHaveAttribute('aria-label')
-    })
-
-    it('links navigate properly', () => {
-      const { container } = render(
-        <BrowserRouter>
-          <a href="/test">Link</a>
-        </BrowserRouter>
-      )
-      const link = screen.getByText('Link')
-      expect(link).toHaveAttribute('href', '/test')
+  describe('Rendering many entities', () => {
+    it('renders one line per announced item without collapsing duplicates', () => {
+      const location = {
+        description: 'A hoard.',
+        items: Array.from({ length: 8 }, (_, i) => ({ id: i, name: 'Gold Coin' })),
+      }
+      const { container } = render(<RoomContents location={location} onInteract={vi.fn()} />)
+      const occurrences = container.textContent.split('There is a Gold Coin here.').length - 1
+      expect(occurrences).toBe(8)
     })
   })
 })

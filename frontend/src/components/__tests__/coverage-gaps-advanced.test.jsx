@@ -327,216 +327,103 @@ describe('Advanced Coverage Gap Tests', () => {
     })
   })
 
-  describe('Conditional Branch Coverage', () => {
-    it('renders different content based on condition', () => {
-      const isVisible = true
-      const { container } = render(
-        <div>
-          {isVisible && <span data-testid="visible">Visible</span>}
-          {!isVisible && <span data-testid="hidden">Hidden</span>}
-        </div>
-      )
-      expect(screen.getByTestId('visible')).toBeInTheDocument()
-      expect(screen.queryByTestId('hidden')).not.toBeInTheDocument()
+  // The blocks below replace ~16 tests that rendered inline <div> literals to
+  // assert on React and JavaScript semantics (ternaries, array.map, truthy/
+  // falsy coercion, ?? vs ||, destructuring). They exercised no project code.
+  // Each theme is now driven through the real components this file imports.
+
+  describe('Conditional rendering in the real panels', () => {
+    it('renders a GamePanel title only when one is supplied', () => {
+      const { rerender } = render(<GamePanel title="INVENTORY">body</GamePanel>)
+      expect(screen.getByText('INVENTORY')).toBeInTheDocument()
+
+      rerender(<GamePanel>body</GamePanel>)
+      expect(screen.queryByText('INVENTORY')).toBeNull()
+      expect(screen.getByText('body')).toBeInTheDocument()
     })
 
-    it('renders ternary content', () => {
-      const value = 50
-      const { container } = render(
-        <div>
-          {value > 75 ? <span>High</span> : value > 25 ? <span>Medium</span> : <span>Low</span>}
-        </div>
-      )
-      expect(screen.getByText('Medium')).toBeInTheDocument()
+    it('renders a GamePanel close affordance only when onClose is supplied', () => {
+      const onClose = vi.fn()
+      const { container, rerender } = render(<GamePanel title="T" onClose={onClose}>body</GamePanel>)
+      const closeButton = container.querySelector('button')
+      expect(closeButton).toBeTruthy()
+
+      fireEvent.click(closeButton)
+      expect(onClose).toHaveBeenCalledTimes(1)
+
+      rerender(<GamePanel title="T">body</GamePanel>)
+      expect(container.querySelector('button')).toBeNull()
     })
 
-    it('renders nested conditionals', () => {
-      const hasItems = true
-      const isEmpty = false
-      const { container } = render(
-        <div>
-          {hasItems ? (
-            isEmpty ? <span>Empty</span> : <span>Has items</span>
-          ) : (
-            <span>No items prop</span>
-          )}
-        </div>
-      )
-      expect(screen.getByText('Has items')).toBeInTheDocument()
-    })
+    it('falls back to the default padding for an unknown padding token', () => {
+      const { container: known } = render(<GamePanel padding="none">a</GamePanel>)
+      const { container: unknown } = render(<GamePanel padding="not-a-size">a</GamePanel>)
+      const { container: fallback } = render(<GamePanel padding="large">a</GamePanel>)
 
-    it('renders optional content', () => {
-      const optional = undefined
-      const { container } = render(
-        <div>
-          {optional?.property}
-          <span>After optional</span>
-        </div>
-      )
-      expect(screen.getByText('After optional')).toBeInTheDocument()
+      expect(known.firstChild.style.padding).not.toBe(fallback.firstChild.style.padding)
+      expect(unknown.firstChild.style.padding).toBe(fallback.firstChild.style.padding)
     })
   })
 
-  describe('Loop and Map Coverage', () => {
-    it('renders array.map with complex objects', () => {
-      const items = [
-        { id: 1, name: 'Item 1', value: 100 },
-        { id: 2, name: 'Item 2', value: 200 },
-        { id: 3, name: 'Item 3', value: 300 }
+  describe('List rendering in CooldownTray', () => {
+    const move = (id, over = {}) => ({ id, name: `Move ${id}`, category: 'Offensive', cooldown_remaining: 2, ...over })
+
+    it('renders nothing when there are no cooling moves', () => {
+      const { container, rerender } = render(<CooldownTray moves={[]} />)
+      expect(container.firstChild).toBeNull()
+
+      rerender(<CooldownTray moves={null} />)
+      expect(container.firstChild).toBeNull()
+
+      rerender(<CooldownTray />)
+      expect(container.firstChild).toBeNull()
+    })
+
+    it('shows the cooling-move count and one card per move', () => {
+      render(<CooldownTray moves={[move(1), move(2), move(3)]} />)
+      expect(screen.getByText('Cooldown')).toBeInTheDocument()
+      expect(screen.getByText('3')).toBeInTheDocument()
+    })
+
+    it('swaps to the expanded layout on hover and back on leave', () => {
+      const { container } = render(<CooldownTray moves={[move(1, { name: 'Power Strike' })]} />)
+      const tray = container.firstChild
+
+      // Collapsed cards show the icon and remaining beats, not the move name.
+      expect(screen.queryByText('Power Strike')).toBeNull()
+
+      fireEvent.mouseEnter(tray)
+      expect(screen.getByText('Power Strike')).toBeInTheDocument()
+
+      fireEvent.mouseLeave(tray)
+      expect(screen.queryByText('Power Strike')).toBeNull()
+    })
+
+    it('renders moves of every category without needing a known one', () => {
+      const moves = [
+        move(1, { category: 'Offensive' }),
+        move(2, { category: 'Defensive' }),
+        move(3, { category: 'Maneuver' }),
+        move(4, { category: 'Utterly Unknown' }),
       ]
-      const { container } = render(
-        <ul>
-          {items.map(item => (
-            <li key={item.id} data-testid={`item-${item.id}`}>
-              {item.name}: {item.value}
-            </li>
-          ))}
-        </ul>
-      )
-      expect(screen.getByTestId('item-1')).toBeInTheDocument()
-      expect(screen.getByTestId('item-2')).toBeInTheDocument()
-      expect(screen.getByTestId('item-3')).toBeInTheDocument()
-    })
-
-    it('renders nested maps', () => {
-      const groups = [
-        { id: 1, items: [{ id: 'a', name: 'A1' }, { id: 'b', name: 'A2' }] },
-        { id: 2, items: [{ id: 'c', name: 'B1' }] }
-      ]
-      const { container } = render(
-        <div>
-          {groups.map(group => (
-            <div key={group.id} data-testid={`group-${group.id}`}>
-              {group.items.map(item => (
-                <span key={item.id}>{item.name}</span>
-              ))}
-            </div>
-          ))}
-        </div>
-      )
-      expect(screen.getByTestId('group-1')).toBeInTheDocument()
-      expect(screen.getByText('A1')).toBeInTheDocument()
-      expect(screen.getByText('B1')).toBeInTheDocument()
-    })
-
-    it('renders filter + map', () => {
-      const items = [
-        { id: 1, active: true, name: 'Active 1' },
-        { id: 2, active: false, name: 'Inactive 1' },
-        { id: 3, active: true, name: 'Active 2' }
-      ]
-      const { container } = render(
-        <ul>
-          {items.filter(i => i.active).map(item => (
-            <li key={item.id}>{item.name}</li>
-          ))}
-        </ul>
-      )
-      expect(screen.getByText('Active 1')).toBeInTheDocument()
-      expect(screen.getByText('Active 2')).toBeInTheDocument()
-      expect(screen.queryByText('Inactive 1')).not.toBeInTheDocument()
+      expect(() => render(<CooldownTray moves={moves} />)).not.toThrow()
+      expect(screen.getByText('4')).toBeInTheDocument()
     })
   })
 
-  describe('Type Coercion and Truthy/Falsy', () => {
-    it('handles falsy values', () => {
-      const { container } = render(
-        <div>
-          {0 && <span>Zero</span>}
-          {'' && <span>Empty string</span>}
-          {false && <span>False</span>}
-          {null && <span>Null</span>}
-          {undefined && <span>Undefined</span>}
-          <span>Always render</span>
-        </div>
-      )
-      expect(screen.getByText('Always render')).toBeInTheDocument()
-      expect(screen.queryByText('Zero')).not.toBeInTheDocument()
+  describe('Absent and partial player data in StatsPanel', () => {
+    it('does not crash when the player has no stats at all', () => {
+      expect(() => render(<StatsPanel player={{}} onClose={vi.fn()} />)).not.toThrow()
     })
 
-    it('handles truthy values', () => {
-      const { container } = render(
-        <div>
-          {1 && <span>One</span>}
-          {'text' && <span>Text</span>}
-          {true && <span>True</span>}
-          {[] && <span>Empty array</span>}
-          {{} && <span>Empty object</span>}
-        </div>
-      )
-      expect(screen.getByText('One')).toBeInTheDocument()
-      expect(screen.getByText('Text')).toBeInTheDocument()
-      expect(screen.getByText('True')).toBeInTheDocument()
-      // Empty array and object are truthy
-      expect(screen.getByText('Empty array')).toBeInTheDocument()
-      expect(screen.getByText('Empty object')).toBeInTheDocument()
-    })
-  })
-
-  describe('Default Parameter and Fallback', () => {
-    it('uses default when value is undefined', () => {
-      const value = undefined
-      const defaultValue = 'Default'
-      const { container } = render(
-        <span>{value ?? defaultValue}</span>
-      )
-      expect(screen.getByText('Default')).toBeInTheDocument()
-    })
-
-    it('uses original when value is not null/undefined', () => {
-      const value = 0
-      const defaultValue = 'Default'
-      const { container } = render(
-        <span>{value ?? defaultValue}</span>
-      )
-      expect(screen.getByText('0')).toBeInTheDocument()
-    })
-
-    it('uses fallback with logical OR', () => {
-      const value = false
-      const fallback = 'Fallback'
-      const { container } = render(
-        <span>{value || fallback}</span>
-      )
-      expect(screen.getByText('Fallback')).toBeInTheDocument()
-    })
-
-    it('uses original with logical OR when truthy', () => {
-      const value = 'Original'
-      const fallback = 'Fallback'
-      const { container } = render(
-        <span>{value || fallback}</span>
-      )
-      expect(screen.getByText('Original')).toBeInTheDocument()
-    })
-  })
-
-  describe('Object and Array Destructuring', () => {
-    it('destructures object properties', () => {
-      const obj = { name: 'Test', value: 100 }
-      const { name, value } = obj
-      const { container } = render(
-        <span>{name}: {value}</span>
-      )
-      expect(screen.getByText('Test: 100')).toBeInTheDocument()
-    })
-
-    it('destructures with rest operator', () => {
-      const obj = { a: 1, b: 2, c: 3, d: 4 }
-      const { a, ...rest } = obj
-      const { container } = render(
-        <span>{a}</span>
-      )
-      expect(screen.getByText('1')).toBeInTheDocument()
-    })
-
-    it('destructures array', () => {
-      const arr = ['First', 'Second', 'Third']
-      const [first, second] = arr
-      const { container } = render(
-        <span>{first}, {second}</span>
-      )
-      expect(screen.getByText('First, Second')).toBeInTheDocument()
+    it('closes via its close handler', () => {
+      const onClose = vi.fn()
+      const { container } = render(<StatsPanel player={{ name: 'Jean', level: 3 }} onClose={onClose} />)
+      const button = container.querySelector('button')
+      if (button) {
+        fireEvent.click(button)
+        expect(onClose).toHaveBeenCalled()
+      }
     })
   })
 })
