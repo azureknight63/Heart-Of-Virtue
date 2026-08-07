@@ -326,6 +326,10 @@ class GameService:
         """
         segments: List[Dict[str, Any]] = []
         conversation: Optional[Dict[str, Any]] = None
+        # Roster of the most recent begin_conversation, kept separate from
+        # ``conversation`` so the enter/exit diff below always compares against
+        # the immediately-preceding cast while ``conversation`` keeps the FIRST.
+        current_cast: List[Dict[str, Any]] = []
         conv_active = False
         # Whether the event used ANY staged feature. When it didn't, we return no
         # segments so the event renders through the legacy typewriter path exactly
@@ -351,17 +355,27 @@ class GameService:
                 # get exit ops in the segments. Otherwise only the final cast
                 # reaches the frontend and characters who appear only in an
                 # intermediate conversation are invisible.
-                if conversation and conversation.get("cast"):
-                    prev_ids = {m["id"] for m in conversation["cast"]}
-                    new_ids = {m["id"] for m in cast}
+                if current_cast:
+                    prev_ids = {member["id"] for member in current_cast}
+                    new_ids = {member["id"] for member in cast}
                     for added_id in new_ids - prev_ids:
-                        added = next(m for m in cast if m["id"] == added_id)
+                        added = next(
+                            member for member in cast if member["id"] == added_id
+                        )
                         pending_enter.append(added)
                     for removed_id in prev_ids - new_ids:
                         pending_exit.append(
                             {"id": removed_id, "transition": "fade"}
                         )
-                conversation = {"cast": cast}
+                current_cast = cast
+                # Only the FIRST roster becomes the conversation payload. The
+                # frontend seeds every cast member with enteredAt = -1 (on stage
+                # from beat 0), so carrying a later roster here would reveal
+                # characters before the prose introduces them and would make the
+                # enter op emitted above a no-op. Later rosters stay fully
+                # represented through those enter/exit ops.
+                if conversation is None:
+                    conversation = {"cast": cast}
                 conv_active = True
                 staged_used = True
                 continue
