@@ -2,6 +2,7 @@ import React from 'react'
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import GameButton from './GameButton'
+import { colors } from '../styles/theme'
 
 describe('GameButton', () => {
   const mockOnClick = vi.fn()
@@ -47,7 +48,11 @@ describe('GameButton', () => {
         </GameButton>
       )
       const button = container.querySelector('button')
-      expect(button).toBeInTheDocument()
+      expect(button).toHaveStyle({
+        backgroundColor: colors.primary,
+        borderColor: colors.primary,
+        color: colors.text.inverse,
+      })
     })
 
     it('applies secondary variant', () => {
@@ -57,7 +62,11 @@ describe('GameButton', () => {
         </GameButton>
       )
       const button = container.querySelector('button')
-      expect(button).toBeInTheDocument()
+      expect(button).toHaveStyle({
+        backgroundColor: 'rgba(0, 0, 0, 0)', // jsdom resolves `transparent` to this
+        borderColor: colors.text.highlight,
+        color: colors.text.highlight,
+      })
     })
 
     it('applies danger variant', () => {
@@ -67,7 +76,11 @@ describe('GameButton', () => {
         </GameButton>
       )
       const button = container.querySelector('button')
-      expect(button).toBeInTheDocument()
+      expect(button).toHaveStyle({
+        backgroundColor: colors.danger,
+        borderColor: colors.danger,
+        color: colors.text.bright,
+      })
     })
 
     it('applies warning variant', () => {
@@ -77,7 +90,21 @@ describe('GameButton', () => {
         </GameButton>
       )
       const button = container.querySelector('button')
-      expect(button).toBeInTheDocument()
+      expect(button).toHaveStyle({
+        backgroundColor: colors.secondary,
+        borderColor: colors.secondary,
+        color: colors.text.inverse,
+      })
+    })
+
+    it('falls back to the secondary variant for an unknown variant name', () => {
+      const { container } = render(
+        <GameButton variant="nonsense" onClick={mockOnClick}>
+          Test
+        </GameButton>
+      )
+      const button = container.querySelector('button')
+      expect(button).toHaveStyle({ borderColor: colors.text.highlight })
     })
   })
 
@@ -143,11 +170,65 @@ describe('GameButton', () => {
     })
 
     it('responds to mouse enter and leave', () => {
-      const { container } = render(<GameButton onClick={mockOnClick}>Hover</GameButton>)
+      const { container } = render(
+        <GameButton variant="primary" onClick={mockOnClick}>
+          Hover
+        </GameButton>
+      )
       const button = container.querySelector('button')
-      expect(button).toBeInTheDocument()
+      expect(button).toHaveStyle({
+        backgroundColor: colors.primary,
+        boxShadow: 'none',
+      })
+
       fireEvent.mouseEnter(button)
+      expect(button).toHaveStyle({
+        backgroundColor: colors.primaryHover,
+        boxShadow: `0 0 12px ${colors.primary}aa`,
+      })
+
       fireEvent.mouseLeave(button)
+      expect(button).toHaveStyle({
+        backgroundColor: colors.primary,
+        boxShadow: 'none',
+      })
+    })
+  })
+
+  describe('Type Attribute', () => {
+    // A design-system button inside a <form> must not submit it implicitly.
+    it('defaults to type="button"', () => {
+      render(<GameButton onClick={mockOnClick}>Default</GameButton>)
+      expect(screen.getByRole('button')).toHaveAttribute('type', 'button')
+    })
+
+    it('forwards an explicit type="submit"', () => {
+      render(
+        <GameButton onClick={mockOnClick} type="submit">
+          Submit
+        </GameButton>
+      )
+      expect(screen.getByRole('button')).toHaveAttribute('type', 'submit')
+    })
+  })
+
+  describe('Pass-through props', () => {
+    it('forwards aria-label to the DOM', () => {
+      render(
+        <GameButton onClick={mockOnClick} aria-label="Close dialog">
+          ✕
+        </GameButton>
+      )
+      expect(screen.getByRole('button', { name: 'Close dialog' })).toBeInTheDocument()
+    })
+
+    it('forwards data-testid to the DOM', () => {
+      render(
+        <GameButton onClick={mockOnClick} data-testid="confirm-btn">
+          OK
+        </GameButton>
+      )
+      expect(screen.getByTestId('confirm-btn')).toBeInTheDocument()
     })
   })
 

@@ -21,6 +21,8 @@ describe('BrowserLogger', () => {
     vi.useRealTimers();
     logger.logQueue = [];
     logger.isInitialized = false;
+    // Singleton: a failing flush in one test would otherwise backoff the next.
+    logger.retryAfter = 0;
   });
 
   it('initializes correctly', () => {
@@ -111,6 +113,43 @@ describe('BrowserLogger', () => {
     expect(logger.logQueue).toHaveLength(1);
     expect(logger.logQueue[0].message).toBe('will fail to send');
     expect(errorSpy).toHaveBeenCalledWith('[Logger] Failed to send logs:', expect.any(Error));
+  });
+
+  it('does not grow the queue past the cap while the endpoint is down', async () => {
+    global.fetch = vi.fn().mockRejectedValue(new Error('network down'));
+    vi.spyOn(logger.originalConsole, 'error').mockImplementation(() => {});
+    // Silence the pass-through to the real console — interceptConsole captures
+    // originalConsole.log at init(), so the spy must be installed first.
+    vi.spyOn(logger.originalConsole, 'log').mockImplementation(() => {});
+
+    logger.init();
+    // Far more entries than the cap, each console call also attempting a flush.
+    for (let i = 0; i < 500; i++) {
+      console.log(`spam ${i}`);
+      await Promise.resolve();
+    }
+
+    expect(logger.logQueue.length).toBeLessThanOrEqual(100);
+    // The most recent entry survives; the oldest are the ones dropped.
+    expect(logger.logQueue[logger.logQueue.length - 1].message).toBe('spam 499');
+  });
+
+  it('backs off further async flushes after a failure', async () => {
+    global.fetch = vi.fn().mockRejectedValue(new Error('network down'));
+    vi.spyOn(logger.originalConsole, 'error').mockImplementation(() => {});
+
+    logger.log('log', 'first');
+    await logger.flush();
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+
+    logger.log('log', 'second');
+    await logger.flush();
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+
+    // Once the backoff window elapses the logger tries again.
+    vi.advanceTimersByTime(30000);
+    await logger.flush();
+    expect(global.fetch).toHaveBeenCalledTimes(2);
   });
 
   it('uses sendBeacon for a synchronous flush', async () => {

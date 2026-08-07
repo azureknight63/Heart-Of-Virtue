@@ -38,8 +38,14 @@ function HeroPanel({
     max: player?.max_fatigue ?? 150,
   }
 
+  // usePlayer's error fallback ships hp:0/max_hp:0, and `?? 100` lets a real 0
+  // through — dividing by it yields NaN, which leaks into height:"NaN%" and
+  // animationDuration:"NaNs". Treat a zero/absent max as an empty bar.
+  const ratio = (current, max) => (max > 0 ? Math.max(0, Math.min(1, current / max)) : 0)
+
   // Calculate heart rate based on HP and Combat status
-  const hpPercent = Math.max(0, Math.min(1, hp.current / hp.max))
+  const hpPercent = ratio(hp.current, hp.max)
+  const fatiguePercent = ratio(fatigue.current, fatigue.max)
   const baseBpm = 60
   const combatBonus = inCombat ? 40 : 0
   const stressBonus = (1 - hpPercent) * (inCombat ? 80 : 60)
@@ -183,7 +189,7 @@ function HeroPanel({
         >
           <div style={{
             width: '100%',
-            height: `${(hp.current / hp.max) * 100}%`,
+            height: `${hpPercent * 100}%`,
             backgroundColor: colors.danger,
             borderRadius: '12px 0 0 12px',
             boxShadow: `0 0 8px ${colors.danger}, inset 0 0 4px rgba(255, 255, 255, 0.3)`,
@@ -241,7 +247,7 @@ function HeroPanel({
         >
           <div style={{
             width: '100%',
-            height: `${(fatigue.current / fatigue.max) * 100}%`,
+            height: `${fatiguePercent * 100}%`,
             backgroundColor: colors.secondary,
             borderRadius: '0 12px 12px 0',
             boxShadow: `0 0 8px ${colors.secondary}, inset 0 0 4px rgba(255, 255, 255, 0.3)`,

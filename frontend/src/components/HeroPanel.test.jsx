@@ -251,4 +251,22 @@ describe('HeroPanel', () => {
     expect(screen.queryByText('PASSIVES')).toBeNull()
     expect(screen.queryByText('STATUS')).toBeNull()
   })
+  // usePlayer's error fallback ships hp:0/max_hp:0. Dividing by a zero max
+  // previously produced height:"NaN%" and animation:"pulse NaNs".
+  it('renders no NaN in any style when hp/fatigue maxima are zero', () => {
+    const degraded = { hp: 0, max_hp: 0, fatigue: 0, max_fatigue: 0 };
+    const { container } = render(<HeroPanel {...mockProps} player={degraded} />);
+
+    const styled = container.querySelectorAll('[style]');
+    expect(styled.length).toBeGreaterThan(0);
+    styled.forEach(el => {
+      expect(el.getAttribute('style')).not.toMatch(/NaN/);
+    });
+
+    // The bars collapse to empty rather than rendering an invalid height.
+    const hpFill = screen.getByTestId('hp-bar').firstElementChild;
+    expect(hpFill.style.height).toBe('0%');
+    const fatigueFill = screen.getByTestId('fatigue-bar').firstElementChild;
+    expect(fatigueFill.style.height).toBe('0%');
+  });
 });

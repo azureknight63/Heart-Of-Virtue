@@ -2,10 +2,16 @@ import { colors, fonts } from '../styles/theme'
 
 export const MOBILE_TAB_BAR_HEIGHT = '56px'
 
+// The tab keys address GamePage's two panel slots and must NOT vary by mode:
+// panelWrap() compares activeTab against these literals to decide which panel is
+// visible, so emitting mode-specific keys ('combat'/'battlefield') hid BOTH
+// panels and left the player staring at a blank screen. Only the labels change.
+export const TAB_KEYS = { left: 'character', right: 'map' }
+
 function MobileTabBar({ activeTab, onTabChange, mode }) {
   const isExploration = mode === 'exploration'
-  const tab1Key = isExploration ? 'character' : 'combat'
-  const tab2Key = isExploration ? 'map' : 'battlefield'
+  const tab1Key = TAB_KEYS.left
+  const tab2Key = TAB_KEYS.right
 
   const isTab1Active = activeTab === tab1Key
   const isTab2Active = activeTab === tab2Key

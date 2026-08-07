@@ -121,6 +121,12 @@ export const AudioProvider = ({ children }) => {
         }
 
         const switchTrack = () => {
+            // A sting leaves the shared element non-looping with an onended
+            // handler that bails out once another track takes over. Reset both
+            // here or the next BGM plays exactly once and the map goes silent.
+            bgmRef.current.loop = true;
+            bgmRef.current.onended = null;
+
             // Save progress of current track
             if (currentBGMRef.current) {
                 trackProgress.current[currentBGMRef.current] = bgmRef.current.currentTime;
@@ -169,6 +175,10 @@ export const AudioProvider = ({ children }) => {
             trackProgress.current[currentBGMRef.current] = bgmRef.current.currentTime;
         }
         bgmRef.current.pause();
+        // Same reset as switchTrack: never leave a sting's one-shot state
+        // stranded on the shared element for whatever plays next.
+        bgmRef.current.loop = true;
+        bgmRef.current.onended = null;
         currentBGMRef.current = null;
         setCurrentBGM(null);
     }, []);

@@ -54,6 +54,20 @@ function TileIcons({ tileData }) {
   )
 }
 
+// Offset-from-player → direction name. Module scope: the render loop consults
+// this once per tile (169 tiles at GRID_SIZE 13), so an inline literal would be
+// re-allocated on every one of them, every render.
+const DIRECTION_BY_OFFSET = {
+  '0,-1': 'north',
+  '0,1': 'south',
+  '-1,0': 'west',
+  '1,0': 'east',
+  '-1,-1': 'northwest',
+  '1,-1': 'northeast',
+  '-1,1': 'southwest',
+  '1,1': 'southeast',
+}
+
 export default function MapGrid({ location, onMove, exits, loading, exploredTiles }) {
   const GRID_SIZE = 13 // Odd number centers player
   const TILE_SIZE = 40
@@ -126,19 +140,7 @@ export default function MapGrid({ location, onMove, exits, loading, exploredTile
     const dx = x - location.x
     const dy = y - location.y
 
-    // Map to direction name
-    const directionMap = {
-      '0,-1': 'north',
-      '0,1': 'south',
-      '-1,0': 'west',
-      '1,0': 'east',
-      '-1,-1': 'northwest',
-      '1,-1': 'northeast',
-      '-1,1': 'southwest',
-      '1,1': 'southeast',
-    }
-
-    const direction = directionMap[`${dx},${dy}`]
+    const direction = DIRECTION_BY_OFFSET[`${dx},${dy}`]
 
     // Check if this direction is in available exits
     if (direction && location.exits && location.exits.includes(direction)) {
@@ -204,20 +206,9 @@ export default function MapGrid({ location, onMove, exits, loading, exploredTile
             const y = startY + row
             const { bgColor, symbol, textColor, tileData } = getTileContent(x, y)
             const isPlayerHere = x === location.x && y === location.y
-            const canMove = location.exits && location.exits.length > 0
             const dx = x - location.x
             const dy = y - location.y
-            const directionMap = {
-              '0,-1': 'north',
-              '0,1': 'south',
-              '-1,0': 'west',
-              '1,0': 'east',
-              '-1,-1': 'northwest',
-              '1,-1': 'northeast',
-              '-1,1': 'southwest',
-              '1,1': 'southeast',
-            }
-            const direction = directionMap[`${dx},${dy}`]
+            const direction = DIRECTION_BY_OFFSET[`${dx},${dy}`]
             const isValidMove = direction && location.exits && location.exits.includes(direction)
 
             return (

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback } from 'react';
+import React, { createContext, useContext, useState, useCallback, useRef, useEffect } from 'react';
 import { colors, spacing } from '../styles/theme';
 
 const ToastContext = createContext();
@@ -17,25 +17,43 @@ export const useToast = () => {
  */
 export const ToastProvider = ({ children }) => {
     const [toasts, setToasts] = useState([]);
+    // Auto-dismiss timers keyed by toast id. Without this a manually-dismissed
+    // toast still fires its orphan timer later, and timers outlive the provider
+    // (leaking across tests and firing setState after unmount).
+    const timersRef = useRef(new Map());
+
+    const removeToast = useCallback((id) => {
+        const timer = timersRef.current.get(id);
+        if (timer !== undefined) {
+            clearTimeout(timer);
+            timersRef.current.delete(id);
+        }
+        setToasts(prev => prev.filter(t => t.id !== id));
+    }, []);
 
     const addToast = useCallback((message, type = 'error', duration = 5000) => {
         const id = Date.now() + Math.random();
         const toast = { id, message, type, duration };
-        
+
         setToasts(prev => [...prev, toast]);
 
         // Auto-remove toast after duration
         if (duration > 0) {
-            setTimeout(() => {
+            timersRef.current.set(id, setTimeout(() => {
+                timersRef.current.delete(id);
                 removeToast(id);
-            }, duration);
+            }, duration));
         }
 
         return id;
-    }, []);
+    }, [removeToast]);
 
-    const removeToast = useCallback((id) => {
-        setToasts(prev => prev.filter(t => t.id !== id));
+    useEffect(() => {
+        const timers = timersRef.current;
+        return () => {
+            timers.forEach(clearTimeout);
+            timers.clear();
+        };
     }, []);
 
     const toastHelpers = {

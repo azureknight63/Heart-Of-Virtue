@@ -96,18 +96,47 @@ describe('MobileTabBar', () => {
       expect(onTabChange).toHaveBeenCalledWith('character')
     })
 
-    it('calls onTabChange with combat tab', () => {
+    // Regression: these two used to assert 'combat'/'battlefield'. GamePage's
+    // panelWrap() only ever compares against 'character'/'map', so those keys
+    // hid both panels and blanked the screen mid-fight. The tab keys address
+    // panel slots; only the labels are mode-specific.
+    it('emits the left panel key from the COMBAT tab', () => {
       const onTabChange = vi.fn()
-      render(<MobileTabBar activeTab="battlefield" onTabChange={onTabChange} mode="combat" />)
+      render(<MobileTabBar activeTab="map" onTabChange={onTabChange} mode="combat" />)
       fireEvent.click(screen.getByText('COMBAT'))
-      expect(onTabChange).toHaveBeenCalledWith('combat')
+      expect(onTabChange).toHaveBeenCalledWith('character')
     })
 
-    it('calls onTabChange with battlefield tab', () => {
+    it('emits the right panel key from the BATTLEFIELD tab', () => {
       const onTabChange = vi.fn()
-      render(<MobileTabBar activeTab="combat" onTabChange={onTabChange} mode="combat" />)
+      render(<MobileTabBar activeTab="character" onTabChange={onTabChange} mode="combat" />)
       fireEvent.click(screen.getByText('BATTLEFIELD'))
-      expect(onTabChange).toHaveBeenCalledWith('battlefield')
+      expect(onTabChange).toHaveBeenCalledWith('map')
+    })
+
+    it('emits the same key space in both modes', () => {
+      const onTabChange = vi.fn()
+      const { rerender } = render(
+        <MobileTabBar activeTab="character" onTabChange={onTabChange} mode="exploration" />
+      )
+      fireEvent.click(screen.getByText('MAP'))
+      rerender(<MobileTabBar activeTab="character" onTabChange={onTabChange} mode="combat" />)
+      fireEvent.click(screen.getByText('BATTLEFIELD'))
+
+      const emitted = onTabChange.mock.calls.map((c) => c[0])
+      expect(emitted).toEqual(['map', 'map'])
+    })
+
+    it('marks the tab active in combat using the panel keys', () => {
+      // The old keys also meant neither tab ever highlighted during combat.
+      const { rerender } = render(
+        <MobileTabBar activeTab="character" onTabChange={vi.fn()} mode="combat" />
+      )
+      const combatTab = screen.getByText('COMBAT').closest('button')
+      const activeColor = combatTab.style.color
+
+      rerender(<MobileTabBar activeTab="map" onTabChange={vi.fn()} mode="combat" />)
+      expect(screen.getByText('COMBAT').closest('button').style.color).not.toBe(activeColor)
     })
 
     it('does not call onTabChange when clicking active tab', () => {

@@ -15,4 +15,18 @@ describe('classifySeq', () => {
   it('accepts the next consecutive seq', () => {
     expect(classifySeq(5, 6)).toBe('next');
   });
+
+  describe('malformed seq', () => {
+    // Treating any of these as 'next' would let the consumer store a non-number
+    // as lastSeq, permanently breaking gap AND duplicate detection.
+    it.each([
+      ['undefined', undefined],
+      ['null', null],
+      ['NaN', NaN],
+      ['a numeric string', '6'],
+    ])('classifies %s as a gap so the consumer resyncs', (_label, badSeq) => {
+      expect(classifySeq(5, badSeq)).toBe('gap');
+      expect(classifySeq(null, badSeq)).toBe('gap');
+    });
+  });
 });

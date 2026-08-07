@@ -46,7 +46,7 @@ function isInertDebugCommand(command) {
 /**
  * ActionsPanel - Display available actions player can take
  */
-export default function ActionsPanel({ player, location, onClose, onRefetch, onMove }) {
+export default function ActionsPanel({ location, onClose }) {
   const [commands, setCommands] = useState([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)

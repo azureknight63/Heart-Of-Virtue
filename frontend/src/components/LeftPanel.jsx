@@ -75,10 +75,13 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
   const [pendingMoveSelection, setPendingMoveSelection] = useState(false)
   const [localCombatInput, setLocalCombatInput] = useState(null)
 
-  // Clear local input when combat turn changes
+  // Clear the locally-staged target picker whenever the beat advances.
+  // `round`/`beat` are the fields the backend actually emits (CombatSerializer
+  // + CombatAdapter); the previous `turn_number`/`combat_id` deps existed on no
+  // client combat object, so a stale picker survived the turn it belonged to.
   useEffect(() => {
     setLocalCombatInput(null)
-  }, [combat?.turn_number, combat?.combat_id])
+  }, [combat?.round, combat?.beat])
 
   // Audio context
   const { playSFX, playSting } = useAudio()
@@ -277,9 +280,11 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
   }, [displayedLog, onDisplayedLogCountChange])
 
   // Check for move categories - handle both direct API response and transformed state
+  // transformCombatData spreads battle_state flat onto the combat object, so
+  // there is never a nested combat.battle_state to fall back to.
   const rawMoves = useMemo(
-    () => combat?.available_options || combat?.battle_state?.available_options || [],
-    [combat?.available_options, combat?.battle_state?.available_options]
+    () => combat?.available_options || [],
+    [combat?.available_options]
   )
 
   // Track the most recent set of moves we've received
@@ -743,15 +748,19 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
         {mode === 'combat' && isMyTurn && (
           <SuggestedMovesPanel
             suggestions={combat?.suggested_moves || []}
-            suggestionsLoading={combat?.battle_state?.suggestions_loading || combat?.suggestions_loading || false}
+            suggestionsLoading={combat?.suggestions_loading || false}
             lastOutcome={combat?.last_move_outcome || ""}
             isMobile={isMobile}
             lastMoveViable={
               Array.isArray(combat?.available_options) &&
               combat.available_options.some(opt => opt.name === combat?.last_move_name && opt.available) &&
               // Also verify the target is still alive in combat
+              // `e.id` is already the canonical wire id from
+              // CombatantSerializer.stream_id (`enemy_<id>`), which is the same
+              // string last_move_target_id carries. Re-prefixing it here made the
+              // comparison always false, so "DO IT AGAIN" never appeared.
               (combat?.last_move_target_id && Array.isArray(combat?.enemies) &&
-               combat.enemies.some(e => `enemy_${e.id}` === combat.last_move_target_id))
+               combat.enemies.some(e => e.id === combat.last_move_target_id))
             }
             isPlayerTurn={isMyTurn}
             onTargetHover={onTargetHover}
@@ -825,11 +834,8 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
 
       {showActions && location && mode === 'exploration' && (
         <ActionsPanel
-          player={player}
           location={location}
           onClose={() => setShowActions(false)}
-          onMove={onMove}
-          onRefetch={onRefetch}
         />
       )}
 

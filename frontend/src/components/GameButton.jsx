@@ -13,6 +13,12 @@ export default function GameButton({
     style = {},
     className = '',
     title = '',
+    // Default to "button": a design-system button inside a <form> must not
+    // submit it implicitly. LoginPage passes type="button" on its Create
+    // Account control, and without the rest spread below that guard was
+    // silently discarded along with aria-*, data-* and keyboard handlers.
+    type = 'button',
+    ...props
 }) {
     const [isHovered, setIsHovered] = useState(false)
 
@@ -80,6 +86,7 @@ export default function GameButton({
 
     return (
         <button
+            type={type}
             onClick={disabled ? undefined : onClick}
             onMouseEnter={() => !disabled && setIsHovered(true)}
             onMouseLeave={() => setIsHovered(false)}
@@ -87,6 +94,7 @@ export default function GameButton({
             style={baseStyle}
             className={`game-btn ${className}`}
             title={title}
+            {...props}
         >
             {children}
         </button>

@@ -27,7 +27,6 @@ export default function StatsPanel({ player, onClose }) {
   }
 
   const resistance = player.resistance || {}
-  const statusResistance = player.status_resistance || {}
   const states = player.states || []
 
   const coreStats = [

@@ -66,15 +66,6 @@ export default function GamePage() {
     if (!inCombat) setStreamedAnimations([])
   }, [inCombat])
 
-  // Debug logging for combat data
-  useEffect(() => {
-    if (inCombat && combat) {
-      console.log('[DEBUG] Combat Data:', combat)
-      console.log('[DEBUG] Suggested Moves:', combat.suggested_moves)
-      console.log('[DEBUG] Player Status Effects:', combat.player?.status_effects)
-    }
-  }, [inCombat, combat])
-
   // Core game state
   const [mode, setMode] = useState('exploration') // 'exploration' or 'combat'
   const [isInteractionTyping, setIsInteractionTyping] = useState(false)
@@ -236,10 +227,8 @@ export default function GamePage() {
   useEffect(() => {
     let pollInterval
     if (inCombat && combat?.suggestions_loading) {
-      console.log('[DEBUG] Suggestions loading, starting poll...')
       const pollIntervalMs = (typeof process !== 'undefined' && (process.env.NODE_ENV === 'test' || process.env.VITEST)) ? 50 : 3000
       pollInterval = setInterval(() => {
-        console.log('[DEBUG] Polling for suggestions...')
         fetchCombatStatus()
       }, pollIntervalMs) // Poll every 3 seconds (50ms in tests)
     }
@@ -262,35 +251,31 @@ export default function GamePage() {
    * Handle movement with event and combat checks
    */
   const handleMove = async (direction) => {
-    try {
-      const result = await moveToLocation(direction)
+    const result = await moveToLocation(direction)
 
-      // Handle events triggered by movement
-      if (result.events_triggered && result.events_triggered.length > 0) {
-        const displayableEvents = result.events_triggered.filter(
-          event => (event.output_text && event.output_text.trim().length > 0) || event.needs_input
-        )
+    // Handle events triggered by movement
+    if (result.events_triggered && result.events_triggered.length > 0) {
+      const displayableEvents = result.events_triggered.filter(
+        event => (event.output_text && event.output_text.trim().length > 0) || event.needs_input
+      )
 
-        if (displayableEvents.length > 0) {
-          setEventQueue(displayableEvents)
-        }
+      if (displayableEvents.length > 0) {
+        setEventQueue(displayableEvents)
       }
-
-      // Check if movement triggered combat
-      if (result.combat_started) {
-        await fetchCombatStatus()
-      }
-
-      // Refetch player data after movement
-      await refetchPlayer()
-
-      // Trigger autosave tick
-      triggerTick()
-
-      return result
-    } catch (err) {
-      throw err
     }
+
+    // Check if movement triggered combat
+    if (result.combat_started) {
+      await fetchCombatStatus()
+    }
+
+    // Refetch player data after movement
+    await refetchPlayer()
+
+    // Trigger autosave tick
+    triggerTick()
+
+    return result
   }
 
   /**
@@ -641,7 +626,6 @@ export default function GamePage() {
           combat={combat}
           location={location}
           onMoveToLocation={handleMove}
-          onModeChange={setMode}
           exploredTiles={exploredTiles}
           currentLogIndex={currentLogIndex}
           displayedLogCount={displayedLogCount}

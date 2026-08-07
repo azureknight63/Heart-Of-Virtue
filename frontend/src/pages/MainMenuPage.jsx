@@ -102,9 +102,15 @@ export default function MainMenuPage() {
     const [isLoadingSaves, setIsLoadingSaves] = useState(false)
     const [loadingAction, setLoadingAction] = useState(false)
 
-    // Play theme and fetch saves on mount
     useEffect(() => {
         playBGM('adventure')
+    }, [playBGM])
+
+    // Fetch the save list once, on mount. This is deliberately NOT keyed on
+    // playBGM: that callback is recreated on every music-volume/mute change, so
+    // sharing an effect with the theme made a single volume-slider drag fire
+    // ~30 GET /saves requests.
+    useEffect(() => {
         const initMenu = async () => {
             try {
                 const response = await saves.list()
@@ -145,7 +151,7 @@ export default function MainMenuPage() {
             }
         }
         initMenu()
-    }, [playBGM])
+    }, [])
 
     // Keep mostRecentSave in sync with saveList (cloud and local)
     useEffect(() => {

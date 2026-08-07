@@ -27,6 +27,9 @@ apiClient.interceptors.response.use(
     // without triggering a circular redirect/reload.
     if (error.response?.status === 401 && !window.location.pathname.includes('/login')) {
       localStorage.removeItem('authToken')
+      // Match logout(): the local autosave belongs to the session that just
+      // ended, and must not be offered to whoever signs in next.
+      localStorage.removeItem('hov_local_autosave')
       window.location.href = `${import.meta.env.BASE_URL}login`
     }
     return Promise.reject(error)

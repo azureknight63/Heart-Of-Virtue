@@ -55,6 +55,10 @@ export const AuthProvider = ({ children }) => {
         } finally {
             localStorage.removeItem('authToken');
             localStorage.removeItem('username');
+            // The local autosave is per-session crash-recovery data. Leaving it
+            // behind let the next account to sign in on this machine see the
+            // previous player's character in the menu — and pick "Continue".
+            localStorage.removeItem('hov_local_autosave');
             setIsAuthenticated(false);
             setUser(null);
             // Force reload to clear state and redirect to login, respecting subpath deployment
