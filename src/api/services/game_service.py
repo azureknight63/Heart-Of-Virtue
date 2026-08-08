@@ -9,6 +9,7 @@ from unittest.mock import patch
 from src.api.constants import ITEM_USE_RANGE
 from src.functions import check_for_combat
 from src.inventory_utils import get_gold
+from src.moves import attacker_accuracy
 from src.narration import capture_narration, narrate
 from src.story import gorran_flavor
 
@@ -54,19 +55,19 @@ _LLM_NOISE_PREFIXES = (
 )
 
 
-#: Weights the engine's to-hit roll applies to the attacker's attributes.
-#: The engine has no single to-hit helper — every move inlines the expression
-#: ``base - target.finesse + user.finesse * 0.7 + user.intelligence * 0.3``
-#: (grep ``user.intelligence * 0.3`` under ``src/moves/``). These constants
-#: mirror the base-98 form used by the basic ``Attack`` (``src/moves/_utility.py``)
-#: and by the pick/ranged families.
-HIT_ACCURACY_BASE = 98
-HIT_ACCURACY_FINESSE_WEIGHT = 0.7
-HIT_ACCURACY_INTELLIGENCE_WEIGHT = 0.3
+#: Stand-in attribute value for a player object that predates (or omits) the
+#: attribute entirely — a sheet request must not 500 over a partially built
+#: player. The engine itself has no such fallback; this is an API-layer policy.
+_MISSING_ATTRIBUTE_DEFAULT = 10
 
 
 def derive_hit_accuracy(player):
     """Return the attacker-side half of the engine's to-hit roll.
+
+    Thin adapter over ``moves.attacker_accuracy``: it supplies this layer's
+    missing-attribute policy and nothing else. The arithmetic and its constants
+    belong to the engine (``src/moves/_base.py``), alongside the attack paths
+    that roll against them, so the sheet cannot drift away from the dice.
 
     A move's hit chance is this value minus the defender's evasion (their
     finesse), floored by the move (5 for the basic ``Attack``) and effectively
@@ -77,17 +78,11 @@ def derive_hit_accuracy(player):
     use a different base (polearm moves use 85, several NPC moves 95/105), and
     situational modifiers applied at cast time — facing/angle accuracy,
     ``HauntingPresence``, ranged decay and close-range distraction — are not
-    reflected here. It does mirror the attribute weighting exactly, which an
-    earlier ``98 + finesse`` version did not: that gave finesse full weight and
-    ignored intelligence, so the sheet only agreed with the dice when the two
-    attributes happened to be equal.
+    reflected here.
     """
-    finesse = getattr(player, "finesse", 10)
-    intelligence = getattr(player, "intelligence", 10)
-    return int(
-        HIT_ACCURACY_BASE
-        + (finesse * HIT_ACCURACY_FINESSE_WEIGHT)
-        + (intelligence * HIT_ACCURACY_INTELLIGENCE_WEIGHT)
+    return attacker_accuracy(
+        getattr(player, "finesse", _MISSING_ATTRIBUTE_DEFAULT),
+        getattr(player, "intelligence", _MISSING_ATTRIBUTE_DEFAULT),
     )
 
 

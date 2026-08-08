@@ -12,6 +12,7 @@ from ._base import (
     Move,
     PassiveMove,
     _apply_to_hit_modifiers,
+    to_hit_chance,
 )  # noqa: F401
 
 
@@ -222,7 +223,7 @@ class Sweep(Move):
                     continue
 
             base_dmg = max(1, int(self.power - enemy.protection))
-            hit_chance = max(5, int(85 - enemy.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3)))
+            hit_chance = to_hit_chance(self.user, enemy, base=85, floor=5)
             # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
             hit_chance = _apply_to_hit_modifiers(self.user, enemy, hit_chance)
             if random.randint(0, 100) <= hit_chance:
@@ -402,7 +403,7 @@ class HalberdSpin(Move):
                     continue
 
             base_dmg = max(1, int(self.power - enemy.protection))
-            hit_chance = max(5, int(85 - enemy.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3)))
+            hit_chance = to_hit_chance(self.user, enemy, base=85, floor=5)
             # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
             hit_chance = _apply_to_hit_modifiers(self.user, enemy, hit_chance)
             if random.randint(0, 100) <= hit_chance:

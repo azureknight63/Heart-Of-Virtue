@@ -73,6 +73,10 @@ export const colors = {
         bright: '#ffffff',
         inverse: '#000000',   // Black text for use on bright/light backgrounds
         highlight: '#ffeeaa',
+        // Item/loot body text. Deliberately one step cooler than `highlight`
+        // so a stat value doesn't compete with the amber label above it; the
+        // two are near-identical but not interchangeable.
+        paleGold: '#ffee99',
         warning: '#ffcc88',
         danger: '#ffaaaa',
         success: '#ccffcc',
@@ -88,6 +92,9 @@ export const colors = {
         panelDeep: 'rgba(0, 0, 0, 0.9)',
         overlay: 'rgba(0, 0, 0, 0.75)',
         dialog: 'rgba(20, 10, 0, 0.4)',
+        // Warmer and more opaque than `dialog` — the inset panels stacked
+        // inside item/loot dialogs need to read as a layer above that ground.
+        panelAmber: 'rgba(30, 15, 0, 0.6)',
         error: '#7f1d1d',
         success: '#064e3b',
         highlight: 'rgba(255, 170, 0, 0.1)',
@@ -104,6 +111,10 @@ export const colors = {
         main: 'rgba(255, 170, 0, 0.3)',
         light: 'rgba(255, 170, 0, 0.1)',
         bright: '#ffaa00',
+        // Opaque dark amber. Unlike `main`/`light` (alpha over whatever sits
+        // behind), this is used as a solid divider/grid-gap fill, where an
+        // alpha border would let the panel behind bleed through.
+        dark: '#664400',
         success: '#00ff88',
         danger: '#ff4444',
     },

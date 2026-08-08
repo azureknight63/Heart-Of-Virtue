@@ -96,36 +96,44 @@ export function computeStage(segments, idx, initialCast) {
 const PORTRAIT_TRANSITION = 'opacity 0.8s ease, transform 0.35s ease, filter 0.35s ease'
 
 /**
- * Opacity multiplier that plays a mount-time fade-in, returning 0 then 1.
+ * Play a mount-time fade-in on `nodeRef` by painting it at 0 for one frame and
+ * then handing it back to `targetOpacity`.
  *
  * A CSS transition needs two painted values to animate between: committing
- * opacity 0 and 1 in the same render is indistinguishable from mounting at 1,
- * which is why an arriving portrait used to pop. So the element paints at 0 and
- * a post-paint frame raises it. The state is keyed off `entering` rather than
- * mount so re-renders within the entering beat (the typewriter re-renders the
- * whole stage per character) cannot restart or undo the fade.
+ * opacity 0 and the target in the same render is indistinguishable from
+ * mounting at the target, which is why an arriving portrait used to pop.
+ *
+ * The two-frame handoff is done as a direct style write rather than React
+ * state, because the intermediate 0 is a paint detail with no meaning to the
+ * component: keeping it out of state avoids an extra render per entrance and
+ * cannot cascade. React stays the owner of the value — it renders
+ * `targetOpacity` inline, the effect borrows the node for exactly one frame,
+ * and any later render writes the prop straight over the top.
+ *
+ * Keying the effect on `entering` (not on mount) means the re-renders within
+ * the entering beat — the typewriter re-renders the whole stage per character —
+ * neither restart nor undo the fade, while a member who walks on a second time
+ * fades in again.
  */
-function useEnterFade(entering) {
-    const [raised, setRaised] = useState(!entering)
-
+function useEnterFade(nodeRef, entering, targetOpacity) {
     useLayoutEffect(() => {
-        if (!entering) {
-            setRaised(true)
-            return undefined
-        }
-        setRaised(false)
-        const frame = requestAnimationFrame(() => setRaised(true))
+        const node = nodeRef.current
+        if (!node || !entering) return undefined
+        node.style.opacity = '0'
+        const frame = requestAnimationFrame(() => {
+            if (nodeRef.current) nodeRef.current.style.opacity = String(targetOpacity)
+        })
         return () => cancelAnimationFrame(frame)
-    }, [entering])
-
-    return raised ? 1 : 0
+    }, [nodeRef, entering, targetOpacity])
 }
 
 function Portrait({ member, isSpeaker }) {
     // Dim & scale: the speaker is full ink/size; listeners fade, shrink, and
-    // desaturate slightly. Fades (enter/exit) multiply the base opacity.
+    // desaturate slightly. An exit fade multiplies the base opacity.
     const baseOpacity = isSpeaker ? 1 : 0.85
-    const enterOpacity = useEnterFade(member.entering && member.enterTransition === 'fade')
+    const opacity = member.opacity * baseOpacity
+    const wrapperRef = useRef(null)
+    useEnterFade(wrapperRef, member.entering && member.enterTransition === 'fade', opacity)
     const imgRef = useRef(null)
 
     // Keep the same <img> node across emotion changes instead of keying on
@@ -143,13 +151,14 @@ function Portrait({ member, isSpeaker }) {
 
     return (
         <div
+            ref={wrapperRef}
             style={{
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
                 gap: spacing.xs,
                 transition: PORTRAIT_TRANSITION,
-                opacity: member.opacity * baseOpacity * enterOpacity,
+                opacity,
                 transform: isSpeaker ? 'scale(1)' : 'scale(0.9)',
             }}
         >

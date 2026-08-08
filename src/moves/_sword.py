@@ -13,6 +13,7 @@ from ._base import (
     PassiveMove,
     _ensure_weapon_exp,
     _apply_to_hit_modifiers,
+    to_hit_chance,
 )  # noqa: F401
 
 
@@ -208,7 +209,7 @@ class WhirlAttack(Move):
                         ) * random.uniform(0.8, 1.2)
                         damage = max(0, damage)
 
-                        hit_chance = int(85 - enemy.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3))
+                        hit_chance = to_hit_chance(self.user, enemy, base=85)
                         # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
                         hit_chance = _apply_to_hit_modifiers(self.user, enemy, hit_chance)
                         roll = random.randint(0, 100)
@@ -341,7 +342,7 @@ class VertigoSpin(Move):
         ) * random.uniform(0.8, 1.2)
         damage = max(0, damage)
 
-        hit_chance = int(85 - self.target.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3))
+        hit_chance = to_hit_chance(self.user, self.target, base=85)
         # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
         hit_chance = _apply_to_hit_modifiers(self.user, self.target, hit_chance)
         roll = random.randint(0, 100)
@@ -545,7 +546,7 @@ class DisarmingSlash(Move):
             )
 
         if self.viable():
-            hit_chance = max(5, int(98 - self.target.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3)))
+            hit_chance = to_hit_chance(self.user, self.target, floor=5)
         else:
             hit_chance = -1
         # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
@@ -689,7 +690,7 @@ class Riposte(Move):
             )
 
         if self.viable():
-            hit_chance = max(5, int(98 - self.target.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3)))
+            hit_chance = to_hit_chance(self.user, self.target, floor=5)
         else:
             hit_chance = -1
         # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).

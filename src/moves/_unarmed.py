@@ -13,6 +13,7 @@ from ._base import (
     PassiveMove,
     _apply_carry_fatigue,
     _apply_to_hit_modifiers,
+    to_hit_chance,
 )  # noqa: F401
 
 
@@ -147,9 +148,7 @@ class PowerStrike(Move):
         self.prep_colors()
         glance = False
         if self.viable():
-            hit_chance = int(85 - self.target.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3))
-            if hit_chance <= 0:
-                hit_chance = 1
+            hit_chance = to_hit_chance(self.user, self.target, base=85, floor=1)
         else:
             hit_chance = -1
         # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
@@ -283,9 +282,7 @@ class Jab(Move):
         self.prep_colors()
         glance = False
         if self.viable():
-            hit_chance = int(98 - self.target.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3))
-            if hit_chance <= 0:
-                hit_chance = 1
+            hit_chance = to_hit_chance(self.user, self.target, floor=1)
         else:
             hit_chance = -1
         # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).

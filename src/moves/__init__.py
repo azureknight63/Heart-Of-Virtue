@@ -22,7 +22,16 @@ All public names are re-exported here so existing imports of the form
 continue to work without any changes in calling code.
 """
 
-from ._base import Move, PassiveMove, _ensure_weapon_exp, _apply_carry_fatigue, default_animations
+from ._base import (
+    Move,
+    PassiveMove,
+    _ensure_weapon_exp,
+    _apply_carry_fatigue,
+    default_animations,
+    to_hit_chance,
+    attacker_accuracy,
+    HIT_CHANCE_BASE,
+)
 from ._utility import (
     StrategicInsight,
     MasterTactician,
@@ -111,6 +120,10 @@ __all__ = [
     "_ensure_weapon_exp",
     "_apply_carry_fatigue",
     "default_animations",
+    # Shared to-hit arithmetic (the API layer's accuracy rating reads these)
+    "to_hit_chance",
+    "attacker_accuracy",
+    "HIT_CHANCE_BASE",
     # Utility
     "StrategicInsight",
     "MasterTactician",

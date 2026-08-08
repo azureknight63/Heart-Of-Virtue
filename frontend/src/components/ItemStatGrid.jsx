@@ -1,10 +1,7 @@
-const LABEL_COLOR = '#ffaa00'
-const DEFAULT_VALUE_COLOR = '#ffee99'
-const PANEL_BG = 'rgba(30, 15, 0, 0.6)'
-const PANEL_BORDER = '#664400'
+import { colors } from '../styles/theme'
 
 const cellStyle = {
-  backgroundColor: PANEL_BG,
+  backgroundColor: colors.bg.panelAmber,
   padding: '6px',
   textAlign: 'center',
   display: 'flex',
@@ -26,16 +23,16 @@ export function ItemStatGrid({ stats }) {
       display: 'grid',
       gridTemplateColumns: 'repeat(auto-fit, minmax(80px, 1fr))',
       gap: '1px',
-      backgroundColor: PANEL_BORDER,
+      backgroundColor: colors.border.dark,
       padding: '1px',
       borderRadius: '3px',
     }}>
       {stats.filter((s) => s.show !== false).map((s) => (
         <div key={s.label} style={cellStyle}>
-          <div style={{ color: LABEL_COLOR, fontWeight: 'bold', fontSize: '13px', marginBottom: '3px' }}>
+          <div style={{ color: colors.secondary, fontWeight: 'bold', fontSize: '13px', marginBottom: '3px' }}>
             {s.label}
           </div>
-          <div style={{ color: s.color || DEFAULT_VALUE_COLOR, fontSize: '14px' }}>
+          <div style={{ color: s.color || colors.text.paleGold, fontSize: '14px' }}>
             {s.value}
           </div>
         </div>
@@ -51,15 +48,15 @@ export function ItemStatGrid({ stats }) {
 export function ItemSection({ title, children, style }) {
   return (
     <div style={{
-      backgroundColor: PANEL_BG,
-      border: `1px solid ${PANEL_BORDER}`,
+      backgroundColor: colors.bg.panelAmber,
+      border: `1px solid ${colors.border.dark}`,
       borderRadius: '4px',
       padding: '8px 10px',
       ...style,
     }}>
       {title && (
         <div style={{
-          color: LABEL_COLOR,
+          color: colors.secondary,
           fontWeight: 'bold',
           fontSize: '13px',
           textTransform: 'uppercase',

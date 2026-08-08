@@ -14,6 +14,7 @@ from ._base import (
     _ensure_weapon_exp,
     _apply_carry_fatigue,
     _apply_to_hit_modifiers,
+    to_hit_chance,
 )  # noqa: F401
 
 
@@ -146,9 +147,7 @@ class Slash(
             )
 
         if self.viable():
-            hit_chance = int(98 - self.target.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3))
-            if hit_chance < 5:  # Minimum value for hit chance
-                hit_chance = 5
+            hit_chance = to_hit_chance(self.user, self.target, floor=5)
         else:
             hit_chance = (
                 -1
@@ -387,7 +386,7 @@ class FeintAndPivot(Move):
         ) * random.uniform(0.8, 1.2)
         damage = max(0, damage)
 
-        hit_chance = int(90 - self.target.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3))
+        hit_chance = to_hit_chance(self.user, self.target, base=90)
         # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
         hit_chance = _apply_to_hit_modifiers(self.user, self.target, hit_chance)
         roll = random.randint(0, 100)
@@ -580,9 +579,7 @@ class Backstab(Move):
             )
 
         if self.viable():
-            hit_chance = int(98 - self.target.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3))
-            if hit_chance < 5:
-                hit_chance = 5
+            hit_chance = to_hit_chance(self.user, self.target, floor=5)
         else:
             hit_chance = -1
         # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).

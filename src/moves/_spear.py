@@ -13,6 +13,7 @@ from ._base import (
     PassiveMove,
     _ensure_weapon_exp,
     _apply_to_hit_modifiers,
+    to_hit_chance,
 )  # noqa: F401
 
 
@@ -99,7 +100,7 @@ class KeepAway(Move):
             )
 
         if self.viable():
-            hit_chance = max(5, int(98 - self.target.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3)))
+            hit_chance = to_hit_chance(self.user, self.target, floor=5)
         else:
             hit_chance = -1
         # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
@@ -296,7 +297,7 @@ class Lunge(Move):
         narrate(self.stage_announce[1])
 
         if self.viable():
-            hit_chance = max(5, int(98 - self.target.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3)))
+            hit_chance = to_hit_chance(self.user, self.target, floor=5)
         else:
             hit_chance = -1
         # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
@@ -418,7 +419,7 @@ class Impale(Move):
             )
 
         if self.viable():
-            hit_chance = max(5, int(98 - self.target.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3)))
+            hit_chance = to_hit_chance(self.user, self.target, floor=5)
         else:
             hit_chance = -1
         # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
@@ -555,7 +556,7 @@ class ArmorPierce(Move):
             )
 
         if self.viable():
-            hit_chance = max(5, int(98 - self.target.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3)))
+            hit_chance = to_hit_chance(self.user, self.target, floor=5)
         else:
             hit_chance = -1
         # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
