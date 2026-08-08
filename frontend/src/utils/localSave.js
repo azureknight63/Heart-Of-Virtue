@@ -82,16 +82,26 @@ function toBoundedInteger(value, min, max) {
 }
 
 /**
+ * Invisible characters that must never reach a rendered row.
+ *
+ * C0/C1 controls cannot render but wreck console/log output and line-break the
+ * row. The Unicode half covers the formatting characters React renders happily:
+ * U+2028/U+2029 break the line like \n, and the bidi marks and overrides
+ * (U+200E-U+200F, U+202A-U+202E, U+2066-U+2069) let an attacker-written
+ * map_name visually reorder the text of the row it sits in.
+ */
+// eslint-disable-next-line no-control-regex -- stripping control characters is the intent
+const INVISIBLE_CHARS = /[\x00-\x1F\x7F-\x9F\u200E\u200F\u2028\u2029\u202A-\u202E\u2066-\u2069]/g
+
+/**
  * @returns a bounded display string, `fallback` when the field is absent, or
  *          null when the field is present but not a string (a tampered blob).
  */
 function toDisplayString(value, fallback) {
   if (value === null || value === undefined) return fallback
   if (typeof value !== 'string') return null
-  // Control characters cannot render but can wreck console/log output and
-  // line-break the row; strip them before measuring the length cap.
-  // eslint-disable-next-line no-control-regex -- stripping control characters is the intent
-  const cleaned = value.replace(/[\x00-\x1F\x7F-\x9F]/g, '').trim()
+  // Strip before measuring the length cap so padding can't smuggle past it.
+  const cleaned = value.replace(INVISIBLE_CHARS, '').trim()
   if (cleaned.length === 0) return fallback
   return cleaned.slice(0, MAX_DISPLAY_LENGTH)
 }

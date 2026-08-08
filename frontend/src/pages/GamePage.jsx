@@ -213,7 +213,6 @@ export default function GamePage() {
     if (isMobile && combat?.awaiting_input && !combat?.end_state && !isEventDialogActive) {
       setActiveMobileTab('character')
     }
-   
   // combat?.log?.length is intentionally included: the linter treats it as
   // unnecessary because the effect body doesn't read it, but we need the
   // effect to re-fire on every new log entry so the tab switch isn't missed

@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { LOCAL_SAVE_KEY } from '../utils/localSave'
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api'
 
@@ -29,7 +30,7 @@ apiClient.interceptors.response.use(
       localStorage.removeItem('authToken')
       // Match logout(): the local autosave belongs to the session that just
       // ended, and must not be offered to whoever signs in next.
-      localStorage.removeItem('hov_local_autosave')
+      localStorage.removeItem(LOCAL_SAVE_KEY)
       window.location.href = `${import.meta.env.BASE_URL}login`
     }
     return Promise.reject(error)

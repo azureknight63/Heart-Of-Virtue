@@ -115,6 +115,5 @@ export function useCombatSocket({
     };
     // Callbacks are read through cbs.current, so they intentionally stay out of
     // the dep array — the socket wires up once per [enabled, sessionId].
-     
   }, [enabled, sessionId]);
 }

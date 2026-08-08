@@ -1362,7 +1362,6 @@ function BattlefieldGrid({
 
     cameraRafRef.current = requestAnimationFrame(animateCamera);
     // Safe: animateCamera only reads mutable refs; setSnapState is a stable setter.
-     
   }, []);
 
   // Update camera target whenever Jean moves or zoom changes

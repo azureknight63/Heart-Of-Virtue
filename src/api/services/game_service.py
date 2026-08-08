@@ -55,8 +55,11 @@ _LLM_NOISE_PREFIXES = (
 
 
 #: Weights the engine's to-hit roll applies to the attacker's attributes.
-#: Kept beside :func:`derive_hit_accuracy` so the character sheet and
-#: ``Move.calculate_hit_chance`` cannot drift apart again.
+#: The engine has no single to-hit helper — every move inlines the expression
+#: ``base - target.finesse + user.finesse * 0.7 + user.intelligence * 0.3``
+#: (grep ``user.intelligence * 0.3`` under ``src/moves/``). These constants
+#: mirror the base-98 form used by the basic ``Attack`` (``src/moves/_utility.py``)
+#: and by the pick/ranged families.
 HIT_ACCURACY_BASE = 98
 HIT_ACCURACY_FINESSE_WEIGHT = 0.7
 HIT_ACCURACY_INTELLIGENCE_WEIGHT = 0.3
@@ -66,13 +69,18 @@ def derive_hit_accuracy(player):
     """Return the attacker-side half of the engine's to-hit roll.
 
     A move's hit chance is this value minus the defender's evasion (their
-    finesse), clamped to [2, 100] — see ``Move.calculate_hit_chance``. It is not
-    a percentage on its own, which is why the character sheet renders it as a
-    rating rather than with a ``%``.
+    finesse), floored by the move (5 for the basic ``Attack``) and effectively
+    capped at 100 by the percentile roll. It is not a percentage on its own,
+    which is why the character sheet renders it as a rating rather than a ``%``.
 
-    Mirrors the combat expression exactly: an earlier version used
-    ``98 + finesse``, giving finesse full weight and ignoring intelligence, so
-    the sheet only agreed with the dice when the two attributes were equal.
+    This is an indicative rating, not an exact per-move figure: some families
+    use a different base (polearm moves use 85, several NPC moves 95/105), and
+    situational modifiers applied at cast time — facing/angle accuracy,
+    ``HauntingPresence``, ranged decay and close-range distraction — are not
+    reflected here. It does mirror the attribute weighting exactly, which an
+    earlier ``98 + finesse`` version did not: that gave finesse full weight and
+    ignored intelligence, so the sheet only agreed with the dice when the two
+    attributes happened to be equal.
     """
     finesse = getattr(player, "finesse", 10)
     intelligence = getattr(player, "intelligence", 10)
@@ -2873,7 +2881,8 @@ class GameService:
         #
         # These are the two halves of the engine's to-hit roll, not percentages:
         # a move's hit chance is the attacker's accuracy minus the defender's
-        # evasion, clamped to [2, 100] (see Move.calculate_hit_chance).
+        # evasion, floored by the move and capped at 100 by the percentile roll.
+        # See derive_hit_accuracy for the caveats this rating glosses over.
         #
         # Accuracy must use the same weighting the combat code does — finesse at
         # 0.7 and intelligence at 0.3 — otherwise the character sheet disagrees

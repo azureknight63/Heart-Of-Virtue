@@ -74,7 +74,7 @@ import GameButton from '../components/GameButton'
 import GamePanel from '../components/GamePanel'
 import GameText from '../components/GameText'
 import BaseDialog from '../components/BaseDialog'
-import { readLocalSave, compareSavesByRecency } from '../utils/localSave'
+import { readLocalSave, compareSavesByRecency, LOCAL_SAVE_KEY } from '../utils/localSave'
 
 /**
  * Fetch the cloud saves and merge in the local autosave, newest first.
@@ -240,7 +240,7 @@ export default function MainMenuPage() {
 
         try {
             if (isLocal) {
-                localStorage.removeItem('hov_local_autosave')
+                localStorage.removeItem(LOCAL_SAVE_KEY)
             } else {
                 await saves.delete(saveId)
             }

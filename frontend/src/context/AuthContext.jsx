@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import apiEndpoints from '../api/endpoints';
+import { LOCAL_SAVE_KEY } from '../utils/localSave';
 
 const AuthContext = createContext();
 
@@ -58,7 +59,7 @@ export const AuthProvider = ({ children }) => {
             // The local autosave is per-session crash-recovery data. Leaving it
             // behind let the next account to sign in on this machine see the
             // previous player's character in the menu — and pick "Continue".
-            localStorage.removeItem('hov_local_autosave');
+            localStorage.removeItem(LOCAL_SAVE_KEY);
             setIsAuthenticated(false);
             setUser(null);
             // Force reload to clear state and redirect to login, respecting subpath deployment

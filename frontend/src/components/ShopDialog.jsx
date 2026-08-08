@@ -316,8 +316,11 @@ export default function ShopDialog({ npcId, npcName, initialTab = 'buy', player,
     ?? 100
   const merchantGold = shopState?.merchant_gold ?? 0
 
+  // effectiveQty, not quantity: for a buyback stack the picker is suppressed so
+  // `quantity` is stuck at 1, and the total (plus the affordability warning
+  // derived from it) would quote a fraction of what shop_buyback charges.
   const buyTotal = selectedItem && activeTab === 'buy'
-    ? (selectedItem.price || 0) * quantity
+    ? (selectedItem.price || 0) * effectiveQty
     : 0
   const sellTotal = selectedItem && activeTab === 'sell'
     ? (selectedItem.offer || 0) * quantity
@@ -734,7 +737,10 @@ export default function ShopDialog({ npcId, npcName, initialTab = 'buy', player,
                   <ActionButton
                     onClick={handleBuyback}
                     color={colors.accent}
-                    label={`Buyback · ${selectedItem.price} 💰`}
+                    // buyTotal, not the unit price: the whole stack is repurchased
+                    // in one transaction, so quoting `price` here understated the
+                    // cost of any stacked entry.
+                    label={`Buyback · ${buyTotal} 💰`}
                     isMobile={isMobile}
                   />
                 ) : activeTab === 'buy' ? (

@@ -83,9 +83,12 @@ const CombatInputDialog = ({ inputType, options, onSelect, onCancel, onTargetHov
                                     {target.hit_chance !== undefined && (
                                         <div style={{ fontSize: '12px', color: '#00ffcc', display: 'flex', justifyContent: 'space-between' }}>
                                             <span>Accuracy:</span>
-                                            {/* hit_chance is already an integer percentage clamped to
-                                                [2, 100] by Move.calculate_hit_chance and passed through
-                                                the adapter verbatim — do not rescale it. */}
+                                            {/* hit_chance is already an integer percentage, produced by
+                                                the ranged moves' calculate_hit_chance (src/moves/_ranged.py)
+                                                and passed through the adapter verbatim — do not rescale it.
+                                                Its [2, 100] clamp is applied before the shared facing /
+                                                HauntingPresence modifiers, so the final value can sit
+                                                slightly outside that band. */}
                                             <span style={{ fontWeight: 'bold' }}>{Math.round(target.hit_chance)}%</span>
                                         </div>
                                     )}

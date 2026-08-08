@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import apiEndpoints from '../api/endpoints'
 import { useAuthContext } from '../context/AuthContext'
 import { combatSocketEnabled } from '../utils/featureFlags'
+import { LOCAL_SAVE_KEY } from '../utils/localSave'
 
 // Helper to transform combat data
 const transformCombatData = (data) => ({
@@ -341,7 +342,7 @@ export const useAutosave = (player) => {
         timestamp: new Date().toISOString(),
         type: 'local_autosave'
       }
-      localStorage.setItem('hov_local_autosave', JSON.stringify(saveData))
+      localStorage.setItem(LOCAL_SAVE_KEY, JSON.stringify(saveData))
     }
   }, [player])
 

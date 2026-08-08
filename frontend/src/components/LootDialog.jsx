@@ -122,7 +122,9 @@ function LootRow({ item, selected, onToggle }) {
       </div>
       {/* Weight */}
       <div style={{ color: '#555', textAlign: 'right', fontSize: 11 }}>
-        {item.weight != null ? formatWeight(item.weight * item.quantity, 1) : '—'}
+        {/* `|| 1` matches the selected-weight total below: a drop without an
+            explicit quantity is one unit, not zero. */}
+        {item.weight != null ? formatWeight(item.weight * (item.quantity || 1), 1) : '—'}
       </div>
 
       {hovered && <ItemTooltip item={item} anchorRef={rowRef} />}

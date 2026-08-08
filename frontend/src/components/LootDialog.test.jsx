@@ -69,6 +69,15 @@ describe('LootDialog', () => {
     expect(screen.getByText('1 item found')).toBeInTheDocument()
   })
 
+  it('treats a drop with no quantity as one unit when rendering its weight', () => {
+    const noQty = { items_dropped: [{ name: 'Loose Cog', weight: 2.5 }] }
+    render(<LootDialog endState={noQty} playerWeight={0} weightLimit={100} onCollect={onCollect} onSkip={onSkip} />)
+    // The row weight used to read "0.0 lb" — weight * undefined is NaN, which
+    // formatWeight coerces to 0 — while the selected total below said 2.5 lb.
+    expect(screen.queryByText('0.0 lb')).not.toBeInTheDocument()
+    expect(screen.getAllByText('2.5 lb').length).toBeGreaterThan(0)
+  })
+
   it('shows a message when nothing dropped', () => {
     render(<LootDialog endState={{ items_dropped: [] }} playerWeight={0} weightLimit={100} onCollect={onCollect} onSkip={onSkip} />)
     expect(screen.getByText('No items dropped.')).toBeInTheDocument()
