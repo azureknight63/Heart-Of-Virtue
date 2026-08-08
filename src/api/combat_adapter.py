@@ -1177,6 +1177,14 @@ class ApiCombatAdapter:
                 current_beat_index = len(beat_states)
                 self.current_beat_state_index = current_beat_index
 
+                # Snapshot the log length before this beat's output is captured, so
+                # beat_state["log"] below can be scoped to just this beat's entries
+                # (issue #436 — CombatBeatStreamer._last_animation walks the log
+                # backward for the latest animation; a cumulative log let it pick up
+                # a stale animation from several beats ago on quiet beats, misattributing
+                # e.g. a Whirl Attack wind-up beat to the enemy's last attack).
+                log_len_before = len(getattr(self.player, "combat_log", []))
+
                 # Capture output for THIS beat only
                 with self._capture_output():
                     # Advance all player moves — tag so write() matches the right animation
@@ -1217,8 +1225,11 @@ class ApiCombatAdapter:
                     allies=self.player.combat_list_allies[1:],
                 )
 
-                # Add log to beat state (snapshot of log at this point)
-                beat_state["log"] = list(getattr(self.player, "combat_log", []))
+                # Add log to beat state — only entries added during THIS beat, not
+                # the full cumulative combat log (see log_len_before above).
+                beat_state["log"] = list(
+                    getattr(self.player, "combat_log", [])[log_len_before:]
+                )
                 beat_states.append(beat_state)
 
                 beats_processed += 1
@@ -1862,10 +1873,10 @@ class ApiCombatAdapter:
                             try:
                                 if flask_app and hasattr(flask_app, "socketio"):
                                     logger.debug(
-                                        f"Emitting combat:suggestions_ready to room combat_{self.session_id} ({len(suggestions)} suggestions)"
+                                        f"Emitting combat:suggestions to room combat_{self.session_id} ({len(suggestions)} suggestions)"
                                     )
                                     flask_app.socketio.emit(
-                                        "combat:suggestions_ready",
+                                        "combat:suggestions",
                                         {"suggested_moves": suggestions},
                                         room=f"combat_{self.session_id}",
                                     )

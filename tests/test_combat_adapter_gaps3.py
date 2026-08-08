@@ -1569,6 +1569,28 @@ class TestRefreshSuggestionsFlaskContextSuccess:
         assert player.suggested_moves == []
         assert player.suggestions_loading is False
 
+    def test_suggestions_socket_emit_uses_frontend_contract(self):
+        player = _make_player()
+        app = _flask_app_with_socketio()
+        adapter = _make_adapter(player, session_id="sess1")
+
+        with (
+            patch("threading.Thread", side_effect=_run_thread_synchronously),
+            patch.object(adapter.strategist, "get_suggestions", return_value=[]),
+            patch(
+                "src.api.combat_adapter.CombatantSerializer.serialize_combatant",
+                return_value={},
+            ),
+            app.app_context(),
+        ):
+            adapter.refresh_suggestions()
+
+        app.socketio.emit.assert_called_once_with(
+            "combat:suggestions",
+            {"suggested_moves": []},
+            room="combat_sess1",
+        )
+
     def test_suggestions_ready_socket_emit_exception_is_swallowed(self):
         player = _make_player()
         app = _flask_app_with_socketio()
