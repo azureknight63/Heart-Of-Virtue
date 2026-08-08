@@ -47,9 +47,15 @@ export default function StatsPanel({ player, onClose }) {
       val: player.hit_accuracy,
       color: colors.primary,
       icon: '🎯',
-      tooltip: `Your chance to hit is your Accuracy minus the target's Evasion, capped at 100%. `
-        + `At ${player.hit_accuracy} you never miss a target whose Evasion is ${accuracyHeadroom} or lower, `
-        + `and lose 1% for each point above that. Grows with Finesse (70%) and Intelligence (30%).`,
+      // "about" is load-bearing, not hedging: this rating folds the attacker's
+      // weighted terms before the defender's evasion is subtracted, while the
+      // engine's roll subtracts evasion first (see to_hit_chance in
+      // src/moves/_base.py, where the term order is documented as deliberate).
+      // The two differ by a point for roughly 0.7% of integer stat pairs, so
+      // stating the subtraction as exact would be a promise the dice don't keep.
+      tooltip: `Your chance to hit is about your Accuracy minus the target's Evasion, capped at 100%. `
+        + `At ${player.hit_accuracy} you almost never miss a target whose Evasion is ${accuracyHeadroom} or lower, `
+        + `and lose roughly 1% for each point above that. Grows with Finesse (70%) and Intelligence (30%).`,
     },
     {
       label: 'Evasion',

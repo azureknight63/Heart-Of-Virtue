@@ -204,6 +204,10 @@ describe('StatsPanel', () => {
 
       const tip = screen.getByText('108').closest('[title]').getAttribute('title');
       expect(tip).toMatch(/Accuracy minus the target's Evasion/i);
+      // Stated as approximate on purpose: the rating folds the attacker's terms
+      // before evasion is subtracted, while the engine's roll subtracts evasion
+      // first, so the two part company by a point for ~0.7% of stat pairs.
+      expect(tip).toMatch(/about your Accuracy/i);
       // 108 - 100 = 8 points of evasion absorbed before any miss.
       expect(tip).toMatch(/Evasion is 8 or lower/i);
     });

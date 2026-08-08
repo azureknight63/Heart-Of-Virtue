@@ -5,6 +5,14 @@ import { colors } from '../styles/theme'
  * Keys match the category strings returned by the backend API (_get_available_moves).
  * Fallback: colors.text.muted
  */
+// NOTE for reviewers: `Special` and `Supernatural` appear in the three style
+// maps below but no engine move currently emits either category, so those
+// entries are unreachable today. They are kept deliberately — moves of those
+// categories are planned once the current beta work lands, and the styling is
+// already agreed. tests/test_move_categories_ui_contract.py guards
+// CATEGORY_GROUPS (the button routing) and does NOT reach these maps, so it
+// will not flag them; that is intended, not an oversight. Drop them only if
+// the plan changes.
 export const MOVE_CATEGORY_COLOR = {
   Offensive:    colors.danger,
   Defensive:    colors.primary,

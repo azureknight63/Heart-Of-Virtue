@@ -71,8 +71,19 @@ export default function BookReaderDialog({ title, text, onClose }) {
   const pages = paginateText(text)
   const totalPages = pages.length
   const [currentPage, setCurrentPage] = useState(0)
-  // Clamp during render: guards the one-frame gap where text shrinks but the
-  // reset effect hasn't fired yet, which would make pages[currentPage] undefined.
+  // Reset to page 0 when a new book's text arrives. Adjusted during render
+  // (React's documented pattern for "resetting state when a prop changes")
+  // rather than in an effect: an effect would commit one frame with the old
+  // page against the new text before the reset fires, which is exactly the
+  // undefined-page gap safePageIdx below guards against.
+  const [pagedText, setPagedText] = useState(text)
+  if (text !== pagedText) {
+    setPagedText(text)
+    setCurrentPage(0)
+  }
+  // Clamp as a second line of defense (e.g. pagination logic itself changing
+  // page count for the same text) — cheap and makes pages[currentPage] safe
+  // even if the reset above and the text it keys on ever fall out of sync.
   const safePageIdx = Math.min(currentPage, totalPages - 1)
 
   const handlePrev = useCallback(() => setCurrentPage(p => Math.max(0, p - 1)), [])
@@ -87,9 +98,6 @@ export default function BookReaderDialog({ title, text, onClose }) {
     window.addEventListener('keydown', handleKey)
     return () => window.removeEventListener('keydown', handleKey)
   }, [handlePrev, handleNext, onClose])
-
-  // Reset to first page if text changes
-  useEffect(() => { setCurrentPage(0) }, [text])
 
   return (
     <div style={{
