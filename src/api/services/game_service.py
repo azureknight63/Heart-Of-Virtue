@@ -54,6 +54,35 @@ _LLM_NOISE_PREFIXES = (
 )
 
 
+#: Weights the engine's to-hit roll applies to the attacker's attributes.
+#: Kept beside :func:`derive_hit_accuracy` so the character sheet and
+#: ``Move.calculate_hit_chance`` cannot drift apart again.
+HIT_ACCURACY_BASE = 98
+HIT_ACCURACY_FINESSE_WEIGHT = 0.7
+HIT_ACCURACY_INTELLIGENCE_WEIGHT = 0.3
+
+
+def derive_hit_accuracy(player):
+    """Return the attacker-side half of the engine's to-hit roll.
+
+    A move's hit chance is this value minus the defender's evasion (their
+    finesse), clamped to [2, 100] — see ``Move.calculate_hit_chance``. It is not
+    a percentage on its own, which is why the character sheet renders it as a
+    rating rather than with a ``%``.
+
+    Mirrors the combat expression exactly: an earlier version used
+    ``98 + finesse``, giving finesse full weight and ignoring intelligence, so
+    the sheet only agreed with the dice when the two attributes were equal.
+    """
+    finesse = getattr(player, "finesse", 10)
+    intelligence = getattr(player, "intelligence", 10)
+    return int(
+        HIT_ACCURACY_BASE
+        + (finesse * HIT_ACCURACY_FINESSE_WEIGHT)
+        + (intelligence * HIT_ACCURACY_INTELLIGENCE_WEIGHT)
+    )
+
+
 class GameService:
     """Provides stateless interface to game logic for API layer.
 
@@ -2840,10 +2869,18 @@ class GameService:
             stats["attack_damage_min"] = 0
             stats["attack_damage_max"] = 0
 
-        # Accuracy and Evasion
-        # Base hit chance formula: (98 - target.finesse) + user.finesse
-        # We'll show accuracy as (98 + player.finesse) and evasion as player.finesse
-        stats["hit_accuracy"] = 98 + getattr(player, "finesse", 10)
+        # Accuracy and Evasion.
+        #
+        # These are the two halves of the engine's to-hit roll, not percentages:
+        # a move's hit chance is the attacker's accuracy minus the defender's
+        # evasion, clamped to [2, 100] (see Move.calculate_hit_chance).
+        #
+        # Accuracy must use the same weighting the combat code does — finesse at
+        # 0.7 and intelligence at 0.3 — otherwise the character sheet disagrees
+        # with the dice. The previous `98 + finesse` gave finesse full weight and
+        # ignored intelligence entirely, so it was only correct when a character
+        # happened to have equal finesse and intelligence.
+        stats["hit_accuracy"] = derive_hit_accuracy(player)
         stats["evasion_chance"] = getattr(player, "finesse", 10)
 
         stats["resistance"] = getattr(player, "resistance", {})
