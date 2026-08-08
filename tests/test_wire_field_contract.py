@@ -137,6 +137,12 @@ BATTLE_STATE_CONTRACT = {
     "awaiting_input": "LeftPanel.jsx:125 combat?.awaiting_input",
     "input_type": "LeftPanel.jsx:293/488 combat?.input_type / combat.input_type",
     "available_options": "LeftPanel.jsx:287,720 combat?.available_options",
+    # BattlefieldGrid.jsx:1137 resets the camera pan when a new fight begins.
+    # This read was dead until combat_id was moved into battle_state: it was
+    # minted per call in start_combat and never published on a status poll, so
+    # transformCombatData's whitelist dropped it and the dep was always
+    # undefined — the fifth instance of the drift class this file guards.
+    "combat_id": "BattlefieldGrid.jsx:1137 useEffect([combat?.combat_id, ...])",
 }
 
 
@@ -185,6 +191,33 @@ class TestCombatWireContract:
         result = real_adapter.get_combat_state()
 
         _assert_contract(result["battle_state"], BATTLE_STATE_CONTRACT, "battle_state")
+
+    def test_combat_id_is_stable_across_polls_but_changes_between_fights(
+        self, real_adapter, real_combat_player
+    ):
+        """The pan-reset dep is only useful if it holds still during a fight.
+
+        A per-call uuid would make BattlefieldGrid reset the camera on every
+        status poll; an absent one (the original bug) means it never resets at
+        all. Both are wrong, so pin the actual property.
+        """
+        with patch("src.api.combat_adapter.CombatStrategist"):
+            real_adapter.initialize_combat([Slime()])
+        first = real_adapter.get_combat_state()["battle_state"]["combat_id"]
+
+        assert first, "combat_id must be populated once a combat has begun"
+        # Same fight, later beat: the id must not move.
+        assert real_adapter.get_combat_state()["battle_state"]["combat_id"] == first
+
+        # A reinit (wave transition / reinforcement spawn) is the SAME fight.
+        with patch("src.api.combat_adapter.CombatStrategist"):
+            real_adapter.initialize_combat([Slime()], reinit=True)
+        assert real_adapter.get_combat_state()["battle_state"]["combat_id"] == first
+
+        # A genuinely new combat must mint a new id.
+        with patch("src.api.combat_adapter.CombatStrategist"):
+            real_adapter.initialize_combat([Slime()])
+        assert real_adapter.get_combat_state()["battle_state"]["combat_id"] != first
 
     def test_check_data_surfaces_when_a_check_move_sets_it(
         self, real_adapter, real_combat_player

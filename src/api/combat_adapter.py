@@ -377,6 +377,12 @@ class ApiCombatAdapter:
             if not reinit:
                 self.player.combat_beat = 1  # Start at beat 1 for synchronization
                 self.player.combat_log = []  # Clear log for new combat
+                # Stable identity for this fight, minted alongside the beat/log
+                # reset so it changes exactly when a genuinely new combat starts
+                # — not on a reinit (wave transition, reinforcement spawn).
+                # get_combat_state publishes it on every poll so the client can
+                # tell "new fight" from "same fight, next beat".
+                self.combat_id = str(uuid.uuid4())
                 # Clear any prior end-of-combat summary/drops from previous encounters
                 self.player.combat_end_summary = None
                 self.player.combat_drops = []
@@ -2326,6 +2332,10 @@ class ApiCombatAdapter:
         )
 
         # Add API-specific fields
+        # combat_id rides in battle_state (not the top level) so the client's
+        # transformCombatData spread carries it through on every poll; a
+        # top-level key would be dropped by its whitelist.
+        battle_state["combat_id"] = getattr(self, "combat_id", None)
         battle_state["beat"] = getattr(self.player, "combat_beat", 0)
         battle_state["heat"] = int(self.player.heat * 100)
         battle_state["awaiting_input"] = self.awaiting_input

@@ -2333,7 +2333,12 @@ class GameService:
                     "is_ally": False,
                 }
             )
-        result["combat_id"] = str(uuid.uuid4())
+        # Publish the adapter's id, not a fresh one: a new uuid here would not
+        # match the combat_id battle_state carries on every subsequent poll, so
+        # a client comparing them would see a spurious combat change.
+        result["combat_id"] = (
+            result.get("battle_state", {}).get("combat_id") or str(uuid.uuid4())
+        )
         result["combatants"] = combatants
         result["turn_order"] = [c["id"] for c in combatants]
         return result
