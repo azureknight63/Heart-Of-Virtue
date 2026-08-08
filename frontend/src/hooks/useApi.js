@@ -328,7 +328,10 @@ export const useExploration = () => {
  */
 export const useAutosave = (player) => {
   const [tickCount, setTickCount] = useState(0)
-  const [lastCloudSave, setLastCloudSave] = useState(Date.now())
+  // Lazy initialiser: a bare useState(Date.now()) re-evaluates Date.now() on
+  // every render and throws the result away, which is impure and made the
+  // hook non-deterministic to reason about.
+  const [lastCloudSave, setLastCloudSave] = useState(() => Date.now())
 
   // Save to LocalStorage whenever player state changes (every interaction/move)
   useEffect(() => {
