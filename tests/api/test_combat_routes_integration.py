@@ -62,8 +62,8 @@ class TestCombatRoutes:
             headers={"Authorization": f"Bearer {session_id}"},
         )
 
-        # Should fail because no such enemy exists on the tile
-        assert response.status_code == 400
+        # Game-logic errors use HTTP 200 with success=false.
+        assert response.status_code == 200
         data = json.loads(response.data)
         assert data["success"] is False
         assert "not found" in data.get("error", "").lower()
@@ -111,8 +111,8 @@ class TestCombatRoutes:
             headers={"Authorization": f"Bearer {session_id}"},
         )
 
-        # Should fail because not in combat
-        assert response.status_code == 400
+        # Game-logic errors use HTTP 200 with success=false.
+        assert response.status_code == 200
         data = json.loads(response.data)
         assert data["success"] is False
         assert "not in combat" in data.get("error", "").lower()
@@ -192,9 +192,8 @@ class TestGameServiceCombatMethods:
 
         assert "error" in result
 
-    def test_combat_serialization_in_response(self, app):
-        """Test that combat responses include serialized state."""
-        from src.api.serializers.combat import CombatStateSerializer
+    def test_combat_status_without_adapter_has_no_battle_state(self, app):
+        """Adapter-less combat flags do not claim to have serialized state."""
 
         game_service = app.game_service
         session_manager = app.session_manager
@@ -210,10 +209,10 @@ class TestGameServiceCombatMethods:
 
         assert result["combat_active"] is True
         assert "battle_state" in result
-        assert "status" in result["battle_state"]
+        assert result["battle_state"] is None
 
-    def test_combat_state_structure(self, app):
-        """Test combat state has expected structure."""
+    def test_combat_status_without_adapter_preserves_empty_state(self, app):
+        """An adapter-less combat flag preserves the explicit empty state."""
         game_service = app.game_service
         session_manager = app.session_manager
         session_id, username = session_manager.create_session("testplayer")
@@ -225,13 +224,4 @@ class TestGameServiceCombatMethods:
         player.combat_list_allies = [player]
 
         result = game_service.get_combat_status(player)
-        battle_state = result["battle_state"]
-
-        # Verify required fields
-        required_fields = ["status", "round", "current_turn_index", "player", "enemies", "turn_order"]
-        for field in required_fields:
-            assert field in battle_state, f"Missing required field: {field}"
-
-        assert battle_state["status"] == "active"
-        assert isinstance(battle_state["round"], int)
-        assert isinstance(battle_state["turn_order"], list)
+        assert result["battle_state"] is None

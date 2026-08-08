@@ -196,6 +196,13 @@ def test_move_executes_and_advances_beats_after_reinforcements(app, client, auth
         from src.functions import add_enemies_to_combat
         add_enemies_to_combat(player, [CaveBat()])
 
+        # Reinforcement placement recalculates coordinates and overwrites the
+        # old proximity map. Restore a close range after adding the wave so the
+        # test is independent of the developer's gameplay config.
+        for combatant in player.combat_list:
+            player.combat_proximity[combatant] = 2
+            combatant.combat_proximity[player] = 2
+
         beat_before = getattr(player, "combat_beat", 0)
 
         move_response = _post_json(

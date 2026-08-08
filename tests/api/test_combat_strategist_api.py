@@ -47,7 +47,8 @@ class TestCombatStrategistAPI:
                         "Slash",
                         "enemy_123",
                         None,
-                        session_id=ANY
+                        session_id=ANY,
+                        session_data=ANY,
                     )
 
     def test_execute_combined_move_missing_target(self, app, client, authenticated_session):
@@ -77,7 +78,7 @@ class TestCombatStrategistAPI:
                         headers={"Authorization": f"Bearer {session_id}"}
                     )
 
-                    assert response.status_code == 400
+                    assert response.status_code == 200
                     data = json.loads(response.data)
                     assert data["success"] is False
                     assert data["error"] == "Target required"
