@@ -8,8 +8,8 @@ from src.narration import (
     narrate,
     say,
     begin_conversation,
-    enter_character,
-    exit_character,
+    enter_op,
+    exit_op,
     react,
 )
 import time
@@ -248,11 +248,11 @@ class CampEntryGreetingEvent(Event):
                 "pulled up short when she saw Jean."
             )
             # time.sleep(0.8)
-            enter_character("Liss", side="right", emotion="surprised")
             say(
                 "Oh — hi! You're new. Are you—",
                 "Liss",
                 "surprised",
+                enter=enter_op("Liss", side="right", emotion="surprised"),
             )
             # time.sleep(0.5)
             print_slow("Her eyes slid past Jean's shoulder and found Gorran.")
@@ -261,15 +261,14 @@ class CampEntryGreetingEvent(Event):
                 "Oh! OH. You're— he's— that's a real one, isn't it, that's—",
                 "Liss",
                 "surprised",
+                leave=exit_op("Liss", transition="fade"),
             )
-
             # time.sleep(0.5)
             print_slow(
                 "Whatever she meant to say next dissolved into a half-squeal, half-gasp. "
                 "She backed up two steps, spun, and bolted for the fire ring, hair "
                 "streaming behind her."
             )
-            exit_character("Liss", transition="fade")
             # time.sleep(1.5)
             print_slow("Jean watched her go, then glanced at Gorran.")
             # time.sleep(0.5)
