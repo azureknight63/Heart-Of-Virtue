@@ -41,11 +41,8 @@ test with no mock to hide behind.
 Covered: combat (``battle_state`` + ``CombatantSerializer`` + state-effect +
 target-selection shapes), player (``GameService.get_player_status`` /
 ``get_player_stats``), shop (``ShopSerializer.serialize_state`` /
-``serialize_player_sellable`` via a real ``GameService.shop_sell`` call).
-
-Deliberately NOT covered: the saves payload (``GameService.list_saves`` is
-under concurrent revision elsewhere — encoding its shape here would just be
-encoding a shape that's about to change).
+``serialize_player_sellable`` via a real ``GameService.shop_sell`` call),
+saves (``GameService.list_saves`` cloud-save row shape).
 
 === How to read a failure ===
 
@@ -63,7 +60,7 @@ invented. If a test here fails:
   that defeats the point of the guard.
 """
 
-from unittest.mock import patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -526,3 +523,61 @@ class TestShopWireContract:
         buyback_items = result["shop_state"]["buyback_items"]
         assert buyback_items, "expected the sold item to land in the buyback ledger"
         _assert_contract(buyback_items[0], SHOP_BUY_ITEM_CONTRACT, "buyback_items[0]")
+
+
+# ============================================================================
+# Saves payload
+# ============================================================================
+# MainMenuPage.jsx's fetchMergedSaves() spreads `response.data.saves` (i.e.
+# GameService.list_saves(), via GET /saves) straight into `saveList` rows —
+# there is no whitelist/transform step like transformCombatData's, so every
+# field a component reads off `save.*` must come from list_saves() itself.
+#
+# Scope: cloud rows only. MainMenuPage also merges in a synthetic local-
+# autosave row (utils/localSave.js's parseLocalSave/readLocalSave) that is
+# display-only and carries its own client-minted `isLocal`/`timestampMs`
+# fields never emitted by the server — that row (and its ongoing rework in a
+# concurrent change) is out of scope here; `isLocal` in particular is never
+# set on a cloud row (it reads as `undefined`, which is why the "Cloud" badge
+# branch is the `!isLocal` default), so it is deliberately not in this
+# contract.
+SAVES_ROW_CONTRACT = {
+    "id": "MainMenuPage.jsx:435,438,499 save.id (row key, load/delete target)",
+    "name": "MainMenuPage.jsx:485 save.name || 'Untitled Save'",
+    "is_autosave": "MainMenuPage.jsx:487 save.is_autosave && <(Autosave)>",
+    "level": "MainMenuPage.jsx:492 Lvl {save.level}",
+    "map_name": "MainMenuPage.jsx:492 save.map_name",
+    "room_title": "MainMenuPage.jsx:492 save.room_title",
+    "timestamp": "MainMenuPage.jsx:495 new Date(save.timestamp).toLocaleString()",
+    # This is the field the "Continue" button's recency sort now keys on
+    # (localSave.js saveRowClockValue: row?.timestampMs ?? row?.timestamp_ms
+    # ?? row?.timestamp, consumed by compareSavesByRecency at
+    # MainMenuPage.jsx:97,159). It was added alongside the display `timestamp`
+    # specifically because `timestamp`'s embedded timezone abbreviation (e.g.
+    # "CET") is unparseable by Date.parse for most non-US zones — losing this
+    # field silently regresses "Continue" back to that timezone bug.
+    "timestamp_ms": "localSave.js:259 saveRowClockValue: row?.timestamp_ms",
+}
+
+
+class TestSavesWireContract:
+    @pytest.mark.asyncio
+    async def test_list_saves_row_fields(self):
+        """A real GameService.list_saves() call, with only the DB layer
+        mocked (established pattern: tests/test_game_service_tier5_coverage.py
+        ::TestListSaves patches src.api.db.db the same way) — the parsing/
+        key-naming logic that actually builds the row dict is exercised for
+        real, not re-encoded by hand in a fixture."""
+        db_mock = AsyncMock()
+        result = MagicMock()
+        result.rows = [
+            ["save1", "MySave", "2026-01-01 12:00:00", True, 5, "Dark Grotto", "EntryHall", 300],
+        ]
+        db_mock.execute.return_value = result
+
+        gs = GameService()
+        with patch("src.api.db.db", db_mock):
+            saves = await gs.list_saves("user123", timezone="America/New_York")
+
+        assert saves, "expected list_saves to return the mocked row"
+        _assert_contract(saves[0], SAVES_ROW_CONTRACT, "list_saves()[0]")
