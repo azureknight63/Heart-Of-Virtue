@@ -4,7 +4,7 @@ import { COMBAT_SPEED_STEPS } from '../utils/combatTiming'
 import BaseDialog from './BaseDialog'
 import GameButton from './GameButton'
 
-export default function AudioControlDialog({ onClose }) {
+export default function SettingsDialog({ onClose }) {
     const {
         musicVolume,
         setMusicVolume,
