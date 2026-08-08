@@ -33,7 +33,7 @@ export default function BetaEndDialog({ onSendFeedback = () => {}, onContinue = 
           lineHeight: 1.7,
           margin: 0,
         }}>
-          You've reached the end of the beta. The Lurker is defeated — Verdette Caverns is yours to
+          You&apos;ve reached the end of the beta. The Lurker is defeated — Verdette Caverns is yours to
           explore, but the road onward opens with the full release.
         </p>
 
@@ -44,8 +44,8 @@ export default function BetaEndDialog({ onSendFeedback = () => {}, onContinue = 
           lineHeight: 1.7,
           margin: 0,
         }}>
-          Thank you for playing. Every piece of feedback shapes what comes next — if you've got
-          thoughts on the story, the combat, or anything else you noticed, we'd love to hear them.
+          Thank you for playing. Every piece of feedback shapes what comes next — if you&apos;ve got
+          thoughts on the story, the combat, or anything else you noticed, we&apos;d love to hear them.
         </p>
 
         {/* Button row */}

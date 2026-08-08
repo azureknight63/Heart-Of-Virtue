@@ -42,7 +42,7 @@ export default function LandingWorldMap({ speed = 1 }) {
         requestAnimationFrame(() => {
           p.style.strokeDashoffset = '0'
         })
-      } catch (_) {}
+      } catch { /* decorative map: a failed load simply renders nothing */ }
     })
     const labels = ref.current.querySelectorAll('[data-label]')
     labels.forEach((el, i) => {

@@ -39,7 +39,7 @@ function TermsContent() {
 
             <Section title="2. Who Can Play">
                 Heart of Virtue is open to players of all ages. If you are under 13, you need a
-                parent or guardian's permission before creating an account, as registration requires
+                parent or guardian&apos;s permission before creating an account, as registration requires
                 providing personal information (email address).
             </Section>
 
@@ -62,7 +62,7 @@ function TermsContent() {
             <Section title="5. What You Cannot Do">
                 <ul style={{ paddingLeft: '1.2em', margin: 0 }}>
                     <li style={{ marginBottom: spacing.xs }}>Reverse-engineer, copy, or redistribute the game, its code, or its story content.</li>
-                    <li style={{ marginBottom: spacing.xs }}>Attempt to access or interfere with other players' accounts or data.</li>
+                    <li style={{ marginBottom: spacing.xs }}>Attempt to access or interfere with other players&apos; accounts or data.</li>
                     <li style={{ marginBottom: spacing.xs }}>Use the game for any commercial purpose.</li>
                     <li>Automate or bot gameplay in ways that harm the service.</li>
                 </ul>
@@ -97,7 +97,7 @@ function TermsContent() {
             </Section>
 
             <Section title="10. Disclaimer of Warranties">
-                Heart of Virtue is provided "as is" without warranties of any kind. We make no
+                Heart of Virtue is provided &quot;as is&quot; without warranties of any kind. We make no
                 guarantees about uptime, data preservation, or feature availability.
             </Section>
 
@@ -158,7 +158,7 @@ function PrivacyContent() {
                 messages you send to in-game characters. It is used only to generate the immediate
                 in-game response and is not used to train AI models or for advertising.
                 <br /><br />
-                OpenAI's privacy policy applies to data processed through their service:
+                OpenAI&apos;s privacy policy applies to data processed through their service:
                 <span style={{ color: colors.text.muted }}> openai.com/policies/privacy-policy</span>
             </Section>
 
@@ -202,7 +202,7 @@ function PrivacyContent() {
 
             <Section title="Children">
                 We welcome players of all ages. If you are under 13, please get a parent or
-                guardian's permission before creating an account, as registration requires
+                guardian&apos;s permission before creating an account, as registration requires
                 providing an email address.
             </Section>
 

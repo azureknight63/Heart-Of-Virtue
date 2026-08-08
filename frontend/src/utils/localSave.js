@@ -90,6 +90,7 @@ function toDisplayString(value, fallback) {
   if (typeof value !== 'string') return null
   // Control characters cannot render but can wreck console/log output and
   // line-break the row; strip them before measuring the length cap.
+  // eslint-disable-next-line no-control-regex -- stripping control characters is the intent
   const cleaned = value.replace(/[\x00-\x1F\x7F-\x9F]/g, '').trim()
   if (cleaned.length === 0) return fallback
   return cleaned.slice(0, MAX_DISPLAY_LENGTH)

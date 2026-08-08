@@ -1362,7 +1362,7 @@ function BattlefieldGrid({
 
     cameraRafRef.current = requestAnimationFrame(animateCamera);
     // Safe: animateCamera only reads mutable refs; setSnapState is a stable setter.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, []);
 
   // Update camera target whenever Jean moves or zoom changes
@@ -1668,3 +1668,14 @@ function BattlefieldGrid({
 }
 
 export default React.memo(BattlefieldGrid);
+
+// React.memo wrapping an arrow function produces an anonymous component,
+// which shows up as "Anonymous" in DevTools and in component stack traces.
+CombatantMarker.displayName = 'CombatantMarker'
+EnemiesList.displayName = 'EnemiesList'
+BreadcrumbLayer.displayName = 'BreadcrumbLayer'
+EntityLayer.displayName = 'EntityLayer'
+SelectedEntityPanel.displayName = 'SelectedEntityPanel'
+EffectsLayer.displayName = 'EffectsLayer'
+JeanSpotlight.displayName = 'JeanSpotlight'
+DeathAnimationLayer.displayName = 'DeathAnimationLayer'

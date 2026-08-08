@@ -324,7 +324,7 @@ function Hero({ onBegin }) {
         </p>
         <div style={{ textAlign: 'center', color: 'var(--ink-faint)', margin: '20px 0', fontSize: '12px' }}>◆</div>
         <p>
-          Jean remembers he was a crusader. It's etched into the depths of his mind. The
+          Jean remembers he was a crusader. It&apos;s etched into the depths of his mind. The
           memories he has of a market lane in Jerusalem come back in fragments he is not
           yet ready to assemble. This world seems to have been placed around him with care.
         </p>

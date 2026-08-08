@@ -160,7 +160,7 @@ export default function PartyPanel({ player, onClose, onRefetch }) {
                     borderRadius: '4px',
                     marginBottom: '8px',
                   }}>
-                    "{member.description}"
+                    &quot;{member.description}&quot;
                   </div>
                 )}
 

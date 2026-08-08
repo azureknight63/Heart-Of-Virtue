@@ -594,7 +594,7 @@ export default function ShopDialog({ npcId, npcName, initialTab = 'buy', player,
                     color: colors.text.dim, fontSize: '0.58rem',
                     fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '1.5px',
                   }}>
-                    {npcName}'s Stock
+                    {npcName}&apos;s Stock
                   </div>
                 )}
                 {buyItems.length === 0 && (
@@ -630,7 +630,7 @@ export default function ShopDialog({ npcId, npcName, initialTab = 'buy', player,
                   fontSize: '0.7rem',
                 }}>
                   <span style={{ color: colors.text.muted }}>
-                    {npcName}'s gold:
+                    {npcName}&apos;s gold:
                   </span>
                   <span style={{
                     color: merchantGold < 50 ? colors.danger : colors.gold,
