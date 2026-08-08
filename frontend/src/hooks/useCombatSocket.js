@@ -26,6 +26,7 @@ export function useCombatSocket({
   onResolved,
   onEnded,
   onSuggestions,
+  onSessionInvalid,
   fetchStatus,
   createSocket = createCombatSocket,
 }) {
@@ -37,6 +38,7 @@ export function useCombatSocket({
     onResolved,
     onEnded,
     onSuggestions,
+    onSessionInvalid,
     fetchStatus,
     createSocket,
   };
@@ -72,6 +74,17 @@ export function useCombatSocket({
     const socket = cbs.current.createSocket({});
     const join = () => socket.emit('join_combat', { session_id: sessionId });
     socket.on('connect', join);
+    // A server restart invalidates in-memory sessions. The browser may still
+    // have the old token and an already-open socket will reconnect before the
+    // HTTP 401 handler gets a chance to redirect. Stop reconnect churn as soon
+    // as the room join is rejected; the caller owns clearing auth state.
+    socket.on('error', (payload) => {
+      const message = String(payload?.message || '').toLowerCase();
+      if (message.includes('invalid session') || message.includes('missing session')) {
+        socket.disconnect();
+        cbs.current.onSessionInvalid?.(payload);
+      }
+    });
     // socket.io-client v4 emits 'reconnect' on the Manager (socket.io), not the
     // Socket itself — listening on the Socket never fires. Guarded so a bare
     // test double without a manager doesn't throw.

@@ -37,6 +37,7 @@ function setup(overrides = {}) {
     onResolved: vi.fn(),
     onEnded: vi.fn(),
     onSuggestions: vi.fn(),
+    onSessionInvalid: vi.fn(),
     fetchStatus: vi.fn().mockResolvedValue({ resynced: true }),
   };
   const hook = renderHook(() =>
@@ -60,6 +61,13 @@ describe('useCombatSocket', () => {
     expect(socket.emit).toHaveBeenCalledWith('join_combat', {
       session_id: 'sess-1',
     });
+  });
+
+  it('stops reconnect churn when the server rejects a stale session', () => {
+    const { socket, calls } = setup();
+    act(() => socket.fire('error', { message: 'Invalid session' }));
+    expect(socket.disconnect).toHaveBeenCalled();
+    expect(calls.onSessionInvalid).toHaveBeenCalledWith({ message: 'Invalid session' });
   });
 
   it('forwards beats in order', () => {
@@ -101,9 +109,9 @@ describe('useCombatSocket', () => {
   it('routes ended and suggestions', () => {
     const { socket, calls } = setup();
     act(() => socket.fire('combat:ended', { seq: 1, status: 'victory' }));
-    act(() => socket.fire('combat:suggestions', { seq: 2, suggestions: [] }));
+    act(() => socket.fire('combat:suggestions', { suggested_moves: [] }));
     expect(calls.onEnded).toHaveBeenCalledWith({ seq: 1, status: 'victory' });
-    expect(calls.onSuggestions).toHaveBeenCalledWith({ seq: 2, suggestions: [] });
+    expect(calls.onSuggestions).toHaveBeenCalledWith({ suggested_moves: [] });
   });
 
   it('rejoins and resyncs on a manager reconnect', async () => {
