@@ -7,7 +7,7 @@ import React from 'react';
 vi.mock('./PartyPanel', () => ({ default: ({ onClose }) => <div data-testid="party-panel"><button onClick={onClose}>Close Party</button></div> }));
 vi.mock('./InventoryDialog', () => ({ default: ({ onClose }) => <div data-testid="inventory-dialog"><button onClick={onClose}>Close Inv</button></div> }));
 vi.mock('./AccountDialog', () => ({ default: ({ onClose }) => <div data-testid="account-dialog"><button onClick={onClose}>Close Acc</button></div> }));
-vi.mock('./AudioControlDialog', () => ({ default: ({ onClose }) => <div data-testid="audio-dialog"><button onClick={onClose}>Close Aud</button></div> }));
+vi.mock('./SettingsDialog', () => ({ default: ({ onClose }) => <div data-testid="audio-dialog"><button onClick={onClose}>Close Aud</button></div> }));
 vi.mock('./StatsPanel', () => ({ default: ({ onClose }) => <div data-testid="stats-panel"><button onClick={onClose}>Close Stats</button></div> }));
 vi.mock('./SkillsPanel', () => ({ default: ({ onClose }) => <div data-testid="skills-panel"><button onClick={onClose}>Close Skills</button></div> }));
 vi.mock('./CollapsibleRoomDescription', () => ({
@@ -156,7 +156,7 @@ describe('LeftPanel', () => {
     it('opens audio and account dialogs from header', () => {
         render(<LeftPanel player={mockPlayer} location={mockLocation} mode="exploration" />);
 
-        fireEvent.click(screen.getByTitle(/Audio Settings/i));
+        fireEvent.click(screen.getByTitle(/^Settings$/i));
         expect(screen.getByTestId('audio-dialog')).toBeDefined();
         fireEvent.click(screen.getByText('Close Aud'));
         expect(screen.queryByTestId('audio-dialog')).toBeNull();
@@ -993,7 +993,7 @@ describe('LeftPanel', () => {
     it('applies and clears hover styling on the header Audio/Feedback/Account buttons', () => {
         render(<LeftPanel player={mockPlayer} location={mockLocation} mode="exploration" />);
 
-        const audioBtn = screen.getByTitle('Audio Settings');
+        const audioBtn = screen.getByTitle('Settings');
         fireEvent.mouseEnter(audioBtn);
         expect(audioBtn.style.backgroundColor).not.toBe('');
         fireEvent.mouseLeave(audioBtn);
@@ -1006,6 +1006,6 @@ describe('LeftPanel', () => {
         fireEvent.mouseEnter(accountBtn);
         fireEvent.mouseLeave(accountBtn);
 
-        expect(screen.getByTitle('Audio Settings')).toBeInTheDocument();
+        expect(screen.getByTitle('Settings')).toBeInTheDocument();
     });
 });
