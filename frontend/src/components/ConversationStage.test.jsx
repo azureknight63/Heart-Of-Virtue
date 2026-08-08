@@ -121,12 +121,93 @@ describe('computeStage (cast replay)', () => {
         expect(members.find((m) => m.id === 'Jean').emotion).toBe('angry')
     })
 
-    it('defaults an exit span to 1, removing the member on the same beat', () => {
+    // --- exit `transition` handling (src/narration.py: "fade" default | "instant") ---
+
+    const exitSegments = (op) => [
+        { text: 'a', speaker: 'Jean', exit: [op], in_conversation: true },
+        { text: 'b', speaker: 'Jean', in_conversation: true },
+        { text: 'c', speaker: 'Jean', in_conversation: true },
+    ]
+    const ameliaAt = (segments, idx) =>
+        computeStage(segments, idx, CAST).members.find((m) => m.id === 'Amelia')
+
+    it('lingers a span-less fade exit for one extra beat before dropping it', () => {
+        const segments = exitSegments({ id: 'Amelia', transition: 'fade' })
+        // Default fade span is 2: half opacity on the exit beat, gone the next.
+        expect(ameliaAt(segments, 0).opacity).toBeCloseTo(0.5, 5)
+        expect(ameliaAt(segments, 1)).toBeUndefined()
+    })
+
+    it('drops an instant exit on its own beat', () => {
+        const segments = exitSegments({ id: 'Amelia', transition: 'instant' })
+        expect(ameliaAt(segments, 0)).toBeUndefined()
+    })
+
+    it('treats an absent or unrecognised exit transition as a fade', () => {
+        // "fade" is the documented default, so neither shape may pop.
+        const bare = exitSegments({ id: 'Amelia' })
+        const unknown = exitSegments({ id: 'Amelia', transition: 'dissolve' })
+        expect(ameliaAt(bare, 0).opacity).toBeCloseTo(0.5, 5)
+        expect(ameliaAt(bare, 1)).toBeUndefined()
+        expect(ameliaAt(unknown, 0).opacity).toBeCloseTo(0.5, 5)
+        expect(ameliaAt(unknown, 1)).toBeUndefined()
+    })
+
+    it('lets an explicit span override the transition-derived default', () => {
+        // Overrides the fade default of 2...
+        const longFade = exitSegments({ id: 'Amelia', transition: 'fade', span: 3 })
+        expect(ameliaAt(longFade, 1).opacity).toBeCloseTo(1 / 3, 5)
+        expect(ameliaAt(longFade, 2)).toBeUndefined()
+        // ...and the instant default of 1.
+        const slowInstant = exitSegments({ id: 'Amelia', transition: 'instant', span: 2 })
+        expect(ameliaAt(slowInstant, 0).opacity).toBeCloseTo(0.5, 5)
+        expect(ameliaAt(slowInstant, 1)).toBeUndefined()
+    })
+
+    // --- enter `transition` handling ---
+
+    it('flags a member as entering only on the beat it walks on', () => {
         const segments = [
-            { text: 'a', speaker: 'Jean', exit: [{ id: 'Amelia' }], in_conversation: true },
+            { text: 'a', speaker: 'Jean', in_conversation: true },
+            { text: 'b', speaker: 'Jean', enter: [{ id: 'Mara', transition: 'fade' }], in_conversation: true },
+            { text: 'c', speaker: 'Jean', in_conversation: true },
         ]
-        const at0 = computeStage(segments, 0, CAST).members.find((m) => m.id === 'Amelia')
-        expect(at0).toBeUndefined()
+        const onEntry = computeStage(segments, 1, CAST).members.find((m) => m.id === 'Mara')
+        const later = computeStage(segments, 2, CAST).members.find((m) => m.id === 'Mara')
+        expect(onEntry.entering).toBe(true)
+        expect(onEntry.enterTransition).toBe('fade')
+        expect(later.entering).toBe(false)
+    })
+
+    it('resolves an absent or unrecognised enter transition to a fade', () => {
+        const segments = [
+            {
+                text: 'a',
+                speaker: 'Jean',
+                enter: [{ id: 'Mara' }, { id: 'Tolen', transition: 'dissolve' }],
+                in_conversation: true,
+            },
+        ]
+        const byId = Object.fromEntries(
+            computeStage(segments, 0, CAST).members.map((m) => [m.id, m])
+        )
+        expect(byId.Mara.enterTransition).toBe('fade')
+        expect(byId.Tolen.enterTransition).toBe('fade')
+    })
+
+    it('marks an instant enter so it is not faded in', () => {
+        const segments = [
+            { text: 'a', speaker: 'Jean', enter: [{ id: 'Mara', transition: 'instant' }], in_conversation: true },
+        ]
+        const mara = computeStage(segments, 0, CAST).members.find((m) => m.id === 'Mara')
+        expect(mara.entering).toBe(true)
+        expect(mara.enterTransition).toBe('instant')
+    })
+
+    it('never treats initial-cast members as entering on beat 0', () => {
+        const segments = [{ text: 'intro', speaker: 'Jean', in_conversation: true }]
+        const members = computeStage(segments, 0, CAST).members
+        expect(members.every((m) => m.entering === false)).toBe(true)
     })
 
     it('treats an out-of-range index as an empty, un-staged beat', () => {
@@ -381,6 +462,69 @@ describe('ConversationStage rendering', () => {
         act(() => vi.advanceTimersByTime(3000))
         act(() => fireEvent.click(stage)) // last beat of stage two complete -> onComplete fires again
         expect(onComplete).toHaveBeenCalledTimes(2)
+    })
+
+    // The wrapper <div> around the <img> carries the composed portrait opacity.
+    const portraitOpacity = (name) => Number(screen.getByAltText(new RegExp(name, 'i')).parentElement.style.opacity)
+
+    const enterSegments = (transition) => [
+        { text: 'Beat one.', speaker: 'Jean', emotion: 'neutral', in_conversation: true },
+        {
+            text: 'Beat two.',
+            speaker: 'Jean',
+            emotion: 'neutral',
+            enter: [{ id: 'Mara', name: 'Mara', side: 'right', emotion: 'neutral', transition }],
+            in_conversation: true,
+        },
+    ]
+
+    it('fades an arriving portrait up from zero instead of popping it in', () => {
+        render(
+            <ConversationStage
+                segments={enterSegments('fade')}
+                conversation={{ cast: CAST }}
+                onComplete={vi.fn()}
+            />
+        )
+        act(() => vi.advanceTimersByTime(3000))
+        act(() => fireEvent.click(screen.getByTestId('conversation-stage'))) // -> beat 1, Mara enters
+
+        // First paint must be at 0 — a CSS opacity transition needs two painted
+        // values, so mounting straight at the target would not animate.
+        expect(portraitOpacity('Mara')).toBe(0)
+        act(() => vi.advanceTimersByTime(100)) // post-paint frame raises it
+        expect(portraitOpacity('Mara')).toBeGreaterThan(0)
+    })
+
+    it('keeps a faded-in portrait at full opacity across re-renders of the same beat', () => {
+        render(
+            <ConversationStage
+                segments={enterSegments('fade')}
+                conversation={{ cast: CAST }}
+                onComplete={vi.fn()}
+            />
+        )
+        act(() => vi.advanceTimersByTime(3000))
+        act(() => fireEvent.click(screen.getByTestId('conversation-stage')))
+        act(() => vi.advanceTimersByTime(100)) // fade raised
+        const raised = portraitOpacity('Mara')
+        // The typewriter re-renders the whole stage per character; the fade must
+        // not restart on any of those.
+        act(() => vi.advanceTimersByTime(3000))
+        expect(portraitOpacity('Mara')).toBe(raised)
+    })
+
+    it('shows an instant-enter portrait at full opacity immediately', () => {
+        render(
+            <ConversationStage
+                segments={enterSegments('instant')}
+                conversation={{ cast: CAST }}
+                onComplete={vi.fn()}
+            />
+        )
+        act(() => vi.advanceTimersByTime(3000))
+        act(() => fireEvent.click(screen.getByTestId('conversation-stage')))
+        expect(portraitOpacity('Mara')).toBeGreaterThan(0)
     })
 
     it('advances beats on click and calls onComplete after the last beat', () => {

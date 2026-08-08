@@ -74,6 +74,28 @@ import GameButton from '../components/GameButton'
 import GamePanel from '../components/GamePanel'
 import GameText from '../components/GameText'
 import BaseDialog from '../components/BaseDialog'
+import { readLocalSave, compareSavesByRecency } from '../utils/localSave'
+
+/**
+ * Fetch the cloud saves and merge in the local autosave, newest first.
+ *
+ * The local blob lives in localStorage, which any XSS on the origin — or a
+ * previous user on a shared machine — can write, so it is validated before it
+ * is allowed to become a selectable row (see utils/localSave). An invalid blob
+ * yields no row and is discarded from storage.
+ *
+ * Note the local row is display-only: nothing restores from it, so selecting it
+ * just resumes the live server session.
+ */
+async function fetchMergedSaves() {
+    const response = await saves.list()
+    const merged = [...(response.data?.saves || [])]
+
+    const localEntry = readLocalSave()
+    if (localEntry) merged.push(localEntry)
+
+    return merged.sort(compareSavesByRecency)
+}
 
 export default function MainMenuPage() {
     const navigate = useNavigate()
@@ -113,33 +135,7 @@ export default function MainMenuPage() {
     useEffect(() => {
         const initMenu = async () => {
             try {
-                const response = await saves.list()
-                let cloudSaves = response.data?.saves || []
-
-                // Get local autosave
-                const localData = localStorage.getItem('hov_local_autosave')
-                let mergedSaves = [...cloudSaves]
-
-                if (localData) {
-                    try {
-                        const parsed = JSON.parse(localData)
-                        mergedSaves.push({
-                            id: 'local_autosave',
-                            name: 'Local Autosave',
-                            timestamp: parsed.timestamp,
-                            level: parsed.player.level,
-                            map_name: parsed.player.map_name || 'Unknown',
-                            room_title: parsed.player.room_title || 'Current Location',
-                            playtime: parsed.player.playtime || 0,
-                            isLocal: true
-                        })
-                    } catch (e) {
-                        console.error("Local save corrupted", e)
-                    }
-                }
-
-                // Sort by timestamp
-                mergedSaves.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+                const mergedSaves = await fetchMergedSaves()
                 setSaveList(mergedSaves)
                 setMostRecentSave(mergedSaves.length > 0 ? mergedSaves[0] : null)
             } catch (error) {
@@ -156,7 +152,11 @@ export default function MainMenuPage() {
     // Keep mostRecentSave in sync with saveList (cloud and local)
     useEffect(() => {
         if (saveList && saveList.length > 0) {
-            const sorted = [...saveList].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+            // compareSavesByRecency, not raw Date arithmetic: cloud timestamps
+            // carry a timezone abbreviation that Date.parse rejects for most
+            // non-US zones, which would sort every row as NaN and pick the
+            // wrong save for "Continue".
+            const sorted = [...saveList].sort(compareSavesByRecency)
             setMostRecentSave(sorted[0])
         } else {
             setMostRecentSave(null)
@@ -202,8 +202,11 @@ export default function MainMenuPage() {
         setShowLoadModal(true)
         setIsLoadingSaves(true)
         try {
-            const response = await saves.list()
-            setSaveList(response.data?.saves || [])
+            // Must go through the same merge as the initial load: setting the
+            // cloud-only list here dropped the local row, and the sync effect
+            // below then re-pointed "Continue" at an older cloud save — so
+            // opening this modal and closing it could cost the player progress.
+            setSaveList(await fetchMergedSaves())
         } catch (error) {
             console.error("Failed to list saves", error)
         } finally {

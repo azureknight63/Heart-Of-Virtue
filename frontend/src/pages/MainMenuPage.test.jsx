@@ -410,18 +410,57 @@ describe('MainMenuPage', () => {
         });
     });
 
-    it('ignores a corrupted local autosave entry without crashing', async () => {
-        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    it('does not offer a corrupted local autosave as a loadable save', async () => {
+        // Asserts behaviour rather than a log line: the invalid blob must not
+        // become a selectable row, and must be discarded so it cannot fail
+        // again on every mount.
+        const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
         localStorage.setItem('hov_local_autosave', 'not valid json');
         saves.list.mockResolvedValue({ data: { saves: [] } });
 
         render(<MemoryRouter><MainMenuPage /></MemoryRouter>);
 
         await waitFor(() => {
-            expect(errorSpy).toHaveBeenCalledWith('Local save corrupted', expect.any(Error));
+            expect(screen.queryByText(/Continue/i)).not.toBeInTheDocument();
         });
-        errorSpy.mockRestore();
+        expect(screen.queryByText(/Local Autosave/i)).not.toBeInTheDocument();
+        expect(localStorage.getItem('hov_local_autosave')).toBeNull();
+        warnSpy.mockRestore();
+    });
+
+    it('offers a valid local autosave as a loadable save', async () => {
+        localStorage.setItem('hov_local_autosave', JSON.stringify({
+            timestamp: '2026-08-08T12:00:00.000Z',
+            player: { level: 12, map_name: 'dark-grotto', room_title: 'Wall Depression' },
+        }));
+        saves.list.mockResolvedValue({ data: { saves: [] } });
+
+        render(<MemoryRouter><MainMenuPage /></MemoryRouter>);
+
+        await waitFor(() => {
+            expect(screen.queryByText(/Continue/i)).toBeInTheDocument();
+        });
+        expect(localStorage.getItem('hov_local_autosave')).not.toBeNull();
         localStorage.removeItem('hov_local_autosave');
+    });
+
+    it('does not offer a local autosave whose player payload is hostile', async () => {
+        // A blob that parses as JSON but carries no usable player must be
+        // rejected just as firmly as malformed JSON.
+        const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        localStorage.setItem('hov_local_autosave', JSON.stringify({
+            timestamp: '2026-08-08T12:00:00.000Z',
+            player: { level: 'not-a-number' },
+        }));
+        saves.list.mockResolvedValue({ data: { saves: [] } });
+
+        render(<MemoryRouter><MainMenuPage /></MemoryRouter>);
+
+        await waitFor(() => {
+            expect(screen.queryByText(/Local Autosave/i)).not.toBeInTheDocument();
+        });
+        expect(localStorage.getItem('hov_local_autosave')).toBeNull();
+        warnSpy.mockRestore();
     });
 
     it('handles a failed initial saves.list call gracefully', async () => {
