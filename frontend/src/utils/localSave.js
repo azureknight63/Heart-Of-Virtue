@@ -244,10 +244,25 @@ export function saveSortValue(timestamp) {
   return Number.isFinite(fallback) ? fallback : -Infinity
 }
 
+/**
+ * Field preference order for a row's sort key.
+ *
+ * `timestampMs` is the local-autosave row's own field (see parseLocalSave).
+ * `timestamp_ms` is the cloud row's epoch field (game_service.list_saves) —
+ * added because the display `timestamp` is formatted in the account's stored
+ * timezone (PUT /auth/timezone), which need not match the browser's, and its
+ * abbreviation is frequently unparseable besides (see saveSortValue below).
+ * Older cached payloads may carry neither, so `timestamp` remains the
+ * fallback rather than a hard requirement.
+ */
+function saveRowClockValue(row) {
+  return row?.timestampMs ?? row?.timestamp_ms ?? row?.timestamp
+}
+
 /** Most-recent-first comparator that stays total even when both keys are unparseable. */
 export function compareSavesByRecency(a, b) {
-  const left = saveSortValue(a?.timestampMs ?? a?.timestamp)
-  const right = saveSortValue(b?.timestampMs ?? b?.timestamp)
+  const left = saveSortValue(saveRowClockValue(a))
+  const right = saveSortValue(saveRowClockValue(b))
   if (left === right) return 0
   return right > left ? 1 : -1
 }

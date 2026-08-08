@@ -250,6 +250,29 @@ describe('sorting helpers', () => {
     expect([older, newer].sort(compareSavesByRecency)[0]).toBe(newer)
   })
 
+  it('prefers a cloud row epoch (timestamp_ms) over its own unparseable display string', () => {
+    // game_service.list_saves formats `timestamp` in the account's stored
+    // timezone preference, not the browser's — when they differ, the
+    // stripped-abbreviation string fallback can land on the wrong side of a
+    // local row entirely. timestamp_ms sidesteps that: it's the same epoch
+    // instant no matter which timezone the display string was rendered in.
+    const cloudRow = { timestamp: '2026-08-09 12:00:00 CET', timestamp_ms: 1_800_000_000_000 }
+    const localRow = { timestampMs: 1_700_000_000_000, timestamp: '2023-11-14T22:13:20.000Z' }
+    expect([localRow, cloudRow].sort(compareSavesByRecency)[0]).toBe(cloudRow)
+    expect([cloudRow, localRow].sort(compareSavesByRecency)[0]).toBe(cloudRow)
+  })
+
+  it('falls back to string parsing for a cloud row payload with no epoch field', () => {
+    // Older/cached payloads may predate timestamp_ms. compareSavesByRecency
+    // must still order them via the existing abbreviation-stripping fallback
+    // in saveSortValue rather than treating the row as unparseable.
+    const older = { timestamp: '2026-08-08 12:00:00 CET' }
+    const newer = { timestamp: '2026-08-09 12:00:00 CET' }
+    expect(older.timestamp_ms).toBeUndefined()
+    expect(newer.timestamp_ms).toBeUndefined()
+    expect([older, newer].sort(compareSavesByRecency)[0]).toBe(newer)
+  })
+
   it.each([[NaN], [Infinity], [-Infinity]])('sinks a non-finite numeric timestamp (%p)', (value) => {
     expect(saveSortValue(value)).toBe(-Infinity)
   })

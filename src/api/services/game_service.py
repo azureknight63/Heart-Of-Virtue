@@ -3442,21 +3442,30 @@ class GameService:
         saves = []
         for row in result.rows:
             ts_str = str(row[2])
+            # Unambiguous sort/compare key alongside the display string below.
+            # The frontend previously had to re-derive this by parsing
+            # `timestamp`'s timezone abbreviation (e.g. "CET"), which Date.parse
+            # cannot do for most non-US zones — see localSave.js. Sourced from
+            # `dt`, the UTC-aware instant, before it is converted to the display
+            # timezone, so it stays correct regardless of the user's tz pref.
+            ts_ms = None
             try:
                 # SQLite CURRENT_TIMESTAMP is in UTC 'YYYY-MM-DD HH:MM:SS'
                 dt = datetime.strptime(ts_str, "%Y-%m-%d %H:%M:%S")
                 dt = dt.replace(tzinfo=zoneinfo.ZoneInfo("UTC"))
+                ts_ms = int(dt.timestamp() * 1000)
                 dt_local = dt.astimezone(user_tz)
                 # Format to a nice string e.g. "2026-04-23 18:15:00 EDT"
                 ts_str = dt_local.strftime("%Y-%m-%d %H:%M:%S %Z")
             except Exception:
-                pass  # fallback to original string
+                pass  # fallback to original string; ts_ms stays None
 
             saves.append(
                 {
                     "id": str(row[0]),
                     "name": str(row[1]),
                     "timestamp": ts_str,
+                    "timestamp_ms": ts_ms,
                     "is_autosave": bool(row[3]),
                     "level": int(row[4]) if row[4] is not None else "?",
                     "map_name": str(row[5]) if row[5] else "Unknown",
