@@ -74,27 +74,40 @@ import GameButton from '../components/GameButton'
 import GamePanel from '../components/GamePanel'
 import GameText from '../components/GameText'
 import BaseDialog from '../components/BaseDialog'
-import { readLocalSave, compareSavesByRecency, LOCAL_SAVE_KEY } from '../utils/localSave'
+import { readLocalSave, compareSavesByRecency } from '../utils/localSave'
 
 /**
- * Fetch the cloud saves and merge in the local autosave, newest first.
+ * Fetch the cloud saves only, newest first.
  *
- * The local blob lives in localStorage, which any XSS on the origin — or a
- * previous user on a shared machine — can write, so it is validated before it
- * is allowed to become a selectable row (see utils/localSave). An invalid blob
- * yields no row and is discarded from storage.
- *
- * Note the local row is display-only: nothing restores from it, so selecting it
- * just resumes the live server session.
+ * The local autosave is deliberately NOT folded in here: it cannot be
+ * restored (see utils/localSave), so it must never appear as a selectable
+ * row in the Load Game list. It is still consulted separately — see
+ * resolveContinueTarget — so Continue keeps resuming the live session
+ * instead of loading a cloud save out from under it.
  */
-async function fetchMergedSaves() {
+async function fetchCloudSaves() {
     const response = await saves.list()
-    const merged = [...(response.data?.saves || [])]
+    const cloudSaves = [...(response.data?.saves || [])]
+    return cloudSaves.sort(compareSavesByRecency)
+}
 
+/**
+ * Decide what the Continue button should do: resume the live server session
+ * (the local autosave is the more recent activity, or the only activity) or
+ * load a specific cloud save.
+ *
+ * The local entry returned here is a decision input ONLY — it is never
+ * written into `saveList`/the Load Game modal. Comparing cloud saves alone
+ * would silently re-target Continue at the newest cloud save whenever a local
+ * autosave is more recent, overwriting the live in-memory session with an
+ * older one. That is the exact progress-loss bug this function guards
+ * against, so it re-reads the local blob on every call rather than trusting
+ * a value computed before the blob may have changed.
+ */
+function resolveContinueTarget(cloudSaves) {
     const localEntry = readLocalSave()
-    if (localEntry) merged.push(localEntry)
-
-    return merged.sort(compareSavesByRecency)
+    const merged = localEntry ? [...cloudSaves, localEntry] : cloudSaves
+    return merged.length > 0 ? [...merged].sort(compareSavesByRecency)[0] : null
 }
 
 export default function MainMenuPage() {
@@ -135,9 +148,9 @@ export default function MainMenuPage() {
     useEffect(() => {
         const initMenu = async () => {
             try {
-                const mergedSaves = await fetchMergedSaves()
-                setSaveList(mergedSaves)
-                setMostRecentSave(mergedSaves.length > 0 ? mergedSaves[0] : null)
+                const cloudSaves = await fetchCloudSaves()
+                setSaveList(cloudSaves)
+                setMostRecentSave(resolveContinueTarget(cloudSaves))
             } catch (error) {
                 console.error("Failed to initialize menu saves", error)
                 setSaveList([])
@@ -149,18 +162,11 @@ export default function MainMenuPage() {
         initMenu()
     }, [])
 
-    // Keep mostRecentSave in sync with saveList (cloud and local)
+    // Keep mostRecentSave in sync with saveList (cloud saves only — see
+    // resolveContinueTarget for why the local autosave is folded back in here
+    // rather than living in saveList itself).
     useEffect(() => {
-        if (saveList && saveList.length > 0) {
-            // compareSavesByRecency, not raw Date arithmetic: cloud timestamps
-            // carry a timezone abbreviation that Date.parse rejects for most
-            // non-US zones, which would sort every row as NaN and pick the
-            // wrong save for "Continue".
-            const sorted = [...saveList].sort(compareSavesByRecency)
-            setMostRecentSave(sorted[0])
-        } else {
-            setMostRecentSave(null)
-        }
+        setMostRecentSave(resolveContinueTarget(saveList))
     }, [saveList])
 
     const handleNewGame = async () => {
@@ -202,11 +208,13 @@ export default function MainMenuPage() {
         setShowLoadModal(true)
         setIsLoadingSaves(true)
         try {
-            // Must go through the same merge as the initial load: setting the
-            // cloud-only list here dropped the local row, and the sync effect
-            // below then re-pointed "Continue" at an older cloud save — so
-            // opening this modal and closing it could cost the player progress.
-            setSaveList(await fetchMergedSaves())
+            // Cloud saves only — the local autosave never becomes a row (see
+            // fetchCloudSaves). The sync effect on saveList re-derives
+            // mostRecentSave via resolveContinueTarget right after this call,
+            // which folds the local blob back in for the Continue decision, so
+            // opening/closing this modal can no longer re-point Continue at an
+            // older cloud save.
+            setSaveList(await fetchCloudSaves())
         } catch (error) {
             console.error("Failed to list saves", error)
         } finally {
@@ -214,18 +222,15 @@ export default function MainMenuPage() {
         }
     }
 
-    const handleLoadConfirm = async (saveId, isLocal = false) => {
+    const handleLoadConfirm = async (saveId) => {
+        // Rows in this modal are always cloud saves now (the local autosave is
+        // excluded from saveList — see fetchCloudSaves), so there is no local
+        // branch here to worry about.
         playSFX('click')
         setLoadingAction(true)
         try {
-            if (isLocal && saveId === 'local_autosave') {
-                // Local autosave means the server session is (likely) still alive.
-                // Navigate to the game; if the session has expired the game page will redirect.
-                navigate('/game')
-            } else {
-                await saves.load(saveId)
-                navigate('/game')
-            }
+            await saves.load(saveId)
+            navigate('/game')
         } catch (error) {
             console.error("Failed to load save", error)
             playSFX('error')
@@ -234,16 +239,14 @@ export default function MainMenuPage() {
         }
     }
 
-    const handleDeleteSave = async (e, saveId, isLocal = false) => {
+    const handleDeleteSave = async (e, saveId) => {
+        // No local branch: the local autosave is never a row in saveList (see
+        // fetchCloudSaves), so every save reaching this handler is a cloud save.
         e.stopPropagation()
         if (!window.confirm("Are you sure you want to delete this save?")) return
 
         try {
-            if (isLocal) {
-                localStorage.removeItem(LOCAL_SAVE_KEY)
-            } else {
-                await saves.delete(saveId)
-            }
+            await saves.delete(saveId)
             setSaveList(prev => prev.filter(s => s.id !== saveId))
             playSFX('click')
         } catch (error) {
@@ -312,7 +315,13 @@ export default function MainMenuPage() {
 
                 <nav style={{ display: 'flex', flexDirection: 'column', gap: spacing.md }}>
                     {!isLoadingInitial && mostRecentSave && (
-                        <GameButton onClick={handleContinue} size="large" style={{ width: '100%' }}>Continue</GameButton>
+                        <GameButton onClick={handleContinue} size="large" style={{ width: '100%' }}>
+                            {/* Honest labelling: a local autosave can't be "loaded" like a
+                                save file — it just resumes whatever session is still live
+                                on the server. Only the label changes; the click handler
+                                already branches on mostRecentSave.isLocal. */}
+                            {mostRecentSave.isLocal ? 'Continue (Resume Session)' : 'Continue'}
+                        </GameButton>
                     )}
                     <GameButton onClick={handleNewGame} size="large" style={{ width: '100%' }}>New Game</GameButton>
                     {!isLoadingInitial && saveList.length > 0 && (
@@ -435,17 +444,17 @@ export default function MainMenuPage() {
                                         key={save.id}
                                         role="button"
                                         tabIndex={0}
-                                        onClick={() => handleLoadConfirm(save.id, save.isLocal)}
+                                        onClick={() => handleLoadConfirm(save.id)}
                                         onKeyDown={(e) => {
                                             if (e.key === 'Enter' || e.key === ' ') {
                                                 e.preventDefault();
-                                                handleLoadConfirm(save.id, save.isLocal);
+                                                handleLoadConfirm(save.id);
                                             }
                                         }}
                                         style={{
                                             padding: spacing.lg,
                                             background: colors.bg.panelLight,
-                                            border: `1px solid ${save.isLocal ? colors.accent : colors.border.light}`,
+                                            border: `1px solid ${colors.border.light}`,
                                             borderRadius: '6px',
                                             cursor: 'pointer',
                                             display: 'flex',
@@ -461,24 +470,9 @@ export default function MainMenuPage() {
                                         }}
                                         onMouseLeave={(e) => {
                                             e.currentTarget.style.background = colors.bg.panelLight;
-                                            e.currentTarget.style.borderColor = save.isLocal ? colors.accent : colors.border.light;
+                                            e.currentTarget.style.borderColor = colors.border.light;
                                         }}
                                     >
-                                        <div style={{
-                                            position: 'absolute',
-                                            top: 0,
-                                            right: 0,
-                                            fontSize: '9px',
-                                            padding: '2px 8px',
-                                            background: save.isLocal ? `${colors.accent}44` : `${colors.primary}44`,
-                                            borderBottomLeftRadius: '4px',
-                                            color: '#fff',
-                                            textTransform: 'uppercase',
-                                            fontWeight: 'bold',
-                                            letterSpacing: '0.5px'
-                                        }}>
-                                            {save.isLocal ? 'Local' : 'Cloud'}
-                                        </div>
                                         <div>
                                             <div style={{ display: 'flex', alignItems: 'center', gap: spacing.sm }}>
                                                 <GameText variant="bright" weight="bold">
@@ -496,7 +490,7 @@ export default function MainMenuPage() {
                                             </GameText>
                                         </div>
                                         <GameButton
-                                            onClick={(e) => handleDeleteSave(e, save.id, save.isLocal)}
+                                            onClick={(e) => handleDeleteSave(e, save.id)}
                                             variant="secondary"
                                             size="small"
                                             style={{ color: colors.danger, borderColor: `${colors.danger}44` }}

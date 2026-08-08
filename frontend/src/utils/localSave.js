@@ -3,16 +3,20 @@
  *
  * localStorage is attacker-influenceable: any XSS on the origin can write
  * arbitrary JSON to this key, and on a shared machine a previous user can too.
- * The blob is rendered as a selectable row in the Load Game list and merged
- * into the sort that decides which save "Continue" targets, so it is treated
- * as fully untrusted input: bounded before parsing, shape-checked, field-by-
- * field validated, and returned as a freshly-constructed object. The raw
- * parsed object never reaches the UI.
+ * The blob is NOT rendered as a selectable row in the Load Game list — it
+ * cannot be restored, so it must never masquerade as a save (see
+ * MainMenuPage's fetchCloudSaves). It is still consulted to decide what
+ * "Continue" does (resolveContinueTarget) and to label that button honestly,
+ * so it remains treated as fully untrusted input: bounded before parsing,
+ * shape-checked, field-by-field validated, and returned as a freshly-
+ * constructed object. The raw parsed object never reaches the UI.
  *
  * IMPORTANT LIMITATION: this autosave is write-only. `useAutosave` writes it,
- * nothing ever restores from it — both Continue and the load-modal confirm
- * simply navigate to /game and rely on the server session still being alive.
- * Validating the blob makes DISPLAY safe; it does not make the row restorable.
+ * nothing ever restores from it. Continue treats its presence/recency purely
+ * as a signal to resume the live server session instead of loading an older
+ * cloud save; if the session has actually died, navigating to /game will
+ * bounce the player to /login or land them in a fresh session — validating
+ * the blob only makes the label/decision safe, it does not make it restorable.
  */
 
 export const LOCAL_SAVE_KEY = 'hov_local_autosave'
