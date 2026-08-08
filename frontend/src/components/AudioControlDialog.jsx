@@ -19,7 +19,7 @@ export default function AudioControlDialog({ onClose }) {
     } = useAudio()
 
     return (
-        <BaseDialog title="🔊 Audio Settings" onClose={onClose}>
+        <BaseDialog title="⚙️ SETTINGS" onClose={onClose}>
             {/* Content */}
             <div style={{ marginBottom: '20px' }}>
 

@@ -538,9 +538,9 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
               e.target.style.backgroundColor = colors.primaryDark
               e.target.style.boxShadow = 'none'
             }}
-            title="Audio Settings"
+            title="Settings"
           >
-            🔊
+            ⚙️
           </button>
           <button
             onClick={() => setShowFeedback(true)}

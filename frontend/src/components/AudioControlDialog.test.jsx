@@ -37,7 +37,7 @@ describe('AudioControlDialog', () => {
   it('renders audio settings correctly', () => {
     render(<AudioControlDialog onClose={mockOnClose} />);
 
-    expect(screen.getByText('🔊 Audio Settings')).toBeDefined();
+    expect(screen.getByText('⚙️ SETTINGS')).toBeDefined();
     expect(screen.getByText('MUSIC')).toBeDefined();
     expect(screen.getByText('SOUND EFFECTS')).toBeDefined();
     expect(screen.getByText('50%')).toBeDefined();
@@ -129,7 +129,7 @@ describe('AudioControlDialog', () => {
 
   it('does not close when clicking the dialog content', () => {
     render(<AudioControlDialog onClose={mockOnClose} />);
-    const dialogContent = screen.getByText('🔊 Audio Settings').parentElement;
+    const dialogContent = screen.getByText('⚙️ SETTINGS').parentElement;
     fireEvent.click(dialogContent);
     expect(mockOnClose).not.toHaveBeenCalled();
   });
