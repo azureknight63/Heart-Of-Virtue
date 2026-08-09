@@ -130,6 +130,34 @@ describe('parseLocalSave', () => {
       expect(entry.map_name.length).toBeLessThan(200)
     })
 
+    it('strips invisible formatting characters, not just C0/C1 controls', () => {
+      // Bidi overrides and zero-width characters render as nothing but can
+      // visually reorder or pad the row. U+202E is the RTL override, U+200B a
+      // zero-width space, U+FEFF a BOM, U+061C the Arabic letter mark.
+      const entry = parseLocalSave(
+        JSON.stringify({
+          timestamp: '2026-08-08T12:00:00.000Z',
+          player: { level: 3, room_title: 'Cave‮​﻿؜Room' },
+        })
+      )
+      expect(entry.room_title).toBe('CaveRoom')
+    })
+
+    it('does not split a surrogate pair when truncating', () => {
+      const entry = parseLocalSave(
+        JSON.stringify({
+          timestamp: '2026-08-08T12:00:00.000Z',
+          player: { level: 3, map_name: '\u{1F5FA}'.repeat(400) },
+        })
+      )
+      // A lone surrogate would render as a replacement character. Match a high
+      // surrogate with no low after it, or a low surrogate with no high before —
+      // a bare [\uD800-\uDFFF] test would flag the valid pair's trailing half.
+      expect(entry.map_name).not.toMatch(
+        /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/
+      )
+    })
+
     it('strips control characters from display strings', () => {
       const entry = parseLocalSave(
         JSON.stringify({
@@ -153,6 +181,25 @@ describe('parseLocalSave', () => {
   })
 
   describe('timestamps', () => {
+    it('rejects a far-future timestamp that would pin Continue forever', () => {
+      // A well-formed but impossible date outranks every real save, so Continue
+      // would resolve to the resume-session path permanently and the player's
+      // actual cloud saves could never be its target.
+      const far = '{"timestamp":"9999-12-31T23:59:59.000Z","player":{"level":5}}'
+      expect(parseLocalSave(far)).toBeNull()
+    })
+
+    it('rejects a negative epoch', () => {
+      const past = '{"timestamp":"1969-12-31T00:00:00.000Z","player":{"level":5}}'
+      expect(parseLocalSave(past)).toBeNull()
+    })
+
+    it('tolerates small forward clock skew', () => {
+      const soon = new Date(Date.now() + 60_000).toISOString()
+      const raw = JSON.stringify({ timestamp: soon, player: { level: 5 } })
+      expect(parseLocalSave(raw)).not.toBeNull()
+    })
+
     it.each([
       ['a missing timestamp', '{"player":{"level":3}}'],
       ['an unparseable timestamp', '{"timestamp":"not a date","player":{"level":3}}'],

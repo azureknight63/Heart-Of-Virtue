@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import apiEndpoints from '../api/endpoints'
 import { useAuthContext } from '../context/AuthContext'
 import { combatSocketEnabled } from '../utils/featureFlags'
-import { LOCAL_SAVE_KEY } from '../utils/localSave'
+import { LOCAL_SAVE_KEY, MAX_RAW_LENGTH } from '../utils/localSave'
 
 // Helper to transform combat data
 const transformCombatData = (data) => ({
@@ -342,7 +342,20 @@ export const useAutosave = (player) => {
         timestamp: new Date().toISOString(),
         type: 'local_autosave'
       }
-      localStorage.setItem(LOCAL_SAVE_KEY, JSON.stringify(saveData))
+      // Guarded on two counts. An unguarded setItem throws QuotaExceededError
+      // out of the commit phase — from full storage (pre-fillable by a prior
+      // user on a shared machine) or Safari private mode — which unmounts the
+      // React root and ends the session. And the writer was unbounded while
+      // readLocalSave caps at MAX_RAW_LENGTH, so an oversized blob could only
+      // ever be written and then rejected on read.
+      try {
+        const serialized = JSON.stringify(saveData)
+        if (serialized.length <= MAX_RAW_LENGTH) {
+          localStorage.setItem(LOCAL_SAVE_KEY, serialized)
+        }
+      } catch {
+        // Crash-recovery telemetry is best-effort; never let it break play.
+      }
     }
   }, [player])
 

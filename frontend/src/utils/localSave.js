@@ -37,6 +37,8 @@ export const MAX_RAW_LENGTH = 256 * 1024
 // Long enough for any ISO-8601 instant, short enough that a pathological
 // string never reaches the date parser.
 const MAX_TIMESTAMP_LENGTH = 64
+/** Forward clock skew tolerated on a stored timestamp before it is rejected. */
+const FUTURE_SKEW_TOLERANCE_MS = 5 * 60 * 1000
 
 // The row is a single line in a 600px dialog; anything longer is either
 // corrupt or a deliberate attempt to blow out the menu layout.
@@ -95,7 +97,7 @@ function toBoundedInteger(value, min, max) {
  * map_name visually reorder the text of the row it sits in.
  */
 // eslint-disable-next-line no-control-regex -- stripping control characters is the intent
-const INVISIBLE_CHARS = /[\x00-\x1F\x7F-\x9F\u200E\u200F\u2028\u2029\u202A-\u202E\u2066-\u2069]/g
+const INVISIBLE_CHARS = /[\x00-\x1F\x7F-\x9F\u200E\u200F\u2028\u2029\u202A-\u202E\u2066-\u2069\u00AD\u061C\u200B-\u200D\uFEFF]/g
 
 /**
  * @returns a bounded display string, `fallback` when the field is absent, or
@@ -107,7 +109,9 @@ function toDisplayString(value, fallback) {
   // Strip before measuring the length cap so padding can't smuggle past it.
   const cleaned = value.replace(INVISIBLE_CHARS, '').trim()
   if (cleaned.length === 0) return fallback
-  return cleaned.slice(0, MAX_DISPLAY_LENGTH)
+  // Array.from, not slice: slicing by UTF-16 index can split a surrogate
+  // pair and leave a lone surrogate in the row object.
+  return Array.from(cleaned).slice(0, MAX_DISPLAY_LENGTH).join('')
 }
 
 // The writer always emits `new Date().toISOString()`. Requiring that exact
@@ -125,6 +129,11 @@ function normaliseTimestamp(value) {
   const ms = Date.parse(value)
   // Shape-valid but impossible dates (e.g. month 13) still parse to NaN.
   if (!Number.isFinite(ms)) return null
+  // Bound the instant, not just the string. A blob dated 9999-12-31 is
+  // well-formed but would outrank every real save forever, permanently pinning
+  // Continue to the resume-session path so the player's actual cloud saves can
+  // never be its target. Small forward skew is tolerated for clock drift.
+  if (ms < 0 || ms > Date.now() + FUTURE_SKEW_TOLERANCE_MS) return null
   return { iso: value, ms }
 }
 

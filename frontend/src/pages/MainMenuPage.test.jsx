@@ -358,7 +358,7 @@ describe('MainMenuPage', () => {
         // saves), Continue would silently re-target the newest CLOUD save here
         // and overwrite the live in-memory session with an older one.
         localStorage.setItem('hov_local_autosave', JSON.stringify({
-            timestamp: '2099-01-01T00:00:00Z',
+            timestamp: new Date(Date.now() - 60_000).toISOString(),
             player: { level: 9, map_name: 'Dark Grotto', room_title: 'Entrance', playtime: 120 },
         }));
         saves.list.mockResolvedValue({
@@ -382,7 +382,7 @@ describe('MainMenuPage', () => {
         // drives the Continue decision (see the regression-guard test above) —
         // but it must never appear as a row a player can click in the modal.
         localStorage.setItem('hov_local_autosave', JSON.stringify({
-            timestamp: '2099-01-01T00:00:00Z',
+            timestamp: new Date(Date.now() - 60_000).toISOString(),
             player: { level: 9, map_name: 'Dark Grotto', room_title: 'Entrance' },
         }));
         saves.list.mockResolvedValue({
@@ -422,7 +422,7 @@ describe('MainMenuPage', () => {
 
     it('defaults a local autosave\'s map/room fields without crashing when absent', async () => {
         localStorage.setItem('hov_local_autosave', JSON.stringify({
-            timestamp: '2099-01-01T00:00:00Z',
+            timestamp: new Date(Date.now() - 60_000).toISOString(),
             player: { level: 9 },
         }));
         saves.list.mockResolvedValue({ data: { saves: [] } });
@@ -528,7 +528,7 @@ describe('MainMenuPage', () => {
 
     it('navigates immediately for a local-autosave Continue without calling saves.load', async () => {
         localStorage.setItem('hov_local_autosave', JSON.stringify({
-            timestamp: '2099-01-01T00:00:00Z',
+            timestamp: new Date(Date.now() - 60_000).toISOString(),
             player: { level: 1, map_name: 'M', room_title: 'R' },
         }));
         saves.list.mockResolvedValue({ data: { saves: [] } });

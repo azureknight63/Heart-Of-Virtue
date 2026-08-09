@@ -38,6 +38,11 @@ export const AuthProvider = ({ children }) => {
         try {
             const response = await apiEndpoints.auth.login(username, password);
             const { session_id } = response.data.data;
+            // Establishing a new identity clears any prior session's autosave.
+            // Teardown paths already do this; doing it here too means
+            // cross-account separation no longer depends on every one of
+            // them having fired (a crash mid-logout, say).
+            localStorage.removeItem(LOCAL_SAVE_KEY);
             localStorage.setItem('authToken', session_id);
             localStorage.setItem('username', username);
             setIsAuthenticated(true);
@@ -72,6 +77,11 @@ export const AuthProvider = ({ children }) => {
         try {
             const response = await apiEndpoints.auth.register(username, password, email);
             const { session_id } = response.data.data;
+            // Establishing a new identity clears any prior session's autosave.
+            // Teardown paths already do this; doing it here too means
+            // cross-account separation no longer depends on every one of
+            // them having fired (a crash mid-logout, say).
+            localStorage.removeItem(LOCAL_SAVE_KEY);
             localStorage.setItem('authToken', session_id);
             localStorage.setItem('username', username);
             setIsAuthenticated(true);
