@@ -4,7 +4,7 @@ import { COMBAT_SPEED_STEPS } from '../utils/combatTiming'
 import BaseDialog from './BaseDialog'
 import GameButton from './GameButton'
 
-export default function AudioControlDialog({ onClose }) {
+export default function SettingsDialog({ onClose }) {
     const {
         musicVolume,
         setMusicVolume,
@@ -19,7 +19,7 @@ export default function AudioControlDialog({ onClose }) {
     } = useAudio()
 
     return (
-        <BaseDialog title="🔊 Audio Settings" onClose={onClose}>
+        <BaseDialog title="⚙️ SETTINGS" onClose={onClose}>
             {/* Content */}
             <div style={{ marginBottom: '20px' }}>
 

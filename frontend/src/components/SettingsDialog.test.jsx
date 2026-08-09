@@ -1,6 +1,6 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import AudioControlDialog from './AudioControlDialog';
+import SettingsDialog from './SettingsDialog';
 import { useAudio } from '../context/AudioContext';
 
 // Mock useAudio
@@ -8,7 +8,7 @@ vi.mock('../context/AudioContext', () => ({
   useAudio: vi.fn()
 }));
 
-describe('AudioControlDialog', () => {
+describe('SettingsDialog', () => {
   const mockSetMusicVolume = vi.fn();
   const mockSetSfxVolume = vi.fn();
   const mockSetIsMusicMuted = vi.fn();
@@ -35,9 +35,9 @@ describe('AudioControlDialog', () => {
   });
 
   it('renders audio settings correctly', () => {
-    render(<AudioControlDialog onClose={mockOnClose} />);
+    render(<SettingsDialog onClose={mockOnClose} />);
 
-    expect(screen.getByText('🔊 Audio Settings')).toBeDefined();
+    expect(screen.getByText('⚙️ SETTINGS')).toBeDefined();
     expect(screen.getByText('MUSIC')).toBeDefined();
     expect(screen.getByText('SOUND EFFECTS')).toBeDefined();
     expect(screen.getByText('50%')).toBeDefined();
@@ -45,7 +45,7 @@ describe('AudioControlDialog', () => {
   });
 
   it('handles music volume change', () => {
-    render(<AudioControlDialog onClose={mockOnClose} />);
+    render(<SettingsDialog onClose={mockOnClose} />);
     const sliders = screen.getAllByRole('slider');
     const musicSlider = sliders[0];
 
@@ -54,7 +54,7 @@ describe('AudioControlDialog', () => {
   });
 
   it('handles sfx volume change', () => {
-    render(<AudioControlDialog onClose={mockOnClose} />);
+    render(<SettingsDialog onClose={mockOnClose} />);
     const sliders = screen.getAllByRole('slider');
     const sfxSlider = sliders[1];
 
@@ -63,7 +63,7 @@ describe('AudioControlDialog', () => {
   });
 
   it('handles music mute toggle', () => {
-    render(<AudioControlDialog onClose={mockOnClose} />);
+    render(<SettingsDialog onClose={mockOnClose} />);
     const muteBtns = screen.getAllByText('ON');
     const musicMuteBtn = muteBtns[0];
 
@@ -72,7 +72,7 @@ describe('AudioControlDialog', () => {
   });
 
   it('handles sfx mute toggle', () => {
-    render(<AudioControlDialog onClose={mockOnClose} />);
+    render(<SettingsDialog onClose={mockOnClose} />);
     const muteBtns = screen.getAllByText('ON');
     const sfxMuteBtn = muteBtns[1];
 
@@ -87,7 +87,7 @@ describe('AudioControlDialog', () => {
       isSfxMuted: true
     });
 
-    render(<AudioControlDialog onClose={mockOnClose} />);
+    render(<SettingsDialog onClose={mockOnClose} />);
 
     const mutedBtns = screen.getAllByText('MUTED');
     expect(mutedBtns.length).toBe(2);
@@ -98,14 +98,14 @@ describe('AudioControlDialog', () => {
   });
 
   it('calls onClose when Close button is clicked', () => {
-    render(<AudioControlDialog onClose={mockOnClose} />);
+    render(<SettingsDialog onClose={mockOnClose} />);
     const closeBtn = screen.getByText('Close');
     fireEvent.click(closeBtn);
     expect(mockOnClose).toHaveBeenCalled();
   });
 
   it('renders the combat speed control with the current step active', () => {
-    render(<AudioControlDialog onClose={mockOnClose} />);
+    render(<SettingsDialog onClose={mockOnClose} />);
 
     expect(screen.getByText('COMBAT SPEED')).toBeDefined();
     const activeBtn = screen.getByText('1x');
@@ -114,22 +114,22 @@ describe('AudioControlDialog', () => {
   });
 
   it('sets combat speed when a step is clicked', () => {
-    render(<AudioControlDialog onClose={mockOnClose} />);
+    render(<SettingsDialog onClose={mockOnClose} />);
 
     fireEvent.click(screen.getByText('2x'));
     expect(mockSetCombatSpeed).toHaveBeenCalledWith(2);
   });
 
   it('closes when clicking the overlay', () => {
-    const { container } = render(<AudioControlDialog onClose={mockOnClose} />);
+    const { container } = render(<SettingsDialog onClose={mockOnClose} />);
     const overlay = container.firstChild;
     fireEvent.click(overlay);
     expect(mockOnClose).toHaveBeenCalled();
   });
 
   it('does not close when clicking the dialog content', () => {
-    render(<AudioControlDialog onClose={mockOnClose} />);
-    const dialogContent = screen.getByText('🔊 Audio Settings').parentElement;
+    render(<SettingsDialog onClose={mockOnClose} />);
+    const dialogContent = screen.getByText('⚙️ SETTINGS').parentElement;
     fireEvent.click(dialogContent);
     expect(mockOnClose).not.toHaveBeenCalled();
   });
