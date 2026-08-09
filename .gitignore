@@ -51,7 +51,7 @@ Thumbs.db
 .env.*
 !.env.example
 !.env.production
-config_dev.ini
+*.ini
 
 # --- Game Specific (Saves) ---
 *.sav

@@ -1,5 +1,6 @@
 """Pytest configuration for API tests."""
 
+import os
 import sys
 from pathlib import Path
 
@@ -19,9 +20,19 @@ FLASK_AVAILABLE = True
 
 @pytest.fixture(scope="session")
 def app():
-    """Create Flask app for testing (session-scoped for performance)."""
-    app, socketio = create_app(TestingConfig)
-    return app
+    """Create a config-isolated Flask app for API tests.
+
+    The developer's .env may select a gameplay config for manual QA. API tests
+    must not inherit that config because it changes starting equipment, maps,
+    and combat ranges for every session created by this fixture.
+    """
+    config_file = os.environ.pop("CONFIG_FILE", None)
+    try:
+        app, socketio = create_app(TestingConfig)
+        yield app
+    finally:
+        if config_file is not None:
+            os.environ["CONFIG_FILE"] = config_file
 
 
 @pytest.fixture

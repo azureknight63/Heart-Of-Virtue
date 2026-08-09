@@ -26,6 +26,7 @@ export function useCombatSocket({
   onResolved,
   onEnded,
   onSuggestions,
+  onSessionInvalid,
   fetchStatus,
   createSocket = createCombatSocket,
 }) {
@@ -37,6 +38,7 @@ export function useCombatSocket({
     onResolved,
     onEnded,
     onSuggestions,
+    onSessionInvalid,
     fetchStatus,
     createSocket,
   };
@@ -82,13 +84,24 @@ export function useCombatSocket({
     // Initial connect is the same situation as a reconnect: beats emitted before
     // join_combat completed went to a room we weren't in, and lastSeqRef starts
     // null so classifySeq can't detect that gap. Re-seed from status either way.
-    // Initial connect and reconnect take the identical action, so they share
-    // one handler rather than two copies that could drift.
+    // Both paths take the identical action, so they share one handler rather
+    // than two copies that could drift.
     const joinAndResync = () => {
       join();
       resync();
     };
     socket.on('connect', joinAndResync);
+    // A server restart invalidates in-memory sessions. The browser may still
+    // have the old token and an already-open socket will reconnect before the
+    // HTTP 401 handler gets a chance to redirect. Stop reconnect churn as soon
+    // as the room join is rejected; the caller owns clearing auth state.
+    socket.on('error', (payload) => {
+      const message = String(payload?.message || '').toLowerCase();
+      if (message.includes('invalid session') || message.includes('missing session')) {
+        socket.disconnect();
+        cbs.current.onSessionInvalid?.(payload);
+      }
+    });
     // socket.io-client v4 emits 'reconnect' on the Manager (socket.io), not the
     // Socket itself — listening on the Socket never fires. Guarded so a bare
     // test double without a manager doesn't throw.
@@ -101,9 +114,15 @@ export function useCombatSocket({
     socket.on(ENDED_EVENT, (e) =>
       handleSeqEvent(e, (x) => cbs.current.onEnded?.(x))
     );
-    socket.on(SUGGESTIONS_EVENT, (p) =>
-      handleSeqEvent(p, (x) => cbs.current.onSuggestions?.(x))
-    );
+    // Delivered directly, NOT through handleSeqEvent. Suggestions are an
+    // out-of-band notification, not part of the ordered beat stream: the
+    // emitter sends `{suggested_moves: [...]}` with no `seq` at all. Passing
+    // that through classifySeq makes it classify as 'gap' (the deliberate
+    // safe direction for a malformed seq on the beat stream), so every
+    // suggestions event would trigger a spurious resync and never reach
+    // onSuggestions. Harmless until the event name was corrected, because
+    // nothing was arriving on this channel at all.
+    socket.on(SUGGESTIONS_EVENT, (p) => cbs.current.onSuggestions?.(p));
 
     return () => {
       lastSeqRef.current = null;

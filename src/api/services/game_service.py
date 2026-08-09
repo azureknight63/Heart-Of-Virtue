@@ -970,6 +970,7 @@ class GameService:
         player: "player_module.Player",
         direction: str,
         session_data: Optional[Dict] = None,
+        session_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Move player in specified direction.
 
@@ -977,6 +978,9 @@ class GameService:
             player: The Player instance
             direction: Direction to move (north, south, east, west, northeast, northwest, southeast, southwest)
             session_data: Optional session dictionary for storing pending events
+            session_id: Optional session id, threaded through to combat init so
+                combat-beat streaming (issue #436) can wire up on auto-triggered
+                combat (e.g. walking into a monster tile)
 
         Returns:
             Dictionary with result of movement
@@ -1110,7 +1114,10 @@ class GameService:
             else:
                 # Initialize combat
                 self._initialize_combat(
-                    player, combat_enemies, session_data=session_data
+                    player,
+                    combat_enemies,
+                    session_id=session_id,
+                    session_data=session_data,
                 )
                 combat_started = True
 
@@ -1255,6 +1262,7 @@ class GameService:
         event_id: str,
         user_input: str,
         session_data: Dict,
+        session_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Process a pending event with user input.
 
@@ -1263,6 +1271,9 @@ class GameService:
             event_id: The UUID of the pending event
             user_input: The user's input (sanitized by caller)
             session_data: Session dictionary containing pending events
+            session_id: Optional session id, threaded through to combat init so
+                combat-beat streaming (issue #436) can wire up when an event
+                (e.g. an ambush narrative) spawns combat
 
         Returns:
             Dictionary with event result and output
@@ -1471,7 +1482,10 @@ class GameService:
             else:
                 # Initialize combat
                 self._initialize_combat(
-                    player, combat_enemies, session_data=session_data
+                    player,
+                    combat_enemies,
+                    session_id=session_id,
+                    session_data=session_data,
                 )
                 result["combat_started"] = True
 
@@ -1695,6 +1709,7 @@ class GameService:
         action: str,
         quantity: Optional[int] = None,
         session_data: Optional[Dict] = None,
+        session_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Interact with an object or NPC.
 
@@ -1704,6 +1719,9 @@ class GameService:
             action: The action keyword to execute
             quantity: Optional quantity for stacked items
             session_data: Optional session dictionary for storing pending events
+            session_id: Optional session id, threaded through to combat init so
+                combat-beat streaming (issue #436) can wire up on auto-triggered
+                combat (e.g. opening a chest that spawns an ambush)
 
         Returns:
             Dictionary with interaction result and output text
@@ -2023,7 +2041,12 @@ class GameService:
 
         if combat_enemies:
             # Initialize combat
-            self._initialize_combat(player, combat_enemies, session_data=session_data)
+            self._initialize_combat(
+                player,
+                combat_enemies,
+                session_id=session_id,
+                session_data=session_data,
+            )
             combat_started = True
 
             # Get initial combat state from the adapter

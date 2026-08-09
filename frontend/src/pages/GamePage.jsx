@@ -59,6 +59,12 @@ export default function GamePage() {
       ]),
     onResolved: applyCombatState,
     onEnded: applyCombatState,
+    onSessionInvalid: () => {
+      localStorage.removeItem('authToken')
+      localStorage.removeItem('username')
+      const baseUrl = import.meta.env.BASE_URL || '/'
+      window.location.href = `${baseUrl}login`
+    },
     fetchStatus: fetchCombatStatus,
   })
 

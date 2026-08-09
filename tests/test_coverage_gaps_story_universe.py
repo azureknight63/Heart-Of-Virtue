@@ -1632,7 +1632,7 @@ class TestMaraFirstContactEvent:
         assert mock_print.called
         mock_say.assert_any_call("Crossing west?", "Mara", "neutral")
         mock_say.assert_any_call(
-            "Alright, fair enough. I accept your terms.", "Jean", "neutral"
+            "Alright, fair enough. I accept your terms.", "Jean", "happy"
         )
         # 14 spoken lines across 4 of the scene's 5 beats (fee, Gorran appraisal,
         # guide offer, close) — Beat 3, the crucifix, is narration-only by design.
@@ -1758,7 +1758,7 @@ class TestLissObservingEvent:
         assert mock_print.called
         mock_say.assert_any_call("I'll probably ask again sometime.", "Liss", "neutral")
         mock_say.assert_any_call(
-            "He's not going to answer that one either.", "Jean", "neutral"
+            "He's not going to answer that one either.", "Jean", "curious"
         )
         # 11 spoken lines (8 Liss, 3 Jean — including one wordless "...") across
         # 3 curiosity bursts — Gorran never gets a line here; his half of the
@@ -2080,8 +2080,6 @@ class TestCampEntryGreetingEvent:
         with (
             patch("src.story.ch03.print_slow") as mock_print,
             patch("src.story.ch03.say") as mock_say,
-            patch("src.story.ch03.enter_character") as mock_enter,
-            patch("src.story.ch03.exit_character") as mock_exit,
             patch("src.story.ch03.time.sleep"),
         ):
             ev.process()
@@ -2090,20 +2088,19 @@ class TestCampEntryGreetingEvent:
         mock_say.assert_any_call("Tents.", "Jean", "curious")
         # Liss enters, notices Jean then Gorran, and leaves in a fluster.
         #
-        # The entrance/exit are staged with the standalone enter_character /
-        # exit_character helpers rather than say()'s enter=/leave= kwargs. Both
-        # spellings are supported and produce the same payload — GameService
-        # merges a pending stage_enter op into the next segment's enter list
-        # (game_service.py, `enter_ops = pending_enter + entry_enter`) — so this
-        # asserts the staging that happens, not the way it was authored.
+        # Her entrance and exit are staged through say()'s enter=/leave= kwargs
+        # (enter_op/exit_op), not the standalone enter_character/exit_character
+        # helpers. Both spellings exist in narration.py and produce the same
+        # payload, so assert the staging that actually happens rather than the
+        # spelling — this event has already been switched between the two once.
         liss_lines = [c for c in mock_say.call_args_list if c.args[1:2] == ("Liss",)]
         assert [c.args[0] for c in liss_lines] == [
-            "Oh — hi! You're new. Are you—",
+            "Oh — hi! You're new. My name's Liss. Are you—",
             "Oh! OH. You're— he's— that's a real one, isn't it, that's—",
         ]
 
-        mock_enter.assert_called_once_with("Liss", side="right", emotion="surprised")
-        mock_exit.assert_called_once_with("Liss", transition="fade")
+        assert liss_lines[0].kwargs["enter"]["id"] == "Liss"
+        assert liss_lines[1].kwargs["leave"]["id"] == "Liss"
         # Jean's closing question and the stated goal (issue #326: player should
         # come away knowing to ask around camp for a way across the river)
         mock_say.assert_any_call("What exactly was that about?", "Jean", "skeptical")

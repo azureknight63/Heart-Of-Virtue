@@ -9,7 +9,8 @@ from src.narration import (
     say,
     begin_conversation,
     enter_character,
-    exit_character,
+    enter_op,
+    exit_op,
     react,
 )
 import time
@@ -248,11 +249,11 @@ class CampEntryGreetingEvent(Event):
                 "pulled up short when she saw Jean."
             )
             # time.sleep(0.8)
-            enter_character("Liss", side="right", emotion="surprised")
             say(
-                "Oh — hi! You're new. Are you—",
+                "Oh — hi! You're new. My name's Liss. Are you—",
                 "Liss",
                 "surprised",
+                enter=enter_op("Liss", side="right", emotion="surprised"),
             )
             # time.sleep(0.5)
             print_slow("Her eyes slid past Jean's shoulder and found Gorran.")
@@ -261,15 +262,14 @@ class CampEntryGreetingEvent(Event):
                 "Oh! OH. You're— he's— that's a real one, isn't it, that's—",
                 "Liss",
                 "surprised",
+                leave=exit_op("Liss", transition="fade"),
             )
-
             # time.sleep(0.5)
             print_slow(
                 "Whatever she meant to say next dissolved into a half-squeal, half-gasp. "
                 "She backed up two steps, spun, and bolted for the fire ring, hair "
                 "streaming behind her."
             )
-            exit_character("Liss", transition="fade")
             # time.sleep(1.5)
             print_slow("Jean watched her go, then glanced at Gorran.")
             # time.sleep(0.5)
@@ -425,7 +425,7 @@ class MaraFirstContactEvent(Event):
                 "neutral",
             )
             time.sleep(0.8)
-            say("Alright, fair enough. I accept your terms.", "Jean", "neutral")
+            say("Alright, fair enough. I accept your terms.", "Jean", "happy")
             time.sleep(1)
 
             # Beat 5 — tied off; sends Jean around the camp
@@ -522,11 +522,11 @@ class DevetIntroEvent(Event):
             )
             say("Probably something less useful.", "Devet", "neutral")
             time.sleep(0.5)
-            react("Jean", "happy")
+            react("Jean", "neutral")
             print_slow("It took Jean a second to realize that had been a joke. He lifted the bowl and took a careful sip.")
             time.sleep(1)
 
-            say("It's good.", "Jean", "happy")
+            say("It's good.", "Jean", "neutral")
             time.sleep(0.8)
             say("It's food.", "Devet", "neutral")
             time.sleep(1)
@@ -578,7 +578,7 @@ class LissObservingEvent(Event):
             narrate("\n")
             time.sleep(0.3)
             print_slow(
-                "A girl was at the camp's far corner — young, dark-haired, turning a stone over "
+                "Liss was at the camp's far corner — young, dark-haired, turning a stone over "
                 "in one hand out of habit. Not approaching Gorran. Orbiting him instead, in loose, "
                 "unhurried circles, hands clasped behind her back like someone sizing up a fact "
                 "she wasn't sure she believed yet."
@@ -608,6 +608,7 @@ class LissObservingEvent(Event):
                 "not to dignify it with the effort of a response."
             )
             time.sleep(1)
+            react("Liss", "neutral")
             print_slow(
                 "She reached out and poked his shin once, experimentally — the way you'd poke "
                 "a small animal to check whether it was asleep or just very good at pretending."
@@ -617,6 +618,7 @@ class LissObservingEvent(Event):
             time.sleep(1)
 
             # Burst 2 — the stone, held up for comparison
+            react("Liss", "curious")
             print_slow(
                 "She held the stone from her hand up next to his forearm, comparing the color, "
                 "tilting her head like a jeweler. Then she crouched and tapped it twice against "
@@ -641,11 +643,13 @@ class LissObservingEvent(Event):
             time.sleep(1)
 
             # Burst 3 — cold and bone (canonical exchange)
+            react("Liss", "surprised")
             print_slow(
                 "A new thought visibly arrived. She clapped once, delighted with herself, and "
                 "bounced up onto her toes, hopping a half-step closer without seeming to notice "
                 "she'd moved."
             )
+            react("Liss", "curious")
             time.sleep(0.8)
             say(
                 "You're made of stone — does the cold feel different because of that? Devet "
@@ -665,12 +669,13 @@ class LissObservingEvent(Event):
             time.sleep(0.8)
             say("I'll probably ask again sometime.", "Liss", "neutral")
             time.sleep(1)
-            say("He's not going to answer that one either.", "Jean", "neutral")
+            say("He's not going to answer that one either.", "Jean", "curious")
             time.sleep(0.8)
             say("I know. I'll keep asking anyway. Mara says I ask too much, but I think it's fine.", "Liss", "happy")
             time.sleep(1)
 
             # The seed, not the arrival
+            react("Liss", "surprised")
             print_slow(
                 "Turning to say something else to Jean, she caught her own foot on nothing at "
                 "all and overbalanced — one arm windmilling before she caught herself on the "
@@ -679,12 +684,14 @@ class LissObservingEvent(Event):
                 "then let go, a little sheepish, and didn't try to explain it."
             )
             time.sleep(1.2)
+            react("Liss", "curious")
             print_slow(
                 "Something in her ran out of questions before it ran out of curiosity. She "
                 "stopped talking, came a few steps closer than she'd allowed herself before, "
                 "and sat, watching the river instead of him."
             )
             time.sleep(1.5)
+            react("Liss", "neutral")
             print_slow(
                 "Gorran allowed this without acknowledging it. Neither of them said anything "
                 "else."
@@ -819,14 +826,15 @@ class IronAndOathIntroEvent(Event):
             time.sleep(1)
 
             # Beat 4 — Liss's Stalking & Vespera's Somber Stillness
+            enter_character("Liss", "right", "skeptical", "fade",)
             print_slow(
-                "At the side of the stall, nine-year-old Liss was creeping behind a stack of crates, "
+                "At the side of the stall, young Liss was creeping behind a stack of crates, "
                 "staring wide-eyed at Gorran in intense, unblinking research."
             )
             time.sleep(1)
             print_slow(
                 "Trying to sneak closer for a better view, her foot caught a support cord. "
-                "She crashed directly into a wooden rack of practice spears with a loud, wooden clatter!"
+                "She crashed directly into a wooden rack of practice spears with a loud, wooden clatter."
             )
             time.sleep(1)
 
@@ -863,7 +871,7 @@ class IronAndOathIntroEvent(Event):
                 "happy",
             )
             time.sleep(1)
-            react("Vespera", "conc")
+            react("Vespera", "concerned")
             print_slow(
                 "A sudden, somber stillness settled over Vespera. Her smile faded into a quiet, distant stare "
                 "as she watched the spot where Liss had vanished. Her fingers gently traced the leather spine "
@@ -1149,6 +1157,8 @@ class MaraObservationEvent(Event):
             time.sleep(1)
             say("Not a priest, if that's what you mean.", "Jean", "neutral")
             time.sleep(1)
+            react("Mara", "curious")
+            react("Jean", "concerned")
             print_slow(
                 "Jean looked up at the sky with consternation. Why had he said that? "
                 "He was trying to remember something just out of reach."

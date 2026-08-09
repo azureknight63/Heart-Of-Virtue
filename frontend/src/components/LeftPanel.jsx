@@ -4,7 +4,7 @@ import { useAudio } from '../context/AudioContext'
 import PartyPanel from './PartyPanel'
 import InventoryDialog from './InventoryDialog'
 import AccountDialog from './AccountDialog'
-import AudioControlDialog from './AudioControlDialog'
+import SettingsDialog from './SettingsDialog'
 import StatsPanel from './StatsPanel'
 import SkillsPanel from './SkillsPanel'
 import CollapsibleRoomDescription from './CollapsibleRoomDescription'
@@ -590,9 +590,9 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
               e.target.style.backgroundColor = colors.primaryDark
               e.target.style.boxShadow = 'none'
             }}
-            title="Audio Settings"
+            title="Settings"
           >
-            🔊
+            ⚙️
           </button>
           <button
             onClick={() => setShowFeedback(true)}
@@ -933,7 +933,7 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
       )}
 
       {showAudio && (
-        <AudioControlDialog
+        <SettingsDialog
           onClose={() => setShowAudio(false)}
         />
       )}

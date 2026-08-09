@@ -141,7 +141,9 @@ def move_player():
                 500,
             )
 
-        result = game_service.move_player(player, direction, session.data)
+        result = game_service.move_player(
+            player, direction, session.data, session_id=session.session_id
+        )
 
         if "error" in result:
             return jsonify({"success": False, "error": result["error"]}), 400
@@ -244,7 +246,7 @@ def submit_event_input():
 
         # Process the event with user input
         result = game_service.process_event_input(
-            player, event_id, sanitized_input, session.data
+            player, event_id, sanitized_input, session.data, session_id=session.session_id
         )
 
         # Save session after processing event
@@ -659,6 +661,7 @@ def interact_with_target():
             action,
             quantity=quantity,
             session_data=session.data,
+            session_id=session.session_id,
         )
 
         if not result["success"]:
