@@ -14,6 +14,11 @@ import globals from 'globals'
  * `exhaustive-deps` catch the stale-closure and missing-cleanup bugs this
  * codebase is most prone to. `exhaustive-deps` is set to `warn` (its upstream
  * default) so it advises without failing the build on intentional omissions.
+ *
+ * File selection lives in the `files` globs below, NOT in the npm script. The
+ * `lint` script used to pass `--ext .jsx,.js`, which flat config ignores (and
+ * ESLint 10 rejects outright); it was a no-op that read as the real source of
+ * truth. Verified identical before removal: 201 files, 140 messages either way.
  */
 export default [
   {
