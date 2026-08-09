@@ -2356,6 +2356,13 @@ class ApiCombatAdapter:
         # transformCombatData spread carries it through on every poll; a
         # top-level key would be dropped by its whitelist.
         battle_state["combat_id"] = self.combat_id
+        # Same reason: emitted top-level, map_size was dropped by
+        # transformCombatData's whitelist, so Battlefield's `combat?.map_size`
+        # was always undefined and BattlefieldGrid fell back to deriving the
+        # arena from the bounding box of current positions — which means a
+        # dynamically-sized grid rendered at the wrong size and *resized
+        # mid-fight* whenever a combatant moved past the previous extent.
+        battle_state["map_size"] = self.combat_grid_size[0]
         battle_state["beat"] = getattr(self.player, "combat_beat", 0)
         battle_state["heat"] = int(self.player.heat * 100)
         battle_state["awaiting_input"] = self.awaiting_input
@@ -2374,6 +2381,9 @@ class ApiCombatAdapter:
         grid_size = self.combat_grid_size
         result: Dict[str, Any] = {
             "combat_active": self.player.in_combat,
+            # Retained for any direct consumer of the raw response shape; the
+            # copy the web client actually reads lives in battle_state above,
+            # because this top-level one never survives transformCombatData.
             "map_size": grid_size[0],
             "battle_state": battle_state,
             "beat_states": [battle_state],  # Initial state as a single beat state

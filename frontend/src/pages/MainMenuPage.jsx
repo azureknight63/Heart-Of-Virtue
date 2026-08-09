@@ -74,7 +74,7 @@ import GameButton from '../components/GameButton'
 import GamePanel from '../components/GamePanel'
 import GameText from '../components/GameText'
 import BaseDialog from '../components/BaseDialog'
-import { readLocalSave, compareSavesByRecency } from '../utils/localSave'
+import { readLocalSave, compareSavesByRecency, formatSaveTimestamp } from '../utils/localSave'
 
 /**
  * How recently the local autosave must have been written for Continue to treat
@@ -510,7 +510,7 @@ export default function MainMenuPage() {
                                                 Lvl {save.level} • {save.map_name} • {save.room_title}
                                             </GameText>
                                             <GameText variant="dim" size="xs" style={{ marginTop: spacing.xs }}>
-                                                {new Date(save.timestamp).toLocaleString()}
+                                                {formatSaveTimestamp(save)}
                                             </GameText>
                                         </div>
                                         <GameButton

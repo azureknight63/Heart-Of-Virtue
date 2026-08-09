@@ -4,6 +4,7 @@ import {
   readLocalSave,
   saveSortValue,
   compareSavesByRecency,
+  formatSaveTimestamp,
   LOCAL_SAVE_KEY,
   LOCAL_SAVE_ID,
   MAX_RAW_LENGTH,
@@ -337,5 +338,37 @@ describe('sorting helpers', () => {
 
   it('stays a total order when both timestamps are unparseable', () => {
     expect(compareSavesByRecency({ timestamp: 'a' }, { timestamp: 'b' })).toBe(0)
+  })
+})
+
+describe('formatSaveTimestamp', () => {
+  it('renders from the epoch field when present', () => {
+    const ms = Date.UTC(2026, 3, 23, 18, 15, 0)
+    expect(formatSaveTimestamp({ timestamp_ms: ms })).toBe(new Date(ms).toLocaleString())
+  })
+
+  it('prefers the local row field', () => {
+    const ms = Date.UTC(2026, 3, 23, 18, 15, 0)
+    expect(formatSaveTimestamp({ timestampMs: ms })).toBe(new Date(ms).toLocaleString())
+  })
+
+  it('never renders "Invalid Date" for an unparseable timezone abbreviation', () => {
+    // The exact regression: rows used `new Date(save.timestamp)`, and the
+    // server formats "%Y-%m-%d %H:%M:%S %Z". Date.parse cannot read most
+    // non-US abbreviations, so every row read "Invalid Date" for those users.
+    for (const tz of ['CET', 'CEST', 'JST', 'IST', 'AEST', 'PKT']) {
+      const stamp = `2026-08-09 12:00:00 ${tz}`
+      expect(Number.isNaN(Date.parse(stamp))).toBe(true)
+      const rendered = formatSaveTimestamp({ timestamp: stamp })
+      expect(rendered).toBe(stamp)
+      expect(rendered).not.toMatch(/Invalid Date/)
+    }
+  })
+
+  it('falls back to empty string when the row carries no usable timestamp', () => {
+    expect(formatSaveTimestamp({})).toBe('')
+    expect(formatSaveTimestamp(null)).toBe('')
+    // A non-finite epoch must fall through rather than render "Invalid Date".
+    expect(formatSaveTimestamp({ timestamp_ms: NaN })).toBe('')
   })
 })

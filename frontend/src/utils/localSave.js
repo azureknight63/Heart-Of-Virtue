@@ -272,6 +272,27 @@ function saveRowClockValue(row) {
   return row?.timestampMs ?? row?.timestamp_ms ?? row?.timestamp
 }
 
+/**
+ * Human-readable timestamp for a save row.
+ *
+ * The sort half of the timezone problem was fixed before the display half was:
+ * rows rendered `new Date(save.timestamp).toLocaleString()`, and `timestamp` is
+ * the server-formatted "%Y-%m-%d %H:%M:%S %Z" string, which `Date.parse` cannot
+ * read for most non-US abbreviations (CET, CEST, JST, IST, AEST, PKT). Every
+ * row in the Load Game list then rendered the literal text "Invalid Date" for
+ * those accounts.
+ *
+ * Prefer the epoch field; otherwise return the server string as-is, which is
+ * already human-readable — never round-trip it through `Date`.
+ */
+export function formatSaveTimestamp(row) {
+  const epoch = row?.timestampMs ?? row?.timestamp_ms
+  if (typeof epoch === 'number' && Number.isFinite(epoch)) {
+    return new Date(epoch).toLocaleString()
+  }
+  return typeof row?.timestamp === 'string' ? row.timestamp : ''
+}
+
 /** Most-recent-first comparator that stays total even when both keys are unparseable. */
 export function compareSavesByRecency(a, b) {
   const left = saveSortValue(saveRowClockValue(a))

@@ -146,6 +146,13 @@ BATTLE_STATE_CONTRACT = {
     # as displayState alternated shape. Cite the component that actually reads
     # the payload, not the one that ends up using the value.
     "combat_id": "Battlefield.jsx passes combat?.combat_id -> BattlefieldGrid combatId prop",
+    # map_size was the sixth instance of the drift bug and this dict is why it
+    # survived: the adapter emitted it at the TOP LEVEL, transformCombatData's
+    # whitelist does not list it, and neither contract dict declared it — so
+    # `combat?.map_size` was permanently undefined and BattlefieldGrid fell
+    # back to deriving the arena from the bounding box of current positions.
+    # It now rides in battle_state, which the spread carries.
+    "map_size": "Battlefield.jsx passes combat?.map_size -> BattlefieldGrid mapSize prop",
 }
 
 
@@ -534,7 +541,7 @@ class TestShopWireContract:
 # ============================================================================
 # Saves payload
 # ============================================================================
-# MainMenuPage.jsx's fetchMergedSaves() spreads `response.data.saves` (i.e.
+# MainMenuPage.jsx's fetchCloudSaves() spreads `response.data.saves` (i.e.
 # GameService.list_saves(), via GET /saves) straight into `saveList` rows —
 # there is no whitelist/transform step like transformCombatData's, so every
 # field a component reads off `save.*` must come from list_saves() itself.
