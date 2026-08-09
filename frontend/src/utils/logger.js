@@ -144,13 +144,22 @@ class BrowserLogger {
                 navigator.sendBeacon(LOG_ENDPOINT, blob);
             } else {
                 // Use fetch for normal async sending
-                await fetch(LOG_ENDPOINT, {
+                const response = await fetch(LOG_ENDPOINT, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                     },
                     body: JSON.stringify(payload)
                 });
+                // fetch only rejects on network-level failure — a 500, a 404,
+                // or a proxy returning an error body all resolve normally.
+                // Without this the backoff below covered only the unreachable
+                // case, and a backend that is *up but erroring* still got a
+                // doomed request per console call: exactly what the stand-down
+                // exists to prevent.
+                if (!response.ok) {
+                    throw new Error(`log endpoint returned ${response.status}`);
+                }
             }
             this.retryAfter = 0;
         } catch (error) {

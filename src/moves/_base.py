@@ -182,10 +182,16 @@ def to_hit_chance(user, target, base=HIT_CHANCE_BASE, floor=None):
 
     ``base`` is the move family's accuracy ceiling before either combatant's
     attributes apply: 98 for most weapon moves, 85 for the polearm/scythe
-    sweeps and the sword's Riposte paths, 90/95/105 for particular dagger and
-    NPC moves. ``floor`` clamps the truncated result — 5 for most player moves,
-    1 for the NPC and unarmed paths; pass ``None`` for the moves that apply no
-    floor of their own.
+    sweeps and the sword's spin attacks (``WhirlAttack``, ``VertigoSpin``),
+    90/95/105 for particular dagger and NPC moves. ``floor`` clamps the
+    truncated result — 5 for most player moves, 1 for the NPC and unarmed
+    paths; pass ``None`` for the moves that apply no floor of their own.
+
+    Note that ``Riposte`` and ``DisarmingSlash`` take the default 98 with
+    ``floor=5``, *not* 85 — an earlier version of this docstring named Riposte
+    as an 85 site. Reconciling code to that claim would have quietly dropped
+    Riposte's accuracy by 13 points. Read the call site, not this list, before
+    changing a base.
 
     Situational modifiers are deliberately *not* applied here. Callers still
     pass the result through `_apply_to_hit_modifiers`, and several interpose

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { usePlayer, useWorld, useCombat, useExploration, useAutosave } from '../hooks/useApi'
 import { useEventManager } from '../hooks/useEventManager'
+import { COMBAT_INIT_EVENT_ID } from '../utils/eventIds'
 import { useCombatCoordinator } from '../hooks/useCombatCoordinator'
 import { useCombatSocket } from '../hooks/useCombatSocket'
 import { combatSocketEnabled } from '../utils/featureFlags'
@@ -20,6 +21,7 @@ import LevelUpModal from '../components/LevelUpModal'
 import BetaEndDialog from '../components/BetaEndDialog'
 import FeedbackDialog from '../components/FeedbackDialog'
 import MobileTabBar, { MOBILE_TAB_BAR_HEIGHT } from '../components/MobileTabBar'
+import { TAB_KEYS } from '../utils/mobileTabs'
 
 export default function GamePage() {
   const isMobile = useMobile()
@@ -77,7 +79,7 @@ export default function GamePage() {
   const [showBetaFeedback, setShowBetaFeedback] = useState(false)
 
   // Mobile tab navigation
-  const [activeMobileTab, setActiveMobileTab] = useState('character')
+  const [activeMobileTab, setActiveMobileTab] = useState(TAB_KEYS.left)
 
   // Game over state (triggered by narrative events that kill the player)
   const [showGameOver, setShowGameOver] = useState(false)
@@ -211,13 +213,10 @@ export default function GamePage() {
    */
   useEffect(() => {
     if (isMobile && combat?.awaiting_input && !combat?.end_state && !isEventDialogActive) {
-      setActiveMobileTab('character')
+      setActiveMobileTab(TAB_KEYS.left)
     }
-  // combat?.log?.length is intentionally included: the linter treats it as
-  // unnecessary because the effect body doesn't read it, but we need the
-  // effect to re-fire on every new log entry so the tab switch isn't missed
-  // when awaiting_input stays `true` across back-to-back instant actions
-  // (e.g. Check, which is non-turn-consuming and never transitions false→true).
+  // combat?.log?.length is deliberate — see the block comment above. The
+  // linter flags it as unnecessary because the body doesn't read it.
   }, [isMobile, combat?.awaiting_input, combat?.log?.length, combat?.end_state, isEventDialogActive])
 
   /**
@@ -288,7 +287,7 @@ export default function GamePage() {
    */
   const handleEventInputWrapper = async (eventId, userInput) => {
     // Handle internal/frontend events
-    if (eventId === 'combat_init') {
+    if (eventId === COMBAT_INIT_EVENT_ID) {
       if (userInput === 'combat_start') {
         setMode('combat')
         setCurrentEvent(null)
@@ -346,7 +345,7 @@ export default function GamePage() {
           : "Enemies draw near! Prepare for combat!"
 
         const alertEvent = {
-          event_id: 'combat_init',
+          event_id: COMBAT_INIT_EVENT_ID,
           name: "Enemy Encounter",
           output_text: dialogDescription,
           needs_input: true,
@@ -596,7 +595,7 @@ export default function GamePage() {
       overflow: 'hidden'
     }}>
       {/* Left Panel - Narrative & Controls */}
-      <div style={panelWrap('character')}>
+      <div style={panelWrap(TAB_KEYS.left)}>
         <LeftPanel
           player={player}
           location={location}
@@ -620,14 +619,14 @@ export default function GamePage() {
           onLogProcessingChange={setIsCombatLogProcessing}
           onDisplayedLogCountChange={setDisplayedLogCount}
           onTargetHover={setHoveredTargetId}
-          onMoveSubmitted={isMobile ? () => setActiveMobileTab('map') : undefined}
+          onMoveSubmitted={isMobile ? () => setActiveMobileTab(TAB_KEYS.right) : undefined}
           onAdvisorPause={handleAdvisorPause}
           onAdvisorRequestSuggestions={handleAdvisorRequestSuggestions}
         />
       </div>
 
       {/* Right Panel - Battlefield/Map */}
-      <div style={panelWrap('map')}>
+      <div style={panelWrap(TAB_KEYS.right)}>
         <RightPanel
           mode={mode}
           combat={combat}
@@ -638,7 +637,7 @@ export default function GamePage() {
           displayedLogCount={displayedLogCount}
           hoveredTargetId={hoveredTargetId}
           showDescription={isMobile}
-          onDescriptionInteract={isMobile ? () => setActiveMobileTab('character') : undefined}
+          onDescriptionInteract={isMobile ? () => setActiveMobileTab(TAB_KEYS.left) : undefined}
           onAnimatingChange={setIsBattlefieldAnimating}
           streaming={streaming}
           streamedAnimations={streamedAnimations}

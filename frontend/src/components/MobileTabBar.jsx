@@ -1,12 +1,11 @@
 import { colors, fonts } from '../styles/theme'
+import { TAB_KEYS } from '../utils/mobileTabs'
 
 export const MOBILE_TAB_BAR_HEIGHT = '56px'
 
-// The tab keys address GamePage's two panel slots and must NOT vary by mode:
-// panelWrap() compares activeTab against these literals to decide which panel is
-// visible, so emitting mode-specific keys ('combat'/'battlefield') hid BOTH
-// panels and left the player staring at a blank screen. Only the labels change.
-export const TAB_KEYS = { left: 'character', right: 'map' }
+// TAB_KEYS lives in utils/mobileTabs.js — it is a contract with GamePage, and
+// this component is mocked wholesale in GamePage's handler tests.
+export { TAB_KEYS }
 
 function MobileTabBar({ activeTab, onTabChange, mode }) {
   const isExploration = mode === 'exploration'

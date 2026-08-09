@@ -9,6 +9,7 @@ import ScrollFadeIndicator from './ScrollFadeIndicator'
 import useScrollIndicators from '../hooks/useScrollIndicators'
 import { colors, spacing, commonStyles, fonts } from '../styles/theme'
 import { cleanTerminalLineBreaks } from '../utils/entityUtils'
+import { COMBAT_INIT_EVENT_ID } from '../utils/eventIds'
 
 const SUBMIT_FAILED_MESSAGE = 'Failed to submit input. Please try again.'
 
@@ -181,7 +182,7 @@ function EventDialog({ event, history = [], onClose, onSubmitInput }) {
             result = { success: false, error: err }
         }
 
-        if (eventId === 'combat_init') return
+        if (eventId === COMBAT_INIT_EVENT_ID) return
         if (result?.success) return
         if (!isMountedRef.current) return
 
