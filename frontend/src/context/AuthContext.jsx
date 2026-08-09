@@ -55,7 +55,8 @@ export const AuthProvider = ({ children }) => {
         return response.data;
     };
 
-    const failSession = (error) => {
+    /** Clears auth state and RETHROWS — callers use `throw clearSessionAndRethrow(e)`. */
+    const clearSessionAndRethrow = (error) => {
         setIsAuthenticated(false);
         setUser(null);
         throw error;
@@ -68,7 +69,7 @@ export const AuthProvider = ({ children }) => {
                 username
             );
         } catch (error) {
-            return failSession(error);
+            throw clearSessionAndRethrow(error);
         }
     };
 
@@ -97,7 +98,7 @@ export const AuthProvider = ({ children }) => {
                 username
             );
         } catch (error) {
-            return failSession(error);
+            throw clearSessionAndRethrow(error);
         }
     };
 

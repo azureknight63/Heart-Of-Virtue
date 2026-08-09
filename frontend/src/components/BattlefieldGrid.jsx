@@ -677,6 +677,12 @@ const EffectsLayer = React.memo(({ activeAnimation, animationPhase, getEntitySty
   const cfg = activeAnimation?.config;
   const effect = cfg?.effect;
 
+  // Deliberately not the parent's `allCombatants` memo. Two reasons, both
+  // load-bearing: EffectsLayer is a separate React.memo component and cannot
+  // see that memo without prop-drilling it, and this lookup accepts the
+  // literal sentinel 'player' as an id — animation payloads use it for the
+  // source/target of player-originated effects — which a plain id match over
+  // the flat list would not resolve.
   const findEntity = (id) => {
     if (!id || !combat) return null;
     if (id === 'player' || combat.player?.id === id) return combat.player;
