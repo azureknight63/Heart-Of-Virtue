@@ -1,6 +1,7 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import InventoryDialog from './InventoryDialog';
+import { WEIGHT_UNIT } from '../utils/itemUtils';
 
 // Mock ItemDetailDialog
 vi.mock('./ItemDetailDialog', () => ({
@@ -230,7 +231,10 @@ describe('InventoryDialog', () => {
     const barePlayer = { inventory: [], weight_pct: 95 };
     render(<InventoryDialog player={barePlayer} onClose={mockOnClose} onRefetch={mockOnRefetch} />);
     expect(screen.getByText(/0 Gold/i)).toBeInTheDocument();
-    expect(screen.getByText('0 / 0')).toBeInTheDocument();
+    // The unit is part of the assertion on purpose: this readout previously
+    // rendered a bare "0 / 0" with no unit at all, and the old expectation
+    // encoded that omission rather than catching it.
+    expect(screen.getByText(`0.0 / 0.0 ${WEIGHT_UNIT}`)).toBeInTheDocument();
   });
 
   it('shows only the Consumables tab in combat mode', () => {

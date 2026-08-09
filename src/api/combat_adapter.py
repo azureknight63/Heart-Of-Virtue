@@ -259,6 +259,23 @@ class ApiCombatAdapter:
             logger.exception("combat beat streaming failed")
 
     @property
+    def combat_id(self):
+        """Stable identity for the current fight.
+
+        Stored on the player rather than on `self` because the adapter object
+        is not the fight's lifetime. `GameService.get_combat_status`'s
+        deferred-level-up resume constructs a replacement ApiCombatAdapter
+        immediately after `_initialize_combat` minted the id; an instance
+        attribute would be discarded there and every poll for the rest of that
+        fight would publish `combat_id: None`.
+        """
+        return self.player.combat_adapter_state.get("combat_id", None)
+
+    @combat_id.setter
+    def combat_id(self, value):
+        self.player.combat_adapter_state["combat_id"] = value
+
+    @property
     def awaiting_input(self):
         return self.player.combat_adapter_state.get("awaiting_input", False)
 
@@ -370,6 +387,9 @@ class ApiCombatAdapter:
 
         Returns:
             Initial or updated combat state
+
+        Side effect: on a non-reinit call this is the sole minting site for
+        `combat_id` (see the property), alongside the beat and log reset.
         """
         try:
             # Import here to avoid circular dependencies
@@ -2335,7 +2355,7 @@ class ApiCombatAdapter:
         # combat_id rides in battle_state (not the top level) so the client's
         # transformCombatData spread carries it through on every poll; a
         # top-level key would be dropped by its whitelist.
-        battle_state["combat_id"] = getattr(self, "combat_id", None)
+        battle_state["combat_id"] = self.combat_id
         battle_state["beat"] = getattr(self.player, "combat_beat", 0)
         battle_state["heat"] = int(self.player.heat * 100)
         battle_state["awaiting_input"] = self.awaiting_input

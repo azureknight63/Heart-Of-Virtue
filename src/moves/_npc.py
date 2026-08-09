@@ -1395,6 +1395,11 @@ class SeismicSlam(Move):
                     continue
                 resist = functions.combat_resistance(enemy, "crushing")
                 damage = max(0, int(self.power * resist) - enemy.protection)
+                # Deliberately NOT to_hit_chance(): this is a brute-force slam
+                # with no intelligence term at all, so the shared helper does
+                # not fit at any base/floor. Migrating it "for consistency"
+                # would silently add HIT_CHANCE_INTELLIGENCE_WEIGHT and buff
+                # the move. Leave inlined; see TwinFangs for the other one.
                 hit_chance = max(
                     5, int(85 - enemy.finesse + (self.user.finesse * 0.7))
                 )
@@ -1649,6 +1654,11 @@ class TwinFangs(Move):
         power = self.power * (self._QUARRY_BONUS if quarried else 1.0)
         resist = functions.combat_resistance(target, "piercing")
         damage = max(0, int(power * resist) - target.protection)
+        # Deliberately NOT to_hit_chance(): no intelligence term, and finesse
+        # is weighted 0.8 rather than the canonical HIT_CHANCE_FINESSE_WEIGHT
+        # (0.7) — a precision-striker's accuracy leans harder on finesse.
+        # Neither deviation is expressible through base/floor, so migrating
+        # this would be a stealth nerf. Leave inlined; cf. SeismicSlam.
         hit_chance = max(
             5, int(90 - target.finesse + (self.user.finesse * 0.8))
         )

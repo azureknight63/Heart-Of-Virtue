@@ -3,7 +3,7 @@ import BaseDialog from './BaseDialog'
 import GameButton from './GameButton'
 import GameText from './GameText'
 import { colors, spacing, fonts } from '../styles/theme'
-import { formatWeight } from '../utils/itemUtils'
+import { formatWeight, formatWeightRatio } from '../utils/itemUtils'
 
 const ENCH_COLORS = ['#888888', '#44FF88', '#FFD700']
 
@@ -53,7 +53,7 @@ function ItemTooltip({ item, anchorRef }) {
         {[
           ['Type', item.type || '—'],
           ['Subtype', item.subtype || '—'],
-          ['Weight', item.weight != null ? `${item.weight}w` : '—'],
+          ['Weight', item.weight != null ? formatWeight(item.weight) : '—'],
           ['Value', item.value != null ? `${item.value}g` : '—'],
         ].map(([lbl, val]) => (
           <div key={lbl} style={{ background: '#0d0800', padding: '4px 6px', textAlign: 'center' }}>
@@ -252,7 +252,7 @@ export default function LootDialog({ endState, playerWeight, weightLimit, onColl
         {/* Weight tracker */}
         <div style={{ background: '#0d1a0d', border: `1px solid #003300`, padding: '8px 12px', fontSize: '11px', fontFamily: fonts.main }}>
           {[
-            ['Current carry weight:', `${baseWeight.toFixed(1)} / ${formatWeight(maxWeight, 1)}`, colors.primary],
+            ['Current carry weight:', formatWeightRatio(baseWeight, maxWeight), colors.primary],
             ['Selected loot adds:', formatWeight(selectedWeight, 1), '#FFD700'],
             ['Total after pickup:', formatWeight(totalAfter, 1), weightColor],
           ].map(([lbl, val, col]) => (

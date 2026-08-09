@@ -80,10 +80,16 @@ def derive_hit_accuracy(player):
     ``HauntingPresence``, ranged decay and close-range distraction — are not
     reflected here.
     """
-    return attacker_accuracy(
-        getattr(player, "finesse", _MISSING_ATTRIBUTE_DEFAULT),
-        getattr(player, "intelligence", _MISSING_ATTRIBUTE_DEFAULT),
-    )
+    # `getattr(..., default)` only covers a *missing* attribute. A present-but-
+    # None finesse/intelligence would reach the engine helper and raise
+    # TypeError on `None * 0.7`, 500-ing the character sheet. The docstring
+    # above claims this layer owns the missing-value policy, so it has to own
+    # the None case too — the combat serializer sanitizes the same way.
+    def _stat(name):
+        value = getattr(player, name, None)
+        return _MISSING_ATTRIBUTE_DEFAULT if value is None else value
+
+    return attacker_accuracy(_stat("finesse"), _stat("intelligence"))
 
 
 class GameService:
@@ -406,7 +412,12 @@ class GameService:
                 # characters before the prose introduces them and would make the
                 # enter op emitted above a no-op. Later rosters stay fully
                 # represented through those enter/exit ops.
-                if conversation is None:
+                # `and cast`: an empty first roster must not claim the slot.
+                # It would leave current_cast falsy (so the diff above is
+                # skipped on the next begin_conversation) while conversation is
+                # already non-None (so it is never upgraded) — no cast and no
+                # enter ops, i.e. every portrait gone for the rest of the event.
+                if conversation is None and cast:
                     conversation = {"cast": cast}
                 conv_active = True
                 staged_used = True
@@ -2335,10 +2346,15 @@ class GameService:
             )
         # Publish the adapter's id, not a fresh one: a new uuid here would not
         # match the combat_id battle_state carries on every subsequent poll, so
-        # a client comparing them would see a spurious combat change.
-        result["combat_id"] = (
-            result.get("battle_state", {}).get("combat_id") or str(uuid.uuid4())
-        )
+        # a client comparing them would see a spurious combat change. That is
+        # why there is no `or uuid4()` fallback — a null here is honest ("this
+        # path produced no fight identity") and the client's `??` chain handles
+        # it, whereas a fabricated id is guaranteed not to match and silently
+        # re-creates the bug the id exists to prevent.
+        # `(x or {})` rather than `.get(k, {})`: several _initialize_combat
+        # return paths carry an explicit "battle_state": None, which a default
+        # only supplied for a *missing* key would not catch.
+        result["combat_id"] = (result.get("battle_state") or {}).get("combat_id")
         result["combatants"] = combatants
         result["turn_order"] = [c["id"] for c in combatants]
         return result
@@ -2890,7 +2906,15 @@ class GameService:
         # ignored intelligence entirely, so it was only correct when a character
         # happened to have equal finesse and intelligence.
         stats["hit_accuracy"] = derive_hit_accuracy(player)
-        stats["evasion_chance"] = getattr(player, "finesse", 10)
+        # The paired half of the same roll, so it takes the same missing-value
+        # policy as derive_hit_accuracy rather than a bare literal, and the
+        # same `int(round(...))` the combat serializer applies to evasion — a
+        # float finesse otherwise rendered 12.5 on the sheet and 13 on the
+        # battlefield card for one stat.
+        _finesse = getattr(player, "finesse", None)
+        stats["evasion_chance"] = int(
+            round(_MISSING_ATTRIBUTE_DEFAULT if _finesse is None else _finesse)
+        )
 
         stats["resistance"] = getattr(player, "resistance", {})
         stats["status_resistance"] = getattr(player, "status_resistance", {})

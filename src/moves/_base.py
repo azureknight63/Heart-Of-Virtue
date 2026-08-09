@@ -222,7 +222,10 @@ def attacker_accuracy(finesse, intelligence, base=HIT_CHANCE_BASE):
     An indicative rating, not a per-move hit chance: it assumes the default
     base, ignores every situational modifier, and — per ``to_hit_chance`` —
     parts company with the real roll by a point for a small fraction of stat
-    combinations because of floating-point association.
+    combinations because the ``int()`` truncation lands on a different
+    intermediate value here (there is no defender term to subtract first).
+    Not a floating-point association artifact: it is truncation order, which
+    is why ``to_hit_chance`` must not be rewritten in terms of this function.
     """
     return int(
         base

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import ItemDetailDialog from './ItemDetailDialog'
 import BaseDialog from './BaseDialog'
 import { colors, spacing } from '../styles/theme'
-import { INVENTORY_TABS, categorizeItems, getRarityColor, getItemIcon, RARITY_RANK, formatWeight } from '../utils/itemUtils'
+import { INVENTORY_TABS, categorizeItems, getRarityColor, getItemIcon, RARITY_RANK, formatWeight, formatWeightRatio } from '../utils/itemUtils'
 
 /**
  * InventoryDialog - Main container for the player's inventory
@@ -114,7 +114,7 @@ export default function InventoryDialog({ items, player, onClose, onRefetch, com
                 </div>
                 <div style={{ color: colors.text.highlight, fontSize: '13px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                   ⚖️ Weight: <span style={{ color: player?.weight_pct > 90 ? colors.danger : colors.primary }}>
-                    {player?.weight?.toFixed(1) || 0} / {player?.max_weight?.toFixed(1) || 0}
+                    {formatWeightRatio(player?.weight, player?.max_weight)}
                   </span>
                 </div>
               </div>
