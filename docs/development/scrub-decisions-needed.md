@@ -12,7 +12,9 @@ Branch base: `aa09858`. Last updated: 2026-08-09.
 
 ---
 
-## 1. `LeftPanel.jsx` is 917 lines doing four unrelated jobs
+## 1. `LeftPanel.jsx` is 930 lines doing four unrelated jobs
+
+**Tracked as [#490](https://github.com/azureknight63/Heart-Of-Virtue/issues/490).**
 
 **Raised by:** DRY/Maintainability × C4 (Major, confidence 80)
 
@@ -45,6 +47,8 @@ its own review; (c) leave it and revisit when the panel next needs a feature.
 
 ## 2. The 11 remaining `react-hooks` lint errors
 
+**Tracked as [#491](https://github.com/azureknight63/Heart-Of-Virtue/issues/491).**
+
 **Status:** open from earlier in the scrub (12 were fixed; 11 remain).
 
 `npm run lint` currently reports 11 errors and 129 warnings. The errors are
@@ -66,6 +70,8 @@ violations failing while making the current state honest.
 
 ## 3. `HeroPanel` vital-bar tooltip glows are inconsistent
 
+**Tracked as [#494](https://github.com/azureknight63/Heart-Of-Virtue/issues/494).**
+
 **Raised by:** noticed while extracting `VitalBar` (commit `1cc1753`).
 
 The HP tooltip uses a colour-matched shadow (`0 0 8px ${colors.danger}99`); the
@@ -82,6 +88,8 @@ change: drop the prop and derive from `color`).
 ---
 
 ## 4. No Content-Security-Policy anywhere
+
+**Tracked as [#492](https://github.com/azureknight63/Heart-Of-Virtue/issues/492).**
 
 **Raised by:** Security × C5 (flagged as a cross-file follow-up, no finding filed)
 
@@ -102,6 +110,8 @@ mode to find violations without breaking play.
 
 ## 5. Bearer token in `localStorage`
 
+**Tracked as [#493](https://github.com/azureknight63/Heart-Of-Virtue/issues/493).**
+
 **Raised by:** Security × C5 (architectural, pre-existing, unchanged by this branch)
 
 `api/client.js` reads the session token from `localStorage`, which is
@@ -121,6 +131,8 @@ cross-account separation no longer depends on a clean teardown.
 
 ## 6. `hov_local_autosave` retention on shared machines
 
+**No separate issue — subsumed by [#489](https://github.com/azureknight63/Heart-Of-Virtue/issues/489)**, which retires the blob entirely. If that lands, this settles by deletion.
+
 **Raised by:** Security × C5 (Nit, confidence 85)
 
 The blob (character/inventory/location state, verified to contain no email or
@@ -139,26 +151,19 @@ would settle this by deletion.
 
 ---
 
-## 7. Should this branch open a PR?
+## 7. Should this branch open a PR? — RESOLVED
 
-32 commits ahead of `aa09858`, no PR exists. The scrub is not finished (see
-below), so there is a question of whether to open one now for incremental review
-or wait for the full fanout to complete.
+Yes. The fanout and both adversary passes are complete; the PR is open.
 
 ---
 
-## Blocked, not a decision — for visibility
+## Scrub status — complete
 
-The code-scrub dimension fanout is **incomplete because the monthly spend limit
-was reached** (the DRY × C5 agent terminated with
-`You've hit your monthly spend limit`). It is not the 5-hour rolling limit.
+All 25 dimension cells (5 chunks x Security / Alignment / DRY+Maintainability /
+Optimization / CleanCode+AIFriendliness) plus both adversary passes are done.
+Every Major found has been fixed except item 1 above, which is a decision.
 
-- **Done (15/25 cells):** Security × C1–C5; Alignment × C1–C5; DRY × C1–C4
-- **Failed, needs re-run:** DRY × C5
-- **Not started:** Optimization × C1–C5; Clean/AI × C1–C5; two adversary passes
-
-Chunk diffs are pre-extracted under
-`/tmp/.../scratchpad/diffs/C{1..5}-*.diff` so a resumed run does not
-have to re-derive them. Dimension subagents have `Read`/`Grep`/`Glob` but **no
-Bash**, so they must be given the diff file path to read rather than told to run
-`git diff`.
+Chunk diffs used by the review agents were pre-extracted to the session
+scratchpad. Note for anyone re-running this: dimension subagents have
+Read/Grep/Glob but **no Bash**, so they cannot run `git diff` — the orchestrator
+must extract each chunk's diff to a file and give them the path.
