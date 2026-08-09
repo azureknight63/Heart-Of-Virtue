@@ -229,6 +229,44 @@ class TestCombatWireContract:
             real_adapter.initialize_combat([Slime()])
         assert real_adapter.get_combat_state()["battle_state"]["combat_id"] != first
 
+    def test_fight_identity_and_grid_survive_adapter_replacement(
+        self, real_adapter, real_combat_player
+    ):
+        """Both must live on the player, not the adapter instance.
+
+        GameService.get_combat_status's deferred-level-up resume builds a
+        REPLACEMENT ApiCombatAdapter mid-fight (Jean levels up on a killing
+        blow, the next fight is deferred until the points are spent, then
+        starts through that branch). Anything held as an instance attribute is
+        silently lost there.
+
+        For combat_id the symptom is `null` on every poll for the rest of the
+        fight. For combat_grid_size it is worse now that map_size actually
+        reaches the client: the fresh adapter reverts to the legacy 13x13
+        default, and get_dynamic_grid_size never returns 13 — it returns 9 for
+        a small fight and 18 for five combatants. At 18 the client would clip
+        every combatant past index 12 out of the visible container, i.e. an
+        invisible enemy in an active fight.
+        """
+        with patch("src.api.combat_adapter.CombatStrategist"):
+            real_adapter.initialize_combat([Slime(), Slime(), Slime(), Slime()])
+
+        before = real_adapter.get_combat_state()["battle_state"]
+        assert before["combat_id"]
+        assert before["map_size"] != 13, (
+            "fixture should produce a dynamically-sized grid, otherwise this "
+            "test cannot distinguish the bug from the default"
+        )
+
+        # Exactly what the deferred-level-up branch does: a brand-new adapter
+        # over the same player, with no re-initialisation of the fight.
+        with patch("src.api.combat_adapter.CombatStrategist"):
+            replacement = ApiCombatAdapter(real_combat_player, session_id="s")
+
+        after = replacement.get_combat_state()["battle_state"]
+        assert after["combat_id"] == before["combat_id"]
+        assert after["map_size"] == before["map_size"]
+
     def test_check_data_surfaces_when_a_check_move_sets_it(
         self, real_adapter, real_combat_player
     ):

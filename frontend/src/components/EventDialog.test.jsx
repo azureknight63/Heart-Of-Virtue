@@ -595,9 +595,10 @@ describe('EventDialog', () => {
     const failingEvent = { ...mockEvent, event_id: 'evt-fail' };
 
     it('re-enables the dialog when the event arrives with no event_id', async () => {
-      // Reachable in production: GameService emits a needs_input LootEvent
-      // without an event_id when session_data is None. submitInput bailed on
-      // that path AFTER the caller had set isSubmitting, leaving every
+      // Guards a defensive path with no current producer (an earlier version
+      // of this comment wrongly claimed GameService can emit a needs_input
+      // LootEvent with no event_id). It is still worth pinning: submitInput
+      // bailed here AFTER the caller had set isSubmitting, leaving every
       // affordance disabled — and showCloseButton={!needsInput} hides the ✕ for
       // a needs_input event, so there was no way out at all.
       vi.useRealTimers();

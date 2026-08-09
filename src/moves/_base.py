@@ -181,17 +181,20 @@ def to_hit_chance(user, target, base=HIT_CHANCE_BASE, floor=None):
     """Return the pre-modifier hit chance for ``user`` attacking ``target``.
 
     ``base`` is the move family's accuracy ceiling before either combatant's
-    attributes apply: 98 for most weapon moves, 85 for the polearm/scythe
-    sweeps and the sword's spin attacks (``WhirlAttack``, ``VertigoSpin``),
-    90/95/105 for particular dagger and NPC moves. ``floor`` clamps the
-    truncated result — 5 for most player moves, 1 for the NPC and unarmed
-    paths; pass ``None`` for the moves that apply no floor of their own.
+    attributes apply; ``floor`` clamps the truncated result. **The call sites
+    are not uniform** — bases of 85/90/95/98/105 and floors of 1, 5, or none
+    are all in use, and which move takes which is not guessable from its
+    weapon class.
 
-    Note that ``Riposte`` and ``DisarmingSlash`` take the default 98 with
-    ``floor=5``, *not* 85 — an earlier version of this docstring named Riposte
-    as an 85 site. Reconciling code to that claim would have quietly dropped
-    Riposte's accuracy by 13 points. Read the call site, not this list, before
-    changing a base.
+    This docstring deliberately does NOT enumerate them. It used to, and the
+    list was wrong twice: it named ``Riposte`` as an 85 site (it takes the
+    default 98, and reconciling the code to that claim would have quietly cost
+    it 13 points of accuracy), and after that was corrected the list still
+    omitted ``PowerStrike``. A partial enumeration in the one place people look
+    for authority is worse than none, because it reads as exhaustive.
+
+    ``grep -rn "to_hit_chance" src/moves/`` is the authority. Read the call
+    site you are changing.
 
     Situational modifiers are deliberately *not* applied here. Callers still
     pass the result through `_apply_to_hit_modifiers`, and several interpose

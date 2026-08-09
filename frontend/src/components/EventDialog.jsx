@@ -170,8 +170,13 @@ function EventDialog({ event, history = [], onClose, onSubmitInput }) {
             // without clearing it re-creates the exact soft-lock this function
             // exists to prevent: all affordances stay disabled and, for a
             // needs_input event, showCloseButton={!needsInput} hides the ✕ too.
-            // Reachable in production — GameService emits a needs_input
-            // LootEvent with no event_id when session_data is None.
+            // Defensive: no current producer. An earlier version of this
+            // comment claimed GameService emits a needs_input LootEvent with
+            // no event_id when session_data is None — it does not.
+            // _store_pending_event assigns a uuid unconditionally, and the
+            // only production caller always passes session.data. Kept because
+            // the cost is one line and the failure mode is unrecoverable, but
+            // do not cite this as evidence of a live path.
             if (isMountedRef.current) setIsSubmitting(false)
             return
         }

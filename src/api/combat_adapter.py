@@ -22,6 +22,7 @@ from src.api.serializers.combat import (
     CombatantSerializer,
 )
 from src.api.constants import ITEM_USE_RANGE, ALLY_HEAL_THRESHOLD
+from src.api.schemas.combat_beat import SUGGESTIONS_EVENT
 from src.api.combat_beat_stream import CombatBeatStreamer
 from ai.combat_strategist import CombatStrategist
 from src.moves._base import select_weighted_target
@@ -142,10 +143,6 @@ class ApiCombatAdapter:
         self.current_beat_state_index = (
             0  # Track which beat state we're currently building
         )
-        self.combat_grid_size = (
-            13,
-            13,
-        )  # Set by initialize_combat; default matches legacy map size
         self.strategist = CombatStrategist()
 
         # Engine-driven beat streaming (issue #436). Created per combat by
@@ -274,6 +271,28 @@ class ApiCombatAdapter:
     @combat_id.setter
     def combat_id(self, value):
         self.player.combat_adapter_state["combat_id"] = value
+
+    @property
+    def combat_grid_size(self):
+        """Arena dimensions for the current fight, as (width, height).
+
+        On player state for the same reason as combat_id: the adapter object is
+        not the fight's lifetime. get_combat_status's deferred-level-up resume
+        builds a replacement adapter mid-fight, and an instance attribute would
+        silently revert to the legacy 13x13 default there — while
+        get_dynamic_grid_size actually returns 9 for a two-combatant fight and
+        18 for five, never 13. Since map_size is now published to the client
+        (it used to be dropped by transformCombatData's whitelist, so the grid
+        always fell back to deriving the arena from positions), a stale 13 is
+        no longer harmless: at 18 wide, any combatant past index 12 renders
+        outside Battlefield's overflow:hidden container — an invisible enemy in
+        an active fight.
+        """
+        return self.player.combat_adapter_state.get("combat_grid_size", (13, 13))
+
+    @combat_grid_size.setter
+    def combat_grid_size(self, value):
+        self.player.combat_adapter_state["combat_grid_size"] = value
 
     @property
     def awaiting_input(self):
@@ -1888,10 +1907,19 @@ class ApiCombatAdapter:
                             try:
                                 if flask_app and hasattr(flask_app, "socketio"):
                                     logger.debug(
-                                        f"Emitting combat:suggestions_ready to room combat_{self.session_id} ({len(suggestions)} suggestions)"
+                                        f"Emitting {SUGGESTIONS_EVENT} to room combat_{self.session_id} ({len(suggestions)} suggestions)"
                                     )
+                                    # Use the shared constant, not a literal:
+                                    # both schemas define "combat:suggestions"
+                                    # while this site emitted the legacy
+                                    # "combat:suggestions_ready", so the client
+                                    # listener never fired. Inert today (the
+                                    # socket flag is off by default and GamePage
+                                    # passes no onSuggestions) but it would have
+                                    # failed silently the moment the flag went on
+                                    # -- the HTTP path masks the miss.
                                     flask_app.socketio.emit(
-                                        "combat:suggestions_ready",
+                                        SUGGESTIONS_EVENT,
                                         {"suggested_moves": suggestions},
                                         room=f"combat_{self.session_id}",
                                     )
@@ -1901,7 +1929,7 @@ class ApiCombatAdapter:
                                     )
                             except Exception as e:
                                 logger.error(
-                                    f"Error emitting suggestions_ready event: {e}"
+                                    f"Error emitting {SUGGESTIONS_EVENT} event: {e}"
                                 )
                         else:
                             logger.warning(
