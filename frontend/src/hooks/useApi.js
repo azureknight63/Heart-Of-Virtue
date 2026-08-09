@@ -352,6 +352,11 @@ export const useAutosave = (player) => {
         const serialized = JSON.stringify(saveData)
         if (serialized.length <= MAX_RAW_LENGTH) {
           localStorage.setItem(LOCAL_SAVE_KEY, serialized)
+        } else {
+          // Skipping the write would strand the PREVIOUS blob, leaving a frozen
+          // timestamp that keeps claiming to be a live session. Clear it so the
+          // state is "no local session" rather than a stale one.
+          localStorage.removeItem(LOCAL_SAVE_KEY)
         }
       } catch {
         // Crash-recovery telemetry is best-effort; never let it break play.

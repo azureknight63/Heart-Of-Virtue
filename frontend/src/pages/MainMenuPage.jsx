@@ -77,6 +77,15 @@ import BaseDialog from '../components/BaseDialog'
 import { readLocalSave, compareSavesByRecency } from '../utils/localSave'
 
 /**
+ * How recently the local autosave must have been written for Continue to treat
+ * it as a live session worth resuming. Generous on purpose: a player taking a
+ * break with the tab open should still resume rather than silently load an
+ * older cloud save, while a blob from days ago belongs to a server session that
+ * is certainly gone.
+ */
+const LOCAL_SESSION_FRESHNESS_MS = 12 * 60 * 60 * 1000
+
+/**
  * Fetch the cloud saves only, newest first.
  *
  * The local autosave is deliberately NOT folded in here: it cannot be
@@ -106,8 +115,23 @@ async function fetchCloudSaves() {
  */
 function resolveContinueTarget(cloudSaves) {
     const localEntry = readLocalSave()
-    const merged = localEntry ? [...cloudSaves, localEntry] : cloudSaves
-    return merged.length > 0 ? [...merged].sort(compareSavesByRecency)[0] : null
+
+    // Deliberately NOT a recency comparison against the cloud rows. The local
+    // blob's timestamp comes from the browser clock (`new Date()` in
+    // useAutosave), while a cloud row's timestamp_ms comes from SQLite's
+    // CURRENT_TIMESTAMP — the server clock. Ranking one against the other means
+    // a browser running a few minutes slow makes every cloud autosave look
+    // newer than the live session, sending Continue down the saves.load() path
+    // and replacing the in-memory session with a snapshot up to 20 ticks old.
+    //
+    // Freshness is measured against the same clock that wrote it, so the
+    // comparison is internally consistent. A blob older than the window means
+    // the tab has been gone long enough that its server session is almost
+    // certainly dead, and the newest cloud save is the better target.
+    if (localEntry && Date.now() - localEntry.timestampMs < LOCAL_SESSION_FRESHNESS_MS) {
+        return localEntry
+    }
+    return cloudSaves.length > 0 ? [...cloudSaves].sort(compareSavesByRecency)[0] : null
 }
 
 export default function MainMenuPage() {

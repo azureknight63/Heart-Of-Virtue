@@ -352,6 +352,64 @@ describe('MainMenuPage', () => {
         });
     });
 
+    it('regression guard: a cloud save stamped in the future does not steal Continue from a live session', async () => {
+        // The local blob's timestamp comes from the BROWSER clock (new Date() in
+        // useAutosave); a cloud row's timestamp_ms comes from the SERVER clock
+        // (SQLite CURRENT_TIMESTAMP). Ranking one against the other means a
+        // browser running slow makes every cloud autosave look newer than the
+        // live session, sending Continue down saves.load() and replacing the
+        // in-memory session with a snapshot up to 20 ticks old. Continue must
+        // key off the blob's freshness against its own clock, not a cross-clock
+        // race — so even a cloud row dated an hour ahead must not win.
+        localStorage.setItem('hov_local_autosave', JSON.stringify({
+            timestamp: new Date(Date.now() - 60_000).toISOString(),
+            player: { level: 9, map_name: 'Dark Grotto', room_title: 'Entrance', playtime: 120 },
+        }));
+        saves.list.mockResolvedValue({
+            data: {
+                saves: [{
+                    id: 'cloud-ahead',
+                    name: 'Cloud Save',
+                    timestamp: '2099-01-01T00:00:00Z',
+                    timestamp_ms: Date.now() + 60 * 60 * 1000,
+                    level: 3, map_name: 'M', room_title: 'R',
+                }],
+            },
+        });
+
+        render(<MemoryRouter><MainMenuPage /></MemoryRouter>);
+
+        await waitFor(() => screen.getByText(/Continue/i));
+        fireEvent.click(screen.getByText(/Continue/i));
+
+        await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith('/game'));
+        expect(saves.load).not.toHaveBeenCalled();
+
+        localStorage.removeItem('hov_local_autosave');
+    });
+
+    it('falls back to the newest cloud save when the local blob is stale', async () => {
+        // A blob older than the freshness window belongs to a server session
+        // that is almost certainly gone, so loading the cloud save is correct.
+        localStorage.setItem('hov_local_autosave', JSON.stringify({
+            timestamp: new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString(),
+            player: { level: 9, map_name: 'Dark Grotto', room_title: 'Entrance', playtime: 120 },
+        }));
+        saves.list.mockResolvedValue({
+            data: { saves: [{ id: 'cloud-1', name: 'Cloud Save', timestamp: '2023-01-01T00:00:00Z', level: 3, map_name: 'M', room_title: 'R' }] },
+        });
+        saves.load.mockResolvedValue({ success: true });
+
+        render(<MemoryRouter><MainMenuPage /></MemoryRouter>);
+
+        await waitFor(() => screen.getByText(/Continue/i));
+        fireEvent.click(screen.getByText(/Continue/i));
+
+        await waitFor(() => expect(saves.load).toHaveBeenCalledWith('cloud-1'));
+
+        localStorage.removeItem('hov_local_autosave');
+    });
+
     it('regression guard: a more-recent local autosave keeps Continue resuming the live session instead of loading an older cloud save', async () => {
         // This is the progress-loss bug from issue #487: if the local blob were
         // dropped from the Continue decision (e.g. by only ever comparing cloud
@@ -463,7 +521,7 @@ describe('MainMenuPage', () => {
 
     it('surfaces a valid local autosave as a resumable Continue, not as a loadable save row', async () => {
         localStorage.setItem('hov_local_autosave', JSON.stringify({
-            timestamp: '2026-08-08T12:00:00.000Z',
+            timestamp: new Date(Date.now() - 60_000).toISOString(),
             player: { level: 12, map_name: 'dark-grotto', room_title: 'Wall Depression' },
         }));
         saves.list.mockResolvedValue({ data: { saves: [] } });
@@ -486,7 +544,7 @@ describe('MainMenuPage', () => {
         // rejected just as firmly as malformed JSON.
         const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
         localStorage.setItem('hov_local_autosave', JSON.stringify({
-            timestamp: '2026-08-08T12:00:00.000Z',
+            timestamp: new Date(Date.now() - 60_000).toISOString(),
             player: { level: 'not-a-number' },
         }));
         saves.list.mockResolvedValue({ data: { saves: [] } });
