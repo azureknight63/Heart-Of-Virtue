@@ -29,15 +29,17 @@ function isDebugMode() {
 // nothing. Filter them out so the panel doesn't show convincing-but-inert
 // buttons. Primary signal is the API's `debug` flag; the name set is a fallback
 // for any command payload that omits it.
-const KNOWN_DEBUG_COMMAND_NAMES = new Set([
-  'Teleport',
-  'Alter',
-  'Showvar',
-  'Supersaiyan',
-  'TestEvent',
-  'SpawnObj',
-  'Refresh Merchants',
-])
+// Derived from COMMAND_TOOLTIPS rather than restated: the two lists held the
+// same seven names, and forgetting to add a new command here would silently
+// bring back the inert button this filter exists to remove — while forgetting
+// the tooltip would silently fall back to the generic description. One list
+// makes both impossible.
+const DEBUG_TOOLTIP_PREFIX = '[DEBUG]'
+const KNOWN_DEBUG_COMMAND_NAMES = new Set(
+  Object.entries(COMMAND_TOOLTIPS)
+    .filter(([, tooltip]) => tooltip.startsWith(DEBUG_TOOLTIP_PREFIX))
+    .map(([name]) => name)
+)
 
 function isInertDebugCommand(command) {
   return command.debug === true || KNOWN_DEBUG_COMMAND_NAMES.has(command.name)

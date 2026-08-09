@@ -1,6 +1,31 @@
 import { colors, shadows, spacing } from '../styles/theme'
 
 /**
+ * The ✕ affordance, shared by the titled and title-less branches below.
+ * Both rendered the same six style properties verbatim, differing only by
+ * `marginLeft` — so a `colors.text.primary` → `colors.primary` correction had
+ * to be made twice, which is the argument for having one copy.
+ */
+function CloseButton({ onClose, style = {} }) {
+    return (
+        <button
+            onClick={onClose}
+            style={{
+                background: 'none',
+                border: 'none',
+                color: colors.primary,
+                cursor: 'pointer',
+                fontSize: '16px',
+                padding: '0 4px',
+                ...style,
+            }}
+        >
+            ✕
+        </button>
+    )
+}
+
+/**
  * GamePanel - A standardized container component with retro styling.
  */
 export default function GamePanel({
@@ -57,38 +82,13 @@ export default function GamePanel({
                         {title}
                     </h2>
                     {onClose && (
-                        <button
-                            onClick={onClose}
-                            style={{
-                                background: 'none',
-                                border: 'none',
-                                color: colors.primary,
-                                cursor: 'pointer',
-                                fontSize: '16px',
-                                padding: '0 4px',
-                                marginLeft: spacing.sm
-                            }}
-                        >
-                            ✕
-                        </button>
+                        <CloseButton onClose={onClose} style={{ marginLeft: spacing.sm }} />
                     )}
                 </div>
             )}
             {!title && onClose && (
                 <div style={{ position: 'absolute', top: spacing.sm, right: spacing.sm }}>
-                    <button
-                        onClick={onClose}
-                        style={{
-                            background: 'none',
-                            border: 'none',
-                            color: colors.primary,
-                            cursor: 'pointer',
-                            fontSize: '16px',
-                            padding: '0 4px'
-                        }}
-                    >
-                        ✕
-                    </button>
+                    <CloseButton onClose={onClose} />
                 </div>
             )}
             <div style={{ position: 'relative' }}>

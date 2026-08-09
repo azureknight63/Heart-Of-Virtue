@@ -8,6 +8,7 @@ import { MOVE_CATEGORY_COLOR, MOVE_CATEGORY_GLOW } from '../utils/categories';
 import { beatSfxFor } from '../utils/combatSfx';
 import { scheduleSfxChain, effectiveDuration } from '../utils/combatTiming';
 import { SFX_DURATIONS } from '../utils/sfxDurations';
+import useDoubleRaf from '../hooks/useDoubleRaf';
 
 // Fragment definitions for the death burst — module-level, never recreated
 const DEATH_FRAGMENTS = Array.from({ length: 12 }, (_, i) => ({
@@ -631,15 +632,9 @@ const SelectedEntityPanel = React.memo(({ entity, onClose }) => {
 const TravelDot = ({ fromStyle, toStyle, color, duration, delay = 0, size = 1 }) => {
   const [launched, setLaunched] = useState(false);
 
-  useEffect(() => {
-    // Double-RAF so the browser paints the dot at its origin before the
-    // transition to the destination begins.
-    let raf2;
-    const raf1 = requestAnimationFrame(() => {
-      raf2 = requestAnimationFrame(() => setLaunched(true));
-    });
-    return () => { cancelAnimationFrame(raf1); if (raf2) cancelAnimationFrame(raf2); };
-  }, []);
+  // Double-RAF so the browser paints the dot at its origin before the
+  // transition to the destination begins.
+  useDoubleRaf(useCallback(() => setLaunched(true), []));
 
   // Extract the cell translations; the dot interpolates between them.
   const style = launched ? toStyle : fromStyle;
@@ -811,20 +806,11 @@ const EffectsLayer = React.memo(({ activeAnimation, animationPhase, getEntitySty
 const DeathBurst = () => {
   const [phase, setPhase] = useState(0); // 0=hidden, 1=burst, 2=fade
 
+  useDoubleRaf(useCallback(() => setPhase(1), []));
+
   useEffect(() => {
-    // raf2 must be hoisted into effect scope: returning a cleanup from inside the
-    // rAF callback discards it, leaving the second frame uncancellable (matches
-    // the TravelDot pattern above).
-    let raf2;
-    const raf1 = requestAnimationFrame(() => {
-      raf2 = requestAnimationFrame(() => setPhase(1));
-    });
     const fadeTimer = setTimeout(() => setPhase(2), 350);
-    return () => {
-      cancelAnimationFrame(raf1);
-      if (raf2) cancelAnimationFrame(raf2);
-      clearTimeout(fadeTimer);
-    };
+    return () => clearTimeout(fadeTimer);
   }, []);
 
   return (
@@ -960,11 +946,19 @@ function BattlefieldGrid({
   // never update, and would keep displaying after the combatant died.
   const [selectedEntityId, setSelectedEntityId] = useState(null);
 
+  // One place the "every combatant on the field" list is built. It was assembled
+  // inline at three sites with slightly different shapes, in a file whose
+  // documented bug history is precisely this kind of same-shape-built-three-ways
+  // drift.
+  const allCombatants = useMemo(
+    () => [combat?.player, ...(combat?.allies || []), ...(combat?.enemies || [])].filter(Boolean),
+    [combat?.player, combat?.allies, combat?.enemies]
+  );
+
   const selectedEntity = useMemo(() => {
     if (!selectedEntityId) return null;
-    return [combat?.player, ...(combat?.allies || []), ...(combat?.enemies || [])]
-      .find((e) => e?.id === selectedEntityId) || null;
-  }, [selectedEntityId, combat?.player, combat?.allies, combat?.enemies]);
+    return allCombatants.find((e) => e?.id === selectedEntityId) || null;
+  }, [selectedEntityId, allCombatants]);
 
   const setSelectedEntity = useCallback(
     (entity) => setSelectedEntityId(entity?.id ?? null),
@@ -1026,12 +1020,11 @@ function BattlefieldGrid({
   const resolvedMapSize = useMemo(() => {
     if (mapSize && mapSize > 0) return mapSize;
     let maxCoord = 8; // floor at 9×9
-    const entities = [combat?.player, ...(combat?.allies || []), ...(combat?.enemies || [])];
-    for (const e of entities) {
+    for (const e of allCombatants) {
       if (e?.position) maxCoord = Math.max(maxCoord, e.position.x, e.position.y);
     }
     return Math.min(100, maxCoord + 1);
-  }, [mapSize, combat?.player, combat?.allies, combat?.enemies]);
+  }, [mapSize, allCombatants]);
 
   // Keep a ref so the RAF loop can read the latest value without being recreated
   const mapSizeRef = useRef(resolvedMapSize);
