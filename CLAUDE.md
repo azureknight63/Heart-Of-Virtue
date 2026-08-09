@@ -121,9 +121,9 @@ The `tests/api/`, `tests/broken/`, and `tests/uat/` directories are excluded fro
 
 | Layer | Current | Target | CI Minimum |
 |-------|---------|--------|-----------|
-| Backend (Python) | 47% | 85% | 85% |
-| Frontend (React) | ~75% | 95% | 95% |
-| Total Tests | 1,308 | 1,500+ | - |
+| Backend (Python) | 96% | 85% | 85% |
+| Frontend (React) | 95%+ | 95% | 95% |
+| Total Tests | 9,565 | - | - |
 
 ### Backend Coverage Enforcement
 
@@ -141,6 +141,8 @@ python -m pytest \
   --cov-fail-under=85 \
   -q
 ```
+
+(Measured 2026-08-09: `python -m pytest --cov=src --cov=ai` reports 96% over 23,367 statements; 7,303 backend tests plus 2,262 frontend. The previously recorded 47%/~75%/1,308 figures were long out of date — re-measure before quoting them.)
 
 **High-coverage areas** (>70%):
 - `src/api/routes/` — REST endpoints well-tested
