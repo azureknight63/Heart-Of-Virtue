@@ -268,8 +268,12 @@ export function saveSortValue(timestamp) {
  * Older cached payloads may carry neither, so `timestamp` remains the
  * fallback rather than a hard requirement.
  */
+function saveRowEpoch(row) {
+  return row?.timestampMs ?? row?.timestamp_ms
+}
+
 function saveRowClockValue(row) {
-  return row?.timestampMs ?? row?.timestamp_ms ?? row?.timestamp
+  return saveRowEpoch(row) ?? row?.timestamp
 }
 
 /**
@@ -286,7 +290,10 @@ function saveRowClockValue(row) {
  * already human-readable — never round-trip it through `Date`.
  */
 export function formatSaveTimestamp(row) {
-  const epoch = row?.timestampMs ?? row?.timestamp_ms
+  // Shares saveRowEpoch with the comparator so "which clock field wins" is
+  // stated once. Sorting and display disagreeing about that is precisely how
+  // the list could have ordered by one field and labelled by another.
+  const epoch = saveRowEpoch(row)
   if (typeof epoch === 'number' && Number.isFinite(epoch)) {
     return new Date(epoch).toLocaleString()
   }

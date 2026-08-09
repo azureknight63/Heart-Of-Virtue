@@ -82,17 +82,17 @@ export function useCombatSocket({
     // Initial connect is the same situation as a reconnect: beats emitted before
     // join_combat completed went to a room we weren't in, and lastSeqRef starts
     // null so classifySeq can't detect that gap. Re-seed from status either way.
-    socket.on('connect', () => {
+    // Initial connect and reconnect take the identical action, so they share
+    // one handler rather than two copies that could drift.
+    const joinAndResync = () => {
       join();
       resync();
-    });
+    };
+    socket.on('connect', joinAndResync);
     // socket.io-client v4 emits 'reconnect' on the Manager (socket.io), not the
     // Socket itself — listening on the Socket never fires. Guarded so a bare
     // test double without a manager doesn't throw.
-    socket.io?.on?.('reconnect', () => {
-      join();
-      resync();
-    });
+    socket.io?.on?.('reconnect', joinAndResync);
 
     socket.on(BEAT_EVENT, (b) => handleSeqEvent(b, (x) => cbs.current.onBeat?.(x)));
     socket.on(RESOLVED_EVENT, (s) =>

@@ -1,5 +1,5 @@
 import axios from 'axios'
-import { LOCAL_SAVE_KEY } from '../utils/localSave'
+import { AUTH_TOKEN_KEY, clearLocalSession } from '../utils/session'
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api'
 
@@ -12,7 +12,7 @@ const apiClient = axios.create({
 
 // Add auth token to requests
 apiClient.interceptors.request.use((config) => {
-  const token = localStorage.getItem('authToken')
+  const token = localStorage.getItem(AUTH_TOKEN_KEY)
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
   }
@@ -27,13 +27,10 @@ apiClient.interceptors.response.use(
     // This allows the login page to handle its own 401s (bad credentials)
     // without triggering a circular redirect/reload.
     if (error.response?.status === 401 && !window.location.pathname.includes('/login')) {
-      localStorage.removeItem('authToken')
-      // Match logout() exactly: leaving `username` behind hands the prior
-      // account's identifier to the next user on a shared machine.
-      localStorage.removeItem('username')
-      // Match logout(): the local autosave belongs to the session that just
-      // ended, and must not be offered to whoever signs in next.
-      localStorage.removeItem(LOCAL_SAVE_KEY)
+      // Shared with logout() rather than restated: the key list is the
+      // invariant, and a comment saying "match logout()" was the only thing
+      // keeping the two in step.
+      clearLocalSession()
       window.location.href = `${import.meta.env.BASE_URL}login`
     }
     return Promise.reject(error)
