@@ -172,6 +172,14 @@ export default function Battlefield({ combat, currentLogIndex, displayedLogCount
       <div style={{ flex: 1, overflow: 'hidden', borderRadius: '4px', border: `1px solid ${colors.border.main}`, backgroundColor: 'rgba(0,0,0,0.3)', position: 'relative' }}>
         <BattlefieldGrid
           combat={displayState}
+          // Passed explicitly, not read off `combat`: the grid receives
+          // `displayState`, which is a BEAT state, and serialize_combat_state
+          // emits neither of these. Reading them from the grid's own prop made
+          // the pan-reset dep flip uuid <-> undefined as displayState alternated
+          // between poll- and action-derived shapes, resetting the camera
+          // repeatedly mid-fight instead of once per fight.
+          combatId={combat?.combat_id}
+          combatActive={combat?.combat_active}
           allBeatStates={accBeatStates}
           currentBeatIndex={baseOffsetRef.current + (currentLogIndex ?? 0)}
           combatLog={combat?.log || []}

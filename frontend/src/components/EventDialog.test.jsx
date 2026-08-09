@@ -594,6 +594,28 @@ describe('EventDialog', () => {
   describe('recovery from a failed submission', () => {
     const failingEvent = { ...mockEvent, event_id: 'evt-fail' };
 
+    it('re-enables the dialog when the event arrives with no event_id', async () => {
+      // Reachable in production: GameService emits a needs_input LootEvent
+      // without an event_id when session_data is None. submitInput bailed on
+      // that path AFTER the caller had set isSubmitting, leaving every
+      // affordance disabled — and showCloseButton={!needsInput} hides the ✕ for
+      // a needs_input event, so there was no way out at all.
+      vi.useRealTimers();
+      const onSubmitInput = vi.fn();
+      const noId = { ...mockEvent, event_id: undefined };
+      render(<EventDialog event={noId} onClose={vi.fn()} onSubmitInput={onSubmitInput} />);
+
+      fireEvent.click(screen.getByTestId('event-text-container'));
+
+      const touch = screen.getByText('Touch it').closest('button');
+      fireEvent.click(touch);
+
+      // The submit never happens (no id to send), but the dialog must not be
+      // left disabled — that state has no escape for a needs_input event.
+      await waitFor(() => expect(touch.disabled).toBe(false));
+      expect(onSubmitInput).not.toHaveBeenCalled();
+    });
+
     it('re-enables the choice buttons when the submission resolves unsuccessfully', async () => {
       vi.useRealTimers();
       const onSubmit = vi.fn().mockResolvedValue({ success: false });

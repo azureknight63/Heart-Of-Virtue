@@ -925,6 +925,10 @@ function BattlefieldGrid({
   allBeatStates,
   currentBeatIndex,
   combatLog,
+  // Fight identity, supplied by Battlefield from the top-level combat object.
+  // `combat` below is a beat state and carries neither.
+  combatId = null,
+  combatActive = false,
   tab,
   zoom = 1,
   displayedLogCount = 0,
@@ -1129,12 +1133,16 @@ function BattlefieldGrid({
     };
   }, [applyPanTransform, decayPan]);
 
-  // Reset pan when a new combat begins (combat_id change or combat becoming active)
+  // Reset pan when a new combat begins. Keyed on the props Battlefield passes
+  // from the top-level combat object, NOT on `combat` — that prop is a beat
+  // state here, and serialize_combat_state emits neither field, so reading them
+  // off it made this dep flip uuid <-> undefined every time displayState
+  // alternated shape, resetting the camera mid-fight.
   useEffect(() => {
     if (panDecayRafRef.current) { cancelAnimationFrame(panDecayRafRef.current); panDecayRafRef.current = null; }
     touchPanRef.current = { x: 0, y: 0 };
     applyPanTransform();
-  }, [combat?.combat_id, combat?.combat_active, applyPanTransform]);
+  }, [combatId, combatActive, applyPanTransform]);
 
   const handleGridClick = useCallback((e) => {
     if (e.target === e.currentTarget) setSelectedEntity(null);

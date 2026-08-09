@@ -164,7 +164,16 @@ function EventDialog({ event, history = [], onClose, onSubmitInput }) {
      * dialog down; it is the only case where a falsy result is not a failure.
      */
     const submitInput = async (value) => {
-        if (!onSubmitInput || !eventId) return
+        if (!onSubmitInput || !eventId) {
+            // Every caller sets isSubmitting before delegating here, so bailing
+            // without clearing it re-creates the exact soft-lock this function
+            // exists to prevent: all affordances stay disabled and, for a
+            // needs_input event, showCloseButton={!needsInput} hides the ✕ too.
+            // Reachable in production — GameService emits a needs_input
+            // LootEvent with no event_id when session_data is None.
+            if (isMountedRef.current) setIsSubmitting(false)
+            return
+        }
         let result
         try {
             result = await onSubmitInput(eventId, value)

@@ -134,12 +134,18 @@ BATTLE_STATE_CONTRACT = {
     "awaiting_input": "LeftPanel.jsx:125 combat?.awaiting_input",
     "input_type": "LeftPanel.jsx:293/488 combat?.input_type / combat.input_type",
     "available_options": "LeftPanel.jsx:287,720 combat?.available_options",
-    # BattlefieldGrid.jsx:1137 resets the camera pan when a new fight begins.
-    # This read was dead until combat_id was moved into battle_state: it was
-    # minted per call in start_combat and never published on a status poll, so
-    # transformCombatData's whitelist dropped it and the dep was always
-    # undefined — the fifth instance of the drift class this file guards.
-    "combat_id": "BattlefieldGrid.jsx:1137 useEffect([combat?.combat_id, ...])",
+    # Battlefield.jsx reads combat_id off the TOP-LEVEL combat object and passes
+    # it to BattlefieldGrid as an explicit `combatId` prop, which keys the
+    # camera-pan reset.
+    #
+    # The citation matters here. An earlier version of this entry credited the
+    # read to BattlefieldGrid itself — but that component is handed a BEAT state
+    # (Battlefield.jsx: `combat={displayState}`), and serialize_combat_state does
+    # not emit combat_id. So the contract was guarding a surface the consumer
+    # never saw, and it would not have caught the dep flipping uuid <-> undefined
+    # as displayState alternated shape. Cite the component that actually reads
+    # the payload, not the one that ends up using the value.
+    "combat_id": "Battlefield.jsx passes combat?.combat_id -> BattlefieldGrid combatId prop",
 }
 
 
