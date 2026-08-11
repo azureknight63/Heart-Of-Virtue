@@ -14,9 +14,13 @@ from src.api.config import TestingConfig
 
 
 @pytest.fixture
-def socket_app():
+def socket_app(monkeypatch):
     """Return the (app, socketio) pair built by the factory for testing."""
+    # The developer .env may enable the rollout flag for manual QA.  This
+    # fixture tests the configuration default, so make the input deterministic.
+    monkeypatch.delenv("COMBAT_SOCKET_STREAMING", raising=False)
     app, socketio = create_app(TestingConfig)
+    app.config["COMBAT_SOCKET_STREAMING"] = False
     return app, socketio
 
 
