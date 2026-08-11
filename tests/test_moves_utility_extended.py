@@ -690,6 +690,29 @@ class TestCheckApiDataEdgeCases:
         move._generate_api_check_data(player)
         data = player.combat_adapter_state["check_data"]
         assert data[0]["current_move"] == "Slash"
+        assert data[0]["current_move_stage"] == 1
+
+    def test_generate_api_check_data_reports_cooldown_move(self):
+        player = _make_player()
+        player._combat_adapter = MagicMock()
+        player.combat_log = []
+        player.combat_beat = 1
+        enemy = _make_target(is_alive_callable=True)
+        cooldown_move = MagicMock()
+        cooldown_move.name = "NPC_Attack"
+        cooldown_move.current_stage = 3
+        enemy.current_move = None
+        enemy.known_moves = [cooldown_move]
+        player.combat_list = [enemy]
+        player.combat_proximity = {enemy: 5}
+        player.combat_list_allies = []
+        player.combat_adapter_state = {}
+
+        Check(player)._generate_api_check_data(player)
+
+        data = player.combat_adapter_state["check_data"]
+        assert data[0]["current_move"] == "NPC_Attack"
+        assert data[0]["current_move_stage"] == 3
 
 
 class TestCheckLegacyAllies:

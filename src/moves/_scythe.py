@@ -23,6 +23,7 @@ class Reap(Move):
     the frontal hemisphere. Falls back to full-circle hit if coordinates
     are unavailable (mirrors WhirlAttack fallback).
     """
+    display_name = 'Reap'
 
     web_animation = "sweep"
 
@@ -153,6 +154,7 @@ class ReapersMark(Move):
 
     Sets a '_reapers_mark' flag on the target that attack moves can check.
     """
+    display_name = "Reaper's Mark"
 
     web_animation = "debuff"
 
@@ -217,6 +219,7 @@ class DeathsHarvest(Move):
     Slower and heavier than Reap; designed for the final exchange in a drawn-out
     fight where the user needs to recover while still pressing the assault.
     """
+    display_name = "Death's Harvest"
 
     web_animation = "heavy_attack"
 
@@ -367,6 +370,7 @@ class DeathsHarvest(Move):
 
 class GrimPersistence(PassiveMove):
     """Passive: Attacks deal bonus damage against targets below 35% HP."""
+    display_name = 'Grim Persistence'
 
     def __init__(self, user):
         super().__init__(
@@ -381,6 +385,7 @@ class GrimPersistence(PassiveMove):
 
 class HauntingPresence(PassiveMove):
     """Passive: Enemies near you suffer an unsettling aura (future hook)."""
+    display_name = 'Haunting Presence'
 
     def __init__(self, user):
         super().__init__(

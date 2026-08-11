@@ -15,6 +15,7 @@ const transformCombatData = (data) => ({
   events_triggered: data.events_triggered || [],
   last_move_outcome: data.last_move_outcome || "",
   last_move_name: data.last_move_name || null,
+
   last_move_target_id: data.last_move_target_id || null
 })
 

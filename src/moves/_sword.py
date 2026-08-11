@@ -21,6 +21,7 @@ class PommelStrike(Move):
     Quick strike using the pommel of the weapon. This kind of attack serves to fill in gap time for weapons that
     have a longer execute time on their normal or special attacks. It also has a small chance to stun the target.
     """
+    display_name = 'Pommel Strike'
 
     web_animation = "attack"
 
@@ -95,6 +96,7 @@ class WhirlAttack(Move):
     ending with a random facing direction. High fatigue cost reflects the effort
     of rapid rotation and multiple strikes.
     """
+    display_name = 'Whirl Attack'
 
     web_animation = "sweep"
 
@@ -246,6 +248,7 @@ class VertigoSpin(Move):
     A powerful spinning attack that not only damages the target but also
     leaves them disoriented, affecting their facing and reducing defensive bonuses.
     """
+    display_name = 'Vertigo Spin'
 
     web_animation = "sweep"
 
@@ -396,6 +399,7 @@ class Thrust(Move):
     range) differentiate their feel: a lighter sword thrusts quicker; a spear
     reaches farther.
     """
+    display_name = 'Thrust'
 
     web_animation = "pierce"
 
@@ -470,6 +474,7 @@ class DisarmingSlash(Move):
     Trades raw damage for a persistent status debuff that reduces the
     target's defensive bonuses.
     """
+    display_name = 'Disarming Slash'
 
     web_animation = "attack"
 
@@ -602,6 +607,7 @@ class Riposte(Move):
     The heat boost from still being in guard amplifies the strike's damage.
     Near-instant prep (guard is already up); short recoil.
     """
+    display_name = 'Riposte'
 
     web_animation = "quick_attack"
 
@@ -737,6 +743,7 @@ class Riposte(Move):
 
 class BladeMastery(PassiveMove):
     """Passive: Sword discipline; reduces fatigue cost of sword attacks."""
+    display_name = 'Blade Mastery'
 
     def __init__(self, user):
         super().__init__(
@@ -751,6 +758,7 @@ class BladeMastery(PassiveMove):
 
 class CounterGuard(PassiveMove):
     """Passive: Parrying while sword-equipped costs less fatigue."""
+    display_name = 'Counter Guard'
 
     def __init__(self, user):
         super().__init__(

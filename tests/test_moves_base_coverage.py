@@ -612,6 +612,8 @@ class TestPassiveMove:
         user = _make_combatant()
 
         class MyPassive(PassiveMove):
+            display_name = "My Passive"
+
             def __init__(self, user):
                 super().__init__(user, name="My Passive", description="desc")
 

@@ -120,6 +120,8 @@ class ReinforcementEvent:
 class CallForHelpMove(Move):
     """Enemy move that spawns additional enemies during combat."""
 
+    display_name = "Call For Help"
+
     def __init__(self, user, target):
         super().__init__(
             name="Call For Help",
@@ -151,6 +153,8 @@ class CallForHelpMove(Move):
 
 class StageProbeMove(Move):
     """Player move that logs each stage for progression checks."""
+
+    display_name = "Stage Probe"
 
     def __init__(self, user):
         super().__init__(

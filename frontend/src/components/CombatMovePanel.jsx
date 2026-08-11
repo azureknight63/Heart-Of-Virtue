@@ -3,6 +3,7 @@ import { useAudio } from '../context/AudioContext';
 import { colors, spacing, shadows, fonts } from '../styles/theme';
 import GamePanel from './GamePanel';
 import GameText from './GameText';
+import { displayNameOf } from '../utils/combatMoveStatus';
 
 const CombatMovePanel = ({ moves, category, onMoveClick, onClose, onTargetHover }) => {
     const { playSFX } = useAudio();
@@ -72,7 +73,8 @@ const CombatMovePanel = ({ moves, category, onMoveClick, onClose, onTargetHover 
                     filteredMoves.map((move, index) => {
                         const isAvailable = move.available !== false;
                         const reason = move.reason || '';
-                        const isHovered = hoveredMoveName === move.name;
+                        const moveKey = move.name || move.display_name;
+                        const isHovered = hoveredMoveName === moveKey;
 
                         // Single target detection for hover effect
                         const firstTarget = move.viable_targets?.[0];
@@ -82,7 +84,7 @@ const CombatMovePanel = ({ moves, category, onMoveClick, onClose, onTargetHover 
 
                         return (
                             <button
-                                key={move.name}
+                                key={moveKey}
                                 onClick={() => {
                                     if (isAvailable) {
                                         playSFX('attack');
@@ -92,7 +94,7 @@ const CombatMovePanel = ({ moves, category, onMoveClick, onClose, onTargetHover 
                                 }}
                                 onMouseEnter={() => {
                                     if (isAvailable) {
-                                        setHoveredMoveName(move.name);
+                                        setHoveredMoveName(moveKey);
                                         if (singleTargetId && onTargetHover) {
                                             onTargetHover(singleTargetId);
                                         }
@@ -127,7 +129,7 @@ const CombatMovePanel = ({ moves, category, onMoveClick, onClose, onTargetHover 
                                         variant={isHovered ? 'highlight' : (isAvailable ? 'bright' : 'dim')}
                                         weight="bold"
                                     >
-                                        {move.name}
+                                        {displayNameOf(move)}
                                     </GameText>
                                     {move.fatigue_cost > 0 && (
                                         <GameText variant="muted" size="xs">

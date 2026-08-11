@@ -34,6 +34,7 @@ def _apply_sentinels_vigil(advancer, defender):
 
 
 class Dodge(Move):
+    display_name = 'Dodge'
     web_animation = "defend"
 
     def __init__(self, user):
@@ -82,6 +83,7 @@ class Dodge(Move):
 
 
 class Parry(Move):
+    display_name = 'Parry'
     web_animation = "defend"
 
     def __init__(self, user):
@@ -150,6 +152,7 @@ class Parry(Move):
 
 
 class Advance(Move):
+    display_name = 'Advance'
     web_animation = "dash"
 
     def __init__(self, user):
@@ -329,6 +332,7 @@ class Advance(Move):
 
 
 class Withdraw(Move):
+    display_name = 'Withdraw'
     web_animation = "dash"
 
     def __init__(self, user):
@@ -453,6 +457,7 @@ class Withdraw(Move):
 
 class BullCharge(Move):
     """Aggressive charge move - advance multiple squares toward target."""
+    display_name = 'Bull Charge'
 
     web_animation = "charge"
 
@@ -566,6 +571,7 @@ class BullCharge(Move):
 
 class TacticalRetreat(Move):
     """Coordinated withdrawal - retreat while maintaining defense."""
+    display_name = 'Tactical Retreat'
 
     web_animation = "dash"
 
@@ -656,6 +662,7 @@ class TacticalRetreat(Move):
 
 class FlankingManeuver(Move):
     """Position to the side of target for combat advantage."""
+    display_name = 'Flanking Maneuver'
 
     web_animation = "dash"
 
@@ -772,6 +779,7 @@ class FlankingManeuver(Move):
 
 class QuietMovement(PassiveMove):
     """Passive: Improves ability to move undetected."""
+    display_name = 'Quiet Movement'
 
     def __init__(self, user):
         super().__init__(
@@ -782,6 +790,7 @@ class QuietMovement(PassiveMove):
 
 
 class TacticalPositioning(Move):
+    display_name = 'Tactical Positioning'
     web_animation = "dash"
 
     def __init__(self, user):
@@ -927,6 +936,7 @@ class Turn(Move):
     Attributes:
         target_direction: The Direction to face (Direction enum value)
     """
+    display_name = 'Turn'
 
     web_animation = "dash"
 
@@ -1011,6 +1021,7 @@ class QuickSwap(Move):
     Allows coordinated repositioning during combat by exchanging places with an ally.
     Useful for protecting vulnerable teammates or rearranging formation mid-combat.
     """
+    display_name = 'Quick Swap'
 
     web_animation = "dash"
 

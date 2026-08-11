@@ -122,6 +122,23 @@ describe('BattlefieldGrid', () => {
         expect(() => fireEvent.mouseLeave(entityWrapper)).not.toThrow();
     });
 
+    it('shows the move name and preparation stage in the hover tooltip', () => {
+        const combatWithMove = {
+            ...mockCombat,
+            enemies: [{
+                ...mockCombat.enemies[0],
+                current_move: { name: 'NPC_Attack', display_name: 'Attack', current_stage: 0, category: 'Offensive' },
+            }],
+        };
+        render(<BattlefieldGrid combat={combatWithMove} tab="overview" zoom={1} />);
+
+        const enemyToken = screen.getByText('G');
+        const entityWrapper = enemyToken.closest('[style*="cursor"]');
+        fireEvent.mouseEnter(entityWrapper);
+
+        expect(screen.getByText('Preparing: Attack')).toBeDefined();
+    });
+
     it('opens SelectedEntityPanel when a combatant is clicked', () => {
         render(<BattlefieldGrid combat={mockCombat} tab="overview" zoom={1} />);
 

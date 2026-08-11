@@ -27,6 +27,7 @@ def _crossbow_close_range_penalty(user, range_min):
 class ShootBow(
     Move
 ):  # ranged attack with a bow, player only. Requires having arrows in inventory;
+    display_name = 'Shoot Bow'
     # this is checked when available skills are evaluated in combat.py
     web_animation = "projectile"
 
@@ -336,6 +337,7 @@ class Hawkeye(Move):
     1.4x hit-chance window it grants (states.Hawkeye, 30 beats) can't be kept
     up continuously. See issue #476 for the balance reasoning.
     """
+    display_name = 'Hawkeye'
 
     web_animation = "buff"
 
@@ -391,6 +393,7 @@ NPC MOVES
 
 class EagleEye(PassiveMove):
     """Passive: Sharpened long-range eye. Improves accuracy at distance."""
+    display_name = 'Eagle Eye'
 
     def __init__(self, user):
         super().__init__(
@@ -410,6 +413,7 @@ class ShootCrossbow(Move):
     No arrows required — bolts are integral to the crossbow.
     Accuracy is halved if any enemy is within minimum range (close-range penalty).
     """
+    display_name = 'Shoot Crossbow'
 
     web_animation = "projectile"
 
@@ -561,6 +565,7 @@ class ShootCrossbow(Move):
 
 class BroadheadBolt(Move):
     """Fire a heavy broadhead bolt — high damage, same reload as ShootCrossbow."""
+    display_name = 'Broadhead Bolt'
 
     web_animation = "projectile"
 
@@ -713,6 +718,7 @@ class AimedShot(Move):
     Takes 25 beats to line up. Worth the wait against high-finesse targets or
     when one decisive shot is needed.
     """
+    display_name = 'Aimed Shot'
 
     web_animation = "projectile"
 
@@ -866,6 +872,7 @@ class AimedShot(Move):
 
 class PinningBolt(Move):
     """Bolt aimed to pin the target — deals damage and applies Disoriented on hit."""
+    display_name = 'Pinning Bolt'
 
     web_animation = "projectile"
 
@@ -1029,6 +1036,7 @@ class PinningBolt(Move):
 
 class QuickReload(PassiveMove):
     """Passive: Crossbow reload training reduces prep time."""
+    display_name = 'Quick Reload'
 
     def __init__(self, user):
         description = (
@@ -1040,6 +1048,7 @@ class QuickReload(PassiveMove):
 
 class MarksmanEye(PassiveMove):
     """Passive: Accuracy bonus at range for crossbow attacks."""
+    display_name = "Marksman's Eye"
 
     def __init__(self, user):
         super().__init__(

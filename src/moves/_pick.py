@@ -23,6 +23,7 @@ class ChipAway(Move):
     Lower per-hit damage but three independent hit rolls; any or all may land.
     Favoured against targets with high evasion where one decisive blow would miss.
     """
+    display_name = 'Chip Away'
 
     web_animation = "quick_attack"
 
@@ -150,6 +151,7 @@ class ChipAway(Move):
 
 class ExploitWeakness(Move):
     """Targeted strike aimed at an exposed spot — applies Disoriented on hit."""
+    display_name = 'Exploit Weakness'
 
     web_animation = "pierce"
 
@@ -284,6 +286,7 @@ class Stupefy(Move):
 
     High recoil and cooldown — this is the closer, not an opener.
     """
+    display_name = 'Stupefy'
 
     web_animation = "heavy_attack"
 
@@ -415,6 +418,7 @@ class Stupefy(Move):
 
 class WorkTheGap(PassiveMove):
     """Passive: Sustained assault gradually strips enemy protection (future hook)."""
+    display_name = 'Work the Gap'
 
     def __init__(self, user):
         description = (

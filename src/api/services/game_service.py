@@ -25,6 +25,7 @@ from src.api.serializers.inventory import (
 from src.api.serializers.combat import (
     CombatStateSerializer,
 )
+from src.moves._base import display_name_of
 from src.api.utils.inventory import get_inventory_list
 
 _log = logging.getLogger(__name__)
@@ -2346,6 +2347,15 @@ class GameService:
             player._combat_adapter = ApiCombatAdapter(
                 player, session_id=session_id, on_event_callback=event_callback
             )
+            # This branch bootstraps an adapter for combat that's already marked
+            # active on the player (e.g. player.in_combat persisted true across a
+            # server restart with no live adapter object) — initialize_combat()
+            # never ran here, so without this the beat streamer (issue #436) is
+            # never created and this encounter silently never streams combat:beat/
+            # resolved/ended for its entire duration.
+            player._combat_adapter._maybe_init_streamer(
+                player._combat_adapter.get_combat_state()
+            )
         else:
             # Update existing adapter's callback to ensure it has access to current session_data
             def event_callback(p):
@@ -2549,6 +2559,13 @@ class GameService:
                     player,
                     session_id=session_id,
                     on_event_callback=event_callback,
+                )
+                # This unconditionally replaces the adapter _initialize_combat just
+                # built above (streamer and all) with a bare one — re-wire the beat
+                # streamer (issue #436) here too, or this deferred/resumed combat
+                # silently never streams combat:beat/resolved/ended.
+                player._combat_adapter._maybe_init_streamer(
+                    player._combat_adapter.get_combat_state()
                 )
                 # Synchronize initial state for the new adapter
                 player._combat_adapter.available_options = (
@@ -2862,6 +2879,7 @@ class GameService:
             known_moves.append(
                 {
                     "name": getattr(move, "name", "Unknown"),
+                    "display_name": display_name_of(move),
                     "category": getattr(move, "category", "Miscellaneous"),
                     "description": getattr(move, "description", ""),
                     "fatigue_cost": getattr(move, "fatigue_cost", 0),
@@ -2892,6 +2910,7 @@ class GameService:
                     category_skills.append(
                         {
                             "name": skill.name,
+                            "display_name": display_name_of(skill),
                             "description": getattr(skill, "description", ""),
                             "required_exp": req_exp,
                             "is_known": is_known,
@@ -3452,8 +3471,17 @@ class GameService:
             player: Player object
             enemies: List of enemy NPCs
         """
-        # Detect if this is a re-initialization (enemies joining an already active combat)
-        is_reinit = getattr(player, "in_combat", False)
+        # Detect if this is a re-initialization (enemies joining an already active combat).
+        # player.in_combat alone isn't enough: if it's stuck true from a prior combat
+        # that never cleaned up properly (e.g. a crash, or a stale persisted flag) but
+        # this process never actually built an adapter for it, treating that as a
+        # "reinforcement" reinit skips initialize_combat()'s fresh-start setup —
+        # including _maybe_init_streamer() and the combat:started broadcast (issue
+        # #436) — so this encounter would silently never stream beats for its
+        # entire duration. Only a genuinely live adapter makes this a real reinit.
+        is_reinit = getattr(player, "in_combat", False) and hasattr(
+            player, "_combat_adapter"
+        )
 
         # Idempotency check: If player is already in combat with exactly these enemy objects,
         # do nothing. Keyed on object identity (id) rather than name so two enemies with the

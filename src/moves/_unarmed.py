@@ -17,6 +17,7 @@ from ._base import (
 
 
 class PowerStrike(Move):
+    display_name = 'Power Strike'
     web_animation = "heavy_attack"
 
     def __init__(self, user):
@@ -186,6 +187,7 @@ class PowerStrike(Move):
 
 
 class Jab(Move):
+    display_name = 'Jab'
     web_animation = "quick_attack"
 
     def __init__(self, user):
@@ -318,6 +320,7 @@ PLAYER MOVES
 
 class IronFist(PassiveMove):
     """Passive: Conditioned hands deal more damage unarmed."""
+    display_name = 'Iron Fist'
 
     def __init__(self, user):
         super().__init__(
@@ -332,6 +335,7 @@ class IronFist(PassiveMove):
 
 class CleaveInstinct(PassiveMove):
     """Passive: A kill carries momentum into the next attack."""
+    display_name = 'Cleave Instinct'
 
     def __init__(self, user):
         super().__init__(
@@ -346,6 +350,7 @@ class CleaveInstinct(PassiveMove):
 
 class HeavyHanded(PassiveMove):
     """Passive: Bludgeon blows stagger opponents — they reel longer after impact."""
+    display_name = 'Heavy Handed'
 
     def __init__(self, user):
         super().__init__(

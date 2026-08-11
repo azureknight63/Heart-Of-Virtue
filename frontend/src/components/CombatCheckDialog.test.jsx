@@ -10,7 +10,9 @@ describe('CombatCheckDialog', () => {
       distance: 0,
       direction_from_player: 'Self',
       facing: 'North',
-      current_move: 'Idle'
+      current_move: 'Rest',
+      current_move_display_name: 'Rest',
+      current_move_stage: 0
     },
     {
       name: 'Goblin',
@@ -18,7 +20,9 @@ describe('CombatCheckDialog', () => {
       distance: 5,
       direction_from_player: 'North',
       facing: 'South',
-      current_move: 'Attacking'
+      current_move: 'NPC_Attack',
+      current_move_display_name: 'Attack',
+      current_move_stage: 1
     }
   ];
 
@@ -41,7 +45,8 @@ describe('CombatCheckDialog', () => {
     expect(screen.getByText('Goblin')).toBeDefined();
     expect(screen.getByText('ENEMY')).toBeDefined();
     expect(screen.getByText('5 ft')).toBeDefined();
-    expect(screen.getByText('Attacking')).toBeDefined();
+    expect(screen.getByText('Using: Attack')).toBeDefined();
+    expect(screen.getByText('Preparing: Rest')).toBeDefined();
   });
 
   it('renders singular "combatant" when there is only one', () => {

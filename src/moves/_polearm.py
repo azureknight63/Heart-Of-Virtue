@@ -39,6 +39,7 @@ class OverheadSmash(Move):
     Slower than Sweep but deals more single-target damage. The weight of the
     weapon driving downward makes this one of the hardest hits in the polearm kit.
     """
+    display_name = 'Overhead Smash'
 
     web_animation = "heavy_attack"
 
@@ -121,6 +122,7 @@ class Sweep(Move):
     Frontal arc (90° cone) when coordinates are available; full circle fallback.
     Lower per-target damage than Overhead Smash but covers multiple enemies.
     """
+    display_name = 'Sweep'
 
     web_animation = "sweep"
 
@@ -245,6 +247,7 @@ class BracePosition(Move):
     Mechanically identical to Parry but flavoured for the defensive polearm style.
     The user plants the weapon and waits to intercept.
     """
+    display_name = 'Brace Position'
 
     web_animation = "defend"
 
@@ -314,6 +317,7 @@ class HalberdSpin(Move):
     More damaging per enemy than Sweep but costs more fatigue and has longer
     cooldown.
     """
+    display_name = 'Halberd Spin'
 
     web_animation = "sweep"
 
@@ -428,6 +432,7 @@ class HalberdSpin(Move):
 
 class ReachMastery(PassiveMove):
     """Passive: Extended range training — polearm attacks reach further."""
+    display_name = 'Reach Mastery'
 
     def __init__(self, user):
         super().__init__(

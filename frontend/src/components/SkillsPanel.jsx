@@ -5,7 +5,8 @@ import BaseDialog from './BaseDialog'
 import GameButton from './GameButton'
 import GameText from './GameText'
 import GamePanel from './GamePanel'
-import { colors, spacing, fonts, shadows } from '../styles/theme'
+import { colors, spacing } from '../styles/theme';
+import { displayNameOf } from '../utils/combatMoveStatus';
 
 /**
  * SkillsPanel - View and learn character skills categorized by discipline
@@ -161,7 +162,7 @@ export default function SkillsPanel({ player, onClose }) {
                     weight="bold"
                     size="md"
                   >
-                    {skill.name}
+                    {displayNameOf(skill)}
                   </GameText>
                   {skill.is_known && (
                     <GameText variant="success" size="xs" weight="bold" style={{ textTransform: 'uppercase' }}>
