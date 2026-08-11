@@ -21,6 +21,10 @@ export function socketUrl() {
 export function createCombatSocket({ url } = {}) {
   return io(url ?? socketUrl(), {
     autoConnect: true,
-    transports: ['websocket', 'polling'],
+    // The API runs Flask-SocketIO on Werkzeug's threaded development server.
+    // That server can log a spurious 500 ("write() before start_response")
+    // when a browser closes a WebSocket, so use Engine.IO polling here. It is
+    // still a live Socket.IO connection and avoids noisy false server errors.
+    transports: ['polling'],
   });
 }
