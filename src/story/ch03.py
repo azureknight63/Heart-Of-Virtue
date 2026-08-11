@@ -269,6 +269,8 @@ class CampEntryGreetingEvent(Event):
                 "She backed up two steps, spun, and bolted for the fire ring, hair "
                 "streaming behind her."
             )
+            # The leave operation is attached to Liss's final spoken beat above
+            # so the staged conversation applies it in sequence with the text.
             # time.sleep(1.5)
             print_slow("Jean watched her go, then glanced at Gorran.")
             # time.sleep(0.5)
@@ -825,7 +827,6 @@ class IronAndOathIntroEvent(Event):
             time.sleep(1)
 
             # Beat 4 — Liss's Stalking & Vespera's Somber Stillness
-            enter_character("Liss", "right", "skeptical", "fade",)
             print_slow(
                 "At the side of the stall, young Liss was creeping behind a stack of crates, "
                 "staring wide-eyed at Gorran in intense, unblinking research."

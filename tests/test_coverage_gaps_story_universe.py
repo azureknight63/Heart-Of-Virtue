@@ -1632,7 +1632,7 @@ class TestMaraFirstContactEvent:
         assert mock_print.called
         mock_say.assert_any_call("Crossing west?", "Mara", "neutral")
         mock_say.assert_any_call(
-            "Alright, fair enough. I accept your terms.", "Jean", "neutral"
+            "Alright, fair enough. I accept your terms.", "Jean", "happy"
         )
         # 14 spoken lines across 4 of the scene's 5 beats (fee, Gorran appraisal,
         # guide offer, close) — Beat 3, the crucifix, is narration-only by design.
@@ -1758,7 +1758,7 @@ class TestLissObservingEvent:
         assert mock_print.called
         mock_say.assert_any_call("I'll probably ask again sometime.", "Liss", "neutral")
         mock_say.assert_any_call(
-            "He's not going to answer that one either.", "Jean", "neutral"
+            "He's not going to answer that one either.", "Jean", "curious"
         )
         # 11 spoken lines (8 Liss, 3 Jean — including one wordless "...") across
         # 3 curiosity bursts — Gorran never gets a line here; his half of the
@@ -2090,7 +2090,7 @@ class TestCampEntryGreetingEvent:
         liss_enter_calls = [
             c
             for c in mock_say.call_args_list
-            if c.args[:2] == ("Oh — hi! You're new. Are you—", "Liss")
+            if c.args[:2] == ("Oh — hi! You're new. My name's Liss. Are you—", "Liss")
         ]
         assert len(liss_enter_calls) == 1
         assert liss_enter_calls[0].kwargs["enter"]["id"] == "Liss"
