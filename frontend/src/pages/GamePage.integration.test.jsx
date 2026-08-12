@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import React from 'react';
 import { MemoryRouter } from 'react-router-dom';
 import GamePage from './GamePage';
+import { combatDisabledAuth } from '../test/mockHelpers';
 import * as api from '../api/endpoints';
 import { usePlayer, useWorld, useCombat, useExploration, useExits, useAutosave, useAuth } from '../hooks/useApi';
 import { useAudio } from '../context/AudioContext';
@@ -12,10 +13,10 @@ vi.mock('../hooks/useApi', async () => {
     const actual = await vi.importActual('../hooks/useApi');
     return {
         ...actual,
+        useAuth: vi.fn(() => combatDisabledAuth),
         useExploration: vi.fn(),
         useExits: vi.fn(),
         useAutosave: vi.fn(),
-        useAuth: vi.fn(),
     };
 });
 

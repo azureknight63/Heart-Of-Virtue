@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import apiEndpoints from '../api/endpoints'
 import { useAuthContext } from '../context/AuthContext'
-import { combatSocketEnabled } from '../utils/featureFlags'
+
 import { LOCAL_SAVE_KEY, MAX_RAW_LENGTH } from '../utils/localSave'
 
 // Helper to transform combat data
@@ -122,7 +122,7 @@ export const usePlayer = () => {
   return { player, loading, error, refetch: fetchPlayer, allocateLevelUpPoints }
 }
 
-export const useCombat = () => {
+export const useCombat = (streamingEnabled = false) => {
   const [combat, setCombat] = useState(null)
   const [loading, setLoading] = useState(false)
   const [inCombat, setInCombat] = useState(false)
@@ -184,7 +184,7 @@ export const useCombat = () => {
       // forever in its pre-action state. Non-terminal streaming responses are still
       // applied by the socket when it arrives; terminal responses are applied here
       // immediately as a safety net.
-      if (!combatSocketEnabled() || data.combat_active === false || data.end_state) {
+      if (!streamingEnabled || data.combat_active === false || data.end_state) {
         applyCombatState(data)
       }
       return data
@@ -194,7 +194,7 @@ export const useCombat = () => {
     } finally {
       setLoading(false)
     }
-  }, [applyCombatState])
+  }, [applyCombatState, streamingEnabled])
 
   return {
     combat,

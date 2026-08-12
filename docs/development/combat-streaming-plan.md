@@ -70,10 +70,11 @@ paced locally. This tightly couples combat visuals **and** SFX to the engine.
 7. **Wire the dead config.** `app.py` reads `SOCKETIO_CORS_ALLOWED_ORIGINS` and
    `SOCKETIO_MESSAGE_QUEUE` (optional Redis for multi-worker fan-out; default
    `None` = single-process, unchanged).
-8. **Feature-flagged rollout.** `COMBAT_SOCKET_STREAMING` (backend config) +
-   `VITE_COMBAT_SOCKET` (frontend). Build/ship dark, run both transports during
-   migration, flip, then delete the old replay path (Phase 4). Nothing is removed
-   until the new path is green in the browser.
+8. **Capability-driven rollout.** `COMBAT_SOCKET_STREAMING` is the backend-owned
+   switch. The effective value is exposed through `/api/info` and the frontend
+   enables Socket.IO only when that capability is true. Build/ship dark, run
+   both transports during migration, flip, then delete the old replay path
+   (Phase 4). Nothing is removed until the new path is green in the browser.
 
 ## Phases (each test-first: red → green → refactor)
 
@@ -81,7 +82,7 @@ paced locally. This tightly couples combat visuals **and** SFX to the engine.
 - `flask_socketio.SocketIOTestClient` fixture (unpacks `(app, socketio)`).
 - Frontend fake-socket util (event-emitter stub for `socket.io-client`,
   fake-timer friendly).
-- `COMBAT_SOCKET_STREAMING` (default off) + `VITE_COMBAT_SOCKET`.
+- `COMBAT_SOCKET_STREAMING` (default off), exposed to the frontend through `/api/info`.
 - Cleanup: `sockets.py` `print()` → `logging`.
 - Smoke test: connect → `join_combat` (valid + invalid session) → assert
   `joined_combat` / `error`.

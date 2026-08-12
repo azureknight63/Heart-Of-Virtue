@@ -39,6 +39,13 @@ class TestCreateApp:
         app, socketio = create_app(ProductionConfig)
         assert app.config['DEBUG'] is False
 
+    def test_create_app_reads_combat_streaming_from_current_environment(self, monkeypatch):
+        monkeypatch.setenv('COMBAT_SOCKET_STREAMING', 'true')
+
+        app, _ = create_app(TestingConfig)
+
+        assert app.config['COMBAT_SOCKET_STREAMING'] is True
+
     @patch('src.api.app.universe_module.Universe')
     @patch('src.player.Player')
     def test_create_app_universe_initialization_dev(self, mock_player, mock_universe):
@@ -158,6 +165,14 @@ class TestAppEndpoints:
         assert data['name'] == 'Heart of Virtue API'
         assert data['version'] == '1.0.0'
         assert data['phase'] == 'Phase 1'
+
+    def test_api_info_exposes_effective_combat_streaming_capability(self, app):
+        app.config['COMBAT_SOCKET_STREAMING'] = False
+        client = app.test_client()
+        response = client.get('/api/info')
+
+        assert response.status_code == 200
+        assert response.get_json()['features']['combat_socket_streaming'] is False
 
     def test_debug_routes_endpoint(self, client):
         """Test debug routes endpoint."""

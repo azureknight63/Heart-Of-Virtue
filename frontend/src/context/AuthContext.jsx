@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import apiEndpoints from '../api/endpoints';
 import { LOCAL_SAVE_KEY } from '../utils/localSave';
 import { AUTH_TOKEN_KEY, USERNAME_KEY, clearLocalSession } from '../utils/session';
+import { combatSocketEnabled } from '../utils/featureFlags';
 
 const AuthContext = createContext();
 
@@ -17,6 +18,7 @@ export const AuthProvider = ({ children }) => {
     const [isAuthenticated, setIsAuthenticated] = useState(false);
     const [loading, setLoading] = useState(true);
     const [user, setUser] = useState(null);
+    const [capabilities, setCapabilities] = useState(null);
 
     const checkAuth = useCallback(() => {
         const token = localStorage.getItem(AUTH_TOKEN_KEY);
@@ -35,11 +37,24 @@ export const AuthProvider = ({ children }) => {
         checkAuth();
     }, [checkAuth]);
 
+    useEffect(() => {
+        let cancelled = false;
+        apiEndpoints.app.getInfo()
+            .then((response) => {
+                if (!cancelled) setCapabilities(response.data.features || {});
+            })
+            .catch((error) => {
+                console.warn('Combat streaming capability unavailable; disabled', error);
+                if (!cancelled) setCapabilities({});
+            });
+        return () => { cancelled = true; };
+    }, []);
+
     /**
      * Shared tail of login and register, which differ only in which endpoint
      * they call. Both previously repeated this sequence — and the same
      * four-line comment — verbatim, so the autosave-clearing step had two
-     * places to fall out of.
+     * places to fall out.
      */
     const establishSession = (response, username) => {
         const { session_id } = response.data.data;
@@ -109,7 +124,8 @@ export const AuthProvider = ({ children }) => {
         login,
         logout,
         register,
-        checkAuth
+        checkAuth,
+        combatSocketStreaming: combatSocketEnabled(capabilities),
     };
 
     return (

@@ -35,7 +35,13 @@ def app():
     must not inherit that config because it changes starting equipment, maps,
     and combat ranges for every session created by this fixture.
     """
-    app, socketio = create_app(TestingConfig)
+    sentinel = object()
+    streaming_flag = os.environ.pop("COMBAT_SOCKET_STREAMING", sentinel)
+    try:
+        app, socketio = create_app(TestingConfig)
+    finally:
+        if streaming_flag is not sentinel:
+            os.environ["COMBAT_SOCKET_STREAMING"] = streaming_flag
     return app
 
 

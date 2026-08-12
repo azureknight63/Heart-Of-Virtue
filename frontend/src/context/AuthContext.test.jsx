@@ -1,7 +1,8 @@
-import { render, screen, act, fireEvent } from '@testing-library/react'
+import { render, screen, act, fireEvent, waitFor } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { AuthProvider, useAuthContext } from './AuthContext'
 import apiEndpoints from '../api/endpoints'
+import { capabilitiesApiMock } from '../test/mockHelpers'
 
 vi.mock('../api/endpoints', () => ({
   default: {
@@ -10,6 +11,7 @@ vi.mock('../api/endpoints', () => ({
       logout: vi.fn(),
       register: vi.fn(),
     },
+    ...capabilitiesApiMock(vi),
   },
 }))
 
@@ -20,6 +22,7 @@ function AuthConsumer() {
       <div data-testid="authed">{String(auth.isAuthenticated)}</div>
       <div data-testid="loading">{String(auth.loading)}</div>
       <div data-testid="username">{auth.user?.username || 'none'}</div>
+      <div data-testid="combat-streaming">{String(auth.combatSocketStreaming)}</div>
       <button onClick={() => auth.login('jean', 'pw').catch(() => {})}>login</button>
       <button onClick={() => auth.logout().catch(() => {})}>logout</button>
       <button onClick={() => auth.register('jean', 'pw', 'jean@example.com').catch(() => {})}>register</button>
@@ -52,6 +55,18 @@ describe('AuthContext', () => {
     expect(screen.getByTestId('authed').textContent).toBe('false')
     expect(screen.getByTestId('loading').textContent).toBe('false')
     expect(screen.getByTestId('username').textContent).toBe('none')
+  })
+
+  it('enables combat streaming from the backend capability response', async () => {
+    apiEndpoints.app.getInfo.mockResolvedValueOnce({
+      data: { features: { combat_socket_streaming: true } },
+    })
+
+    render(<AuthProvider><AuthConsumer /></AuthProvider>)
+
+    await waitFor(() => {
+      expect(screen.getByTestId('combat-streaming').textContent).toBe('true')
+    })
   })
 
   it('hydrates as authenticated when a token is already stored', () => {

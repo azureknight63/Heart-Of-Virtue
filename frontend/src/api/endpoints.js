@@ -1,5 +1,9 @@
 import apiClient from './client'
 
+export const app = {
+  getInfo: () => apiClient.get('/info'),
+}
+
 // Auth endpoints
 export const auth = {
   register: (username, password, email) => apiClient.post('/auth/register', { username, password, email }),
@@ -122,6 +126,7 @@ export const shop = {
 }
 
 export default {
+  app,
   auth,
   player,
   world,

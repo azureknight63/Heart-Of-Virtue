@@ -4,6 +4,12 @@ import os
 from datetime import timedelta
 
 
+def combat_socket_streaming_enabled():
+    """Read the server-owned combat streaming switch at app creation time."""
+    value = os.environ.get("COMBAT_SOCKET_STREAMING", "false")
+    return value.lower() not in ("0", "false", "no", "")
+
+
 class Config:
     """Base configuration."""
 
@@ -46,9 +52,7 @@ class Config:
     # on, the engine streams per-beat events the frontend animates/sounds in
     # lockstep. Feature-flag for the phased rollout (see
     # docs/development/combat-streaming-plan.md).
-    COMBAT_SOCKET_STREAMING = os.environ.get(
-        "COMBAT_SOCKET_STREAMING", "false"
-    ).lower() not in ("0", "false", "no", "")
+    COMBAT_SOCKET_STREAMING = False
 
 
 class DevelopmentConfig(Config):

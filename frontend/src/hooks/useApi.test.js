@@ -4,6 +4,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useAuth, usePlayer, useCombat, useWorld, useExploration, useAutosave } from './useApi';
 import { AuthProvider } from '../context/AuthContext';
 import apiEndpoints from '../api/endpoints';
+import { capabilitiesApiMock } from '../test/mockHelpers';
 
 vi.mock('../api/endpoints', () => ({
   default: {
@@ -12,6 +13,7 @@ vi.mock('../api/endpoints', () => ({
       logout: vi.fn(),
       register: vi.fn(),
     },
+    ...capabilitiesApiMock(vi),
     player: {
       getStatus: vi.fn(),
       getFullState: vi.fn(),
@@ -202,7 +204,6 @@ describe('useCombat', () => {
   });
 
   it('applies a terminal HTTP response even when socket streaming is enabled', async () => {
-    vi.stubEnv('VITE_COMBAT_SOCKET', '1');
     apiEndpoints.combat.performAction.mockResolvedValue({
       data: {
         combat_active: false,
@@ -223,7 +224,6 @@ describe('useCombat', () => {
       id: 'victory-1',
       status: 'victory',
     });
-    vi.unstubAllEnvs();
   });
 
   it('normalizes a terminal combat:ended payload into end state', () => {

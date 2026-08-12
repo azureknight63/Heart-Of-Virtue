@@ -1,6 +1,7 @@
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import GamePage from './GamePage';
+import { combatDisabledAuth } from '../test/mockHelpers';
 import { usePlayer, useWorld, useCombat, useExploration, useExits, useAutosave } from '../hooks/useApi';
 import { useAudio } from '../context/AudioContext';
 import { useToast } from '../context/ToastContext';
@@ -8,13 +9,13 @@ import { MemoryRouter } from 'react-router-dom';
 
 // Mock the hooks
 vi.mock('../hooks/useApi', () => ({
+    useAuth: vi.fn(() => combatDisabledAuth),
     usePlayer: vi.fn(),
     useWorld: vi.fn(),
     useCombat: vi.fn(),
     useExploration: vi.fn(),
     useExits: vi.fn(),
     useAutosave: vi.fn(),
-    useAuth: vi.fn(),
 }));
 
 vi.mock('../context/AudioContext', () => ({

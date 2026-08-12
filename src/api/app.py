@@ -6,7 +6,7 @@ from pathlib import Path
 from flask import Flask
 from flask_cors import CORS
 from flask_socketio import SocketIO
-from src.api.config import DevelopmentConfig
+from src.api.config import DevelopmentConfig, combat_socket_streaming_enabled
 from src.api.services import SessionManager, GameService
 import src.universe as universe_module
 
@@ -58,6 +58,7 @@ def create_app(config_class=None):
 
     app = Flask(__name__)
     app.config.from_object(config_class)
+    app.config["COMBAT_SOCKET_STREAMING"] = combat_socket_streaming_enabled()
 
     # Honor a reverse proxy's X-Forwarded-* headers so request.remote_addr (and
     # thus the login rate-limit key) reflects the real client. Off by default —
@@ -395,6 +396,11 @@ def create_app(config_class=None):
                 "name": "Heart of Virtue API",
                 "phase": "Phase 1",
                 "description": "Flask-based REST API for Heart of Virtue game engine",
+                "features": {
+                    "combat_socket_streaming": bool(
+                        app.config.get("COMBAT_SOCKET_STREAMING", False)
+                    )
+                },
             }
         )
 

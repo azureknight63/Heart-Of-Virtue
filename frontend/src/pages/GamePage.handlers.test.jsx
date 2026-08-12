@@ -2,6 +2,7 @@ import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 import GamePage from './GamePage';
+import { combatDisabledAuth } from '../test/mockHelpers';
 import { usePlayer, useWorld, useCombat, useExploration, useAutosave } from '../hooks/useApi';
 import { useEventManager } from '../hooks/useEventManager';
 import { useCombatCoordinator } from '../hooks/useCombatCoordinator';
@@ -19,12 +20,12 @@ import { combat as combatApi } from '../api/endpoints';
 // hook + dialog behavior; this file targets the wiring code those don't reach.
 
 vi.mock('../hooks/useApi', () => ({
+    useAuth: vi.fn(() => combatDisabledAuth),
     usePlayer: vi.fn(),
     useWorld: vi.fn(),
     useCombat: vi.fn(),
     useExploration: vi.fn(),
     useAutosave: vi.fn(),
-    useAuth: vi.fn(),
 }));
 
 vi.mock('../hooks/useEventManager', () => ({
