@@ -50,6 +50,9 @@ export function useCombatSocket({
   // HTTP response is only honoured if no newer event landed while it was in
   // flight — otherwise the older snapshot would clobber fresher beats.
   const genRef = useRef(0);
+  // Highest seq seen on a combat:update, so an out-of-order legacy state
+  // update cannot rewind the UI.
+  const lastStateSeqRef = useRef(null);
 
   useEffect(() => {
     if (!enabled || !sessionId) return undefined;
@@ -59,6 +62,7 @@ export function useCombatSocket({
       // tracking and re-seed from the authoritative status.
       const gen = ++genRef.current;
       lastSeqRef.current = null;
+      lastStateSeqRef.current = null;
       try {
         const state = await cbs.current.fetchStatus?.();
         // Discard a stale snapshot: events applied during the await already
@@ -119,14 +123,24 @@ export function useCombatSocket({
     // Legacy/compatibility state updates are not authoritative beat events,
     // but they are still useful as a recovery path when the backend streaming
     // flag is off or a beat event was missed.
-    socket.on('combat:update', (state) => cbs.current.onUpdate?.(state));
-    // Suggestions are out-of-band notifications, not part of the ordered beat
-    // stream: the emitter sends `{suggested_moves: [...]}` without a `seq`.
-    // Routing them through classifySeq would trigger a spurious resync.
+    socket.on('combat:update', (state) => {
+      const seq = state?.seq;
+      if (seq != null && lastStateSeqRef.current != null && seq < lastStateSeqRef.current) return;
+      if (seq != null) lastStateSeqRef.current = seq;
+      cbs.current.onUpdate?.(state);
+    });
+    // Suggestions are delivered DIRECTLY, not through handleSeqEvent. They are
+    // an out-of-band notification rather than part of the ordered beat stream:
+    // the emitter sends `{suggested_moves: [...]}` with no `seq` at all, and
+    // classifySeq deliberately treats a missing seq as 'gap' (the safe
+    // direction for the beat stream). Routed through it, every suggestions
+    // event triggers a spurious resync and onSuggestions never fires — see the
+    // 'routes ended and suggestions' spec, which pins this.
     socket.on(SUGGESTIONS_EVENT, (p) => cbs.current.onSuggestions?.(p));
 
     return () => {
       lastSeqRef.current = null;
+      lastStateSeqRef.current = null;
       try {
         socket.disconnect();
       } catch {

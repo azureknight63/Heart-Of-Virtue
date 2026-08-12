@@ -109,13 +109,23 @@ describe('useCombatSocket', () => {
 
   it('routes ended, legacy updates, and suggestions', () => {
     const { socket, calls } = setup();
-    const update = { combat_active: true, battle_state: { awaiting_input: true } };
-    act(() => socket.fire('combat:ended', { seq: 1, status: 'victory' }));
+    const update = { seq: 3, combat_active: true, battle_state: { awaiting_input: true } };
+    act(() => socket.fire('combat:ended', { seq: 2, status: 'victory' }));
     act(() => socket.fire('combat:update', update));
     act(() => socket.fire('combat:suggestions', { suggested_moves: [] }));
-    expect(calls.onEnded).toHaveBeenCalledWith({ seq: 1, status: 'victory' });
+    expect(calls.onEnded).toHaveBeenCalledWith({ seq: 2, status: 'victory' });
     expect(calls.onUpdate).toHaveBeenCalledWith(update);
     expect(calls.onSuggestions).toHaveBeenCalledWith({ suggested_moves: [] });
+  });
+
+  it('drops stale legacy updates after a newer update', () => {
+    const { socket, calls } = setup();
+    const newest = { seq: 4, combat_active: true };
+    const stale = { seq: 3, combat_active: true };
+    act(() => socket.fire('combat:update', newest));
+    act(() => socket.fire('combat:update', stale));
+    expect(calls.onUpdate).toHaveBeenCalledTimes(1);
+    expect(calls.onUpdate).toHaveBeenCalledWith(newest);
   });
 
   it('rejoins and resyncs on a manager reconnect', async () => {

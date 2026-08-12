@@ -33,7 +33,20 @@ def _bare_adapter(session_id="s1"):
     adapter.session_id = session_id
     adapter._beat_streamer = None
     adapter._departures = {}
+    adapter._terminal_event_emitted = False
     return adapter
+
+
+def test_stream_combat_result_does_not_emit_ended_twice():
+    adapter = _bare_adapter()
+    sock = FakeSocketIO()
+    adapter._beat_streamer = CombatBeatStreamer(sock, "combat_s1")
+    result = {"end_state": {"status": "victory", "id": "e1"}}
+
+    adapter._stream_combat_result(result, [], ended=True)
+    adapter._stream_combat_result(result, [], ended=True)
+
+    assert [e for e, _, _ in sock.emits].count(ENDED_EVENT) == 1
 
 
 def test_streamer_not_created_when_flag_off():
