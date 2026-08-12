@@ -2,7 +2,6 @@ import { render, screen, act, fireEvent, waitFor } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { AuthProvider, useAuthContext } from './AuthContext'
 import apiEndpoints from '../api/endpoints'
-import { capabilitiesApiMock } from '../test/mockHelpers'
 
 vi.mock('../api/endpoints', () => ({
   default: {
@@ -11,7 +10,9 @@ vi.mock('../api/endpoints', () => ({
       logout: vi.fn(),
       register: vi.fn(),
     },
-    ...capabilitiesApiMock(vi),
+    app: {
+      getInfo: vi.fn().mockResolvedValue({ data: { features: {} } }),
+    },
   },
 }))
 

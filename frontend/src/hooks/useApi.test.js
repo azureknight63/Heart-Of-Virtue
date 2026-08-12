@@ -4,7 +4,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useAuth, usePlayer, useCombat, useWorld, useExploration, useAutosave } from './useApi';
 import { AuthProvider } from '../context/AuthContext';
 import apiEndpoints from '../api/endpoints';
-import { capabilitiesApiMock } from '../test/mockHelpers';
 
 vi.mock('../api/endpoints', () => ({
   default: {
@@ -13,7 +12,9 @@ vi.mock('../api/endpoints', () => ({
       logout: vi.fn(),
       register: vi.fn(),
     },
-    ...capabilitiesApiMock(vi),
+    app: {
+      getInfo: vi.fn().mockResolvedValue({ data: { features: {} } }),
+    },
     player: {
       getStatus: vi.fn(),
       getFullState: vi.fn(),
