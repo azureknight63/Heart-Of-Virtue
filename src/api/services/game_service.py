@@ -2373,6 +2373,11 @@ class GameService:
         if session_id:
             adapter.session_id = session_id
 
+        # Reconcile adapters created before the request session id was available.
+        # Legacy combat:log/combat:update events can work in that state while
+        # beat/resolution events remain permanently disabled.
+        adapter._ensure_streamer()
+
         # Check if adapter is ready for input (unless cancelling/fleeing, which should always be allowed)
         if not adapter.awaiting_input and move_type not in ("cancel", "flee"):
             return {
@@ -2599,7 +2604,14 @@ class GameService:
                     # No pending events, we should be resuming or finishing
                     if len(player.combat_list) == 0:
                         # All enemies defeated after event finished - trigger victory
+                        # and publish the same terminal stream event as the normal
+                        # move-execution path. Otherwise status polling can produce
+                        # victory/log state without combat:ended.
                         adapter._handle_victory()
+                        terminal_state = adapter.get_combat_state()
+                        adapter._stream_combat_result(
+                            terminal_state, [], ended=True
+                        )
                     elif hasattr(player, "current_move") and player.current_move:
                         # Resume the current move if it was interrupted
                         return adapter._execute_move(player.current_move)

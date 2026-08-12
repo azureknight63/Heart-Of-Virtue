@@ -66,6 +66,36 @@ def test_streamer_created_when_flag_on():
     assert adapter._beat_streamer._last == seed
 
 
+def test_ensure_streamer_reconnects_after_session_id_becomes_known():
+    """Late session wiring must not leave log/turn and beat streams split."""
+    adapter = _bare_adapter(session_id=None)
+    adapter.get_combat_state = lambda: {"battle_state": {"combatants": []}}
+    app = _app(streaming=True)
+
+    with app.app_context():
+        adapter._maybe_init_streamer(adapter.get_combat_state())
+    assert adapter._beat_streamer is None
+
+    adapter.session_id = "sess-late"
+    with app.app_context():
+        adapter._ensure_streamer()
+
+    assert isinstance(adapter._beat_streamer, CombatBeatStreamer)
+
+
+def test_ensure_streamer_is_idempotent():
+    adapter = _bare_adapter("sess-1")
+    adapter.get_combat_state = lambda: {"battle_state": {"combatants": []}}
+    app = _app(streaming=True)
+
+    with app.app_context():
+        adapter._ensure_streamer()
+        first = adapter._beat_streamer
+        adapter._ensure_streamer()
+
+    assert adapter._beat_streamer is first
+
+
 def test_stream_combat_result_is_noop_without_streamer():
     adapter = _bare_adapter()
     adapter._beat_streamer = None

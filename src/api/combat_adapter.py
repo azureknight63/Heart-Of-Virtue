@@ -211,6 +211,18 @@ class ApiCombatAdapter:
             logger.exception("failed to init combat beat streamer")
             self._beat_streamer = None
 
+    def _ensure_streamer(self):
+        """Attach the beat streamer after a late session id becomes available.
+
+        Some API paths create/reuse an adapter before the request session id is
+        attached. The legacy ``combat:log`` and ``combat:turn`` emitters use the
+        later id, but the beat streamer used to remain permanently disabled.
+        Reconcile that late binding at the first safe request boundary.
+        """
+        if self._beat_streamer is not None or not self.session_id:
+            return
+        self._maybe_init_streamer(self.get_combat_state())
+
     @staticmethod
     def _combatant_stream_id(combatant):
         """Stream id for a combatant, matching CombatantSerializer's scheme.

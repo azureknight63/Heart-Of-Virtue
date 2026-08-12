@@ -36,6 +36,7 @@ function setup(overrides = {}) {
     onBeat: vi.fn(),
     onResolved: vi.fn(),
     onEnded: vi.fn(),
+    onUpdate: vi.fn(),
     onSuggestions: vi.fn(),
     onSessionInvalid: vi.fn(),
     fetchStatus: vi.fn().mockResolvedValue({ resynced: true }),
@@ -106,11 +107,14 @@ describe('useCombatSocket', () => {
     expect(calls.onResolved).toHaveBeenCalledWith({ resynced: true });
   });
 
-  it('routes ended and suggestions', () => {
+  it('routes ended, legacy updates, and suggestions', () => {
     const { socket, calls } = setup();
+    const update = { combat_active: true, battle_state: { awaiting_input: true } };
     act(() => socket.fire('combat:ended', { seq: 1, status: 'victory' }));
+    act(() => socket.fire('combat:update', update));
     act(() => socket.fire('combat:suggestions', { suggested_moves: [] }));
     expect(calls.onEnded).toHaveBeenCalledWith({ seq: 1, status: 'victory' });
+    expect(calls.onUpdate).toHaveBeenCalledWith(update);
     expect(calls.onSuggestions).toHaveBeenCalledWith({ suggested_moves: [] });
   });
 

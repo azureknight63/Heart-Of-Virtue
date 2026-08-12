@@ -25,6 +25,7 @@ export function useCombatSocket({
   onBeat,
   onResolved,
   onEnded,
+  onUpdate,
   onSuggestions,
   onSessionInvalid,
   fetchStatus,
@@ -37,6 +38,7 @@ export function useCombatSocket({
     onBeat,
     onResolved,
     onEnded,
+    onUpdate,
     onSuggestions,
     onSessionInvalid,
     fetchStatus,
@@ -100,6 +102,10 @@ export function useCombatSocket({
     socket.on(ENDED_EVENT, (e) =>
       handleSeqEvent(e, (x) => cbs.current.onEnded?.(x))
     );
+    // Legacy/compatibility state updates are not authoritative beat events,
+    // but they are still useful as a recovery path when the backend streaming
+    // flag is off or a beat event was missed.
+    socket.on('combat:update', (state) => cbs.current.onUpdate?.(state));
     socket.on(SUGGESTIONS_EVENT, (p) =>
       handleSeqEvent(p, (x) => cbs.current.onSuggestions?.(x))
     );

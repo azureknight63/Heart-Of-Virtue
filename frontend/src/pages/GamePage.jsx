@@ -35,8 +35,8 @@ export default function GamePage() {
 
   // Engine-driven combat streaming (issue #436). Off by default; when the
   // VITE_COMBAT_SOCKET flag is on, per-beat animations arrive over the socket
-  // and drive BattlefieldGrid; combat:resolved/ended apply state (performAction
-  // becomes ack-only in useCombat).
+  // and drive BattlefieldGrid. Socket events are preferred for live beats, while
+  // combat:update and terminal HTTP responses remain state-recovery fallbacks.
   const streaming = combatSocketEnabled()
   const [streamedAnimations, setStreamedAnimations] = useState([])
   const combatRef = useRef(combat)
@@ -57,6 +57,7 @@ export default function GamePage() {
       ]),
     onResolved: applyCombatState,
     onEnded: applyCombatState,
+    onUpdate: applyCombatState,
     onSessionInvalid: () => {
       localStorage.removeItem('authToken')
       localStorage.removeItem('username')
