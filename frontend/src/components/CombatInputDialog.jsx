@@ -73,7 +73,9 @@ const CombatInputDialog = ({ inputType, options, onSelect, onCancel, onTargetHov
                                         <div style={{ fontSize: '12px', color: '#ff6666', display: 'flex', alignItems: 'center', gap: '6px' }}>
                                             <span style={{ minWidth: '30px', opacity: 0.6 }}>HP:</span>
                                             <div style={{ flex: 1, height: '4px', backgroundColor: 'rgba(255,0,0,0.2)', borderRadius: '2px' }}>
-                                                <div style={{ width: `${(target.health.current / target.health.max) * 100}%`, height: '100%', backgroundColor: '#ff6666', borderRadius: '2px' }} />
+                                                {/* Guard the divisor: a combatant serialized with max 0
+                                                    would otherwise put "Infinity%" into the style. */}
+                                                <div style={{ width: `${target.health.max > 0 ? (target.health.current / target.health.max) * 100 : 0}%`, height: '100%', backgroundColor: '#ff6666', borderRadius: '2px' }} />
                                             </div>
                                             <span style={{ fontSize: '10px' }}>{target.health.current}/{target.health.max}</span>
                                         </div>
@@ -81,7 +83,13 @@ const CombatInputDialog = ({ inputType, options, onSelect, onCancel, onTargetHov
                                     {target.hit_chance !== undefined && (
                                         <div style={{ fontSize: '12px', color: '#00ffcc', display: 'flex', justifyContent: 'space-between' }}>
                                             <span>Accuracy:</span>
-                                            <span style={{ fontWeight: 'bold' }}>{Math.round(target.hit_chance * 100)}%</span>
+                                            {/* hit_chance is already an integer percentage, produced by
+                                                the ranged moves' calculate_hit_chance (src/moves/_ranged.py)
+                                                and passed through the adapter verbatim — do not rescale it.
+                                                Its [2, 100] clamp is applied before the shared facing /
+                                                HauntingPresence modifiers, so the final value can sit
+                                                slightly outside that band. */}
+                                            <span style={{ fontWeight: 'bold' }}>{Math.round(target.hit_chance)}%</span>
                                         </div>
                                     )}
                                 </div>

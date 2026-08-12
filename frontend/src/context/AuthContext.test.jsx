@@ -151,8 +151,28 @@ describe('AuthContext', () => {
     expect(window.location.href).toContain('login')
   })
 
+  it('clears the local autosave so the next account cannot load it', async () => {
+    // The local autosave is per-session crash-recovery data. Left behind, the
+    // menu offered the previous player's character to whoever signed in next,
+    // and it sorted newest so it became the "Continue" target.
+    localStorage.setItem('authToken', 'tok-1')
+    localStorage.setItem('hov_local_autosave', JSON.stringify({ player: { level: 12 } }))
+    apiEndpoints.auth.logout.mockResolvedValue()
+
+    delete window.location
+    window.location = { href: '' }
+
+    render(<AuthProvider><AuthConsumer /></AuthProvider>)
+    await act(async () => {
+      fireEvent.click(screen.getByText('logout'))
+    })
+
+    expect(localStorage.getItem('hov_local_autosave')).toBeNull()
+  })
+
   it('still clears state and redirects when the logout request fails', async () => {
     localStorage.setItem('authToken', 'tok-1')
+    localStorage.setItem('hov_local_autosave', JSON.stringify({ player: { level: 12 } }))
     apiEndpoints.auth.logout.mockRejectedValue(new Error('network error'))
 
     delete window.location
@@ -164,6 +184,8 @@ describe('AuthContext', () => {
     })
 
     expect(localStorage.getItem('authToken')).toBeNull()
+    // Even when the network call fails, the session is over locally.
+    expect(localStorage.getItem('hov_local_autosave')).toBeNull()
     expect(window.location.href).toContain('login')
   })
 

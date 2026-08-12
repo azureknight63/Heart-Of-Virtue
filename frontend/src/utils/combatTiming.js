@@ -8,17 +8,24 @@
  * components.
  */
 
-/** Clamp a speed multiplier to a positive number (defaults to 1x). */
-export function normalizeSpeed(speed) {
-  return typeof speed === 'number' && speed > 0 ? speed : 1;
-}
-
 /**
  * Stepped combat-speed choices (issue #460) — kept discrete rather than a
  * continuous slider so SFX time-stretch stays inside a clean-sounding band.
  */
 export const COMBAT_SPEED_STEPS = [0.5, 0.75, 1, 1.5, 2];
 export const DEFAULT_COMBAT_SPEED = 1;
+
+/**
+ * Clamp a speed multiplier to a positive, finite number (defaults to 1x).
+ *
+ * `Number.isFinite` rather than `typeof === 'number'`: this value is seeded from
+ * persisted localStorage prefs, and `JSON.parse('1e999')` yields `Infinity`,
+ * which passes a `> 0` test and then collapses every animation phase and SFX
+ * offset to 0ms — combat plays with no visible animation and all cues at once.
+ */
+export function normalizeSpeed(speed) {
+  return Number.isFinite(speed) && speed > 0 ? speed : DEFAULT_COMBAT_SPEED;
+}
 
 /** A base duration (ms) scaled by the combat-speed multiplier. */
 export function effectiveDuration(baseMs, speed = 1) {

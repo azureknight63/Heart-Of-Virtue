@@ -25,14 +25,14 @@ export default function SuggestedMovesPanel({ suggestions = [], suggestionsLoadi
     }, [isPlayerTurn]) // eslint-disable-line react-hooks/exhaustive-deps
 
     useEffect(() => {
-        try { localStorage.setItem(STORAGE_KEY, String(isCollapsed)) } catch {}
+        try { localStorage.setItem(STORAGE_KEY, String(isCollapsed)) } catch { /* storage disabled: collapse state is cosmetic */ }
     }, [isCollapsed])
 
     const handleToggle = async () => {
         const newCollapsed = !isCollapsed
         setIsCollapsed(newCollapsed)
         let pauseOk = false
-        try { await onPause?.(newCollapsed); pauseOk = true } catch {}
+        try { await onPause?.(newCollapsed); pauseOk = true } catch { /* pauseOk stays false; caller reverts the toggle */ }
         if (pauseOk && !newCollapsed && isPlayerTurn) {
             onRequestSuggestions?.()
         }
@@ -151,7 +151,7 @@ export default function SuggestedMovesPanel({ suggestions = [], suggestionsLoadi
                     position: 'relative'
                 }}>
                     <div style={{ color: colors.text.highlight, fontSize: '9px', marginBottom: '2px', opacity: 0.7 }}>ANALYSIS OF PREVIOUS CYCLE:</div>
-                    <div style={{ marginBottom: '8px' }}>"{lastOutcome}"</div>
+                    <div style={{ marginBottom: '8px' }}>&quot;{lastOutcome}&quot;</div>
 
                     {lastMoveViable && <button
                         onClick={() => {

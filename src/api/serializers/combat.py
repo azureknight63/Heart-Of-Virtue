@@ -13,6 +13,7 @@ from typing import Dict, List, Any, Optional, TYPE_CHECKING
 from src.api.constants import ITEM_USE_RANGE
 from src.api.serializers.inventory import _BONUS_ATTRS, _collect_equipped_items
 from src.combatant import move_in_progress
+from src.moves import attacker_accuracy
 from src.moves._base import display_name_of
 
 if TYPE_CHECKING:
@@ -21,22 +22,6 @@ if TYPE_CHECKING:
     from src.states import State
 
 logger = logging.getLogger(__name__)
-
-
-# Base term of the engine's hit-chance formula (see
-# `Move.standard_execute_attack` in src/moves/_base.py and `Attack.execute` in
-# src/moves/_utility.py):
-#
-#     hit_chance = 98 - target.finesse + user.finesse * 0.7 + user.intelligence * 0.3
-#
-# Split across two serialized stats so `accuracy - target_evasion` reproduces
-# the engine value exactly: `accuracy` is the attacker-side rating
-# (98 + own finesse/intelligence terms) and `evasion` is the defender-side
-# subtrahend (own finesse).
-# SYNC RISK: if the hit-chance formula in src/moves changes, update these.
-_ACCURACY_BASE = 98
-_ACCURACY_FINESSE_WEIGHT = 0.7
-_ACCURACY_INTELLIGENCE_WEIGHT = 0.3
 
 
 def _num(obj, attr, default=0.0) -> float:
@@ -456,19 +441,19 @@ class CombatantSerializer:
         * `defense` — `protection`, the flat value the engine subtracts from
           incoming damage.
         * `accuracy` / `evasion` — the two halves of the engine's hit-chance
-          formula (see `_ACCURACY_BASE`).
+          formula, split so `accuracy - target_evasion` reproduces the engine
+          value: `accuracy` comes from `moves.attacker_accuracy` (the base plus
+          the attacker's weighted finesse/intelligence) and `evasion` is the
+          defender-side subtrahend, their own finesse. `_num` sanitizes the
+          inputs first — the engine helper owns the arithmetic, this layer
+          owns tolerating junk attribute values.
         """
         finesse = _num(combatant, "finesse")
         protection = _num(combatant, "protection")
-        accuracy = (
-            _ACCURACY_BASE
-            + finesse * _ACCURACY_FINESSE_WEIGHT
-            + _num(combatant, "intelligence") * _ACCURACY_INTELLIGENCE_WEIGHT
-        )
         return {
             "damage": round(_weapon_damage(combatant)),
             "speed": int(_num(combatant, "speed", 5)),
-            "accuracy": int(accuracy),
+            "accuracy": attacker_accuracy(finesse, _num(combatant, "intelligence")),
             "evasion": int(round(finesse)),
             "defense": int(round(protection)),
             "attack_power": round(_attack_power(combatant)),

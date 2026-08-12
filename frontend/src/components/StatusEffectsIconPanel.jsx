@@ -101,7 +101,18 @@ export default function StatusEffectsIconPanel({ effects = [], vertical = false 
                             <div style={{ fontSize: '10px', color: '#ccc', lineHeight: '1.4' }}>
                                 {effect.description || 'No description available.'}
                             </div>
-                            {effect.duration_remaining !== undefined && (
+                            {/* StateEffectSerializer.serialize_state emits `beats_left`.
+                                `duration_remaining` comes from serialize_state_with_duration,
+                                which currently has no callers — accept both so the line
+                                renders against the contract the API actually sends.
+
+                                The `> 0` is load-bearing too, not just a tidier
+                                truthiness check: permanent/persistent states carry
+                                beats_left AND beats_max fixed at 0 (states.py only
+                                counts down under `if self.beats_max > 0`), so the
+                                previous `!== undefined` rendered a permanent buff as
+                                "0 beats remaining". Do not relax this back. */}
+                            {(effect.beats_left ?? effect.duration_remaining) > 0 && (
                                 <div style={{
                                     fontSize: '9px',
                                     marginTop: '4px',
@@ -109,7 +120,7 @@ export default function StatusEffectsIconPanel({ effects = [], vertical = false 
                                     fontStyle: 'italic',
                                     fontWeight: 'bold'
                                 }}>
-                                    {effect.duration_remaining} beats remaining
+                                    {effect.beats_left ?? effect.duration_remaining} beats remaining
                                 </div>
                             )}
                             {/* Tooltip arrow */}

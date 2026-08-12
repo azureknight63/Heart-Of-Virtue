@@ -297,20 +297,6 @@ describe('MainMenuPage', () => {
         await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith('/game'));
     });
 
-    it('reverts the hover border color for a local-autosave row on mouse leave', async () => {
-        const mockSaves = [{ id: 'local_autosave', name: 'Local Autosave', timestamp: '2023-01-01', level: 1, map_name: 'M', room_title: 'R', isLocal: true }];
-        saves.list.mockResolvedValue({ data: { saves: mockSaves } });
-
-        render(<MemoryRouter><MainMenuPage /></MemoryRouter>);
-        await waitFor(() => screen.getByText(/Load Game/i));
-        fireEvent.click(screen.getByText(/Load Game/i));
-        await waitFor(() => screen.getByText(/Local Autosave/i));
-
-        const row = screen.getByText(/Local Autosave/i).closest('[style*="cursor: pointer"]');
-        fireEvent.mouseEnter(row);
-        fireEvent.mouseLeave(row);
-    });
-
     it('shows "Untitled Save" when a save has no name', async () => {
         const mockSaves = [{ id: 'a', timestamp: '2023-01-01', level: 1, map_name: 'M', room_title: 'R' }];
         saves.list.mockResolvedValue({ data: { saves: mockSaves } });
@@ -366,9 +352,71 @@ describe('MainMenuPage', () => {
         });
     });
 
-    it('merges a local autosave into the save list, sorted most-recent-first', async () => {
+    it('regression guard: a cloud save stamped in the future does not steal Continue from a live session', async () => {
+        // The local blob's timestamp comes from the BROWSER clock (new Date() in
+        // useAutosave); a cloud row's timestamp_ms comes from the SERVER clock
+        // (SQLite CURRENT_TIMESTAMP). Ranking one against the other means a
+        // browser running slow makes every cloud autosave look newer than the
+        // live session, sending Continue down saves.load() and replacing the
+        // in-memory session with a snapshot up to 20 ticks old. Continue must
+        // key off the blob's freshness against its own clock, not a cross-clock
+        // race — so even a cloud row dated an hour ahead must not win.
         localStorage.setItem('hov_local_autosave', JSON.stringify({
-            timestamp: '2099-01-01T00:00:00Z',
+            timestamp: new Date(Date.now() - 60_000).toISOString(),
+            player: { level: 9, map_name: 'Dark Grotto', room_title: 'Entrance', playtime: 120 },
+        }));
+        saves.list.mockResolvedValue({
+            data: {
+                saves: [{
+                    id: 'cloud-ahead',
+                    name: 'Cloud Save',
+                    timestamp: '2099-01-01T00:00:00Z',
+                    timestamp_ms: Date.now() + 60 * 60 * 1000,
+                    level: 3, map_name: 'M', room_title: 'R',
+                }],
+            },
+        });
+
+        render(<MemoryRouter><MainMenuPage /></MemoryRouter>);
+
+        await waitFor(() => screen.getByText(/Continue/i));
+        fireEvent.click(screen.getByText(/Continue/i));
+
+        await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith('/game'));
+        expect(saves.load).not.toHaveBeenCalled();
+
+        localStorage.removeItem('hov_local_autosave');
+    });
+
+    it('falls back to the newest cloud save when the local blob is stale', async () => {
+        // A blob older than the freshness window belongs to a server session
+        // that is almost certainly gone, so loading the cloud save is correct.
+        localStorage.setItem('hov_local_autosave', JSON.stringify({
+            timestamp: new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString(),
+            player: { level: 9, map_name: 'Dark Grotto', room_title: 'Entrance', playtime: 120 },
+        }));
+        saves.list.mockResolvedValue({
+            data: { saves: [{ id: 'cloud-1', name: 'Cloud Save', timestamp: '2023-01-01T00:00:00Z', level: 3, map_name: 'M', room_title: 'R' }] },
+        });
+        saves.load.mockResolvedValue({ success: true });
+
+        render(<MemoryRouter><MainMenuPage /></MemoryRouter>);
+
+        await waitFor(() => screen.getByText(/Continue/i));
+        fireEvent.click(screen.getByText(/Continue/i));
+
+        await waitFor(() => expect(saves.load).toHaveBeenCalledWith('cloud-1'));
+
+        localStorage.removeItem('hov_local_autosave');
+    });
+
+    it('regression guard: a more-recent local autosave keeps Continue resuming the live session instead of loading an older cloud save', async () => {
+        // This is the progress-loss bug from issue #487: if the local blob were
+        // dropped from the Continue decision (e.g. by only ever comparing cloud
+        // saves), Continue would silently re-target the newest CLOUD save here
+        // and overwrite the live in-memory session with an older one.
+        localStorage.setItem('hov_local_autosave', JSON.stringify({
+            timestamp: new Date(Date.now() - 60_000).toISOString(),
             player: { level: 9, map_name: 'Dark Grotto', room_title: 'Entrance', playtime: 120 },
         }));
         saves.list.mockResolvedValue({
@@ -387,9 +435,52 @@ describe('MainMenuPage', () => {
         localStorage.removeItem('hov_local_autosave');
     });
 
+    it('does not show a valid local autosave as a selectable row in the Load Game list', async () => {
+        // The local blob is real and more recent than the cloud save, so it
+        // drives the Continue decision (see the regression-guard test above) —
+        // but it must never appear as a row a player can click in the modal.
+        localStorage.setItem('hov_local_autosave', JSON.stringify({
+            timestamp: new Date(Date.now() - 60_000).toISOString(),
+            player: { level: 9, map_name: 'Dark Grotto', room_title: 'Entrance' },
+        }));
+        saves.list.mockResolvedValue({
+            data: { saves: [{ id: 'cloud-1', name: 'Cloud Save', timestamp: '2020-01-01T00:00:00Z', level: 3, map_name: 'M', room_title: 'R' }] },
+        });
+
+        render(<MemoryRouter><MainMenuPage /></MemoryRouter>);
+        await waitFor(() => screen.getByText(/Load Game/i));
+        fireEvent.click(screen.getByText(/Load Game/i));
+
+        await waitFor(() => screen.getByText(/Cloud Save/i));
+        expect(screen.queryByText(/Local Autosave/i)).not.toBeInTheDocument();
+
+        localStorage.removeItem('hov_local_autosave');
+    });
+
+    it('loads the newest cloud save on Continue when there is no local autosave', async () => {
+        // Companion to the regression guard above: with no local blob at all,
+        // Continue must fall back to the ordinary cloud-load path.
+        const mockSaves = [
+            { id: 'old', name: 'Old Save', timestamp: '2020-01-01T00:00:00Z', level: 1, map_name: 'Map 1', room_title: 'Room 1' },
+            { id: 'new', name: 'New Save', timestamp: '2023-01-02T00:00:00Z', level: 2, map_name: 'Map 2', room_title: 'Room 2' },
+        ];
+        saves.list.mockResolvedValue({ data: { saves: mockSaves } });
+        saves.load.mockResolvedValue({ success: true });
+
+        render(<MemoryRouter><MainMenuPage /></MemoryRouter>);
+
+        await waitFor(() => screen.getByText(/Continue/i));
+        fireEvent.click(screen.getByText(/Continue/i));
+
+        expect(saves.load).toHaveBeenCalledWith('new');
+        await waitFor(() => {
+            expect(mockNavigate).toHaveBeenCalledWith('/game');
+        });
+    });
+
     it('defaults a local autosave\'s map/room fields without crashing when absent', async () => {
         localStorage.setItem('hov_local_autosave', JSON.stringify({
-            timestamp: '2099-01-01T00:00:00Z',
+            timestamp: new Date(Date.now() - 60_000).toISOString(),
             player: { level: 9 },
         }));
         saves.list.mockResolvedValue({ data: { saves: [] } });
@@ -410,18 +501,61 @@ describe('MainMenuPage', () => {
         });
     });
 
-    it('ignores a corrupted local autosave entry without crashing', async () => {
-        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    it('does not offer a corrupted local autosave as a loadable save', async () => {
+        // Asserts behaviour rather than a log line: the invalid blob must not
+        // become a selectable row, and must be discarded so it cannot fail
+        // again on every mount.
+        const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
         localStorage.setItem('hov_local_autosave', 'not valid json');
         saves.list.mockResolvedValue({ data: { saves: [] } });
 
         render(<MemoryRouter><MainMenuPage /></MemoryRouter>);
 
         await waitFor(() => {
-            expect(errorSpy).toHaveBeenCalledWith('Local save corrupted', expect.any(Error));
+            expect(screen.queryByText(/Continue/i)).not.toBeInTheDocument();
         });
-        errorSpy.mockRestore();
+        expect(screen.queryByText(/Local Autosave/i)).not.toBeInTheDocument();
+        expect(localStorage.getItem('hov_local_autosave')).toBeNull();
+        warnSpy.mockRestore();
+    });
+
+    it('surfaces a valid local autosave as a resumable Continue, not as a loadable save row', async () => {
+        localStorage.setItem('hov_local_autosave', JSON.stringify({
+            timestamp: new Date(Date.now() - 60_000).toISOString(),
+            player: { level: 12, map_name: 'dark-grotto', room_title: 'Wall Depression' },
+        }));
+        saves.list.mockResolvedValue({ data: { saves: [] } });
+
+        render(<MemoryRouter><MainMenuPage /></MemoryRouter>);
+
+        // Honest labelling: this is a session resume, not a save load.
+        await waitFor(() => {
+            expect(screen.getByText(/Continue \(Resume Session\)/i)).toBeInTheDocument();
+        });
+        // No cloud saves and the local entry is never a row, so there is
+        // nothing for a Load Game modal to show.
+        expect(screen.queryByText(/Load Game/i)).not.toBeInTheDocument();
+        expect(localStorage.getItem('hov_local_autosave')).not.toBeNull();
         localStorage.removeItem('hov_local_autosave');
+    });
+
+    it('does not offer a local autosave whose player payload is hostile', async () => {
+        // A blob that parses as JSON but carries no usable player must be
+        // rejected just as firmly as malformed JSON.
+        const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        localStorage.setItem('hov_local_autosave', JSON.stringify({
+            timestamp: new Date(Date.now() - 60_000).toISOString(),
+            player: { level: 'not-a-number' },
+        }));
+        saves.list.mockResolvedValue({ data: { saves: [] } });
+
+        render(<MemoryRouter><MainMenuPage /></MemoryRouter>);
+
+        await waitFor(() => {
+            expect(screen.queryByText(/Local Autosave/i)).not.toBeInTheDocument();
+        });
+        expect(localStorage.getItem('hov_local_autosave')).toBeNull();
+        warnSpy.mockRestore();
     });
 
     it('handles a failed initial saves.list call gracefully', async () => {
@@ -452,7 +586,7 @@ describe('MainMenuPage', () => {
 
     it('navigates immediately for a local-autosave Continue without calling saves.load', async () => {
         localStorage.setItem('hov_local_autosave', JSON.stringify({
-            timestamp: '2099-01-01T00:00:00Z',
+            timestamp: new Date(Date.now() - 60_000).toISOString(),
             player: { level: 1, map_name: 'M', room_title: 'R' },
         }));
         saves.list.mockResolvedValue({ data: { saves: [] } });
@@ -503,20 +637,6 @@ describe('MainMenuPage', () => {
         errorSpy.mockRestore();
     });
 
-    it('navigates immediately when confirming a local-autosave entry from the load modal', async () => {
-        const mockSaves = [{ id: 'local_autosave', name: 'Local Autosave', timestamp: '2023-01-01', level: 1, map_name: 'M', room_title: 'R', isLocal: true }];
-        saves.list.mockResolvedValue({ data: { saves: mockSaves } });
-
-        render(<MemoryRouter><MainMenuPage /></MemoryRouter>);
-        await waitFor(() => screen.getByText(/Load Game/i));
-        fireEvent.click(screen.getByText(/Load Game/i));
-        await waitFor(() => screen.getByText(/Local Autosave/i));
-
-        fireEvent.click(screen.getByText(/Local Autosave/i));
-        expect(saves.load).not.toHaveBeenCalled();
-        await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith('/game'));
-    });
-
     it('confirms a save selection from the load modal via the Enter key', async () => {
         const mockSaves = [{ id: 'cloud-1', name: 'Cloud Save', timestamp: '2023-01-01', level: 1, map_name: 'M', room_title: 'R' }];
         saves.list.mockResolvedValue({ data: { saves: mockSaves } });
@@ -560,22 +680,6 @@ describe('MainMenuPage', () => {
 
         expect(saves.delete).not.toHaveBeenCalled();
         expect(screen.getByText(/Cloud Save/i)).toBeInTheDocument();
-    });
-
-    it('deletes a local autosave entry by clearing localStorage instead of calling the API', async () => {
-        const mockSaves = [{ id: 'local_autosave', name: 'Local Autosave', timestamp: '2023-01-01', level: 1, map_name: 'M', room_title: 'R', isLocal: true }];
-        saves.list.mockResolvedValue({ data: { saves: mockSaves } });
-        localStorage.setItem('hov_local_autosave', 'some-data');
-        vi.spyOn(window, 'confirm').mockReturnValue(true);
-
-        render(<MemoryRouter><MainMenuPage /></MemoryRouter>);
-        await waitFor(() => screen.getByText(/Load Game/i));
-        fireEvent.click(screen.getByText(/Load Game/i));
-        await waitFor(() => screen.getByText(/Local Autosave/i));
-        fireEvent.click(screen.getByText(/Delete/i));
-
-        expect(saves.delete).not.toHaveBeenCalled();
-        expect(localStorage.getItem('hov_local_autosave')).toBeNull();
     });
 
     it('plays an error SFX when deleting a cloud save fails', async () => {

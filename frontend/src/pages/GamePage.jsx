@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { usePlayer, useWorld, useCombat, useExploration, useAutosave } from '../hooks/useApi'
 import { useEventManager } from '../hooks/useEventManager'
+import { COMBAT_INIT_EVENT_ID } from '../utils/eventIds'
 import { useCombatCoordinator } from '../hooks/useCombatCoordinator'
 import { useCombatSocket } from '../hooks/useCombatSocket'
 import { combatSocketEnabled } from '../utils/featureFlags'
@@ -20,6 +21,7 @@ import LevelUpModal from '../components/LevelUpModal'
 import BetaEndDialog from '../components/BetaEndDialog'
 import FeedbackDialog from '../components/FeedbackDialog'
 import MobileTabBar, { MOBILE_TAB_BAR_HEIGHT } from '../components/MobileTabBar'
+import { TAB_KEYS } from '../utils/mobileTabs'
 
 export default function GamePage() {
   const isMobile = useMobile()
@@ -73,15 +75,6 @@ export default function GamePage() {
     if (!inCombat) setStreamedAnimations([])
   }, [inCombat])
 
-  // Debug logging for combat data
-  useEffect(() => {
-    if (inCombat && combat) {
-      console.log('[DEBUG] Combat Data:', combat)
-      console.log('[DEBUG] Suggested Moves:', combat.suggested_moves)
-      console.log('[DEBUG] Player Status Effects:', combat.player?.status_effects)
-    }
-  }, [inCombat, combat])
-
   // Core game state
   const [mode, setMode] = useState('exploration') // 'exploration' or 'combat'
   const [isInteractionTyping, setIsInteractionTyping] = useState(false)
@@ -93,7 +86,7 @@ export default function GamePage() {
   const [showBetaFeedback, setShowBetaFeedback] = useState(false)
 
   // Mobile tab navigation
-  const [activeMobileTab, setActiveMobileTab] = useState('character')
+  const [activeMobileTab, setActiveMobileTab] = useState(TAB_KEYS.left)
 
   // Game over state (triggered by narrative events that kill the player)
   const [showGameOver, setShowGameOver] = useState(false)
@@ -227,14 +220,10 @@ export default function GamePage() {
    */
   useEffect(() => {
     if (isMobile && combat?.awaiting_input && !combat?.end_state && !isEventDialogActive) {
-      setActiveMobileTab('character')
+      setActiveMobileTab(TAB_KEYS.left)
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  // combat?.log?.length is intentionally included: the linter treats it as
-  // unnecessary because the effect body doesn't read it, but we need the
-  // effect to re-fire on every new log entry so the tab switch isn't missed
-  // when awaiting_input stays `true` across back-to-back instant actions
-  // (e.g. Check, which is non-turn-consuming and never transitions false→true).
+  // combat?.log?.length is deliberate — see the block comment above. The
+  // linter flags it as unnecessary because the body doesn't read it.
   }, [isMobile, combat?.awaiting_input, combat?.log?.length, combat?.end_state, isEventDialogActive])
 
   /**
@@ -243,10 +232,8 @@ export default function GamePage() {
   useEffect(() => {
     let pollInterval
     if (inCombat && combat?.suggestions_loading) {
-      console.log('[DEBUG] Suggestions loading, starting poll...')
       const pollIntervalMs = (typeof process !== 'undefined' && (process.env.NODE_ENV === 'test' || process.env.VITEST)) ? 50 : 3000
       pollInterval = setInterval(() => {
-        console.log('[DEBUG] Polling for suggestions...')
         fetchCombatStatus()
       }, pollIntervalMs) // Poll every 3 seconds (50ms in tests)
     }
@@ -269,43 +256,45 @@ export default function GamePage() {
    * Handle movement with event and combat checks
    */
   const handleMove = async (direction) => {
-    try {
-      const result = await moveToLocation(direction)
+    const result = await moveToLocation(direction)
 
-      // Handle events triggered by movement
-      if (result.events_triggered && result.events_triggered.length > 0) {
-        const displayableEvents = result.events_triggered.filter(
-          event => (event.output_text && event.output_text.trim().length > 0) || event.needs_input
-        )
+    // Handle events triggered by movement
+    if (result.events_triggered && result.events_triggered.length > 0) {
+      const displayableEvents = result.events_triggered.filter(
+        event => (event.output_text && event.output_text.trim().length > 0) || event.needs_input
+      )
 
-        if (displayableEvents.length > 0) {
-          setEventQueue(displayableEvents)
-        }
+      if (displayableEvents.length > 0) {
+        setEventQueue(displayableEvents)
       }
-
-      // Check if movement triggered combat
-      if (result.combat_started) {
-        await fetchCombatStatus()
-      }
-
-      // Refetch player data after movement
-      await refetchPlayer()
-
-      // Trigger autosave tick
-      triggerTick()
-
-      return result
-    } catch (err) {
-      throw err
     }
+
+    // Check if movement triggered combat
+    if (result.combat_started) {
+      await fetchCombatStatus()
+    }
+
+    // Refetch player data after movement
+    await refetchPlayer()
+
+    // Trigger autosave tick
+    triggerTick()
+
+    return result
   }
 
   /**
    * Handle event input with special cases
+   *
+   * Returns the event manager's result so EventDialog can tell a successful
+   * submission from a failed one — on failure it must re-enable its controls,
+   * otherwise the dialog is left with every control disabled and no way out.
+   * The `combat_init` branch returns undefined by design: that path unmounts
+   * the dialog, so there is nothing left to re-enable.
    */
   const handleEventInputWrapper = async (eventId, userInput) => {
     // Handle internal/frontend events
-    if (eventId === 'combat_init') {
+    if (eventId === COMBAT_INIT_EVENT_ID) {
       if (userInput === 'combat_start') {
         setMode('combat')
         setCurrentEvent(null)
@@ -326,7 +315,7 @@ export default function GamePage() {
       if (result.is_game_over) {
         setGameOverMessage(result.output_text || '')
         setPendingGameOver(true)
-        return
+        return result
       }
 
       // Check if event triggered combat
@@ -340,6 +329,8 @@ export default function GamePage() {
       await refetchWorld()
       await fetchCombatStatus()
     }
+
+    return result
   }
 
   /**
@@ -361,7 +352,7 @@ export default function GamePage() {
           : "Enemies draw near! Prepare for combat!"
 
         const alertEvent = {
-          event_id: 'combat_init',
+          event_id: COMBAT_INIT_EVENT_ID,
           name: "Enemy Encounter",
           output_text: dialogDescription,
           needs_input: true,
@@ -464,7 +455,7 @@ export default function GamePage() {
   }, [location])
 
   const handleAdvisorPause = useCallback(async (paused) => {
-    try { await combatApi.pauseSuggestions(paused) } catch {}
+    try { await combatApi.pauseSuggestions(paused) } catch { /* advisor pausing is best-effort */ }
   }, [])
 
   const handleAdvisorRequestSuggestions = useCallback(() => {
@@ -611,7 +602,7 @@ export default function GamePage() {
       overflow: 'hidden'
     }}>
       {/* Left Panel - Narrative & Controls */}
-      <div style={panelWrap('character')}>
+      <div style={panelWrap(TAB_KEYS.left)}>
         <LeftPanel
           player={player}
           location={location}
@@ -635,26 +626,25 @@ export default function GamePage() {
           onLogProcessingChange={setIsCombatLogProcessing}
           onDisplayedLogCountChange={setDisplayedLogCount}
           onTargetHover={setHoveredTargetId}
-          onMoveSubmitted={isMobile ? () => setActiveMobileTab('map') : undefined}
+          onMoveSubmitted={isMobile ? () => setActiveMobileTab(TAB_KEYS.right) : undefined}
           onAdvisorPause={handleAdvisorPause}
           onAdvisorRequestSuggestions={handleAdvisorRequestSuggestions}
         />
       </div>
 
       {/* Right Panel - Battlefield/Map */}
-      <div style={panelWrap('map')}>
+      <div style={panelWrap(TAB_KEYS.right)}>
         <RightPanel
           mode={mode}
           combat={combat}
           location={location}
           onMoveToLocation={handleMove}
-          onModeChange={setMode}
           exploredTiles={exploredTiles}
           currentLogIndex={currentLogIndex}
           displayedLogCount={displayedLogCount}
           hoveredTargetId={hoveredTargetId}
           showDescription={isMobile}
-          onDescriptionInteract={isMobile ? () => setActiveMobileTab('character') : undefined}
+          onDescriptionInteract={isMobile ? () => setActiveMobileTab(TAB_KEYS.left) : undefined}
           onAnimatingChange={setIsBattlefieldAnimating}
           streaming={streaming}
           streamedAnimations={streamedAnimations}

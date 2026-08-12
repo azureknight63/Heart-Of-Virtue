@@ -20,8 +20,10 @@ describe('CombatInputDialog', () => {
 
   it('renders target selection correctly', () => {
     const options = [
-      { id: 'target1', name: 'Goblin', distance: 10, health: { current: 50, max: 100 }, hit_chance: 0.85 },
-      { id: 'target2', name: 'Orc', distance: 20, health: { current: 120, max: 150 }, hit_chance: 0.6 }
+      // hit_chance matches the engine contract: an integer percentage in [2, 100],
+      // not a 0-1 fraction (Move.calculate_hit_chance, passed through the adapter).
+      { id: 'target1', name: 'Goblin', distance: 10, health: { current: 50, max: 100 }, hit_chance: 85 },
+      { id: 'target2', name: 'Orc', distance: 20, health: { current: 120, max: 150 }, hit_chance: 60 }
     ];
 
     render(

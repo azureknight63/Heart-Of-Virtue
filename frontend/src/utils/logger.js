@@ -6,11 +6,18 @@
 const LOG_ENDPOINT = `${import.meta.env.BASE_URL}api/logs/browser`;
 const BATCH_SIZE = 10;
 const FLUSH_INTERVAL = 5000; // 5 seconds
+// With the log API down, every console call used to re-queue its failed batch
+// and immediately retry, so the queue grew without bound and each console call
+// issued another doomed request. Cap the backlog and stand down briefly after
+// a failure. Oldest entries are dropped first — recent logs matter most.
+const MAX_QUEUE_SIZE = 100;
+const FAILURE_BACKOFF_MS = 30000;
 
 class BrowserLogger {
     constructor() {
         this.logQueue = [];
         this.flushTimer = null;
+        this.retryAfter = 0;
         this.originalConsole = {
             log: console.log,
             error: console.error,
@@ -75,10 +82,20 @@ class BrowserLogger {
         };
 
         this.logQueue.push(entry);
+        this.trimQueue();
 
         // Flush if batch size reached
         if (this.logQueue.length >= BATCH_SIZE) {
             this.flush();
+        }
+    }
+
+    /**
+     * Drop the oldest entries once the backlog exceeds MAX_QUEUE_SIZE.
+     */
+    trimQueue() {
+        if (this.logQueue.length > MAX_QUEUE_SIZE) {
+            this.logQueue = this.logQueue.slice(-MAX_QUEUE_SIZE);
         }
     }
 
@@ -106,6 +123,12 @@ class BrowserLogger {
             return;
         }
 
+        // Stand down after a failure so a dead endpoint isn't hammered once per
+        // console call. The unload flush (sendBeacon) always goes out.
+        if (!synchronous && Date.now() < this.retryAfter) {
+            return;
+        }
+
         const logsToSend = [...this.logQueue];
         this.logQueue = [];
 
@@ -121,19 +144,31 @@ class BrowserLogger {
                 navigator.sendBeacon(LOG_ENDPOINT, blob);
             } else {
                 // Use fetch for normal async sending
-                await fetch(LOG_ENDPOINT, {
+                const response = await fetch(LOG_ENDPOINT, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                     },
                     body: JSON.stringify(payload)
                 });
+                // fetch only rejects on network-level failure — a 500, a 404,
+                // or a proxy returning an error body all resolve normally.
+                // Without this the backoff below covered only the unreachable
+                // case, and a backend that is *up but erroring* still got a
+                // doomed request per console call: exactly what the stand-down
+                // exists to prevent.
+                if (!response.ok) {
+                    throw new Error(`log endpoint returned ${response.status}`);
+                }
             }
+            this.retryAfter = 0;
         } catch (error) {
             // Use original console to avoid infinite loop
             this.originalConsole.error('[Logger] Failed to send logs:', error);
-            // Re-queue the logs
+            this.retryAfter = Date.now() + FAILURE_BACKOFF_MS;
+            // Re-queue the logs, then trim so the backlog stays bounded
             this.logQueue.unshift(...logsToSend);
+            this.trimQueue();
         }
     }
 

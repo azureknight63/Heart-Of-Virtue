@@ -17,6 +17,27 @@ describe('swingCueFor', () => {
   it('falls back to a default for an unknown animation', () => {
     expect(swingCueFor('nonexistent')).toBe('attack_swipe');
   });
+
+  it.each(['debuff', 'drain'])(
+    'does not reuse the impact-phase cue as the windup for %s',
+    (animation) => {
+      // These configs declare only `sfx: { impact: 'status_hit' }`. Scanning every
+      // sfx value (rather than pre-impact phases) returned the status ding as the
+      // windup, so a [swing, impact, status] beat played it twice and dropped the
+      // actual whoosh.
+      expect(swingCueFor(animation)).toBe('attack_swipe');
+    }
+  );
+
+  it('plays the status cue once, not twice, across a debuff beat', () => {
+    const debuffBeat = {
+      ...beat(),
+      web_animation: 'debuff',
+      outcome: 'hit',
+      sfx: [{ kind: 'swing' }, { kind: 'impact' }, { kind: 'status' }],
+    };
+    expect(beatSfxFor(debuffBeat)).toEqual(['attack_swipe', 'attack_hit', 'status_hit']);
+  });
 });
 
 describe('cueForEmission', () => {

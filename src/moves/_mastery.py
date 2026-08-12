@@ -4,7 +4,7 @@ from src.narration import colored, cprint, narrate
 import random
 import src.states as states
 import src.functions as functions
-from ._base import Move, _ensure_weapon_exp, _apply_to_hit_modifiers
+from ._base import Move, _ensure_weapon_exp, _apply_to_hit_modifiers, to_hit_chance
 
 
 def _all_stats(p):
@@ -60,7 +60,7 @@ class Pulverize(Move):
         self.prep_colors()
         narrate(self.stage_announce[1])
         target = self.target
-        hit_chance = max(5, int(98 - target.finesse + player.finesse * 0.7 + player.intelligence * 0.3))
+        hit_chance = to_hit_chance(player, target, floor=5)
         # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
         hit_chance = _apply_to_hit_modifiers(player, target, hit_chance)
         roll = random.randint(0, 100)
@@ -189,7 +189,7 @@ class LightningAssault(Move):
         self.prep_colors()
         narrate(self.stage_announce[1])
         target = self.target
-        hit_chance = max(5, int(98 - target.finesse + player.finesse * 0.7 + player.intelligence * 0.3))
+        hit_chance = to_hit_chance(player, target, floor=5)
         # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
         hit_chance = _apply_to_hit_modifiers(player, target, hit_chance)
         _ensure_weapon_exp(player)

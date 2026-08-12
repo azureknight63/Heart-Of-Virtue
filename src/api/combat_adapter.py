@@ -22,6 +22,7 @@ from src.api.serializers.combat import (
     CombatantSerializer,
 )
 from src.api.constants import ITEM_USE_RANGE, ALLY_HEAL_THRESHOLD
+from src.api.schemas.combat_beat import SUGGESTIONS_EVENT
 from src.api.combat_beat_stream import CombatBeatStreamer
 from ai.combat_strategist import CombatStrategist
 from src.moves._base import select_weighted_target, display_name_of
@@ -142,10 +143,6 @@ class ApiCombatAdapter:
         self.current_beat_state_index = (
             0  # Track which beat state we're currently building
         )
-        self.combat_grid_size = (
-            13,
-            13,
-        )  # Set by initialize_combat; default matches legacy map size
         self.strategist = CombatStrategist()
 
         # Engine-driven beat streaming (issue #436). Created per combat by
@@ -278,6 +275,45 @@ class ApiCombatAdapter:
             logger.exception("combat beat streaming failed")
 
     @property
+    def combat_id(self):
+        """Stable identity for the current fight.
+
+        Stored on the player rather than on `self` because the adapter object
+        is not the fight's lifetime. `GameService.get_combat_status`'s
+        deferred-level-up resume constructs a replacement ApiCombatAdapter
+        immediately after `_initialize_combat` minted the id; an instance
+        attribute would be discarded there and every poll for the rest of that
+        fight would publish `combat_id: None`.
+        """
+        return self.player.combat_adapter_state.get("combat_id", None)
+
+    @combat_id.setter
+    def combat_id(self, value):
+        self.player.combat_adapter_state["combat_id"] = value
+
+    @property
+    def combat_grid_size(self):
+        """Arena dimensions for the current fight, as (width, height).
+
+        On player state for the same reason as combat_id: the adapter object is
+        not the fight's lifetime. get_combat_status's deferred-level-up resume
+        builds a replacement adapter mid-fight, and an instance attribute would
+        silently revert to the legacy 13x13 default there — while
+        get_dynamic_grid_size actually returns 9 for a two-combatant fight and
+        18 for five, never 13. Since map_size is now published to the client
+        (it used to be dropped by transformCombatData's whitelist, so the grid
+        always fell back to deriving the arena from positions), a stale 13 is
+        no longer harmless: at 18 wide, any combatant past index 12 renders
+        outside Battlefield's overflow:hidden container — an invisible enemy in
+        an active fight.
+        """
+        return self.player.combat_adapter_state.get("combat_grid_size", (13, 13))
+
+    @combat_grid_size.setter
+    def combat_grid_size(self, value):
+        self.player.combat_adapter_state["combat_grid_size"] = value
+
+    @property
     def awaiting_input(self):
         return self.player.combat_adapter_state.get("awaiting_input", False)
 
@@ -399,6 +435,9 @@ class ApiCombatAdapter:
 
         Returns:
             Initial or updated combat state
+
+        Side effect: on a non-reinit call this is the sole minting site for
+        `combat_id` (see the property), alongside the beat and log reset.
         """
         try:
             # Import here to avoid circular dependencies
@@ -407,6 +446,12 @@ class ApiCombatAdapter:
                 self.player.combat_beat = 1  # Start at beat 1 for synchronization
                 self._terminal_event_emitted = False
                 self.player.combat_log = []  # Clear log for new combat
+                # Stable identity for this fight, minted alongside the beat/log
+                # reset so it changes exactly when a genuinely new combat starts
+                # — not on a reinit (wave transition, reinforcement spawn).
+                # get_combat_state publishes it on every poll so the client can
+                # tell "new fight" from "same fight, next beat".
+                self.combat_id = str(uuid.uuid4())
                 # Clear any prior end-of-combat summary/drops from previous encounters
                 self.player.combat_end_summary = None
                 self.player.combat_drops = []
@@ -1923,10 +1968,19 @@ class ApiCombatAdapter:
                             try:
                                 if flask_app and hasattr(flask_app, "socketio"):
                                     logger.debug(
-                                        f"Emitting combat:suggestions to room combat_{self.session_id} ({len(suggestions)} suggestions)"
+                                        f"Emitting {SUGGESTIONS_EVENT} to room combat_{self.session_id} ({len(suggestions)} suggestions)"
                                     )
+                                    # Use the shared constant, not a literal:
+                                    # both schemas define "combat:suggestions"
+                                    # while this site emitted the legacy
+                                    # "combat:suggestions_ready", so the client
+                                    # listener never fired. Inert today (the
+                                    # socket flag is off by default and GamePage
+                                    # passes no onSuggestions) but it would have
+                                    # failed silently the moment the flag went on
+                                    # -- the HTTP path masks the miss.
                                     flask_app.socketio.emit(
-                                        "combat:suggestions",
+                                        SUGGESTIONS_EVENT,
                                         {"suggested_moves": suggestions},
                                         room=f"combat_{self.session_id}",
                                     )
@@ -1936,7 +1990,7 @@ class ApiCombatAdapter:
                                     )
                             except Exception as e:
                                 logger.error(
-                                    f"Error emitting suggestions_ready event: {e}"
+                                    f"Error emitting {SUGGESTIONS_EVENT} event: {e}"
                                 )
                         else:
                             logger.warning(
@@ -2382,6 +2436,17 @@ class ApiCombatAdapter:
         )
 
         # Add API-specific fields
+        # combat_id rides in battle_state (not the top level) so the client's
+        # transformCombatData spread carries it through on every poll; a
+        # top-level key would be dropped by its whitelist.
+        battle_state["combat_id"] = self.combat_id
+        # Same reason: emitted top-level, map_size was dropped by
+        # transformCombatData's whitelist, so Battlefield's `combat?.map_size`
+        # was always undefined and BattlefieldGrid fell back to deriving the
+        # arena from the bounding box of current positions — which means a
+        # dynamically-sized grid rendered at the wrong size and *resized
+        # mid-fight* whenever a combatant moved past the previous extent.
+        battle_state["map_size"] = self.combat_grid_size[0]
         battle_state["beat"] = getattr(self.player, "combat_beat", 0)
         battle_state["heat"] = int(self.player.heat * 100)
         battle_state["awaiting_input"] = self.awaiting_input
@@ -2400,6 +2465,9 @@ class ApiCombatAdapter:
         grid_size = self.combat_grid_size
         result: Dict[str, Any] = {
             "combat_active": self.player.in_combat,
+            # Retained for any direct consumer of the raw response shape; the
+            # copy the web client actually reads lives in battle_state above,
+            # because this top-level one never survives transformCombatData.
             "map_size": grid_size[0],
             "battle_state": battle_state,
             "beat_states": [battle_state],  # Initial state as a single beat state

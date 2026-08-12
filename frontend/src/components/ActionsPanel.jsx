@@ -5,18 +5,42 @@ import apiEndpoints from '../api/endpoints'
 import BaseDialog from './BaseDialog'
 import { colors, spacing } from '../styles/theme'
 
-// Tooltip descriptions for each command
-const COMMAND_TOOLTIPS = {
-  'Menu': 'Open the main menu',
-  'Save': 'Save your game progress',
-  'Teleport': '[DEBUG] Teleport to a specific location',
-  'Alter': '[DEBUG] Change game variables and switches',
-  'Showvar': '[DEBUG] Display all game variables',
-  'Supersaiyan': '[DEBUG] Max out your stats',
-  'TestEvent': '[DEBUG] Trigger test events',
-  'SpawnObj': '[DEBUG] Spawn objects on this tile',
-  'Refresh Merchants': '[DEBUG] Refresh all merchant inventories',
-}
+/**
+ * The commands this panel knows about — one entry per command, carrying both
+ * its tooltip and whether it is a debug command.
+ *
+ * A single structured list rather than a tooltip map plus a name set. Those
+ * were two hand-maintained lists of the same seven names: forgetting the set
+ * silently restored the inert button the filter exists to remove, forgetting
+ * the map silently fell back to the generic description. An intermediate
+ * version derived the set from tooltips starting with "[DEBUG]", which fixed
+ * the drift but made prose load-bearing — rewording a tooltip would have
+ * changed behaviour. The `debug` field says what it means.
+ */
+const COMMANDS = [
+  { name: 'Menu', tooltip: 'Open the main menu' },
+  { name: 'Save', tooltip: 'Save your game progress' },
+  { name: 'Teleport', tooltip: 'Teleport to a specific location', debug: true },
+  { name: 'Alter', tooltip: 'Change game variables and switches', debug: true },
+  { name: 'Showvar', tooltip: 'Display all game variables', debug: true },
+  { name: 'Supersaiyan', tooltip: 'Max out your stats', debug: true },
+  { name: 'TestEvent', tooltip: 'Trigger test events', debug: true },
+  { name: 'SpawnObj', tooltip: 'Spawn objects on this tile', debug: true },
+  { name: 'Refresh Merchants', tooltip: 'Refresh all merchant inventories', debug: true },
+]
+
+const DEBUG_TOOLTIP_PREFIX = '[DEBUG] '
+
+const COMMAND_TOOLTIPS = Object.fromEntries(
+  COMMANDS.map(({ name, tooltip, debug }) => [
+    name,
+    debug ? `${DEBUG_TOOLTIP_PREFIX}${tooltip}` : tooltip,
+  ])
+)
+
+const KNOWN_DEBUG_COMMAND_NAMES = new Set(
+  COMMANDS.filter((c) => c.debug).map((c) => c.name)
+)
 
 function isDebugMode() {
   // Show debug label when running in development mode
@@ -27,18 +51,8 @@ function isDebugMode() {
 // no wired handler and no execute endpoint — COMMAND_HANDLERS only supports Menu
 // and Save, so anything else falls through to a fake "..." toast that does
 // nothing. Filter them out so the panel doesn't show convincing-but-inert
-// buttons. Primary signal is the API's `debug` flag; the name set is a fallback
-// for any command payload that omits it.
-const KNOWN_DEBUG_COMMAND_NAMES = new Set([
-  'Teleport',
-  'Alter',
-  'Showvar',
-  'Supersaiyan',
-  'TestEvent',
-  'SpawnObj',
-  'Refresh Merchants',
-])
-
+// buttons. Primary signal is the API's `debug` flag; the name set above is a
+// fallback for any command payload that omits it.
 function isInertDebugCommand(command) {
   return command.debug === true || KNOWN_DEBUG_COMMAND_NAMES.has(command.name)
 }
@@ -46,7 +60,7 @@ function isInertDebugCommand(command) {
 /**
  * ActionsPanel - Display available actions player can take
  */
-export default function ActionsPanel({ player, location, onClose, onRefetch, onMove }) {
+export default function ActionsPanel({ location, onClose }) {
   const [commands, setCommands] = useState([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)

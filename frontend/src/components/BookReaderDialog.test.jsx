@@ -1,5 +1,5 @@
 import { render, screen, fireEvent } from '@testing-library/react'
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import BookReaderDialog, { paginateText, stripBookWrapper } from './BookReaderDialog'
 
 // ---------------------------------------------------------------------------
@@ -173,6 +173,24 @@ describe('BookReaderDialog', () => {
     fireEvent.keyDown(window, { key: 'ArrowLeft' })
     fireEvent.keyDown(window, { key: 'ArrowRight' })
     expect(screen.queryByText(/Page \d+ \//)).toBeNull() // still no indicator (1 page)
+  })
+
+  it('resets to page 1 when switching to a different multi-page text without unmounting', () => {
+    // Distinct from the clamp test below: both texts here are multi-page, so
+    // a passing result can only come from the page actually resetting to 0 —
+    // clamping alone (min(currentPage, totalPages-1)) would leave it on page 2.
+    const otherLongText = (() => {
+      const s = 'Another entirely different sentence in another long book. '
+      return s.repeat(30) // ~1740 chars → multi-page
+    })()
+    const { rerender } = render(
+      <BookReaderDialog title="Book" text={longText} onClose={mockOnClose} />
+    )
+    fireEvent.keyDown(window, { key: 'ArrowRight' })
+    expect(screen.getByText(/Page 2 \//)).toBeDefined()
+
+    rerender(<BookReaderDialog title="Book" text={otherLongText} onClose={mockOnClose} />)
+    expect(screen.getByText(/Page 1 \//)).toBeDefined()
   })
 
   it('clamps safePageIdx when text shrinks without unmounting', () => {

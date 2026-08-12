@@ -4,14 +4,17 @@ import { render, screen } from '@testing-library/react'
 import PreVictoryNarrativeDialog from './PreVictoryNarrativeDialog'
 
 // TypewriterOutput fires onComplete immediately so tests don't need fake timers.
-vi.mock('./TypewriterOutput', () => ({
-  default: ({ text, onComplete }) => {
+vi.mock('./TypewriterOutput', () => {
+  // Named with a capital so the hooks lint rule can see this is a component;
+  // as an inline `default:` arrow it read as a plain function calling a hook.
+  function MockTypewriterOutput({ text, onComplete }) {
     React.useEffect(() => {
       onComplete && onComplete()
     }, [])
     return <div data-testid="typewriter">{text}</div>
-  },
-}))
+  }
+  return { default: MockTypewriterOutput }
+})
 
 describe('PreVictoryNarrativeDialog', () => {
   it('renders the narration text', () => {

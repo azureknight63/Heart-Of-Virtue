@@ -69,6 +69,15 @@ describe('LootDialog', () => {
     expect(screen.getByText('1 item found')).toBeInTheDocument()
   })
 
+  it('treats a drop with no quantity as one unit when rendering its weight', () => {
+    const noQty = { items_dropped: [{ name: 'Loose Cog', weight: 2.5 }] }
+    render(<LootDialog endState={noQty} playerWeight={0} weightLimit={100} onCollect={onCollect} onSkip={onSkip} />)
+    // The row weight used to read "0.0 lb" — weight * undefined is NaN, which
+    // formatWeight coerces to 0 — while the selected total below said 2.5 lb.
+    expect(screen.queryByText('0.0 lb')).not.toBeInTheDocument()
+    expect(screen.getAllByText('2.5 lb').length).toBeGreaterThan(0)
+  })
+
   it('shows a message when nothing dropped', () => {
     render(<LootDialog endState={{ items_dropped: [] }} playerWeight={0} weightLimit={100} onCollect={onCollect} onSkip={onSkip} />)
     expect(screen.getByText('No items dropped.')).toBeInTheDocument()
@@ -180,11 +189,16 @@ describe('LootDialog', () => {
     expect(screen.getByText('26.5 lb')).toBeInTheDocument()
   })
 
+  // The item row and the summary now share one weight format, so a bare text
+  // query can match both. Scope to the summary row by its label.
+  const summaryValue = (label) =>
+    screen.getByText(label).parentElement.querySelector('span:last-child').textContent
+
   it('sums weight across item quantity for the selected-weight total', () => {
     const stacked = { items_dropped: [{ name: 'Gold Coin', weight: 0.1, quantity: 50 }] }
     render(<LootDialog endState={stacked} playerWeight={10} weightLimit={100} onCollect={onCollect} onSkip={onSkip} />)
-    expect(screen.getByText('5.0 lb')).toBeInTheDocument()
-    expect(screen.getByText('15.0 lb')).toBeInTheDocument()
+    expect(summaryValue('Selected loot adds:')).toBe('5.0 lb')
+    expect(summaryValue('Total after pickup:')).toBe('15.0 lb')
   })
 
   it('treats missing playerWeight/weightLimit as 0 and 100', () => {
@@ -228,7 +242,7 @@ describe('LootDialog', () => {
   it('skips a selected item missing weight when summing selected weight', () => {
     const mixed = { items_dropped: [{ name: 'Weightless Charm', quantity: 1 }, { name: 'Gold Coin', weight: 2, quantity: 1 }] }
     render(<LootDialog endState={mixed} playerWeight={10} weightLimit={100} onCollect={onCollect} onSkip={onSkip} />)
-    expect(screen.getByText('2.0 lb')).toBeInTheDocument()
+    expect(summaryValue('Selected loot adds:')).toBe('2.0 lb')
   })
 
   it('clears a pending toast timer when triggering another over-weight attempt', () => {

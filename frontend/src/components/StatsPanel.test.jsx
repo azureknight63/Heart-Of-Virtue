@@ -184,4 +184,46 @@ describe('StatsPanel', () => {
     const chip = screen.getByText(/FIRE: 150%/i);
     expect(chip.style.color).toBe('rgb(255, 68, 68)'); // colors.danger (#ff4444)
   });
+
+  describe('Accuracy and Evasion presentation', () => {
+    const withCombatStats = (over) => ({ ...mockPlayer, ...over });
+
+    it('renders Accuracy and Evasion as ratings, not percentages', () => {
+      // They are the two halves of one subtraction, not probabilities: a "%"
+      // made Accuracy read as an impossible 108% and Evasion read as a dodge
+      // chance it never was.
+      render(<StatsPanel player={withCombatStats({ hit_accuracy: 108, evasion_chance: 10 })} onClose={vi.fn()} />);
+
+      expect(screen.getByText('108')).toBeInTheDocument();
+      expect(screen.queryByText('108%')).not.toBeInTheDocument();
+      expect(screen.queryByText('10%')).not.toBeInTheDocument();
+    });
+
+    it('explains the hit formula and the evasion headroom in the Accuracy tooltip', () => {
+      render(<StatsPanel player={withCombatStats({ hit_accuracy: 108, evasion_chance: 10 })} onClose={vi.fn()} />);
+
+      const tip = screen.getByText('108').closest('[title]').getAttribute('title');
+      expect(tip).toMatch(/Accuracy minus the target's Evasion/i);
+      // Stated as approximate on purpose: the rating folds the attacker's terms
+      // before evasion is subtracted, while the engine's roll subtracts evasion
+      // first, so the two part company by a point for ~0.7% of stat pairs.
+      expect(tip).toMatch(/about your Accuracy/i);
+      // 108 - 100 = 8 points of evasion absorbed before any miss.
+      expect(tip).toMatch(/Evasion is 8 or lower/i);
+    });
+
+    it('clamps the headroom at zero when accuracy is below the cap', () => {
+      render(<StatsPanel player={withCombatStats({ hit_accuracy: 92, evasion_chance: 4 })} onClose={vi.fn()} />);
+
+      const tip = screen.getByText('92').closest('[title]').getAttribute('title');
+      expect(tip).toMatch(/Evasion is 0 or lower/i);
+    });
+
+    it('describes Evasion as subtracted from the attacker, not a dodge chance', () => {
+      render(<StatsPanel player={withCombatStats({ hit_accuracy: 108, evasion_chance: 10 })} onClose={vi.fn()} />);
+
+      const evasionTile = screen.getByText('Evasion').closest('[title]');
+      expect(evasionTile.getAttribute('title')).toMatch(/Subtracted from an attacker/i);
+    });
+  });
 });

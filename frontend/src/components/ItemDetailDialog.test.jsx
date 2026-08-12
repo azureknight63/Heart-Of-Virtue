@@ -53,7 +53,7 @@ describe('ItemDetailDialog', () => {
 
     expect(screen.getAllByText('Iron Sword')[0]).toBeDefined();
     expect(screen.getByText('A sturdy iron sword.')).toBeDefined();
-    expect(screen.getByText(/5\.00w/i)).toBeDefined();
+    expect(screen.getByText(/5\.00 lb/i)).toBeDefined();
     expect(screen.getByText(/100g/i)).toBeDefined();
   });
 
@@ -1371,11 +1371,11 @@ describe('ItemDetailDialog', () => {
   // Category fallback chain, weight/value defaults, comparison fallbacks
   // ---------------------------------------------------------------------------
   describe('field defaults and comparison fallbacks', () => {
-    it('falls back through subtype then type for the category, and to 0w/0g for missing weight/value', () => {
+    it('falls back through subtype then type for the category, and to 0 lb/0g for missing weight/value', () => {
       const bareItem = { id: 5, name: 'Odd Trinket', subtype: 'Curio' };
       render(<ItemDetailDialog item={bareItem} player={mockPlayer} onBack={mockOnBack} />);
       expect(screen.getByText('Curio')).toBeInTheDocument();
-      expect(screen.getByText('0w')).toBeInTheDocument();
+      expect(screen.getByText('0.00 lb')).toBeInTheDocument();
       expect(screen.getByText('0g')).toBeInTheDocument();
     });
 

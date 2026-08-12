@@ -14,6 +14,7 @@ from ._base import (
     _ensure_weapon_exp,
     _apply_carry_fatigue,
     _apply_to_hit_modifiers,
+    to_hit_chance,
 )  # noqa: F401
 
 
@@ -111,7 +112,7 @@ class ShootBow(
         if (
             range_min <= target_distance <= range_max
         ):  # check if target is still in range
-            hit_chance = int(98 - enemy.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3))
+            hit_chance = to_hit_chance(self.user, enemy)
             hit_chance = int(hit_chance - close_range_distraction * (hit_chance / 2))
             wpn_range_base = getattr(self.user.eq_weapon, "range_base", 0)
             if target_distance > wpn_range_base:
@@ -517,7 +518,7 @@ class ShootCrossbow(Move):
         if not self.viable():
             hit_chance = -1
         else:
-            hit_chance = max(5, int(98 - self.target.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3)))
+            hit_chance = to_hit_chance(self.user, self.target, floor=5)
             if _crossbow_close_range_penalty(self.user, rmin):
                 hit_chance = int(hit_chance * 0.5)
             # Apply distance accuracy decay (like ShootBow)
@@ -666,7 +667,7 @@ class BroadheadBolt(Move):
             )
 
         if self.viable():
-            hit_chance = max(5, int(98 - self.target.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3)))
+            hit_chance = to_hit_chance(self.user, self.target, floor=5)
             # Apply distance accuracy decay
             if self.target in self.user.combat_proximity:
                 target_distance = self.user.combat_proximity[self.target]
@@ -823,7 +824,7 @@ class AimedShot(Move):
             hit_chance = -1
         else:
             hit_chance = min(
-                100, max(5, int(98 - self.target.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3)) + 15)
+                100, max(5, to_hit_chance(self.user, self.target) + 15)
             )
             if _crossbow_close_range_penalty(self.user, rmin):
                 hit_chance = int(hit_chance * 0.5)
@@ -976,7 +977,7 @@ class PinningBolt(Move):
         if not self.viable():
             hit_chance = -1
         else:
-            hit_chance = max(5, int(98 - self.target.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3)))
+            hit_chance = to_hit_chance(self.user, self.target, floor=5)
             if _crossbow_close_range_penalty(self.user, rmin):
                 hit_chance = int(hit_chance * 0.5)
             # Apply distance accuracy decay

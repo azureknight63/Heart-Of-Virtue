@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react'
 import BaseDialog from './BaseDialog'
 import { useShop } from '../hooks/useShop'
 import { colors, spacing, accessibility } from '../styles/theme'
-import { getItemIcon } from '../utils/itemUtils'
+import { getItemIcon, formatWeight, WEIGHT_UNIT } from '../utils/itemUtils'
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
@@ -50,14 +50,14 @@ function WeightBar({ current, max, pendingDelta, isMobile }) {
               </span>
               {!isMobile && (
                 <span style={{ color: colors.text.dim, fontSize: '0.58rem' }}>
-                  → {projectedTotal.toFixed(1)} kg after
+                  → {projectedTotal.toFixed(1)} {WEIGHT_UNIT} after
                 </span>
               )}
             </>
           )}
-          {!isMobile && pendingDelta === 0 && <span style={{ color: colors.text.dim }}>&nbsp;kg</span>}
+          {!isMobile && pendingDelta === 0 && <span style={{ color: colors.text.dim }}>&nbsp;{WEIGHT_UNIT}</span>}
         </div>
-        <span style={{ color: colors.text.dim, fontSize: '0.62rem' }}>max {max.toFixed(1)} kg</span>
+        <span style={{ color: colors.text.dim, fontSize: '0.62rem' }}>max {max.toFixed(1)} {WEIGHT_UNIT}</span>
       </div>
       <div style={{
         width: '100%',
@@ -174,7 +174,7 @@ function ItemRow({ item, isSelected, tab, onClick, isMobile }) {
         {item.subtype || item.type || ''}
       </div>
       <div style={{ textAlign: 'right', fontSize: '0.7rem', color: colors.text.muted }}>
-        {(item.weight || 0).toFixed(2)} kg
+        {formatWeight(item.weight)}
       </div>
       <div style={{ textAlign: 'right', fontSize: '0.78rem', fontWeight: 'bold', color: priceColor }}>
         {tab === 'sell' && (
@@ -288,23 +288,39 @@ export default function ShopDialog({ npcId, npcName, initialTab = 'buy', player,
     return list.find(i => i.id === selectedId) || null
   }, [selectedId, activeTab, allBuyItems, sellInventory])
 
+  // Buyback repurchases the whole stack in one transaction: the serializer sends
+  // the *unit* offer as `price` alongside `count`, and the engine charges
+  // `buyback_price * count` (GameService.shop_buyback). The qty picker is
+  // suppressed for buyback, so `quantity` stays 1 — use `count` as the real
+  // multiplier or the UI quotes a fraction of what the player is actually charged.
+  const effectiveQty = selectedItem?.is_buyback ? (selectedItem.count || 1) : quantity
+
   // ── Weight delta for the weight bar ───────────────────────────────────────
 
   const pendingWeight = useMemo(() => {
     if (!selectedItem) return 0
-    const w = (selectedItem.weight || 0) * quantity
+    const w = (selectedItem.weight || 0) * effectiveQty
     return activeTab === 'buy' ? w : -w
-  }, [selectedItem, quantity, activeTab])
+  }, [selectedItem, effectiveQty, activeTab])
 
   // ── Buy validation ─────────────────────────────────────────────────────────
 
   const playerGold = shopState?.player_gold ?? (player?.gold ?? 0)
   const playerWeightCurrent = shopState?.player_weight_current ?? (player?.weight_current ?? 0)
-  const playerWeightMax = shopState?.player_weight_max ?? (player?.weight_tolerance ?? 100)
+  // The player payload exposes capacity as `max_weight`/`carrying_capacity`
+  // (GameService.get_player_status / get_player_stats). It has no
+  // `weight_tolerance` key — that is the engine-side attribute name only.
+  const playerWeightMax = shopState?.player_weight_max
+    ?? player?.max_weight
+    ?? player?.carrying_capacity
+    ?? 100
   const merchantGold = shopState?.merchant_gold ?? 0
 
+  // effectiveQty, not quantity: for a buyback stack the picker is suppressed so
+  // `quantity` is stuck at 1, and the total (plus the affordability warning
+  // derived from it) would quote a fraction of what shop_buyback charges.
   const buyTotal = selectedItem && activeTab === 'buy'
-    ? (selectedItem.price || 0) * quantity
+    ? (selectedItem.price || 0) * effectiveQty
     : 0
   const sellTotal = selectedItem && activeTab === 'sell'
     ? (selectedItem.offer || 0) * quantity
@@ -581,7 +597,7 @@ export default function ShopDialog({ npcId, npcName, initialTab = 'buy', player,
                     color: colors.text.dim, fontSize: '0.58rem',
                     fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '1.5px',
                   }}>
-                    {npcName}'s Stock
+                    {npcName}&apos;s Stock
                   </div>
                 )}
                 {buyItems.length === 0 && (
@@ -617,7 +633,7 @@ export default function ShopDialog({ npcId, npcName, initialTab = 'buy', player,
                   fontSize: '0.7rem',
                 }}>
                   <span style={{ color: colors.text.muted }}>
-                    {npcName}'s gold:
+                    {npcName}&apos;s gold:
                   </span>
                   <span style={{
                     color: merchantGold < 50 ? colors.danger : colors.gold,
@@ -721,7 +737,10 @@ export default function ShopDialog({ npcId, npcName, initialTab = 'buy', player,
                   <ActionButton
                     onClick={handleBuyback}
                     color={colors.accent}
-                    label={`Buyback · ${selectedItem.price} 💰`}
+                    // buyTotal, not the unit price: the whole stack is repurchased
+                    // in one transaction, so quoting `price` here understated the
+                    // cost of any stacked entry.
+                    label={`Buyback · ${buyTotal} 💰`}
                     isMobile={isMobile}
                   />
                 ) : activeTab === 'buy' ? (

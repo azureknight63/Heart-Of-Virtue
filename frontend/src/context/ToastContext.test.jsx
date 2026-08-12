@@ -179,4 +179,38 @@ describe('ToastContext', () => {
     })
     expect(screen.queryByText('Saved!')).not.toBeInTheDocument()
   })
+
+  it('cancels the auto-dismiss timer when a toast is dismissed early', () => {
+    render(
+      <ToastProvider>
+        <ToastConsumer />
+      </ToastProvider>
+    )
+    act(() => {
+      fireEvent.click(screen.getByText('fire-success'))
+    })
+    expect(vi.getTimerCount()).toBe(1)
+
+    act(() => {
+      fireEvent.click(screen.getByLabelText('Close notification'))
+    })
+    // The orphan timer would otherwise still fire after the toast is gone.
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('clears outstanding auto-dismiss timers when the provider unmounts', () => {
+    const { unmount } = render(
+      <ToastProvider>
+        <ToastConsumer />
+      </ToastProvider>
+    )
+    act(() => {
+      fireEvent.click(screen.getByText('fire-success'))
+      fireEvent.click(screen.getByText('fire-error'))
+    })
+    expect(vi.getTimerCount()).toBe(2)
+
+    unmount()
+    expect(vi.getTimerCount()).toBe(0)
+  })
 })

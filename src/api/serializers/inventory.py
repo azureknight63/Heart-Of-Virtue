@@ -298,12 +298,22 @@ class InventorySerializer:
             items.append(InventoryItemSerializer.serialize(item, idx, player))
             total_weight += getattr(item, "weight", 0.0)
 
+        # The engine attribute is `weight_tolerance` (Player.__init__ sets it to
+        # 20.0); nothing anywhere defines `carrying_capacity` on a Player, so
+        # reading it alone always fell through to the 100.0 default. That made
+        # weight_limit five times the real cap and weight_percentage five times
+        # too small — a player at their limit reported 20% load. `items.py` and
+        # `player/_inventory.py` already use this same fallback ordering.
+        capacity = getattr(
+            player,
+            "weight_tolerance",
+            getattr(player, "carrying_capacity", 100.0),
+        )
         return {
             "total_weight": round(total_weight, 2),
-            "weight_limit": getattr(player, "carrying_capacity", 100.0),
-            "weight_percentage": round(
-                (total_weight / getattr(player, "carrying_capacity", 100.0)) * 100,
-                1,
+            "weight_limit": capacity,
+            "weight_percentage": (
+                round((total_weight / capacity) * 100, 1) if capacity else 0.0
             ),
             "item_count": len(items),
             "slots_used": len([i for i in items if i]),

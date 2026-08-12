@@ -1,7 +1,24 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react'
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react'
 import useTypewriter from '../hooks/useTypewriter'
 import { colors, spacing, fonts } from '../styles/theme'
 import { portraitUrl, handlePortraitError, speakerSlug, normalizeEmotion } from '../utils/portraits'
+
+// A fading exit with no author-supplied span ghosts for one extra beat before
+// leaving. Span 1 would drop the member on the exit beat itself — visually
+// identical to `transition: "instant"`, which is what the backend's cast-diff
+// departures (emitted with a bare `transition: "fade"`) used to look like.
+const DEFAULT_FADE_EXIT_SPAN = 2
+
+// `transition` is documented in src/narration.py as "fade" (the default) or
+// "instant"; anything absent or unrecognised falls back to the documented
+// default rather than silently popping.
+const isInstant = (op) => op.transition === 'instant'
+
+/** Beats an exit takes to complete: an explicit span always wins over the transition default. */
+function exitSpanFor(op) {
+    if (op.span > 0) return op.span
+    return isInstant(op) ? 1 : DEFAULT_FADE_EXIT_SPAN
+}
 
 /**
  * Replay the segment list up to `idx` to derive the current cast state.
@@ -10,11 +27,14 @@ import { portraitUrl, handlePortraitError, speakerSlug, normalizeEmotion } from 
  * listener reactions, and exit ops (with per-beat opacity for fades), so the
  * stage at any beat is fully determined by the segments + initial roster.
  *
+ * Each member carries `entering` (true only on the beat it walked on) and its
+ * resolved `enterTransition`; a fade-in cannot be expressed as a static opacity
+ * here, so `Portrait` turns that pair into the two-frame mount animation.
+ *
  * @returns {{members: Array, activeSpeaker: ?string, staged: boolean}}
  */
 export function computeStage(segments, idx, initialCast) {
     const members = new Map()
-    const enteredAt = new Map()
     const exits = new Map()
 
     ;(initialCast || []).forEach((c) => {
@@ -23,8 +43,11 @@ export function computeStage(segments, idx, initialCast) {
             name: c.name || c.id,
             side: c.side || 'right',
             emotion: c.emotion || 'neutral',
+            // The opening roster is already on stage when beat 0 renders, so it
+            // must never register as "entering" (enteredAt can't be any beat).
+            enteredAt: -1,
+            enterTransition: 'instant',
         })
-        enteredAt.set(c.id, -1)
     })
 
     for (let k = 0; k <= idx && k < segments.length; k++) {
@@ -35,8 +58,9 @@ export function computeStage(segments, idx, initialCast) {
                 name: op.name || op.id,
                 side: op.side || 'right',
                 emotion: op.emotion || 'neutral',
+                enteredAt: k,
+                enterTransition: isInstant(op) ? 'instant' : 'fade',
             })
-            enteredAt.set(op.id, k)
             exits.delete(op.id)
         })
         if (seg.speaker && members.has(seg.speaker)) {
@@ -48,22 +72,20 @@ export function computeStage(segments, idx, initialCast) {
             })
         }
         ;(seg.exit || []).forEach((op) => {
-            exits.set(op.id, { tExit: k, span: op.span || 1 })
+            exits.set(op.id, { tExit: k, span: exitSpanFor(op) })
         })
     }
 
     const result = []
     members.forEach((mem, id) => {
         let opacity = 1
-        let leaving = false
         if (exits.has(id)) {
             const { tExit, span } = exits.get(id)
             const elapsed = idx - tExit + 1
             if (elapsed >= span) return // fully faded out — drop from stage
             opacity = Math.max(0, 1 - elapsed / span)
-            leaving = true
         }
-        result.push({ ...mem, opacity, leaving, entering: enteredAt.get(id) === idx })
+        result.push({ ...mem, opacity, entering: mem.enteredAt === idx })
     })
 
     const cur = segments[idx] || {}
@@ -73,10 +95,45 @@ export function computeStage(segments, idx, initialCast) {
 
 const PORTRAIT_TRANSITION = 'opacity 0.8s ease, transform 0.35s ease, filter 0.35s ease'
 
+/**
+ * Play a mount-time fade-in on `nodeRef` by painting it at 0 for one frame and
+ * then handing it back to `targetOpacity`.
+ *
+ * A CSS transition needs two painted values to animate between: committing
+ * opacity 0 and the target in the same render is indistinguishable from
+ * mounting at the target, which is why an arriving portrait used to pop.
+ *
+ * The two-frame handoff is done as a direct style write rather than React
+ * state, because the intermediate 0 is a paint detail with no meaning to the
+ * component: keeping it out of state avoids an extra render per entrance and
+ * cannot cascade. React stays the owner of the value — it renders
+ * `targetOpacity` inline, the effect borrows the node for exactly one frame,
+ * and any later render writes the prop straight over the top.
+ *
+ * Keying the effect on `entering` (not on mount) means the re-renders within
+ * the entering beat — the typewriter re-renders the whole stage per character —
+ * neither restart nor undo the fade, while a member who walks on a second time
+ * fades in again.
+ */
+function useEnterFade(nodeRef, entering, targetOpacity) {
+    useLayoutEffect(() => {
+        const node = nodeRef.current
+        if (!node || !entering) return undefined
+        node.style.opacity = '0'
+        const frame = requestAnimationFrame(() => {
+            if (nodeRef.current) nodeRef.current.style.opacity = String(targetOpacity)
+        })
+        return () => cancelAnimationFrame(frame)
+    }, [nodeRef, entering, targetOpacity])
+}
+
 function Portrait({ member, isSpeaker }) {
     // Dim & scale: the speaker is full ink/size; listeners fade, shrink, and
-    // desaturate slightly. Fades (enter/exit) multiply the base opacity.
+    // desaturate slightly. An exit fade multiplies the base opacity.
     const baseOpacity = isSpeaker ? 1 : 0.85
+    const opacity = member.opacity * baseOpacity
+    const wrapperRef = useRef(null)
+    useEnterFade(wrapperRef, member.entering && member.enterTransition === 'fade', opacity)
     const imgRef = useRef(null)
 
     // Keep the same <img> node across emotion changes instead of keying on
@@ -94,13 +151,14 @@ function Portrait({ member, isSpeaker }) {
 
     return (
         <div
+            ref={wrapperRef}
             style={{
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
                 gap: spacing.xs,
                 transition: PORTRAIT_TRANSITION,
-                opacity: member.opacity * baseOpacity,
+                opacity,
                 transform: isSpeaker ? 'scale(1)' : 'scale(0.9)',
             }}
         >

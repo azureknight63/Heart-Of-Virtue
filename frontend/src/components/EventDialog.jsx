@@ -9,6 +9,21 @@ import ScrollFadeIndicator from './ScrollFadeIndicator'
 import useScrollIndicators from '../hooks/useScrollIndicators'
 import { colors, spacing, commonStyles, fonts } from '../styles/theme'
 import { cleanTerminalLineBreaks } from '../utils/entityUtils'
+import { COMBAT_INIT_EVENT_ID } from '../utils/eventIds'
+
+const SUBMIT_FAILED_MESSAGE = 'Failed to submit input. Please try again.'
+
+/**
+ * Build the retry banner text for a failed input submission.
+ * The event manager returns `{ success: false }` (server rejection, already
+ * toasted) or `{ success: false, error }` (network/transport failure).
+ */
+export function submissionErrorMessage(result) {
+    const err = result?.error
+    if (typeof err === 'string' && err.trim()) return err
+    if (err?.message) return err.message
+    return SUBMIT_FAILED_MESSAGE
+}
 
 /**
  * EventDialog - Displays event output text and handles player input for events
@@ -27,7 +42,16 @@ function EventDialog({ event, history = [], onClose, onSubmitInput }) {
 
     const inputRef = useRef(null)
     const dialogRef = useRef(null)
+    // Guards the post-await re-enable below from firing after unmount.
+    const isMountedRef = useRef(true)
     const { showTop, showBottom, check: checkScroll, ref: scrollRef } = useScrollIndicators()
+
+    useEffect(() => {
+        isMountedRef.current = true
+        return () => {
+            isMountedRef.current = false
+        }
+    }, [])
 
     // Earthbound-style damage effect: shake screen + red flash
     const handleDamageHit = useCallback(() => {
@@ -57,6 +81,10 @@ function EventDialog({ event, history = [], onClose, onSubmitInput }) {
     const inputOptions = event?.input_options || []
     const eventId = event?.event_id
     const isDeathScene = event?.is_death_scene || false
+    // EventSerializer emits input_min/input_max; min_value/max_value are kept as
+    // a legacy fallback for any payload still using the old field names.
+    const minValue = event?.input_min ?? event?.min_value
+    const maxValue = event?.input_max ?? event?.max_value
     // Staged conversation mode: when the engine emits structured beats, render
     // the visual-novel cast stage instead of the plain typewriter block.
     const segments = Array.isArray(event?.segments) ? event.segments : null
@@ -100,7 +128,6 @@ function EventDialog({ event, history = [], onClose, onSubmitInput }) {
                 if (keyNum >= 1 && keyNum <= Math.min(9, inputOptions.length)) {
                     e.preventDefault()
                     const choice = inputOptions[keyNum - 1]
-                    setSelectedChoice(keyNum - 1)
                     handleChoiceSelect(choice.value)
                 }
             }
@@ -123,21 +150,67 @@ function EventDialog({ event, history = [], onClose, onSubmitInput }) {
         }
     }, [showInput, inputType, inputOptions, textInput, numberInput, selectedChoice, isSubmitting])
 
+    /**
+     * Submit the player's input and, if the submission fails, re-enable the
+     * dialog.
+     *
+     * `isSubmitting` disables every control in this dialog (choice buttons,
+     * Submit, Close, the keydown handler) and BaseDialog hides its X while the
+     * event needs input — so leaving the flag set after a failed submission
+     * soft-locks the player with no way out but a page reload. The reset effect
+     * cannot help: a failed submit leaves `event` untouched, so none of its
+     * deps change.
+     *
+     * The synthetic `combat_init` event resolves `undefined` and tears this
+     * dialog down; it is the only case where a falsy result is not a failure.
+     */
+    const submitInput = async (value) => {
+        if (!onSubmitInput || !eventId) {
+            // Every caller sets isSubmitting before delegating here, so bailing
+            // without clearing it re-creates the exact soft-lock this function
+            // exists to prevent: all affordances stay disabled and, for a
+            // needs_input event, showCloseButton={!needsInput} hides the ✕ too.
+            // Defensive: no current producer. An earlier version of this
+            // comment claimed GameService emits a needs_input LootEvent with
+            // no event_id when session_data is None — it does not.
+            // _store_pending_event assigns a uuid unconditionally, and the
+            // only production caller always passes session.data. Kept because
+            // the cost is one line and the failure mode is unrecoverable, but
+            // do not cite this as evidence of a live path.
+            if (isMountedRef.current) setIsSubmitting(false)
+            return
+        }
+        let result
+        try {
+            result = await onSubmitInput(eventId, value)
+        } catch (err) {
+            result = { success: false, error: err }
+        }
+
+        if (eventId === COMBAT_INIT_EVENT_ID) return
+        if (result?.success) return
+        if (!isMountedRef.current) return
+
+        setIsSubmitting(false)
+        setValidationSeverity('error')
+        setValidationMessage(submissionErrorMessage(result))
+    }
+
     const handleChoiceSelect = (value) => {
         if (isSubmitting) return
         setIsSubmitting(true)
         setSelectedChoice(value)
         setValidationMessage('')
         // Submit immediately for choice type as per user request
-        if (onSubmitInput && eventId) {
-            onSubmitInput(eventId, value)
-        }
+        submitInput(value)
     }
 
     const validateInput = () => {
         setValidationMessage('')
 
-        if (inputType === 'choice' && !selectedChoice) {
+        // An option's value may legitimately be 0 or '' — only `null` (the
+        // initial state) means "nothing picked yet".
+        if (inputType === 'choice' && selectedChoice === null) {
             setValidationMessage('Please select an option')
             setValidationSeverity('error')
             return false
@@ -170,8 +243,6 @@ function EventDialog({ event, history = [], onClose, onSubmitInput }) {
                 setValidationSeverity('error')
                 return false
             }
-            const minValue = event?.input_min ?? event?.min_value
-            const maxValue = event?.input_max ?? event?.max_value
             if (minValue !== undefined && num < minValue) {
                 setValidationMessage(`Number must be at least ${minValue}`)
                 setValidationSeverity('error')
@@ -201,9 +272,7 @@ function EventDialog({ event, history = [], onClose, onSubmitInput }) {
             userInput = numberInput
         }
 
-        if (onSubmitInput && eventId) {
-            onSubmitInput(eventId, userInput)
-        }
+        submitInput(userInput)
     }
 
     // Character counter for text input
@@ -473,7 +542,7 @@ function EventDialog({ event, history = [], onClose, onSubmitInput }) {
                         {inputType === 'number' && (
                             <div style={{ display: 'flex', gap: spacing.sm, alignItems: 'center' }}>
                                 <GameButton
-                                    onClick={() => setNumberInput(prev => String(Math.max((parseInt(prev) || 0) - 1, event?.min_value || 0)))}
+                                    onClick={() => setNumberInput(prev => String(Math.max((parseInt(prev) || 0) - 1, minValue ?? 0)))}
                                     size="large"
                                 >
                                     -
@@ -484,8 +553,8 @@ function EventDialog({ event, history = [], onClose, onSubmitInput }) {
                                     value={numberInput}
                                     onChange={(e) => setNumberInput(e.target.value)}
                                     placeholder="0"
-                                    min={event?.min_value}
-                                    max={event?.max_value}
+                                    min={minValue}
+                                    max={maxValue}
                                     style={{
                                         flex: 1,
                                         padding: spacing.md,
@@ -500,7 +569,7 @@ function EventDialog({ event, history = [], onClose, onSubmitInput }) {
                                     }}
                                 />
                                 <GameButton
-                                    onClick={() => setNumberInput(prev => String(Math.min((parseInt(prev) || 0) + 1, event?.max_value || 999)))}
+                                    onClick={() => setNumberInput(prev => String(Math.min((parseInt(prev) || 0) + 1, maxValue ?? 999)))}
                                     size="large"
                                 >
                                     +

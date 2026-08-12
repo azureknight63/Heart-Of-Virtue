@@ -8,6 +8,7 @@ import { MOVE_CATEGORY_COLOR, MOVE_CATEGORY_GLOW } from '../utils/categories';
 import { beatSfxFor } from '../utils/combatSfx';
 import { scheduleSfxChain, effectiveDuration } from '../utils/combatTiming';
 import { SFX_DURATIONS } from '../utils/sfxDurations';
+import useDoubleRaf from '../hooks/useDoubleRaf';
 import { displayNameOf, formatCombatMoveStatus } from '../utils/combatMoveStatus';
 
 // Fragment definitions for the death burst — module-level, never recreated
@@ -633,15 +634,9 @@ const SelectedEntityPanel = React.memo(({ entity, onClose }) => {
 const TravelDot = ({ fromStyle, toStyle, color, duration, delay = 0, size = 1 }) => {
   const [launched, setLaunched] = useState(false);
 
-  useEffect(() => {
-    // Double-RAF so the browser paints the dot at its origin before the
-    // transition to the destination begins.
-    let raf2;
-    const raf1 = requestAnimationFrame(() => {
-      raf2 = requestAnimationFrame(() => setLaunched(true));
-    });
-    return () => { cancelAnimationFrame(raf1); if (raf2) cancelAnimationFrame(raf2); };
-  }, []);
+  // Double-RAF so the browser paints the dot at its origin before the
+  // transition to the destination begins.
+  useDoubleRaf(useCallback(() => setLaunched(true), []));
 
   // Extract the cell translations; the dot interpolates between them.
   const style = launched ? toStyle : fromStyle;
@@ -684,6 +679,12 @@ const EffectsLayer = React.memo(({ activeAnimation, animationPhase, getEntitySty
   const cfg = activeAnimation?.config;
   const effect = cfg?.effect;
 
+  // Deliberately not the parent's `allCombatants` memo. Two reasons, both
+  // load-bearing: EffectsLayer is a separate React.memo component and cannot
+  // see that memo without prop-drilling it, and this lookup accepts the
+  // literal sentinel 'player' as an id — animation payloads use it for the
+  // source/target of player-originated effects — which a plain id match over
+  // the flat list would not resolve.
   const findEntity = (id) => {
     if (!id || !combat) return null;
     if (id === 'player' || combat.player?.id === id) return combat.player;
@@ -813,16 +814,11 @@ const EffectsLayer = React.memo(({ activeAnimation, animationPhase, getEntitySty
 const DeathBurst = () => {
   const [phase, setPhase] = useState(0); // 0=hidden, 1=burst, 2=fade
 
+  useDoubleRaf(useCallback(() => setPhase(1), []));
+
   useEffect(() => {
-    let raf1 = requestAnimationFrame(() => {
-      const raf2 = requestAnimationFrame(() => setPhase(1));
-      return () => cancelAnimationFrame(raf2);
-    });
     const fadeTimer = setTimeout(() => setPhase(2), 350);
-    return () => {
-      cancelAnimationFrame(raf1);
-      clearTimeout(fadeTimer);
-    };
+    return () => clearTimeout(fadeTimer);
   }, []);
 
   return (
@@ -923,6 +919,10 @@ function BattlefieldGrid({
   allBeatStates,
   currentBeatIndex,
   combatLog,
+  // Fight identity, supplied by Battlefield from the top-level combat object.
+  // `combat` below is a beat state and carries neither.
+  combatId = null,
+  combatActive = false,
   tab,
   zoom = 1,
   displayedLogCount = 0,
@@ -948,7 +948,30 @@ function BattlefieldGrid({
   const animationTimeoutsRef = useRef([]);
 
   const [hoveredEntity, setHoveredEntity] = useState(null);
-  const [selectedEntity, setSelectedEntity] = useState(null);
+  // Store the id, not the entity object. Every beat replaces `combat` with freshly
+  // deserialized entities, so a stored object reference would freeze the panel on
+  // the stats captured at click time — HP, current action and status effects would
+  // never update, and would keep displaying after the combatant died.
+  const [selectedEntityId, setSelectedEntityId] = useState(null);
+
+  // One place the "every combatant on the field" list is built. It was assembled
+  // inline at three sites with slightly different shapes, in a file whose
+  // documented bug history is precisely this kind of same-shape-built-three-ways
+  // drift.
+  const allCombatants = useMemo(
+    () => [combat?.player, ...(combat?.allies || []), ...(combat?.enemies || [])].filter(Boolean),
+    [combat?.player, combat?.allies, combat?.enemies]
+  );
+
+  const selectedEntity = useMemo(() => {
+    if (!selectedEntityId) return null;
+    return allCombatants.find((e) => e?.id === selectedEntityId) || null;
+  }, [selectedEntityId, allCombatants]);
+
+  const setSelectedEntity = useCallback(
+    (entity) => setSelectedEntityId(entity?.id ?? null),
+    []
+  );
 
   const { playSFX } = useAudio();
 
@@ -960,16 +983,27 @@ function BattlefieldGrid({
   // re-renders on every phase. Cleanup resets to false on unmount so GamePage
   // never gets stuck with isBattlefieldAnimating=true.
   const prevAnimatingRef = useRef(false);
+  const onAnimatingChangeRef = useRef(onAnimatingChange);
+  useEffect(() => {
+    onAnimatingChangeRef.current = onAnimatingChange;
+  }, [onAnimatingChange]);
+
+  // Change detection only — deliberately no cleanup here. A cleanup would run on
+  // every dep change, not just unmount, emitting `false` mid-sequence while
+  // prevAnimatingRef still reads `true`, so the guard below would suppress the
+  // corrective `true` and leave the parent believing animation had finished.
   useEffect(() => {
     const isAnimating = activeAnimation !== null || animationQueue.length > 0;
     if (onAnimatingChange && isAnimating !== prevAnimatingRef.current) {
       prevAnimatingRef.current = isAnimating;
       onAnimatingChange(isAnimating)
     }
-    return () => {
-      if (onAnimatingChange) onAnimatingChange(false)
-    }
   }, [activeAnimation, animationQueue, onAnimatingChange]);
+
+  // Unmount-only reset, so the parent never gets stuck with isBattlefieldAnimating=true.
+  useEffect(() => () => {
+    onAnimatingChangeRef.current?.(false)
+  }, []);
 
   // Smooth camera — zoomed mode only. All mutable values live in refs so the
   // RAF loop never needs to be recreated and only drives a React re-render
@@ -994,12 +1028,11 @@ function BattlefieldGrid({
   const resolvedMapSize = useMemo(() => {
     if (mapSize && mapSize > 0) return mapSize;
     let maxCoord = 8; // floor at 9×9
-    const entities = [combat?.player, ...(combat?.allies || []), ...(combat?.enemies || [])];
-    for (const e of entities) {
+    for (const e of allCombatants) {
       if (e?.position) maxCoord = Math.max(maxCoord, e.position.x, e.position.y);
     }
     return Math.min(100, maxCoord + 1);
-  }, [mapSize, combat?.player, combat?.allies, combat?.enemies]);
+  }, [mapSize, allCombatants]);
 
   // Keep a ref so the RAF loop can read the latest value without being recreated
   const mapSizeRef = useRef(resolvedMapSize);
@@ -1101,12 +1134,16 @@ function BattlefieldGrid({
     };
   }, [applyPanTransform, decayPan]);
 
-  // Reset pan when a new combat begins (combat_id change or combat becoming active)
+  // Reset pan when a new combat begins. Keyed on the props Battlefield passes
+  // from the top-level combat object, NOT on `combat` — that prop is a beat
+  // state here, and serialize_combat_state emits neither field, so reading them
+  // off it made this dep flip uuid <-> undefined every time displayState
+  // alternated shape, resetting the camera mid-fight.
   useEffect(() => {
     if (panDecayRafRef.current) { cancelAnimationFrame(panDecayRafRef.current); panDecayRafRef.current = null; }
     touchPanRef.current = { x: 0, y: 0 };
     applyPanTransform();
-  }, [combat?.combat_id, combat?.combat_active, applyPanTransform]);
+  }, [combatId, combatActive, applyPanTransform]);
 
   const handleGridClick = useCallback((e) => {
     if (e.target === e.currentTarget) setSelectedEntity(null);
@@ -1334,7 +1371,6 @@ function BattlefieldGrid({
 
     cameraRafRef.current = requestAnimationFrame(animateCamera);
     // Safe: animateCamera only reads mutable refs; setSnapState is a stable setter.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Update camera target whenever Jean moves or zoom changes
@@ -1640,3 +1676,14 @@ function BattlefieldGrid({
 }
 
 export default React.memo(BattlefieldGrid);
+
+// React.memo wrapping an arrow function produces an anonymous component,
+// which shows up as "Anonymous" in DevTools and in component stack traces.
+CombatantMarker.displayName = 'CombatantMarker'
+EnemiesList.displayName = 'EnemiesList'
+BreadcrumbLayer.displayName = 'BreadcrumbLayer'
+EntityLayer.displayName = 'EntityLayer'
+SelectedEntityPanel.displayName = 'SelectedEntityPanel'
+EffectsLayer.displayName = 'EffectsLayer'
+JeanSpotlight.displayName = 'JeanSpotlight'
+DeathAnimationLayer.displayName = 'DeathAnimationLayer'

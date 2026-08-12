@@ -28,6 +28,9 @@ from ._base import (
     _ensure_weapon_exp,
     _apply_carry_fatigue,
     default_animations,
+    to_hit_chance,
+    attacker_accuracy,
+    HIT_CHANCE_BASE,
     display_name_of,
 )
 from ._utility import (
@@ -118,6 +121,10 @@ __all__ = [
     "_ensure_weapon_exp",
     "_apply_carry_fatigue",
     "default_animations",
+    # Shared to-hit arithmetic (the API layer's accuracy rating reads these)
+    "to_hit_chance",
+    "attacker_accuracy",
+    "HIT_CHANCE_BASE",
     "display_name_of",
     # Utility
     "StrategicInsight",

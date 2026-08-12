@@ -8,13 +8,13 @@ describe('StatusEffectsIconPanel', () => {
             name: 'Burn',
             type: 'ailment',
             description: 'Taking fire damage over time.',
-            duration_remaining: 3
+            beats_left: 3
         },
         {
             name: 'Shield',
             type: 'buff',
             description: 'Increases protection.',
-            duration_remaining: 5
+            beats_left: 5
         }
     ];
 
@@ -72,7 +72,7 @@ describe('StatusEffectsIconPanel', () => {
     describe('Effect Type Variations', () => {
         it('renders buff effects', () => {
             const buffs = [
-                { name: 'Strength Boost', type: 'buff', description: 'Increased strength', duration_remaining: 5 }
+                { name: 'Strength Boost', type: 'buff', description: 'Increased strength', beats_left: 5 }
             ];
             render(<StatusEffectsIconPanel effects={buffs} />);
             expect(screen.getByText('💪')).toBeDefined();
@@ -80,7 +80,7 @@ describe('StatusEffectsIconPanel', () => {
 
         it('renders ailment effects', () => {
             const ailments = [
-                { name: 'Poisoned', type: 'ailment', description: 'Poison damage', duration_remaining: 3 }
+                { name: 'Poisoned', type: 'ailment', description: 'Poison damage', beats_left: 3 }
             ];
             render(<StatusEffectsIconPanel effects={ailments} />);
             expect(screen.getByText('🧪')).toBeDefined();
@@ -88,7 +88,7 @@ describe('StatusEffectsIconPanel', () => {
 
         it('renders debuff effects', () => {
             const debuffs = [
-                { name: 'Weakness', type: 'debuff', description: 'Reduced damage', duration_remaining: 4 }
+                { name: 'Weakness', type: 'debuff', description: 'Reduced damage', beats_left: 4 }
             ];
             render(<StatusEffectsIconPanel effects={debuffs} />);
             // Should render without error
@@ -97,9 +97,9 @@ describe('StatusEffectsIconPanel', () => {
 
         it('handles mixed effect types', () => {
             const mixed = [
-                { name: 'Burn', type: 'ailment', description: 'Fire damage', duration_remaining: 2 },
-                { name: 'Shield', type: 'buff', description: 'Protection', duration_remaining: 5 },
-                { name: 'Weakness', type: 'debuff', description: 'Low defense', duration_remaining: 3 }
+                { name: 'Burn', type: 'ailment', description: 'Fire damage', beats_left: 2 },
+                { name: 'Shield', type: 'buff', description: 'Protection', beats_left: 5 },
+                { name: 'Weakness', type: 'debuff', description: 'Low defense', beats_left: 3 }
             ];
             render(<StatusEffectsIconPanel effects={mixed} />);
             expect(screen.getByText('🔥')).toBeDefined();
@@ -110,7 +110,7 @@ describe('StatusEffectsIconPanel', () => {
     describe('Duration Display', () => {
         it('displays effect with remaining duration', () => {
             const shortDuration = [
-                { name: 'Quick Effect', type: 'buff', description: 'Brief boost', duration_remaining: 1 }
+                { name: 'Quick Effect', type: 'buff', description: 'Brief boost', beats_left: 1 }
             ];
             render(<StatusEffectsIconPanel effects={shortDuration} />);
             expect(screen.getByText).toBeDefined();
@@ -118,7 +118,7 @@ describe('StatusEffectsIconPanel', () => {
 
         it('displays effect expiring soon (1 beat remaining)', () => {
             const expiring = [
-                { name: 'Ending Effect', type: 'buff', description: 'Almost gone', duration_remaining: 1 }
+                { name: 'Ending Effect', type: 'buff', description: 'Almost gone', beats_left: 1 }
             ];
             render(<StatusEffectsIconPanel effects={expiring} />);
             expect(screen.getByText).toBeDefined();
@@ -126,7 +126,7 @@ describe('StatusEffectsIconPanel', () => {
 
         it('displays effect with long duration', () => {
             const longDuration = [
-                { name: 'Long Buff', type: 'buff', description: 'Extended protection', duration_remaining: 99 }
+                { name: 'Long Buff', type: 'buff', description: 'Extended protection', beats_left: 99 }
             ];
             render(<StatusEffectsIconPanel effects={longDuration} />);
             expect(screen.getByText).toBeDefined();
@@ -134,7 +134,7 @@ describe('StatusEffectsIconPanel', () => {
 
         it('handles zero duration remaining', () => {
             const noDuration = [
-                { name: 'Expired', type: 'buff', description: 'Already expired', duration_remaining: 0 }
+                { name: 'Expired', type: 'buff', description: 'Already expired', beats_left: 0 }
             ];
             render(<StatusEffectsIconPanel effects={noDuration} />);
             expect(screen.getByText).toBeDefined();
@@ -142,11 +142,34 @@ describe('StatusEffectsIconPanel', () => {
 
         it('handles negative duration gracefully', () => {
             const negativeDuration = [
-                { name: 'Over-expired', type: 'ailment', description: 'Should not happen', duration_remaining: -1 }
+                { name: 'Over-expired', type: 'ailment', description: 'Should not happen', beats_left: -1 }
             ];
             expect(() => {
                 render(<StatusEffectsIconPanel effects={negativeDuration} />);
             }).not.toThrow();
+        });
+
+        it('renders the remaining-beats line from the beats_left the API actually sends', () => {
+            // StateEffectSerializer.serialize_state emits `beats_left`; this is the
+            // real production contract, so the tooltip must read it.
+            const effects = [{ name: 'Burn', type: 'ailment', description: 'Fire', beats_left: 3 }];
+            render(<StatusEffectsIconPanel effects={effects} />);
+            fireEvent.mouseEnter(screen.getByText('🔥'));
+            expect(screen.getByText('3 beats remaining')).toBeInTheDocument();
+        });
+
+        it('still honours the legacy duration_remaining field', () => {
+            const effects = [{ name: 'Shield', type: 'buff', description: 'Guard', duration_remaining: 7 }];
+            render(<StatusEffectsIconPanel effects={effects} />);
+            fireEvent.mouseEnter(screen.getByText('🛡️'));
+            expect(screen.getByText('7 beats remaining')).toBeInTheDocument();
+        });
+
+        it('omits the remaining-beats line for an expired effect', () => {
+            const effects = [{ name: 'Burn', type: 'ailment', description: 'Fire', beats_left: 0 }];
+            render(<StatusEffectsIconPanel effects={effects} />);
+            fireEvent.mouseEnter(screen.getByText('🔥'));
+            expect(screen.queryByText(/beats remaining/)).not.toBeInTheDocument();
         });
     });
 
@@ -156,7 +179,7 @@ describe('StatusEffectsIconPanel', () => {
                 name: `Effect ${i}`,
                 type: i % 2 === 0 ? 'buff' : 'ailment',
                 description: `Description ${i}`,
-                duration_remaining: Math.floor(Math.random() * 10) + 1
+                beats_left: Math.floor(Math.random() * 10) + 1
             }));
             render(<StatusEffectsIconPanel effects={manyEffects} />);
             expect(screen.getByText).toBeDefined();
@@ -164,8 +187,8 @@ describe('StatusEffectsIconPanel', () => {
 
         it('handles duplicate effect names', () => {
             const duplicates = [
-                { name: 'Burn', type: 'ailment', description: 'Fire damage 1', duration_remaining: 2 },
-                { name: 'Burn', type: 'ailment', description: 'Fire damage 2', duration_remaining: 3 }
+                { name: 'Burn', type: 'ailment', description: 'Fire damage 1', beats_left: 2 },
+                { name: 'Burn', type: 'ailment', description: 'Fire damage 2', beats_left: 3 }
             ];
             render(<StatusEffectsIconPanel effects={duplicates} />);
             expect(screen.getAllByText('🔥')).toHaveLength(2);
@@ -173,8 +196,8 @@ describe('StatusEffectsIconPanel', () => {
 
         it('handles effects with same icon', () => {
             const sameIcon = [
-                { name: 'Fire Burn', type: 'ailment', description: 'Burning', duration_remaining: 2 },
-                { name: 'Lava Burn', type: 'ailment', description: 'Hot burning', duration_remaining: 3 }
+                { name: 'Fire Burn', type: 'ailment', description: 'Burning', beats_left: 2 },
+                { name: 'Lava Burn', type: 'ailment', description: 'Hot burning', beats_left: 3 }
             ];
             render(<StatusEffectsIconPanel effects={sameIcon} />);
             expect(screen.getAllByText('🔥')).toHaveLength(2);
@@ -219,7 +242,7 @@ describe('StatusEffectsIconPanel', () => {
     describe('Description Handling', () => {
         it('displays effects with descriptions', () => {
             const withDesc = [
-                { name: 'Known Effect', type: 'buff', description: 'Clear description', duration_remaining: 5 }
+                { name: 'Known Effect', type: 'buff', description: 'Clear description', beats_left: 5 }
             ];
             render(<StatusEffectsIconPanel effects={withDesc} />);
             expect(screen.getByText).toBeDefined();
@@ -227,7 +250,7 @@ describe('StatusEffectsIconPanel', () => {
 
         it('handles missing descriptions', () => {
             const noDesc = [
-                { name: 'Mystery Effect', type: 'buff', duration_remaining: 3 }
+                { name: 'Mystery Effect', type: 'buff', beats_left: 3 }
             ];
             expect(() => {
                 render(<StatusEffectsIconPanel effects={noDesc} />);
@@ -240,7 +263,7 @@ describe('StatusEffectsIconPanel', () => {
                     name: 'Complex Effect',
                     type: 'buff',
                     description: 'This is a very long description that explains in great detail what this effect does and how it impacts the player. '.repeat(5),
-                    duration_remaining: 5
+                    beats_left: 5
                 }
             ];
             render(<StatusEffectsIconPanel effects={longDesc} />);
@@ -253,7 +276,7 @@ describe('StatusEffectsIconPanel', () => {
                     name: 'Special',
                     type: 'buff',
                     description: 'Effect with special chars: <>&"\'',
-                    duration_remaining: 3
+                    beats_left: 3
                 }
             ];
             render(<StatusEffectsIconPanel effects={specialDesc} />);
@@ -312,7 +335,7 @@ describe('StatusEffectsIconPanel', () => {
             expect(screen.getByText('No description available.')).toBeInTheDocument();
         });
 
-        it('omits the duration line when duration_remaining is undefined', () => {
+        it('omits the duration line when beats_left is undefined', () => {
             const noDuration = [{ name: 'Mystery Effect', type: 'buff', description: 'Something' }];
             render(<StatusEffectsIconPanel effects={noDuration} />);
             fireEvent.mouseEnter(screen.getByText('✨'));
@@ -327,7 +350,7 @@ describe('StatusEffectsIconPanel', () => {
         });
 
         it('applies the debuff color to a debuff effect tooltip', () => {
-            const debuffs = [{ name: 'Weakness', type: 'debuff', description: 'Reduced damage', duration_remaining: 4 }];
+            const debuffs = [{ name: 'Weakness', type: 'debuff', description: 'Reduced damage', beats_left: 4 }];
             render(<StatusEffectsIconPanel effects={debuffs} />);
             fireEvent.mouseEnter(screen.getByText('🥀'));
             expect(screen.getByText('WEAKNESS')).toBeInTheDocument();
@@ -335,8 +358,8 @@ describe('StatusEffectsIconPanel', () => {
 
         it('renders a passive effect and an unrecognized-type effect without error', () => {
             const mixed = [
-                { name: 'Vigilance', type: 'passive', description: 'Always watching', duration_remaining: 1 },
-                { name: 'Curious', type: 'strange-type', description: 'Unclassified', duration_remaining: 1 },
+                { name: 'Vigilance', type: 'passive', description: 'Always watching', beats_left: 1 },
+                { name: 'Curious', type: 'strange-type', description: 'Unclassified', beats_left: 1 },
             ]
             render(<StatusEffectsIconPanel effects={mixed} />);
             const icons = screen.getAllByText('✨');
@@ -349,7 +372,7 @@ describe('StatusEffectsIconPanel', () => {
         });
 
         it('handles an effect with no type using the default color', () => {
-            const noType = [{ name: 'Blank', description: 'No type set', duration_remaining: 2 }]
+            const noType = [{ name: 'Blank', description: 'No type set', beats_left: 2 }]
             render(<StatusEffectsIconPanel effects={noType} />);
             fireEvent.mouseEnter(screen.getByText('✨'));
             expect(screen.getByText('BLANK')).toBeInTheDocument();
@@ -376,7 +399,7 @@ describe('StatusEffectsIconPanel', () => {
                 name: `Effect ${i}`,
                 type: 'buff',
                 description: `Effect number ${i}`,
-                duration_remaining: i % 20
+                beats_left: i % 20
             }));
 
             expect(() => {
@@ -388,7 +411,7 @@ describe('StatusEffectsIconPanel', () => {
             const { rerender } = render(<StatusEffectsIconPanel effects={mockEffects} />);
 
             const newEffects = [
-                { name: 'New Effect', type: 'buff', description: 'Different', duration_remaining: 5 }
+                { name: 'New Effect', type: 'buff', description: 'Different', beats_left: 5 }
             ];
 
             rerender(<StatusEffectsIconPanel effects={newEffects} />);

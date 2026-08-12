@@ -15,6 +15,7 @@ import CombatMovePanel from './CombatMovePanel'
 import CombatLog from './CombatLog'
 import CombatInputDialog from './CombatInputDialog'
 import { getAnimationDuration } from '../utils/animationConfigs'
+import { groupHasMoves } from '../utils/categories'
 import CombatCheckDialog from './CombatCheckDialog'
 import SuggestedMovesPanel from './SuggestedMovesPanel'
 import FleeButton from './FleeButton'
@@ -23,6 +24,24 @@ import CooldownTray from './CooldownTray'
 import ShopDialog from './ShopDialog'
 
 const BETA_MODE = import.meta.env.VITE_BETA_MODE === 'true'
+
+/**
+ * Identity of a combat-log entry, for de-duplicating the reveal queue.
+ *
+ * The engine has no per-entry id, so identity is derived from content. Both the
+ * pending filter and the append guard must use THIS function: they previously
+ * keyed on different field sets, which silently dropped lines that matched on
+ * message+round but differed in type.
+ *
+ * The separator is U+001F (unit separator), a control character the engine
+ * never emits inside a message, so no combination of field values can forge
+ * a collision across a field boundary. A space would not be safe here --
+ * messages are prose and contain spaces. Written as an escape rather than a
+ * literal control character so it survives editors and diff tooling.
+ */
+const LOG_KEY_SEP = '\u001F'
+const logEntryKey = (entry) =>
+  [entry?.round ?? '', entry?.type ?? '', entry?.message ?? ''].join(LOG_KEY_SEP)
 
 /**
  * Moves that are instant / non-turn-consuming on the backend.
@@ -75,10 +94,13 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
   const [pendingMoveSelection, setPendingMoveSelection] = useState(false)
   const [localCombatInput, setLocalCombatInput] = useState(null)
 
-  // Clear local input when combat turn changes
+  // Clear the locally-staged target picker whenever the beat advances.
+  // `round`/`beat` are the fields the backend actually emits (CombatSerializer
+  // + CombatAdapter); the previous `turn_number`/`combat_id` deps existed on no
+  // client combat object, so a stale picker survived the turn it belonged to.
   useEffect(() => {
     setLocalCombatInput(null)
-  }, [combat?.turn_number, combat?.combat_id])
+  }, [combat?.round, combat?.beat])
 
   // Audio context
   const { playSFX, playSting } = useAudio()
@@ -87,13 +109,23 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
   const [isProcessingLog, setIsProcessingLog] = useState(false)
   const [displayedLog, setDisplayedLog] = useState([])
 
-  // Memoize pending log entries — avoids expensive nested filter/some on every render
+  // Set membership rather than a nested scan. `combat.log` is a freshly
+  // deserialized array on every poll and socket beat, so its identity always
+  // changes and this memo always recomputes — which made the previous
+  // `log.filter(e => displayed.some(...))` O(log x displayed) *per poll*, not
+  // just per revealed line. A multi-wave fight keeps one continuous log (it is
+  // not reset across wave transitions), and the reload-recovery path replays
+  // with no delay between entries, so the quadratic term was reachable.
+  // Building the key set is O(displayed) and the filter is then O(log).
+  const displayedLogKeys = useMemo(
+    () => new Set((displayedLog || []).map(logEntryKey)),
+    [displayedLog]
+  )
+
   const pendingLogEntries = useMemo(() => {
-    if (!combat?.log || !displayedLog) return []
-    return combat.log.filter(entry =>
-      !displayedLog.some(existing => existing.message === entry.message && existing.round === entry.round && existing.type === entry.type)
-    )
-  }, [combat?.log, displayedLog])
+    if (!combat?.log) return []
+    return combat.log.filter(entry => !displayedLogKeys.has(logEntryKey(entry)))
+  }, [combat?.log, displayedLogKeys])
 
   // Detect page reload during combat: all logs pending on first batch (no logs displayed yet)
   const isPageReloadRecovery = useRef(false)
@@ -177,7 +209,12 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
 
         // Add this line to displayed log
         setDisplayedLog(prev => {
-          if (prev.some(existing => existing.message === entry.message && existing.round === entry.round)) {
+          // Same key as the pending filter above. These two disagreed: the
+          // filter keyed on message+round+type, this guard on message+round
+          // only, so two entries alike but for `type` were queued as pending
+          // and then silently dropped here — the reveal loop advances either
+          // way, so the line simply never appeared.
+          if (prev.some(existing => logEntryKey(existing) === logEntryKey(entry))) {
             return prev
           }
           const newLog = [...prev, entry]
@@ -214,7 +251,11 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
             playSFX('quest_complete')
           }
 
-          if (msg.includes('attacks') && msg.includes('jean') && player?.hp < (player?.max_hp * 0.3)) {
+          // activePlayer, not player: `player` lags combat state, and this
+          // check fires at exactly the moment a hit lands — when the two
+          // diverge. Every other live-combat HP read in this file goes
+          // through activePlayer for the same reason.
+          if (msg.includes('attacks') && msg.includes('jean') && activePlayer?.hp < (activePlayer?.max_hp * 0.3)) {
             playSFX('low_health_warning')
           }
         }
@@ -255,18 +296,19 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
       isMounted = false
       if (timeoutId) clearTimeout(timeoutId)
     }
-    // We depend on combat.log to trigger providing new pending entries
-    // But pendingLogEntries updates when displayedLog updates.
-    // To avoid infinite loops or stuttering, we should trigger this when combat.log changes length?
-    // Or just depend on pendingLogEntries.length > 0 transition?
-    // Using pendingLogEntries in deps is safe if we gate logic carefully.
-    // If pendingLogEntries shrinks (as we display them), we don't want to restart the loop for the REST of them.
-    // So we should only start if NOT isProcessingLog?
-    // But we set isProcessingLog=true immediately.
-
-    // Actually, the original logic filtered inside the effect.
-    // Let's revert to tracking changes via combat.log but using the robust filtering.
-    // AND we rely on the closure over `newEntries`.
+    // Depends on `combat.log` ONLY, deliberately.
+    //
+    // `pendingLogEntries` is derived from `displayedLog`, which this effect
+    // itself updates via setDisplayedLog on every revealed line. Adding it to
+    // the deps would therefore tear down and restart the reveal loop after
+    // each entry — overlapping timeout chains, re-revealing the remaining
+    // entries from the top, and stuttering the pacing. The effect reads the
+    // pending list through its closure precisely so the batch it started with
+    // is the batch it finishes.
+    //
+    // (This replaced a block of unresolved musing about whether to add
+    // `pendingLogEntries` to the deps. It read as an open question, which is
+    // an invitation for someone to "fix" a dependency array that is correct.)
   }, [combat?.log]) // Only trigger when backend sends new logs
 
   // Notify parent of displayed log count whenever it changes
@@ -277,9 +319,11 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
   }, [displayedLog, onDisplayedLogCountChange])
 
   // Check for move categories - handle both direct API response and transformed state
+  // transformCombatData spreads battle_state flat onto the combat object, so
+  // there is never a nested combat.battle_state to fall back to.
   const rawMoves = useMemo(
-    () => combat?.available_options || combat?.battle_state?.available_options || [],
-    [combat?.available_options, combat?.battle_state?.available_options]
+    () => combat?.available_options || [],
+    [combat?.available_options]
   )
 
   // Track the most recent set of moves we've received
@@ -320,13 +364,22 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
     hasSpecialMoves,
     hasDefensiveMoves,
     hasMiscellaneousMoves,
-  } = useMemo(() => ({
-    hasOffensiveMoves: mode === 'combat' && (availableMoves.some(m => m.category === 'Offensive') || lastKnownMoves.some(m => m.category === 'Offensive')),
-    hasManeuverMoves: mode === 'combat' && (availableMoves.some(m => m.category === 'Maneuver') || lastKnownMoves.some(m => m.category === 'Maneuver')),
-    hasSpecialMoves: mode === 'combat' && (availableMoves.some(m => m.category === 'Special' || m.category === 'Spiritual' || m.category === 'Supernatural') || lastKnownMoves.some(m => m.category === 'Special')),
-    hasDefensiveMoves: mode === 'combat' && (availableMoves.some(m => m.category === 'Defensive') || lastKnownMoves.some(m => m.category === 'Defensive')),
-    hasMiscellaneousMoves: mode === 'combat' && (availableMoves.some(m => m.category === 'Miscellaneous' || m.category === 'Utility') || lastKnownMoves.some(m => m.category === 'Miscellaneous' || m.category === 'Utility')),
-  }), [mode, availableMoves, lastKnownMoves])
+  } = useMemo(() => {
+    // Which engine categories each radial button collects is defined once, in
+    // utils/categories.js (CATEGORY_GROUPS) — CombatMovePanel filters its list
+    // with the same map, so a button can never appear for moves the panel would
+    // then hide (or vice versa).
+    const hasGroup = (group) => mode === 'combat' && (
+      groupHasMoves(availableMoves, group) || groupHasMoves(lastKnownMoves, group)
+    )
+    return {
+      hasOffensiveMoves: hasGroup('Offensive'),
+      hasManeuverMoves: hasGroup('Maneuver'),
+      hasSpecialMoves: hasGroup('Special'),
+      hasDefensiveMoves: hasGroup('Defensive'),
+      hasMiscellaneousMoves: hasGroup('Miscellaneous'),
+    }
+  }, [mode, availableMoves, lastKnownMoves])
 
   // Auto-scaling logic for HeroPanel
   const heroContainerRef = useRef(null)
@@ -448,8 +501,7 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
       setLocalCombatInput({
         type: 'target_selection',
         options: move.viable_targets || [],
-        moveName: move.name,
-        moveIndex: move.id
+        moveName: move.name
       })
       return;
     }
@@ -743,15 +795,19 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
         {mode === 'combat' && isMyTurn && (
           <SuggestedMovesPanel
             suggestions={combat?.suggested_moves || []}
-            suggestionsLoading={combat?.battle_state?.suggestions_loading || combat?.suggestions_loading || false}
+            suggestionsLoading={combat?.suggestions_loading || false}
             lastOutcome={combat?.last_move_outcome || ""}
             isMobile={isMobile}
             lastMoveViable={
               Array.isArray(combat?.available_options) &&
               combat.available_options.some(opt => opt.name === combat?.last_move_name && opt.available) &&
               // Also verify the target is still alive in combat
+              // `e.id` is already the canonical wire id from
+              // CombatantSerializer.stream_id (`enemy_<id>`), which is the same
+              // string last_move_target_id carries. Re-prefixing it here made the
+              // comparison always false, so "DO IT AGAIN" never appeared.
               (combat?.last_move_target_id && Array.isArray(combat?.enemies) &&
-               combat.enemies.some(e => `enemy_${e.id}` === combat.last_move_target_id))
+               combat.enemies.some(e => e.id === combat.last_move_target_id))
             }
             isPlayerTurn={isMyTurn}
             onTargetHover={onTargetHover}
@@ -825,11 +881,8 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
 
       {showActions && location && mode === 'exploration' && (
         <ActionsPanel
-          player={player}
           location={location}
           onClose={() => setShowActions(false)}
-          onMove={onMove}
-          onRefetch={onRefetch}
         />
       )}
 

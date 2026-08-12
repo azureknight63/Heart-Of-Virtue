@@ -275,6 +275,40 @@ describe('BattlefieldGrid', () => {
             expect(onAnimatingChange).toHaveBeenCalledWith(true);
         });
 
+        it('never reports false while a multi-animation queue is still draining', () => {
+            // Regression: the notifier effect used to carry a cleanup, which React
+            // runs on every dep change rather than only on unmount. Dequeuing the
+            // first of two animations emitted a spurious false, and because
+            // prevAnimatingRef still read true the corrective true never followed —
+            // so the victory/defeat grace timer started mid-animation.
+            const onAnimatingChange = vi.fn();
+            const twoAnimations = {
+                ...mockCombat,
+                log: [
+                    { animation: { type: 'attack', source_id: 'player', target_id: 'enemy_goblin', outcome: 'hit' } },
+                    { animation: { type: 'death', source_id: 'enemy_goblin', target_id: 'enemy_goblin', outcome: 'hit' } },
+                ],
+            };
+            render(
+                <BattlefieldGrid
+                    combat={twoAnimations}
+                    tab="overview"
+                    zoom={1}
+                    onAnimatingChange={onAnimatingChange}
+                    displayedLogCount={2}
+                />
+            );
+
+            expect(onAnimatingChange).toHaveBeenCalledWith(true);
+            onAnimatingChange.mockClear();
+
+            // Advance just past the first animation so the queue dequeues the
+            // second. That dep change is what used to trigger the cleanup; the
+            // flag must stay true because the queue is still draining.
+            act(() => vi.advanceTimersByTime(getAnimationDuration('attack') + 20));
+            expect(onAnimatingChange).not.toHaveBeenCalledWith(false);
+        });
+
         it('does not call onAnimatingChange again during phase transitions', () => {
             const onAnimatingChange = vi.fn();
             render(

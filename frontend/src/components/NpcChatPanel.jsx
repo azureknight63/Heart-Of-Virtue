@@ -84,16 +84,25 @@ export default function NpcChatPanel({ npcId, npcName, onClose }) {
   const handleOptionClick = async (option) => {
     if (phase !== 'waiting_jean' || !npcKey) return
 
+    // Clear any previous failure before trying again. The option list is gated
+    // on `!error`, so a stale error would hide every dialogue option for the
+    // rest of the conversation even after a successful retry.
+    setError(null)
+    retryFnRef.current = null
+
+    // Optimistically shown before the request resolves; removed again on
+    // failure so a retry doesn't append a second copy of the same line.
+    const newJeanMessage = {
+      speaker: 'jean',
+      text: option.text,
+      tone: option.tone,
+    }
+
     try {
       setPhase('waiting_npc')
       setLoading(true)
 
       // Add Jean's response to messages
-      const newJeanMessage = {
-        speaker: 'jean',
-        text: option.text,
-        tone: option.tone,
-      }
       setMessages((prev) => [...prev, newJeanMessage])
 
       // Call the respond endpoint
@@ -129,6 +138,8 @@ export default function NpcChatPanel({ npcId, npcName, onClose }) {
     } catch (err) {
       if (!isMountedRef.current) return
       const errorMsg = err.response?.data?.error || 'NPC did not respond'
+      // Roll back the optimistic line by identity — the retry re-adds it.
+      setMessages((prev) => prev.filter((msg) => msg !== newJeanMessage))
       retryFnRef.current = () => handleOptionClick(option)
       setError(errorMsg)
       setPhase('waiting_jean')

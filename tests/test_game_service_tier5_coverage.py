@@ -2704,6 +2704,57 @@ class TestListSaves:
             saves = await game_service.list_saves("user123")
 
         assert saves[0]["timestamp"] == "not-a-timestamp"
+        # No parseable instant to derive an epoch from — must not fabricate one.
+        assert saves[0]["timestamp_ms"] is None
+
+    @pytest.mark.asyncio
+    async def test_list_saves_epoch_matches_known_utc_instant(self, game_service):
+        # The DB row is UTC per SQLite CURRENT_TIMESTAMP convention (see
+        # list_saves). Cross-checking against a hand-computed epoch (not just
+        # "is a number") is what actually verifies the UTC interpretation.
+        db_mock = AsyncMock()
+        result = MagicMock()
+        result.rows = [
+            ["save1", "MySave", "2026-01-01 12:00:00", True, 5, "Dark Grotto", "EntryHall", 300],
+        ]
+        db_mock.execute.return_value = result
+
+        with patch("src.api.db.db", db_mock):
+            saves = await game_service.list_saves("user123", timezone="America/New_York")
+
+        import calendar
+        from datetime import datetime as _dt
+
+        expected_ms = calendar.timegm(_dt(2026, 1, 1, 12, 0, 0).timetuple()) * 1000
+        assert saves[0]["timestamp_ms"] == expected_ms
+
+    @pytest.mark.asyncio
+    async def test_list_saves_epoch_survives_display_string_js_cannot_parse(self, game_service):
+        # Europe/Paris in January is CET, one of the abbreviations V8's
+        # Date.parse cannot recover (see frontend/src/utils/localSave.js).
+        # The whole point of timestamp_ms is that the client never needs to
+        # parse the display string at all — confirm it's still a correct,
+        # timezone-independent epoch even though the string it's paired with
+        # is unparseable JS-side.
+        db_mock = AsyncMock()
+        result = MagicMock()
+        result.rows = [
+            ["save1", "MySave", "2026-01-01 12:00:00", True, 5, "Dark Grotto", "EntryHall", 300],
+        ]
+        db_mock.execute.return_value = result
+
+        with patch("src.api.db.db", db_mock):
+            saves = await game_service.list_saves("user123", timezone="Europe/Paris")
+
+        assert saves[0]["timestamp"].endswith("CET")
+
+        import calendar
+        from datetime import datetime as _dt
+
+        expected_ms = calendar.timegm(_dt(2026, 1, 1, 12, 0, 0).timetuple()) * 1000
+        # Same underlying instant regardless of which display timezone was
+        # requested — epoch must not shift with the display-string format.
+        assert saves[0]["timestamp_ms"] == expected_ms
 
 
 class TestDeleteSave:

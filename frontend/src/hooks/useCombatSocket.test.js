@@ -142,6 +142,65 @@ describe('useCombatSocket', () => {
     expect(calls.fetchStatus).toHaveBeenCalled();
   });
 
+  it('resyncs on the initial connect, not only on reconnect', async () => {
+    // Beats emitted before join_combat completed went to a room we had not
+    // joined, and lastSeqRef starts null so classifySeq cannot detect that gap.
+    // The initial connect therefore has to re-seed from status like reconnect.
+    const { socket, calls } = setup();
+    await act(async () => {
+      socket.fire('connect');
+    });
+    expect(calls.fetchStatus).toHaveBeenCalled();
+    expect(calls.onResolved).toHaveBeenCalledWith({ resynced: true });
+  });
+
+  it('discards a resync snapshot that a newer beat has already superseded', async () => {
+    // The gap-triggered resync is fire-and-forget. If a live beat lands while
+    // its HTTP request is in flight, applying the older snapshot would roll the
+    // UI backwards - reviving dead enemies and re-freezing awaiting_input.
+    let releaseStatus;
+    const fetchStatus = vi.fn(
+      () => new Promise((resolve) => { releaseStatus = () => resolve({ stale: true }); })
+    );
+    const { socket, calls } = setup({ fetchStatus });
+
+    act(() => socket.fire('combat:beat', beat(1)));
+    // seq 5 is a gap (2-4 missing) and kicks off the resync.
+    act(() => socket.fire('combat:beat', beat(5)));
+    expect(fetchStatus).toHaveBeenCalled();
+
+    // A newer beat arrives and is applied before the resync resolves.
+    act(() => socket.fire('combat:beat', beat(6)));
+    expect(calls.onBeat).toHaveBeenCalledWith(beat(6));
+
+    await act(async () => {
+      releaseStatus();
+    });
+    expect(calls.onResolved).not.toHaveBeenCalledWith({ stale: true });
+  });
+
+  it('applies a resync snapshot when no newer beat intervened', async () => {
+    const { socket, calls } = setup();
+    act(() => socket.fire('combat:beat', beat(1)));
+    await act(async () => {
+      socket.fire('combat:beat', beat(9));
+    });
+    expect(calls.onResolved).toHaveBeenCalledWith({ resynced: true });
+  });
+
+  it('swallows a fetchStatus rejection during resync', async () => {
+    const fetchStatus = vi.fn().mockRejectedValue(new Error('network'));
+    const { socket, calls } = setup({ fetchStatus });
+    // Seed lastSeq first: classifySeq(null, n) is always 'next', so a gap can
+    // only be detected once a beat has been applied.
+    act(() => socket.fire('combat:beat', beat(1)));
+    await act(async () => {
+      socket.fire('combat:beat', beat(4));
+    });
+    expect(fetchStatus).toHaveBeenCalled();
+    expect(calls.onResolved).not.toHaveBeenCalled();
+  });
+
   it('disconnects on unmount', () => {
     const { socket, hook } = setup();
     hook.unmount();

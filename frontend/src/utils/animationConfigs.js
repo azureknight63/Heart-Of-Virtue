@@ -35,13 +35,21 @@
  *                 animation's outcome (hit/miss/parry) at play time
  */
 
-/** Map an attack outcome to the corresponding impact SFX cue name. */
+/**
+ * Map an attack outcome to the corresponding impact SFX cue name.
+ * Keep the cases in step with `OUTCOMES` in utils/combatBeatSchema.js, which is
+ * parity-tested against the engine's src/api/schemas/combat_beat.py.
+ */
 export const impactSfxFor = (outcome) => {
   switch (outcome) {
     case 'miss': return 'attack_miss';
+    // Every negated outcome shares the parry cue. `absorb` belongs here rather
+    // than with 'hit': the damage did not land, so it must not play the
+    // flesh-impact sound the player reads as taking a real hit.
     case 'parry':
     case 'block':
     case 'deflect':
+    case 'absorb':
       return 'attack_parry';
     case 'hit':
     default:
@@ -376,5 +384,12 @@ export const ANIMATION_CONFIGS = {
 /** Resolve a config for the given type, falling back to `pulse` when unknown. */
 export const getAnimationConfig = (type) => ANIMATION_CONFIGS[type] || ANIMATION_CONFIGS.pulse;
 
-/** Duration in ms for an animation of the given type (default 0 when unknown). */
-export const getAnimationDuration = (type) => ANIMATION_CONFIGS[type]?.duration ?? 0;
+/**
+ * Duration in ms for an animation of the given type.
+ *
+ * Resolves through getAnimationConfig so an unknown type yields `pulse`'s
+ * duration — the same fallback the renderer uses. Returning 0 here instead
+ * would let callers that gate on the animation length (e.g. LeftPanel's combat
+ * log reveal) race ahead of an animation that is in fact still playing.
+ */
+export const getAnimationDuration = (type) => getAnimationConfig(type).duration;

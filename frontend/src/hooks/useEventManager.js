@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import apiClient from '../api/client'
+import { COMBAT_INIT_EVENT_ID } from '../utils/eventIds'
 
 // Constants
 // Constants - Optimized for test environment if detected
@@ -335,7 +336,7 @@ export function useEventManager({
             setCurrentEvent(null)
 
             // Track that this event input was processed
-            if (eventId && eventId !== 'combat_init') {
+            if (eventId && eventId !== COMBAT_INIT_EVENT_ID) {
                 processedEventIds.current.add(eventId)
                 // Auto-expire from processed list to allow repeating events later
                 setTimeout(() => {

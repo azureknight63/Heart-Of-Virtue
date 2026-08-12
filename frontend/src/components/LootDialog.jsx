@@ -3,6 +3,7 @@ import BaseDialog from './BaseDialog'
 import GameButton from './GameButton'
 import GameText from './GameText'
 import { colors, spacing, fonts } from '../styles/theme'
+import { formatWeight, formatWeightRatio } from '../utils/itemUtils'
 
 const ENCH_COLORS = ['#888888', '#44FF88', '#FFD700']
 
@@ -52,7 +53,7 @@ function ItemTooltip({ item, anchorRef }) {
         {[
           ['Type', item.type || '—'],
           ['Subtype', item.subtype || '—'],
-          ['Weight', item.weight != null ? `${item.weight}w` : '—'],
+          ['Weight', item.weight != null ? formatWeight(item.weight) : '—'],
           ['Value', item.value != null ? `${item.value}g` : '—'],
         ].map(([lbl, val]) => (
           <div key={lbl} style={{ background: '#0d0800', padding: '4px 6px', textAlign: 'center' }}>
@@ -121,7 +122,9 @@ function LootRow({ item, selected, onToggle }) {
       </div>
       {/* Weight */}
       <div style={{ color: '#555', textAlign: 'right', fontSize: 11 }}>
-        {item.weight != null ? `${(item.weight * item.quantity).toFixed(1)}lb` : '—'}
+        {/* `|| 1` matches the selected-weight total below: a drop without an
+            explicit quantity is one unit, not zero. */}
+        {item.weight != null ? formatWeight(item.weight * (item.quantity || 1), 1) : '—'}
       </div>
 
       {hovered && <ItemTooltip item={item} anchorRef={rowRef} />}
@@ -249,9 +252,9 @@ export default function LootDialog({ endState, playerWeight, weightLimit, onColl
         {/* Weight tracker */}
         <div style={{ background: '#0d1a0d', border: `1px solid #003300`, padding: '8px 12px', fontSize: '11px', fontFamily: fonts.main }}>
           {[
-            ['Current carry weight:', `${baseWeight.toFixed(1)} / ${maxWeight.toFixed(1)} lb`, colors.primary],
-            ['Selected loot adds:', `${selectedWeight.toFixed(1)} lb`, '#FFD700'],
-            ['Total after pickup:', `${totalAfter.toFixed(1)} lb`, weightColor],
+            ['Current carry weight:', formatWeightRatio(baseWeight, maxWeight), colors.primary],
+            ['Selected loot adds:', formatWeight(selectedWeight, 1), '#FFD700'],
+            ['Total after pickup:', formatWeight(totalAfter, 1), weightColor],
           ].map(([lbl, val, col]) => (
             <div key={lbl} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
               <span style={{ color: '#555' }}>{lbl}</span>

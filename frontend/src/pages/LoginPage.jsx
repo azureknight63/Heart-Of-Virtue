@@ -214,7 +214,6 @@ export default function LoginPage() {
                   type="submit"
                   variant="primary"
                   disabled={loading}
-                  aria-label="Submit login form"
                   style={{ width: '100%' }}
                 >
                   {loading ? 'Processing...' : 'Enter Game'}
@@ -305,7 +304,6 @@ export default function LoginPage() {
                   type="submit"
                   variant="primary"
                   disabled={loading}
-                  aria-label="Submit registration form"
                   style={{ width: '100%' }}
                 >
                   {loading ? 'Processing...' : 'Create Account'}

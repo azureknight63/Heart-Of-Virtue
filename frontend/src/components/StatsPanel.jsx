@@ -27,8 +27,11 @@ export default function StatsPanel({ player, onClose }) {
   }
 
   const resistance = player.resistance || {}
-  const statusResistance = player.status_resistance || {}
   const states = player.states || []
+
+  // How much enemy Evasion the player can absorb before they start missing:
+  // hit chance is capped at 100%, so everything above 100 is headroom.
+  const accuracyHeadroom = Math.max(0, (player.hit_accuracy || 0) - 100)
 
   const coreStats = [
     { label: 'HP', val: `${player.hp}/${player.max_hp}`, color: colors.danger, icon: '❤️' },
@@ -36,8 +39,32 @@ export default function StatsPanel({ player, onClose }) {
     { label: 'Protection', val: Math.round(player.protection || 0), color: colors.info, icon: '🛡️' },
     { label: 'Level', val: player.level || 1, color: '#cc88ff', icon: '⭐' },
     { label: 'Attack', val: `${player.attack_damage_min}-${player.attack_damage_max}`, color: colors.secondary, icon: '⚔️' },
-    { label: 'Accuracy', val: `${player.hit_accuracy}%`, color: colors.primary, icon: '🎯' },
-    { label: 'Evasion', val: `${player.evasion_chance}%`, color: colors.text.muted, icon: '💨' },
+    // Not percentages: hit chance is the attacker's Accuracy minus the
+    // defender's Evasion, so a bare "%" made Accuracy read as an impossible
+    // 108% and Evasion read as a dodge chance it is not.
+    {
+      label: 'Accuracy',
+      val: player.hit_accuracy,
+      color: colors.primary,
+      icon: '🎯',
+      // "about" is load-bearing, not hedging: this rating folds the attacker's
+      // weighted terms before the defender's evasion is subtracted, while the
+      // engine's roll subtracts evasion first (see to_hit_chance in
+      // src/moves/_base.py, where the term order is documented as deliberate).
+      // The two differ by a point for roughly 0.7% of integer stat pairs, so
+      // stating the subtraction as exact would be a promise the dice don't keep.
+      tooltip: `Your chance to hit is about your Accuracy minus the target's Evasion, capped at 100%. `
+        + `At ${player.hit_accuracy} you almost never miss a target whose Evasion is ${accuracyHeadroom} or lower, `
+        + `and lose roughly 1% for each point above that. Grows with Finesse (70%) and Intelligence (30%).`,
+    },
+    {
+      label: 'Evasion',
+      val: player.evasion_chance,
+      color: colors.text.muted,
+      icon: '💨',
+      tooltip: 'Subtracted from an attacker\'s Accuracy to find their chance to hit you. '
+        + 'Equal to your Finesse.',
+    },
   ]
 
   return (
@@ -63,9 +90,23 @@ export default function StatsPanel({ player, onClose }) {
               gap: '2px',
               borderColor: colors.alpha.secondary[30],
             }}>
-              <div style={{ fontSize: '16px' }}>{stat.icon}</div>
-              <GameText variant="muted" size="xs" style={{ textTransform: 'uppercase' }}>{stat.label}</GameText>
-              <GameText weight="bold" style={{ color: stat.color }}>{stat.val}</GameText>
+              {/* The tooltip sits on an inner wrapper because GamePanel's own
+                  `title` prop renders a heading rather than hover text. */}
+              <div
+                title={stat.tooltip}
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: '2px',
+                  width: '100%',
+                  cursor: stat.tooltip ? 'help' : 'default',
+                }}
+              >
+                <div style={{ fontSize: '16px' }}>{stat.icon}</div>
+                <GameText variant="muted" size="xs" style={{ textTransform: 'uppercase' }}>{stat.label}</GameText>
+                <GameText weight="bold" style={{ color: stat.color }}>{stat.val}</GameText>
+              </div>
             </GamePanel>
           ))}
         </div>

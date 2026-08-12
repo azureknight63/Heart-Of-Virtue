@@ -5,6 +5,7 @@ import {
   getAnimationDuration,
   impactSfxFor,
 } from './animationConfigs';
+import { OUTCOMES } from './combatBeatSchema';
 
 describe('ANIMATION_CONFIGS', () => {
   const entries = Object.entries(ANIMATION_CONFIGS);
@@ -49,12 +50,24 @@ describe('getAnimationConfig', () => {
 });
 
 describe('getAnimationDuration', () => {
+  it('every config declares a positive numeric duration', () => {
+    // getAnimationDuration reads `.duration` directly rather than guarding with
+    // `?? 0`, because a 0 here would let callers that gate on animation length
+    // race ahead. This test is what enforces the invariant instead.
+    for (const [type, config] of Object.entries(ANIMATION_CONFIGS)) {
+      expect(typeof config.duration, `${type} is missing a duration`).toBe('number');
+      expect(config.duration).toBeGreaterThan(0);
+    }
+  });
+
   it('returns the configured duration', () => {
     expect(getAnimationDuration('attack')).toBe(ANIMATION_CONFIGS.attack.duration);
   });
 
-  it('returns 0 for unknown types', () => {
-    expect(getAnimationDuration('nonsense')).toBe(0);
+  it('falls back to the pulse duration for unknown types', () => {
+    // Must match getAnimationConfig's fallback: a caller gating on the
+    // animation length has to wait for what the renderer actually plays.
+    expect(getAnimationDuration('nonsense')).toBe(ANIMATION_CONFIGS.pulse.duration);
   });
 });
 
@@ -65,5 +78,18 @@ describe('impactSfxFor', () => {
     expect(impactSfxFor('parry')).toBe('attack_parry');
     expect(impactSfxFor('block')).toBe('attack_parry');
     expect(impactSfxFor(undefined)).toBe('attack_hit');
+  });
+
+  it('does not play the flesh-impact cue for an absorbed hit', () => {
+    // `absorb` is a declared outcome in combatBeatSchema.OUTCOMES. Falling through
+    // to attack_hit made a negated hit sound identical to real damage.
+    expect(impactSfxFor('absorb')).toBe('attack_parry');
+  });
+
+  it('covers every outcome the beat schema declares', () => {
+    // Guards against the switch drifting from the engine's outcome vocabulary.
+    for (const outcome of OUTCOMES) {
+      expect(typeof impactSfxFor(outcome)).toBe('string');
+    }
   });
 });

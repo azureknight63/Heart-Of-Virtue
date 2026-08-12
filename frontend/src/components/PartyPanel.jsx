@@ -8,12 +8,16 @@ import apiClient from '../api/client'
  * Allows using consumable items on individual party members out of combat.
  */
 export default function PartyPanel({ player, onClose, onRefetch }) {
-  if (!player) return null
-
-  const partyMembers = player.party_members || []
   const [useItemTarget, setUseItemTarget] = useState(null) // member being targeted
   const [actionResult, setActionResult] = useState(null)
   const [isLoading, setIsLoading] = useState(false)
+
+  // Every hook must run before this early return. When `player` flips between
+  // null and populated the hook count would otherwise change between renders,
+  // which React rejects ("Rendered more hooks than during the previous render").
+  if (!player) return null
+
+  const partyMembers = player.party_members || []
 
   // Gather consumables from player inventory (serialized shape: {id, name, can_use, ...})
   const consumables = (player.inventory || []).filter(
@@ -156,7 +160,7 @@ export default function PartyPanel({ player, onClose, onRefetch }) {
                     borderRadius: '4px',
                     marginBottom: '8px',
                   }}>
-                    "{member.description}"
+                    &quot;{member.description}&quot;
                   </div>
                 )}
 

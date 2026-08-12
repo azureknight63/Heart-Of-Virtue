@@ -89,6 +89,21 @@ export const AudioProvider = ({ children }) => {
     // track change and trigger unrelated useEffects in consumers).
     const currentBGMRef = useRef(null);
 
+    /**
+     * Return the shared audio element to its looping-BGM state.
+     *
+     * A sting borrows the same element, setting `loop = false` and an `onended`
+     * handler. Leaving either behind means the next BGM plays exactly once and
+     * the map goes silent — the bug this reset exists to prevent. Three
+     * separate paths need it (track switch, explicit stop, and the sting's own
+     * `onended`), and it lived as a copy-pasted pair of lines in all three, so
+     * a future addition to the reset would have had three places to miss.
+     */
+    const clearStingState = useCallback(() => {
+        bgmRef.current.loop = true;
+        bgmRef.current.onended = null;
+    }, []);
+
     // Save preferences whenever they change
     useEffect(() => {
         saveAudioPreferences({
@@ -121,6 +136,11 @@ export const AudioProvider = ({ children }) => {
         }
 
         const switchTrack = () => {
+            // A sting leaves the shared element non-looping with an onended
+            // handler that bails out once another track takes over. Reset both
+            // here or the next BGM plays exactly once and the map goes silent.
+            clearStingState();
+
             // Save progress of current track
             if (currentBGMRef.current) {
                 trackProgress.current[currentBGMRef.current] = bgmRef.current.currentTime;
@@ -162,16 +182,19 @@ export const AudioProvider = ({ children }) => {
         } else {
             switchTrack();
         }
-    }, [isMusicMuted, musicVolume]);
+    }, [isMusicMuted, musicVolume, clearStingState]);
 
     const stopBGM = useCallback(() => {
         if (currentBGMRef.current) {
             trackProgress.current[currentBGMRef.current] = bgmRef.current.currentTime;
         }
         bgmRef.current.pause();
+        // Same reset as switchTrack: never leave a sting's one-shot state
+        // stranded on the shared element for whatever plays next.
+        clearStingState();
         currentBGMRef.current = null;
         setCurrentBGM(null);
-    }, []);
+    }, [clearStingState]);
 
     // `speed` (issue #460): combat-speed multiplier for this one-shot cue.
     // playbackRate scales tempo; preservesPitch keeps it from sounding
@@ -216,14 +239,13 @@ export const AudioProvider = ({ children }) => {
         // Guard: only restore if no external track switch happened during the sting
         // (i.e., currentBGMRef still points to this sting track).
         bgmRef.current.onended = () => {
-            bgmRef.current.loop = true;
-            bgmRef.current.onended = null;
+            clearStingState();
             if (previousBGM && previousBGM !== trackName
                     && currentBGMRef.current === trackName) {
                 playBGM(previousBGM);
             }
         };
-    }, [isMusicMuted, musicVolume, playBGM]);
+    }, [isMusicMuted, musicVolume, playBGM, clearStingState]);
 
     const value = {
         playBGM,

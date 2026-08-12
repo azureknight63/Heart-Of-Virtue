@@ -19,15 +19,24 @@ export default function GameOverScreen({ message }) {
 
     // Reveal the button after the delay, then fade it in
     useEffect(() => {
+        // The nested rAF callbacks outlive the timeout, so they need cancelling
+        // too — otherwise unmounting during the ~2 frames after the timer fires
+        // leaves setButtonVisible writing into a discarded tree.
+        let outerFrame
+        let innerFrame
         const revealTimer = setTimeout(() => {
             setShowButton(true)
             // Tiny extra tick so the CSS transition actually fires
-            requestAnimationFrame(() => {
-                requestAnimationFrame(() => setButtonVisible(true))
+            outerFrame = requestAnimationFrame(() => {
+                innerFrame = requestAnimationFrame(() => setButtonVisible(true))
             })
         }, BUTTON_REVEAL_DELAY_MS)
 
-        return () => clearTimeout(revealTimer)
+        return () => {
+            clearTimeout(revealTimer)
+            if (outerFrame) cancelAnimationFrame(outerFrame)
+            if (innerFrame) cancelAnimationFrame(innerFrame)
+        }
     }, [])
 
     const handleMainMenu = () => {

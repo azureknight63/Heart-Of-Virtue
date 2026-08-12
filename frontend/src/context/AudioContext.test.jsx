@@ -197,6 +197,42 @@ describe('AudioContext', () => {
         vi.useRealTimers();
     });
 
+    it('restores looping when a new BGM takes over mid-sting', () => {
+        vi.useFakeTimers();
+        const wrapper = ({ children }) => <AudioProvider>{children}</AudioProvider>;
+        const { result } = renderHook(() => useAudio(), { wrapper });
+
+        act(() => { result.current.playSting('fanfare'); });
+        const bgmEl = global.__audioInstances[0];
+        expect(bgmEl.loop).toBe(false);
+
+        // A track change during the sting: the sting's own onended would bail
+        // out (its currentBGM guard fails), so switchTrack has to do the reset —
+        // otherwise the incoming track plays once and the map goes silent.
+        act(() => {
+            result.current.playBGM('battle');
+            vi.advanceTimersByTime(2000);
+        });
+
+        expect(bgmEl.loop).toBe(true);
+        expect(bgmEl.onended).toBeNull();
+        vi.useRealTimers();
+    });
+
+    it('restores looping when the BGM is stopped mid-sting', () => {
+        const wrapper = ({ children }) => <AudioProvider>{children}</AudioProvider>;
+        const { result } = renderHook(() => useAudio(), { wrapper });
+
+        act(() => { result.current.playSting('fanfare'); });
+        const bgmEl = global.__audioInstances[0];
+        expect(bgmEl.loop).toBe(false);
+
+        act(() => { result.current.stopBGM(); });
+
+        expect(bgmEl.loop).toBe(true);
+        expect(bgmEl.onended).toBeNull();
+    });
+
     it('does not restore the previous BGM if it changed during the sting', () => {
         const wrapper = ({ children }) => <AudioProvider>{children}</AudioProvider>;
         const { result } = renderHook(() => useAudio(), { wrapper });

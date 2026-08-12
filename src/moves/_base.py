@@ -172,6 +172,82 @@ def _apply_to_hit_modifiers(attacker, defender, hit_chance):
     return hit_chance
 
 
+#: Default base term of the engine's to-hit expression, plus the weights it
+#: applies to the attacker's attributes. These live here, next to the attack
+#: paths that consume them, so a balance change is a one-file edit — an earlier
+#: copy in the API layer drifted to ``98 + finesse`` and the character sheet
+#: disagreed with the dice until someone noticed.
+HIT_CHANCE_BASE = 98
+HIT_CHANCE_FINESSE_WEIGHT = 0.7
+HIT_CHANCE_INTELLIGENCE_WEIGHT = 0.3
+
+
+def to_hit_chance(user, target, base=HIT_CHANCE_BASE, floor=None):
+    """Return the pre-modifier hit chance for ``user`` attacking ``target``.
+
+    ``base`` is the move family's accuracy ceiling before either combatant's
+    attributes apply; ``floor`` clamps the truncated result. **The call sites
+    are not uniform** — bases of 85/90/95/98/105 and floors of 1, 5, or none
+    are all in use, and which move takes which is not guessable from its
+    weapon class.
+
+    This docstring deliberately does NOT enumerate them. It used to, and the
+    list was wrong twice: it named ``Riposte`` as an 85 site (it takes the
+    default 98, and reconciling the code to that claim would have quietly cost
+    it 13 points of accuracy), and after that was corrected the list still
+    omitted ``PowerStrike``. A partial enumeration in the one place people look
+    for authority is worse than none, because it reads as exhaustive.
+
+    ``grep -rn "to_hit_chance" src/moves/`` is the authority. Read the call
+    site you are changing.
+
+    Situational modifiers are deliberately *not* applied here. Callers still
+    pass the result through `_apply_to_hit_modifiers`, and several interpose
+    their own adjustments first (ranged accuracy decay, the Hawkeye buff,
+    Aimed Shot's flat +15, the crossbow close-range halving), so folding those
+    in would change when each one lands relative to the clamps.
+
+    Term order is load-bearing: ``base - target.finesse`` is evaluated before
+    the weighted attacker terms are added. Folding the attacker's terms first
+    and subtracting evasion last shifts the truncated result by one point for
+    roughly 0.7% of integer stat combinations, so this must not be "simplified"
+    into ``attacker_accuracy(...) - target.finesse``.
+    """
+    chance = int(
+        base
+        - target.finesse
+        + (user.finesse * HIT_CHANCE_FINESSE_WEIGHT)
+        + (user.intelligence * HIT_CHANCE_INTELLIGENCE_WEIGHT)
+    )
+    if floor is not None:
+        chance = max(floor, chance)
+    return chance
+
+
+def attacker_accuracy(finesse, intelligence, base=HIT_CHANCE_BASE):
+    """Return the attacker-side half of the to-hit roll, with no defender term.
+
+    The API renders accuracy and evasion as two separate ratings so a client
+    can show ``accuracy - evasion``; this is the accuracy half. It takes raw
+    attribute values rather than a combatant because those callers each apply
+    their own missing/garbage-value policy before the arithmetic, which is an
+    API-layer concern rather than an engine one.
+
+    An indicative rating, not a per-move hit chance: it assumes the default
+    base, ignores every situational modifier, and — per ``to_hit_chance`` —
+    parts company with the real roll by a point for a small fraction of stat
+    combinations because the ``int()`` truncation lands on a different
+    intermediate value here (there is no defender term to subtract first).
+    Not a floating-point association artifact: it is truncation order, which
+    is why ``to_hit_chance`` must not be rewritten in terms of this function.
+    """
+    return int(
+        base
+        + (finesse * HIT_CHANCE_FINESSE_WEIGHT)
+        + (intelligence * HIT_CHANCE_INTELLIGENCE_WEIGHT)
+    )
+
+
 def select_weighted_target(candidates):
     """Pick a random combat target, weighting down targets with Shadow Step.
 
@@ -706,9 +782,7 @@ class Move:  # master class for all moves
             )
 
         if self.viable():
-            hit_chance = int(98 - self.target.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3))
-            if hit_chance < 5:  # Minimum value for hit chance
-                hit_chance = 5
+            hit_chance = to_hit_chance(self.user, self.target, floor=5)
         else:
             hit_chance = (
                 -1

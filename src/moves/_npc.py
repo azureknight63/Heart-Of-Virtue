@@ -8,7 +8,7 @@ import src.functions as functions  # noqa: F401
 import src.items as items  # noqa: F401
 import src.positions as positions  # noqa: F401
 from src.animations import animate_to_main_screen as animate  # noqa: F401
-from ._base import Move, _apply_to_hit_modifiers  # noqa: F401
+from ._base import Move, _apply_to_hit_modifiers, to_hit_chance  # noqa: F401
 
 
 class NpcAttack(Move):  # basic attack function, NPCs only
@@ -155,9 +155,7 @@ class NpcAttack(Move):  # basic attack function, NPCs only
         self.prep_colors()
         glance = False
         if self.viable():
-            hit_chance = int(95 - self.target.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3))
-            if hit_chance <= 0:
-                hit_chance = 1
+            hit_chance = to_hit_chance(self.user, self.target, base=95, floor=1)
         else:
             hit_chance = -1
         # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
@@ -511,9 +509,7 @@ class GorranClub(Move):  # Gorran's special club attack! Massive damage, long re
         self.prep_colors()
         glance = False
         if self.viable():
-            hit_chance = int(105 - self.target.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3))
-            if hit_chance <= 0:
-                hit_chance = 1
+            hit_chance = to_hit_chance(self.user, self.target, base=105, floor=1)
         else:
             hit_chance = -1
         # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
@@ -657,9 +653,7 @@ class VenomClaw(Move):  # Poisonous attack
         self.prep_colors()
         glance = False
         if self.viable():
-            hit_chance = int(95 - self.target.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3))
-            if hit_chance <= 0:
-                hit_chance = 1
+            hit_chance = to_hit_chance(self.user, self.target, base=95, floor=1)
         else:
             hit_chance = -1
         # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
@@ -805,9 +799,7 @@ class SpiderBite(Move):  # Poisonous attack
         self.prep_colors()
         glance = False
         if self.viable():
-            hit_chance = int(95 - self.target.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3))
-            if hit_chance <= 0:
-                hit_chance = 1
+            hit_chance = to_hit_chance(self.user, self.target, base=95, floor=1)
         else:
             hit_chance = -1
         # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
@@ -953,9 +945,7 @@ class BatBite(Move):  # Vampiric / life-draining bite for bat-type NPCs
         self.prep_colors()
         glance = False
         if self.viable():
-            hit_chance = int(95 - self.target.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3))
-            if hit_chance <= 0:
-                hit_chance = 1
+            hit_chance = to_hit_chance(self.user, self.target, base=95, floor=1)
         else:
             hit_chance = -1
         # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
@@ -1021,9 +1011,7 @@ class MineralSpit(NpcAttack):
         self.prep_colors()
         glance = False
         if self.viable():
-            hit_chance = int(95 - self.target.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3))
-            if hit_chance <= 0:
-                hit_chance = 1
+            hit_chance = to_hit_chance(self.user, self.target, base=95, floor=1)
         else:
             hit_chance = -1
         # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
@@ -1085,9 +1073,7 @@ class SoulDrain(NpcAttack):
         self.prep_colors()
         glance = False
         if self.viable():
-            hit_chance = int(95 - self.target.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3))
-            if hit_chance <= 0:
-                hit_chance = 1
+            hit_chance = to_hit_chance(self.user, self.target, base=95, floor=1)
         else:
             hit_chance = -1
         # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
@@ -1150,9 +1136,7 @@ class KeeningToll(NpcAttack):
         narrate(self.stage_announce[1])
         self.prep_colors()
         if self.viable():
-            hit_chance = int(95 - self.target.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3))
-            if hit_chance <= 0:
-                hit_chance = 1
+            hit_chance = to_hit_chance(self.user, self.target, base=95, floor=1)
         else:
             hit_chance = -1
         # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
@@ -1219,9 +1203,7 @@ class WailStrike(TelegraphedSurge):
         self.prep_colors()
         glance = False
         if self.viable():
-            hit_chance = int(95 - self.target.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3))
-            if hit_chance <= 0:
-                hit_chance = 1
+            hit_chance = to_hit_chance(self.user, self.target, base=95, floor=1)
         else:
             hit_chance = -1
         # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
@@ -1300,9 +1282,7 @@ class DeathKnell(NpcAttack):
         narrate(self.stage_announce[1])
         self.prep_colors()
         if self.viable():
-            hit_chance = int(95 - self.target.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3))
-            if hit_chance <= 0:
-                hit_chance = 1
+            hit_chance = to_hit_chance(self.user, self.target, base=95, floor=1)
         else:
             hit_chance = -1
         # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
@@ -1431,6 +1411,11 @@ class SeismicSlam(Move):
                     continue
                 resist = functions.combat_resistance(enemy, "crushing")
                 damage = max(0, int(self.power * resist) - enemy.protection)
+                # Deliberately NOT to_hit_chance(): this is a brute-force slam
+                # with no intelligence term at all, so the shared helper does
+                # not fit at any base/floor. Migrating it "for consistency"
+                # would silently add HIT_CHANCE_INTELLIGENCE_WEIGHT and buff
+                # the move. Leave inlined; see TwinFangs for the other one.
                 hit_chance = max(
                     5, int(85 - enemy.finesse + (self.user.finesse * 0.7))
                 )
@@ -1688,6 +1673,11 @@ class TwinFangs(Move):
         power = self.power * (self._QUARRY_BONUS if quarried else 1.0)
         resist = functions.combat_resistance(target, "piercing")
         damage = max(0, int(power * resist) - target.protection)
+        # Deliberately NOT to_hit_chance(): no intelligence term, and finesse
+        # is weighted 0.8 rather than the canonical HIT_CHANCE_FINESSE_WEIGHT
+        # (0.7) — a precision-striker's accuracy leans harder on finesse.
+        # Neither deviation is expressible through base/floor, so migrating
+        # this would be a stealth nerf. Leave inlined; cf. SeismicSlam.
         hit_chance = max(
             5, int(90 - target.finesse + (self.user.finesse * 0.8))
         )

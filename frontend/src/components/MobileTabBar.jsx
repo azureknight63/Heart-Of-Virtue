@@ -1,11 +1,16 @@
 import { colors, fonts } from '../styles/theme'
+import { TAB_KEYS } from '../utils/mobileTabs'
 
 export const MOBILE_TAB_BAR_HEIGHT = '56px'
 
+// TAB_KEYS lives in utils/mobileTabs.js — it is a contract with GamePage, and
+// this component is mocked wholesale in GamePage's handler tests.
+export { TAB_KEYS }
+
 function MobileTabBar({ activeTab, onTabChange, mode }) {
   const isExploration = mode === 'exploration'
-  const tab1Key = isExploration ? 'character' : 'combat'
-  const tab2Key = isExploration ? 'map' : 'battlefield'
+  const tab1Key = TAB_KEYS.left
+  const tab2Key = TAB_KEYS.right
 
   const isTab1Active = activeTab === tab1Key
   const isTab2Active = activeTab === tab2Key

@@ -659,6 +659,71 @@ describe('NpcChatPanel', () => {
 
       await waitFor(() => expect(screen.getByText('Mynx refuses to answer.')).toBeInTheDocument())
     })
+
+    it('does not duplicate Jean\'s line when a failed option is retried', async () => {
+      npcChat.respond.mockRejectedValueOnce(new Error('Network error'))
+      render(
+        <NpcChatPanel npcId={mockNpcId} npcName={mockNpcName} onClose={mockOnClose} />
+      )
+
+      await waitFor(() => expect(npcChat.open).toHaveBeenCalled())
+      fireEvent.click(screen.getByText('Hi there'))
+      await waitFor(() => expect(screen.getByText(/NPC did not respond/i)).toBeInTheDocument())
+
+      npcChat.respond.mockResolvedValue({
+        data: {
+          npc_response: 'Ah, welcome back.',
+          jean_options: [{ text: 'Hi there', tone: 'curious' }],
+          loquacity_current: 3,
+          loquacity_max: 5,
+          conversation_ended: false,
+        },
+      })
+      fireEvent.click(screen.getByText('Retry'))
+      await waitFor(() => expect(npcChat.respond).toHaveBeenCalledTimes(2))
+
+      // The optimistic line is rolled back on failure, so the retry re-adds it
+      // exactly once instead of stacking a second copy in the transcript.
+      const jeanLines = screen
+        .getAllByText(/Hi there/)
+        .filter((node) => node.tagName === 'EM')
+      expect(jeanLines).toHaveLength(1)
+    })
+
+    it('clears the error and restores the dialogue options after a successful retry', async () => {
+      npcChat.respond.mockRejectedValueOnce(new Error('Network error'))
+      render(
+        <NpcChatPanel npcId={mockNpcId} npcName={mockNpcName} onClose={mockOnClose} />
+      )
+
+      await waitFor(() => expect(npcChat.open).toHaveBeenCalled())
+      fireEvent.click(screen.getByText('Hi there'))
+      await waitFor(() => expect(screen.getByText(/NPC did not respond/i)).toBeInTheDocument())
+
+      // While the error is up the option list is hidden.
+      expect(screen.queryByText('Leave me alone')).toBeNull()
+
+      npcChat.respond.mockResolvedValue({
+        data: {
+          npc_response: 'Ah, welcome back.',
+          jean_options: [
+            { text: 'Tell me more', tone: 'curious' },
+            { text: 'Leave me alone', tone: 'hostile' },
+          ],
+          loquacity_current: 3,
+          loquacity_max: 5,
+          conversation_ended: false,
+        },
+      })
+      fireEvent.click(screen.getByText('Retry'))
+
+      await waitFor(() => expect(screen.queryByText(/NPC did not respond/i)).toBeNull())
+      expect(screen.queryByText('Retry')).toBeNull()
+      // Without clearing `error`, the option list stayed gated off forever and
+      // "End Conversation" was the player's only remaining action.
+      expect(screen.getByText('Tell me more')).toBeInTheDocument()
+      expect(screen.getByText('Leave me alone')).toBeInTheDocument()
+    })
   })
 
   describe('Conversation ending automatically', () => {

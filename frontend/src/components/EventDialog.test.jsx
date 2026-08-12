@@ -88,8 +88,8 @@ describe('EventDialog', () => {
     const numberEvent = {
       ...mockEvent,
       input_type: 'number',
-      min_value: 1,
-      max_value: 10
+      input_min: 1,
+      input_max: 10
     };
 
     render(<EventDialog event={numberEvent} onClose={mockOnClose} onSubmitInput={mockOnSubmitInput} />);
@@ -116,8 +116,8 @@ describe('EventDialog', () => {
     const numberEvent = {
       ...mockEvent,
       input_type: 'number',
-      min_value: 1,
-      max_value: 10
+      input_min: 1,
+      input_max: 10
     };
 
     render(<EventDialog event={numberEvent} onClose={mockOnClose} onSubmitInput={mockOnSubmitInput} />);
@@ -529,6 +529,228 @@ describe('EventDialog', () => {
       fireEvent.change(input, { target: { value: '999' } });
       fireEvent.click(screen.getByText('+'));
       expect(input.value).toBe('999');
+    });
+  });
+
+  describe('number input bounds come from the serializer contract', () => {
+    it('mirrors input_min/input_max onto the native input attributes', () => {
+      const numberEvent = { ...mockEvent, input_type: 'number', input_min: 2, input_max: 7 };
+      render(<EventDialog event={numberEvent} onClose={mockOnClose} onSubmitInput={mockOnSubmitInput} />);
+      act(() => { vi.advanceTimersByTime(5000); });
+
+      const input = screen.getByPlaceholderText('0');
+      expect(input.getAttribute('min')).toBe('2');
+      expect(input.getAttribute('max')).toBe('7');
+    });
+
+    it('clamps the steppers to input_min/input_max so they cannot leave the valid range', () => {
+      const numberEvent = { ...mockEvent, input_type: 'number', input_min: 2, input_max: 7 };
+      render(<EventDialog event={numberEvent} onClose={mockOnClose} onSubmitInput={mockOnSubmitInput} />);
+      act(() => { vi.advanceTimersByTime(5000); });
+
+      const input = screen.getByPlaceholderText('0');
+
+      fireEvent.change(input, { target: { value: '7' } });
+      fireEvent.click(screen.getByText('+'));
+      expect(input.value).toBe('7');
+
+      fireEvent.change(input, { target: { value: '2' } });
+      fireEvent.click(screen.getByText('-'));
+      expect(input.value).toBe('2');
+    });
+
+    it('falls back to legacy min_value/max_value when input_min/input_max are absent', () => {
+      const numberEvent = { ...mockEvent, input_type: 'number', min_value: 3, max_value: 4 };
+      render(<EventDialog event={numberEvent} onClose={mockOnClose} onSubmitInput={mockOnSubmitInput} />);
+      act(() => { vi.advanceTimersByTime(5000); });
+
+      const input = screen.getByPlaceholderText('0');
+      expect(input.getAttribute('min')).toBe('3');
+      expect(input.getAttribute('max')).toBe('4');
+
+      fireEvent.change(input, { target: { value: '4' } });
+      fireEvent.click(screen.getByText('+'));
+      expect(input.value).toBe('4');
+
+      // Validation reads the same fallback.
+      fireEvent.change(input, { target: { value: '9' } });
+      fireEvent.click(screen.getByRole('button', { name: /Submit/i }));
+      expect(screen.getByText(/Number must be at most 4/i)).toBeInTheDocument();
+    });
+
+    it('rejects a number below input_min', () => {
+      const numberEvent = { ...mockEvent, input_type: 'number', input_min: 5, input_max: 10 };
+      render(<EventDialog event={numberEvent} onClose={mockOnClose} onSubmitInput={mockOnSubmitInput} />);
+      act(() => { vi.advanceTimersByTime(5000); });
+
+      fireEvent.change(screen.getByPlaceholderText('0'), { target: { value: '2' } });
+      fireEvent.click(screen.getByRole('button', { name: /Submit/i }));
+
+      expect(screen.getByText(/Number must be at least 5/i)).toBeInTheDocument();
+      expect(mockOnSubmitInput).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('recovery from a failed submission', () => {
+    const failingEvent = { ...mockEvent, event_id: 'evt-fail' };
+
+    it('re-enables the dialog when the event arrives with no event_id', async () => {
+      // Guards a defensive path with no current producer (an earlier version
+      // of this comment wrongly claimed GameService can emit a needs_input
+      // LootEvent with no event_id). It is still worth pinning: submitInput
+      // bailed here AFTER the caller had set isSubmitting, leaving every
+      // affordance disabled — and showCloseButton={!needsInput} hides the ✕ for
+      // a needs_input event, so there was no way out at all.
+      vi.useRealTimers();
+      const onSubmitInput = vi.fn();
+      const noId = { ...mockEvent, event_id: undefined };
+      render(<EventDialog event={noId} onClose={vi.fn()} onSubmitInput={onSubmitInput} />);
+
+      fireEvent.click(screen.getByTestId('event-text-container'));
+
+      const touch = screen.getByText('Touch it').closest('button');
+      fireEvent.click(touch);
+
+      // The submit never happens (no id to send), but the dialog must not be
+      // left disabled — that state has no escape for a needs_input event.
+      await waitFor(() => expect(touch.disabled).toBe(false));
+      expect(onSubmitInput).not.toHaveBeenCalled();
+    });
+
+    it('re-enables the choice buttons when the submission resolves unsuccessfully', async () => {
+      vi.useRealTimers();
+      const onSubmit = vi.fn().mockResolvedValue({ success: false });
+      render(<EventDialog event={failingEvent} onClose={mockOnClose} onSubmitInput={onSubmit} />);
+
+      fireEvent.click(screen.getByTestId('event-text-container'));
+
+      const touch = screen.getByText('Touch it').closest('button');
+      fireEvent.click(touch);
+      expect(onSubmit).toHaveBeenCalledWith('evt-fail', 'touch');
+
+      // Without the re-enable, every control stays disabled forever and the
+      // player can only recover by reloading the page.
+      await waitFor(() => expect(touch.disabled).toBe(false));
+      expect(screen.getByText(/Failed to submit input/i)).toBeInTheDocument();
+
+      // ...and the retry actually goes through.
+      fireEvent.click(touch);
+      await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(2));
+    });
+
+    it('re-enables the choice buttons when the submission rejects', async () => {
+      vi.useRealTimers();
+      const onSubmit = vi.fn().mockRejectedValue(new Error('network down'));
+      render(<EventDialog event={failingEvent} onClose={mockOnClose} onSubmitInput={onSubmit} />);
+
+      fireEvent.click(screen.getByTestId('event-text-container'));
+
+      const leave = screen.getByText('Leave it').closest('button');
+      fireEvent.click(leave);
+
+      await waitFor(() => expect(leave.disabled).toBe(false));
+      expect(screen.getByText(/network down/i)).toBeInTheDocument();
+
+      fireEvent.click(leave);
+      await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(2));
+    });
+
+    it('re-enables the Submit button when a text submission fails', async () => {
+      vi.useRealTimers();
+      const onSubmit = vi.fn().mockResolvedValue({ success: false, error: 'The statue rejects you.' });
+      const textEvent = { ...failingEvent, input_type: 'text' };
+      render(<EventDialog event={textEvent} onClose={mockOnClose} onSubmitInput={onSubmit} />);
+
+      fireEvent.click(screen.getByTestId('event-text-container'));
+
+      fireEvent.change(screen.getByPlaceholderText(/Enter your text here/i), { target: { value: 'hello there' } });
+      fireEvent.click(screen.getByRole('button', { name: /Submit/i }));
+
+      await waitFor(() => expect(screen.getByRole('button', { name: /^Submit$/i }).disabled).toBe(false));
+      expect(screen.getByText('The statue rejects you.')).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole('button', { name: /^Submit$/i }));
+      await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(2));
+    });
+
+    it('keeps the controls disabled on success so the choice cannot be double-submitted', async () => {
+      vi.useRealTimers();
+      const onSubmit = vi.fn().mockResolvedValue({ success: true });
+      render(<EventDialog event={failingEvent} onClose={mockOnClose} onSubmitInput={onSubmit} />);
+
+      fireEvent.click(screen.getByTestId('event-text-container'));
+
+      const touch = screen.getByText('Touch it').closest('button');
+      fireEvent.click(touch);
+
+      await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+      expect(touch.disabled).toBe(true);
+      expect(screen.queryByText(/Failed to submit input/i)).toBeNull();
+    });
+
+    it('is a no-op when no submit handler is wired up', () => {
+      render(<EventDialog event={failingEvent} onClose={mockOnClose} />);
+      act(() => { vi.advanceTimersByTime(5000); });
+
+      expect(() => fireEvent.click(screen.getByText('Touch it'))).not.toThrow();
+      expect(screen.queryByText(/Failed to submit input/i)).toBeNull();
+    });
+
+    it('does not touch state when the submission settles after unmount', async () => {
+      vi.useRealTimers();
+      let rejectSubmit;
+      const onSubmit = vi.fn(() => new Promise((_resolve, reject) => { rejectSubmit = reject; }));
+      const { unmount } = render(
+        <EventDialog event={failingEvent} onClose={mockOnClose} onSubmitInput={onSubmit} />
+      );
+
+      fireEvent.click(screen.getByTestId('event-text-container'));
+      fireEvent.click(screen.getByText('Touch it'));
+      await waitFor(() => expect(onSubmit).toHaveBeenCalled());
+
+      unmount();
+      const warn = vi.spyOn(console, 'error').mockImplementation(() => {});
+      rejectSubmit(new Error('too late'));
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(warn).not.toHaveBeenCalled();
+      warn.mockRestore();
+    });
+
+    it('does not re-enable for the synthetic combat_init event, which resolves undefined', async () => {
+      vi.useRealTimers();
+      const onSubmit = vi.fn().mockResolvedValue(undefined);
+      const combatEvent = {
+        ...mockEvent,
+        event_id: 'combat_init',
+        input_options: [{ label: 'Fight', value: 'combat_start' }]
+      };
+      render(<EventDialog event={combatEvent} onClose={mockOnClose} onSubmitInput={onSubmit} />);
+
+      fireEvent.click(screen.getByTestId('event-text-container'));
+
+      const fight = screen.getByText('Fight').closest('button');
+      fireEvent.click(fight);
+
+      await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+      expect(fight.disabled).toBe(true);
+      expect(screen.queryByText(/Failed to submit input/i)).toBeNull();
+    });
+  });
+
+  describe('falsy choice values', () => {
+    it('submits a choice whose value is 0 rather than reporting nothing selected', () => {
+      const zeroEvent = {
+        ...mockEvent,
+        input_options: [{ label: 'First', value: 0 }, { label: 'Second', value: 1 }]
+      };
+      render(<EventDialog event={zeroEvent} onClose={mockOnClose} onSubmitInput={mockOnSubmitInput} />);
+      act(() => { vi.advanceTimersByTime(5000); });
+
+      fireEvent.click(screen.getByText('First'));
+      expect(mockOnSubmitInput).toHaveBeenCalledWith('event-123', 0);
+      expect(screen.queryByText(/Please select an option/i)).toBeNull();
     });
   });
 });

@@ -140,6 +140,30 @@ describe('GameOverScreen', () => {
       expect(screen.getByText(/GAME OVER/i)).toBeInTheDocument()
     })
 
+    it('cancels the reveal cleanly when unmounted before the delay elapses', () => {
+      // No rAF has been scheduled yet, so the cleanup must tolerate both frame
+      // ids being undefined rather than calling cancelAnimationFrame(undefined).
+      const cancelSpy = vi.spyOn(globalThis, 'cancelAnimationFrame')
+      const { unmount } = renderWithRouter(<GameOverScreen message="Died" />)
+      expect(() => unmount()).not.toThrow()
+      expect(cancelSpy).not.toHaveBeenCalled()
+      cancelSpy.mockRestore()
+    })
+
+    it('cancels the queued animation frames when unmounted after the delay', () => {
+      // Regression: the inner rAF cleanup used to be returned from inside the
+      // rAF callback, where React discards it, so the second frame was never
+      // cancellable and could set state on an unmounted tree.
+      const cancelSpy = vi.spyOn(globalThis, 'cancelAnimationFrame')
+      const { unmount } = renderWithRouter(<GameOverScreen message="Died" />)
+      act(() => {
+        vi.advanceTimersByTime(1500)
+      })
+      unmount()
+      expect(cancelSpy).toHaveBeenCalled()
+      cancelSpy.mockRestore()
+    })
+
     it('handles rapid re-renders', () => {
       const { rerender } = renderWithRouter(
         <GameOverScreen message="Game Over 1" />

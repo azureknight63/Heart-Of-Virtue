@@ -2086,7 +2086,8 @@ class TestCampEntryGreetingEvent:
         assert mock_print.called
         # Jean's spoken observations about the camp
         mock_say.assert_any_call("Tents.", "Jean", "curious")
-        # Liss enters, notices Jean then Gorran, and is staged with an enter op
+        # Liss enters, notices Jean then Gorran, and leaves in a fluster.
+        # Her entrance and exit are staged through say()'s enter=/leave= kwargs.
         liss_enter_calls = [
             c
             for c in mock_say.call_args_list
@@ -2095,7 +2096,9 @@ class TestCampEntryGreetingEvent:
         assert len(liss_enter_calls) == 1
         assert liss_enter_calls[0].kwargs["enter"]["id"] == "Liss"
         liss_exit_calls = [
-            c for c in mock_say.call_args_list if c.args[1] == "Liss" and "leave" in c.kwargs
+            c
+            for c in mock_say.call_args_list
+            if c.args[1] == "Liss" and "leave" in c.kwargs
         ]
         assert len(liss_exit_calls) == 1
         assert liss_exit_calls[0].kwargs["leave"]["id"] == "Liss"

@@ -371,7 +371,7 @@ describe('LeftPanel', () => {
                 { id: 1, name: 'Slash', category: 'Offensive' },
                 { id: 2, name: 'Guard', category: 'Defensive' },
                 { id: 3, name: 'Dodge', category: 'Maneuver' },
-                { id: 4, name: 'Pray', category: 'Supernatural' },
+                { id: 4, name: 'War Cry', category: 'Mastery' },
                 { id: 5, name: 'Check', category: 'Utility' },
             ],
             beat_states: [{ enemies: [] }],
@@ -380,19 +380,37 @@ describe('LeftPanel', () => {
         expect(screen.getByTestId('hero-flags')).toHaveTextContent('offensive,defensive,maneuver,misc,special');
     });
 
-    it('falls back to combat.battle_state.available_options when available_options is absent', () => {
+    it('routes Tactical moves to the MISC button and tolerates a nameless move', () => {
+        const combat = {
+            log: [],
+            awaiting_input: true,
+            input_type: 'move_selection',
+            available_options: [
+                { id: 1, category: 'Tactical' },
+            ],
+            beat_states: [{ enemies: [] }],
+        };
+        render(<LeftPanel player={mockPlayer} location={mockLocation} mode="combat" combat={combat} />);
+        expect(screen.getByTestId('hero-flags')).toHaveTextContent('misc');
+    });
+
+    // useApi's transformCombatData spreads battle_state flat onto the combat
+    // object, so a nested battle_state never reaches this component.
+    it('reads moves from the flattened combat shape, not a nested battle_state', () => {
         const combat = {
             log: [],
             awaiting_input: true,
             input_type: 'move_selection',
             battle_state: {
-                available_options: [{ id: 1, name: 'Slash', category: 'Offensive', available: true }],
+                available_options: [{ id: 2, name: 'Reap', category: 'Offensive', available: true }],
             },
+            available_options: [{ id: 1, name: 'Slash', category: 'Offensive', available: true }],
             beat_states: [{ enemies: [] }],
         };
         render(<LeftPanel player={mockPlayer} location={mockLocation} mode="combat" combat={combat} />);
         fireEvent.click(screen.getByText('Offensive Btn'));
         expect(screen.getByText('Slash')).toBeInTheDocument();
+        expect(screen.queryByText('Reap')).not.toBeInTheDocument();
     });
 
     it('excludes the UseItem and "Use Item" moves from the combat move panel, and tolerates a nameless move', () => {
@@ -566,6 +584,72 @@ describe('LeftPanel', () => {
 
         expect(screen.queryByTestId('combat-input-dialog')).not.toBeInTheDocument();
         expect(onCombatAction).not.toHaveBeenCalled();
+    });
+
+    // The clearing effect used to key on turn_number/combat_id, neither of which
+    // exists on the client combat object — so a picker outlived its own turn.
+    it('closes a stale local target picker when the beat advances', () => {
+        const combat = {
+            log: [],
+            awaiting_input: true,
+            input_type: 'move_selection',
+            round: 1,
+            beat: 1,
+            available_options: [{
+                id: 1, name: 'Lunge', category: 'Offensive', available: true,
+                targeted: true, requires_target_selection: true,
+                viable_targets: [{ id: 'enemy_1' }, { id: 'enemy_2' }],
+            }],
+            beat_states: [{ enemies: [] }],
+        };
+        const { rerender } = render(
+            <LeftPanel player={mockPlayer} location={mockLocation} mode="combat" combat={combat} />
+        );
+        fireEvent.click(screen.getByText('Offensive Btn'));
+        fireEvent.click(screen.getByText('Lunge'));
+        expect(screen.getByTestId('combat-input-dialog')).toBeInTheDocument();
+
+        rerender(
+            <LeftPanel
+                player={mockPlayer}
+                location={mockLocation}
+                mode="combat"
+                combat={{ ...combat, beat: 2, awaiting_input: false }}
+            />
+        );
+        expect(screen.queryByTestId('combat-input-dialog')).not.toBeInTheDocument();
+    });
+
+    it('closes a stale local target picker when the round advances', () => {
+        const combat = {
+            log: [],
+            awaiting_input: true,
+            input_type: 'move_selection',
+            round: 1,
+            beat: 3,
+            available_options: [{
+                id: 1, name: 'Lunge', category: 'Offensive', available: true,
+                targeted: true, requires_target_selection: true,
+                viable_targets: [{ id: 'enemy_1' }],
+            }],
+            beat_states: [{ enemies: [] }],
+        };
+        const { rerender } = render(
+            <LeftPanel player={mockPlayer} location={mockLocation} mode="combat" combat={combat} />
+        );
+        fireEvent.click(screen.getByText('Offensive Btn'));
+        fireEvent.click(screen.getByText('Lunge'));
+        expect(screen.getByTestId('combat-input-dialog')).toBeInTheDocument();
+
+        rerender(
+            <LeftPanel
+                player={mockPlayer}
+                location={mockLocation}
+                mode="combat"
+                combat={{ ...combat, round: 2, awaiting_input: false }}
+            />
+        );
+        expect(screen.queryByTestId('combat-input-dialog')).not.toBeInTheDocument();
     });
 
     it('opens an empty local target-selection dialog when viable_targets is absent', () => {
@@ -968,14 +1052,14 @@ describe('LeftPanel', () => {
         expect(screen.queryByTestId('interact-panel')).not.toBeInTheDocument();
     });
 
-    it('opens the Defensive and Special combat move panels', () => {
+    it('opens the Defensive and Special (Mastery) combat move panels', () => {
         const combat = {
             log: [],
             awaiting_input: true,
             input_type: 'move_selection',
             available_options: [
                 { id: 1, name: 'Dodge', category: 'Defensive', available: true },
-                { id: 2, name: 'Insight', category: 'Special', available: true },
+                { id: 2, name: 'War Cry', category: 'Mastery', available: true },
             ],
             beat_states: [{ enemies: [] }],
         };

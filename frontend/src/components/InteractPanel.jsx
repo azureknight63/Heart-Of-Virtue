@@ -24,7 +24,6 @@ function InteractPanel({
     onClose,
     onOpenShop,
     initialTarget = null,
-    history = [],
     onTypingChange
 }) {
     const [targets, setTargets] = useState([])
@@ -69,8 +68,6 @@ function InteractPanel({
 
     // Ref to track if we're currently syncing to prevent infinite loops
     const isSyncingTarget = useRef(false)
-    // Ref to store previous selected target for comparison
-    const prevSelectedTargetRef = useRef(selectedTarget)
     // Tracks whether the panel was ever opened with targets present.
     // Distinguishes "opened on an already-empty tile" (no auto-close) from
     // "opened with targets that later all disappeared" (auto-close allowed).
@@ -118,8 +115,6 @@ function InteractPanel({
                 }
             }
         }
-        // Update the ref for next comparison
-        prevSelectedTargetRef.current = selectedTarget
     }, [location, selectedTarget])
 
     // Track whether we have ever had targets so the auto-close effect can

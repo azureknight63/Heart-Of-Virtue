@@ -16,6 +16,7 @@ from ._base import (
     _apply_carry_fatigue,
     _apply_blade_mastery_discount,
     _apply_to_hit_modifiers,
+    to_hit_chance,
     display_name_of,
 )  # noqa: F401
 
@@ -522,9 +523,7 @@ class Attack(Move):  # basic attack function, always uses equipped weapon, playe
             if self.animations["e"] != "None":
                 animate(self.animations["e"], self.stage_announce[1])
         if self.viable():
-            hit_chance = int(98 - self.target.finesse + (self.user.finesse * 0.7) + (self.user.intelligence * 0.3))
-            if hit_chance < 5:  # Minimum value for hit chance
-                hit_chance = 5
+            hit_chance = to_hit_chance(self.user, self.target, floor=5)
         else:
             hit_chance = (
                 -1

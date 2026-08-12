@@ -9,6 +9,7 @@ from unittest.mock import patch
 from src.api.constants import ITEM_USE_RANGE
 from src.functions import check_for_combat
 from src.inventory_utils import get_gold
+from src.moves import attacker_accuracy
 from src.narration import capture_narration, narrate
 from src.story import gorran_flavor
 
@@ -53,6 +54,43 @@ _LLM_NOISE_PREFIXES = (
     "[ERROR]",
     "[WARNING]",
 )
+
+
+#: Stand-in attribute value for a player object that predates (or omits) the
+#: attribute entirely — a sheet request must not 500 over a partially built
+#: player. The engine itself has no such fallback; this is an API-layer policy.
+_MISSING_ATTRIBUTE_DEFAULT = 10
+
+
+def derive_hit_accuracy(player):
+    """Return the attacker-side half of the engine's to-hit roll.
+
+    Thin adapter over ``moves.attacker_accuracy``: it supplies this layer's
+    missing-attribute policy and nothing else. The arithmetic and its constants
+    belong to the engine (``src/moves/_base.py``), alongside the attack paths
+    that roll against them, so the sheet cannot drift away from the dice.
+
+    A move's hit chance is this value minus the defender's evasion (their
+    finesse), floored by the move (5 for the basic ``Attack``) and effectively
+    capped at 100 by the percentile roll. It is not a percentage on its own,
+    which is why the character sheet renders it as a rating rather than a ``%``.
+
+    This is an indicative rating, not an exact per-move figure: some families
+    use a different base (polearm moves use 85, several NPC moves 95/105), and
+    situational modifiers applied at cast time — facing/angle accuracy,
+    ``HauntingPresence``, ranged decay and close-range distraction — are not
+    reflected here.
+    """
+    # `getattr(..., default)` only covers a *missing* attribute. A present-but-
+    # None finesse/intelligence would reach the engine helper and raise
+    # TypeError on `None * 0.7`, 500-ing the character sheet. The docstring
+    # above claims this layer owns the missing-value policy, so it has to own
+    # the None case too — the combat serializer sanitizes the same way.
+    def _stat(name):
+        value = getattr(player, name, None)
+        return _MISSING_ATTRIBUTE_DEFAULT if value is None else value
+
+    return attacker_accuracy(_stat("finesse"), _stat("intelligence"))
 
 
 class GameService:
@@ -327,6 +365,10 @@ class GameService:
         """
         segments: List[Dict[str, Any]] = []
         conversation: Optional[Dict[str, Any]] = None
+        # Roster of the most recent begin_conversation, kept separate from
+        # ``conversation`` so the enter/exit diff below always compares against
+        # the immediately-preceding cast while ``conversation`` keeps the FIRST.
+        current_cast: List[Dict[str, Any]] = []
         conv_active = False
         # Whether the event used ANY staged feature. When it didn't, we return no
         # segments so the event renders through the legacy typewriter path exactly
@@ -352,17 +394,32 @@ class GameService:
                 # get exit ops in the segments. Otherwise only the final cast
                 # reaches the frontend and characters who appear only in an
                 # intermediate conversation are invisible.
-                if conversation and conversation.get("cast"):
-                    prev_ids = {m["id"] for m in conversation["cast"]}
-                    new_ids = {m["id"] for m in cast}
+                if current_cast:
+                    prev_ids = {member["id"] for member in current_cast}
+                    new_ids = {member["id"] for member in cast}
                     for added_id in new_ids - prev_ids:
-                        added = next(m for m in cast if m["id"] == added_id)
+                        added = next(
+                            member for member in cast if member["id"] == added_id
+                        )
                         pending_enter.append(added)
                     for removed_id in prev_ids - new_ids:
                         pending_exit.append(
                             {"id": removed_id, "transition": "fade"}
                         )
-                conversation = {"cast": cast}
+                current_cast = cast
+                # Only the FIRST roster becomes the conversation payload. The
+                # frontend seeds every cast member with enteredAt = -1 (on stage
+                # from beat 0), so carrying a later roster here would reveal
+                # characters before the prose introduces them and would make the
+                # enter op emitted above a no-op. Later rosters stay fully
+                # represented through those enter/exit ops.
+                # `and cast`: an empty first roster must not claim the slot.
+                # It would leave current_cast falsy (so the diff above is
+                # skipped on the next begin_conversation) while conversation is
+                # already non-None (so it is never upgraded) — no cast and no
+                # enter ops, i.e. every portrait gone for the rest of the event.
+                if conversation is None and cast:
+                    conversation = {"cast": cast}
                 conv_active = True
                 staged_used = True
                 continue
@@ -455,6 +512,21 @@ class GameService:
                 return output_text, paced_segments, None
             return output_text, [], None
         return output_text, segments, conversation
+
+    @staticmethod
+    def _apply_staged_payload(target, clean_output, segments, conversation):
+        """Copy a :meth:`_capture_conversation` result onto a response/event dict.
+
+        Empty parts are skipped so an unstaged event's payload keeps the exact
+        shape it had before staged conversations existed.
+        """
+        if clean_output:
+            target["output_text"] = clean_output
+        if segments:
+            target["segments"] = segments
+        if conversation:
+            target["conversation"] = conversation
+        return target
 
     def _store_pending_event(
         self,
@@ -1177,12 +1249,9 @@ class GameService:
                 clean_output, segments, conversation = self._capture_conversation(
                     _msgs, player
                 )
-                if clean_output:
-                    event_data["output_text"] = clean_output
-                if segments:
-                    event_data["segments"] = segments
-                if conversation:
-                    event_data["conversation"] = conversation
+                self._apply_staged_payload(
+                    event_data, clean_output, segments, conversation
+                )
 
             events_triggered.append(event_data)
 
@@ -1296,15 +1365,20 @@ class GameService:
 
         # Capture output + staged conversation segments
         clean_output, segments, conversation = self._capture_conversation(_msgs, player)
-        if clean_output:
-            result["output_text"] = clean_output
-        if segments:
-            result["segments"] = segments
-        if conversation:
-            result["conversation"] = conversation
+        self._apply_staged_payload(result, clean_output, segments, conversation)
 
         # Check if event still needs input (persistent events)
         updated_event_data = EventSerializer.serialize_with_input(event)
+        # Persist the staged payload alongside the serialized event so a client
+        # that re-reads GET /world/events/pending (page reload, or GamePage's
+        # checkPendingEvents on victory/loot) recovers THIS stage's prose and
+        # portraits. serialize_with_input only carries the event's `description`
+        # attribute, which staged events stop updating after their early stages —
+        # replaying it would re-render stale prose and let its Continue button
+        # skip the stage the player is actually on.
+        self._apply_staged_payload(
+            updated_event_data, clean_output, segments, conversation
+        )
 
         if updated_event_data.get("needs_input") and not getattr(
             event, "completed", False
@@ -2294,7 +2368,17 @@ class GameService:
                     "is_ally": False,
                 }
             )
-        result["combat_id"] = str(uuid.uuid4())
+        # Publish the adapter's id, not a fresh one: a new uuid here would not
+        # match the combat_id battle_state carries on every subsequent poll, so
+        # a client comparing them would see a spurious combat change. That is
+        # why there is no `or uuid4()` fallback — a null here is honest ("this
+        # path produced no fight identity") and the client's `??` chain handles
+        # it, whereas a fabricated id is guaranteed not to match and silently
+        # re-creates the bug the id exists to prevent.
+        # `(x or {})` rather than `.get(k, {})`: several _initialize_combat
+        # return paths carry an explicit "battle_state": None, which a default
+        # only supplied for a *missing* key would not catch.
+        result["combat_id"] = (result.get("battle_state") or {}).get("combat_id")
         result["combatants"] = combatants
         result["turn_order"] = [c["id"] for c in combatants]
         return result
@@ -2861,11 +2945,28 @@ class GameService:
             stats["attack_damage_min"] = 0
             stats["attack_damage_max"] = 0
 
-        # Accuracy and Evasion
-        # Base hit chance formula: (98 - target.finesse) + user.finesse
-        # We'll show accuracy as (98 + player.finesse) and evasion as player.finesse
-        stats["hit_accuracy"] = 98 + getattr(player, "finesse", 10)
-        stats["evasion_chance"] = getattr(player, "finesse", 10)
+        # Accuracy and Evasion.
+        #
+        # These are the two halves of the engine's to-hit roll, not percentages:
+        # a move's hit chance is the attacker's accuracy minus the defender's
+        # evasion, floored by the move and capped at 100 by the percentile roll.
+        # See derive_hit_accuracy for the caveats this rating glosses over.
+        #
+        # Accuracy must use the same weighting the combat code does — finesse at
+        # 0.7 and intelligence at 0.3 — otherwise the character sheet disagrees
+        # with the dice. The previous `98 + finesse` gave finesse full weight and
+        # ignored intelligence entirely, so it was only correct when a character
+        # happened to have equal finesse and intelligence.
+        stats["hit_accuracy"] = derive_hit_accuracy(player)
+        # The paired half of the same roll, so it takes the same missing-value
+        # policy as derive_hit_accuracy rather than a bare literal, and the
+        # same `int(round(...))` the combat serializer applies to evasion — a
+        # float finesse otherwise rendered 12.5 on the sheet and 13 on the
+        # battlefield card for one stat.
+        _finesse = getattr(player, "finesse", None)
+        stats["evasion_chance"] = int(
+            round(_MISSING_ATTRIBUTE_DEFAULT if _finesse is None else _finesse)
+        )
 
         stats["resistance"] = getattr(player, "resistance", {})
         stats["status_resistance"] = getattr(player, "status_resistance", {})
@@ -3424,21 +3525,30 @@ class GameService:
         saves = []
         for row in result.rows:
             ts_str = str(row[2])
+            # Unambiguous sort/compare key alongside the display string below.
+            # The frontend previously had to re-derive this by parsing
+            # `timestamp`'s timezone abbreviation (e.g. "CET"), which Date.parse
+            # cannot do for most non-US zones — see localSave.js. Sourced from
+            # `dt`, the UTC-aware instant, before it is converted to the display
+            # timezone, so it stays correct regardless of the user's tz pref.
+            ts_ms = None
             try:
                 # SQLite CURRENT_TIMESTAMP is in UTC 'YYYY-MM-DD HH:MM:SS'
                 dt = datetime.strptime(ts_str, "%Y-%m-%d %H:%M:%S")
                 dt = dt.replace(tzinfo=zoneinfo.ZoneInfo("UTC"))
+                ts_ms = int(dt.timestamp() * 1000)
                 dt_local = dt.astimezone(user_tz)
                 # Format to a nice string e.g. "2026-04-23 18:15:00 EDT"
                 ts_str = dt_local.strftime("%Y-%m-%d %H:%M:%S %Z")
             except Exception:
-                pass  # fallback to original string
+                pass  # fallback to original string; ts_ms stays None
 
             saves.append(
                 {
                     "id": str(row[0]),
                     "name": str(row[1]),
                     "timestamp": ts_str,
+                    "timestamp_ms": ts_ms,
                     "is_autosave": bool(row[3]),
                     "level": int(row[4]) if row[4] is not None else "?",
                     "map_name": str(row[5]) if row[5] else "Unknown",

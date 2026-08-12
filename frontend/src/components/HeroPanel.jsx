@@ -3,6 +3,98 @@ import { colors, spacing, fonts, shadows, accessibility } from '../styles/theme'
 import StatusEffectsIconPanel from './StatusEffectsIconPanel'
 import GameText from './GameText'
 
+/**
+ * VitalBar — one of the two curved bars flanking the hero portrait.
+ *
+ * The HP and Fatigue bars were ~55-line near-duplicates differing only in the
+ * values below. That is a drift risk with a track record here: the divide-by-
+ * zero guard on the fill height had to be applied to two separate expressions,
+ * and any change to the hover/touch/tooltip behaviour needed both copies edited
+ * in lockstep.
+ *
+ * `side` drives every left/right mirror (position, both border radii, and the
+ * tooltip's anchor). `tooltipShadow` is a prop rather than derived from `color`
+ * only because the two bars genuinely render different glows today — HP uses a
+ * colour-matched shadow, Fatigue uses the orange `shadows.glow` token, which
+ * looks like an oversight but is preserved here so this extraction stays purely
+ * structural. Unify them in a deliberate visual change, not silently.
+ */
+function VitalBar({
+  side,
+  label,
+  color,
+  trackColor,
+  tooltipShadow,
+  fillRatio,
+  current,
+  max,
+  active,
+  onHoverChange,
+  onToggle,
+  testId,
+}) {
+  const isLeft = side === 'left'
+  return (
+    <div
+      onMouseEnter={() => onHoverChange(true)}
+      onMouseLeave={() => onHoverChange(false)}
+      onClick={onToggle}
+      onTouchStart={(e) => {
+        e.preventDefault()
+        onToggle()
+      }}
+      style={{
+        position: 'absolute',
+        [isLeft ? 'left' : 'right']: '-75px',
+        top: '50%',
+        transform: 'translateY(-50%)',
+        width: '15px',
+        height: '150px',
+        borderRadius: isLeft ? '15px 0 0 15px' : '0 15px 15px 0',
+        border: `2px solid ${color}`,
+        backgroundColor: trackColor,
+        boxShadow: `0 0 10px ${color}88, inset 0 0 8px ${color}44`,
+        zIndex: 3,
+        display: 'flex',
+        flexDirection: 'column-reverse',
+        overflow: 'visible',
+        cursor: 'pointer',
+      }}
+      data-testid={testId}
+    >
+      <div style={{
+        width: '100%',
+        height: `${fillRatio * 100}%`,
+        backgroundColor: color,
+        borderRadius: isLeft ? '12px 0 0 12px' : '0 12px 12px 0',
+        boxShadow: `0 0 8px ${color}, inset 0 0 4px rgba(255, 255, 255, 0.3)`,
+      }} />
+
+      {active && (
+        <div style={{
+          position: 'absolute',
+          [isLeft ? 'left' : 'right']: '50%',
+          bottom: '-35px',
+          transform: `translateX(${isLeft ? '-50%' : '50%'})`,
+          backgroundColor: colors.bg.main,
+          border: `1.5px solid ${color}`,
+          borderRadius: '3px',
+          padding: '4px 6px',
+          color,
+          fontSize: '8px',
+          fontWeight: 'bold',
+          fontFamily: fonts.main,
+          whiteSpace: 'nowrap',
+          boxShadow: tooltipShadow,
+          zIndex: 20,
+        }}>
+          {label}<br />{current.toFixed(0)}/{max}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function HeroPanel({
   player,
   isMobile,
@@ -38,8 +130,14 @@ function HeroPanel({
     max: player?.max_fatigue ?? 150,
   }
 
+  // usePlayer's error fallback ships hp:0/max_hp:0, and `?? 100` lets a real 0
+  // through — dividing by it yields NaN, which leaks into height:"NaN%" and
+  // animationDuration:"NaNs". Treat a zero/absent max as an empty bar.
+  const ratio = (current, max) => (max > 0 ? Math.max(0, Math.min(1, current / max)) : 0)
+
   // Calculate heart rate based on HP and Combat status
-  const hpPercent = Math.max(0, Math.min(1, hp.current / hp.max))
+  const hpPercent = ratio(hp.current, hp.max)
+  const fatiguePercent = ratio(fatigue.current, fatigue.max)
   const baseBpm = 60
   const combatBonus = inCombat ? 40 : 0
   const stressBonus = (1 - hpPercent) * (inCombat ? 80 : 60)
@@ -153,122 +251,36 @@ function HeroPanel({
           `}
         </style>
 
-        {/* HP Bar - Left Side Curved */}
-        <div
-          onMouseEnter={() => setHoveredBar('hp')}
-          onMouseLeave={() => setHoveredBar(null)}
-          onClick={() => setFocusedBar(focusedBar === 'hp' ? null : 'hp')}
-          onTouchStart={(e) => {
-            e.preventDefault();
-            setFocusedBar(focusedBar === 'hp' ? null : 'hp');
-          }}
-          style={{
-            position: 'absolute',
-            left: '-75px',
-            top: '50%',
-            transform: 'translateY(-50%)',
-            width: '15px',
-            height: '150px',
-            borderRadius: '15px 0 0 15px',
-            border: `2px solid ${colors.danger}`,
-            backgroundColor: colors.bg.negativeLight,
-            boxShadow: `0 0 10px ${colors.danger}88, inset 0 0 8px ${colors.danger}44`,
-            zIndex: 3,
-            display: 'flex',
-            flexDirection: 'column-reverse',
-            overflow: 'visible',
-            cursor: 'pointer',
-          }}
-          data-testid="hp-bar"
-        >
-          <div style={{
-            width: '100%',
-            height: `${(hp.current / hp.max) * 100}%`,
-            backgroundColor: colors.danger,
-            borderRadius: '12px 0 0 12px',
-            boxShadow: `0 0 8px ${colors.danger}, inset 0 0 4px rgba(255, 255, 255, 0.3)`,
-          }} />
+        {/* HP (left) and Fatigue (right) — see VitalBar above. */}
+        <VitalBar
+          side="left"
+          label="HP"
+          color={colors.danger}
+          trackColor={colors.bg.negativeLight}
+          tooltipShadow={`0 0 8px ${colors.danger}99`}
+          fillRatio={hpPercent}
+          current={hp.current}
+          max={hp.max}
+          active={hoveredBar === 'hp' || focusedBar === 'hp'}
+          onHoverChange={(on) => setHoveredBar(on ? 'hp' : null)}
+          onToggle={() => setFocusedBar(focusedBar === 'hp' ? null : 'hp')}
+          testId="hp-bar"
+        />
 
-          {(hoveredBar === 'hp' || focusedBar === 'hp') && (
-            <div style={{
-              position: 'absolute',
-              left: '50%',
-              bottom: '-35px',
-              transform: 'translateX(-50%)',
-              backgroundColor: colors.bg.main,
-              border: `1.5px solid ${colors.danger}`,
-              borderRadius: '3px',
-              padding: '4px 6px',
-              color: colors.danger,
-              fontSize: '8px',
-              fontWeight: 'bold',
-              fontFamily: fonts.main,
-              whiteSpace: 'nowrap',
-              boxShadow: `0 0 8px ${colors.danger}99`,
-              zIndex: 20,
-            }}>
-              HP<br />{hp.current.toFixed(0)}/{hp.max}
-            </div>
-          )}
-        </div>
-
-        <div
-          onMouseEnter={() => setHoveredBar('fatigue')}
-          onMouseLeave={() => setHoveredBar(null)}
-          onClick={() => setFocusedBar(focusedBar === 'fatigue' ? null : 'fatigue')}
-          onTouchStart={(e) => {
-            e.preventDefault();
-            setFocusedBar(focusedBar === 'fatigue' ? null : 'fatigue');
-          }}
-          style={{
-            position: 'absolute',
-            right: '-75px',
-            top: '50%',
-            transform: 'translateY(-50%)',
-            width: '15px',
-            height: '150px',
-            borderRadius: '0 15px 15px 0',
-            border: `2px solid ${colors.secondary}`,
-            backgroundColor: colors.bg.highlightLight,
-            boxShadow: `0 0 10px ${colors.secondary}88, inset 0 0 8px ${colors.secondary}44`,
-            zIndex: 3,
-            display: 'flex',
-            flexDirection: 'column-reverse',
-            overflow: 'visible',
-            cursor: 'pointer',
-          }}
-          data-testid="fatigue-bar"
-        >
-          <div style={{
-            width: '100%',
-            height: `${(fatigue.current / fatigue.max) * 100}%`,
-            backgroundColor: colors.secondary,
-            borderRadius: '0 12px 12px 0',
-            boxShadow: `0 0 8px ${colors.secondary}, inset 0 0 4px rgba(255, 255, 255, 0.3)`,
-          }} />
-
-          {(hoveredBar === 'fatigue' || focusedBar === 'fatigue') && (
-            <div style={{
-              position: 'absolute',
-              right: '50%',
-              bottom: '-35px',
-              transform: 'translateX(50%)',
-              backgroundColor: colors.bg.main,
-              border: `1.5px solid ${colors.secondary}`,
-              borderRadius: '3px',
-              padding: '4px 6px',
-              color: colors.secondary,
-              fontSize: '8px',
-              fontWeight: 'bold',
-              fontFamily: fonts.main,
-              whiteSpace: 'nowrap',
-              boxShadow: shadows.glow,
-              zIndex: 20,
-            }}>
-              Fatigue<br />{fatigue.current.toFixed(0)}/{fatigue.max}
-            </div>
-          )}
-        </div>
+        <VitalBar
+          side="right"
+          label="Fatigue"
+          color={colors.secondary}
+          trackColor={colors.bg.highlightLight}
+          tooltipShadow={shadows.glow}
+          fillRatio={fatiguePercent}
+          current={fatigue.current}
+          max={fatigue.max}
+          active={hoveredBar === 'fatigue' || focusedBar === 'fatigue'}
+          onHoverChange={(on) => setHoveredBar(on ? 'fatigue' : null)}
+          onToggle={() => setFocusedBar(focusedBar === 'fatigue' ? null : 'fatigue')}
+          testId="fatigue-bar"
+        />
 
         {/* Surrounding Buttons */}
         {buttons.map(({ key, label, top, left, transform, onClick, color }) => {

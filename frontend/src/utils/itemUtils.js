@@ -45,19 +45,63 @@ export const categorizeItems = (items) => {
 }
 
 /**
+ * The unit label for every weight the engine reports. The engine itself is
+ * unitless (`weight_tolerance`), so this is the single place the product
+ * decision lives — previously the same value was labelled "kg" in the shop and
+ * inventory, "lb" in the loot dialog, and "w" in the item detail panel.
+ */
+export const WEIGHT_UNIT = 'lb'
+
+/**
+ * formatWeight - Render a weight with consistent precision and unit.
+ * Coerces non-numeric input to 0 so a missing field can't emit "undefinedlb"
+ * or a full float expansion like "0.30000000000000004".
+ */
+export const formatWeight = (weight, decimals = 2) =>
+    `${(Number(weight) || 0).toFixed(decimals)} ${WEIGHT_UNIT}`
+
+/**
+ * formatWeightRatio - Render a "carried / capacity" readout.
+ * The unit is emitted once, on the capacity, so the pair reads as one quantity.
+ * Shared because the inventory resource bar and the loot dialog's carry-weight
+ * summary rendered the same pair two different ways, and one of them printed
+ * no unit at all.
+ */
+export const formatWeightRatio = (current, max, decimals = 1) =>
+    `${(Number(current) || 0).toFixed(decimals)} / ${formatWeight(max, decimals)}`
+
+/**
+ * RARITY_TIERS - The one place a rarity tier is defined.
+ * Rank and color used to live in two independent lists (a rank map and a
+ * switch); adding or renaming a tier in one and forgetting the other silently
+ * mis-sorted it as lowest (rank -1) or mis-colored it, with no warning.
+ * Ordered lowest to highest — rank is the index.
+ */
+export const RARITY_TIERS = [
+    { key: 'common', color: '#ffffff' },
+    { key: 'uncommon', color: '#1eff00' },
+    { key: 'rare', color: '#0070dd' },
+    { key: 'epic', color: '#a335ee' },
+    { key: 'legendary', color: '#ff8000' },
+    { key: 'artifact', color: '#e6cc80' },
+]
+
+const DEFAULT_RARITY_COLOR = '#ffffff'
+
+/**
+ * RARITY_RANK - Canonical ordering for item rarity, lowest to highest.
+ * Rarity is a ranked enum, so sorting it lexically is meaningless to the player.
+ */
+export const RARITY_RANK = Object.fromEntries(
+    RARITY_TIERS.map((tier, rank) => [tier.key, rank])
+)
+
+/**
  * getRarityColor - Returns color for item rarity
  */
-export const getRarityColor = (rarity) => {
-    switch (rarity?.toLowerCase()) {
-        case 'common': return '#ffffff'
-        case 'uncommon': return '#1eff00'
-        case 'rare': return '#0070dd'
-        case 'epic': return '#a335ee'
-        case 'legendary': return '#ff8000'
-        case 'artifact': return '#e6cc80'
-        default: return '#ffffff'
-    }
-}
+export const getRarityColor = (rarity) =>
+    RARITY_TIERS.find((tier) => tier.key === rarity?.toLowerCase())?.color
+    ?? DEFAULT_RARITY_COLOR
 
 /**
  * getItemIcon - Returns appropriate emoji for item subtype

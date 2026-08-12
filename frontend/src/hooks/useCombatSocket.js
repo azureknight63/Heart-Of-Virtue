@@ -46,6 +46,12 @@ export function useCombatSocket({
   };
 
   const lastSeqRef = useRef(null);
+  // Bumped whenever a live event is applied or a new resync starts. A resync's
+  // HTTP response is only honoured if no newer event landed while it was in
+  // flight — otherwise the older snapshot would clobber fresher beats.
+  const genRef = useRef(0);
+  // Highest seq seen on a combat:update, so an out-of-order legacy state
+  // update cannot rewind the UI.
   const lastStateSeqRef = useRef(null);
 
   useEffect(() => {
@@ -54,11 +60,14 @@ export function useCombatSocket({
     const resync = async () => {
       // A gap/reconnect means we can't trust incremental beats; drop seq
       // tracking and re-seed from the authoritative status.
+      const gen = ++genRef.current;
       lastSeqRef.current = null;
       lastStateSeqRef.current = null;
       try {
         const state = await cbs.current.fetchStatus?.();
-        if (state) cbs.current.onResolved?.(state);
+        // Discard a stale snapshot: events applied during the await already
+        // advanced the UI past what this response describes.
+        if (state && gen === genRef.current) cbs.current.onResolved?.(state);
       } catch {
         /* fetchStatus handles its own errors */
       }
@@ -72,12 +81,22 @@ export function useCombatSocket({
         return;
       }
       lastSeqRef.current = payload.seq;
+      genRef.current += 1;
       handler(payload);
     };
 
     const socket = cbs.current.createSocket({});
     const join = () => socket.emit('join_combat', { session_id: sessionId });
-    socket.on('connect', join);
+    // Initial connect is the same situation as a reconnect: beats emitted before
+    // join_combat completed went to a room we weren't in, and lastSeqRef starts
+    // null so classifySeq can't detect that gap. Re-seed from status either way.
+    // Both paths take the identical action, so they share one handler rather
+    // than two copies that could drift.
+    const joinAndResync = () => {
+      join();
+      resync();
+    };
+    socket.on('connect', joinAndResync);
     // A server restart invalidates in-memory sessions. The browser may still
     // have the old token and an already-open socket will reconnect before the
     // HTTP 401 handler gets a chance to redirect. Stop reconnect churn as soon
@@ -92,10 +111,7 @@ export function useCombatSocket({
     // socket.io-client v4 emits 'reconnect' on the Manager (socket.io), not the
     // Socket itself — listening on the Socket never fires. Guarded so a bare
     // test double without a manager doesn't throw.
-    socket.io?.on?.('reconnect', () => {
-      join();
-      resync();
-    });
+    socket.io?.on?.('reconnect', joinAndResync);
 
     socket.on(BEAT_EVENT, (b) => handleSeqEvent(b, (x) => cbs.current.onBeat?.(x)));
     socket.on(RESOLVED_EVENT, (s) =>
@@ -113,9 +129,14 @@ export function useCombatSocket({
       if (seq != null) lastStateSeqRef.current = seq;
       cbs.current.onUpdate?.(state);
     });
-    socket.on(SUGGESTIONS_EVENT, (p) =>
-      handleSeqEvent(p, (x) => cbs.current.onSuggestions?.(x))
-    );
+    // Suggestions are delivered DIRECTLY, not through handleSeqEvent. They are
+    // an out-of-band notification rather than part of the ordered beat stream:
+    // the emitter sends `{suggested_moves: [...]}` with no `seq` at all, and
+    // classifySeq deliberately treats a missing seq as 'gap' (the safe
+    // direction for the beat stream). Routed through it, every suggestions
+    // event triggers a spurious resync and onSuggestions never fires — see the
+    // 'routes ended and suggestions' spec, which pins this.
+    socket.on(SUGGESTIONS_EVENT, (p) => cbs.current.onSuggestions?.(p));
 
     return () => {
       lastSeqRef.current = null;
@@ -128,6 +149,5 @@ export function useCombatSocket({
     };
     // Callbacks are read through cbs.current, so they intentionally stay out of
     // the dep array — the socket wires up once per [enabled, sessionId].
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, sessionId]);
 }

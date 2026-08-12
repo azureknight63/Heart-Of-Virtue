@@ -1,6 +1,7 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import InventoryDialog from './InventoryDialog';
+import { WEIGHT_UNIT } from '../utils/itemUtils';
 
 // Mock ItemDetailDialog
 vi.mock('./ItemDetailDialog', () => ({
@@ -192,7 +193,7 @@ describe('InventoryDialog', () => {
     expect(screen.getByText('New Prop Axe')).toBeInTheDocument();
   });
 
-  it('cycles a sort back to off on a third click, and sorts strings by rarity', () => {
+  it('cycles a sort back to off on a third click, and sorts by rarity rank', () => {
     const withRarity = {
       ...mockPlayer,
       inventory: mockPlayer.inventory.map(item => ({
@@ -203,13 +204,14 @@ describe('InventoryDialog', () => {
     render(<InventoryDialog player={withRarity} onClose={mockOnClose} onRefetch={mockOnRefetch} />);
 
     const raritySort = screen.getByTitle('Sort by Rarity');
-    fireEvent.click(raritySort); // off -> desc (reverse alphabetical: uncommon, rare, common)
+    // Rarity sorts by RARITY_RANK, not alphabetically: rare > uncommon > common.
+    fireEvent.click(raritySort); // off -> desc (rarest first: rare, uncommon, common)
     let items = screen.getAllByText(/Steel Axe|Iron Sword|Wooden Bow/);
-    expect(items[0].textContent).toContain('Wooden Bow'); // uncommon
+    expect(items[0].textContent).toContain('Steel Axe'); // rare, the highest rank
 
-    fireEvent.click(raritySort); // desc -> asc (alphabetical: common, rare, uncommon)
+    fireEvent.click(raritySort); // desc -> asc (commonest first: common, uncommon, rare)
     items = screen.getAllByText(/Steel Axe|Iron Sword|Wooden Bow/);
-    expect(items[0].textContent).toContain('Iron Sword'); // common sorts first ascending
+    expect(items[0].textContent).toContain('Iron Sword'); // common, the lowest rank
 
     fireEvent.click(raritySort); // asc -> off
     items = screen.getAllByText(/Steel Axe|Iron Sword|Wooden Bow/);
@@ -229,7 +231,10 @@ describe('InventoryDialog', () => {
     const barePlayer = { inventory: [], weight_pct: 95 };
     render(<InventoryDialog player={barePlayer} onClose={mockOnClose} onRefetch={mockOnRefetch} />);
     expect(screen.getByText(/0 Gold/i)).toBeInTheDocument();
-    expect(screen.getByText('0 / 0')).toBeInTheDocument();
+    // The unit is part of the assertion on purpose: this readout previously
+    // rendered a bare "0 / 0" with no unit at all, and the old expectation
+    // encoded that omission rather than catching it.
+    expect(screen.getByText(`0.0 / 0.0 ${WEIGHT_UNIT}`)).toBeInTheDocument();
   });
 
   it('shows only the Consumables tab in combat mode', () => {
