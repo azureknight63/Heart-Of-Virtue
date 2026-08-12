@@ -134,6 +134,33 @@ describe('BrowserLogger', () => {
     expect(logger.logQueue[logger.logQueue.length - 1].message).toBe('spam 499');
   });
 
+  it('treats an HTTP error status as a failure, not a success', async () => {
+    // fetch only rejects on a network-level failure — a 500, a 404, or a proxy
+    // returning an error body all RESOLVE. Without the response.ok check the
+    // stand-down covered only the unreachable case, so a backend that is up
+    // but erroring still got a doomed request per console call, which is the
+    // exact scenario the backoff exists to prevent.
+    global.fetch = vi.fn().mockResolvedValue({ ok: false, status: 500 });
+    const errorSpy = vi.spyOn(logger.originalConsole, 'error').mockImplementation(() => {});
+
+    logger.log('log', 'server is unhappy');
+    await logger.flush();
+
+    expect(logger.logQueue).toHaveLength(1);
+    expect(logger.retryAfter).toBeGreaterThan(Date.now());
+    expect(errorSpy).toHaveBeenCalledWith('[Logger] Failed to send logs:', expect.any(Error));
+  });
+
+  it('clears the backoff after a genuinely successful send', async () => {
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, status: 204 });
+
+    logger.log('log', 'fine');
+    await logger.flush();
+
+    expect(logger.logQueue).toHaveLength(0);
+    expect(logger.retryAfter).toBe(0);
+  });
+
   it('backs off further async flushes after a failure', async () => {
     global.fetch = vi.fn().mockRejectedValue(new Error('network down'));
     vi.spyOn(logger.originalConsole, 'error').mockImplementation(() => {});

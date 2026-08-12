@@ -8,7 +8,6 @@ from src.narration import (
     narrate,
     say,
     begin_conversation,
-    enter_character,
     enter_op,
     exit_op,
     react,

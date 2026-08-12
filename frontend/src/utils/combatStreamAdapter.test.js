@@ -60,6 +60,45 @@ describe('beatToAnimations', () => {
     ]);
   });
 
+  it('resolves the literal "player" sentinel as the killed entity', () => {
+    // Engine beats address Jean as the string 'player', not by his id, so the
+    // sentinel branch is the one that fires for a player death burst.
+    const out = beatToAnimations(
+      { web_animation: 'attack', actor_id: 'enemy_1', killed: ['player'] },
+      combat
+    );
+    expect(out).toHaveLength(2);
+    expect(out[1]).toMatchObject({ type: 'death', target_id: 'player' });
+  });
+
+  it('resolves the player by id as well as by sentinel', () => {
+    const byId = {
+      ...combat,
+      player: { id: 'jean_1', position: { x: 2, y: 2 } },
+    };
+    const out = beatToAnimations(
+      { web_animation: 'attack', actor_id: 'enemy_1', killed: ['jean_1'] },
+      byId
+    );
+    expect(out[1]).toMatchObject({ type: 'death', position: { x: 2, y: 2 } });
+  });
+
+  it('emits no death burst when there is no combat snapshot to read from', () => {
+    // The snapshot is what supplies the burst position; with none, the actor
+    // animation must still survive rather than the whole beat being dropped.
+    const out = beatToAnimations(
+      { web_animation: 'attack', actor_id: 'enemy_1', killed: ['enemy_2'] },
+      null
+    );
+    expect(out).toHaveLength(1);
+    expect(out[0].type).toBe('attack');
+  });
+
+  it('treats a beat with no killed field as a plain move', () => {
+    const out = beatToAnimations({ web_animation: 'attack', actor_id: 'enemy_1' }, combat);
+    expect(out).toHaveLength(1);
+  });
+
   it('returns empty for a null beat', () => {
     expect(beatToAnimations(null, combat)).toEqual([]);
   });
