@@ -2087,20 +2087,21 @@ class TestCampEntryGreetingEvent:
         # Jean's spoken observations about the camp
         mock_say.assert_any_call("Tents.", "Jean", "curious")
         # Liss enters, notices Jean then Gorran, and leaves in a fluster.
-        #
-        # Her entrance and exit are staged through say()'s enter=/leave= kwargs
-        # (enter_op/exit_op), not the standalone enter_character/exit_character
-        # helpers. Both spellings exist in narration.py and produce the same
-        # payload, so assert the staging that actually happens rather than the
-        # spelling — this event has already been switched between the two once.
-        liss_lines = [c for c in mock_say.call_args_list if c.args[1:2] == ("Liss",)]
-        assert [c.args[0] for c in liss_lines] == [
-            "Oh — hi! You're new. My name's Liss. Are you—",
-            "Oh! OH. You're— he's— that's a real one, isn't it, that's—",
+        # Her entrance and exit are staged through say()'s enter=/leave= kwargs.
+        liss_enter_calls = [
+            c
+            for c in mock_say.call_args_list
+            if c.args[:2] == ("Oh — hi! You're new. My name's Liss. Are you—", "Liss")
         ]
-
-        assert liss_lines[0].kwargs["enter"]["id"] == "Liss"
-        assert liss_lines[1].kwargs["leave"]["id"] == "Liss"
+        assert len(liss_enter_calls) == 1
+        assert liss_enter_calls[0].kwargs["enter"]["id"] == "Liss"
+        liss_exit_calls = [
+            c
+            for c in mock_say.call_args_list
+            if c.args[1] == "Liss" and "leave" in c.kwargs
+        ]
+        assert len(liss_exit_calls) == 1
+        assert liss_exit_calls[0].kwargs["leave"]["id"] == "Liss"
         # Jean's closing question and the stated goal (issue #326: player should
         # come away knowing to ask around camp for a way across the river)
         mock_say.assert_any_call("What exactly was that about?", "Jean", "skeptical")

@@ -3,6 +3,7 @@ import BaseDialog from './BaseDialog';
 import GameButton from './GameButton';
 import GameText from './GameText';
 import { colors, spacing } from '../styles/theme';
+import { formatCombatMoveStatus } from '../utils/combatMoveStatus';
 
 const CombatCheckDialog = ({ checkData, onClose }) => {
     if (!checkData || checkData.length === 0) {
@@ -83,9 +84,12 @@ const CombatCheckDialog = ({ checkData, onClose }) => {
 
                             {combatant.current_move && (
                                 <div style={{ gridColumn: '1 / -1' }}>
-                                    <GameText variant="muted" size="xs" style={{ display: 'inline' }}>Current Move: </GameText>
                                     <GameText variant="secondary" weight="bold" size="xs" style={{ display: 'inline' }}>
-                                        {combatant.current_move}
+                                        {formatCombatMoveStatus(
+                                            combatant.current_move,
+                                            combatant.current_move_stage,
+                                            combatant.current_move_display_name,
+                                        )}
                                     </GameText>
                                 </div>
                             )}

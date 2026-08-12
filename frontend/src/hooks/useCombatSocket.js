@@ -25,6 +25,7 @@ export function useCombatSocket({
   onBeat,
   onResolved,
   onEnded,
+  onUpdate,
   onSuggestions,
   onSessionInvalid,
   fetchStatus,
@@ -37,6 +38,7 @@ export function useCombatSocket({
     onBeat,
     onResolved,
     onEnded,
+    onUpdate,
     onSuggestions,
     onSessionInvalid,
     fetchStatus,
@@ -114,14 +116,13 @@ export function useCombatSocket({
     socket.on(ENDED_EVENT, (e) =>
       handleSeqEvent(e, (x) => cbs.current.onEnded?.(x))
     );
-    // Delivered directly, NOT through handleSeqEvent. Suggestions are an
-    // out-of-band notification, not part of the ordered beat stream: the
-    // emitter sends `{suggested_moves: [...]}` with no `seq` at all. Passing
-    // that through classifySeq makes it classify as 'gap' (the deliberate
-    // safe direction for a malformed seq on the beat stream), so every
-    // suggestions event would trigger a spurious resync and never reach
-    // onSuggestions. Harmless until the event name was corrected, because
-    // nothing was arriving on this channel at all.
+    // Legacy/compatibility state updates are not authoritative beat events,
+    // but they are still useful as a recovery path when the backend streaming
+    // flag is off or a beat event was missed.
+    socket.on('combat:update', (state) => cbs.current.onUpdate?.(state));
+    // Suggestions are out-of-band notifications, not part of the ordered beat
+    // stream: the emitter sends `{suggested_moves: [...]}` without a `seq`.
+    // Routing them through classifySeq would trigger a spurious resync.
     socket.on(SUGGESTIONS_EVENT, (p) => cbs.current.onSuggestions?.(p));
 
     return () => {

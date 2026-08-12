@@ -25,7 +25,7 @@ from src.api.constants import ITEM_USE_RANGE, ALLY_HEAL_THRESHOLD
 from src.api.schemas.combat_beat import SUGGESTIONS_EVENT
 from src.api.combat_beat_stream import CombatBeatStreamer
 from ai.combat_strategist import CombatStrategist
-from src.moves._base import select_weighted_target
+from src.moves._base import select_weighted_target, display_name_of
 from src.story import gorran_flavor
 
 if TYPE_CHECKING:
@@ -207,6 +207,18 @@ class ApiCombatAdapter:
         except Exception:
             logger.exception("failed to init combat beat streamer")
             self._beat_streamer = None
+
+    def _ensure_streamer(self):
+        """Attach the beat streamer after a late session id becomes available.
+
+        Some API paths create/reuse an adapter before the request session id is
+        attached. The legacy ``combat:log`` and ``combat:turn`` emitters use the
+        later id, but the beat streamer used to remain permanently disabled.
+        Reconcile that late binding at the first safe request boundary.
+        """
+        if self._beat_streamer is not None or not self.session_id:
+            return
+        self._maybe_init_streamer(self.get_combat_state())
 
     @staticmethod
     def _combatant_stream_id(combatant):
@@ -393,6 +405,16 @@ class ApiCombatAdapter:
                         current_app.socketio.emit("combat:log", entry, room=room)
                 except Exception as e:
                     print(f"[SOCKET ERROR] Failed to emit log: {e}")
+
+    def _emit_animation_log(self, beat, animation_data):
+        """Add the fallback log entry for an animation without impact text."""
+        self._add_log_entry(
+            beat,
+            f"{animation_data.get('move_display_name', animation_data.get('move_name', 'Move'))} animation",
+            "animation",
+            beat_index=self.current_beat_state_index,
+            animation_data=animation_data,
+        )
 
     def initialize_combat(
         self, enemies: List[Any], reinit: bool = False
@@ -803,7 +825,7 @@ class ApiCombatAdapter:
         self.player.current_move.user = self.player
         self._add_log_entry(
             self.output_capture.current_round,
-            f"{self.player.name} uses {selected_move.name}!",
+            f"{self.player.name} uses {display_name_of(selected_move)}!",
             "player_action",
         )
 
@@ -847,7 +869,7 @@ class ApiCombatAdapter:
 
         self._add_log_entry(
             self.output_capture.current_round,
-            f"{self.player.name} uses {selected_move.name}!",
+            f"{self.player.name} uses {display_name_of(selected_move)}!",
             "player_action",
         )
 
@@ -1158,6 +1180,7 @@ class ApiCombatAdapter:
             with self._capture_output():
                 # Store for repeat functionality
                 self.player.last_move_name = move.name
+
                 self.player.last_move_target_id = (
                     getattr(move.target, "id", f"enemy_{id(move.target)}")
                     if getattr(move, "target", None)
@@ -1187,6 +1210,7 @@ class ApiCombatAdapter:
                         else None
                     ),
                     "move_name": move.name,
+                    "move_display_name": display_name_of(move),
                 }
 
                 # Store for outcome tracking (updated when combat output is captured)
@@ -1315,13 +1339,7 @@ class ApiCombatAdapter:
         for entity in self._all_combatants():
             if hasattr(entity, "_pending_animation"):
                 animation_data = entity._pending_animation
-                self._add_log_entry(
-                    self.player.combat_beat,
-                    f"{animation_data.get('move_name', 'Move')} animation",
-                    "animation",
-                    beat_index=self.current_beat_state_index,
-                    animation_data=animation_data,
-                )
+                self._emit_animation_log(self.player.combat_beat, animation_data)
                 delattr(entity, "_pending_animation")
 
         # Move execution finished
@@ -1657,6 +1675,7 @@ class ApiCombatAdapter:
                             else (f"enemy_{id(npc.target)}" if npc.target else None)
                         ),
                         "move_name": npc.current_move.name,
+                        "move_display_name": display_name_of(npc.current_move),
                     }
 
                     # Store pending animation on the NPC; write() will pair it with
@@ -2191,6 +2210,7 @@ class ApiCombatAdapter:
                 "id": str(i),
                 "index": i,
                 "name": move.name,
+                "display_name": display_name_of(move),
                 "description": getattr(move, "description", ""),
                 "category": getattr(move, "category", "Miscellaneous"),
                 "fatigue_cost": move.fatigue_cost,
@@ -2366,13 +2386,7 @@ class ApiCombatAdapter:
                 )
                 if entry.get("trigger_animation") and "animation_data" in entry:
                     animation_data = entry["animation_data"]
-                    self._add_log_entry(
-                        current_beat,
-                        f"{animation_data.get('move_name', 'Move')} animation",
-                        "animation",
-                        beat_index=self.current_beat_state_index,
-                        animation_data=animation_data,
-                    )
+                    self._emit_animation_log(current_beat, animation_data)
 
             # Clear capture for next time
             self.output_capture.clear()
@@ -2431,6 +2445,7 @@ class ApiCombatAdapter:
             "suggestions_loading": getattr(self.player, "suggestions_loading", False),
             "last_move_outcome": getattr(self.player, "last_move_summary", ""),
             "last_move_name": getattr(self.player, "last_move_name", ""),
+
             "last_move_target_id": getattr(self.player, "last_move_target_id", None),
         }
 

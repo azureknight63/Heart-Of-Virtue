@@ -10,7 +10,7 @@ ApiCombatAdapter), so per CLAUDE.md it lives under ``tests/api/`` (excluded from
 the default suite) to avoid polluting module-level item/merchant registries.
 """
 
-import importlib
+import importlib.util
 import sys
 from pathlib import Path
 
@@ -20,7 +20,18 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-fuzzer = importlib.import_module("tools.combat_command_fuzzer")
+
+def _load_fuzzer():
+    """Load the standalone tool without requiring ``tools`` to be a package."""
+    path = ROOT / "tools" / "combat_command_fuzzer.py"
+    spec = importlib.util.spec_from_file_location("_combat_command_fuzzer", path)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
+
+
+fuzzer = _load_fuzzer()
 
 
 # A handful of fixed seeds gives deterministic, reproducible coverage across the

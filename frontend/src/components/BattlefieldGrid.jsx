@@ -9,6 +9,7 @@ import { beatSfxFor } from '../utils/combatSfx';
 import { scheduleSfxChain, effectiveDuration } from '../utils/combatTiming';
 import { SFX_DURATIONS } from '../utils/sfxDurations';
 import useDoubleRaf from '../hooks/useDoubleRaf';
+import { displayNameOf, formatCombatMoveStatus } from '../utils/combatMoveStatus';
 
 // Fragment definitions for the death burst — module-level, never recreated
 const DEATH_FRAGMENTS = Array.from({ length: 12 }, (_, i) => ({
@@ -344,7 +345,7 @@ const EnemiesList = React.memo(({ enemies }) => (
                 </GameText>
                 {move && (
                   <GameText size="xs" style={{ marginTop: spacing.xs, color: categoryColor || colors.text.muted }}>
-                    ◆ {move.name} <span style={{ opacity: 0.6 }}>({category})</span>
+                    ◆ {displayNameOf(move)} <span style={{ opacity: 0.6 }}>({category})</span>
                   </GameText>
                 )}
               </div>
@@ -532,8 +533,9 @@ const EntityLayer = React.memo(({
                   {item.entity.name}
                 </div>
                 <div className="text-orange/80 text-[9px] flex justify-between gap-2">
-                  <span>Prep:</span>
-                  <span className="font-mono">{item.entity.prepared_move?.name || '---'}</span>
+                  <span className="font-mono">
+                    {formatCombatMoveStatus(item.entity.current_move || item.entity.prepared_move) || 'Idle'}
+                  </span>
                 </div>
               </div>
               {/* Arrow */}
@@ -612,11 +614,11 @@ const SelectedEntityPanel = React.memo(({ entity, onClose }) => {
             </div>
           </div>
 
-          {/* Current Move */}
+          {/* Move in progress */}
           <div className="pt-2 border-t border-white/10">
-            <div className="text-[10px] text-white/60 mb-1">CURRENT ACTION</div>
+            <div className="text-[10px] text-white/60 mb-1">MOVE IN PROGRESS</div>
             <div className="text-orange text-xs font-bold">
-              {entity.current_move?.name || entity.prepared_move?.name || 'Idle'}
+              {formatCombatMoveStatus(entity.current_move || entity.prepared_move) || 'Idle'}
             </div>
           </div>
         </div>

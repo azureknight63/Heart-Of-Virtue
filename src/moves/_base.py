@@ -27,6 +27,11 @@ def _apply_carry_fatigue(user, fatigue_cost):
     return fatigue_cost
 
 
+def display_name_of(move, default="Unknown"):
+    """Return a move's player-facing name with a safe internal-name fallback."""
+    return getattr(move, "display_name", None) or getattr(move, "name", default)
+
+
 def _apply_work_the_gap(user, target, landed_hits=1):
     """WorkTheGap passive: each landed pick strike shaves the target's
     protection (a progressive armour strip), floored at 0.
@@ -274,6 +279,9 @@ class Move:  # master class for all moves
     # (attack for targeted damaging moves, pulse otherwise). The full set of
     # valid types lives in frontend/src/utils/animationConfigs.js.
     web_animation = None
+    # Concrete engine moves must declare a player-facing name. Internal `name`
+    # values remain stable for command routing and AI logic.
+    display_name = None
 
     def __init__(
         self,
@@ -295,6 +303,12 @@ class Move:  # master class for all moves
         category="Miscellaneous",
         passive=False,
     ):
+        if type(self) is not Move:
+            display_name = getattr(type(self), "display_name", None)
+            if not isinstance(display_name, str) or not display_name.strip():
+                raise TypeError(
+                    f"{type(self).__name__} must declare a non-empty display_name"
+                )
         self.name = name
         self.description = description
         self.category = category

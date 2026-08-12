@@ -4,6 +4,15 @@ import os
 import sys
 from pathlib import Path
 
+# Keep API tests deterministic even when the developer's .env selects a manual
+# gameplay configuration. Individual tests that exercise config loading use
+# monkeypatch/patch.dict explicitly.
+_TEST_CONFIG_FILE = os.environ.pop("CONFIG_FILE", None)
+# A missing CONFIG_FILE makes SessionManager fall back to the developer-only
+# config_dev.ini when it exists. Use a nonexistent sentinel instead so tests
+# exercise engine defaults without depending on an untracked local file.
+os.environ["CONFIG_FILE"] = "__hermes_api_tests_no_config__.ini"
+
 # Project root on sys.path. src/ is deliberately NOT added and no bare-name
 # module shims are installed: every local import uses the canonical `src.`
 # path, so a bare-import regression fails loudly here too.
@@ -26,13 +35,8 @@ def app():
     must not inherit that config because it changes starting equipment, maps,
     and combat ranges for every session created by this fixture.
     """
-    config_file = os.environ.pop("CONFIG_FILE", None)
-    try:
-        app, socketio = create_app(TestingConfig)
-        yield app
-    finally:
-        if config_file is not None:
-            os.environ["CONFIG_FILE"] = config_file
+    app, socketio = create_app(TestingConfig)
+    return app
 
 
 @pytest.fixture

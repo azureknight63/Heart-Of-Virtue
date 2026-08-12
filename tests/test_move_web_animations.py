@@ -74,6 +74,7 @@ def test_instances_resolve_class_attribute():
 
     class _Probe(Move):
         web_animation = "pierce"
+        display_name = "Probe"
 
     probe = _Probe(
         name="probe",

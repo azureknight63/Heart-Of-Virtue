@@ -31,6 +31,7 @@ from ._base import (
     to_hit_chance,
     attacker_accuracy,
     HIT_CHANCE_BASE,
+    display_name_of,
 )
 from ._utility import (
     StrategicInsight,
@@ -124,6 +125,7 @@ __all__ = [
     "to_hit_chance",
     "attacker_accuracy",
     "HIT_CHANCE_BASE",
+    "display_name_of",
     # Utility
     "StrategicInsight",
     "MasterTactician",

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { colors, spacing, shadows, fonts } from '../styles/theme'
+import { displayNameOf } from '../utils/combatMoveStatus'
 
 export default function StatusEffectsIconPanel({ effects = [], vertical = false }) {
     const [hoveredEffectName, setHoveredEffectName] = useState(null)
@@ -95,7 +96,7 @@ export default function StatusEffectsIconPanel({ effects = [], vertical = false 
                                 borderBottom: `1px solid ${getEffectColor(effect.type)}44`,
                                 paddingBottom: '2px'
                             }}>
-                                {effect.name.toUpperCase()}
+                                {displayNameOf(effect).toUpperCase()}
                             </div>
                             <div style={{ fontSize: '10px', color: '#ccc', lineHeight: '1.4' }}>
                                 {effect.description || 'No description available.'}

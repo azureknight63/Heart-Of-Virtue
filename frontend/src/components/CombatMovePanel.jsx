@@ -4,6 +4,7 @@ import { colors, spacing, shadows, fonts } from '../styles/theme';
 import GamePanel from './GamePanel';
 import GameText from './GameText';
 import { movesInGroup } from '../utils/categories';
+import { displayNameOf } from '../utils/combatMoveStatus';
 
 // `isProcessing` is passed by LeftPanel while a move submission is in flight.
 // Without it the panel stays live during the API round trip and a double-click
@@ -71,7 +72,8 @@ const CombatMovePanel = ({ moves, category, onMoveClick, onClose, onTargetHover,
                     filteredMoves.map((move, index) => {
                         const isAvailable = move.available !== false;
                         const reason = move.reason || '';
-                        const isHovered = hoveredMoveName === move.name;
+                        const moveKey = move.name || move.display_name;
+                        const isHovered = hoveredMoveName === moveKey;
 
                         // Single target detection for hover effect
                         const firstTarget = move.viable_targets?.[0];
@@ -81,7 +83,7 @@ const CombatMovePanel = ({ moves, category, onMoveClick, onClose, onTargetHover,
 
                         return (
                             <button
-                                key={move.name}
+                                key={moveKey}
                                 onClick={() => {
                                     if (isAvailable && !isProcessing) {
                                         playSFX('attack');
@@ -91,7 +93,7 @@ const CombatMovePanel = ({ moves, category, onMoveClick, onClose, onTargetHover,
                                 }}
                                 onMouseEnter={() => {
                                     if (isAvailable) {
-                                        setHoveredMoveName(move.name);
+                                        setHoveredMoveName(moveKey);
                                         if (singleTargetId && onTargetHover) {
                                             onTargetHover(singleTargetId);
                                         }
@@ -126,7 +128,7 @@ const CombatMovePanel = ({ moves, category, onMoveClick, onClose, onTargetHover,
                                         variant={isHovered ? 'highlight' : (isAvailable ? 'bright' : 'dim')}
                                         weight="bold"
                                     >
-                                        {move.name}
+                                        {displayNameOf(move)}
                                     </GameText>
                                     {move.fatigue_cost > 0 && (
                                         <GameText variant="muted" size="xs">

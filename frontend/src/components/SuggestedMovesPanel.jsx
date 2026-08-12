@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
-import { colors } from '../styles/theme'
+import { colors, spacing, shadows } from '../styles/theme'
+import { displayNameOf } from '../utils/combatMoveStatus'
 
 const STORAGE_KEY = 'hov_tactical_advisor_collapsed'
 
@@ -224,10 +225,11 @@ export default function SuggestedMovesPanel({ suggestions = [], suggestionsLoadi
                     </div>
                 ) : (
                     suggestions.map((s) => {
-                        const isHovered = hoveredSuggestionName === s.move_name;
+                        const suggestionKey = s.move_name || s.move_display_name;
+                        const isHovered = hoveredSuggestionName === suggestionKey;
                         return (
                         <div
-                            key={s.move_name}
+                            key={suggestionKey}
                             onClick={() => {
                                 if (onTargetHover) onTargetHover(null);
                                 onSuggestClick?.(s);
@@ -244,7 +246,7 @@ export default function SuggestedMovesPanel({ suggestions = [], suggestionsLoadi
                                 boxShadow: isHovered ? `0 0 10px ${colors.primary}33` : 'none'
                             }}
                             onMouseEnter={() => {
-                                setHoveredSuggestionName(s.move_name)
+                                setHoveredSuggestionName(suggestionKey)
                                 if (s.target_id?.startsWith('enemy_') && onTargetHover) {
                                     onTargetHover(s.target_id);
                                 }
@@ -258,7 +260,7 @@ export default function SuggestedMovesPanel({ suggestions = [], suggestionsLoadi
                         >
                             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
                                 <span style={{ color: colors.text.highlight, fontWeight: 'bold', fontSize: '13px' }}>
-                                    {s.move_name}
+                                    {displayNameOf({ name: s.move_name, display_name: s.move_display_name })}
                                 </span>
                                 <span style={{
                                     color: colors.primary,

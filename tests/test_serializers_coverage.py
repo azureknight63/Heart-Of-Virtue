@@ -405,6 +405,23 @@ class TestCombatantSerializer:
         result = self.CombatantSerializer._serialize_active_move(combatant)
         assert result is None
 
+    def test_serialize_active_move_reports_cooldown_move(self):
+        combatant = _mock_combatant(name="Goblin", is_player=False)
+        cooldown_move = MagicMock()
+        cooldown_move.name = "NPC_Attack"
+        cooldown_move.category = "Offensive"
+        cooldown_move.description = ""
+        cooldown_move.current_stage = 3
+        cooldown_move.beats_left = 2
+        cooldown_move.stage_beat = [0, 1, 0, 4]
+        combatant.current_move = None
+        combatant.known_moves = [cooldown_move]
+
+        result = self.CombatantSerializer._serialize_active_move(combatant)
+
+        assert result["name"] == "NPC_Attack"
+        assert result["current_stage"] == 3
+
     def test_serialize_position_with_facing(self):
         combatant = _mock_combatant()
         pos = MagicMock()

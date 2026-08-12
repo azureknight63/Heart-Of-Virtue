@@ -21,6 +21,7 @@ from ._base import (
 class Slash(
     Move
 ):  # Slashing-type attack using the equipped weapon; available to Daggers, Swords, Stars, Axes, and Halberds.
+    display_name = 'Slash'
     web_animation = "attack"
 
     def __init__(self, player):
@@ -192,6 +193,7 @@ class FeintAndPivot(Move):
     - If already on flank (±45°): pivot to behind
     - If already behind (±45°): perfect positioning behind
     """
+    display_name = 'Feint & Pivot'
 
     web_animation = "quick_attack"
 
@@ -459,6 +461,7 @@ class FeintAndPivot(Move):
 
 class ShadowStep(PassiveMove):
     """Passive: Silent footwork. Marks player as capable of stealthy approach."""
+    display_name = 'Shadow Step'
 
     def __init__(self, user):
         super().__init__(
@@ -478,6 +481,7 @@ class Backstab(Move):
     get_damage_modifier) to scale power based on attack angle. Frontal attacks
     get a slight penalty; flanking and rear attacks deal up to +40% more.
     """
+    display_name = 'Backstab'
 
     web_animation = "pierce"
 

@@ -3,15 +3,35 @@
 # is needed here anymore — only the project root goes on sys.path.
 import sys, os, pathlib
 import time
+import pytest
+
+# The repository's project root must be first so its utils/ namespace package
+# wins over Hermes' own top-level utils.py helper.
+PROJECT_ROOT = pathlib.Path(__file__).resolve().parent.parent
+PROJECT_ROOT_STR = str(PROJECT_ROOT)
+if PROJECT_ROOT_STR in sys.path:
+    sys.path.remove(PROJECT_ROOT_STR)
+sys.path.insert(0, PROJECT_ROOT_STR)
+if "utils" in sys.modules and not hasattr(sys.modules["utils"], "__path__"):
+    sys.modules.pop("utils")
 
 # Disable LLM and reduce delays for tests
 os.environ["MYNX_LLM_ENABLED"] = "0"
 os.environ["MYNX_FALLBACK_DELAY"] = "0"
 # Prevent CombatStrategist from making discovery requests
 os.environ["MYNX_LLM_PROVIDER"] = "none"
-PROJECT_ROOT = pathlib.Path(__file__).resolve().parent.parent
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
+
+# Hermes itself exposes a top-level utils.py; the project map editor uses the
+# repository's utils/ package. Remove the already-loaded helper module so the
+# normal import machinery can discover the project package.
+if "hermes-agent/utils.py" in getattr(sys.modules.get("utils"), "__file__", "").replace("\\", "/"):
+    sys.modules.pop("utils", None)
+
+
+@pytest.fixture
+def worker_id():
+    """Provide the xdist worker id when running serially as well."""
+    return "master"
 
 
 # Skip tkinter tests during web app implementation
@@ -85,12 +105,26 @@ MAPGEN_MODULE_NAMES = (
 
 
 def snapshot_and_clear_mapgen_modules():
-    """Removes utils.map_generator and every utils.mapgen submodule from
-    sys.modules, returning a snapshot for restore_mapgen_modules() to
-    restore later. Call this (then reimport utils.map_generator) at the
-    start of a tkinter-stub fixture; call restore_mapgen_modules() with the
-    returned snapshot in that fixture's teardown."""
-    return {name: sys.modules.get(name) for name in MAPGEN_MODULE_NAMES}
+    """Removes map-editor modules and any shadowing non-package ``utils``.
+
+    Hermes exposes its own top-level ``utils.py`` helper.  The project editor
+    is a real ``utils/`` package, so remove the helper before the test fixture
+    imports ``utils.map_generator``.
+    """
+    previous = {name: sys.modules.get(name) for name in MAPGEN_MODULE_NAMES}
+    project_utils = sys.modules.get("utils")
+    if project_utils is not None and not hasattr(project_utils, "__path__"):
+        sys.modules.pop("utils", None)
+    # Ensure the repository namespace package is installed even when Hermes'
+    # helper module was imported before pytest loaded this conftest.  The
+    # repository intentionally uses a namespace `utils/` directory (no
+    # `utils/__init__.py`), so create the package object explicitly.
+    import types
+    project_utils = types.ModuleType("utils")
+    project_utils.__path__ = [str(PROJECT_ROOT / "utils")]
+    project_utils.__package__ = "utils"
+    sys.modules["utils"] = project_utils
+    return previous
 
 
 def restore_mapgen_modules(previous):

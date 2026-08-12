@@ -8,6 +8,7 @@ import src.functions as functions  # noqa: F401
 import src.items as items  # noqa: F401
 import src.positions as positions  # noqa: F401
 from src.animations import animate_to_main_screen as animate  # noqa: F401
+from src.combatant import move_in_progress
 from ._base import (
     Move,
     PassiveMove,
@@ -16,6 +17,7 @@ from ._base import (
     _apply_blade_mastery_discount,
     _apply_to_hit_modifiers,
     to_hit_chance,
+    display_name_of,
 )  # noqa: F401
 
 
@@ -25,6 +27,7 @@ class StrategicInsight(PassiveMove):
     This is a passive move affecting the TacticalAdvisor feature.
     It cannot be selected during combat.
     """
+    display_name = 'Strategic Insight'
 
     def __init__(self, user):
         description = (
@@ -39,6 +42,7 @@ class MasterTactician(PassiveMove):
     This is a passive move affecting the TacticalAdvisor feature.
     It cannot be selected during combat.
     """
+    display_name = 'Master Tactician'
 
     def __init__(self, user):
         description = "Mastery of tactical positioning, timing, and combat strategy."
@@ -46,6 +50,7 @@ class MasterTactician(PassiveMove):
 
 
 class Check(Move):  # player checks the battlefield (shows enemies, allies, distances)
+    display_name = 'Check'
     web_animation = "pulse"
 
     def __init__(self, player):
@@ -174,14 +179,13 @@ class Check(Move):  # player checks the battlefield (shows enemies, allies, dist
 
                     combatant_info["direction_from_player"] = direction
 
-            # Get current move if not idle
-            if (
-                hasattr(combatant, "current_move")
-                and combatant.current_move is not None
-            ):
-                move = combatant.current_move
-                if move.current_stage > 0:  # Move is active
-                    combatant_info["current_move"] = move.name
+            # Include every stage of the move in progress, including stage 0
+            # (preparation), so the UI can distinguish preparing from idle.
+            move = move_in_progress(combatant)
+            if move is not None:
+                combatant_info["current_move"] = move.name
+                combatant_info["current_move_display_name"] = display_name_of(move)
+                combatant_info["current_move_stage"] = getattr(move, "current_stage", None)
 
             combatants_data.append(combatant_info)
 
@@ -325,6 +329,7 @@ class Check(Move):  # player checks the battlefield (shows enemies, allies, dist
 
 
 class Wait(Move):  # player chooses how many beats he'd like to wait
+    display_name = 'Wait'
     web_animation = "pulse"
 
     def __init__(self, player):
@@ -368,6 +373,7 @@ class Wait(Move):  # player chooses how many beats he'd like to wait
 
 
 class Attack(Move):  # basic attack function, always uses equipped weapon, player only
+    display_name = 'Attack'
     web_animation = "attack"
 
     def __init__(self, player):
@@ -557,6 +563,7 @@ class Attack(Move):  # basic attack function, always uses equipped weapon, playe
 
 
 class Rest(Move):  # standard rest to restore fatigue.
+    display_name = 'Rest'
     web_animation = "heal"
 
     def __init__(self, player):
@@ -604,6 +611,7 @@ class Rest(Move):  # standard rest to restore fatigue.
 
 
 class UseItem(Move):
+    display_name = 'Use Item'
     web_animation = "pulse"
 
     def __init__(self, player):
@@ -655,6 +663,7 @@ class CrusaderOath(Move):
     Cannot be used while Hollowed (the oath requires faith to swear on).
     Long cooldown prevents chaining.
     """
+    display_name = "Crusader's Oath"
 
     web_animation = "buff"
 

@@ -12,8 +12,9 @@ from typing import Dict, List, Any, Optional, TYPE_CHECKING
 
 from src.api.constants import ITEM_USE_RANGE
 from src.api.serializers.inventory import _BONUS_ATTRS, _collect_equipped_items
-# The engine owns the to-hit weighting; the serializer only renders it.
+from src.combatant import move_in_progress
 from src.moves import attacker_accuracy
+from src.moves._base import display_name_of
 
 if TYPE_CHECKING:
     from src.player import Player
@@ -127,6 +128,7 @@ class CombatStateSerializer:
             "suggestions_loading": getattr(player, "suggestions_loading", False),
             "last_move_outcome": getattr(player, "last_move_summary", ""),
             "last_move_name": getattr(player, "last_move_name", None),
+
             "last_move_target_id": getattr(player, "last_move_target_id", None),
             "player_consumables": CombatStateSerializer._get_consumables(player),
         }
@@ -288,6 +290,7 @@ class CombatantSerializer:
         distance_to_ref = CombatantSerializer._get_distance(combatant, reference)
         in_range = distance_to_ref <= ITEM_USE_RANGE if reference is not None else True
 
+        active_move = CombatantSerializer._serialize_active_move(combatant)
         return {
             "id": CombatantSerializer.stream_id(combatant),
             "in_range": in_range,
@@ -320,19 +323,18 @@ class CombatantSerializer:
             "equipment": CombatantSerializer._serialize_combat_equipment(combatant),
             "distance": distance_to_ref,
             "position": CombatantSerializer._serialize_position(combatant),
-            "current_move": CombatantSerializer._serialize_active_move(combatant),
-            "move_in_process": CombatantSerializer._serialize_active_move(
-                combatant
-            ),  # Alias for Strategist
+            "current_move": active_move,
+            "move_in_process": active_move,  # Alias for Strategist
         }
 
     @staticmethod
     def _serialize_active_move(combatant: Any) -> Optional[Dict[str, Any]]:
         """Serialize currently active/charging move."""
-        if hasattr(combatant, "current_move") and combatant.current_move:
-            move = combatant.current_move
+        move = move_in_progress(combatant)
+        if move:
             return {
                 "name": getattr(move, "name", "Unknown"),
+                "display_name": display_name_of(move),
                 "category": getattr(move, "category", "Miscellaneous"),
                 "description": getattr(move, "description", ""),
                 "current_stage": getattr(move, "current_stage", 0),
@@ -479,6 +481,7 @@ class CombatantSerializer:
                     passives.append(
                         {
                             "name": move.name,
+                            "display_name": display_name_of(move),
                             "type": "passive",
                             "description": getattr(
                                 move, "description", "Passive skill."

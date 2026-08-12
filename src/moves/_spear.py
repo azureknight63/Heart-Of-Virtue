@@ -23,6 +23,7 @@ class KeepAway(Move):
     The spear is weakest when enemies close in. Keep Away deals a glancing
     hit and shoves the target back, restoring the engagement distance.
     """
+    display_name = 'Keep Away'
 
     web_animation = "pierce"
 
@@ -188,6 +189,7 @@ class Lunge(Move):
     Bridges the gap when the target retreats just outside spear reach.
     Moves the user 3 units toward the target then delivers a standard thrust.
     """
+    display_name = 'Lunge'
 
     web_animation = "pierce"
 
@@ -342,6 +344,7 @@ class Impale(Move):
     damage against only 40% of normal protection — devastating against
     heavily armoured foes.
     """
+    display_name = 'Impale'
 
     web_animation = "pierce"
 
@@ -462,6 +465,7 @@ class Impale(Move):
 
 class SentinelsVigil(PassiveMove):
     """Passive: Range-denial discipline; future hook for counter-damage on advance."""
+    display_name = "Sentinel's Vigil"
 
     def __init__(self, user):
         super().__init__(
@@ -480,6 +484,7 @@ class ArmorPierce(Move):
     The pick's pointed tip finds the hairline gap. Protection is set to
     zero in the damage calculation — raw weapon power and resistance apply.
     """
+    display_name = 'Armor Pierce'
 
     web_animation = "pierce"
 

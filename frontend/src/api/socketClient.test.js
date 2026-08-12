@@ -8,14 +8,14 @@ import { createCombatSocket } from './socketClient';
 describe('createCombatSocket', () => {
   beforeEach(() => io.mockClear());
 
-  it('connects to the given url with websocket+polling transports', () => {
+  it('uses polling by default to avoid Werkzeug websocket disconnect 500s', () => {
     createCombatSocket({ url: 'http://api.example' });
     expect(io).toHaveBeenCalledTimes(1);
     const [url, opts] = io.mock.calls[0];
     expect(url).toBe('http://api.example');
     expect(opts).toMatchObject({
       autoConnect: true,
-      transports: ['websocket', 'polling'],
+      transports: ['polling'],
     });
   });
 

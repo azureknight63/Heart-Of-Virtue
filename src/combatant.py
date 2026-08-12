@@ -16,6 +16,25 @@ Usage (in each subclass __init__):
 
 import math
 
+MOVE_STAGE_RECOIL = 2
+MOVE_STAGE_COOLDOWN = 3
+
+
+def move_in_progress(combatant):
+    """Return the current move, including a move detached for cooldown."""
+    move = getattr(combatant, "current_move", None)
+    if move is not None:
+        return move
+    return next(
+        (
+            candidate
+            for candidate in getattr(combatant, "known_moves", [])
+            if getattr(candidate, "current_stage", None)
+            in (MOVE_STAGE_RECOIL, MOVE_STAGE_COOLDOWN)
+        ),
+        None,
+    )
+
 
 def exp_needed_for_level(level, intelligence):
     """Exp required to advance from `level` to the next.

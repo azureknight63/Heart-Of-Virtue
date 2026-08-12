@@ -201,6 +201,51 @@ describe('useCombat', () => {
     expect(result.current.combat.log).toContain('Attack!');
   });
 
+  it('applies a terminal HTTP response even when socket streaming is enabled', async () => {
+    vi.stubEnv('VITE_COMBAT_SOCKET', '1');
+    apiEndpoints.combat.performAction.mockResolvedValue({
+      data: {
+        combat_active: false,
+        battle_state: { status: 'active', awaiting_input: false },
+        end_state: { id: 'victory-1', status: 'victory' },
+        log: ['Victory!'],
+      },
+    });
+
+    const { result } = renderHook(() => useCombat());
+
+    await act(async () => {
+      await result.current.performAction('move', { move_id: 'Attack' });
+    });
+
+    expect(result.current.inCombat).toBe(false);
+    expect(result.current.combat.end_state).toEqual({
+      id: 'victory-1',
+      status: 'victory',
+    });
+    vi.unstubAllEnvs();
+  });
+
+  it('normalizes a terminal combat:ended payload into end state', () => {
+    const { result } = renderHook(() => useCombat());
+
+    act(() => {
+      result.current.applyCombatState({
+        id: 'victory-2',
+        status: 'victory',
+        message: 'Victory!',
+      });
+    });
+
+    expect(result.current.inCombat).toBe(false);
+    expect(result.current.combat.end_state).toEqual({
+      id: 'victory-2',
+      status: 'victory',
+      message: 'Victory!',
+    });
+    expect(result.current.combat.awaiting_input).toBe(false);
+  });
+
   it('logs and swallows errors from fetchCombatStatus without throwing', async () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     apiEndpoints.combat.getStatus.mockRejectedValue(new Error('network down'));

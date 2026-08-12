@@ -12,6 +12,7 @@ from ._base import Move, _apply_to_hit_modifiers, to_hit_chance  # noqa: F401
 
 
 class NpcAttack(Move):  # basic attack function, NPCs only
+    display_name = 'Attack'
     web_animation = "attack"
     # Subclasses that declare their own mvrange in __init__ (e.g. ranged
     # attacks like MineralSpit/WailStrike) must set this True so evaluate()
@@ -178,6 +179,7 @@ class NpcAttack(Move):  # basic attack function, NPCs only
 
 
 class NpcRest(Move):  # standard rest to restore fatigue for NPCs.
+    display_name = 'Rest'
     web_animation = "heal"
 
     def __init__(self, npc):
@@ -225,6 +227,7 @@ class NpcRest(Move):  # standard rest to restore fatigue for NPCs.
 
 
 class NpcIdle(Move):  # NPC does nothing for a few beats.
+    display_name = 'Idle'
     web_animation = "pulse"
 
     def __init__(self, npc):
@@ -268,6 +271,7 @@ class TelegraphedSurge(NpcAttack):
         _hit_text(npc, target_name)  str  — red line shown on impact
         _recoil_text(npc)   str    — plain line shown after surge
     """
+    display_name = 'Telegraphed Surge'
 
     web_animation = "shockwave"
 
@@ -305,6 +309,7 @@ class SlimeVolley(TelegraphedSurge):
     the player time to Dodge; if unparried, deals significantly amplified damage.
     On a solid hit, the wave of corrosive slime can coat the target.
     """
+    display_name = 'Slime Volley'
 
     web_animation = "projectile"
 
@@ -343,6 +348,7 @@ class TidalSurge(TelegraphedSurge):
     SlimeVolley but with dramatically higher damage multiplier and longer prep.
     The sheer volume of the surge makes coating the target almost certain.
     """
+    display_name = 'Tidal Surge'
 
     web_animation = "shockwave"
 
@@ -376,6 +382,7 @@ class TidalSurge(TelegraphedSurge):
 
 
 class GorranClub(Move):  # Gorran's special club attack! Massive damage, long recoil
+    display_name = 'Club Strike'
     web_animation = "heavy_attack"
 
     def __init__(self, npc):
@@ -526,6 +533,7 @@ class GorranClub(Move):  # Gorran's special club attack! Massive damage, long re
 
 
 class VenomClaw(Move):  # Poisonous attack
+    display_name = 'Venom Claw'
     web_animation = "attack"
 
     def __init__(self, npc):
@@ -671,6 +679,7 @@ class VenomClaw(Move):  # Poisonous attack
 
 
 class SpiderBite(Move):  # Poisonous attack
+    display_name = 'Spider Bite'
     web_animation = "quick_attack"
 
     def __init__(self, npc):
@@ -819,6 +828,7 @@ class SpiderBite(Move):  # Poisonous attack
 
 
 class BatBite(Move):  # Vampiric / life-draining bite for bat-type NPCs
+    display_name = 'Bat Bite'
     web_animation = "quick_attack"
 
     def __init__(self, npc):
@@ -967,6 +977,7 @@ class MineralSpit(NpcAttack):
     Flings a viscous mineral slurry that hardens on contact. Even a near-miss
     leaves residue that can begin the calcification process.
     """
+    display_name = 'Mineral Spit'
 
     web_animation = "projectile"
 
@@ -1033,6 +1044,7 @@ class SoulDrain(NpcAttack):
     The Lurker is a predator of the hollow places. Where grief has already opened
     a wound, it finds purchase. Where faith has lapsed, it reaches through.
     """
+    display_name = 'Soul Drain'
 
     web_animation = "drain"
 
@@ -1093,6 +1105,7 @@ class KeeningToll(NpcAttack):
     given a higher move weight than WailStrike: this is the wail the
     WailWraith reaches for most often.
     """
+    display_name = 'Keening Toll'
 
     web_animation = "drain"
 
@@ -1161,6 +1174,7 @@ class WailStrike(TelegraphedSurge):
     hitting, slower follow-up — the extended prep phase gives the player a
     genuine window to Dodge before it lands.
     """
+    display_name = 'Wail Strike'
 
     web_animation = "shockwave"
 
@@ -1226,6 +1240,7 @@ class DeathKnell(NpcAttack):
     change to Jean's resistance (gear, a story beat, etc.) is what would make
     it a real threat, not a bypass baked into the move itself.
     """
+    display_name = 'Death Knell'
 
     web_animation = "death"
 
@@ -1318,6 +1333,7 @@ class SeismicSlam(Move):
     to Stagger each one (resisted by stun status resistance, like the
     Heavy Handed passive).
     """
+    display_name = 'Seismic Slam'
 
     web_animation = "shockwave"
 
@@ -1432,6 +1448,7 @@ class StoneBulwark(Move):
     protection that scales with Gorran's own. Long cooldown; won't recast
     while any ally still carries the ward.
     """
+    display_name = 'Stone Bulwark'
 
     web_animation = "defend"
 
@@ -1518,6 +1535,7 @@ class MarkedQuarry(Move):
     The whole party benefits automatically through the stat machinery.
     Applied with force=True — a perception mark can't be resisted.
     """
+    display_name = 'Marked Quarry'
 
     web_animation = "debuff"
 
@@ -1590,6 +1608,7 @@ class TwinFangs(Move):
     into dagger slash in one motion. Deals 1.2x damage, +50% more against a
     Quarried target (her kit becomes a deliberate hunt: mark, then execute).
     """
+    display_name = 'Twin Fangs'
 
     web_animation = "quick_attack"
 

@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { colors } from '../styles/theme'
 import { categoryColor, categoryIcon } from '../utils/categories'
+import { displayNameOf } from '../utils/combatMoveStatus'
 
 function CooldownTray({ moves }) {
   const [expanded, setExpanded] = useState(false)
@@ -120,7 +121,7 @@ function ExpandedCard({ move }) {
             color: `${color}DD`,
             fontFamily: "'Courier New', monospace",
           }}>
-            {move.name}
+            {displayNameOf(move)}
           </span>
         </div>
         <div style={{ textAlign: 'right', minWidth: '28px' }}>

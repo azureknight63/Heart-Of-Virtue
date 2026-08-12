@@ -19,6 +19,7 @@ def _is_highest(p, stat_val):
 
 class Pulverize(Move):
     """Strength mastery: devastating overhead blow that ignores all protection."""
+    display_name = 'Pulverize'
 
     web_animation = "heavy_attack"
 
@@ -85,6 +86,7 @@ class Pulverize(Move):
 
 class KillingPrecision(Move):
     """Finesse mastery: surgically unerring strike that never misses."""
+    display_name = 'Killing Precision'
 
     web_animation = "pierce"
 
@@ -145,6 +147,7 @@ class KillingPrecision(Move):
 
 class LightningAssault(Move):
     """Speed mastery: three rapid strikes; Disoriented if all land."""
+    display_name = 'Lightning Assault'
 
     web_animation = "quick_attack"
 
@@ -219,6 +222,7 @@ class LightningAssault(Move):
 
 class Ironhide(Move):
     """Endurance mastery: purge ailments, recover HP and fatigue."""
+    display_name = 'Ironhide'
 
     web_animation = "defend"
 
@@ -281,6 +285,7 @@ class Ironhide(Move):
 
 class WarCry(Move):
     """Charisma mastery: interrupts all winding enemy moves and stuns for 1 beat."""
+    display_name = 'War Cry'
 
     web_animation = "buff"
 
@@ -338,6 +343,7 @@ class WarCry(Move):
 
 class SecretPlans(Move):
     """Intelligence mastery: +30% speed and damage for player and all allies; resets cooldowns."""
+    display_name = 'Secret Plans'
 
     web_animation = "buff"
 
@@ -392,6 +398,7 @@ class SecretPlans(Move):
 
 class BloodOfMartyrs(Move):
     """Faith mastery: absorb all damage for 40 beats, then detonate for 2× absorbed."""
+    display_name = 'Blood of Martyrs'
 
     web_animation = "buff"
 

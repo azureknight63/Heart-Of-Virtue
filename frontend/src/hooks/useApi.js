@@ -16,6 +16,7 @@ const transformCombatData = (data) => ({
   events_triggered: data.events_triggered || [],
   last_move_outcome: data.last_move_outcome || "",
   last_move_name: data.last_move_name || null,
+
   last_move_target_id: data.last_move_target_id || null
 })
 
@@ -147,11 +148,24 @@ export const useCombat = () => {
   }, [])
 
   // Apply a server combat-state payload (HTTP response or a socket
-  // combat:resolved/ended event — both are get_combat_state() output).
+  // combat:resolved event). combat:ended may carry only the end summary.
+
   const applyCombatState = useCallback((data) => {
     if (!data) return
-    setCombat(transformCombatData(data))
-    if (typeof data.combat_active === 'boolean') setInCombat(data.combat_active)
+    // combat:ended carries the end summary itself rather than a full
+    // get_combat_state() response. Normalize it to the same shape so the
+    // coordinator can show Victory/Defeat instead of leaving the old move
+    // selection state on screen.
+    const state = (typeof data.combat_active === 'boolean' || data.battle_state)
+      ? data
+      : {
+          combat_active: false,
+          battle_state: { status: 'ended', awaiting_input: false, input_type: null },
+          end_state: data,
+          log: [],
+        }
+    setCombat(transformCombatData(state))
+    if (typeof state.combat_active === 'boolean') setInCombat(state.combat_active)
   }, [])
 
   const performAction = useCallback(async (action, target) => {
@@ -164,10 +178,13 @@ export const useCombat = () => {
       if (data.success === false) {
         return data
       }
-      // When streaming (issue #436) the response is an ack: combat state (and its
-      // beats) arrive over the socket, so applying it here would double-drive the
-      // UI. Off by default — the HTTP path applies state as before.
-      if (!combatSocketEnabled()) {
+      // Streaming normally delivers beat/resolution payloads over Socket.IO. The
+      // HTTP response remains authoritative for the action, though: a client may
+      // miss a socket event, and a victory response must not leave the UI waiting
+      // forever in its pre-action state. Non-terminal streaming responses are still
+      // applied by the socket when it arrives; terminal responses are applied here
+      // immediately as a safety net.
+      if (!combatSocketEnabled() || data.combat_active === false || data.end_state) {
         applyCombatState(data)
       }
       return data

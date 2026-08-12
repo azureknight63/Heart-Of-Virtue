@@ -211,17 +211,28 @@ class TestGameServiceCombatMethods:
         assert "battle_state" in result
         assert result["battle_state"] is None
 
-    def test_combat_status_without_adapter_preserves_empty_state(self, app):
-        """An adapter-less combat flag preserves the explicit empty state."""
+    def test_combat_status_real_adapter_has_expected_structure(self, app):
+        """A real combat adapter returns the complete serialized battle state."""
         game_service = app.game_service
         session_manager = app.session_manager
         session_id, username = session_manager.create_session("testplayer")
         player = session_manager.get_player(session_id)
 
-        # Manually start combat
-        player.in_combat = True
-        player.combat_list = []
-        player.combat_list_allies = [player]
+        from src.npc import CaveBat
+
+        enemy = CaveBat()
+        enemy.friend = False
+        tile = player.universe.get_tile(player.location_x, player.location_y)
+        player.current_room = tile
+        tile.npcs_here = [enemy]
+        start = game_service.start_combat(player, str(id(enemy)), session_id=session_id)
+        assert "error" not in start
+        assert player.in_combat is True
 
         result = game_service.get_combat_status(player)
-        assert result["battle_state"] is None
+        battle_state = result["battle_state"]
+        required_fields = ["status", "round", "current_turn_index", "player", "enemies", "turn_order"]
+        assert all(field in battle_state for field in required_fields)
+        assert battle_state["status"] == "active"
+        assert isinstance(battle_state["round"], int)
+        assert isinstance(battle_state["turn_order"], list)
