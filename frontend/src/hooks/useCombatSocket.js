@@ -46,6 +46,7 @@ export function useCombatSocket({
   };
 
   const lastSeqRef = useRef(null);
+  const lastStateSeqRef = useRef(null);
 
   useEffect(() => {
     if (!enabled || !sessionId) return undefined;
@@ -54,6 +55,7 @@ export function useCombatSocket({
       // A gap/reconnect means we can't trust incremental beats; drop seq
       // tracking and re-seed from the authoritative status.
       lastSeqRef.current = null;
+      lastStateSeqRef.current = null;
       try {
         const state = await cbs.current.fetchStatus?.();
         if (state) cbs.current.onResolved?.(state);
@@ -105,13 +107,19 @@ export function useCombatSocket({
     // Legacy/compatibility state updates are not authoritative beat events,
     // but they are still useful as a recovery path when the backend streaming
     // flag is off or a beat event was missed.
-    socket.on('combat:update', (state) => cbs.current.onUpdate?.(state));
+    socket.on('combat:update', (state) => {
+      const seq = state?.seq;
+      if (seq != null && lastStateSeqRef.current != null && seq < lastStateSeqRef.current) return;
+      if (seq != null) lastStateSeqRef.current = seq;
+      cbs.current.onUpdate?.(state);
+    });
     socket.on(SUGGESTIONS_EVENT, (p) =>
       handleSeqEvent(p, (x) => cbs.current.onSuggestions?.(x))
     );
 
     return () => {
       lastSeqRef.current = null;
+      lastStateSeqRef.current = null;
       try {
         socket.disconnect();
       } catch {

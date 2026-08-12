@@ -154,6 +154,9 @@ class ApiCombatAdapter:
         # Per-move {stream_id: reason} for combatants removed from the roster, so
         # streaming can tell a death from an alive-exit (flee/warp/scripted).
         self._departures = {}
+        # Prevent concurrent status polls or duplicate cleanup paths from
+        # emitting the terminal SocketIO event more than once per combat.
+        self._terminal_event_emitted = False
 
         # Initialize persistent state if missing
         if not hasattr(self.player, "combat_adapter_state"):
@@ -207,6 +210,7 @@ class ApiCombatAdapter:
                 ).get("combatants", []),
             )
             self._departures = {}
+            self._terminal_event_emitted = False
         except Exception:
             logger.exception("failed to init combat beat streamer")
             self._beat_streamer = None
@@ -264,6 +268,9 @@ class ApiCombatAdapter:
             )
             end_state = (result or {}).get("end_state")
             if ended or end_state:
+                if getattr(self, "_terminal_event_emitted", False):
+                    return
+                self._terminal_event_emitted = True
                 streamer.emit_ended(end_state or result)
             else:
                 streamer.emit_resolved(result)
@@ -398,6 +405,7 @@ class ApiCombatAdapter:
 
             if not reinit:
                 self.player.combat_beat = 1  # Start at beat 1 for synchronization
+                self._terminal_event_emitted = False
                 self.player.combat_log = []  # Clear log for new combat
                 # Clear any prior end-of-combat summary/drops from previous encounters
                 self.player.combat_end_summary = None
@@ -1419,12 +1427,22 @@ class ApiCombatAdapter:
         if len(self.player.combat_list) == 0 and self.player.in_combat:
             self._handle_victory()
 
-            # If no events are blocking, return victory immediately
-            if not event_just_triggered:
-                result = self.get_combat_state()
-                result["beat_states"] = beat_states
-                self._stream_combat_result(result, beat_states, ended=True)
-                return result
+            # Publish the terminal stream even when a post-combat event is
+            # queued. The event dialog and victory state are independent; the
+            # old path only streamed when no event was pending.
+            result = self.get_combat_state()
+            result["beat_states"] = beat_states
+            self._stream_combat_result(result, beat_states, ended=True)
+            # get_combat_state() consumes events_triggered; restore them so the
+            # normal tail below can still return the pending event to the API.
+            triggered_events = result.get("events_triggered")
+            if triggered_events:
+                self.player.combat_adapter_state["events_triggered"] = triggered_events
+
+            # Return the terminal state immediately. If a post-combat event is
+            # pending, its payload was restored above and travels with this result;
+            # do not fall through and replay the same beat stream a second time.
+            return result
 
         # Set up for next move selection if battle continues and no event is blocking
         if not event_just_triggered:
@@ -1452,12 +1470,20 @@ class ApiCombatAdapter:
                 except Exception:
                     pass
                 self.player.current_move = None
-            self.awaiting_input = True
-            self.input_type = "move_selection"
-            self.pending_move_index = None
-            try:
-                self.available_options = self._get_available_moves()
-            except Exception:
+            if self.player.in_combat:
+                self.awaiting_input = True
+                self.input_type = "move_selection"
+                self.pending_move_index = None
+                try:
+                    self.available_options = self._get_available_moves()
+                except Exception:
+                    self.available_options = []
+            else:
+                # A post-victory event may still be pending, but combat input is
+                # no longer valid. Do not advertise a phantom move-selection turn.
+                self.awaiting_input = False
+                self.input_type = None
+                self.pending_move_index = None
                 self.available_options = []
 
         # Final state capture (consumes events_triggered)
@@ -1472,7 +1498,12 @@ class ApiCombatAdapter:
 
                 if hasattr(current_app, "socketio"):
                     room = f"combat_{self.session_id}"
-                    current_app.socketio.emit("combat:update", result, room=room)
+                    # combat:update is the legacy recovery channel. When a beat
+                    # streamer exists, its seq-guarded resolved/ended event is
+                    # authoritative and the duplicate unsequenced update could
+                    # arrive late and clobber terminal state.
+                    if self._beat_streamer is None:
+                        current_app.socketio.emit("combat:update", result, room=room)
 
                     # If awaiting input, also emit turn notification
                     if self.awaiting_input:
