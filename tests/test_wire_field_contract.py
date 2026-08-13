@@ -584,30 +584,26 @@ class TestShopWireContract:
 # there is no whitelist/transform step like transformCombatData's, so every
 # field a component reads off `save.*` must come from list_saves() itself.
 #
-# Scope: cloud rows only. MainMenuPage also merges in a synthetic local-
-# autosave row (utils/localSave.js's parseLocalSave/readLocalSave) that is
-# display-only and carries its own client-minted `isLocal`/`timestampMs`
-# fields never emitted by the server — that row (and its ongoing rework in a
-# concurrent change) is out of scope here; `isLocal` in particular is never
-# set on a cloud row (it reads as `undefined`, which is why the "Cloud" badge
-# branch is the `!isLocal` default), so it is deliberately not in this
-# contract.
+# Scope: cloud rows only, and now the only kind there is. Issue #489 retired
+# the write-only local-autosave blob (`hov_local_autosave`, see #487) that
+# MainMenuPage used to merge in as a synthetic, display-only row with its own
+# client-minted `isLocal`/`timestampMs` fields never emitted by the server.
 SAVES_ROW_CONTRACT = {
-    "id": "MainMenuPage.jsx:435,438,499 save.id (row key, load/delete target)",
-    "name": "MainMenuPage.jsx:485 save.name || 'Untitled Save'",
-    "is_autosave": "MainMenuPage.jsx:487 save.is_autosave && <(Autosave)>",
-    "level": "MainMenuPage.jsx:492 Lvl {save.level}",
-    "map_name": "MainMenuPage.jsx:492 save.map_name",
-    "room_title": "MainMenuPage.jsx:492 save.room_title",
-    "timestamp": "MainMenuPage.jsx:495 new Date(save.timestamp).toLocaleString()",
+    "id": "MainMenuPage.jsx:405,408,412,454 save.id (row key, load/delete target)",
+    "name": "MainMenuPage.jsx:440 save.name || 'Untitled Save'",
+    "is_autosave": "MainMenuPage.jsx:442 save.is_autosave && <(Autosave)>",
+    "level": "MainMenuPage.jsx:447 Lvl {save.level}",
+    "map_name": "MainMenuPage.jsx:447 save.map_name",
+    "room_title": "MainMenuPage.jsx:447 save.room_title",
+    "timestamp": "MainMenuPage.jsx:450 formatSaveTimestamp(save)",
     # This is the field the "Continue" button's recency sort now keys on
-    # (localSave.js saveRowClockValue: row?.timestampMs ?? row?.timestamp_ms
-    # ?? row?.timestamp, consumed by compareSavesByRecency at
-    # MainMenuPage.jsx:97,159). It was added alongside the display `timestamp`
+    # (localSave.js saveRowClockValue: row?.timestamp_ms ?? row?.timestamp,
+    # consumed by compareSavesByRecency at MainMenuPage.jsx:88,93). It was
+    # added alongside the display `timestamp`
     # specifically because `timestamp`'s embedded timezone abbreviation (e.g.
     # "CET") is unparseable by Date.parse for most non-US zones — losing this
     # field silently regresses "Continue" back to that timezone bug.
-    "timestamp_ms": "localSave.js:259 saveRowClockValue: row?.timestamp_ms",
+    "timestamp_ms": "localSave.js:52 saveRowClockValue: row?.timestamp_ms",
 }
 
 

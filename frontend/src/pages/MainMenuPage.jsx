@@ -74,25 +74,13 @@ import GameButton from '../components/GameButton'
 import GamePanel from '../components/GamePanel'
 import GameText from '../components/GameText'
 import BaseDialog from '../components/BaseDialog'
-import { readLocalSave, compareSavesByRecency, formatSaveTimestamp } from '../utils/localSave'
+import { compareSavesByRecency, formatSaveTimestamp } from '../utils/localSave'
 
 /**
- * How recently the local autosave must have been written for Continue to treat
- * it as a live session worth resuming. Generous on purpose: a player taking a
- * break with the tab open should still resume rather than silently load an
- * older cloud save, while a blob from days ago belongs to a server session that
- * is certainly gone.
- */
-const LOCAL_SESSION_FRESHNESS_MS = 12 * 60 * 60 * 1000
-
-/**
- * Fetch the cloud saves only, newest first.
- *
- * The local autosave is deliberately NOT folded in here: it cannot be
- * restored (see utils/localSave), so it must never appear as a selectable
- * row in the Load Game list. It is still consulted separately — see
- * resolveContinueTarget — so Continue keeps resuming the live session
- * instead of loading a cloud save out from under it.
+ * Fetch the cloud saves, newest first. This is now the only save source —
+ * issue #489 retired the write-only local autosave blob (see #487) in favor
+ * of a tightened cloud-autosave trigger (useApi.js's useAutosave), so there
+ * is no local entry to fold in or exclude here anymore.
  */
 async function fetchCloudSaves() {
     const response = await saves.list()
@@ -100,37 +88,8 @@ async function fetchCloudSaves() {
     return cloudSaves.sort(compareSavesByRecency)
 }
 
-/**
- * Decide what the Continue button should do: resume the live server session
- * (the local autosave is the more recent activity, or the only activity) or
- * load a specific cloud save.
- *
- * The local entry returned here is a decision input ONLY — it is never
- * written into `saveList`/the Load Game modal. Comparing cloud saves alone
- * would silently re-target Continue at the newest cloud save whenever a local
- * autosave is more recent, overwriting the live in-memory session with an
- * older one. That is the exact progress-loss bug this function guards
- * against, so it re-reads the local blob on every call rather than trusting
- * a value computed before the blob may have changed.
- */
+/** Continue always targets the newest cloud save. */
 function resolveContinueTarget(cloudSaves) {
-    const localEntry = readLocalSave()
-
-    // Deliberately NOT a recency comparison against the cloud rows. The local
-    // blob's timestamp comes from the browser clock (`new Date()` in
-    // useAutosave), while a cloud row's timestamp_ms comes from SQLite's
-    // CURRENT_TIMESTAMP — the server clock. Ranking one against the other means
-    // a browser running a few minutes slow makes every cloud autosave look
-    // newer than the live session, sending Continue down the saves.load() path
-    // and replacing the in-memory session with a snapshot up to 20 ticks old.
-    //
-    // Freshness is measured against the same clock that wrote it, so the
-    // comparison is internally consistent. A blob older than the window means
-    // the tab has been gone long enough that its server session is almost
-    // certainly dead, and the newest cloud save is the better target.
-    if (localEntry && Date.now() - localEntry.timestampMs < LOCAL_SESSION_FRESHNESS_MS) {
-        return localEntry
-    }
     return cloudSaves.length > 0 ? [...cloudSaves].sort(compareSavesByRecency)[0] : null
 }
 
@@ -186,9 +145,7 @@ export default function MainMenuPage() {
         initMenu()
     }, [])
 
-    // Keep mostRecentSave in sync with saveList (cloud saves only — see
-    // resolveContinueTarget for why the local autosave is folded back in here
-    // rather than living in saveList itself).
+    // Keep mostRecentSave in sync with saveList.
     useEffect(() => {
         setMostRecentSave(resolveContinueTarget(saveList))
     }, [saveList])
@@ -210,11 +167,6 @@ export default function MainMenuPage() {
     const handleContinue = async () => {
         if (!mostRecentSave) return
         playSFX('click')
-        // Local autosave = active session still in server memory; just navigate.
-        if (mostRecentSave.isLocal) {
-            navigate('/game')
-            return
-        }
         setLoadingAction(true)
         try {
             await saves.load(mostRecentSave.id)
@@ -232,12 +184,6 @@ export default function MainMenuPage() {
         setShowLoadModal(true)
         setIsLoadingSaves(true)
         try {
-            // Cloud saves only — the local autosave never becomes a row (see
-            // fetchCloudSaves). The sync effect on saveList re-derives
-            // mostRecentSave via resolveContinueTarget right after this call,
-            // which folds the local blob back in for the Continue decision, so
-            // opening/closing this modal can no longer re-point Continue at an
-            // older cloud save.
             setSaveList(await fetchCloudSaves())
         } catch (error) {
             console.error("Failed to list saves", error)
@@ -247,9 +193,6 @@ export default function MainMenuPage() {
     }
 
     const handleLoadConfirm = async (saveId) => {
-        // Rows in this modal are always cloud saves now (the local autosave is
-        // excluded from saveList — see fetchCloudSaves), so there is no local
-        // branch here to worry about.
         playSFX('click')
         setLoadingAction(true)
         try {
@@ -264,8 +207,6 @@ export default function MainMenuPage() {
     }
 
     const handleDeleteSave = async (e, saveId) => {
-        // No local branch: the local autosave is never a row in saveList (see
-        // fetchCloudSaves), so every save reaching this handler is a cloud save.
         e.stopPropagation()
         if (!window.confirm("Are you sure you want to delete this save?")) return
 
@@ -340,11 +281,7 @@ export default function MainMenuPage() {
                 <nav style={{ display: 'flex', flexDirection: 'column', gap: spacing.md }}>
                     {!isLoadingInitial && mostRecentSave && (
                         <GameButton onClick={handleContinue} size="large" style={{ width: '100%' }}>
-                            {/* Honest labelling: a local autosave can't be "loaded" like a
-                                save file — it just resumes whatever session is still live
-                                on the server. Only the label changes; the click handler
-                                already branches on mostRecentSave.isLocal. */}
-                            {mostRecentSave.isLocal ? 'Continue (Resume Session)' : 'Continue'}
+                            Continue
                         </GameButton>
                     )}
                     <GameButton onClick={handleNewGame} size="large" style={{ width: '100%' }}>New Game</GameButton>

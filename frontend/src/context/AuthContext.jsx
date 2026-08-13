@@ -1,6 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import apiEndpoints from '../api/endpoints';
-import { LOCAL_SAVE_KEY } from '../utils/localSave';
 import { AUTH_TOKEN_KEY, USERNAME_KEY, clearLocalSession } from '../utils/session';
 import { combatSocketEnabled } from '../utils/featureFlags';
 
@@ -52,17 +51,10 @@ export const AuthProvider = ({ children }) => {
 
     /**
      * Shared tail of login and register, which differ only in which endpoint
-     * they call. Both previously repeated this sequence — and the same
-     * four-line comment — verbatim, so the autosave-clearing step had two
-     * places to fall out.
+     * they call.
      */
     const establishSession = (response, username) => {
         const { session_id } = response.data.data;
-        // Establishing a new identity clears any prior session's autosave.
-        // Teardown paths already do this; doing it here too means
-        // cross-account separation no longer depends on every one of
-        // them having fired (a crash mid-logout, say).
-        localStorage.removeItem(LOCAL_SAVE_KEY);
         localStorage.setItem(AUTH_TOKEN_KEY, session_id);
         localStorage.setItem(USERNAME_KEY, username);
         setIsAuthenticated(true);
@@ -92,11 +84,11 @@ export const AuthProvider = ({ children }) => {
         try {
             await apiEndpoints.auth.logout();
         } finally {
-            // Every session-scoped key, including the local autosave: leaving
-            // that behind let the next account to sign in on this machine see
-            // the previous player's character in the menu — and pick
-            // "Continue". Shared with the 401 interceptor so the key list
-            // cannot drift between the two teardown paths.
+            // Every session-scoped key: leaving one behind (a dead auth token,
+            // the prior account's username) lets the next person to sign in on
+            // this machine inherit stale identifiers from the last session.
+            // Shared with the 401 interceptor so the key list cannot drift
+            // between the two teardown paths.
             clearLocalSession();
             setIsAuthenticated(false);
             setUser(null);

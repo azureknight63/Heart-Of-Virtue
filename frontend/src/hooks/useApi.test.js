@@ -513,42 +513,55 @@ describe('useAutosave', () => {
     localStorage.clear();
   });
 
-  it('saves player state to localStorage when the player is known', () => {
-    const player = { name: 'Jean', level: 5 };
-    renderHook(() => useAutosave(player));
-
-    const saved = JSON.parse(localStorage.getItem('hov_local_autosave'));
-    expect(saved.player).toEqual(player);
-    expect(saved.type).toBe('local_autosave');
-  });
-
-  it('does not save to localStorage for the placeholder Unknown player', () => {
-    renderHook(() => useAutosave({ name: 'Unknown' }));
-    expect(localStorage.getItem('hov_local_autosave')).toBeNull();
-  });
-
-  it('triggers a cloud save every 20 ticks and resets the counter', async () => {
+  it('triggers a cloud save every AUTOSAVE_TICK_THRESHOLD ticks and resets the counter', async () => {
     apiEndpoints.saves.save.mockResolvedValue({});
-    const { result } = renderHook(() => useAutosave({ name: 'Jean' }));
+    const { result } = renderHook(() => useAutosave());
 
-    for (let i = 0; i < 20; i++) {
-      await act(async () => { await result.current.triggerTick(); });
-    }
+    // Threshold is 3: two ticks must not save yet.
+    await act(async () => { await result.current.triggerTick(); });
+    await act(async () => { await result.current.triggerTick(); });
+    expect(apiEndpoints.saves.save).not.toHaveBeenCalled();
+
+    await act(async () => { await result.current.triggerTick(); });
 
     expect(apiEndpoints.saves.save).toHaveBeenCalledWith('Autosave', true);
+    expect(apiEndpoints.saves.save).toHaveBeenCalledTimes(1);
     expect(result.current.tickCount).toBe(0);
   });
 
-  it('logs an error without throwing when the cloud save fails', async () => {
+  it('logs an error and calls onSaveError without throwing when the cloud save fails', async () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     apiEndpoints.saves.save.mockRejectedValue(new Error('cloud down'));
+    const onSaveError = vi.fn();
 
-    const { result } = renderHook(() => useAutosave({ name: 'Jean' }));
+    const { result } = renderHook(() => useAutosave({ onSaveError }));
     await act(async () => {
       await result.current.saveToCloud();
     });
 
     expect(errorSpy).toHaveBeenCalledWith('[Autosave] Cloud sync failed:', expect.any(Error));
+    expect(onSaveError).toHaveBeenCalledWith(expect.any(Error));
     errorSpy.mockRestore();
+  });
+
+  it('does not fire an overlapping cloud save while one is already in flight', async () => {
+    let resolveSave;
+    apiEndpoints.saves.save.mockReturnValue(new Promise((resolve) => { resolveSave = resolve; }));
+    const { result } = renderHook(() => useAutosave());
+
+    let firstCall;
+    let secondCall;
+    await act(async () => {
+      firstCall = result.current.saveToCloud();
+      secondCall = result.current.saveToCloud();
+    });
+
+    expect(apiEndpoints.saves.save).toHaveBeenCalledTimes(1);
+
+    resolveSave({});
+    await act(async () => {
+      await firstCall;
+      await secondCall;
+    });
   });
 });

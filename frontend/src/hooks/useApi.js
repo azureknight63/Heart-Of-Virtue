@@ -2,8 +2,6 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import apiEndpoints from '../api/endpoints'
 import { useAuthContext } from '../context/AuthContext'
 
-import { LOCAL_SAVE_KEY, MAX_RAW_LENGTH } from '../utils/localSave'
-
 // Helper to transform combat data
 const transformCombatData = (data) => ({
   ...data.battle_state,
@@ -339,69 +337,62 @@ export const useExploration = () => {
   return { exploredTiles, setExploredTiles, loading, refetch: fetchExploredTiles }
 }
 
+// Meaningful transitions (movement, combat actions — see triggerTick's call
+// sites in GamePage/useCombatCoordinator) call triggerTick, which throttles
+// the actual cloud write to at most once every AUTOSAVE_TICK_THRESHOLD
+// transitions. A dead session therefore loses at most
+// AUTOSAVE_TICK_THRESHOLD - 1 transitions' worth of progress — down from the
+// previous threshold of 20. There is no other durable record of progress
+// (issue #489 retired the write-only local autosave blob, see #487), so this
+// threshold is the entire bound on unsaved-progress exposure.
+const AUTOSAVE_TICK_THRESHOLD = 3
+
 /**
- * useAutosave - Hybrid persistence hook
- * Saves to LocalStorage every "tick"
- * Saves to Turso Cloud (DB) every 20 "ticks"
+ * useAutosave - Cloud autosave trigger hook.
+ *
+ * Saves to the Turso cloud autosave slot (server-side UPSERT, so repeated
+ * calls are cheap) on a throttled schedule — see AUTOSAVE_TICK_THRESHOLD.
+ *
+ * @param {Object} [options]
+ * @param {(err: Error) => void} [options.onSaveError] called when a cloud
+ *   save fails, so the caller can surface it to the player. A failed save is
+ *   silent progress loss now that no local backstop exists.
  */
-export const useAutosave = (player) => {
+export const useAutosave = ({ onSaveError } = {}) => {
   const [tickCount, setTickCount] = useState(0)
   // Lazy initialiser: a bare useState(Date.now()) re-evaluates Date.now() on
   // every render and throws the result away, which is impure and made the
   // hook non-deterministic to reason about.
   const [lastCloudSave, setLastCloudSave] = useState(() => Date.now())
+  // Guards against overlapping cloud saves: at AUTOSAVE_TICK_THRESHOLD=3, a
+  // burst of rapid transitions (e.g. spamming combat actions) can trigger a
+  // new save before the in-flight one's response lands.
+  const saveInFlight = useRef(false)
 
-  // Save to LocalStorage whenever player state changes (every interaction/move)
-  useEffect(() => {
-    if (player && player.name !== 'Unknown') {
-      const saveData = {
-        player,
-        timestamp: new Date().toISOString(),
-        type: 'local_autosave'
-      }
-      // Guarded on two counts. An unguarded setItem throws QuotaExceededError
-      // out of the commit phase — from full storage (pre-fillable by a prior
-      // user on a shared machine) or Safari private mode — which unmounts the
-      // React root and ends the session. And the writer was unbounded while
-      // readLocalSave caps at MAX_RAW_LENGTH, so an oversized blob could only
-      // ever be written and then rejected on read.
-      try {
-        const serialized = JSON.stringify(saveData)
-        if (serialized.length <= MAX_RAW_LENGTH) {
-          localStorage.setItem(LOCAL_SAVE_KEY, serialized)
-        } else {
-          // Skipping the write would strand the PREVIOUS blob, leaving a frozen
-          // timestamp that keeps claiming to be a live session. Clear it so the
-          // state is "no local session" rather than a stale one.
-          localStorage.removeItem(LOCAL_SAVE_KEY)
-        }
-      } catch {
-        // Crash-recovery telemetry is best-effort; never let it break play.
-      }
+  const saveToCloud = async () => {
+    if (saveInFlight.current) return
+    saveInFlight.current = true
+    try {
+      await apiEndpoints.saves.save('Autosave', true)
+      setLastCloudSave(Date.now())
+    } catch (err) {
+      console.error('[Autosave] Cloud sync failed:', err)
+      onSaveError?.(err)
+    } finally {
+      saveInFlight.current = false
     }
-  }, [player])
+  }
 
   const triggerTick = async () => {
     setTickCount(prev => {
       const newCount = prev + 1
 
-      // Every 20 ticks, trigger a cloud autosave
-      if (newCount >= 20) {
+      if (newCount >= AUTOSAVE_TICK_THRESHOLD) {
         saveToCloud()
         return 0
       }
       return newCount
     })
-  }
-
-  const saveToCloud = async () => {
-    try {
-      console.log('[Autosave] Triggering cloud sync...')
-      await apiEndpoints.saves.save('Autosave', true)
-      setLastCloudSave(Date.now())
-    } catch (err) {
-      console.error('[Autosave] Cloud sync failed:', err)
-    }
   }
 
   return { tickCount, lastCloudSave, triggerTick, saveToCloud }
