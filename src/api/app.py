@@ -385,7 +385,17 @@ def create_app(config_class=None):
             except Exception as exc:
                 return jsonify({"success": False, "error": str(exc)}), 500
 
-    # API info endpoint
+    # API info endpoint.
+    #
+    # This is also the runtime capability-discovery endpoint (#436/#496): the
+    # frontend's CapabilitiesProvider fetches it once at startup and reads
+    # `features.combat_socket_streaming` to decide whether combat animation
+    # is driven by the Socket.IO beat stream or by the HTTP-only fallback.
+    # A dedicated `/api/capabilities` route was considered and rejected for
+    # now — it would grow the public API surface for a single boolean, with
+    # no other capability planned. Revisit if `features` grows past a couple
+    # of keys, or gains metadata/versioning needs that shouldn't share a
+    # payload with the general info fields above it.
     @app.route("/api/info", methods=["GET"])
     def api_info():
         from flask import jsonify

@@ -2,9 +2,14 @@ import { render, screen } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 const mockUseAuth = vi.fn()
+const mockUseCapabilities = vi.fn()
 
 vi.mock('./hooks/useApi', () => ({
   useAuth: () => mockUseAuth()
+}))
+
+vi.mock('./context/CapabilitiesContext', () => ({
+  useCapabilities: () => mockUseCapabilities()
 }))
 
 vi.mock('./pages/LoginPage', () => ({
@@ -35,6 +40,8 @@ function setLocation(path) {
 describe('App', () => {
   beforeEach(() => {
     mockUseAuth.mockReset()
+    mockUseCapabilities.mockReset()
+    mockUseCapabilities.mockReturnValue({ capabilitiesLoading: false, combatSocketStreaming: false })
   })
 
   it('renders the loading screen while auth is loading', () => {
@@ -42,6 +49,22 @@ describe('App', () => {
     setLocation('/games/HeartOfVirtue/')
     render(<App />)
     expect(screen.getByText('LoadingScreenStub')).toBeInTheDocument()
+  })
+
+  it('renders the loading screen while capability discovery is pending for an authenticated user', () => {
+    mockUseAuth.mockReturnValue({ isAuthenticated: true, loading: false })
+    mockUseCapabilities.mockReturnValue({ capabilitiesLoading: true, combatSocketStreaming: false })
+    setLocation('/games/HeartOfVirtue/game')
+    render(<App />)
+    expect(screen.getByText('LoadingScreenStub')).toBeInTheDocument()
+  })
+
+  it('does not wait on capability discovery for an unauthenticated visitor', () => {
+    mockUseAuth.mockReturnValue({ isAuthenticated: false, loading: false })
+    mockUseCapabilities.mockReturnValue({ capabilitiesLoading: true, combatSocketStreaming: false })
+    setLocation('/games/HeartOfVirtue/')
+    render(<App />)
+    expect(screen.getByText('LandingPageStub')).toBeInTheDocument()
   })
 
   it('renders LandingPage at root when unauthenticated', () => {

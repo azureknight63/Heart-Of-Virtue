@@ -1,4 +1,4 @@
-import { render, screen, act, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, act, fireEvent } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { AuthProvider, useAuthContext } from './AuthContext'
 import apiEndpoints from '../api/endpoints'
@@ -10,9 +10,6 @@ vi.mock('../api/endpoints', () => ({
       logout: vi.fn(),
       register: vi.fn(),
     },
-    app: {
-      getInfo: vi.fn().mockResolvedValue({ data: { features: {} } }),
-    },
   },
 }))
 
@@ -23,7 +20,6 @@ function AuthConsumer() {
       <div data-testid="authed">{String(auth.isAuthenticated)}</div>
       <div data-testid="loading">{String(auth.loading)}</div>
       <div data-testid="username">{auth.user?.username || 'none'}</div>
-      <div data-testid="combat-streaming">{String(auth.combatSocketStreaming)}</div>
       <button onClick={() => auth.login('jean', 'pw').catch(() => {})}>login</button>
       <button onClick={() => auth.logout().catch(() => {})}>logout</button>
       <button onClick={() => auth.register('jean', 'pw', 'jean@example.com').catch(() => {})}>register</button>
@@ -43,6 +39,10 @@ describe('AuthContext', () => {
     localStorage.clear()
   })
 
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
   it('throws when useAuthContext is called outside an AuthProvider', () => {
     const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
     expect(() => render(<ThrowsOutsideProvider />)).toThrow(
@@ -56,18 +56,6 @@ describe('AuthContext', () => {
     expect(screen.getByTestId('authed').textContent).toBe('false')
     expect(screen.getByTestId('loading').textContent).toBe('false')
     expect(screen.getByTestId('username').textContent).toBe('none')
-  })
-
-  it('enables combat streaming from the backend capability response', async () => {
-    apiEndpoints.app.getInfo.mockResolvedValueOnce({
-      data: { features: { combat_socket_streaming: true } },
-    })
-
-    render(<AuthProvider><AuthConsumer /></AuthProvider>)
-
-    await waitFor(() => {
-      expect(screen.getByTestId('combat-streaming').textContent).toBe('true')
-    })
   })
 
   it('hydrates as authenticated when a token is already stored', () => {
@@ -165,6 +153,22 @@ describe('AuthContext', () => {
     expect(localStorage.getItem('authToken')).toBeNull()
     expect(localStorage.getItem('username')).toBeNull()
     expect(window.location.href).toContain('login')
+  })
+
+  it('falls back to a root base path when BASE_URL is unset', async () => {
+    vi.stubEnv('BASE_URL', '')
+    localStorage.setItem('authToken', 'tok-1')
+    apiEndpoints.auth.logout.mockResolvedValue()
+
+    delete window.location
+    window.location = { href: '' }
+
+    render(<AuthProvider><AuthConsumer /></AuthProvider>)
+    await act(async () => {
+      fireEvent.click(screen.getByText('logout'))
+    })
+
+    expect(window.location.href).toBe('/login')
   })
 
   it('still clears state and redirects when the logout request fails', async () => {

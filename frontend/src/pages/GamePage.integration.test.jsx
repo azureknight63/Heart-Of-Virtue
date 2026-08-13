@@ -3,22 +3,25 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import React from 'react';
 import { MemoryRouter } from 'react-router-dom';
 import GamePage from './GamePage';
-import { combatDisabledAuth } from '../test/mockHelpers';
+import { capabilitiesDisabled } from '../test/mockHelpers';
 import * as api from '../api/endpoints';
-import { usePlayer, useWorld, useCombat, useExploration, useExits, useAutosave, useAuth } from '../hooks/useApi';
+import { usePlayer, useWorld, useCombat, useExploration, useExits, useAutosave } from '../hooks/useApi';
 import { useAudio } from '../context/AudioContext';
 
-// Mock only the hooks we need to stub (useExploration, useExits, useAutosave, useAuth)
+// Mock only the hooks we need to stub (useExploration, useExits, useAutosave)
 vi.mock('../hooks/useApi', async () => {
     const actual = await vi.importActual('../hooks/useApi');
     return {
         ...actual,
-        useAuth: vi.fn(() => combatDisabledAuth),
         useExploration: vi.fn(),
         useExits: vi.fn(),
         useAutosave: vi.fn(),
     };
 });
+
+vi.mock('../context/CapabilitiesContext', () => ({
+    useCapabilities: vi.fn(() => capabilitiesDisabled),
+}));
 
 vi.mock('../context/AudioContext', () => ({
     useAudio: vi.fn(),
@@ -213,10 +216,6 @@ describe('Tactical AI Integration Tests', () => {
 
         useAutosave.mockReturnValue({
             triggerTick: vi.fn()
-        });
-
-        useAuth.mockReturnValue({
-            logout: vi.fn()
         });
 
         useAudio.mockReturnValue({
