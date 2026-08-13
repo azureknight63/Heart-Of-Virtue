@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { useAuth, usePlayer, useWorld, useCombat, useExploration, useAutosave } from '../hooks/useApi'
+import { usePlayer, useWorld, useCombat, useExploration, useAutosave } from '../hooks/useApi'
+import { useCapabilities } from '../context/CapabilitiesContext'
 import { useEventManager } from '../hooks/useEventManager'
 import { COMBAT_INIT_EVENT_ID } from '../utils/eventIds'
 import { useCombatCoordinator } from '../hooks/useCombatCoordinator'
@@ -30,7 +31,7 @@ export default function GamePage() {
   const { player, loading: playerLoading, refetch: refetchPlayer } = usePlayer()
   const { location, loading: worldLoading, moveToLocation, refetch: refetchWorld } = useWorld()
   const { exploredTiles, setExploredTiles, refetch: refetchExploration } = useExploration()
-  const { combatSocketStreaming = false } = useAuth() || {}
+  const { combatSocketStreaming } = useCapabilities()
   const { combat, inCombat, fetchCombatStatus, performAction, applyCombatState } = useCombat(combatSocketStreaming)
   const { playBGM, playSFX, playSting, combatSpeed } = useAudio()
   const { triggerTick } = useAutosave(player)
