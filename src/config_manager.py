@@ -90,7 +90,9 @@ class GameConfig:
 
     # === [game] section: Save/Load ===
     # Defaults True (issue #450): the cloud autosave has always run
-    # unconditionally in production (every 20 ticks, frontend-triggered).
+    # unconditionally in production (every AUTOSAVE_TICK_THRESHOLD ticks,
+    # frontend-triggered — see frontend/src/hooks/useApi.js's useAutosave;
+    # tightened from 20 to 3 in issue #489).
     # This flag was previously parsed but never consulted; now that
     # GameService.save_game() actually gates on it, the default must match
     # the existing de facto behavior or every player without an explicit

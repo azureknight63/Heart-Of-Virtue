@@ -123,31 +123,28 @@ issue tracked on the branch.
 handling, CORS credentials, the Socket.IO handshake, and the test-session
 bypass). Not a scrub-sized change.
 
-**Related, already handled:** `hov_local_autosave` is cleared on logout and on
-401, and login/register clear it *before* writing the new token, so
-cross-account separation no longer depends on a clean teardown.
+**Related, already handled:** `hov_local_autosave` no longer exists (see item 6
+below) — it was retired in #489, closing this angle of cross-account leakage
+by deletion rather than by teardown ordering.
 
 ---
 
-## 6. `hov_local_autosave` retention on shared machines
+## 6. `hov_local_autosave` retention on shared machines — RESOLVED
 
-**No separate issue — subsumed by [#489](https://github.com/azureknight63/Heart-Of-Virtue/issues/489)**, which retires the blob entirely. If that lands, this settles by deletion.
+**Settled by deletion.** [#489](https://github.com/azureknight63/Heart-Of-Virtue/issues/489)
+landed and retired the blob entirely — `hov_local_autosave` is no longer
+written, read, or referenced anywhere in the codebase, so there is nothing
+left to persist on a shared machine.
 
 **Raised by:** Security × C5 (Nit, confidence 85)
 
 The blob (character/inventory/location state, verified to contain no email or
-user id) persists after a tab close. Only logout, a 401, or the next login
-clears it, so on a shared machine it is readable via devtools until someone
-signs in.
-
-**Options:** namespace the key by username and refuse a blob whose username does
-not match the logged-in user; clear on `visibilitychange`/`beforeunload`; or
-accept it, since the contents are game state with no PII.
-
-**Context:** this is entangled with issues **#487** (the blob is write-only —
-nothing restores from it) and **#489** (Tier B: close the cloud-autosave gap
-server-side). If #489 lands, the local blob may be removable entirely, which
-would settle this by deletion.
+user id) used to persist after a tab close, readable via devtools until the
+next logout/401/login cleared it. #489 closed the underlying exposure
+server-side instead: the cloud autosave now triggers every
+`AUTOSAVE_TICK_THRESHOLD` (3) transitions (down from 20), and
+`frontend/src/hooks/useApi.js`'s `useAutosave` no longer writes to
+`localStorage` at all.
 
 ---
 
