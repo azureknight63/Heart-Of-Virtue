@@ -1,8 +1,7 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import apiEndpoints from '../api/endpoints';
 import { LOCAL_SAVE_KEY } from '../utils/localSave';
 import { AUTH_TOKEN_KEY, USERNAME_KEY, clearLocalSession } from '../utils/session';
-import { combatSocketEnabled } from '../utils/featureFlags';
 
 const AuthContext = createContext();
 
@@ -18,7 +17,6 @@ export const AuthProvider = ({ children }) => {
     const [isAuthenticated, setIsAuthenticated] = useState(false);
     const [loading, setLoading] = useState(true);
     const [user, setUser] = useState(null);
-    const [capabilities, setCapabilities] = useState(null);
 
     const checkAuth = useCallback(() => {
         const token = localStorage.getItem(AUTH_TOKEN_KEY);
@@ -36,19 +34,6 @@ export const AuthProvider = ({ children }) => {
     useEffect(() => {
         checkAuth();
     }, [checkAuth]);
-
-    useEffect(() => {
-        let cancelled = false;
-        apiEndpoints.app.getInfo()
-            .then((response) => {
-                if (!cancelled) setCapabilities(response.data.features || {});
-            })
-            .catch((error) => {
-                console.warn('Combat streaming capability unavailable; disabled', error);
-                if (!cancelled) setCapabilities({});
-            });
-        return () => { cancelled = true; };
-    }, []);
 
     /**
      * Shared tail of login and register, which differ only in which endpoint
@@ -125,7 +110,6 @@ export const AuthProvider = ({ children }) => {
         logout,
         register,
         checkAuth,
-        combatSocketStreaming: combatSocketEnabled(capabilities),
     };
 
     return (

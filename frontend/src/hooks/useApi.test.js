@@ -12,9 +12,6 @@ vi.mock('../api/endpoints', () => ({
       logout: vi.fn(),
       register: vi.fn(),
     },
-    app: {
-      getInfo: vi.fn().mockResolvedValue({ data: { features: {} } }),
-    },
     player: {
       getStatus: vi.fn(),
       getFullState: vi.fn(),
