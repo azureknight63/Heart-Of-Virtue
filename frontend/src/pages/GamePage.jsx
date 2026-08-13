@@ -34,8 +34,10 @@ export default function GamePage() {
   const { combatSocketStreaming } = useCapabilities()
   const { combat, inCombat, fetchCombatStatus, performAction, applyCombatState } = useCombat(combatSocketStreaming)
   const { playBGM, playSFX, playSting, combatSpeed } = useAudio()
-  const { triggerTick } = useAutosave(player)
   const { error: showError } = useToast()
+  const { triggerTick } = useAutosave({
+    onSaveError: () => showError('Failed to save your progress. Check your connection.')
+  })
 
   // Engine-driven combat streaming (issue #436). Off by default. When the
   // backend capability is enabled, per-beat animations arrive over Socket.IO

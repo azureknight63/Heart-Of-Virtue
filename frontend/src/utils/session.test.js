@@ -5,15 +5,13 @@ import {
   SESSION_KEYS,
   clearLocalSession,
 } from './session'
-import { LOCAL_SAVE_KEY } from './localSave'
 
 describe('SESSION_KEYS', () => {
   it('covers every key that constitutes a signed-in session', () => {
     // The set is the invariant, not the individual removals: a teardown path
-    // that misses one strands a dead credential, leaks the prior account's
-    // username, or — the one that actually shipped — offers the next user on
-    // a shared machine the previous player's autosave.
-    expect(SESSION_KEYS).toEqual([AUTH_TOKEN_KEY, USERNAME_KEY, LOCAL_SAVE_KEY])
+    // that misses one strands a dead credential or leaks the prior account's
+    // username to the next user on a shared machine.
+    expect(SESSION_KEYS).toEqual([AUTH_TOKEN_KEY, USERNAME_KEY])
   })
 })
 
@@ -40,9 +38,7 @@ describe('clearLocalSession', () => {
   it('keeps clearing the remaining keys when one removal throws', () => {
     // Storage can throw for reasons that have nothing to do with the session
     // (Safari private mode, quota, a disabled-storage policy). Giving up on
-    // the first failure would leave later keys behind — and the autosave is
-    // last, so a naive implementation would leak exactly the thing that
-    // matters most.
+    // the first failure would leave later keys behind.
     const removeItem = vi.fn((key) => {
       if (key === AUTH_TOKEN_KEY) throw new Error('storage disabled')
     })

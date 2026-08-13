@@ -1,18 +1,15 @@
-import { LOCAL_SAVE_KEY } from './localSave'
-
 /**
  * The localStorage keys that together constitute a signed-in session.
  *
  * Named rather than inlined because the *set* is the invariant: every teardown
  * path has to clear all of it. Leaving `authToken` behind strands a dead
  * credential; leaving `username` hands the prior account's identifier to the
- * next user on a shared machine; leaving the autosave lets them see — and
- * "Continue" into — the previous player's character. That last one shipped.
+ * next user on a shared machine.
  */
 export const AUTH_TOKEN_KEY = 'authToken'
 export const USERNAME_KEY = 'username'
 
-export const SESSION_KEYS = [AUTH_TOKEN_KEY, USERNAME_KEY, LOCAL_SAVE_KEY]
+export const SESSION_KEYS = [AUTH_TOKEN_KEY, USERNAME_KEY]
 
 /**
  * Remove every trace of the current session from local storage.

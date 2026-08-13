@@ -3453,9 +3453,10 @@ class GameService:
                         player.current_room = start_tile
 
                 # Reset transient combat state so the player never loads mid-fight.
-                # Saves captured during combat (e.g. autosave every 20 ticks) or after
-                # a defeat whose cleanup was interrupted would otherwise resume into a
-                # phantom combat with no enemies.
+                # Saves captured during combat (e.g. autosave every
+                # AUTOSAVE_TICK_THRESHOLD ticks, frontend/src/hooks/useApi.js) or
+                # after a defeat whose cleanup was interrupted would otherwise
+                # resume into a phantom combat with no enemies.
                 player.in_combat = False
                 player.combat_list = []
                 # Preserve only living allies — dead allies must not be re-injected into
