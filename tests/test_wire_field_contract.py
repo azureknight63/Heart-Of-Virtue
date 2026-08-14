@@ -295,6 +295,27 @@ COMBATANT_CONTRACT = {
     "status_effects": "HeroPanel.jsx:130-133,338-341 player?.status_effects",
     "passives": "HeroPanel.jsx:109-113,332-336 player?.passives",
     "distance": "LeftPanel.jsx:131 e.distance (canFlee check on combat.enemies)",
+    # The battlefield map is the other consumer of a serialized combatant. It
+    # was reading `position`/`current_move` all along; `distance` is now shown
+    # there too (token tooltip, selected-combatant panel, enemies list and the
+    # off-screen edge markers), which is what the positional layer is *for*.
+    "name": "BattlefieldGrid.jsx EntityTooltip / EnemiesList entity.name",
+    "battle_symbol": "BattlefieldGrid.jsx entitiesToRender displaySymbol fallback chain",
+    "position": "BattlefieldGrid.jsx getPos(entity) -> getEntityStyle / fitBox framing",
+    "current_move": "BattlefieldGrid.jsx CombatantMarker telegraph + EntityTooltip",
+}
+
+# The in-progress move hanging off a combatant (CombatantSerializer.
+# _serialize_active_move). BattlefieldGrid turns this into the *only* readout
+# of enemy intent on the map, so a rename here silently blanks the telegraph.
+ACTIVE_MOVE_CONTRACT = {
+    "display_name": "combatMoveStatus.js displayNameOf(move)",
+    "category": "BattlefieldGrid.jsx MOVE_CATEGORY_GLOW/_COLOR[move.category]",
+    # isMovePending() suppresses the telegraph for stages 2/3 so a spent
+    # combatant stops looking like one winding up; beatsUntilResolve() renders
+    # the countdown badge on the token.
+    "current_stage": "combatMoveStatus.js isMovePending / formatCombatMoveStatus",
+    "beats_left": "combatMoveStatus.js beatsUntilResolve -> countdown badge",
 }
 
 # StatusEffectsIconPanel.jsx renders each element of status_effects/passives.
@@ -334,6 +355,21 @@ class TestCombatantWireContract:
         enemy = Slime()
         payload = CombatantSerializer.serialize_combatant(enemy, reference=player)
         _assert_contract(payload, COMBATANT_CONTRACT, "serialize_combatant(enemy)")
+
+    def test_active_move_fields_on_a_real_move_in_progress(self):
+        """A real move mid-cast, through the real serializer, so the fields the
+        battlefield telegraph reads can't be renamed out from under it."""
+        player = Player()
+        move = ShootBow(player)
+        move.current_stage = 0
+        move.beats_left = 2
+        player.current_move = move
+
+        payload = CombatantSerializer.serialize_combatant(player)
+        assert payload["current_move"], "expected the in-progress move to serialize"
+        _assert_contract(
+            payload["current_move"], ACTIVE_MOVE_CONTRACT, "combatant.current_move"
+        )
 
     def test_status_effect_fields_on_a_real_state(self):
         player = Player()

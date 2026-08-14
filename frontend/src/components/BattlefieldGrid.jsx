@@ -9,7 +9,7 @@ import { beatSfxFor } from '../utils/combatSfx';
 import { scheduleSfxChain, effectiveDuration } from '../utils/combatTiming';
 import { SFX_DURATIONS } from '../utils/sfxDurations';
 import useDoubleRaf from '../hooks/useDoubleRaf';
-import { displayNameOf, formatCombatMoveStatus } from '../utils/combatMoveStatus';
+import { formatCombatMoveStatus, isMovePending, beatsUntilResolve } from '../utils/combatMoveStatus';
 
 // Fragment definitions for the death burst — module-level, never recreated
 const DEATH_FRAGMENTS = Array.from({ length: 12 }, (_, i) => ({
@@ -28,10 +28,51 @@ const ANIM_DEBUG = typeof window !== 'undefined'
 // ---------------------------------------------------------------------------
 // Grid / camera constants — module level
 // ---------------------------------------------------------------------------
-export const VIEW_SIZE = 13;  // viewport cell count in zoomed mode; shows enemies within attacking range (up to 9 cells) plus buffer
+export const VIEW_SIZE = 13;  // viewport cell count in follow mode; shows enemies within attacking range (up to 9 cells) plus buffer
 const HALF_VIEW = Math.floor(VIEW_SIZE / 2);
 const CAMERA_LERP = 0.12;     // fraction of remaining distance per RAF frame
 const CAMERA_EPSILON = 0.004; // settle threshold (cells)
+
+// ---------------------------------------------------------------------------
+// View modes
+// ---------------------------------------------------------------------------
+// `follow` keeps a fixed VIEW_SIZE window centered on Jean. `fit` frames every
+// living combatant instead of the whole arena: arenas scale to 3 cells per
+// combatant (src/coordinate_config.py) and can reach 100x100, so framing the
+// arena rendered thousands of empty cells and pea-sized tokens whenever the
+// fight was anything but a full-map brawl — which is what made "zoom out"
+// feel useless. Framing the action keeps tokens legible at every roster size.
+export const VIEW_MODE_FOLLOW = 'follow';
+export const VIEW_MODE_FIT = 'fit';
+
+// Pointer travel above which a mouseup is treated as the end of a pan gesture
+// rather than a click on the map.
+const DRAG_CLICK_THRESHOLD_PX = 6;
+
+// Cells of breathing room around the combatant bounding box in fit mode.
+const FIT_PADDING = 2;
+// Fit framing is quantized to this many cells and only re-derived when the
+// current frame stops working (see fitBox below), so the map does not visibly
+// rescale every single beat as combatants shuffle a cell.
+const FIT_STEP = 4;
+
+/**
+ * Normalize the `zoom` prop onto a named view mode. The legacy encoding
+ * (`1` = zoomed, `'full'` = whole arena) is still accepted so callers and
+ * existing tests keep working.
+ */
+const normalizeViewMode = (zoom) =>
+  (zoom === VIEW_MODE_FIT || zoom === 'full') ? VIEW_MODE_FIT : VIEW_MODE_FOLLOW;
+
+/** "in 2 beats" / "in 1 beat" — one place, so the badge, its accessible name
+ *  and the enemies list can never disagree about pluralization. */
+const formatBeatCountdown = (beats) => `in ${beats} beat${beats === 1 ? '' : 's'}`;
+
+/** True when the entity is alive (or carries no HP information at all). */
+const isLiving = (entity) => {
+  const hp = entity?.hp ?? entity?.health?.current;
+  return hp === undefined || hp > 0;
+};
 
 /**
  * Snap a float camera origin to the nearest valid integer cell.
@@ -79,16 +120,21 @@ const CombatantMarker = React.memo(({
   entity,
   isPlayer,
   isHero = false,
-  isFullMode = false,
+  isCompact = false,
   isHovered = false,
   isSelected = false,
   animationState = null,
   displaySymbol = null,
 }) => {
   const move = entity.current_move || entity.prepared_move;
-  const moveCategory = move ? (move.category || 'Miscellaneous') : null;
+  // Only a move that has not resolved yet is intent. Keying the glow on the
+  // mere presence of a move lit up combatants in recoil/cooldown exactly like
+  // one charging an attack, so the strongest signal on the map meant nothing.
+  const pending = isMovePending(move);
+  const moveCategory = pending ? (move.category || 'Miscellaneous') : null;
   const pendingGlowColor = moveCategory ? MOVE_CATEGORY_GLOW[moveCategory] : null;
   const pendingBorderColor = moveCategory ? MOVE_CATEGORY_BORDER[moveCategory] : null;
+  const beatsLeft = beatsUntilResolve(move);
   const [isHoveredEffect, setIsHoveredEffect] = React.useState(false);
 
   // Alignment border: lime for friend/player, red for enemy. When a pending
@@ -110,7 +156,7 @@ const CombatantMarker = React.memo(({
 
   const content = displaySymbol || entity.battle_symbol || (entity.name && entity.name[0]) || '?';
 
-  const triangleClass = isFullMode
+  const triangleClass = isCompact
     ? 'absolute top-[-2px] left-1/2 -translate-x-1/2 w-0 h-0 border-l-[2px] border-r-[2px] border-b-[3px] border-l-transparent border-r-transparent filter drop-shadow-sm opacity-90'
     : 'absolute top-[-6px] left-1/2 -translate-x-1/2 w-0 h-0 border-l-[6px] border-r-[6px] border-b-[8px] border-l-transparent border-r-transparent filter drop-shadow opacity-90';
 
@@ -243,9 +289,9 @@ const CombatantMarker = React.memo(({
         <div
           className="absolute pointer-events-none z-20 select-none"
           style={{
-            top: isFullMode ? '-4px' : '-10px',
-            right: isFullMode ? '-2px' : '-4px',
-            fontSize: isFullMode ? '8px' : '14px',
+            top: isCompact ? '-4px' : '-10px',
+            right: isCompact ? '-2px' : '-4px',
+            fontSize: isCompact ? '8px' : '14px',
             lineHeight: 1,
             color: colors.gold,
             textShadow: '0 0 4px rgba(0,0,0,0.9)',
@@ -256,8 +302,37 @@ const CombatantMarker = React.memo(({
         </div>
       )}
 
+      {/* Beat countdown — how many beats until this combatant's in-progress
+          move resolves. The pulsing category glow says "something is coming";
+          this says *when*, which is the half the player actually needs to
+          decide between blocking, closing distance, or getting clear. */}
+      {!isCompact && beatsLeft !== null && (
+        <div
+          className="absolute pointer-events-none select-none z-20 flex items-center justify-center rounded-full"
+          style={{
+            bottom: '-5px',
+            right: '-7px',
+            minWidth: '15px',
+            height: '15px',
+            padding: '0 3px',
+            fontSize: '10px',
+            lineHeight: 1,
+            fontWeight: 'bold',
+            fontFamily: 'monospace',
+            color: '#000',
+            backgroundColor: pendingBorderColor || colors.secondary,
+            border: '1px solid rgba(0,0,0,0.6)',
+            textShadow: 'none',
+          }}
+          title={`Resolves ${formatBeatCountdown(beatsLeft)}`}
+          aria-label={`Move resolves ${formatBeatCountdown(beatsLeft)}`}
+        >
+          {beatsLeft}
+        </div>
+      )}
+
       {/* Status effects — fade to full on hover */}
-      {!isFullMode && (
+      {!isCompact && (
         <div
           className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 pointer-events-auto transition-opacity duration-200"
           style={{ opacity: isHoveredEffect ? 1 : 0.35 }}
@@ -322,8 +397,9 @@ const EnemiesList = React.memo(({ enemies }) => (
           ? Math.min(1, Math.max(0, enemy.hp / enemy.max_hp)) * 100
           : 0;
         const move = enemy.current_move || enemy.prepared_move;
-        const category = move ? (move.category || 'Miscellaneous') : null;
+        const category = isMovePending(move) ? (move.category || 'Miscellaneous') : null;
         const categoryColor = category ? MOVE_CATEGORY_BORDER[category] : null;
+        const beatsLeft = beatsUntilResolve(move);
         return (
           <div
             key={enemy.id ?? `${enemy.name}-${idx}`}
@@ -342,10 +418,21 @@ const EnemiesList = React.memo(({ enemies }) => (
                 <GameText variant="secondary" weight="bold" size="sm">{enemy.name}</GameText>
                 <GameText variant="secondary" size="xs" style={{ marginTop: spacing.xs }}>
                   HP: {enemy.hp} / {enemy.max_hp}
+                  {enemy.distance !== undefined && (
+                    <span style={{ color: colors.text.muted }}> · {enemy.distance} ft</span>
+                  )}
                 </GameText>
+                {/* The stage label carries its own meaning ("Preparing" vs
+                    "Cooling down from"), so an already-resolved move still
+                    earns a line — it just loses the category color that marks
+                    live intent, and the countdown. */}
                 {move && (
                   <GameText size="xs" style={{ marginTop: spacing.xs, color: categoryColor || colors.text.muted }}>
-                    ◆ {displayNameOf(move)} <span style={{ opacity: 0.6 }}>({category})</span>
+                    ◆ {formatCombatMoveStatus(move)}
+                    {category && <span style={{ opacity: 0.6 }}> ({category})</span>}
+                    {beatsLeft !== null && (
+                      <span style={{ opacity: 0.85 }}> — {formatBeatCountdown(beatsLeft)}</span>
+                    )}
                   </GameText>
                 )}
               </div>
@@ -400,6 +487,36 @@ const BreadcrumbLayer = React.memo(({ breadcrumbs }) => (
 ));
 
 // ---------------------------------------------------------------------------
+// EntityTooltip — hover card above a combatant token
+// ---------------------------------------------------------------------------
+const EntityTooltip = React.memo(({ entity, showDistance }) => {
+  const { hp, maxHp } = resolveEntityStats(entity);
+  return (
+    <div className="absolute top-full left-1/2 -translate-x-1/2 mt-4 z-[100] animate-in fade-in slide-in-from-top-2 duration-200 pointer-events-none">
+      <div className="bg-black/90 border border-orange/40 rounded px-2 py-1 shadow-2xl backdrop-blur-md min-w-[120px]">
+        <div className="text-white text-[10px] font-bold uppercase tracking-wider border-b border-white/10 pb-1 mb-1">
+          {entity.name}
+        </div>
+        {/* Distance is what the whole positional layer turns on — every move
+            carries an mvrange and ranged accuracy decays with it — yet it was
+            serialized and then never shown anywhere on the map. */}
+        <div className="text-white/70 text-[9px] font-mono flex justify-between gap-3">
+          <span>{hp}/{maxHp} HP</span>
+          {showDistance && entity.distance !== undefined && <span>{entity.distance} ft</span>}
+        </div>
+        <div className="text-orange/80 text-[9px] flex justify-between gap-2">
+          <span className="font-mono">
+            {formatCombatMoveStatus(entity.current_move || entity.prepared_move) || 'Idle'}
+          </span>
+        </div>
+      </div>
+      {/* Arrow */}
+      <div className="w-0 h-0 border-l-[6px] border-r-[6px] border-b-[6px] border-l-transparent border-r-transparent border-b-black/90 absolute left-1/2 -translate-x-1/2 bottom-full" />
+    </div>
+  );
+});
+
+// ---------------------------------------------------------------------------
 // EntityLayer — renders all live combatants with interactions and animations
 // ---------------------------------------------------------------------------
 const EntityLayer = React.memo(({
@@ -409,7 +526,7 @@ const EntityLayer = React.memo(({
   hoveredEntity,
   selectedEntity,
   hoveredTargetId,
-  isFullMode,
+  isCompact,
   onHoverEntity,
   onClearHover,
   onSelectEntity,
@@ -517,7 +634,7 @@ const EntityLayer = React.memo(({
               entity={item.entity}
               isPlayer={item.isPlayer}
               isHero={item.isHero}
-              isFullMode={isFullMode}
+              isCompact={isCompact}
               isHovered={(entityId != null && hoveredTargetId === entityId) || isEntityHovered}
               isSelected={entityId != null && selectedEntity?.id === entityId}
               animationState={animState}
@@ -525,22 +642,11 @@ const EntityLayer = React.memo(({
             />
           </div>
 
-          {/* Hover tooltip */}
-          {isEntityHovered && !selectedEntity && (
-            <div className="absolute top-full left-1/2 -translate-x-1/2 mt-4 z-[100] animate-in fade-in slide-in-from-top-2 duration-200 pointer-events-none">
-              <div className="bg-black/90 border border-orange/40 rounded px-2 py-1 shadow-2xl backdrop-blur-md min-w-[120px]">
-                <div className="text-white text-[10px] font-bold uppercase tracking-wider border-b border-white/10 pb-1 mb-1">
-                  {item.entity.name}
-                </div>
-                <div className="text-orange/80 text-[9px] flex justify-between gap-2">
-                  <span className="font-mono">
-                    {formatCombatMoveStatus(item.entity.current_move || item.entity.prepared_move) || 'Idle'}
-                  </span>
-                </div>
-              </div>
-              {/* Arrow */}
-              <div className="w-0 h-0 border-l-[6px] border-r-[6px] border-b-[6px] border-l-transparent border-r-transparent border-b-black/90 absolute left-1/2 -translate-x-1/2 bottom-full" />
-            </div>
+          {/* Hover tooltip. Previously suppressed whenever anything was
+              selected, so inspecting one combatant blinded you to every other
+              token on the field; only the selected one needs suppressing. */}
+          {isEntityHovered && selectedEntity?.id !== entityId && (
+            <EntityTooltip entity={item.entity} showDistance={!item.isHero} />
           )}
         </div>
       );
@@ -552,12 +658,11 @@ const EntityLayer = React.memo(({
 // SelectedEntityPanel — detailed stats card shown when a combatant is clicked
 // ---------------------------------------------------------------------------
 const SelectedEntityPanel = React.memo(({ entity, onClose }) => {
-  const hp = entity.hp ?? entity.health?.current ?? 0;
-  const maxHp = entity.max_hp ?? entity.health?.max ?? 1;
-  const maxFatigue = entity.max_fatigue || entity.maxfatigue || 100;
-
-  const hpPct = maxHp > 0 ? Math.min(1, Math.max(0, hp / maxHp)) * 100 : 0;
-  const fatiguePct = maxFatigue > 0 ? Math.min(1, Math.max(0, (entity.fatigue || 0) / maxFatigue)) * 100 : 0;
+  // resolveEntityStats is the single derivation of these five values; this
+  // panel used to re-derive them with a slightly different fallback chain.
+  const { hp, maxHp, fatigue, maxFatigue, hpPct: hpFrac, fatPct } = resolveEntityStats(entity);
+  const hpPct = hpFrac * 100;
+  const fatiguePct = fatPct * 100;
 
   return (
     <div
@@ -567,7 +672,12 @@ const SelectedEntityPanel = React.memo(({ entity, onClose }) => {
       <div className="bg-black/95 border-2 border-orange/50 rounded-lg p-3 shadow-2xl backdrop-blur-xl">
         {/* Header */}
         <div className="flex justify-between items-start mb-3 border-b border-white/10 pb-2">
-          <GameText weight="bold" size="sm" variant="secondary">{entity.name}</GameText>
+          <div>
+            <GameText weight="bold" size="sm" variant="secondary">{entity.name}</GameText>
+            {entity.distance !== undefined && (
+              <div className="text-white/50 text-[10px] font-mono mt-0.5">{entity.distance} ft away</div>
+            )}
+          </div>
           <button
             onClick={onClose}
             className="text-white/40 hover:text-white transition-colors"
@@ -596,7 +706,7 @@ const SelectedEntityPanel = React.memo(({ entity, onClose }) => {
           <div>
             <div className="flex justify-between text-[10px] mb-1">
               <span className="text-white/60">STAMINA (FAT)</span>
-              <span className="text-orange-400 font-mono">{entity.fatigue || 0}/{maxFatigue}</span>
+              <span className="text-orange-400 font-mono">{fatigue}/{maxFatigue}</span>
             </div>
             <div className="h-1.5 w-full bg-orange-900/30 rounded-full overflow-hidden">
               <div className="h-full bg-orange-500 transition-all duration-500" style={{ width: `${fatiguePct}%` }} />
@@ -912,6 +1022,110 @@ const DeathAnimationLayer = React.memo(({ dyingEntities, getEntityStyle }) => {
 });
 
 // ---------------------------------------------------------------------------
+// OffScreenMarkers — edge chevrons pointing at living enemies outside the
+// viewport. Ranged moves reach 40–50 ft while follow mode shows 13 cells, so
+// a fight can legitimately be happening entirely off-screen; before this the
+// only cue was a 2.5s banner telling the player to change view mode, which
+// said nothing about *where* or *how many*.
+// ---------------------------------------------------------------------------
+const MAX_OFFSCREEN_MARKERS = 6;
+
+const OffScreenMarkers = React.memo(({ enemies, leftX, topY, gridCols }) => {
+  const markers = useMemo(() => {
+    // Viewport center in world coordinates.
+    const cx = leftX + (gridCols - 1) / 2;
+    const cy = topY - (gridCols - 1) / 2;
+    const out = [];
+    for (const enemy of enemies) {
+      const pos = enemy.position;
+      if (!pos) continue;
+      const onScreen = pos.x >= leftX && pos.x < leftX + gridCols
+        && pos.y <= topY && pos.y > topY - gridCols;
+      if (onScreen) continue;
+
+      const dx = pos.x - cx;
+      const dy = pos.y - cy;
+      const len = Math.hypot(dx, dy) || 1;
+      const nx = dx / len;
+      const ny = dy / len;
+      // Project onto the edge of the inset box: dividing by the dominant axis
+      // puts the marker on whichever border the enemy actually lies beyond.
+      const k = 0.44 / Math.max(Math.abs(nx), Math.abs(ny));
+      out.push({
+        id: enemy.id ?? `${enemy.name}-${pos.x}-${pos.y}`,
+        name: enemy.name,
+        // Screen y grows downward, world y grows upward.
+        left: `${50 + nx * k * 100}%`,
+        top: `${50 - ny * k * 100}%`,
+        // 0deg = pointing up (north); atan2(dx, dy) turns clockwise from north.
+        angle: (Math.atan2(dx, dy) * 180) / Math.PI,
+        distance: enemy.distance,
+        // Nearest-first, so a capped list keeps the enemies that matter most.
+        // `distance` is feet from Jean and `len` is cells from the viewport
+        // center — different origins, but a grid cell is ~1 ft
+        // (src/positions.py distance_from_coords), so they rank together
+        // closely enough for a tie-break over which few markers to draw.
+        sortKey: enemy.distance ?? len,
+      });
+    }
+    out.sort((a, b) => a.sortKey - b.sortKey);
+    return out.slice(0, MAX_OFFSCREEN_MARKERS);
+  }, [enemies, leftX, topY, gridCols]);
+
+  if (markers.length === 0) return null;
+
+  return (
+    <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 145 }}>
+      {markers.map((m) => (
+        <div
+          key={m.id}
+          style={{
+            position: 'absolute',
+            left: m.left,
+            top: m.top,
+            transform: 'translate(-50%, -50%)',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: '1px',
+          }}
+          title={`${m.name}${m.distance !== undefined ? ` — ${m.distance} ft` : ''} (off-screen)`}
+          aria-label={`${m.name} off-screen${m.distance !== undefined ? `, ${m.distance} feet away` : ''}`}
+        >
+          <div
+            style={{
+              width: 0,
+              height: 0,
+              borderLeft: '5px solid transparent',
+              borderRight: '5px solid transparent',
+              borderBottom: `9px solid ${colors.danger}`,
+              transform: `rotate(${m.angle}deg)`,
+              filter: 'drop-shadow(0 0 3px rgba(0,0,0,0.9))',
+            }}
+          />
+          {m.distance !== undefined && (
+            <span
+              style={{
+                fontSize: '8px',
+                fontFamily: 'monospace',
+                color: colors.danger,
+                backgroundColor: 'rgba(0,0,0,0.75)',
+                borderRadius: '2px',
+                padding: '0 2px',
+                lineHeight: 1.3,
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {m.distance}ft
+            </span>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+});
+
+// ---------------------------------------------------------------------------
 // BattlefieldGrid — main exported component
 // ---------------------------------------------------------------------------
 function BattlefieldGrid({
@@ -953,6 +1167,8 @@ function BattlefieldGrid({
   // the stats captured at click time — HP, current action and status effects would
   // never update, and would keep displaying after the combatant died.
   const [selectedEntityId, setSelectedEntityId] = useState(null);
+
+  const isFitMode = normalizeViewMode(zoom) === VIEW_MODE_FIT;
 
   // One place the "every combatant on the field" list is built. It was assembled
   // inline at three sites with slightly different shapes, in a file whose
@@ -1023,6 +1239,15 @@ function BattlefieldGrid({
   const touchPanRef = useRef({ x: 0, y: 0 }); // current pan offset in pixels
   const touchStartRef = useRef(null);           // { x, y } of last touch point
   const panDecayRafRef = useRef(null);
+  // Accumulated pointer travel for the current drag. A drag that ends over the
+  // map background also fires a click; without this the gesture would clear
+  // the selected-combatant panel every time the player panned.
+  const dragTravelRef = useRef(0);
+  // Mirrors "pan is non-zero" into React so the recenter affordance can render.
+  // Panning is sticky (it used to spring back to center the instant you let
+  // go, which made the advertised "drag to pan" do nothing), so the player
+  // needs a way back — and needs to know they are looking away from Jean.
+  const [isPanned, setIsPanned] = useState(false);
 
   // Resolve effective map size: API value → bounding box of entity positions → 9
   const resolvedMapSize = useMemo(() => {
@@ -1040,13 +1265,18 @@ function BattlefieldGrid({
 
   // Touch pan handlers — attached via useEffect so touchmove can be non-passive
   const applyPanTransform = useCallback(() => {
+    const { x, y } = touchPanRef.current;
     if (panLayerRef.current) {
-      const { x, y } = touchPanRef.current;
       panLayerRef.current.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)`;
     }
+    // React bails out when the value is unchanged, so calling this per frame
+    // during a drag costs nothing beyond the comparison.
+    const panned = Math.abs(x) > 2 || Math.abs(y) > 2;
+    setIsPanned((prev) => (prev === panned ? prev : panned));
   }, []);
 
-  const decayPan = useCallback(() => {
+  /** Ease the pan offset back to zero (the recenter affordance). */
+  const recenterPan = useCallback(() => {
     const pan = touchPanRef.current;
     if (Math.abs(pan.x) < 0.5 && Math.abs(pan.y) < 0.5) {
       touchPanRef.current = { x: 0, y: 0 };
@@ -1054,9 +1284,9 @@ function BattlefieldGrid({
       panDecayRafRef.current = null;
       return;
     }
-    touchPanRef.current = { x: pan.x * 0.85, y: pan.y * 0.85 };
+    touchPanRef.current = { x: pan.x * 0.82, y: pan.y * 0.82 };
     applyPanTransform();
-    panDecayRafRef.current = requestAnimationFrame(decayPan);
+    panDecayRafRef.current = requestAnimationFrame(recenterPan);
   }, [applyPanTransform]);
 
   useEffect(() => {
@@ -1067,6 +1297,7 @@ function BattlefieldGrid({
       const { width, height } = el.getBoundingClientRect();
       const maxX = width * 0.4;
       const maxY = height * 0.4;
+      dragTravelRef.current += Math.abs(dx) + Math.abs(dy);
       touchPanRef.current = {
         x: Math.max(-maxX, Math.min(maxX, touchPanRef.current.x + dx)),
         y: Math.max(-maxY, Math.min(maxY, touchPanRef.current.y + dy)),
@@ -1074,11 +1305,16 @@ function BattlefieldGrid({
       applyPanTransform();
     };
 
+    const beginDrag = (x, y) => {
+      if (panDecayRafRef.current) { cancelAnimationFrame(panDecayRafRef.current); panDecayRafRef.current = null; }
+      dragTravelRef.current = 0;
+      touchStartRef.current = { x, y };
+    };
+
     // Touch handlers
     const onTouchStart = (e) => {
       if (e.touches.length !== 1) return;
-      if (panDecayRafRef.current) { cancelAnimationFrame(panDecayRafRef.current); panDecayRafRef.current = null; }
-      touchStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+      beginDrag(e.touches[0].clientX, e.touches[0].clientY);
     };
     const onTouchMove = (e) => {
       if (!touchStartRef.current || e.touches.length !== 1) return;
@@ -1088,17 +1324,16 @@ function BattlefieldGrid({
       touchStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
       applyDelta(dx, dy);
     };
+    // Pan is sticky: releasing keeps the view where the player put it. The
+    // recenter button (and starting a new fight) is what returns it.
     const onTouchEnd = () => {
       touchStartRef.current = null;
-      if (panDecayRafRef.current) cancelAnimationFrame(panDecayRafRef.current);
-      panDecayRafRef.current = requestAnimationFrame(decayPan);
     };
 
     // Mouse drag handlers
     const onMouseDown = (e) => {
       if (e.button !== 0) return;
-      if (panDecayRafRef.current) { cancelAnimationFrame(panDecayRafRef.current); panDecayRafRef.current = null; }
-      touchStartRef.current = { x: e.clientX, y: e.clientY };
+      beginDrag(e.clientX, e.clientY);
       el.style.cursor = 'grabbing';
     };
     const onMouseMove = (e) => {
@@ -1112,8 +1347,6 @@ function BattlefieldGrid({
       if (!touchStartRef.current) return;
       touchStartRef.current = null;
       el.style.cursor = '';
-      if (panDecayRafRef.current) cancelAnimationFrame(panDecayRafRef.current);
-      panDecayRafRef.current = requestAnimationFrame(decayPan);
     };
 
     el.addEventListener('touchstart', onTouchStart, { passive: true });
@@ -1132,7 +1365,7 @@ function BattlefieldGrid({
       window.removeEventListener('mouseup', onMouseUp);
       if (panDecayRafRef.current) cancelAnimationFrame(panDecayRafRef.current);
     };
-  }, [applyPanTransform, decayPan]);
+  }, [applyPanTransform]);
 
   // Reset pan when a new combat begins. Keyed on the props Battlefield passes
   // from the top-level combat object, NOT on `combat` — that prop is a beat
@@ -1145,12 +1378,19 @@ function BattlefieldGrid({
     applyPanTransform();
   }, [combatId, combatActive, applyPanTransform]);
 
-  const handleGridClick = useCallback((e) => {
-    if (e.target === e.currentTarget) setSelectedEntity(null);
-  }, []);
+  // Clicking the map background clears the selection — as the panel's own
+  // close-button tooltip promised. The previous `e.target === e.currentTarget`
+  // test never passed: the pan and content layers are full-bleed children with
+  // default pointer-events, so a background click always resolved to one of
+  // them and Escape was the only way out. Entity and panel clicks stop
+  // propagation, so anything that reaches this handler *is* the background.
+  const handleGridClick = useCallback(() => {
+    if (dragTravelRef.current > DRAG_CLICK_THRESHOLD_PX) return; // a pan, not a click
+    setSelectedEntity(null);
+  }, [setSelectedEntity]);
 
   const handleClearHover = useCallback(() => setHoveredEntity(null), []);
-  const handleCloseSelectedEntity = useCallback(() => setSelectedEntity(null), []);
+  const handleCloseSelectedEntity = useCallback(() => setSelectedEntity(null), [setSelectedEntity]);
 
   // Escape closes the selected-entity panel — the ✕ button is small and not
   // everyone notices that clicking the map background also clears selection.
@@ -1158,7 +1398,7 @@ function BattlefieldGrid({
     const onKey = (e) => { if (e.key === 'Escape') setSelectedEntity(null); };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  }, [setSelectedEntity]);
 
   // Set/clear the unmount guard
   useEffect(() => {
@@ -1373,10 +1613,11 @@ function BattlefieldGrid({
     // Safe: animateCamera only reads mutable refs; setSnapState is a stable setter.
   }, []);
 
-  // Update camera target whenever Jean moves or zoom changes
+  // Update camera target whenever Jean moves or the view mode changes
   useEffect(() => {
-    if (zoom === 'full') {
-      // Full map — no camera animation; clear any residual transform
+    if (isFitMode) {
+      // Fit mode frames the roster, not Jean — no camera animation; clear any
+      // residual transform
       if (cameraRafRef.current) { cancelAnimationFrame(cameraRafRef.current); cameraRafRef.current = null; }
       if (contentDivRef.current) contentDivRef.current.style.transform = '';
       cameraRef.current = null;
@@ -1420,7 +1661,7 @@ function BattlefieldGrid({
     if (!cameraRafRef.current) {
       cameraRafRef.current = requestAnimationFrame(animateCamera);
     }
-  }, [zoom, playerPos.x, playerPos.y, animateCamera, resolvedMapSize]);
+  }, [isFitMode, playerPos.x, playerPos.y, animateCamera, resolvedMapSize]);
 
   // Cancel camera RAF on unmount
   useEffect(() => () => {
@@ -1428,24 +1669,98 @@ function BattlefieldGrid({
   }, []);
 
   // -------------------------------------------------------------------------
+  // Fit-mode framing — the square window containing every living combatant.
+  //
+  // Hysteresis via fitBoxRef: the current frame is kept as long as everyone is
+  // still inside it and it is no more than one quantization step larger than
+  // needed. Without it the framing would be re-derived every beat and the
+  // whole map would visibly rescale each time a combatant shuffled one cell.
+  // Writing the ref during the memo is safe because the check is idempotent —
+  // a repeated evaluation sees the box it just produced and returns it.
+  // -------------------------------------------------------------------------
+  const fitBoxRef = useRef(null);
+  const fitBox = useMemo(() => {
+    if (!isFitMode) {
+      fitBoxRef.current = null;
+      return null;
+    }
+    const positioned = allCombatants.filter((e) => e?.position && isLiving(e));
+    // Nothing to frame (combat ending, or a payload with no positions at all):
+    // fall back to the whole arena rather than an undefined viewport. Clearing
+    // the ref matters — otherwise the next roster to appear would be validated
+    // against a frame left over from the previous fight.
+    if (positioned.length === 0) {
+      fitBoxRef.current = null;
+      return { size: resolvedMapSize, leftX: 0, topY: resolvedMapSize - 1 };
+    }
+
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const e of positioned) {
+      minX = Math.min(minX, e.position.x);
+      maxX = Math.max(maxX, e.position.x);
+      minY = Math.min(minY, e.position.y);
+      maxY = Math.max(maxY, e.position.y);
+    }
+
+    const needed = Math.max(maxX - minX, maxY - minY) + 1 + FIT_PADDING * 2;
+    const size = Math.min(
+      // Never wider than the arena itself (but always at least a follow-mode
+      // window, so a melee scrum doesn't zoom in past the default view).
+      Math.max(resolvedMapSize, VIEW_SIZE),
+      Math.max(VIEW_SIZE, Math.ceil(needed / FIT_STEP) * FIT_STEP)
+    );
+
+    const prev = fitBoxRef.current;
+    const stillFits = prev
+      && prev.size <= size + FIT_STEP
+      && minX >= prev.leftX && maxX <= prev.leftX + prev.size - 1
+      && maxY <= prev.topY && minY > prev.topY - prev.size;
+    if (stillFits) return prev;
+
+    // Center on the combatants, then slide the frame back inside the arena so
+    // the viewport isn't spent on out-of-bounds void. When the frame is wider
+    // than the arena (small arenas, where the VIEW_SIZE floor wins) there is
+    // nothing to clamp against, so center on the arena instead.
+    // Returns the low edge (leftmost column / bottom row) of the frame on one axis.
+    const lowEdge = (center) => {
+      if (size >= resolvedMapSize) return Math.round((resolvedMapSize - size) / 2);
+      return Math.max(0, Math.min(resolvedMapSize - size, Math.round(center - (size - 1) / 2)));
+    };
+
+    // topY is the frame's top row, so the y axis is clamped on its bottom edge
+    // and converted back up.
+    const box = {
+      size,
+      leftX: lowEdge((minX + maxX) / 2),
+      topY: lowEdge((minY + maxY) / 2) + size - 1,
+    };
+    fitBoxRef.current = box;
+    return box;
+  }, [isFitMode, allCombatants, resolvedMapSize]);
+
+  // -------------------------------------------------------------------------
   // Viewport computations — done unconditionally (before any early return) so
   // the hooks below are always called in the same order.
   // -------------------------------------------------------------------------
-  const isFullMode = zoom === 'full';
-  const gridCols = isFullMode ? resolvedMapSize : VIEW_SIZE;
-  let leftX, topY;
-  if (isFullMode) {
-    leftX = 0;
-    topY = resolvedMapSize - 1;
+  let gridCols, leftX, topY;
+  if (isFitMode) {
+    ({ size: gridCols, leftX, topY } = fitBox);
   } else if (snapCellRef.current) {
     // Use the ref directly (always current) instead of state (which may lag during RAF)
+    gridCols = VIEW_SIZE;
     leftX = snapCellRef.current.leftX;
     topY  = snapCellRef.current.topY;
   } else {
     // Pre-snapState fallback — Jean always centered, no edge-clamping
+    gridCols = VIEW_SIZE;
     leftX = playerPos.x - HALF_VIEW;
     topY  = playerPos.y + HALF_VIEW;
   }
+
+  // Tokens shrink with the viewport, so the detail a marker can carry is a
+  // function of cell size, not of which mode produced it — fit mode is
+  // full-detail for a skirmish and compact for a 30-cell brawl.
+  const isCompact = gridCols > VIEW_SIZE;
 
   /** Convert a world grid position to the absolute-CSS style needed by the layers. */
   const getEntityStyle = useCallback((pos, baseZ = 20) => {
@@ -1528,10 +1843,10 @@ function BattlefieldGrid({
 
   // Memoized background cell array — each cell knows whether it lies inside
   // the real map so off-map viewport cells can render slightly dimmer, giving
-  // the player an implicit sense of map boundaries when Jean is near an edge.
-  // In Full Map mode every cell is on-map, so we skip the per-cell array.
+  // the player an implicit sense of map boundaries near an edge. Computed in
+  // both modes now: fit framing pads past the arena edge just like follow
+  // mode does, so it needs the same dimming to read as a boundary.
   const gridBgCells = useMemo(() => {
-    if (isFullMode) return null;
     const cells = [];
     for (let row = 0; row < gridCols; row++) {
       for (let col = 0; col < gridCols; col++) {
@@ -1542,7 +1857,20 @@ function BattlefieldGrid({
       }
     }
     return cells;
-  }, [isFullMode, gridCols, leftX, topY, resolvedMapSize]);
+  }, [gridCols, leftX, topY, resolvedMapSize]);
+
+  // Living enemies drive the off-screen edge markers.
+  const livingEnemies = useMemo(
+    () => (combat?.enemies || []).filter(isLiving),
+    [combat?.enemies]
+  );
+
+  // The arena boundary rectangle is worth drawing exactly when the viewport
+  // pokes outside the arena on some side — i.e. when the edge is on screen.
+  const showArenaBounds = leftX < 0
+    || topY > resolvedMapSize - 1
+    || leftX + gridCols > resolvedMapSize
+    || topY - gridCols + 1 < 0;
 
   // -------------------------------------------------------------------------
   // Enemies tab: flat list view
@@ -1572,28 +1900,21 @@ function BattlefieldGrid({
           gridTemplateRows: `repeat(${gridCols}, minmax(0, 1fr))`,
           pointerEvents: 'none'
         }}>
-          {gridBgCells === null
-            ? Array.from({ length: gridCols * gridCols }, (_, i) => (
-              <div
-                key={i}
-                style={{ backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: '2px' }}
-              />
-            ))
-            : gridBgCells.map((onMap, i) => (
-              <div
-                key={i}
-                style={{
-                  backgroundColor: onMap ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.35)',
-                  borderRadius: '2px'
-                }}
-              />
-            ))}
+          {gridBgCells.map((onMap, i) => (
+            <div
+              key={i}
+              style={{
+                backgroundColor: onMap ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.35)',
+                borderRadius: '2px'
+              }}
+            />
+          ))}
         </div>
 
-        {/* Small-map extent marker — faint dashed rectangle around the real
-            map when it is smaller than the viewport, so players can see the
-            edge of the world without having to switch zoom modes. */}
-        {!isFullMode && resolvedMapSize < gridCols && (
+        {/* Arena extent marker — faint dashed rectangle around the real map,
+            drawn whenever the viewport reaches past the world's edge, so the
+            boundary is visible without having to change view mode. */}
+        {showArenaBounds && (
           <div style={{ position: 'absolute', inset: 0, padding: spacing.sm, pointerEvents: 'none' }}>
             <div style={{
               position: 'absolute',
@@ -1610,7 +1931,9 @@ function BattlefieldGrid({
 
         <BreadcrumbLayer breadcrumbs={breadcrumbs} />
 
-        {isFullMode && combat?.player && (
+        {/* Jean gets a spotlight whenever tokens are too small to pick her out
+            by her star alone. */}
+        {isCompact && combat?.player && (
           <JeanSpotlight player={combat.player} getEntityStyle={getEntityStyle} />
         )}
 
@@ -1621,7 +1944,7 @@ function BattlefieldGrid({
           hoveredEntity={hoveredEntity}
           selectedEntity={selectedEntity}
           hoveredTargetId={hoveredTargetId}
-          isFullMode={isFullMode}
+          isCompact={isCompact}
           onHoverEntity={setHoveredEntity}
           onClearHover={handleClearHover}
           onSelectEntity={setSelectedEntity}
@@ -1637,6 +1960,15 @@ function BattlefieldGrid({
         <DeathAnimationLayer dyingEntities={dyingEntities} getEntityStyle={getEntityStyle} />
       </div>
       </div>{/* end panLayerRef */}
+
+      {/* Edge markers for enemies outside the viewport. Outside panLayerRef so
+          they stay pinned to the visible border while the map is panned. */}
+      <OffScreenMarkers
+        enemies={livingEnemies}
+        leftX={leftX}
+        topY={topY}
+        gridCols={gridCols}
+      />
 
       {/* SelectedEntityPanel and overlays live outside panLayerRef — screen-fixed
           relative to the grid container and must not translate with the map. */}
@@ -1658,19 +1990,39 @@ function BattlefieldGrid({
         </div>
       )}
 
-      {/* Drag-to-pan hint — visible on all devices, useful as a first-use affordance */}
-      <div
-        style={{
-          position: 'absolute', bottom: '28px', right: '6px',
-          zIndex: 140, pointerEvents: 'none',
-          fontSize: '9px', fontFamily: 'monospace',
-          color: 'rgba(255,255,255,0.35)', userSelect: 'none',
-          display: 'flex', alignItems: 'center', gap: '3px',
-        }}
-        aria-label="Drag to pan the map"
-      >
-        <span>drag to pan</span>
-      </div>
+      {/* Pan affordance. While centered this is a hint; once the player has
+          dragged, it becomes the way back — pan is sticky now, so without it
+          there would be no route home from a corner of the arena. */}
+      {isPanned ? (
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); recenterPan(); }}
+          style={{
+            position: 'absolute', bottom: '24px', right: '6px',
+            zIndex: 155, pointerEvents: 'auto',
+            fontSize: '10px', fontFamily: 'monospace', fontWeight: 'bold',
+            color: colors.secondary, backgroundColor: 'rgba(0,0,0,0.85)',
+            border: `1px solid ${colors.secondary}`, borderRadius: '3px',
+            padding: '2px 6px', cursor: 'pointer', userSelect: 'none',
+          }}
+          title="Recenter the map"
+        >
+          ⌖ recenter
+        </button>
+      ) : (
+        <div
+          style={{
+            position: 'absolute', bottom: '28px', right: '6px',
+            zIndex: 140, pointerEvents: 'none',
+            fontSize: '9px', fontFamily: 'monospace',
+            color: 'rgba(255,255,255,0.35)', userSelect: 'none',
+            display: 'flex', alignItems: 'center', gap: '3px',
+          }}
+          aria-label="Drag to pan the map"
+        >
+          <span>drag to pan</span>
+        </div>
+      )}
     </div>
   );
 }
@@ -1684,6 +2036,8 @@ EnemiesList.displayName = 'EnemiesList'
 BreadcrumbLayer.displayName = 'BreadcrumbLayer'
 EntityLayer.displayName = 'EntityLayer'
 SelectedEntityPanel.displayName = 'SelectedEntityPanel'
+EntityTooltip.displayName = 'EntityTooltip'
+OffScreenMarkers.displayName = 'OffScreenMarkers'
 EffectsLayer.displayName = 'EffectsLayer'
 JeanSpotlight.displayName = 'JeanSpotlight'
 DeathAnimationLayer.displayName = 'DeathAnimationLayer'

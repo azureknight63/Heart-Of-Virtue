@@ -50,12 +50,170 @@ describe('BattlefieldGrid', () => {
         expect(onMap.length + offMap.length).toBe(169);
     });
 
-    it('renders entire grid in full mode', () => {
-        const { container } = render(<BattlefieldGrid combat={mockCombat} tab="overview" zoom="full" />);
+    it('frames the combatants, not the whole arena, in fit mode', () => {
+        // Combatants are clustered; fit mode must not spend the viewport on
+        // empty arena. The framing floors at VIEW_SIZE so it never zooms in
+        // past the follow-mode window, giving a 13x13 grid here.
+        const { container } = render(<BattlefieldGrid combat={mockCombat} tab="overview" zoom="fit" />);
 
-        // Full mode shows the entire map (9x9 = 81 cells for mockCombat)
-        const cells = container.querySelectorAll('[style*="background-color: rgba(255, 255, 255, 0.03)"]');
-        expect(cells.length).toBe(81);
+        const grid = container.querySelector('[style*="grid-template-columns"]');
+        expect(grid.style.gridTemplateColumns).toBe('repeat(13, minmax(0, 1fr))');
+        expect(grid.children.length).toBe(13 * 13);
+    });
+
+    it('scales the fit framing up when combatants are far apart', () => {
+        // A 40x40 arena with two combatants 24 cells apart: the framing must
+        // grow to contain both rather than stay at the follow-mode window.
+        const spreadCombat = {
+            player: { ...mockCombat.player, position: { x: 5, y: 5 } },
+            enemies: [{ id: 'e-far', name: 'Archer', hp: 10, max_hp: 10, position: { x: 29, y: 5 } }],
+        };
+        const { container } = render(
+            <BattlefieldGrid combat={spreadCombat} tab="overview" zoom="fit" mapSize={40} />
+        );
+
+        // span 25 + 2*2 padding = 29, rounded up to the 4-cell quantum = 32
+        const grid = container.querySelector('[style*="grid-template-columns"]');
+        expect(grid.style.gridTemplateColumns).toBe('repeat(32, minmax(0, 1fr))');
+    });
+
+    it('falls back to the whole arena in fit mode when nothing has a position', () => {
+        const positionless = {
+            player: { id: 'player', name: 'Jean', hp: 100, max_hp: 100 },
+            enemies: [{ id: 'e', name: 'Ghost', hp: 5, max_hp: 5 }],
+        };
+        const { container } = render(
+            <BattlefieldGrid combat={positionless} tab="overview" zoom="fit" mapSize={9} />
+        );
+
+        const grid = container.querySelector('[style*="grid-template-columns"]');
+        expect(grid.style.gridTemplateColumns).toBe('repeat(9, minmax(0, 1fr))');
+    });
+
+    it('keeps the fit framing stable while combatants stay inside it', () => {
+        const spreadCombat = {
+            player: { ...mockCombat.player, position: { x: 5, y: 5 } },
+            enemies: [{ id: 'e-far', name: 'Archer', hp: 10, max_hp: 10, position: { x: 29, y: 5 } }],
+        };
+        const { container, rerender } = render(
+            <BattlefieldGrid combat={spreadCombat} tab="overview" zoom="fit" mapSize={40} />
+        );
+        const before = container.querySelector('[style*="grid-template-columns"]').style.gridTemplateColumns;
+
+        // The archer shuffles one cell closer — well inside the current frame.
+        rerender(
+            <BattlefieldGrid
+                combat={{
+                    ...spreadCombat,
+                    enemies: [{ ...spreadCombat.enemies[0], position: { x: 28, y: 5 } }],
+                }}
+                tab="overview"
+                zoom="fit"
+                mapSize={40}
+            />
+        );
+        const after = container.querySelector('[style*="grid-template-columns"]').style.gridTemplateColumns;
+
+        // Re-deriving the box every beat would rescale the whole map underfoot.
+        expect(after).toBe(before);
+    });
+
+    describe('reading the fight at a glance', () => {
+        const pendingMove = { name: 'Reap', category: 'Attack', current_stage: 0, beats_left: 2 };
+
+        it('shows how many beats until an in-progress move resolves', () => {
+            const combat = {
+                ...mockCombat,
+                enemies: [{ ...mockCombat.enemies[0], current_move: pendingMove }],
+            };
+            render(<BattlefieldGrid combat={combat} tab="overview" zoom={1} />);
+
+            expect(screen.getByLabelText('Move resolves in 2 beats')).toBeInTheDocument();
+        });
+
+        it('does not telegraph a move that is only cooling down', () => {
+            const combat = {
+                ...mockCombat,
+                player: { ...mockCombat.player, current_move: null },
+                enemies: [{
+                    ...mockCombat.enemies[0],
+                    // Stage 3 is cooldown — aftermath, not a threat. Glowing here
+                    // made a spent combatant look identical to one winding up.
+                    current_move: { name: 'Reap', category: 'Attack', current_stage: 3, beats_left: 2 },
+                }],
+            };
+            const { container } = render(<BattlefieldGrid combat={combat} tab="overview" zoom={1} />);
+
+            expect(container.querySelector('.battlefield-pending-glow')).toBeNull();
+            expect(screen.queryByLabelText(/Move resolves in/)).toBeNull();
+        });
+
+        it('marks off-screen enemies with an edge chevron and their distance', () => {
+            const combat = {
+                ...mockCombat,
+                enemies: [{
+                    id: 'enemy_archer',
+                    name: 'Archer',
+                    hp: 10,
+                    max_hp: 10,
+                    distance: 22,
+                    position: { x: 28, y: 6 },  // far outside the 13-cell window
+                }],
+            };
+            render(<BattlefieldGrid combat={combat} tab="overview" zoom={1} mapSize={40} />);
+
+            expect(screen.getByLabelText('Archer off-screen, 22 feet away')).toBeInTheDocument();
+        });
+
+        it('does not mark enemies that are on screen', () => {
+            render(<BattlefieldGrid combat={mockCombat} tab="overview" zoom={1} />);
+            expect(screen.queryByLabelText(/off-screen/)).toBeNull();
+        });
+
+        it('shows distance in the hover tooltip and the selected-combatant panel', () => {
+            const combat = {
+                ...mockCombat,
+                enemies: [{ ...mockCombat.enemies[0], distance: 4 }],
+            };
+            render(<BattlefieldGrid combat={combat} tab="overview" zoom={1} />);
+
+            const goblin = screen.getByText('G');
+            fireEvent.mouseEnter(goblin.closest('div[style*="position: absolute"]'));
+            expect(screen.getByText('4 ft')).toBeInTheDocument();
+
+            fireEvent.click(goblin);
+            expect(screen.getByText('4 ft away')).toBeInTheDocument();
+        });
+
+        it('still shows hover tooltips for other combatants while one is selected', () => {
+            const combat = {
+                ...mockCombat,
+                enemies: [
+                    { ...mockCombat.enemies[0], distance: 4 },
+                    { id: 'enemy_rat', name: 'Rat', hp: 8, max_hp: 8, distance: 9, position: { x: 4, y: 6 } },
+                ],
+            };
+            render(<BattlefieldGrid combat={combat} tab="overview" zoom={1} />);
+
+            fireEvent.click(screen.getByText('G'));
+            fireEvent.mouseEnter(screen.getByText('R').closest('div[style*="position: absolute"]'));
+
+            // Previously any selection suppressed every tooltip on the field.
+            expect(screen.getByText('9 ft')).toBeInTheDocument();
+        });
+
+        it('clears the selection when the map background is clicked', () => {
+            const { container } = render(<BattlefieldGrid combat={mockCombat} tab="overview" zoom={1} />);
+
+            fireEvent.click(screen.getByText('G'));
+            expect(screen.getByText('INTEGRITY (HP)')).toBeInTheDocument();
+
+            // The panel's own tooltip advertises this; the old target-identity
+            // check never matched, because full-bleed child layers always
+            // absorbed the click first.
+            fireEvent.click(container.firstChild);
+            expect(screen.queryByText('INTEGRITY (HP)')).toBeNull();
+        });
     });
 
     it('renders enemy list in enemies tab', () => {
@@ -628,6 +786,45 @@ describe('BattlefieldGrid', () => {
         expect(screen.getByText('(Miscellaneous)')).toBeInTheDocument();
     });
 
+    it('lists distance and the pending-move countdown in the enemies tab', () => {
+        const combatEdge = {
+            ...mockCombat,
+            enemies: [{
+                id: 'x',
+                name: 'Wisp',
+                hp: 10,
+                max_hp: 10,
+                distance: 12,
+                current_move: { name: 'Drain', category: 'Special', current_stage: 0, beats_left: 1 },
+                position: { x: 1, y: 1 },
+            }],
+        };
+        render(<BattlefieldGrid combat={combatEdge} tab="enemies" zoom={1} />);
+
+        expect(screen.getByText(/12 ft/)).toBeInTheDocument();
+        expect(screen.getByText(/in 1 beat$/)).toBeInTheDocument();
+    });
+
+    it('still names a cooling-down move in the enemies tab, without a countdown', () => {
+        const combatEdge = {
+            ...mockCombat,
+            enemies: [{
+                id: 'x',
+                name: 'Wisp',
+                hp: 10,
+                max_hp: 10,
+                current_move: { name: 'Drain', category: 'Special', current_stage: 3, beats_left: 4 },
+                position: { x: 1, y: 1 },
+            }],
+        };
+        render(<BattlefieldGrid combat={combatEdge} tab="enemies" zoom={1} />);
+
+        // Suppressing the *telegraph* for a resolved move must not swallow the
+        // fact that the enemy is spent — that is tactically useful information.
+        expect(screen.getByText(/Cooling down from: Drain/)).toBeInTheDocument();
+        expect(screen.queryByText(/in 4 beats/)).toBeNull();
+    });
+
     it('renders an enemy with no active move and zero max_hp without crashing', () => {
         const combatEdge = {
             ...mockCombat,
@@ -699,10 +896,28 @@ describe('BattlefieldGrid', () => {
             player: { ...mockCombat.player, position: { x: 15, y: 15 } },
             enemies: [],
         };
-        const { container } = render(<BattlefieldGrid combat={farCombat} tab="overview" zoom="full" />);
-        // Full mode shows the entire derived map: maxCoord 15 + 1 = 16x16 cells
+        const { container } = render(<BattlefieldGrid combat={farCombat} tab="overview" zoom="fit" />);
+        // maxCoord 15 + 1 => a 16x16 arena. The combatant sits in its far
+        // corner, so the 13x13 frame is clamped back inside the arena and every
+        // cell is on-map: 169 lit. (A 9x9 arena — the floor, i.e. a failure to
+        // derive the size from positions — would leave only 81 lit.)
         const cells = container.querySelectorAll('[style*="background-color: rgba(255, 255, 255, 0.03)"]');
-        expect(cells.length).toBe(256);
+        expect(cells.length).toBe(169);
+    });
+
+    it('clamps the fit frame inside the arena instead of framing empty void', () => {
+        // Combatants hard against the arena's west edge. Centering the frame on
+        // them alone would spend half the viewport on out-of-bounds cells.
+        const cornerCombat = {
+            player: { ...mockCombat.player, position: { x: 0, y: 0 } },
+            enemies: [{ id: 'e', name: 'Slime', hp: 5, max_hp: 5, position: { x: 1, y: 1 } }],
+        };
+        const { container } = render(
+            <BattlefieldGrid combat={cornerCombat} tab="overview" zoom="fit" mapSize={40} />
+        );
+
+        const cells = container.querySelectorAll('[style*="background-color: rgba(255, 255, 255, 0.03)"]');
+        expect(cells.length).toBe(13 * 13);
     });
 
     describe('touch and mouse panning', () => {
@@ -714,27 +929,60 @@ describe('BattlefieldGrid', () => {
             vi.useRealTimers();
         });
 
-        it('pans the map via touch drag and decays back afterward', () => {
-            const { container } = render(<BattlefieldGrid combat={mockCombat} tab="overview" zoom={1} />);
-            const gridEl = container.firstChild;
-            expect(gridEl).not.toBeNull();
+        // jsdom reports a zero-sized box, and the pan clamp is a fraction of
+        // that box — so without a real rect every pan clamps to zero and the
+        // gesture assertions below would pass vacuously.
+        const renderPannableGrid = (props = {}) => {
+            const result = render(<BattlefieldGrid combat={mockCombat} tab="overview" zoom={1} {...props} />);
+            const gridEl = result.container.firstChild;
+            gridEl.getBoundingClientRect = () => ({ width: 400, height: 400, top: 0, left: 0, right: 400, bottom: 400 });
+            return { ...result, gridEl, panLayer: gridEl.firstChild };
+        };
+
+        it('keeps a touch pan where the player left it instead of springing back', () => {
+            const { gridEl, panLayer } = renderPannableGrid();
 
             fireEvent.touchStart(gridEl, { touches: [{ clientX: 100, clientY: 100 }] });
             fireEvent.touchMove(gridEl, { touches: [{ clientX: 60, clientY: 80 }] });
             fireEvent.touchEnd(gridEl);
+            expect(panLayer.style.transform).toBe('translate(-40.0px, -20.0px)');
 
-            expect(() => act(() => vi.advanceTimersByTime(500))).not.toThrow();
+            // The old behaviour decayed the offset to zero on release, which
+            // made the advertised "drag to pan" affordance do nothing at all.
+            act(() => vi.advanceTimersByTime(1000));
+            expect(panLayer.style.transform).toBe('translate(-40.0px, -20.0px)');
         });
 
-        it('pans the map via mouse drag and decays back afterward', () => {
-            const { container } = render(<BattlefieldGrid combat={mockCombat} tab="overview" zoom={1} />);
-            const gridEl = container.firstChild;
+        it('offers a recenter control once panned, and it returns the map to center', () => {
+            const { gridEl, panLayer } = renderPannableGrid();
+            expect(screen.queryByTitle('Recenter the map')).toBeNull();
 
             fireEvent.mouseDown(gridEl, { button: 0, clientX: 100, clientY: 100 });
             fireEvent.mouseMove(window, { clientX: 60, clientY: 80 });
             fireEvent.mouseUp(window);
+            expect(panLayer.style.transform).toBe('translate(-40.0px, -20.0px)');
 
-            expect(() => act(() => vi.advanceTimersByTime(500))).not.toThrow();
+            const recenter = screen.getByTitle('Recenter the map');
+            act(() => { fireEvent.click(recenter); vi.advanceTimersByTime(1000); });
+
+            expect(panLayer.style.transform).toBe('translate(0.0px, 0.0px)');
+            expect(screen.queryByTitle('Recenter the map')).toBeNull();
+        });
+
+        it('does not clear the selected combatant when a drag ends over the map', () => {
+            const { gridEl } = renderPannableGrid();
+
+            fireEvent.click(screen.getByText('J'));
+            expect(screen.getByText('INTEGRITY (HP)')).toBeInTheDocument();
+
+            // A drag also fires a click on mouseup; that must not be read as a
+            // background click dismissing the panel.
+            fireEvent.mouseDown(gridEl, { button: 0, clientX: 100, clientY: 100 });
+            fireEvent.mouseMove(window, { clientX: 60, clientY: 80 });
+            fireEvent.mouseUp(window);
+            fireEvent.click(gridEl);
+
+            expect(screen.getByText('INTEGRITY (HP)')).toBeInTheDocument();
         });
 
         it('ignores multi-touch gestures and secondary mouse buttons', () => {
