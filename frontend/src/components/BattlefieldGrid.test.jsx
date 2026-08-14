@@ -3,6 +3,7 @@ import { render, screen, fireEvent, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import BattlefieldGrid from './BattlefieldGrid';
 import { getAnimationDuration } from '../utils/animationConfigs';
+import { setFlag, resetFlags } from '../utils/featureFlags';
 
 const { mockPlaySFX } = vi.hoisted(() => ({ mockPlaySFX: vi.fn() }));
 
@@ -213,6 +214,209 @@ describe('BattlefieldGrid', () => {
             // absorbed the click first.
             fireEvent.click(container.firstChild);
             expect(screen.queryByText('INTEGRITY (HP)')).toBeNull();
+        });
+    });
+
+    describe('threat line (who a pending move is aimed at)', () => {
+        it('draws a line from a pending attacker to its target', () => {
+            const combat = {
+                ...mockCombat,
+                enemies: [{
+                    ...mockCombat.enemies[0],
+                    current_move: {
+                        name: 'NPC_Attack', category: 'Offensive',
+                        current_stage: 0, beats_left: 2, target_id: 'player',
+                    },
+                }],
+            };
+            const { container } = render(<BattlefieldGrid combat={combat} tab="overview" zoom={1} />);
+
+            const lines = container.querySelectorAll('[data-testid="threat-line"]');
+            expect(lines.length).toBe(1);
+            expect(lines[0].getAttribute('data-source-id')).toBe('enemy_goblin');
+            expect(lines[0].getAttribute('data-target-id')).toBe('player');
+            // Enemy-on-Jean is the dominant case: thicker and brighter than any
+            // other combination.
+            expect(lines[0].getAttribute('data-dominant')).toBe('true');
+        });
+
+        it('draws no line when the move is only cooling down (stage 3)', () => {
+            const combat = {
+                ...mockCombat,
+                enemies: [{
+                    ...mockCombat.enemies[0],
+                    current_move: {
+                        name: 'NPC_Attack', category: 'Offensive',
+                        current_stage: 3, beats_left: 2, target_id: 'player',
+                    },
+                }],
+            };
+            const { container } = render(<BattlefieldGrid combat={combat} tab="overview" zoom={1} />);
+
+            expect(container.querySelectorAll('[data-testid="threat-line"]').length).toBe(0);
+        });
+
+        it('draws no line when the move has no target', () => {
+            const combat = {
+                ...mockCombat,
+                enemies: [{
+                    ...mockCombat.enemies[0],
+                    current_move: {
+                        name: 'NPC_Rest', category: 'Utility',
+                        current_stage: 0, beats_left: 2, target_id: null,
+                    },
+                }],
+            };
+            const { container } = render(<BattlefieldGrid combat={combat} tab="overview" zoom={1} />);
+
+            expect(container.querySelectorAll('[data-testid="threat-line"]').length).toBe(0);
+        });
+
+        it('draws no line when the target is off screen', () => {
+            const combat = {
+                ...mockCombat,
+                enemies: [
+                    {
+                        ...mockCombat.enemies[0],
+                        current_move: {
+                            name: 'NPC_Attack', category: 'Offensive',
+                            current_stage: 0, beats_left: 2, target_id: 'enemy_far',
+                        },
+                    },
+                    {
+                        id: 'enemy_far', name: 'Straggler', hp: 5, max_hp: 5,
+                        position: { x: 200, y: 200 }, // well outside the 13-cell window
+                    },
+                ],
+            };
+            const { container } = render(<BattlefieldGrid combat={combat} tab="overview" zoom={1} />);
+
+            expect(container.querySelectorAll('[data-testid="threat-line"]').length).toBe(0);
+        });
+    });
+
+    describe('range ring (max reach of the selected combatant\'s move)', () => {
+        it('appears once the combatant with a ranged move is selected', () => {
+            const combat = {
+                ...mockCombat,
+                enemies: [{
+                    ...mockCombat.enemies[0],
+                    current_move: {
+                        name: 'ShootBow', category: 'Offensive',
+                        current_stage: 0, beats_left: 2,
+                        mvrange: { min: 1, max: 5 },
+                    },
+                }],
+            };
+            const { container } = render(<BattlefieldGrid combat={combat} tab="overview" zoom={1} />);
+
+            expect(container.querySelectorAll('[data-testid="range-ring"]').length).toBe(0);
+
+            fireEvent.click(screen.getByText('G'));
+
+            expect(container.querySelectorAll('[data-testid="range-ring"]').length).toBe(1);
+        });
+
+        it('does not appear for an unselected combatant', () => {
+            const combat = {
+                ...mockCombat,
+                enemies: [{
+                    ...mockCombat.enemies[0],
+                    current_move: {
+                        name: 'ShootBow', category: 'Offensive',
+                        current_stage: 0, beats_left: 2,
+                        mvrange: { min: 1, max: 5 },
+                    },
+                }],
+            };
+            const { container } = render(<BattlefieldGrid combat={combat} tab="overview" zoom={1} />);
+
+            expect(container.querySelectorAll('[data-testid="range-ring"]').length).toBe(0);
+        });
+
+        it('does not appear when the selected move has no mvrange', () => {
+            const { container } = render(<BattlefieldGrid combat={mockCombat} tab="overview" zoom={1} />);
+
+            // mockCombat's player current_move carries no mvrange at all.
+            fireEvent.click(screen.getByText('J'));
+
+            expect(container.querySelectorAll('[data-testid="range-ring"]').length).toBe(0);
+        });
+
+        it('is suppressed when the ring would be larger than the viewport', () => {
+            const combat = {
+                ...mockCombat,
+                enemies: [{
+                    ...mockCombat.enemies[0],
+                    current_move: {
+                        name: 'ShootBow', category: 'Offensive',
+                        current_stage: 0, beats_left: 2,
+                        // diameter 40 cells vs. the 13-cell follow-mode viewport.
+                        mvrange: { min: 1, max: 20 },
+                    },
+                }],
+            };
+            const { container } = render(<BattlefieldGrid combat={combat} tab="overview" zoom={1} />);
+
+            fireEvent.click(screen.getByText('G'));
+
+            expect(container.querySelectorAll('[data-testid="range-ring"]').length).toBe(0);
+        });
+
+        it('disappears again once the selection is cleared', () => {
+            const combat = {
+                ...mockCombat,
+                enemies: [{
+                    ...mockCombat.enemies[0],
+                    current_move: {
+                        name: 'ShootBow', category: 'Offensive',
+                        current_stage: 0, beats_left: 2,
+                        mvrange: { min: 1, max: 5 },
+                    },
+                }],
+            };
+            const { container } = render(<BattlefieldGrid combat={combat} tab="overview" zoom={1} />);
+
+            fireEvent.click(screen.getByText('G'));
+            expect(container.querySelectorAll('[data-testid="range-ring"]').length).toBe(1);
+
+            fireEvent.keyDown(window, { key: 'Escape' });
+            expect(container.querySelectorAll('[data-testid="range-ring"]').length).toBe(0);
+        });
+    });
+
+    describe('squareBattlefieldCells feature flag', () => {
+        afterEach(() => {
+            resetFlags();
+        });
+
+        it('fills the panel by default, inheriting its aspect ratio', () => {
+            const { getByTestId, container } = render(<BattlefieldGrid combat={mockCombat} tab="overview" zoom={1} />);
+
+            expect(getByTestId('battlefield-viewport').dataset.layout).toBe('fill');
+            // No container-query context is established when the flag is off.
+            expect(container.firstChild.style.containerType).toBe('');
+        });
+
+        it('letterboxes the map to a square when the flag is on', () => {
+            act(() => setFlag('squareBattlefieldCells', true));
+            const { getByTestId, container } = render(<BattlefieldGrid combat={mockCombat} tab="overview" zoom={1} />);
+
+            expect(getByTestId('battlefield-viewport').dataset.layout).toBe('square');
+            // The square is sized in container-query units, which need the
+            // container to declare size containment.
+            expect(container.firstChild.style.containerType).toBe('size');
+        });
+
+        it('switches live when the flag is toggled, without a remount', () => {
+            const { getByTestId } = render(<BattlefieldGrid combat={mockCombat} tab="overview" zoom={1} />);
+            expect(getByTestId('battlefield-viewport').dataset.layout).toBe('fill');
+
+            act(() => setFlag('squareBattlefieldCells', true));
+            expect(getByTestId('battlefield-viewport').dataset.layout).toBe('square');
+
+            act(() => setFlag('squareBattlefieldCells', false));
+            expect(getByTestId('battlefield-viewport').dataset.layout).toBe('fill');
         });
     });
 
@@ -936,7 +1140,9 @@ describe('BattlefieldGrid', () => {
             const result = render(<BattlefieldGrid combat={mockCombat} tab="overview" zoom={1} {...props} />);
             const gridEl = result.container.firstChild;
             gridEl.getBoundingClientRect = () => ({ width: 400, height: 400, top: 0, left: 0, right: 400, bottom: 400 });
-            return { ...result, gridEl, panLayer: gridEl.firstChild };
+            // The pan layer sits inside the viewport box, which is itself
+            // inside the grid container.
+            return { ...result, gridEl, panLayer: result.getByTestId('battlefield-viewport').firstChild };
         };
 
         it('keeps a touch pan where the player left it instead of springing back', () => {

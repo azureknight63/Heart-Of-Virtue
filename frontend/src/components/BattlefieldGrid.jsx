@@ -10,6 +10,7 @@ import { scheduleSfxChain, effectiveDuration } from '../utils/combatTiming';
 import { SFX_DURATIONS } from '../utils/sfxDurations';
 import useDoubleRaf from '../hooks/useDoubleRaf';
 import { formatCombatMoveStatus, isMovePending, beatsUntilResolve } from '../utils/combatMoveStatus';
+import { useFeatureFlag } from '../utils/featureFlags';
 
 // Fragment definitions for the death burst — module-level, never recreated
 const DEATH_FRAGMENTS = Array.from({ length: 12 }, (_, i) => ({
@@ -1126,6 +1127,132 @@ const OffScreenMarkers = React.memo(({ enemies, leftX, topY, gridCols }) => {
 });
 
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// ThreatLineLayer — a line from each combatant with a pending move to that
+// move's target, so intent gets a *who* to go with the existing beat-
+// countdown badge's *when*. Only drawn when both ends are actually on screen
+// (entitiesToRender already excludes anything getEntityStyle couldn't place).
+// Enemy-on-Jean lines are the ones the player has to react to, so they render
+// thicker and brighter; everything else stays subdued so the field doesn't
+// turn into a thicket of lines. Rendered below EntityLayer so a line never
+// sits on top of a token.
+// ---------------------------------------------------------------------------
+const ThreatLineLayer = React.memo(({ entitiesToRender, getEntityCenterPct }) => {
+  const lines = useMemo(() => {
+    const itemById = new Map();
+    for (const item of entitiesToRender) {
+      if (item.entity.id != null) itemById.set(item.entity.id, item);
+    }
+
+    const result = [];
+    for (const item of entitiesToRender) {
+      if (item.isDying) continue;
+      const source = item.entity;
+      const move = source.current_move || source.prepared_move;
+      if (!isMovePending(move)) continue;
+      const targetId = move.target_id;
+      if (!targetId || targetId === source.id) continue; // untargeted / self-target
+
+      const targetItem = itemById.get(targetId);
+      if (!targetItem) continue; // target off-screen, dead, or gone
+
+      const from = getEntityCenterPct(getPos(source));
+      const to = getEntityCenterPct(getPos(targetItem.entity));
+      if (!from || !to) continue;
+
+      // The lines the player has to react to: an enemy aimed at Jean.
+      // `isHero` is set only for combat.player, and `isPlayer` covers the
+      // player and her allies — so this is "an enemy, targeting Jean".
+      const dominant = targetItem.isHero && !item.isPlayer;
+      result.push({
+        id: `${source.id}->${targetId}`,
+        sourceId: source.id,
+        targetId,
+        x1: from.xPct, y1: from.yPct,
+        x2: to.xPct, y2: to.yPct,
+        color: MOVE_CATEGORY_COLOR[move.category] || colors.text.muted,
+        dominant,
+      });
+    }
+    return result;
+  }, [entitiesToRender, getEntityCenterPct]);
+
+  if (lines.length === 0) return null;
+
+  return (
+    <div style={{ position: 'absolute', inset: 0, padding: spacing.sm, pointerEvents: 'none', zIndex: 6 }}>
+      <svg
+        width="100%" height="100%"
+        viewBox="0 0 100 100"
+        preserveAspectRatio="none"
+        style={{ overflow: 'visible' }}
+        aria-hidden="true"
+      >
+        {lines.map((line) => (
+          <line
+            key={line.id}
+            data-testid="threat-line"
+            data-source-id={line.sourceId}
+            data-target-id={line.targetId}
+            data-dominant={line.dominant ? 'true' : 'false'}
+            x1={line.x1} y1={line.y1} x2={line.x2} y2={line.y2}
+            stroke={line.color}
+            strokeWidth={line.dominant ? 2.5 : 1}
+            strokeOpacity={line.dominant ? 0.9 : 0.32}
+            strokeDasharray={line.dominant ? undefined : '4 3'}
+            strokeLinecap="round"
+            vectorEffect="non-scaling-stroke"
+          />
+        ))}
+      </svg>
+    </div>
+  );
+});
+
+// ---------------------------------------------------------------------------
+// RangeRingLayer — a faint ring at the selected combatant's max move range,
+// so the player can see what it threatens without opening the move detail.
+// Anchored the same way JeanSpotlight anchors its pulse: a getEntityStyle
+// cell rect flex-centers a percentage-sized ring around it, so the ring
+// inherits the cell's camera/pan/fit position for free.
+// ---------------------------------------------------------------------------
+const RangeRingLayer = React.memo(({ entity, getEntityStyle, gridCols }) => {
+  const move = entity?.current_move || entity?.prepared_move;
+  const maxRange = move?.mvrange?.max;
+  if (!entity || typeof maxRange !== 'number' || maxRange <= 0) return null;
+
+  const diameterCells = maxRange * 2;
+  // A ring wider than the viewport reads as an edge-to-edge wash rather than
+  // a legible "here's the threat radius" cue, so it is suppressed instead of
+  // drawn illegibly large.
+  if (diameterCells > gridCols) return null;
+
+  const style = getEntityStyle(getPos(entity), 15);
+  if (!style) return null; // selected entity currently off screen
+
+  const diameterPct = diameterCells * 100; // percent of the 1-cell anchor rect
+
+  return (
+    <div style={{ position: 'absolute', inset: 0, padding: spacing.sm, pointerEvents: 'none' }}>
+      <div
+        style={{ position: 'absolute', ...style, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+      >
+        <div
+          data-testid="range-ring"
+          style={{
+            width: `${diameterPct}%`,
+            height: `${diameterPct}%`,
+            borderRadius: '50%',
+            border: `1px solid ${colors.gold}`,
+            opacity: 0.35,
+          }}
+        />
+      </div>
+    </div>
+  );
+});
+
+// ---------------------------------------------------------------------------
 // BattlefieldGrid — main exported component
 // ---------------------------------------------------------------------------
 function BattlefieldGrid({
@@ -1169,6 +1296,7 @@ function BattlefieldGrid({
   const [selectedEntityId, setSelectedEntityId] = useState(null);
 
   const isFitMode = normalizeViewMode(zoom) === VIEW_MODE_FIT;
+  const squareCells = useFeatureFlag('squareBattlefieldCells');
 
   // One place the "every combatant on the field" list is built. It was assembled
   // inline at three sites with slightly different shapes, in a file whose
@@ -1763,18 +1891,49 @@ function BattlefieldGrid({
   const isCompact = gridCols > VIEW_SIZE;
 
   /** Convert a world grid position to the absolute-CSS style needed by the layers. */
-  const getEntityStyle = useCallback((pos, baseZ = 20) => {
+  /**
+   * The viewport cell a world position falls in, or null when it is off
+   * screen. Single source of the visibility test — everything that places
+   * something on the map goes through here, so no layer can drift into its
+   * own idea of what is on screen.
+   */
+  const cellOf = useCallback((pos) => {
     if (!pos || pos.x < leftX || pos.x >= leftX + gridCols || pos.y > topY || pos.y <= topY - gridCols) return null;
-    const col = pos.x - leftX;
-    const row = topY - pos.y;
+    return { col: pos.x - leftX, row: topY - pos.y };
+  }, [leftX, topY, gridCols]);
+
+  const getEntityStyle = useCallback((pos, baseZ = 20) => {
+    const cell = cellOf(pos);
+    if (!cell) return null;
     return {
       left: 0, top: 0,
-      transform: `translate(${col * 100}%, ${row * 100}%)`,
+      transform: `translate(${cell.col * 100}%, ${cell.row * 100}%)`,
       width: `${(1 / gridCols) * 100}%`,
       height: `${(1 / gridCols) * 100}%`,
       zIndex: baseZ
     };
-  }, [leftX, topY, gridCols]);
+  }, [cellOf, gridCols]);
+
+  /**
+   * The center of a world position as a percentage of the padded viewport
+   * box — the coordinate space the SVG overlay layers draw in.
+   *
+   * Threat lines need a bare point rather than a cell rect. Deriving it here
+   * from the same `cellOf` the styles use keeps it camera/pan/fit-aware and
+   * shares the off-screen check, without parsing the CSS strings
+   * getEntityStyle just formatted: a regex round-trip through
+   * `translate(x%, y%)` would silently yield no lines at all the first time
+   * that template changed shape.
+   */
+  const getEntityCenterPct = useCallback((pos) => {
+    const cell = cellOf(pos);
+    if (!cell) return null;
+    const cellPct = 100 / gridCols;
+    return {
+      xPct: cell.col * cellPct + cellPct / 2,
+      yPct: cell.row * cellPct + cellPct / 2,
+    };
+  }, [cellOf, gridCols]);
 
   // Memoized breadcrumb trail — only recomputed when beat history or viewport changes
   const breadcrumbs = useMemo(() => {
@@ -1883,8 +2042,35 @@ function BattlefieldGrid({
     <div
       ref={gridContainerRef}
       onClick={handleGridClick}
-      style={{ position: 'relative', width: '100%', height: '100%', backgroundColor: colors.bg.main, overflow: 'hidden', touchAction: 'none', cursor: 'grab' }}
+      style={{
+        position: 'relative', width: '100%', height: '100%',
+        backgroundColor: colors.bg.main, overflow: 'hidden',
+        touchAction: 'none', cursor: 'grab',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        // Square-cell mode measures the largest square that fits via container
+        // query units, so `containerType` only exists while the flag is on.
+        containerType: squareCells ? 'size' : undefined,
+      }}
     >
+      {/*
+        The map viewport. Every layer below sizes itself in percentages of this
+        box, so making it square is all it takes for one grid cell to be square.
+        Off (the default) it fills the panel, and cells inherit the panel's
+        aspect ratio — a 9x9 arena renders as a rectangle and diagonals read
+        shorter than they are. On, the map is letterboxed to a square at the
+        cost of unused space in a tall panel. Feature-flagged because that
+        trade is a look-at-it-both-ways call, not an obvious win.
+      */}
+      <div
+        style={squareCells
+          ? { position: 'relative', width: 'min(100cqw, 100cqh)', height: 'min(100cqw, 100cqh)' }
+          : { position: 'absolute', inset: 0 }}
+        data-testid="battlefield-viewport"
+        // The square sizing is a `min()` of container-query units, which jsdom
+        // cannot hold — this attribute is what tests and QA scripts assert the
+        // active layout on.
+        data-layout={squareCells ? 'square' : 'fill'}
+      >
       {/*
         panLayerRef: touch-drag pan offset layer. Translates independently of the
         RAF camera so finger panning doesn't interfere with smooth camera animation.
@@ -1937,6 +2123,19 @@ function BattlefieldGrid({
           <JeanSpotlight player={combat.player} getEntityStyle={getEntityStyle} />
         )}
 
+        <ThreatLineLayer
+          entitiesToRender={entitiesToRender}
+          getEntityCenterPct={getEntityCenterPct}
+        />
+
+        {selectedEntity && (
+          <RangeRingLayer
+            entity={selectedEntity}
+            getEntityStyle={getEntityStyle}
+            gridCols={gridCols}
+          />
+        )}
+
         <EntityLayer
           entitiesToRender={entitiesToRender}
           activeAnimation={activeAnimation}
@@ -1962,16 +2161,19 @@ function BattlefieldGrid({
       </div>{/* end panLayerRef */}
 
       {/* Edge markers for enemies outside the viewport. Outside panLayerRef so
-          they stay pinned to the visible border while the map is panned. */}
+          they stay pinned to the visible border while the map is panned, but
+          inside the viewport box so they hug the map edge rather than the
+          panel edge when the map is letterboxed. */}
       <OffScreenMarkers
         enemies={livingEnemies}
         leftX={leftX}
         topY={topY}
         gridCols={gridCols}
       />
+      </div>{/* end viewport */}
 
-      {/* SelectedEntityPanel and overlays live outside panLayerRef — screen-fixed
-          relative to the grid container and must not translate with the map. */}
+      {/* SelectedEntityPanel and overlays are panel chrome — they sit outside
+          the viewport box so they stay pinned to the panel's own corners. */}
       {selectedEntity && (
         <SelectedEntityPanel
           entity={selectedEntity}
@@ -2041,3 +2243,5 @@ OffScreenMarkers.displayName = 'OffScreenMarkers'
 EffectsLayer.displayName = 'EffectsLayer'
 JeanSpotlight.displayName = 'JeanSpotlight'
 DeathAnimationLayer.displayName = 'DeathAnimationLayer'
+ThreatLineLayer.displayName = 'ThreatLineLayer'
+RangeRingLayer.displayName = 'RangeRingLayer'

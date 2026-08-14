@@ -346,8 +346,78 @@ class CombatantSerializer:
                     if hasattr(move, "stage_beat")
                     else 0
                 ),
+                "target_id": CombatantSerializer._serialize_move_target_id(move),
+                "mvrange": CombatantSerializer._serialize_move_range(move),
             }
         return None
+
+    @staticmethod
+    def _serialize_move_target_id(move: Any) -> Optional[str]:
+        """Canonical wire id of a move's target, or None when untargeted /
+        no target has been selected yet.
+
+        ``Move.target`` (see ``src/moves/_base.py``) holds a single combatant
+        reference — never a list (verified via ``grep -rn "self.target"
+        src/moves/``); some moves (e.g. ``PowerStrike``) default it to the
+        move's own ``user`` in ``__init__`` purely as a placeholder until the
+        adapter's target-selection command overwrites it, and untargeted
+        moves (``Move.targeted is False`` — buffs, ``Rest``, passives) leave
+        that placeholder in place for their whole life since nothing ever
+        assigns a real target. ``combat_adapter.py`` already gates its own
+        target lookup the same way (``if move.targeted and move.target``), so
+        this mirrors that convention rather than inventing a new one.
+
+        MUST resolve through ``CombatantSerializer.stream_id`` rather than a
+        hand-rolled id — that is the only thing that guarantees this matches
+        the id ``serialize_combatant`` emits for the same entity, per the
+        wire-field-name-drift gotcha in CLAUDE.md.
+        """
+        if not getattr(move, "targeted", False):
+            return None
+        target = getattr(move, "target", None)
+        if target is None or isinstance(target, (list, tuple, set)):
+            # Defensive: no real Move.target is ever a collection today, but
+            # a collection can't be resolved to a single wire id either way.
+            return None
+        return CombatantSerializer.stream_id(target)
+
+    @staticmethod
+    def _serialize_move_range(move: Any) -> Optional[Dict[str, int]]:
+        """Move reach as ``{"min": int, "max": int}``, or None when the move
+        exposes no ``mvrange``.
+
+        Reads ``move.mvrange`` (see ``src/moves/_base.py``) as-is — this layer
+        never reimplements range arithmetic. Some moves compute an *effective*
+        max separately (ranged weapons with distance decay override
+        ``get_effective_range_max`` in ``src/moves/_ranged.py``); when that
+        returns a non-None value it is preferred for ``max`` because it's what
+        the engine itself uses for targeting/hit-chance at this moment, while
+        the static ``mvrange[1]`` would understate/overstate the real reach.
+
+        The override takes the *user* whose move it is, so an NPC's reach is
+        computed from the NPC's own weapon — not the player's, which is what
+        passing a fixed reference would do.
+        """
+        mvrange = getattr(move, "mvrange", None)
+        if not mvrange or len(mvrange) != 2:
+            return None
+        range_min, range_max = mvrange
+
+        # Every Move has get_effective_range_max (the base returns None — see
+        # src/moves/_base.py), so this is a plain call, matching how
+        # combat_adapter._get_available_targets already invokes it. It is
+        # deliberately not wrapped in try/except: an override that raises is a
+        # real engine bug, and swallowing it here would ship a silently wrong
+        # threat radius instead — the exact silent-failure mode this payload's
+        # contract test exists to prevent.
+        effective_max = move.get_effective_range_max(getattr(move, "user", None))
+        if effective_max is not None:
+            range_max = effective_max
+
+        try:
+            return {"min": int(range_min), "max": int(range_max)}
+        except (TypeError, ValueError):
+            return None
 
     @staticmethod
     def _get_distance(combatant: Any, reference: Any = None) -> int:

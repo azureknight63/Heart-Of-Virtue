@@ -72,7 +72,7 @@ from src.api.serializers.combat import (
 )
 from src.api.serializers.shop_serializer import ShopSerializer
 from src.api.services.game_service import GameService
-from src.items import Restorative
+from src.items import Restorative, Shortbow
 from src.moves import ShootBow
 from src.npc._enemies import Slime
 from src.npc._merchants import Merchant
@@ -316,6 +316,13 @@ ACTIVE_MOVE_CONTRACT = {
     # the countdown badge on the token.
     "current_stage": "combatMoveStatus.js isMovePending / formatCombatMoveStatus",
     "beats_left": "combatMoveStatus.js beatsUntilResolve -> countdown badge",
+    # Threat-line/range-ring feature: who the pending move is aimed at, and
+    # how far it reaches. target_id MUST be resolved through
+    # CombatantSerializer.stream_id (see _serialize_move_target_id) or the
+    # frontend can never match it against a combatant's own `id` — the same
+    # drift class this whole file exists to catch.
+    "target_id": "BattlefieldGrid.jsx ThreatLineLayer entity.currentMove.target_id",
+    "mvrange": "BattlefieldGrid.jsx RangeRingLayer entity.currentMove.mvrange",
 }
 
 # StatusEffectsIconPanel.jsx renders each element of status_effects/passives.
@@ -370,6 +377,103 @@ class TestCombatantWireContract:
         _assert_contract(
             payload["current_move"], ACTIVE_MOVE_CONTRACT, "combatant.current_move"
         )
+
+    def test_active_move_target_id_matches_the_target_combatants_own_serialized_id(self):
+        """The whole point of `target_id`: it must resolve to exactly the same
+        wire id `serialize_combatant` gives the target itself, or the frontend
+        can never look the target up in `combat.enemies`/`combat.allies` to
+        draw the threat line — the "id schemes don't match" failure mode
+        CLAUDE.md calls this repo's dominant bug class.
+
+        Both sides are computed independently through the real serializer
+        entry points (never hand-built) so a future change to either the
+        active-move id logic or `stream_id` itself cannot silently drift them
+        apart without breaking this test.
+        """
+        player = Player()
+        player.known_moves = []
+        player.combat_log = []
+        player.last_move_summary = ""
+        player.combat_beat = 1
+        player.in_combat = True
+        enemy = Slime()
+        player.combat_list = [enemy]
+        player.combat_list_allies = [player]
+        player.combat_proximity = {enemy: 10}
+
+        move = ShootBow(player)
+        move.target = enemy
+        move.current_stage = 0
+        move.beats_left = 2
+        player.current_move = move
+
+        player_payload = CombatantSerializer.serialize_combatant(player)
+        enemy_payload = CombatantSerializer.serialize_combatant(enemy, reference=player)
+
+        assert player_payload["current_move"], "expected the in-progress move to serialize"
+        assert player_payload["current_move"]["target_id"] == enemy_payload["id"], (
+            "current_move.target_id must exactly match the target's own "
+            "serialize_combatant() id, or BattlefieldGrid cannot resolve who "
+            f"the move is aimed at. Got target_id={player_payload['current_move']['target_id']!r} "
+            f"vs enemy id={enemy_payload['id']!r}"
+        )
+
+    def test_active_move_range_prefers_the_engines_effective_max(self):
+        """`mvrange.max` must be the reach the engine actually uses, not the
+        static tuple bound.
+
+        Without this the "prefer get_effective_range_max" branch could quietly
+        never fire — the base Move returns None, so a wrong argument or a
+        swallowed exception would silently fall back to `mvrange[1]` and the
+        range ring would draw the wrong radius with nothing failing. The
+        expected value is computed by calling the move's own method rather
+        than hardcoding a number, so the engine stays the source of truth.
+        """
+        player = Player()
+        player.eq_weapon = Shortbow()
+        move = ShootBow(player)
+        move.current_stage = 0
+        move.beats_left = 1
+        player.current_move = move
+
+        engine_effective_max = move.get_effective_range_max(player)
+        assert engine_effective_max is not None, (
+            "fixture no longer exercises the override — pick a move/weapon "
+            "whose get_effective_range_max returns a value"
+        )
+        assert engine_effective_max != move.mvrange[1], (
+            "fixture is degenerate: the effective max coincides with the "
+            "static bound, so this test could pass either way"
+        )
+
+        payload = CombatantSerializer.serialize_combatant(player)
+        assert payload["current_move"]["mvrange"] == {
+            "min": int(move.mvrange[0]),
+            "max": int(engine_effective_max),
+        }
+
+    def test_active_move_range_computes_reach_from_the_moves_own_user(self):
+        """An NPC's reach must come from the NPC's weapon, not the player's.
+
+        `_serialize_move_range` passes `move.user` into the override; passing a
+        fixed player reference (as combat_adapter does for its own player-only
+        target list) would report Jean's bow range for a Slime's move.
+        """
+        player = Player()
+        player.eq_weapon = Shortbow()
+        enemy = Slime()
+        enemy.eq_weapon = None  # a Slime has no weapon slot at all
+
+        enemy_move = ShootBow(enemy)  # enemy has no bow equipped
+        enemy_move.current_stage = 0
+        enemy_move.beats_left = 1
+        enemy.current_move = enemy_move
+
+        payload = CombatantSerializer.serialize_combatant(enemy, reference=player)
+        # No weapon on the Slime => the override returns None => the static
+        # bound stands. If the player were used as the reference instead, the
+        # Shortbow's much longer effective reach would leak in here.
+        assert payload["current_move"]["mvrange"]["max"] == int(enemy_move.mvrange[1])
 
     def test_status_effect_fields_on_a_real_state(self):
         player = Player()
