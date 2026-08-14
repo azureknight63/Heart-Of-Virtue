@@ -1,7 +1,8 @@
-import { render, screen, fireEvent } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, screen, fireEvent, within } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import SettingsDialog from './SettingsDialog';
 import { useAudio } from '../context/AudioContext';
+import { FEATURE_FLAGS, getFlag, resetFlags } from '../utils/featureFlags';
 
 // Mock useAudio
 vi.mock('../context/AudioContext', () => ({
@@ -132,6 +133,41 @@ describe('SettingsDialog', () => {
     const dialogContent = screen.getByText('⚙️ SETTINGS').parentElement;
     fireEvent.click(dialogContent);
     expect(mockOnClose).not.toHaveBeenCalled();
+  });
+
+  describe('experimental feature flags', () => {
+    afterEach(() => {
+      resetFlags();
+    });
+
+    it('renders a row for every registered flag, driven by the registry', () => {
+      render(<SettingsDialog onClose={mockOnClose} />);
+
+      const names = Object.keys(FEATURE_FLAGS);
+      expect(names.length).toBeGreaterThan(0);
+      for (const name of names) {
+        expect(screen.getByText(FEATURE_FLAGS[name].label)).toBeInTheDocument();
+      }
+    });
+
+    it('toggles a flag on and back off, reflecting the live value', () => {
+      render(<SettingsDialog onClose={mockOnClose} />);
+      const label = FEATURE_FLAGS.squareBattlefieldCells.label;
+      const row = screen.getByText(label).parentElement;
+      const toggle = within(row).getByRole('button');
+
+      expect(toggle).toHaveTextContent('OFF');
+      expect(toggle.getAttribute('aria-pressed')).toBe('false');
+
+      fireEvent.click(toggle);
+      expect(getFlag('squareBattlefieldCells')).toBe(true);
+      expect(toggle).toHaveTextContent('ON');
+      expect(toggle.getAttribute('aria-pressed')).toBe('true');
+
+      fireEvent.click(toggle);
+      expect(getFlag('squareBattlefieldCells')).toBe(false);
+      expect(toggle).toHaveTextContent('OFF');
+    });
   });
 
 });
