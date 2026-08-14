@@ -118,6 +118,15 @@ describe('featureFlags', () => {
     expect(getFlag('bogusFlag')).toBe(false);
   });
 
+  it('does not crash the module on malformed percent-encoding in ?flags=', async () => {
+    // A bare trailing "%" is invalid percent-encoding and throws inside
+    // decodeURIComponent. This runs at module import time, so an uncaught
+    // throw here would fail the whole app, not just the flag lookup.
+    setSearch('?flags=%');
+    const imported = await freshImport();
+    expect(imported.getFlag('squareBattlefieldCells')).toBe(false);
+  });
+
   describe('useFeatureFlag', () => {
     it('re-renders subscribers when the flag changes', async () => {
       const { useFeatureFlag, setFlag } = await freshImport();

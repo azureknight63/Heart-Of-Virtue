@@ -40,10 +40,20 @@ const urlForcedFlags = () => {
   if (typeof window === 'undefined') return [];
   const match = /[?&]flags=([^&#]*)/.exec(window.location.search);
   if (!match) return [];
-  return decodeURIComponent(match[1])
-    .split(',')
-    .map((name) => name.trim())
-    .filter((name) => FLAG_NAMES.includes(name));
+  try {
+    // A hand-edited or truncated URL can carry malformed percent-encoding
+    // (e.g. a bare trailing `%`), which throws. This runs at module import
+    // time (`let state = load()` below) — an uncaught throw here would fail
+    // the whole module, not just the flag lookup, matching the "a flag is
+    // never important enough to break the app over" rule the localStorage
+    // path below already follows.
+    return decodeURIComponent(match[1])
+      .split(',')
+      .map((name) => name.trim())
+      .filter((name) => FLAG_NAMES.includes(name));
+  } catch {
+    return [];
+  }
 };
 
 const load = () => {

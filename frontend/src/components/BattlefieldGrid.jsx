@@ -11,6 +11,7 @@ import { SFX_DURATIONS } from '../utils/sfxDurations';
 import useDoubleRaf from '../hooks/useDoubleRaf';
 import { formatCombatMoveStatus, isMovePending, beatsUntilResolve } from '../utils/combatMoveStatus';
 import { useFeatureFlag } from '../utils/featureFlags';
+import { isLiving } from '../utils/combatEntities';
 
 // Fragment definitions for the death burst — module-level, never recreated
 const DEATH_FRAGMENTS = Array.from({ length: 12 }, (_, i) => ({
@@ -69,11 +70,6 @@ const normalizeViewMode = (zoom) =>
  *  and the enemies list can never disagree about pluralization. */
 const formatBeatCountdown = (beats) => `in ${beats} beat${beats === 1 ? '' : 's'}`;
 
-/** True when the entity is alive (or carries no HP information at all). */
-const isLiving = (entity) => {
-  const hp = entity?.hp ?? entity?.health?.current;
-  return hp === undefined || hp > 0;
-};
 
 /**
  * Snap a float camera origin to the nearest valid integer cell.

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 
 import BattlefieldGrid, { VIEW_SIZE, VIEW_MODE_FOLLOW, VIEW_MODE_FIT } from './BattlefieldGrid'
 import { colors, spacing } from '../styles/theme'
+import { isLiving } from '../utils/combatEntities'
 
 const HALF_VIEW = Math.floor(VIEW_SIZE / 2);
 const MAX_BEAT_STATES = 200;
@@ -32,8 +33,7 @@ function anyEnemyOffScreen(state) {
   const px = player.position.x;
   const py = player.position.y;
   for (const e of enemies) {
-    const hp = e.hp ?? e.health?.current;
-    if (hp !== undefined && hp <= 0) continue;
+    if (!isLiving(e)) continue;
     const ep = e.position;
     if (!ep) continue;
     if (Math.abs(ep.x - px) > HALF_VIEW || Math.abs(ep.y - py) > HALF_VIEW) return true;
@@ -115,13 +115,10 @@ export default function Battlefield({ combat, currentLogIndex, displayedLogCount
 
   // Living enemy count and beat number: the two numbers that answer "where is
   // this fight at?" without reading back through the log.
-  const livingEnemyCount = useMemo(() => {
-    const enemies = displayState?.enemies || [];
-    return enemies.filter((e) => {
-      const hp = e.hp ?? e.health?.current;
-      return hp === undefined || hp > 0;
-    }).length;
-  }, [displayState?.enemies]);
+  const livingEnemyCount = useMemo(
+    () => (displayState?.enemies || []).filter(isLiving).length,
+    [displayState?.enemies]
+  );
 
   // Rising edge on enemyOffScreen → flash a one-shot banner explaining the hint.
   useEffect(() => {
