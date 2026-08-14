@@ -268,7 +268,13 @@ class ApiCombatAdapter:
                 if getattr(self, "_terminal_event_emitted", False):
                     return
                 self._terminal_event_emitted = True
-                streamer.emit_ended(end_state or result)
+                # Stream the full result, not just the bare end_state: the
+                # client's applyCombatState() falls back to a synthesized
+                # shape with log hardcoded to [] when battle_state/log are
+                # absent, which was wiping the killing-blow's log entry and
+                # letting the victory dialog's "no pending logs" gate pass
+                # before the death animation ever played.
+                streamer.emit_ended(result)
             else:
                 streamer.emit_resolved(result)
         except Exception:
