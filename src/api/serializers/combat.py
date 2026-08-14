@@ -348,6 +348,7 @@ class CombatantSerializer:
                 ),
                 "target_id": CombatantSerializer._serialize_move_target_id(move),
                 "mvrange": CombatantSerializer._serialize_move_range(move),
+                "falloff": CombatantSerializer._serialize_move_falloff(move),
             }
         return None
 
@@ -416,6 +417,29 @@ class CombatantSerializer:
 
         try:
             return {"min": int(range_min), "max": int(range_max)}
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _serialize_move_falloff(move: Any) -> Optional[Dict[str, float]]:
+        """Accuracy decay curve as ``{"start": ft, "per_ft": points}``, or None
+        when the move's accuracy does not decay with distance.
+
+        Straight passthrough of ``Move.get_accuracy_falloff`` (src/moves/
+        _base.py) — the engine owns the curve; this layer only names its
+        fields for the wire. A decaying move has no real maximum reach: it can
+        be fired at any distance and simply decays toward the 2% floor, which
+        is why ``mvrange.max`` for one of these is the (very large) distance
+        at which a 100-point hit chance would reach zero rather than a wall.
+        The client draws the difference — a dissolving gradient for a decaying
+        move, a hard ring for a bounded one.
+        """
+        falloff = move.get_accuracy_falloff(getattr(move, "user", None))
+        if not falloff:
+            return None
+        start, per_ft = falloff
+        try:
+            return {"start": float(start), "per_ft": float(per_ft)}
         except (TypeError, ValueError):
             return None
 

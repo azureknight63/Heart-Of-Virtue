@@ -347,6 +347,31 @@ class Move:  # master class for all moves
         """
         return None
 
+    def get_accuracy_falloff(self, user):
+        """Distance beyond which this move's accuracy decays, and how fast.
+
+        Returns ``(start_ft, points_per_ft)`` — accuracy is flat out to
+        ``start_ft``, then loses ``points_per_ft`` hit-chance points for every
+        foot past it — or ``None`` when accuracy does not decay with distance.
+
+        This is the same pair the decaying moves' own ``calculate_hit_chance``
+        subtracts with (``hit_chance -= (distance - start) * decay``), exposed
+        so a caller can *describe* the curve without re-deriving it. The web
+        battlefield draws the range indicator from it: a decaying move has no
+        meaningful hard edge — reach is unbounded and far shots simply decay
+        to a vanishing chance — so it renders as a gradient that dissolves
+        outward rather than as a ring.
+
+        The default covers every move that carries ``decay``/``base_range``
+        (the crossbow line: ShootCrossbow, BroadheadBolt, AimedShot,
+        PinningBolt). Moves with no ``decay`` attribute — every melee move —
+        fall through to ``None``.
+        """
+        decay = getattr(self, "decay", 0)
+        if not decay or decay <= 0:
+            return None
+        return (getattr(self, "base_range", 0), decay)
+
     def can_use_coordinates(self, user):
         """Check if 2D coordinate-based movement is available for this move."""
         if not (hasattr(user, "combat_position") and user.combat_position is not None):

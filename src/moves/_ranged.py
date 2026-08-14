@@ -83,6 +83,22 @@ class ShootBow(
             return getattr(wpn, "range_base", 0) + (100 / decay)
         return None
 
+    def get_accuracy_falloff(self, user):
+        """Falloff measured from the *weapon's* range_base, not ``self.base_range``.
+
+        ShootBow is the one move where those two differ: ``evaluate`` folds the
+        arrow's range modifier into ``self.base_range``, but
+        ``calculate_hit_chance`` above subtracts from ``wpn_range_base``. This
+        override reports what the hit-chance calculation actually does, since
+        that — not the unused attribute — is the accuracy the player will see.
+        """
+        if not self.decay or self.decay <= 0:
+            return None
+        wpn = getattr(user, "eq_weapon", None)
+        if wpn is None:
+            return None
+        return (getattr(wpn, "range_base", 0), self.decay)
+
     def calculate_hit_chance(
         self, enemy
     ):  # estimate the hit chance for enemy and return as a string (ex "48%")

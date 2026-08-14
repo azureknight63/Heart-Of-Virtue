@@ -44,6 +44,15 @@ def test_active_move_serialization_keeps_internal_name_and_adds_display_name():
         beats_left = 1
         stage_beat = [2, 1, 0, 4]
 
+        # Every real Move defines these (src/moves/_base.py); the serializer
+        # calls them unguarded, so a probe standing in for a Move has to
+        # provide them or it is testing a shape production never sees.
+        def get_effective_range_max(self, user):
+            return None
+
+        def get_accuracy_falloff(self, user):
+            return None
+
     class CombatantProbe:
         current_move = MoveProbe()
         known_moves = []

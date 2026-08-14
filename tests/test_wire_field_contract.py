@@ -73,7 +73,7 @@ from src.api.serializers.combat import (
 from src.api.serializers.shop_serializer import ShopSerializer
 from src.api.services.game_service import GameService
 from src.items import Restorative, Shortbow
-from src.moves import ShootBow
+from src.moves import PowerStrike, ShootBow
 from src.npc._enemies import Slime
 from src.npc._merchants import Merchant
 from src.player import Player
@@ -316,6 +316,7 @@ ACTIVE_MOVE_CONTRACT = {
     # the countdown badge on the token.
     "current_stage": "combatMoveStatus.js isMovePending / formatCombatMoveStatus",
     "beats_left": "combatMoveStatus.js beatsUntilResolve -> countdown badge",
+    "falloff": "BattlefieldGrid.jsx RangeRingLayer — gradient vs hard ring",
     # Threat-line/range-ring feature: who the pending move is aimed at, and
     # how far it reaches. target_id MUST be resolved through
     # CombatantSerializer.stream_id (see _serialize_move_target_id) or the
@@ -451,6 +452,69 @@ class TestCombatantWireContract:
             "min": int(move.mvrange[0]),
             "max": int(engine_effective_max),
         }
+
+    def test_active_move_falloff_predicts_the_engines_own_hit_chance(self):
+        """The falloff curve must describe the *real* accuracy decay.
+
+        The battlefield draws a gradient from `start`/`per_ft` to show a
+        decaying move dissolving toward a vanishing hit chance. If those two
+        numbers don't match what `calculate_hit_chance` actually subtracts,
+        the gradient is a confident-looking lie — worse than drawing nothing.
+
+        So this doesn't just check the fields exist: it takes the serialized
+        pair, predicts the hit chance at a distance past `start`, and compares
+        against the engine's own calculation at that distance.
+        """
+        player = Player()
+        player.eq_weapon = Shortbow()
+        enemy = Slime()
+        player.combat_list = [enemy]
+        player.combat_list_allies = [player]
+
+        move = ShootBow(player)
+        move.current_stage = 0
+        move.beats_left = 1
+        player.current_move = move
+
+        payload = CombatantSerializer.serialize_combatant(player)
+        falloff = payload["current_move"]["falloff"]
+        assert falloff, "a bow shot decays with range — expected a falloff curve"
+
+        start = falloff["start"]
+        per_ft = falloff["per_ft"]
+        assert per_ft > 0
+
+        # Baseline at the plateau edge, then a point well beyond it. Both come
+        # from the engine; only the *difference* between them is predicted.
+        player.combat_proximity = {enemy: int(start)}
+        baseline = move.calculate_hit_chance(enemy)
+
+        far = int(start) + 40
+        player.combat_proximity = {enemy: far}
+        actual = move.calculate_hit_chance(enemy)
+
+        predicted = baseline - (far - start) * per_ft
+        assert abs(actual - predicted) <= 1, (
+            f"serialized falloff (start={start}, per_ft={per_ft}) predicts "
+            f"{predicted:.2f}% at {far} ft but the engine computes {actual}%. "
+            "The battlefield gradient would misrepresent real hit chance."
+        )
+        assert actual < baseline, (
+            "fixture is degenerate: accuracy did not actually drop past "
+            "`start`, so this test could pass with a zero falloff"
+        )
+
+    def test_no_falloff_for_a_move_whose_accuracy_does_not_decay(self):
+        """Melee moves carry no decay, and must report none — the client uses
+        null here to pick a hard range ring over a dissolving gradient."""
+        player = Player()
+        move = PowerStrike(player)
+        move.current_stage = 0
+        move.beats_left = 1
+        player.current_move = move
+
+        payload = CombatantSerializer.serialize_combatant(player)
+        assert payload["current_move"]["falloff"] is None
 
     def test_active_move_range_computes_reach_from_the_moves_own_user(self):
         """An NPC's reach must come from the NPC's weapon, not the player's.

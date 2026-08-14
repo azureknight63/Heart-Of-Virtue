@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { render, screen, fireEvent, act, cleanup } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import BattlefieldGrid from './BattlefieldGrid';
 import { getAnimationDuration } from '../utils/animationConfigs';
@@ -292,6 +292,131 @@ describe('BattlefieldGrid', () => {
             const { container } = render(<BattlefieldGrid combat={combat} tab="overview" zoom={1} />);
 
             expect(container.querySelectorAll('[data-testid="threat-line"]').length).toBe(0);
+        });
+    });
+
+    describe('decaying reach renders as a gradient, not a ring', () => {
+        // A bow has no hard maximum: it can be fired at any distance and
+        // accuracy simply bleeds away past `start`. mvrange.max is where a
+        // full 100-point hit chance would decay to zero, not a wall.
+        // The viewport is 13 cells, so a plateau of 3 ft has its transition
+        // on screen and there is a real dissolve to draw.
+        const decayingMove = {
+            name: 'ShootBow', category: 'Offensive',
+            current_stage: 0, beats_left: 2,
+            mvrange: { min: 1, max: 203 },
+            falloff: { start: 3, per_ft: 0.5 },
+        };
+        const selectEnemyWith = (move) => {
+            const combat = {
+                ...mockCombat,
+                enemies: [{ ...mockCombat.enemies[0], current_move: move }],
+            };
+            const result = render(<BattlefieldGrid combat={combat} tab="overview" zoom={1} />);
+            fireEvent.click(screen.getByText('G'));
+            return result;
+        };
+
+        it('dissolves outward instead of drawing a wall the engine does not have', () => {
+            const { container } = selectEnemyWith(decayingMove);
+            const indicator = container.querySelector('[data-testid="range-ring"]');
+
+            expect(indicator.dataset.shape).toBe('falloff');
+            expect(indicator.style.background).toContain('radial-gradient');
+            // Solid to the plateau, then fading — no hard border anywhere.
+            expect(indicator.style.border).toBe('');
+        });
+
+        it('scales the gradient to the viewport, not to the nominal max reach', () => {
+            const { container } = selectEnemyWith(decayingMove);
+            const indicator = container.querySelector('[data-testid="range-ring"]');
+
+            // Sizing to mvrange.max (203ft => 406 cells) against a 13-cell view
+            // would put the whole visible field inside the plateau, rendering a
+            // flat wash with no gradient visible at all. Drawn radius is
+            // 1.5 * (13/2) = 9.75 cells => 19.5 diameter => 1950%.
+            expect(indicator.style.width).toBe('1950%');
+            // Plateau at 3 of 9.75 => 30.77% of the radius.
+            expect(indicator.style.background).toContain('30.77%');
+        });
+
+        it('marks the plateau — the last distance at full accuracy', () => {
+            const { container } = selectEnemyWith(decayingMove);
+            const plateau = container.querySelector('[data-testid="range-plateau"]');
+
+            // start=3 => a 6-cell diameter, as a percentage of the 1-cell anchor.
+            expect(plateau.style.width).toBe('600%');
+            expect(plateau.style.height).toBe(plateau.style.width);
+        });
+
+        it('draws nothing when the whole visible field is still at full accuracy', () => {
+            // The realistic bow case: a 20ft plateau against a 13-cell view
+            // means every square the player can see is at undiminished
+            // accuracy. A gradient here would be a uniform tint conveying
+            // nothing, so the honest output is no indicator at all.
+            const { container } = selectEnemyWith({
+                ...decayingMove,
+                mvrange: { min: 6, max: 2020 },
+                falloff: { start: 20, per_ft: 0.05 },
+            });
+            expect(container.querySelectorAll('[data-testid="range-ring"]').length).toBe(0);
+        });
+
+        it('fades in proportion to the accuracy actually lost, not decoratively', () => {
+            // The whole justification for a gradient is that its density reads
+            // as hit chance. A fixed dramatic fade would overstate a shallow
+            // decay by an order of magnitude — a confident-looking lie.
+            const gentle = selectEnemyWith(decayingMove)
+                .container.querySelector('[data-testid="range-ring"]').style.background;
+            cleanup();
+            const brutal = selectEnemyWith({
+                ...decayingMove,
+                falloff: { start: 3, per_ft: 12 },
+            }).container.querySelector('[data-testid="range-ring"]').style.background;
+
+            // Same plateau, same drawn radius — only the decay rate differs, so
+            // only the outer stop may differ, and the steeper decay must be the
+            // fainter one at the edge.
+            // jsdom normalizes the hex+alpha stops to rgba(), so read the
+            // alpha off the last colour stop in the gradient.
+            const outerAlpha = (bg) => {
+                const stops = bg.match(/rgba\([^)]*\)/g);
+                return parseFloat(stops[stops.length - 1].split(',').pop());
+            };
+            expect(outerAlpha(brutal)).toBeLessThan(outerAlpha(gentle));
+        });
+
+        it('is not suppressed merely for exceeding the viewport, unlike a hard ring', () => {
+            // A hard ring bigger than the view is suppressed because its edge
+            // — the only thing it encodes — would be off screen. A gradient
+            // still says something inside the view, so the same rule must not
+            // apply to it.
+            const { container } = selectEnemyWith(decayingMove);
+            expect(container.querySelectorAll('[data-testid="range-ring"]').length).toBe(1);
+        });
+
+        it('still draws a hard ring for a move whose accuracy does not decay', () => {
+            const { container } = selectEnemyWith({
+                name: 'PowerStrike', category: 'Attack',
+                current_stage: 0, beats_left: 1,
+                mvrange: { min: 0, max: 3 },
+                falloff: null,
+            });
+            const indicator = container.querySelector('[data-testid="range-ring"]');
+
+            expect(indicator.dataset.shape).toBe('ring');
+            expect(indicator.style.background).toBe('');
+            expect(container.querySelector('[data-testid="range-plateau"]')).toBeNull();
+        });
+
+        it('treats a zero decay rate as no decay at all', () => {
+            const { container } = selectEnemyWith({
+                name: 'Odd', category: 'Attack',
+                current_stage: 0, beats_left: 1,
+                mvrange: { min: 0, max: 3 },
+                falloff: { start: 2, per_ft: 0 },
+            });
+            expect(container.querySelector('[data-testid="range-ring"]').dataset.shape).toBe('ring');
         });
     });
 

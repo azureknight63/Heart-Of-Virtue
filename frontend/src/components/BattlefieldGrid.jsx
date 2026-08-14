@@ -1206,41 +1206,132 @@ const ThreatLineLayer = React.memo(({ entitiesToRender, getEntityCenterPct }) =>
 });
 
 // ---------------------------------------------------------------------------
-// RangeRingLayer — a faint ring at the selected combatant's max move range,
-// so the player can see what it threatens without opening the move detail.
-// Anchored the same way JeanSpotlight anchors its pulse: a getEntityStyle
-// cell rect flex-centers a percentage-sized ring around it, so the ring
-// inherits the cell's camera/pan/fit position for free.
+// RangeRingLayer — what the selected combatant's move threatens.
+//
+// Two shapes, because the engine has two kinds of reach:
+//
+//   Bounded move (no falloff): a hard edge at mvrange.max. A crisp ring is
+//   honest — inside is in range, outside is not.
+//
+//   Decaying move (falloff present): reach is *unbounded*. A bow can be fired
+//   at any distance; accuracy simply bleeds away at `per_ft` hit-chance points
+//   for every foot past `start`, down to the engine's 2% floor. Drawing a ring
+//   at mvrange.max would invent a wall that does not exist. It renders instead
+//   as a disc that is solid out to `start` — the plateau where accuracy is
+//   untouched — and then dissolves outward, reaching transparent exactly where
+//   the falloff would have eaten a full 100 points. The gradient IS the hit
+//   chance: how solid the fill is at a given radius is how likely the shot is.
+//
+// Anchored like JeanSpotlight: a getEntityStyle cell rect flex-centers a
+// percentage-sized element, so both shapes inherit camera/pan/fit position.
 // ---------------------------------------------------------------------------
+
+// Fill alpha at full accuracy. The gradient's outer stop is this scaled by the
+// accuracy actually remaining there, so the fill's density is a direct readout
+// of hit chance rather than a decorative fade.
+// Kept low deliberately: this fill can cover the entire viewport, and it sits
+// under the tokens, the threat lines and the breadcrumb trail. At 0.28 it
+// washed the whole map amber.
+const FALLOFF_CORE_ALPHA = 0.12;
+
+/** `#rrggbb` + a 0-1 alpha as the two-digit hex suffix the theme uses. */
+const withAlpha = (hex, alpha) => {
+  const clamped = Math.round(Math.min(1, Math.max(0, alpha)) * 255);
+  return `${hex}${clamped.toString(16).padStart(2, '0')}`;
+};
+
 const RangeRingLayer = React.memo(({ entity, getEntityStyle, gridCols }) => {
   const move = entity?.current_move || entity?.prepared_move;
   const maxRange = move?.mvrange?.max;
   if (!entity || typeof maxRange !== 'number' || maxRange <= 0) return null;
 
-  const diameterCells = maxRange * 2;
-  // A ring wider than the viewport reads as an edge-to-edge wash rather than
-  // a legible "here's the threat radius" cue, so it is suppressed instead of
-  // drawn illegibly large.
-  if (diameterCells > gridCols) return null;
-
   const style = getEntityStyle(getPos(entity), 15);
   if (!style) return null; // selected entity currently off screen
 
-  const diameterPct = diameterCells * 100; // percent of the 1-cell anchor rect
+  const falloff = move.falloff;
+  const decays = falloff && typeof falloff.start === 'number' && falloff.per_ft > 0;
+
+  if (!decays) {
+    const diameterCells = maxRange * 2;
+    // A hard ring wider than the viewport reads as an edge-to-edge wash rather
+    // than a legible "here's the threat radius" cue, so it is suppressed
+    // instead of drawn illegibly large. A decaying move has no such edge to
+    // miss, which is why the gradient below is not subject to this.
+    if (diameterCells > gridCols) return null;
+    return (
+      <div style={{ position: 'absolute', inset: 0, padding: spacing.sm, pointerEvents: 'none' }}>
+        <div style={{ position: 'absolute', ...style, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div
+            data-testid="range-ring"
+            data-shape="ring"
+            style={{
+              width: `${diameterCells * 100}%`,
+              height: `${diameterCells * 100}%`,
+              borderRadius: '50%',
+              border: `1px solid ${colors.gold}`,
+              opacity: 0.35,
+            }}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  // The decay is gradual relative to arena size: a bow plateaus to ~20 ft and
+  // then sheds 0.05 points/ft, while an arena is 9-33 cells across (~1 ft per
+  // cell). Sizing the element to mvrange.max (2020 ft => 4040 cells) would put
+  // the entire viewport inside the plateau — a flat wash with no visible
+  // gradient and no information. So the indicator is drawn at *viewport*
+  // scale, and is suppressed outright when the whole visible field is at full
+  // accuracy, because then there is genuinely nothing to depict.
+  const visibleRadiusCells = gridCols / 2;
+  if (falloff.start >= visibleRadiusCells) return null;
+
+  // Reach past the viewport edge so the fade is not cut off mid-transition,
+  // but never out to the (enormous) nominal max.
+  const drawRadius = Math.min(maxRange, visibleRadiusCells * 1.5);
+  const plateauFraction = Math.min(0.95, Math.max(0, falloff.start / drawRadius));
+  // Remaining hit chance at the drawn edge, as a fraction of a full 100
+  // points. This is the engine's own linear decay, so the alpha at any radius
+  // really is how likely the shot is at that distance.
+  const edgeRetention = Math.max(0, 1 - ((drawRadius - falloff.start) * falloff.per_ft) / 100);
+  const diameterCells = drawRadius * 2;
 
   return (
     <div style={{ position: 'absolute', inset: 0, padding: spacing.sm, pointerEvents: 'none' }}>
-      <div
-        style={{ position: 'absolute', ...style, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-      >
+      <div style={{ position: 'absolute', ...style, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <div
           data-testid="range-ring"
+          data-shape="falloff"
           style={{
-            width: `${diameterPct}%`,
-            height: `${diameterPct}%`,
+            width: `${diameterCells * 100}%`,
+            height: `${diameterCells * 100}%`,
             borderRadius: '50%',
-            border: `1px solid ${colors.gold}`,
-            opacity: 0.35,
+            // Solid to the plateau edge, then a linear bleed to whatever
+            // accuracy is actually left at the drawn edge. The outer stop is
+            // the core scaled by real retention — NOT a fixed dramatic fade.
+            // With current engine constants a bow sheds under 3 points across
+            // anything the player can see, so this is deliberately a near-flat
+            // tint: a strong visible dissolve would overstate the decay by an
+            // order of magnitude, which is worse than showing nothing.
+            background: `radial-gradient(circle, `
+              + `${withAlpha(colors.secondary, FALLOFF_CORE_ALPHA)} 0%, `
+              + `${withAlpha(colors.secondary, FALLOFF_CORE_ALPHA)} ${(plateauFraction * 100).toFixed(2)}%, `
+              + `${withAlpha(colors.secondary, FALLOFF_CORE_ALPHA * edgeRetention)} 100%)`,
+          }}
+        />
+        {/* A thin marker on the plateau edge: the last distance at which the
+            shot is at full accuracy, which is the number a player actually
+            aims to stay inside. */}
+        <div
+          data-testid="range-plateau"
+          style={{
+            position: 'absolute',
+            width: `${falloff.start * 2 * 100}%`,
+            height: `${falloff.start * 2 * 100}%`,
+            borderRadius: '50%',
+            border: `1px dashed ${colors.secondary}`,
+            opacity: 0.4,
           }}
         />
       </div>
