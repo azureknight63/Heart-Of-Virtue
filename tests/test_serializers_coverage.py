@@ -383,6 +383,7 @@ class TestCombatantSerializer:
         # them unguarded; a bare MagicMock would return an unpackable Mock.
         move.get_effective_range_max.return_value = None
         move.get_accuracy_falloff.return_value = None
+        move.beats_until_resolve.return_value = None
         combatant.current_move = move
         result = self.CombatantSerializer._serialize_active_move(combatant)
         assert result is not None
@@ -396,10 +397,12 @@ class TestCombatantSerializer:
                 "name", "category", "description", "current_stage", "beats_left",
                 # Part of the real Move API the serializer reaches for.
                 "get_effective_range_max", "get_accuracy_falloff",
+                "beats_until_resolve",
             ]
         )
         move.get_effective_range_max.return_value = None
         move.get_accuracy_falloff.return_value = None
+        move.beats_until_resolve.return_value = None
         move.name = "Slash"
         move.category = "Attack"
         move.description = "Slash"
@@ -426,6 +429,7 @@ class TestCombatantSerializer:
         cooldown_move.stage_beat = [0, 1, 0, 4]
         cooldown_move.get_effective_range_max.return_value = None
         cooldown_move.get_accuracy_falloff.return_value = None
+        cooldown_move.beats_until_resolve.return_value = None
         combatant.current_move = None
         combatant.known_moves = [cooldown_move]
 

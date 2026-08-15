@@ -26,13 +26,30 @@ export function isMovePending(move) {
 }
 
 /**
- * Beats remaining before a pending move resolves, or null when the move is not
- * pending / carries no countdown. Rendered as the countdown badge on a token.
+ * Beats remaining before a pending move's effect lands, or null when there is
+ * no countdown to show. Rendered as the countdown badge on a token.
+ *
+ * This is a passthrough of the engine's `Move.beats_until_resolve`, not a
+ * derivation. `beats_left` is beats left in the move's *current stage*, which
+ * is a much smaller number — a move showing 3 with a 4-beat execute stage
+ * actually lands 9 beats away — and working that out requires walking the same
+ * stage machine `Move.advance` does, including its rule that a zero-length
+ * stage resolves in the same beat as the one before it. Re-deriving that here
+ * would put a second copy of the engine's stage machine in JavaScript, free to
+ * drift, which is the mistake CLAUDE.md records for the inlined to-hit
+ * arithmetic.
+ *
+ * The `beats_left` fallback exists for stage-less payloads (which
+ * `isMovePending` deliberately treats as pending); it is the best available
+ * answer there, not a correct one.
  */
 export function beatsUntilResolve(move) {
   if (!isMovePending(move)) return null;
+  const resolved = move.beats_until_resolve;
+  if (typeof resolved === 'number' && resolved > 0) return resolved;
   const left = move.beats_left;
-  return typeof left === 'number' && left >= 0 ? left : null;
+  // 0 is never a correct reading: "lands this beat" is 1.
+  return typeof left === 'number' && left > 0 ? left : null;
 }
 
 /**

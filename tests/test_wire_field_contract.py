@@ -315,7 +315,11 @@ ACTIVE_MOVE_CONTRACT = {
     # combatant stops looking like one winding up; beatsUntilResolve() renders
     # the countdown badge on the token.
     "current_stage": "combatMoveStatus.js isMovePending / formatCombatMoveStatus",
-    "beats_left": "combatMoveStatus.js beatsUntilResolve -> countdown badge",
+    "beats_left": "combatMoveStatus.js beatsUntilResolve fallback (stage-less payloads)",
+    # The countdown badge renders THIS, not beats_left: the latter is beats
+    # left in the current stage, which for a windup move is a much smaller
+    # number than the time until the blow actually lands.
+    "beats_until_resolve": "combatMoveStatus.js beatsUntilResolve -> countdown badge",
     "falloff": "BattlefieldGrid.jsx RangeRingLayer — gradient vs hard ring",
     # Threat-line/range-ring feature: who the pending move is aimed at, and
     # how far it reaches. target_id MUST be resolved through

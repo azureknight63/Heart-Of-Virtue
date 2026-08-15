@@ -120,7 +120,10 @@ describe('BattlefieldGrid', () => {
     });
 
     describe('reading the fight at a glance', () => {
-        const pendingMove = { name: 'Reap', category: 'Attack', current_stage: 0, beats_left: 2 };
+        const pendingMove = {
+            name: 'Reap', category: 'Attack',
+            current_stage: 0, beats_left: 2, beats_until_resolve: 7,
+        };
 
         it('shows how many beats until an in-progress move resolves', () => {
             const combat = {
@@ -129,7 +132,11 @@ describe('BattlefieldGrid', () => {
             };
             render(<BattlefieldGrid combat={combat} tab="overview" zoom={1} />);
 
-            expect(screen.getByLabelText('Move resolves in 2 beats')).toBeInTheDocument();
+            // The engine-computed time to land (7), not beats_left (2) — the
+            // latter is only beats left in the current stage, and telling the
+            // player 2 when the blow lands in 7 mis-times every reaction.
+            expect(screen.getByLabelText('Move resolves in 7 beats')).toBeInTheDocument();
+            expect(screen.queryByLabelText('Move resolves in 2 beats')).toBeNull();
         });
 
         it('does not telegraph a move that is only cooling down', () => {

@@ -38,9 +38,9 @@ const defaults = () =>
  */
 const urlForcedFlags = () => {
   if (typeof window === 'undefined') return [];
-  const match = /[?&]flags=([^&#]*)/.exec(window.location.search);
-  if (!match) return [];
   try {
+    const match = /[?&]flags=([^&#]*)/.exec(window.location?.search);
+    if (!match) return [];
     // A hand-edited or truncated URL can carry malformed percent-encoding
     // (e.g. a bare trailing `%`), which throws. This runs at module import
     // time (`let state = load()` below) — an uncaught throw here would fail

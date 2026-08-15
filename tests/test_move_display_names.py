@@ -53,6 +53,9 @@ def test_active_move_serialization_keeps_internal_name_and_adds_display_name():
         def get_accuracy_falloff(self, user):
             return None
 
+        def beats_until_resolve(self):
+            return None
+
     class CombatantProbe:
         current_move = MoveProbe()
         known_moves = []

@@ -8,6 +8,7 @@ import src.functions as functions  # noqa: F401
 import src.items as items  # noqa: F401
 import src.positions as positions  # noqa: F401
 from src.animations import animate_to_main_screen as animate  # noqa: F401
+from src.combatant import MOVE_STAGE_EXECUTE, MOVE_STAGE_PREP
 
 
 def _apply_carry_fatigue(user, fatigue_cost):
@@ -346,6 +347,44 @@ class Move:  # master class for all moves
         Return a float/int to override mvrange[1] during target selection, or None to use mvrange[1].
         """
         return None
+
+    def beats_until_resolve(self):
+        """Beats from now until this move's effect lands, or None once it has.
+
+        ``beats_left`` on its own is beats remaining in the *current stage*,
+        which is not the number a player can act on: a move showing 3 with a
+        4-beat execute stage actually lands 9 beats away. This walks the same
+        stage machine ``advance`` does, so the two can never disagree.
+
+        It lives here rather than in the web client on purpose. The rule that
+        makes it non-obvious — ``advance``'s ``while self.beats_left == 0``
+        loop runs a zero-length stage in the *same* beat as the one before it,
+        so a move with no execute stage resolves as soon as prep ends — is a
+        property of that loop twenty lines below, and a second copy of it in
+        JavaScript would drift from this one exactly as the inlined to-hit
+        arithmetic did (see CLAUDE.md).
+
+        Returns None for a move in recoil or cooldown: its effect already
+        happened, so there is nothing left to count down to.
+        """
+        stage = getattr(self, "current_stage", None)
+        if stage not in (MOVE_STAGE_PREP, MOVE_STAGE_EXECUTE):
+            return None
+        left = getattr(self, "beats_left", None)
+        if not isinstance(left, (int, float)) or isinstance(left, bool) or left < 0:
+            return None
+
+        # One extra beat in every case: draining to zero does not advance the
+        # stage, the *next* beat does.
+        if stage == MOVE_STAGE_EXECUTE:
+            return int(left) + 1
+
+        stage_beats = getattr(self, "stage_beat", None) or []
+        execute_beats = stage_beats[1] if len(stage_beats) > 1 else 0
+        if not isinstance(execute_beats, (int, float)) or execute_beats <= 0:
+            # Zero-length execute stage: prep and execute fire on one beat.
+            return int(left) + 1
+        return int(left) + 1 + int(execute_beats) + 1
 
     def get_accuracy_falloff(self, user):
         """Distance beyond which this move's accuracy decays, and how fast.

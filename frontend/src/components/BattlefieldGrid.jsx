@@ -1249,6 +1249,11 @@ const RangeRingLayer = React.memo(({ entity, getEntityStyle, gridCols }) => {
   const move = entity?.current_move || entity?.prepared_move;
   const maxRange = move?.mvrange?.max;
   if (!entity || typeof maxRange !== 'number' || maxRange <= 0) return null;
+  // Gate on pending like every other telegraph. move_in_progress hands back
+  // recoil/cooldown moves by design (src/combatant.py), so without this,
+  // selecting a combatant whose shot already fired drew a live threat radius
+  // for a spent move.
+  if (!isMovePending(move)) return null;
 
   const style = getEntityStyle(getPos(entity), 15);
   if (!style) return null; // selected entity currently off screen
@@ -1327,7 +1332,11 @@ const RangeRingLayer = React.memo(({ entity, getEntityStyle, gridCols }) => {
             // as the very wall this whole treatment exists to deny. The
             // informative span (centre to FALLOFF_EDGE_FEATHER_PCT) is where
             // alpha tracks retention.
-            background: `radial-gradient(circle, `
+            // closest-side, not the default farthest-corner: it puts the
+            // gradient's 100% exactly on the box edge, which is where the
+            // SVG rings' r=50 lands. With the default the stops sat at the
+            // half-diagonal and the rings never agreed with the fill.
+            background: `radial-gradient(closest-side, `
               + `${withAlpha(colors.secondary, FALLOFF_CORE_ALPHA)} 0%, `
               + `${withAlpha(colors.secondary, FALLOFF_CORE_ALPHA)} ${(plateauFraction * 100).toFixed(2)}%, `
               + `${withAlpha(colors.secondary, FALLOFF_CORE_ALPHA * edgeRetention)} ${FALLOFF_EDGE_FEATHER_PCT}%, `
@@ -1354,6 +1363,10 @@ const RangeRingLayer = React.memo(({ entity, getEntityStyle, gridCols }) => {
             overflow: 'visible',
           }}
           viewBox="0 0 100 100"
+          // Without this the rings render as true circles (xMidYMid meet)
+          // while the fill beside them is an ellipse whenever cells are not
+          // square — which is the default, squareBattlefieldCells being off.
+          preserveAspectRatio="none"
           aria-hidden="true"
         >
           {/* non-scaling-stroke keeps stroke width AND the dash pattern in
@@ -2109,14 +2122,14 @@ function BattlefieldGrid({
       if (style) result.push({ entity: combat.player, style, isPlayer: true, isHero: true });
     }
     combat?.allies?.forEach((ally) => {
-      if (ally.hp === undefined || ally.hp > 0 || (ally.health?.current ?? 0) > 0) {
+      if (isLiving(ally)) {
         const style = getEntityStyle(getPos(ally));
         if (style) result.push({ entity: ally, style, isPlayer: true, isHero: false });
       }
     });
     combat?.enemies?.forEach((enemy) => {
       if (dyingIds.has(enemy.id)) return;
-      if (enemy.hp === undefined || enemy.hp > 0 || (enemy.health?.current ?? 0) > 0) {
+      if (isLiving(enemy)) {
         const style = getEntityStyle(getPos(enemy));
         if (style) result.push({ entity: enemy, style, isPlayer: false });
       }
@@ -2305,7 +2318,14 @@ function BattlefieldGrid({
       {/* Edge markers for enemies outside the viewport. Outside panLayerRef so
           they stay pinned to the visible border while the map is panned, but
           inside the viewport box so they hug the map edge rather than the
-          panel edge when the map is letterboxed. */}
+          panel edge when the map is letterboxed.
+
+          Known limitation: the on/off-screen test uses the unpanned
+          leftX/topY, so after a drag (capped at 40% of the box, ~5 cells) the
+          marker set can disagree with what is actually visible by a few
+          columns. Do NOT "fix" this by adding touchPanRef to the memo deps —
+          it is a ref precisely so dragging does not re-render per frame, so
+          that edit would compile, look right, and do nothing. */}
       <OffScreenMarkers
         enemies={livingEnemies}
         leftX={leftX}

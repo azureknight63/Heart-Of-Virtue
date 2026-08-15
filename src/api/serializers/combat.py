@@ -346,6 +346,12 @@ class CombatantSerializer:
                     if hasattr(move, "stage_beat")
                     else 0
                 ),
+                # Beats until the move's effect actually lands. `beats_left`
+                # above is beats left in the CURRENT STAGE, which is a much
+                # smaller number — the battlefield countdown badge renders
+                # this one instead. Computed by the engine (Move.
+                # beats_until_resolve) so the stage machine has one owner.
+                "beats_until_resolve": move.beats_until_resolve(),
                 "target_id": CombatantSerializer._serialize_move_target_id(move),
                 "mvrange": CombatantSerializer._serialize_move_range(move),
                 "falloff": CombatantSerializer._serialize_move_falloff(move),
