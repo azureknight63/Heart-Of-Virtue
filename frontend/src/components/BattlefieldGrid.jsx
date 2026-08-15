@@ -52,11 +52,18 @@ export const VIEW_MODE_FIT = 'fit';
 const DRAG_CLICK_THRESHOLD_PX = 6;
 
 // Cells of breathing room around the combatant bounding box in fit mode.
+// Arena ceiling, mirroring get_dynamic_grid_size's clamp in
+// src/coordinate_config.py. Bounds a gridCols^2 loop and DOM-node count.
+const MAX_MAP_SIZE = 100;
+
 const FIT_PADDING = 2;
 // Fit framing is quantized to this many cells and only re-derived when the
 // current frame stops working (see fitBox below), so the map does not visibly
 // rescale every single beat as combatants shuffle a cell.
 const FIT_STEP = 4;
+// Ceiling on queued animations. Draining is ~1-2/sec (phase totals are
+// 500-1050ms), so a faster beat stream accumulates without this.
+const MAX_ANIMATION_QUEUE = 200;
 
 /**
  * Normalize the `zoom` prop onto a named view mode. The legacy encoding
@@ -1547,7 +1554,7 @@ function BattlefieldGrid({
     onAnimatingChangeRef.current?.(false)
   }, []);
 
-  // Smooth camera — zoomed mode only. All mutable values live in refs so the
+  // Smooth camera — follow mode only. All mutable values live in refs so the
   // RAF loop never needs to be recreated and only drives a React re-render
   // when the integer snap cell actually changes (i.e. Jean crosses a cell
   // boundary), keeping frame-level CPU cost off the React scheduler.
@@ -1585,17 +1592,16 @@ function BattlefieldGrid({
 
   // Resolve effective map size: API value → bounding box of entity positions → 9
   const resolvedMapSize = useMemo(() => {
-    if (mapSize && mapSize > 0) return mapSize;
+    // Clamped like the derived branch below: this value drives a gridCols^2
+    // cell loop and that many DOM nodes, so an out-of-range map_size from a
+    // regressed server would hang the tab rather than degrade.
+    if (mapSize && mapSize > 0) return Math.min(MAX_MAP_SIZE, Math.floor(mapSize));
     let maxCoord = 8; // floor at 9×9
     for (const e of allCombatants) {
       if (e?.position) maxCoord = Math.max(maxCoord, e.position.x, e.position.y);
     }
-    return Math.min(100, maxCoord + 1);
+    return Math.min(MAX_MAP_SIZE, maxCoord + 1);
   }, [mapSize, allCombatants]);
-
-  // Keep a ref so the RAF loop can read the latest value without being recreated
-  const mapSizeRef = useRef(resolvedMapSize);
-  useEffect(() => { mapSizeRef.current = resolvedMapSize; }, [resolvedMapSize]);
 
   // Touch pan handlers — attached via useEffect so touchmove can be non-passive
   const applyPanTransform = useCallback(() => {
@@ -1628,11 +1634,11 @@ function BattlefieldGrid({
     if (!el) return;
 
     const applyDelta = (dx, dy) => {
-      // Bounds are captured once per gesture: the container is 100% of the
-      // panel and cannot resize mid-drag, while reading them here forced a
-      // synchronous layout flush on every pointer move (60-120/s) over a
-      // subtree holding up to thousands of grid cells. Lazily initialised so
-      // a synthetic move with no preceding down-event still clamps.
+      // Bounds are captured once per gesture, not per move: the container is
+      // 100% of the panel and cannot resize mid-drag, and reading the rect on
+      // every pointer move (60-120/s) forces a synchronous layout flush over a
+      // subtree holding up to thousands of grid cells. Lazily initialised so a
+      // synthetic move with no preceding down-event still clamps.
       if (!dragBoundsRef.current) {
         const { width, height } = el.getBoundingClientRect();
         dragBoundsRef.current = { maxX: width * 0.4, maxY: height * 0.4 };
@@ -1708,7 +1714,11 @@ function BattlefieldGrid({
       window.removeEventListener('mouseup', onMouseUp);
       if (panDecayRafRef.current) cancelAnimationFrame(panDecayRafRef.current);
     };
-  }, [applyPanTransform]);
+    // `tab` is load-bearing: the enemies tab early-returns a different tree, so
+    // the container this effect binds to unmounts and a NEW one mounts on the
+    // way back. Without re-running, the listeners stay attached to the detached
+    // node and panning is silently dead for the rest of the session.
+  }, [applyPanTransform, tab]);
 
   // Reset pan when a new combat begins. Keyed on the props Battlefield passes
   // from the top-level combat object, NOT on `combat` — that prop is a beat
@@ -1719,6 +1729,10 @@ function BattlefieldGrid({
     if (panDecayRafRef.current) { cancelAnimationFrame(panDecayRafRef.current); panDecayRafRef.current = null; }
     touchPanRef.current = { x: 0, y: 0 };
     applyPanTransform();
+    // The queue is per-fight. Without this it lives for the whole session,
+    // replaying a finished fight's animations into the next one.
+    setAnimationQueue([]);
+    setLastProcessedStreamIndex(0);
   }, [combatId, combatActive, applyPanTransform]);
 
   // Clicking the map background clears the selection — as the panel's own
@@ -1783,7 +1797,7 @@ function BattlefieldGrid({
     }
     if (streamedAnimations.length > lastProcessedStreamIndex) {
       const next = streamedAnimations.slice(lastProcessedStreamIndex);
-      setAnimationQueue((prev) => [...prev, ...next]);
+      setAnimationQueue((prev) => [...prev, ...next].slice(-MAX_ANIMATION_QUEUE));
       setLastProcessedStreamIndex(streamedAnimations.length);
     }
   }, [streaming, streamedAnimations, lastProcessedStreamIndex]);
@@ -1808,10 +1822,10 @@ function BattlefieldGrid({
           const beatIdx = entry.beat_index ?? 0;
           const stateBefore = allBeatStates[Math.max(0, beatIdx - 1)];
           const stateAt = allBeatStates[beatIdx];
-          // Both sides through isLiving. These were hand-rolled with OPPOSITE
-          // defaults — `?? 1` here and `?? 0` below — so an enemy whose HP was
-          // omitted counted as alive before and dead after, firing a phantom
-          // death burst on a combatant that was still fighting.
+          // Both liveness checks must read a missing hp field identically.
+          // Divergent defaults across these two lines make an enemy count as
+          // alive before the blow and dead after it, firing a death burst on a
+          // combatant that is still fighting.
           const wasAlive = stateBefore?.enemies?.some(
             (en) => en.id === anim.target_id && isLiving(en)
           );
@@ -1829,7 +1843,7 @@ function BattlefieldGrid({
       });
 
       if (animations.length > 0) {
-        setAnimationQueue((prev) => [...prev, ...animations]);
+        setAnimationQueue((prev) => [...prev, ...animations].slice(-MAX_ANIMATION_QUEUE));
       }
       setLastProcessedLogIndex(displayedLogCount);
     }
@@ -1839,7 +1853,6 @@ function BattlefieldGrid({
   const playAnimation = useCallback((animData) => {
     const config = getAnimationConfig(animData.type);
     setActiveAnimation({ ...animData, config });
-    setAnimationPhase(config.phases[0].name);
 
     // Streaming (issue #436): fire this beat's ordered SFX as a 75% partial
     // stack at animation start (the engine authored the emissions); this
@@ -1899,7 +1912,9 @@ function BattlefieldGrid({
     };
 
     advancePhase();
-    // Safe: State setters are stable; ANIMATION_CONFIGS and animationCancelRef are module/ref level, keeping playAnimation reference stable. trackTimeout is stable (empty-dep useCallback).
+    // Omitted deps are stable by construction: state setters, animationCancelRef
+    // (a ref), and trackTimeout (empty-dep useCallback). Only playSFX and
+    // combatSpeed change this callback's behaviour.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playSFX, combatSpeed]);
 
@@ -1990,7 +2005,7 @@ function BattlefieldGrid({
     };
 
     if (!cameraRef.current) {
-      // First mount in zoomed mode — snap immediately, no animation
+      // First mount in follow mode — snap immediately, no animation
       snapImmediately();
       return;
     }
@@ -2100,7 +2115,8 @@ function BattlefieldGrid({
     leftX = snapCellRef.current.leftX;
     topY  = snapCellRef.current.topY;
   } else {
-    // Pre-snapState fallback — Jean always centered, no edge-clamping
+    // No snap committed yet (first frame, or a fit->follow switch) — Jean
+    // centered, no edge-clamping
     gridCols = VIEW_SIZE;
     leftX = playerPos.x - HALF_VIEW;
     topY  = playerPos.y + HALF_VIEW;

@@ -1369,6 +1369,29 @@ describe('BattlefieldGrid', () => {
             expect(screen.queryByTitle('Recenter the map')).toBeNull();
         });
 
+        it('still pans after a trip through the enemies tab', () => {
+            // The enemies tab early-returns a different tree, so the container
+            // the pan listeners are bound to unmounts and a NEW one mounts on
+            // the way back. If the effect does not re-run, the listeners stay
+            // on the detached node and panning is dead for the rest of the
+            // session — with nothing on screen to suggest why.
+            const { rerender, getByTestId } = render(
+                <BattlefieldGrid combat={mockCombat} tab="overview" zoom={1} />
+            );
+            rerender(<BattlefieldGrid combat={mockCombat} tab="enemies" zoom={1} />);
+            rerender(<BattlefieldGrid combat={mockCombat} tab="overview" zoom={1} />);
+
+            const gridEl = document.querySelector('[style*="cursor: grab"]');
+            gridEl.getBoundingClientRect = () => ({ width: 400, height: 400, top: 0, left: 0, right: 400, bottom: 400 });
+            const panLayer = getByTestId('battlefield-viewport').firstChild;
+
+            fireEvent.mouseDown(gridEl, { button: 0, clientX: 100, clientY: 100 });
+            fireEvent.mouseMove(window, { clientX: 70, clientY: 90 });
+            fireEvent.mouseUp(window);
+
+            expect(panLayer.style.transform).toBe('translate(-30.0px, -10.0px)');
+        });
+
         it('does not clear the selected combatant when a drag ends over the map', () => {
             const { gridEl } = renderPannableGrid();
 
