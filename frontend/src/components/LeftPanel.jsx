@@ -127,11 +127,53 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
     return combat.log.filter(entry => !displayedLogKeys.has(logEntryKey(entry)))
   }, [combat?.log, displayedLogKeys])
 
+  // Restart the revealed set when a new fight begins.
+  //
+  // The server clears `combat_log` per fight (ApiCombatAdapter.initialize_combat),
+  // so `combat.log` is per-fight — but `displayedLog` was only ever appended to,
+  // making it, and the `displayedLogCount` derived from it, cumulative for the
+  // whole session. Three things broke downstream of that mismatch:
+  //   * BattlefieldGrid slices `log.slice(lastProcessedLogIndex, displayedLogCount)`.
+  //     Its cursor resets each fight (RightPanel unmounts the battlefield when
+  //     combat ends) while the count did not, so from fight #2 the two indexed
+  //     different spaces: the whole log dumped at mount, then every later reveal
+  //     sliced past the end and returned nothing. Animations fired in one burst
+  //     at combat start and then stopped for the rest of the fight.
+  //   * The dedup above swallowed any fight-#2 line whose round/type/message
+  //     matched one from fight #1.
+  //   * `hasPendingLogs` (GamePage/useCombatCoordinator) compared a short new log
+  //     against the cumulative count, so the end-of-combat "wait for the log to
+  //     finish" guard was defeated.
+  //
+  // Done DURING RENDER, not in an effect: the reveal effect below depends on
+  // `combat.log` alone and reads `pendingLogEntries` from its closure, so on a
+  // new fight it runs before any effect could clear the old entries — and
+  // computes an EMPTY batch, because the stale keys dedup the new log away.
+  // Adjusting state in render makes React re-render with the cleared set first,
+  // which is the documented pattern for resetting state on a prop change.
+  // Keyed on combat_id: minted per fight, and stable across wave transitions
+  // and reinforcement spawns, so the same fight keeps its log.
+  const [prevCombatId, setPrevCombatId] = useState(combat?.combat_id)
+  const newCombatResetRef = useRef(false)
+  if (combat?.combat_id !== undefined && combat.combat_id !== prevCombatId) {
+    setPrevCombatId(combat.combat_id)
+    setDisplayedLog([])
+    newCombatResetRef.current = true
+  }
+
   // Detect page reload during combat: all logs pending on first batch (no logs displayed yet)
   const isPageReloadRecovery = useRef(false)
   useEffect(() => {
     // If we have pending logs but haven't displayed ANY yet, it's a reload recovery
     if (displayedLog.length === 0 && pendingLogEntries.length > 0) {
+      // ...unless we just emptied it ourselves for a new fight. Without this the
+      // reset would masquerade as a reload and replay every fight's opening
+      // lines with no delay between them.
+      if (newCombatResetRef.current) {
+        newCombatResetRef.current = false
+        isPageReloadRecovery.current = false
+        return
+      }
       isPageReloadRecovery.current = true
     } else if (displayedLog.length > 0) {
       // Once we've displayed any logs normally, no longer in reload recovery

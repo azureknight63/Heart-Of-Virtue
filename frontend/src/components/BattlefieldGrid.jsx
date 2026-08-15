@@ -1807,6 +1807,14 @@ function BattlefieldGrid({
     if (streaming) return; // beats drive animation instead (see effect above)
     const log = combatLog || combat?.log;
     if (!log) return;
+    // Mirror of the streaming guard above. LeftPanel empties its revealed set
+    // when a new fight starts, so displayedLogCount drops back to 0; without
+    // re-syncing, the stale cursor sits above it and the new fight's entries
+    // never enqueue.
+    if (displayedLogCount < lastProcessedLogIndex) {
+      setLastProcessedLogIndex(displayedLogCount);
+      return;
+    }
     if (displayedLogCount > lastProcessedLogIndex) {
       const newEntries = log.slice(lastProcessedLogIndex, displayedLogCount);
       const animations = [];
