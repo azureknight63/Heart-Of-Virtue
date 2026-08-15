@@ -1168,7 +1168,40 @@ class GameService:
         if not hasattr(tile, "events_here"):
             return events_triggered
 
-        for event in list(tile.events_here):
+        # Some events queue a follow-up event onto tile.events_here as a side
+        # effect of check_conditions() (e.g. AfterDefeatingKingSlime queuing
+        # Ch02KingSlimeMemoryFlash). A plain snapshot taken before iterating
+        # misses those newly queued events, since they're appended after the
+        # snapshot is captured. Process in waves — tracking which events have
+        # already been queued for processing — so a chained event fires
+        # within this same call instead of being stranded until the player
+        # happens to re-trigger tile entry.
+        enqueued_ids = {id(e) for e in tile.events_here}
+        queue = list(tile.events_here)
+        processed_ids = set()
+        # Chains are expected to be shallow (one event queuing a single
+        # follow-up, e.g. a defeat event queuing its memory-flash payoff).
+        # Cap iterations so a future event bug that keeps generating fresh
+        # instances (this codebase has hit event multi-fire bugs before —
+        # see Ch02KingSlimeMemoryFlash's needs_input/story-flag guards)
+        # can't hang the request in an unbounded loop.
+        max_iterations = max(50, len(queue) * 10)
+        iterations = 0
+        while queue:
+            iterations += 1
+            if iterations > max_iterations:
+                _log.warning(
+                    "trigger_tile_events exceeded %d iterations on tile %s; "
+                    "stopping to avoid a runaway event chain",
+                    max_iterations,
+                    getattr(tile, "name", tile),
+                )
+                break
+            event = queue.pop(0)
+            if id(event) in processed_ids:
+                continue
+            processed_ids.add(id(event))
+
             # LootEvents are created when the player interacts with a container.
             # They must NOT auto-fire on room entry — skip them here so they are
             # only processed via process_event_input when the player opens/loots.
@@ -1252,6 +1285,15 @@ class GameService:
                 self._apply_staged_payload(
                     event_data, clean_output, segments, conversation
                 )
+
+                # Pick up any events newly queued as a side effect of
+                # check_conditions() above, so a chained event (e.g. a
+                # post-victory memory-flash queued by a defeat event) is
+                # processed in this same pass.
+                for new_event in tile.events_here:
+                    if id(new_event) not in enqueued_ids:
+                        enqueued_ids.add(id(new_event))
+                        queue.append(new_event)
 
             events_triggered.append(event_data)
 

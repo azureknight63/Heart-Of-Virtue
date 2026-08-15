@@ -197,3 +197,35 @@ def test_stream_combat_result_emits_ended_when_flagged():
     events = [e for e, _, _ in sock.emits]
     assert ENDED_EVENT in events
     assert RESOLVED_EVENT not in events
+
+
+def test_stream_combat_result_ended_payload_carries_full_state():
+    """combat:ended must carry battle_state/log, not just the bare end_state.
+
+    The client's applyCombatState() falls back to a synthesized shape with
+    log hardcoded to [] whenever the payload lacks combat_active/battle_state.
+    That wiped the killing blow's log entry and let the victory-dialog gate's
+    "no pending logs" check pass before the death animation had even been
+    queued, cutting the victory screen in before the kill was shown. The full
+    get_combat_state() result (which already contains end_state alongside
+    battle_state/log/combat_active) must be streamed, not just its end_state.
+    """
+    adapter = _bare_adapter()
+    sock = FakeSocketIO()
+    adapter._beat_streamer = CombatBeatStreamer(sock, "combat_s1")
+    result = {
+        "combat_active": False,
+        "battle_state": {"combatants": [], "status": "ended"},
+        "log": [{"message": "Jean lands the killing blow!", "animation": {}}],
+        "end_state": {"status": "victory", "id": "e1"},
+    }
+
+    adapter._stream_combat_result(result, [], ended=True)
+
+    payloads = [p for e, p, _ in sock.emits if e == ENDED_EVENT]
+    assert len(payloads) == 1
+    payload = payloads[0]
+    assert payload["battle_state"] == result["battle_state"]
+    assert payload["log"] == result["log"]
+    assert payload["combat_active"] is False
+    assert payload["end_state"] == result["end_state"]
