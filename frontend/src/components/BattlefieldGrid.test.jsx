@@ -1132,12 +1132,32 @@ describe('BattlefieldGrid', () => {
         });
     });
 
-    it('shows status effect icons at full opacity on hover', () => {
-        render(<BattlefieldGrid combat={mockCombat} tab="overview" zoom={1} />);
+    it('fades status effect icons to full opacity on hover', () => {
+        const combat = {
+            ...mockCombat,
+            enemies: [{
+                ...mockCombat.enemies[0],
+                status_effects: [{ name: 'Poisoned', type: 'debuff', beats_left: 3 }],
+            }],
+        };
+        render(<BattlefieldGrid combat={combat} tab="overview" zoom={1} />);
+
         const statusWrapper = document.querySelector('.absolute.bottom-full');
         expect(statusWrapper).not.toBeNull();
-        expect(() => fireEvent.mouseEnter(statusWrapper)).not.toThrow();
-        expect(() => fireEvent.mouseLeave(statusWrapper)).not.toThrow();
+
+        // Dimmed until hovered, so a field of tokens isn't a wall of icons.
+        expect(statusWrapper.style.opacity).toBe('0.35');
+        fireEvent.mouseEnter(statusWrapper);
+        expect(statusWrapper.style.opacity).toBe('1');
+        fireEvent.mouseLeave(statusWrapper);
+        expect(statusWrapper.style.opacity).toBe('0.35');
+    });
+
+    it('renders no status-effect wrapper for a combatant that has none', () => {
+        // The panel renders null for an empty list, so an unconditional wrapper
+        // was an empty div plus two live listeners on every token on the field.
+        render(<BattlefieldGrid combat={mockCombat} tab="overview" zoom={1} />);
+        expect(document.querySelector('.absolute.bottom-full')).toBeNull();
     });
 
     it('does not close the selected entity panel when clicking inside it', () => {
@@ -1151,10 +1171,13 @@ describe('BattlefieldGrid', () => {
         expect(screen.getByText('Jean')).toBeInTheDocument();
     });
 
-    it('falls back to Miscellaneous for a prepared_move with no category, in the enemies list', () => {
+    it('falls back to Miscellaneous for a move with no category, in the enemies list', () => {
         const combatEdge = {
             ...mockCombat,
-            enemies: [{ id: 'x', name: 'Wisp', hp: 10, max_hp: 10, prepared_move: { name: 'Cackle' }, position: { x: 1, y: 1 } }],
+            // current_move, not prepared_move: no serializer in src/ emits the
+            // latter, so a fixture built on it asserted through a wire name
+            // that does not exist — a mock agreeing with itself.
+            enemies: [{ id: 'x', name: 'Wisp', hp: 10, max_hp: 10, current_move: { name: 'Cackle' }, position: { x: 1, y: 1 } }],
         };
         render(<BattlefieldGrid combat={combatEdge} tab="enemies" zoom={1} />);
         expect(screen.getByText(/Cackle/)).toBeInTheDocument();
@@ -1244,7 +1267,7 @@ describe('BattlefieldGrid', () => {
     it('renders a marker with no pending move without a category glow/border', () => {
         const combatEdge = {
             ...mockCombat,
-            player: { ...mockCombat.player, current_move: undefined, prepared_move: undefined },
+            player: { ...mockCombat.player, current_move: undefined },
         };
         render(<BattlefieldGrid combat={combatEdge} tab="overview" zoom={1} />);
         expect(screen.getByText('J')).toBeInTheDocument();

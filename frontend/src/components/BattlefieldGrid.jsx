@@ -123,7 +123,7 @@ const CombatantMarker = React.memo(({
   animationState = null,
   displaySymbol = null,
 }) => {
-  const move = entity.current_move || entity.prepared_move;
+  const move = entity.current_move;
   // Only a move that has not resolved yet is intent. Keying the glow on the
   // mere presence of a move lit up combatants in recoil/cooldown exactly like
   // one charging an attack, so the strongest signal on the map meant nothing.
@@ -131,7 +131,7 @@ const CombatantMarker = React.memo(({
   const moveCategory = pending ? (move.category || 'Miscellaneous') : null;
   const pendingGlowColor = moveCategory ? MOVE_CATEGORY_GLOW[moveCategory] : null;
   const pendingBorderColor = moveCategory ? MOVE_CATEGORY_BORDER[moveCategory] : null;
-  const beatsLeft = beatsUntilResolve(move);
+  const beatsToResolve = beatsUntilResolve(move);
   const [isHoveredEffect, setIsHoveredEffect] = React.useState(false);
 
   // Alignment border: lime for friend/player, red for enemy. When a pending
@@ -303,7 +303,7 @@ const CombatantMarker = React.memo(({
           move resolves. The pulsing category glow says "something is coming";
           this says *when*, which is the half the player actually needs to
           decide between blocking, closing distance, or getting clear. */}
-      {!isCompact && beatsLeft !== null && (
+      {!isCompact && beatsToResolve !== null && (
         <div
           className="absolute pointer-events-none select-none z-20 flex items-center justify-center rounded-full"
           style={{
@@ -321,15 +321,18 @@ const CombatantMarker = React.memo(({
             border: '1px solid rgba(0,0,0,0.6)',
             textShadow: 'none',
           }}
-          title={`Resolves ${formatBeatCountdown(beatsLeft)}`}
-          aria-label={`Move resolves ${formatBeatCountdown(beatsLeft)}`}
+          title={`Resolves ${formatBeatCountdown(beatsToResolve)}`}
+          aria-label={`Move resolves ${formatBeatCountdown(beatsToResolve)}`}
         >
-          {beatsLeft}
+          {beatsToResolve}
         </div>
       )}
 
-      {/* Status effects — fade to full on hover */}
-      {!isCompact && (
+      {/* Status effects — fade to full on hover. Gated on there being any:
+          StatusEffectsIconPanel renders null for an empty list, so without
+          this every marker on the field carries an empty positioned div, two
+          mouse listeners and an opacity transition that can never show. */}
+      {!isCompact && entity.status_effects?.length > 0 && (
         <div
           className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 pointer-events-auto transition-opacity duration-200"
           style={{ opacity: isHoveredEffect ? 1 : 0.35 }}
@@ -390,15 +393,18 @@ const EnemiesList = React.memo(({ enemies }) => (
   <div style={{ padding: spacing.md, overflowY: 'auto', height: '100%', backgroundColor: colors.bg.main }}>
     <div style={{ display: 'flex', flexDirection: 'column', gap: spacing.sm }}>
       {enemies?.map((enemy, idx) => {
-        // Through resolveEntityStats, not re-derived: the inline version this
-        // replaced skipped the helper's health.current fallback, so an enemy in
-        // the nested legacy shape showed a full bar here and a correct torus on
-        // the map.
-        const hpPct = resolveEntityStats(enemy).hpPct * 100;
-        const move = enemy.current_move || enemy.prepared_move;
+        // Every HP read here goes through resolveEntityStats — bar AND
+        // numerals. Routing only the bar through it (as an earlier fix did)
+        // is worse than routing neither: an enemy in the nested legacy shape
+        // then renders a correct-looking bar above "HP: undefined / undefined".
+        // Local is `hpPercent` because the helper's `hpPct` is a 0-1 fraction
+        // and mixing the two silently multiplies by 100.
+        const { hp, maxHp, hpPct } = resolveEntityStats(enemy);
+        const hpPercent = hpPct * 100;
+        const move = enemy.current_move;
         const category = isMovePending(move) ? (move.category || 'Miscellaneous') : null;
         const categoryColor = category ? MOVE_CATEGORY_BORDER[category] : null;
-        const beatsLeft = beatsUntilResolve(move);
+        const beatsToResolve = beatsUntilResolve(move);
         return (
           <div
             key={enemy.id ?? `${enemy.name}-${idx}`}
@@ -416,7 +422,7 @@ const EnemiesList = React.memo(({ enemies }) => (
               <div>
                 <GameText variant="secondary" weight="bold" size="sm">{enemy.name}</GameText>
                 <GameText variant="secondary" size="xs" style={{ marginTop: spacing.xs }}>
-                  HP: {enemy.hp} / {enemy.max_hp}
+                  HP: {hp} / {maxHp}
                   {enemy.distance !== undefined && (
                     <span style={{ color: colors.text.muted }}> · {enemy.distance} ft</span>
                   )}
@@ -429,8 +435,8 @@ const EnemiesList = React.memo(({ enemies }) => (
                   <GameText size="xs" style={{ marginTop: spacing.xs, color: categoryColor || colors.text.muted }}>
                     ◆ {formatCombatMoveStatus(move)}
                     {category && <span style={{ opacity: 0.6 }}> ({category})</span>}
-                    {beatsLeft !== null && (
-                      <span style={{ opacity: 0.85 }}> — {formatBeatCountdown(beatsLeft)}</span>
+                    {beatsToResolve !== null && (
+                      <span style={{ opacity: 0.85 }}> — {formatBeatCountdown(beatsToResolve)}</span>
                     )}
                   </GameText>
                 )}
@@ -442,7 +448,7 @@ const EnemiesList = React.memo(({ enemies }) => (
                 style={{
                   height: '100%',
                   background: `linear-gradient(to right, ${colors.danger}, ${colors.secondary})`,
-                  width: `${hpPct}%`
+                  width: `${hpPercent}%`
                 }}
               />
             </div>
@@ -505,7 +511,7 @@ const EntityTooltip = React.memo(({ entity, showDistance }) => {
         </div>
         <div className="text-orange/80 text-[9px] flex justify-between gap-2">
           <span className="font-mono">
-            {formatCombatMoveStatus(entity.current_move || entity.prepared_move) || 'Idle'}
+            {formatCombatMoveStatus(entity.current_move) || 'Idle'}
           </span>
         </div>
       </div>
@@ -617,7 +623,11 @@ const EntityLayer = React.memo(({
             cursor: item.isDying ? 'default' : 'pointer',
             pointerEvents: item.isDying ? 'none' : 'auto',
             ...item.style,
-            zIndex: isHighlighted ? 50 : (item.style.zIndex || 20)
+            // The animating token must lift above the one it is striking.
+            // This has to live on the wrapper: it is absolutely positioned
+            // with a numeric z-index, so it forms a stacking context and any
+            // z-index set on the inner motion div is scoped inside it.
+            zIndex: animState ? 100 : (isHighlighted ? 50 : (item.style.zIndex || 20))
           }}
         >
           <div style={{
@@ -727,7 +737,7 @@ const SelectedEntityPanel = React.memo(({ entity, onClose }) => {
           <div className="pt-2 border-t border-white/10">
             <div className="text-[10px] text-white/60 mb-1">MOVE IN PROGRESS</div>
             <div className="text-orange text-xs font-bold">
-              {formatCombatMoveStatus(entity.current_move || entity.prepared_move) || 'Idle'}
+              {formatCombatMoveStatus(entity.current_move) || 'Idle'}
             </div>
           </div>
         </div>
@@ -1146,7 +1156,7 @@ const ThreatLineLayer = React.memo(({ entitiesToRender, getEntityCenterPct }) =>
     for (const item of entitiesToRender) {
       if (item.isDying) continue;
       const source = item.entity;
-      const move = source.current_move || source.prepared_move;
+      const move = source.current_move;
       if (!isMovePending(move)) continue;
       const targetId = move.target_id;
       if (!targetId || targetId === source.id) continue; // untargeted / self-target
@@ -1231,9 +1241,10 @@ const ThreatLineLayer = React.memo(({ entitiesToRender, getEntityCenterPct }) =>
 // Fill alpha at full accuracy. The gradient's outer stop is this scaled by the
 // accuracy actually remaining there, so the fill's density is a direct readout
 // of hit chance rather than a decorative fade.
-// Kept low deliberately: this fill can cover the entire viewport, and it sits
-// under the tokens, the threat lines and the breadcrumb trail. At 0.28 it
-// washed the whole map amber.
+// Kept low deliberately: this fill can cover the entire viewport. It sits
+// under the tokens (z 20+) and over the breadcrumb (z 5) and threat-line
+// (z 6) layers, so it must not compete with either. At 0.28 it washed the
+// whole map amber.
 const FALLOFF_CORE_ALPHA = 0.12;
 // Radius percentage at which the fill stops encoding retention and starts
 // feathering out, so the disc has no hard rim.
@@ -1241,14 +1252,17 @@ const FALLOFF_EDGE_FEATHER_PCT = 88;
 
 /** `#rrggbb` + a 0-1 alpha as the two-digit hex suffix the theme uses. */
 const withAlpha = (hex, alpha) => {
+  // Non-finite would survive the clamp and produce `#rrggbbNaN`, a 9-digit
+  // colour that invalidates the whole gradient declaration.
+  if (!Number.isFinite(alpha)) return `${hex}00`;
   const clamped = Math.round(Math.min(1, Math.max(0, alpha)) * 255);
   return `${hex}${clamped.toString(16).padStart(2, '0')}`;
 };
 
 const RangeRingLayer = React.memo(({ entity, getEntityStyle, gridCols }) => {
-  const move = entity?.current_move || entity?.prepared_move;
+  const move = entity?.current_move;
   const maxRange = move?.mvrange?.max;
-  if (!entity || typeof maxRange !== 'number' || maxRange <= 0) return null;
+  if (!entity || !Number.isFinite(maxRange) || maxRange <= 0) return null;
   // Gate on pending like every other telegraph. move_in_progress hands back
   // recoil/cooldown moves by design (src/combatant.py), so without this,
   // selecting a combatant whose shot already fired drew a live threat radius
@@ -1259,7 +1273,8 @@ const RangeRingLayer = React.memo(({ entity, getEntityStyle, gridCols }) => {
   if (!style) return null; // selected entity currently off screen
 
   const falloff = move.falloff;
-  const decays = falloff && typeof falloff.start === 'number' && falloff.per_ft > 0;
+  const decays = falloff && Number.isFinite(falloff.start) && falloff.per_ft > 0
+    && Number.isFinite(falloff.per_ft);
 
   if (!decays) {
     const diameterCells = maxRange * 2;
@@ -1288,7 +1303,7 @@ const RangeRingLayer = React.memo(({ entity, getEntityStyle, gridCols }) => {
   }
 
   // The decay is gradual relative to arena size: a bow plateaus to ~20 ft and
-  // then sheds 0.05 points/ft, while an arena is 9-33 cells across (~1 ft per
+  // then sheds 0.05 points/ft, while an arena is 9-100 cells across (~1 ft per
   // cell). Sizing the element to mvrange.max (2020 ft => 4040 cells) would put
   // the entire viewport inside the plateau — a flat wash with no visible
   // gradient and no information. So the indicator is drawn at *viewport*
