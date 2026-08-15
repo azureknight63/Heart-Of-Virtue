@@ -325,6 +325,11 @@ describe('BattlefieldGrid', () => {
             expect(indicator.style.background).toContain('radial-gradient');
             // Solid to the plateau, then fading — no hard border anywhere.
             expect(indicator.style.border).toBe('');
+            // ...and the fill feathers to nothing at its rim rather than
+            // ending in a hard circle, which would read as the wall this
+            // treatment exists to deny.
+            const stops = indicator.style.background.match(/rgba\([^)]*\)/g);
+            expect(parseFloat(stops[stops.length - 1].split(',').pop())).toBe(0);
         });
 
         it('scales the gradient to the viewport, not to the nominal max reach', () => {
@@ -333,20 +338,51 @@ describe('BattlefieldGrid', () => {
 
             // Sizing to mvrange.max (203ft => 406 cells) against a 13-cell view
             // would put the whole visible field inside the plateau, rendering a
-            // flat wash with no gradient visible at all. Drawn radius is
-            // 1.5 * (13/2) = 9.75 cells => 19.5 diameter => 1950%.
-            expect(indicator.style.width).toBe('1950%');
-            // Plateau at 3 of 9.75 => 30.77% of the radius.
-            expect(indicator.style.background).toContain('30.77%');
+            // flat wash with no gradient visible at all. Drawn radius is the
+            // viewport's inscribed circle, 13/2 = 6.5 cells => 13 diameter.
+            expect(indicator.style.width).toBe('1300%');
+            // Plateau at 3 of 6.5 => 46.15% of the radius.
+            expect(indicator.style.background).toContain('46.15%');
         });
 
         it('marks the plateau — the last distance at full accuracy', () => {
             const { container } = selectEnemyWith(decayingMove);
             const plateau = container.querySelector('[data-testid="range-plateau"]');
 
-            // start=3 => a 6-cell diameter, as a percentage of the 1-cell anchor.
-            expect(plateau.style.width).toBe('600%');
-            expect(plateau.style.height).toBe(plateau.style.width);
+            // Drawn radius is the inscribed 6.5 cells, so a 3-cell plateau
+            // sits at 3/6.5 of the way out => 23.08 in the 0-50 viewBox radius.
+            expect(Number(plateau.getAttribute('r'))).toBeCloseTo(23.08, 1);
+        });
+
+        it('adds a sparser outer ring so the boundary reads as porous, not a wall', () => {
+            const { container } = selectEnemyWith(decayingMove);
+            const plateau = container.querySelector('[data-testid="range-plateau"]');
+            const outer = container.querySelector('[data-testid="range-outer"]');
+
+            // Both rings are dashed, but the outer one has far more gap than
+            // dash — that contrast is what says "this edge is soft".
+            const gapRatio = (el) => {
+                const [dash, gap] = el.getAttribute('stroke-dasharray').split(' ').map(Number);
+                return gap / dash;
+            };
+            expect(gapRatio(outer)).toBeGreaterThan(gapRatio(plateau));
+            expect(Number(outer.getAttribute('r'))).toBeGreaterThan(Number(plateau.getAttribute('r')));
+
+            // Without this the element's scale (up to ~20x a cell) multiplies
+            // the dash pattern and both rings smear into solid lines.
+            expect(outer.getAttribute('vector-effect')).toBe('non-scaling-stroke');
+            expect(plateau.getAttribute('vector-effect')).toBe('non-scaling-stroke');
+        });
+
+        it('draws no dashed rings for a bounded move', () => {
+            const { container } = selectEnemyWith({
+                name: 'PowerStrike', category: 'Attack',
+                current_stage: 0, beats_left: 1,
+                mvrange: { min: 0, max: 3 },
+                falloff: null,
+            });
+            expect(container.querySelector('[data-testid="range-plateau"]')).toBeNull();
+            expect(container.querySelector('[data-testid="range-outer"]')).toBeNull();
         });
 
         it('draws nothing when the whole visible field is still at full accuracy', () => {
@@ -377,11 +413,14 @@ describe('BattlefieldGrid', () => {
             // Same plateau, same drawn radius — only the decay rate differs, so
             // only the outer stop may differ, and the steeper decay must be the
             // fainter one at the edge.
-            // jsdom normalizes the hex+alpha stops to rgba(), so read the
-            // alpha off the last colour stop in the gradient.
+            // Stops are [core, plateau-edge, retention, feather-to-nothing].
+            // The retention stop is the one that encodes accuracy; the final
+            // feather is always zero (it only softens the drawn rim), so
+            // reading the last stop would compare 0 against 0.
+            const RETENTION_STOP = 2;
             const outerAlpha = (bg) => {
                 const stops = bg.match(/rgba\([^)]*\)/g);
-                return parseFloat(stops[stops.length - 1].split(',').pop());
+                return parseFloat(stops[RETENTION_STOP].split(',').pop());
             };
             expect(outerAlpha(brutal)).toBeLessThan(outerAlpha(gentle));
         });

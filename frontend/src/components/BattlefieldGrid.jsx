@@ -1233,6 +1233,9 @@ const ThreatLineLayer = React.memo(({ entitiesToRender, getEntityCenterPct }) =>
 // under the tokens, the threat lines and the breadcrumb trail. At 0.28 it
 // washed the whole map amber.
 const FALLOFF_CORE_ALPHA = 0.12;
+// Radius percentage at which the fill stops encoding retention and starts
+// feathering out, so the disc has no hard rim.
+const FALLOFF_EDGE_FEATHER_PCT = 88;
 
 /** `#rrggbb` + a 0-1 alpha as the two-digit hex suffix the theme uses. */
 const withAlpha = (hex, alpha) => {
@@ -1287,9 +1290,11 @@ const RangeRingLayer = React.memo(({ entity, getEntityStyle, gridCols }) => {
   const visibleRadiusCells = gridCols / 2;
   if (falloff.start >= visibleRadiusCells) return null;
 
-  // Reach past the viewport edge so the fade is not cut off mid-transition,
-  // but never out to the (enormous) nominal max.
-  const drawRadius = Math.min(maxRange, visibleRadiusCells * 1.5);
+  // The drawn extent is the circle inscribed in the viewport: large enough to
+  // cover the field the player is looking at, small enough that its edge — and
+  // so the outer ring drawn on it — is actually on screen. Reaching further
+  // (an earlier version used 1.5x) pushed that ring permanently out of view.
+  const drawRadius = Math.min(maxRange, visibleRadiusCells);
   const plateauFraction = Math.min(0.95, Math.max(0, falloff.start / drawRadius));
   // Remaining hit chance at the drawn edge, as a fraction of a full 100
   // points. This is the engine's own linear decay, so the alpha at any radius
@@ -1314,26 +1319,66 @@ const RangeRingLayer = React.memo(({ entity, getEntityStyle, gridCols }) => {
             // anything the player can see, so this is deliberately a near-flat
             // tint: a strong visible dissolve would overstate the decay by an
             // order of magnitude, which is worse than showing nothing.
+            // The last stop is a feather to nothing over the outermost few
+            // percent. That is a *drawing* boundary, not an accuracy claim —
+            // it stops the disc from ending in a hard circle that would read
+            // as the very wall this whole treatment exists to deny. The
+            // informative span (centre to FALLOFF_EDGE_FEATHER_PCT) is where
+            // alpha tracks retention.
             background: `radial-gradient(circle, `
               + `${withAlpha(colors.secondary, FALLOFF_CORE_ALPHA)} 0%, `
               + `${withAlpha(colors.secondary, FALLOFF_CORE_ALPHA)} ${(plateauFraction * 100).toFixed(2)}%, `
-              + `${withAlpha(colors.secondary, FALLOFF_CORE_ALPHA * edgeRetention)} 100%)`,
+              + `${withAlpha(colors.secondary, FALLOFF_CORE_ALPHA * edgeRetention)} ${FALLOFF_EDGE_FEATHER_PCT}%, `
+              + `${withAlpha(colors.secondary, 0)} 100%)`,
           }}
         />
-        {/* A thin marker on the plateau edge: the last distance at which the
-            shot is at full accuracy, which is the number a player actually
-            aims to stay inside. */}
-        <div
-          data-testid="range-plateau"
+        {/* Two dashed rings, drawn as SVG because CSS `border-style: dashed`
+            gives no control over dash length or gap — and the gap is the whole
+            point here. The inner ring is tightly dashed: a real transition,
+            the last distance at full accuracy. The outer one is drawn with
+            long gaps between short dashes, so it reads as a boundary that is
+            porous rather than a wall — the shot carries on past it, just less
+            and less reliably. Together they say "solid to here, thinning out
+            to there, and still going" in a way a single ring cannot.
+
+            The outer ring marks the edge of the drawn falloff, not a range
+            limit — there isn't one. Its sparseness is doing the talking; the
+            plateau ring is the one carrying an actual number. */}
+        <svg
           style={{
             position: 'absolute',
-            width: `${falloff.start * 2 * 100}%`,
-            height: `${falloff.start * 2 * 100}%`,
-            borderRadius: '50%',
-            border: `1px dashed ${colors.secondary}`,
-            opacity: 0.4,
+            width: `${diameterCells * 100}%`,
+            height: `${diameterCells * 100}%`,
+            overflow: 'visible',
           }}
-        />
+          viewBox="0 0 100 100"
+          aria-hidden="true"
+        >
+          {/* non-scaling-stroke keeps stroke width AND the dash pattern in
+              screen pixels; without it both would be multiplied by the
+              element's scale (up to ~20x a cell) and the dashes would smear
+              into a solid line. */}
+          <circle
+            data-testid="range-plateau"
+            cx="50" cy="50" r={plateauFraction * 50}
+            fill="none"
+            stroke={colors.secondary}
+            strokeWidth="1"
+            strokeDasharray="4 3"
+            vectorEffect="non-scaling-stroke"
+            opacity="0.45"
+          />
+          <circle
+            data-testid="range-outer"
+            cx="50" cy="50" r="49"
+            fill="none"
+            stroke={colors.secondary}
+            strokeWidth="1"
+            strokeDasharray="2 14"
+            vectorEffect="non-scaling-stroke"
+            opacity="0.3"
+          />
+        </svg>
       </div>
     </div>
   );
