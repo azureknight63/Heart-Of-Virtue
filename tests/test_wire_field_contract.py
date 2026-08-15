@@ -322,8 +322,8 @@ ACTIVE_MOVE_CONTRACT = {
     # CombatantSerializer.stream_id (see _serialize_move_target_id) or the
     # frontend can never match it against a combatant's own `id` — the same
     # drift class this whole file exists to catch.
-    "target_id": "BattlefieldGrid.jsx ThreatLineLayer entity.currentMove.target_id",
-    "mvrange": "BattlefieldGrid.jsx RangeRingLayer entity.currentMove.mvrange",
+    "target_id": "BattlefieldGrid.jsx ThreatLineLayer entity.current_move.target_id",
+    "mvrange": "BattlefieldGrid.jsx RangeRingLayer entity.current_move.mvrange",
 }
 
 # StatusEffectsIconPanel.jsx renders each element of status_effects/passives.

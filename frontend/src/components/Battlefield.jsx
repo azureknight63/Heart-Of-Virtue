@@ -107,7 +107,7 @@ export default function Battlefield({ combat, currentLogIndex, displayedLogCount
   }, [currentLogIndex, combat?.beat_states])
 
   // Hint the player to expand the view when a living enemy is beyond the
-  // zoomed viewport. The glow is suppressed while already in full-map mode.
+  // follow-mode viewport. The glow is suppressed while already in Fit Fight.
   const enemyOffScreen = useMemo(
     () => zoom !== VIEW_MODE_FIT && anyEnemyOffScreen(displayState),
     [zoom, displayState]

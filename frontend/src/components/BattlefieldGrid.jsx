@@ -390,9 +390,11 @@ const EnemiesList = React.memo(({ enemies }) => (
   <div style={{ padding: spacing.md, overflowY: 'auto', height: '100%', backgroundColor: colors.bg.main }}>
     <div style={{ display: 'flex', flexDirection: 'column', gap: spacing.sm }}>
       {enemies?.map((enemy, idx) => {
-        const hpPct = enemy.max_hp > 0
-          ? Math.min(1, Math.max(0, enemy.hp / enemy.max_hp)) * 100
-          : 0;
+        // Through resolveEntityStats, not re-derived: the inline version this
+        // replaced skipped the helper's health.current fallback, so an enemy in
+        // the nested legacy shape showed a full bar here and a correct torus on
+        // the map.
+        const hpPct = resolveEntityStats(enemy).hpPct * 100;
         const move = enemy.current_move || enemy.prepared_move;
         const category = isMovePending(move) ? (move.category || 'Miscellaneous') : null;
         const categoryColor = category ? MOVE_CATEGORY_BORDER[category] : null;
@@ -968,8 +970,9 @@ const DeathBurst = () => {
 };
 
 // ---------------------------------------------------------------------------
-// JeanSpotlight — pulsing ring overlaid on Jean's cell in full-map mode so the
-// player can always locate her at a glance when tokens are tiny.
+// JeanSpotlight — pulsing ring overlaid on Jean's cell whenever tokens are
+// compact (see `isCompact`), so the player can still locate her when they are
+// too small to read.
 // ---------------------------------------------------------------------------
 const JeanSpotlight = React.memo(({ player, getEntityStyle }) => {
   const pos = getPos(player);
@@ -1122,7 +1125,6 @@ const OffScreenMarkers = React.memo(({ enemies, leftX, topY, gridCols }) => {
   );
 });
 
-// ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
 // ThreatLineLayer — a line from each combatant with a pending move to that
 // move's target, so intent gets a *who* to go with the existing beat-
@@ -1490,7 +1492,13 @@ function BattlefieldGrid({
   const snapCellRef  = useRef(null); // { leftX, topY } — last committed integer snap
   const contentDivRef = useRef(null); // wrapper div that receives the sub-cell CSS transform
   const cameraRafRef  = useRef(null);
-  const [snapState, setSnapState] = useState(null); // triggers re-render on cell boundary cross
+  // Deliberately write-only: the render path reads `snapCellRef.current` (always
+  // current, unlike state during a RAF frame), so this value is never consumed.
+  // It exists solely to re-render when the camera crosses a cell boundary.
+  // Do NOT "clean up" as unused state — deleting it freezes the camera at its
+  // first snap, and no test catches that because the ref keeps reading correctly.
+  const [, forceSnapRender] = useState(0);
+  const setSnapState = useCallback(() => forceSnapRender((n) => n + 1), []);
 
   // Touch pan — a separate layer that moves independently of the RAF camera,
   // so panning doesn't interfere with the smooth camera animation.
@@ -1870,8 +1878,9 @@ function BattlefieldGrid({
     }
 
     cameraRafRef.current = requestAnimationFrame(animateCamera);
-    // Safe: animateCamera only reads mutable refs; setSnapState is a stable setter.
-  }, []);
+    // Safe: animateCamera only reads mutable refs; setSnapState is a stable
+    // useCallback, so animateCamera's own identity stays stable too.
+  }, [setSnapState]);
 
   // Update camera target whenever Jean moves or the view mode changes
   useEffect(() => {
@@ -1908,8 +1917,9 @@ function BattlefieldGrid({
     }
 
     // If Jean would leave the viewport during a smooth animation (jump > HALF_VIEW
-    // cells), snap instead. Moves ≤ HALF_VIEW always keep Jean within the 9-cell
-    // window; larger jumps (log skipping, combat start) would make her invisible.
+    // cells), snap instead. Moves ≤ HALF_VIEW always keep Jean within the
+    // VIEW_SIZE-cell window; larger jumps (log skipping, combat start) would
+    // make her invisible.
     const pendingX = Math.abs(tgtX - cameraRef.current.x);
     const pendingY = Math.abs(tgtY - cameraRef.current.y);
     if (pendingX > HALF_VIEW || pendingY > HALF_VIEW) {
@@ -1921,7 +1931,7 @@ function BattlefieldGrid({
     if (!cameraRafRef.current) {
       cameraRafRef.current = requestAnimationFrame(animateCamera);
     }
-  }, [isFitMode, playerPos.x, playerPos.y, animateCamera, resolvedMapSize]);
+  }, [isFitMode, playerPos.x, playerPos.y, animateCamera, resolvedMapSize, setSnapState]);
 
   // Cancel camera RAF on unmount
   useEffect(() => () => {
@@ -2022,7 +2032,6 @@ function BattlefieldGrid({
   // full-detail for a skirmish and compact for a 30-cell brawl.
   const isCompact = gridCols > VIEW_SIZE;
 
-  /** Convert a world grid position to the absolute-CSS style needed by the layers. */
   /**
    * The viewport cell a world position falls in, or null when it is off
    * screen. Single source of the visibility test — everything that places
@@ -2034,6 +2043,7 @@ function BattlefieldGrid({
     return { col: pos.x - leftX, row: topY - pos.y };
   }, [leftX, topY, gridCols]);
 
+  /** Convert a world grid position to the absolute-CSS style the layers need. */
   const getEntityStyle = useCallback((pos, baseZ = 20) => {
     const cell = cellOf(pos);
     if (!cell) return null;
