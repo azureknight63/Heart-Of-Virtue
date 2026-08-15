@@ -1415,6 +1415,42 @@ const RangeRingLayer = React.memo(({ entity, getEntityStyle, gridCols }) => {
 });
 
 // ---------------------------------------------------------------------------
+// GridBackgroundLayer — the cell lattice, with off-map cells dimmed.
+//
+// Memoized as its own component rather than mapped inline in the render body.
+// The boolean array was already cached, but expanding it to elements inline
+// re-allocated gridCols^2 elements + props + style objects on EVERY render,
+// and React then reconciled that many keyed children whose props identity
+// always differed — writing no DOM. At ~15 renders per beat (each animation
+// phase, each poll) and up to 2,304 cells in a mid-size fit-mode fight, that
+// is tens of milliseconds per beat spent rebuilding a background that did not
+// change. Both props here are stable across poll/phase/hover/selection
+// renders, so the shallow compare skips the whole subtree.
+//
+// Memoizing only the mapped array would not do: reconcileChildrenArray still
+// walks and clones every child fiber even when each one bails.
+// ---------------------------------------------------------------------------
+const GridBackgroundLayer = React.memo(({ cells, gridCols }) => (
+  <div style={{
+    position: 'absolute', inset: 0,
+    display: 'grid', gap: '1px', padding: spacing.sm,
+    gridTemplateColumns: `repeat(${gridCols}, minmax(0, 1fr))`,
+    gridTemplateRows: `repeat(${gridCols}, minmax(0, 1fr))`,
+    pointerEvents: 'none'
+  }}>
+    {cells.map((onMap, i) => (
+      <div
+        key={i}
+        style={{
+          backgroundColor: onMap ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.35)',
+          borderRadius: '2px'
+        }}
+      />
+    ))}
+  </div>
+));
+
+// ---------------------------------------------------------------------------
 // BattlefieldGrid — main exported component
 // ---------------------------------------------------------------------------
 function BattlefieldGrid({
@@ -1526,7 +1562,7 @@ function BattlefieldGrid({
   // Do NOT "clean up" as unused state — deleting it freezes the camera at its
   // first snap, and no test catches that because the ref keeps reading correctly.
   const [, forceSnapRender] = useState(0);
-  const setSnapState = useCallback(() => forceSnapRender((n) => n + 1), []);
+  const bumpSnapRender = useCallback(() => forceSnapRender((n) => n + 1), []);
 
   // Touch pan — a separate layer that moves independently of the RAF camera,
   // so panning doesn't interfere with the smooth camera animation.
@@ -1539,6 +1575,8 @@ function BattlefieldGrid({
   // map background also fires a click; without this the gesture would clear
   // the selected-combatant panel every time the player panned.
   const dragTravelRef = useRef(0);
+  // Pan clamp bounds, captured at gesture start — see applyDelta.
+  const dragBoundsRef = useRef(null);
   // Mirrors "pan is non-zero" into React so the recenter affordance can render.
   // Panning is sticky (it used to spring back to center the instant you let
   // go, which made the advertised "drag to pan" do nothing), so the player
@@ -1590,9 +1628,16 @@ function BattlefieldGrid({
     if (!el) return;
 
     const applyDelta = (dx, dy) => {
-      const { width, height } = el.getBoundingClientRect();
-      const maxX = width * 0.4;
-      const maxY = height * 0.4;
+      // Bounds are captured once per gesture: the container is 100% of the
+      // panel and cannot resize mid-drag, while reading them here forced a
+      // synchronous layout flush on every pointer move (60-120/s) over a
+      // subtree holding up to thousands of grid cells. Lazily initialised so
+      // a synthetic move with no preceding down-event still clamps.
+      if (!dragBoundsRef.current) {
+        const { width, height } = el.getBoundingClientRect();
+        dragBoundsRef.current = { maxX: width * 0.4, maxY: height * 0.4 };
+      }
+      const { maxX, maxY } = dragBoundsRef.current;
       dragTravelRef.current += Math.abs(dx) + Math.abs(dy);
       touchPanRef.current = {
         x: Math.max(-maxX, Math.min(maxX, touchPanRef.current.x + dx)),
@@ -1603,6 +1648,8 @@ function BattlefieldGrid({
 
     const beginDrag = (x, y) => {
       if (panDecayRafRef.current) { cancelAnimationFrame(panDecayRafRef.current); panDecayRafRef.current = null; }
+      const { width, height } = el.getBoundingClientRect();
+      dragBoundsRef.current = { maxX: width * 0.4, maxY: height * 0.4 };
       dragTravelRef.current = 0;
       touchStartRef.current = { x, y };
     };
@@ -1761,11 +1808,15 @@ function BattlefieldGrid({
           const beatIdx = entry.beat_index ?? 0;
           const stateBefore = allBeatStates[Math.max(0, beatIdx - 1)];
           const stateAt = allBeatStates[beatIdx];
+          // Both sides through isLiving. These were hand-rolled with OPPOSITE
+          // defaults — `?? 1` here and `?? 0` below — so an enemy whose HP was
+          // omitted counted as alive before and dead after, firing a phantom
+          // death burst on a combatant that was still fighting.
           const wasAlive = stateBefore?.enemies?.some(
-            (en) => en.id === anim.target_id && (en.hp ?? en.health?.current ?? 1) > 0
+            (en) => en.id === anim.target_id && isLiving(en)
           );
           const isNowDead = !stateAt?.enemies?.some(
-            (en) => en.id === anim.target_id && (en.hp ?? en.health?.current ?? 0) > 0
+            (en) => en.id === anim.target_id && isLiving(en)
           );
           if (wasAlive && isNowDead) {
             const lastKnown = stateBefore.enemies.find((en) => en.id === anim.target_id);
@@ -1864,7 +1915,7 @@ function BattlefieldGrid({
   const playerPos = getPos(combat?.player);
 
   // Smooth camera RAF loop — reads only refs, drives contentDivRef transform
-  // directly (no React state per frame). setSnapState is called only when the
+  // directly (no React state per frame). bumpSnapRender is called only when the
   // integer cell boundary changes (~once per combat beat at most).
   const animateCamera = useCallback(() => {
     const cam = cameraRef.current;
@@ -1885,7 +1936,7 @@ function BattlefieldGrid({
       const snap = computeSnapOrigin(cameraRef.current);
       if (!snapCellRef.current || snap.leftX !== snapCellRef.current.leftX || snap.topY !== snapCellRef.current.topY) {
         snapCellRef.current = snap;
-        setSnapState({ ...snap });
+        bumpSnapRender();
       }
       return;
     }
@@ -1902,13 +1953,13 @@ function BattlefieldGrid({
 
     if (!snapCellRef.current || snap.leftX !== snapCellRef.current.leftX || snap.topY !== snapCellRef.current.topY) {
       snapCellRef.current = snap;
-      setSnapState({ ...snap });
+      bumpSnapRender();
     }
 
     cameraRafRef.current = requestAnimationFrame(animateCamera);
-    // Safe: animateCamera only reads mutable refs; setSnapState is a stable
+    // Safe: animateCamera only reads mutable refs; bumpSnapRender is a stable
     // useCallback, so animateCamera's own identity stays stable too.
-  }, [setSnapState]);
+  }, [bumpSnapRender]);
 
   // Update camera target whenever Jean moves or the view mode changes
   useEffect(() => {
@@ -1919,7 +1970,7 @@ function BattlefieldGrid({
       if (contentDivRef.current) contentDivRef.current.style.transform = '';
       cameraRef.current = null;
       snapCellRef.current = null;
-      setSnapState(null);
+      bumpSnapRender();
       return;
     }
 
@@ -1935,7 +1986,7 @@ function BattlefieldGrid({
       if (contentDivRef.current) contentDivRef.current.style.transform = '';
       const snap = computeSnapOrigin(cameraRef.current);
       snapCellRef.current = snap;
-      setSnapState({ ...snap });
+      bumpSnapRender();
     };
 
     if (!cameraRef.current) {
@@ -1959,7 +2010,7 @@ function BattlefieldGrid({
     if (!cameraRafRef.current) {
       cameraRafRef.current = requestAnimationFrame(animateCamera);
     }
-  }, [isFitMode, playerPos.x, playerPos.y, animateCamera, resolvedMapSize, setSnapState]);
+  }, [isFitMode, playerPos.x, playerPos.y, animateCamera, bumpSnapRender]);
 
   // Cancel camera RAF on unmount
   useEffect(() => () => {
@@ -2248,24 +2299,7 @@ function BattlefieldGrid({
       */}
       <div ref={panLayerRef} style={{ position: 'absolute', inset: 0 }}>
       <div ref={contentDivRef} style={{ position: 'absolute', inset: 0, willChange: 'transform' }}>
-        {/* Background grid */}
-        <div style={{
-          position: 'absolute', inset: 0,
-          display: 'grid', gap: '1px', padding: spacing.sm,
-          gridTemplateColumns: `repeat(${gridCols}, minmax(0, 1fr))`,
-          gridTemplateRows: `repeat(${gridCols}, minmax(0, 1fr))`,
-          pointerEvents: 'none'
-        }}>
-          {gridBgCells.map((onMap, i) => (
-            <div
-              key={i}
-              style={{
-                backgroundColor: onMap ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.35)',
-                borderRadius: '2px'
-              }}
-            />
-          ))}
-        </div>
+        <GridBackgroundLayer cells={gridBgCells} gridCols={gridCols} />
 
         {/* Arena extent marker — faint dashed rectangle around the real map,
             drawn whenever the viewport reaches past the world's edge, so the
@@ -2415,6 +2449,7 @@ EnemiesList.displayName = 'EnemiesList'
 BreadcrumbLayer.displayName = 'BreadcrumbLayer'
 EntityLayer.displayName = 'EntityLayer'
 SelectedEntityPanel.displayName = 'SelectedEntityPanel'
+GridBackgroundLayer.displayName = 'GridBackgroundLayer'
 EntityTooltip.displayName = 'EntityTooltip'
 OffScreenMarkers.displayName = 'OffScreenMarkers'
 EffectsLayer.displayName = 'EffectsLayer'
