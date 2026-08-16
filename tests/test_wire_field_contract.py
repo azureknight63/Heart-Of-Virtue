@@ -78,6 +78,7 @@ from src.npc._enemies import Slime
 from src.npc._merchants import Merchant
 from src.player import Player
 import src.states as states
+from src.narration import capture_narration
 
 
 def _assert_contract(payload: dict, contract: dict, label: str):
@@ -555,6 +556,59 @@ class TestCombatantWireContract:
             f"{predicted:.2f}% at {far} ft but the engine computes {actual}%."
         )
         assert actual < baseline
+
+    def test_the_aim_preview_describes_the_shot_that_will_be_taken(self):
+        """The falloff on the wire must not change when the shot resolves.
+
+        `prep` runs at the *last* beat of a 10-beat aim, and it used to be the
+        only place the arrow was chosen. So for the ten beats the client renders
+        a range gradient -- it renders only while a move is pending -- the wire
+        carried the `__init__` placeholder: 0.05 decay for a shot that resolved
+        at 2.1, and a 97% hit chance for one that landed at 45%. The player
+        aimed at a near-certain shot and got a coin flip.
+
+        This asserts the two agree across the whole aim, which is the property
+        the split between `_select_arrow` and `prep`'s side effects exists for.
+        """
+        player = Player()
+        player.eq_weapon = Shortbow()
+        arrow = IronArrow()
+        arrow.count = 10
+        player.inventory.append(arrow)
+        enemy = Slime()
+        player.combat_list = [enemy]
+        player.combat_list_allies = [player]
+        player.combat_proximity = {enemy: 45}
+
+        move = ShootBow(player)
+        move.user = player
+        move.target = enemy
+        player.current_move = move
+        move.cast()
+
+        def snapshot():
+            payload = CombatantSerializer.serialize_combatant(player)["current_move"]
+            return payload["falloff"], payload["mvrange"], move.calculate_hit_chance(enemy)
+
+        while_aiming = []
+        with capture_narration():
+            while move.current_stage == 0:
+                while_aiming.append(snapshot())
+                move.advance(player)
+            at_execute = snapshot()
+
+        assert len(while_aiming) > 1, "fixture is degenerate: no aim to preview"
+        assert while_aiming[0] == at_execute, (
+            f"the aim showed {while_aiming[0]} but the shot resolved as "
+            f"{at_execute} -- the preview is describing a different arrow"
+        )
+        assert all(beat == at_execute for beat in while_aiming), (
+            "the preview changed part-way through the aim"
+        )
+        # An iron arrow really does move the numbers, so this is not vacuous.
+        assert while_aiming[0][0]["per_ft"] == pytest.approx(
+            player.eq_weapon.range_decay * arrow.range_decay_modifier
+        )
 
     def test_no_falloff_for_a_move_whose_accuracy_does_not_decay(self):
         """Melee moves carry no decay, and must report none — the client uses
