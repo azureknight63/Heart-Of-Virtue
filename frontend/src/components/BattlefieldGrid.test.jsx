@@ -471,13 +471,14 @@ describe('BattlefieldGrid', () => {
         });
 
         it('stays near-flat for a real engine payload, rather than faking a dissolve', () => {
-            // Every fixture above uses a decay steep enough to see in a 13-cell
-            // view. The engine's real rates are 0.022-0.084 points/ft against a
-            // plateau of 10.5-30 ft, which only renders at all in a wide fit
-            // frame — and there it must stay honest: a crossbow sheds well
-            // under one point of hit chance across the whole drawn disc, so the
-            // alpha has to barely move. A "dramatic" fade here would overstate
-            // the decay by two orders of magnitude.
+            // The fixtures above are hand-picked to make the transition land
+            // inside a 13-cell view. This one uses the engine's real numbers
+            // (Crossbow: plateau 15 ft, 1.1 points of hit chance per foot past
+            // it — see tests/test_ranged_falloff_balance.py) in the wide fit
+            // frame where the treatment actually ships. The fade has to track
+            // that decay: visible, because a crossbow really does lose a third
+            // of its accuracy across a large arena, but still proportional
+            // rather than decorative.
             const spread = {
                 player: { ...mockCombat.player, position: { x: 0, y: 0, facing: 0 } },
                 enemies: [{
@@ -486,8 +487,8 @@ describe('BattlefieldGrid', () => {
                     current_move: {
                         name: 'ShootCrossbow', category: 'Offensive',
                         current_stage: 0, beats_left: 2,
-                        mvrange: { min: 1, max: 1681 },
-                        falloff: { start: 15, per_ft: 0.06 },
+                        mvrange: { min: 1, max: 106 },
+                        falloff: { start: 15, per_ft: 1.1 },
                     },
                 }],
             };
