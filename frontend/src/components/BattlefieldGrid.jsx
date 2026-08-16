@@ -1274,6 +1274,12 @@ const FALLOFF_CORE_ALPHA = 0.12;
 // Radius percentage at which the fill stops encoding retention and starts
 // feathering out, so the disc has no hard rim.
 const FALLOFF_EDGE_FEATHER_PCT = 88;
+// Ceiling on the plateau's share of the drawn radius. It is the feather stop,
+// not a round number: a plateau past that point would emit gradient stops in
+// descending order (`… plateau%, 88%, 100%`), which CSS resolves by clamping
+// the later stop up — collapsing the feather span and giving the disc the hard
+// rim this whole treatment exists to avoid.
+const MAX_PLATEAU_FRACTION = FALLOFF_EDGE_FEATHER_PCT / 100;
 
 /** `#rrggbb` + a 0-1 alpha as the two-digit hex suffix the theme uses. */
 const withAlpha = (hex, alpha) => {
@@ -1340,7 +1346,7 @@ const RangeRingLayer = React.memo(({ entity, getEntityStyle, gridCols }) => {
   // cover the field the player is looking at, small enough that its edge — and
   // so the outer ring drawn on it — stays on screen.
   const drawRadius = Math.min(maxRange, visibleRadiusCells);
-  const plateauFraction = Math.min(0.95, Math.max(0, falloff.start / drawRadius));
+  const plateauFraction = Math.min(MAX_PLATEAU_FRACTION, Math.max(0, falloff.start / drawRadius));
   // Remaining hit chance at the drawn edge, as a fraction of a full 100
   // points. This is the engine's own linear decay, so the alpha at any radius
   // really is how likely the shot is at that distance.

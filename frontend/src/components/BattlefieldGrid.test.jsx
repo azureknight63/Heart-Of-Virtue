@@ -455,6 +455,64 @@ describe('BattlefieldGrid', () => {
             expect(container.querySelector('[data-testid="range-plateau"]')).toBeNull();
         });
 
+        it('keeps the plateau inside the feather, so the disc never gains a rim', () => {
+            // A plateau past the feather stop would emit gradient stops out of
+            // order (`... 92%, 88%, 100%`); CSS clamps the later one up, which
+            // collapses the feather and leaves the hard rim this treatment
+            // exists to deny. start 6 of a 6.5-cell drawn radius is 92.3%.
+            const { container } = selectEnemyWith({
+                ...decayingMove,
+                falloff: { start: 6, per_ft: 0.5 },
+            });
+            const bg = container.querySelector('[data-testid="range-ring"]').style.background;
+            const positions = [...bg.matchAll(/(\d+(?:\.\d+)?)%/g)].map((m) => Number(m[1]));
+            expect(positions).toEqual([...positions].sort((a, b) => a - b));
+            expect(Math.max(...positions.slice(0, -1))).toBeLessThanOrEqual(88);
+        });
+
+        it('stays near-flat for a real engine payload, rather than faking a dissolve', () => {
+            // Every fixture above uses a decay steep enough to see in a 13-cell
+            // view. The engine's real rates are 0.022-0.084 points/ft against a
+            // plateau of 10.5-30 ft, which only renders at all in a wide fit
+            // frame — and there it must stay honest: a crossbow sheds well
+            // under one point of hit chance across the whole drawn disc, so the
+            // alpha has to barely move. A "dramatic" fade here would overstate
+            // the decay by two orders of magnitude.
+            const spread = {
+                player: { ...mockCombat.player, position: { x: 0, y: 0, facing: 0 } },
+                enemies: [{
+                    ...mockCombat.enemies[0],
+                    position: { x: 40, y: 40, facing: 180 },
+                    current_move: {
+                        name: 'ShootCrossbow', category: 'Offensive',
+                        current_stage: 0, beats_left: 2,
+                        mvrange: { min: 1, max: 1681 },
+                        falloff: { start: 15, per_ft: 0.06 },
+                    },
+                }],
+            };
+            const { container } = render(
+                <BattlefieldGrid combat={spread} tab="overview" zoom="fit" />
+            );
+            fireEvent.click(screen.getByText('G'));
+            const indicator = container.querySelector('[data-testid="range-ring"]');
+            expect(indicator.dataset.shape).toBe('falloff');
+
+            // Stops are [core, plateau-edge, retention, feather-to-nothing].
+            const alphas = indicator.style.background
+                .match(/rgba\([^)]*\)/g)
+                .map((stop) => parseFloat(stop.split(',').pop()));
+            expect(alphas[2]).toBeGreaterThan(0);
+            // The fade is real but tiny — a couple of percent of the core alpha
+            // across the whole disc, which is what the engine's decay actually
+            // costs. The synthetic fixtures above lose an order of magnitude
+            // more; if this ratio ever drops near theirs, the alpha has stopped
+            // tracking retention and started decorating.
+            const retentionRatio = alphas[2] / alphas[0];
+            expect(retentionRatio).toBeLessThan(1);
+            expect(retentionRatio).toBeGreaterThan(0.9);
+        });
+
         it('treats a zero decay rate as no decay at all', () => {
             const { container } = selectEnemyWith({
                 name: 'Odd', category: 'Attack',

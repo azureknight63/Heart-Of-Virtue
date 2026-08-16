@@ -72,7 +72,7 @@ from src.api.serializers.combat import (
 )
 from src.api.serializers.shop_serializer import ShopSerializer
 from src.api.services.game_service import GameService
-from src.items import Restorative, Shortbow
+from src.items import IronArrow, Restorative, Shortbow
 from src.moves import PowerStrike, ShootBow
 from src.npc._enemies import Slime
 from src.npc._merchants import Merchant
@@ -507,6 +507,54 @@ class TestCombatantWireContract:
             "fixture is degenerate: accuracy did not actually drop past "
             "`start`, so this test could pass with a zero falloff"
         )
+
+    def test_falloff_still_predicts_hit_chance_once_the_arrow_is_chosen(self):
+        """Same contract, but after `prep` has folded in the real ammunition.
+
+        ShootBow picks its arrow at the end of the prep stage, and the arrow
+        carries a `range_decay_modifier` (0.8-1.4). So the decay a bow reports
+        while aiming is the weapon's bare rate, and the decay it reports once
+        nocked is that rate scaled by the arrow. The test above only ever sees
+        the first of those, which would let an arrow-scaling regression pass:
+        both sides of its comparison read the same unrefreshed attribute.
+        """
+        player = Player()
+        player.eq_weapon = Shortbow()
+        arrow = IronArrow()
+        arrow.count = 10
+        player.inventory.append(arrow)
+        enemy = Slime()
+        player.combat_list = [enemy]
+        player.combat_list_allies = [player]
+
+        move = ShootBow(player)
+        move.current_stage = 0
+        move.beats_left = 1
+        player.current_move = move
+        move.prep(player)
+
+        falloff = CombatantSerializer.serialize_combatant(player)["current_move"]["falloff"]
+        start, per_ft = falloff["start"], falloff["per_ft"]
+
+        # The arrow really did move the rate — otherwise this test is just a
+        # second copy of the one above.
+        assert per_ft == pytest.approx(
+            player.eq_weapon.range_decay * arrow.range_decay_modifier
+        )
+        assert per_ft != pytest.approx(player.eq_weapon.range_decay)
+
+        player.combat_proximity = {enemy: int(start)}
+        baseline = move.calculate_hit_chance(enemy)
+        far = int(start) + 40
+        player.combat_proximity = {enemy: far}
+        actual = move.calculate_hit_chance(enemy)
+
+        predicted = baseline - (far - start) * per_ft
+        assert abs(actual - predicted) <= 1, (
+            f"serialized falloff (start={start}, per_ft={per_ft}) predicts "
+            f"{predicted:.2f}% at {far} ft but the engine computes {actual}%."
+        )
+        assert actual < baseline
 
     def test_no_falloff_for_a_move_whose_accuracy_does_not_decay(self):
         """Melee moves carry no decay, and must report none — the client uses
