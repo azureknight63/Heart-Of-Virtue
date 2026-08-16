@@ -470,10 +470,10 @@ describe('BattlefieldGrid', () => {
             expect(Math.max(...positions.slice(0, -1))).toBeLessThanOrEqual(88);
         });
 
-        it('stays near-flat for a real engine payload, rather than faking a dissolve', () => {
+        it('tracks the real engine decay rate for a production payload', () => {
             // The fixtures above are hand-picked to make the transition land
             // inside a 13-cell view. This one uses the engine's real numbers
-            // (Crossbow: plateau 15 ft, 1.1 points of hit chance per foot past
+            // (Crossbow: plateau 15 ft, 1.65 points of hit chance per foot past
             // it — see tests/test_ranged_falloff_balance.py) in the wide fit
             // frame where the treatment actually ships. The fade has to track
             // that decay: visible, because a crossbow really does lose a third
@@ -487,8 +487,8 @@ describe('BattlefieldGrid', () => {
                     current_move: {
                         name: 'ShootCrossbow', category: 'Offensive',
                         current_stage: 0, beats_left: 2,
-                        mvrange: { min: 1, max: 106 },
-                        falloff: { start: 15, per_ft: 1.1 },
+                        mvrange: { min: 1, max: 76 },
+                        falloff: { start: 15, per_ft: 1.65 },
                     },
                 }],
             };
@@ -504,14 +504,24 @@ describe('BattlefieldGrid', () => {
                 .match(/rgba\([^)]*\)/g)
                 .map((stop) => parseFloat(stop.split(',').pop()));
             expect(alphas[2]).toBeGreaterThan(0);
-            // The fade is real but tiny — a couple of percent of the core alpha
-            // across the whole disc, which is what the engine's decay actually
-            // costs. The synthetic fixtures above lose an order of magnitude
-            // more; if this ratio ever drops near theirs, the alpha has stopped
-            // tracking retention and started decorating.
+
+            // Rather than assert a magnitude band — which would be an arbitrary
+            // window that has to be retuned every time the engine is balanced —
+            // derive the expected fade from what was actually drawn and check
+            // proportionality. The plateau stop is `start / drawRadius`, so the
+            // rendered gradient tells us the radius it was sized to.
+            const plateauPct = Number(
+                indicator.style.background.match(/([\d.]+)%/g)[1].replace('%', '')
+            );
+            const drawRadius = 15 / (plateauPct / 100);
+            const expectedRetention = 1 - ((drawRadius - 15) * 1.65) / 100;
+
             const retentionRatio = alphas[2] / alphas[0];
+            // Loose enough only for 8-bit alpha quantisation (two decimals in
+            // the serialized rgba). A decorative fade would miss by far more.
+            expect(Math.abs(retentionRatio - expectedRetention)).toBeLessThan(0.03);
+            // ...and it must actually be a fade, not a flat tint.
             expect(retentionRatio).toBeLessThan(1);
-            expect(retentionRatio).toBeGreaterThan(0.9);
         });
 
         it('treats a zero decay rate as no decay at all', () => {

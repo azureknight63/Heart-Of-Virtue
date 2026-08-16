@@ -19,13 +19,28 @@ so a small skirmish spans ~9-15 ft and a large battle ~45-90 ft.
 
 import pytest
 
+from src.coordinate_config import CoordinateSystemConfig
 from src.items import Crossbow, Longbow, Shortbow
 
 RANGED_WEAPONS = [Shortbow, Longbow, Crossbow]
 
-# The largest arena is 100 cells square; a shot should stay usable across a
-# large battle without being usable across a county.
-LARGEST_ARENA_SPAN_FT = 100
+
+def arena_span_ft(combatant_count):
+    """Width of the arena the engine builds for this many combatants, in feet.
+
+    Read from `get_dynamic_grid_size` rather than hardcoded, so these bounds
+    move with the arena sizing instead of silently drifting from it. The player
+    argument is unused by that method.
+    """
+    return CoordinateSystemConfig(None).get_dynamic_grid_size(combatant_count)[0]
+
+
+# A 20-combatant battle is a large fight anyone will realistically play. Its
+# arena is the span every ranged weapon must still cover.
+LARGE_BATTLE_SPAN_FT = arena_span_ft(20)
+# The arena size caps out here, at 33+ combatants. Crossing THIS is deliberately
+# beyond some weapons — see the reach test below.
+LARGEST_ARENA_SPAN_FT = arena_span_ft(100)
 
 
 def effective_max_range(weapon):
@@ -36,18 +51,44 @@ def effective_max_range(weapon):
 
 @pytest.mark.parametrize("weapon_cls", RANGED_WEAPONS, ids=lambda c: c.__name__)
 def test_reach_covers_a_large_battle_without_being_unbounded(weapon_cls):
+    """Reach must span a large fight, but need not span the biggest one.
+
+    The floor is deliberately the 20-combatant arena and not the 100-cell
+    maximum: at the top end, a ranged attacker being unable to cover the whole
+    field is the point — it is what forces repositioning instead of standing at
+    the back plinking. Only the shortest-reach weapon should feel that, and only
+    in the largest battles, so the floor still guarantees ranged combat works
+    everywhere a fight is normally fought.
+    """
     weapon = weapon_cls()
     reach = effective_max_range(weapon)
 
-    assert reach >= LARGEST_ARENA_SPAN_FT, (
+    assert reach >= LARGE_BATTLE_SPAN_FT, (
         f"{weapon_cls.__name__} decays to zero accuracy at {reach:.0f} ft, "
-        f"inside the {LARGEST_ARENA_SPAN_FT} ft span of the largest arena — "
-        "ranged combat would stop working in a big battle."
+        f"inside the {LARGE_BATTLE_SPAN_FT} ft span of a 20-combatant arena — "
+        "ranged combat would stop working in an ordinary large battle."
     )
     assert reach <= 4 * LARGEST_ARENA_SPAN_FT, (
         f"{weapon_cls.__name__} carries to {reach:.0f} ft, several times the "
         "largest arena. Decay that gradual is indistinguishable from no decay "
         "at every distance a fight occurs, which is what made range free."
+    )
+
+
+def test_the_largest_battles_outrun_at_least_one_weapon():
+    """The positioning pressure this balance exists to create.
+
+    If every weapon covered the maximum arena from any position, distance would
+    be free again at the top end — the failure this file was written against.
+    """
+    outranged = [
+        cls.__name__
+        for cls in RANGED_WEAPONS
+        if effective_max_range(cls()) < LARGEST_ARENA_SPAN_FT
+    ]
+    assert outranged, (
+        f"every ranged weapon covers the full {LARGEST_ARENA_SPAN_FT} ft arena, "
+        "so nothing forces a ranged attacker to reposition in a huge battle"
     )
 
 
