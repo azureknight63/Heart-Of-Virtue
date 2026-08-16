@@ -26,7 +26,8 @@ const STORAGE_KEY = 'hovFeatureFlags';
 // issues #487/#489. Cap the read before JSON.parse rather than after, ignore
 // inherited/prototype keys, accept only registered names, and coerce to a
 // boolean so a hand-edited value can never reach a component as an object.
-const MAX_BLOB_BYTES = 4096;
+// The cap counts UTF-16 code units, not bytes — a sanity bound, not a quota.
+const MAX_BLOB_CHARS = 4096;
 
 const defaults = () =>
   Object.fromEntries(FLAG_NAMES.map((name) => [name, FEATURE_FLAGS[name].default]));
@@ -60,7 +61,7 @@ const load = () => {
   const state = defaults();
   try {
     const raw = typeof localStorage === 'undefined' ? null : localStorage.getItem(STORAGE_KEY);
-    if (raw && raw.length <= MAX_BLOB_BYTES) {
+    if (raw && raw.length <= MAX_BLOB_CHARS) {
       const parsed = JSON.parse(raw);
       if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
         for (const name of FLAG_NAMES) {

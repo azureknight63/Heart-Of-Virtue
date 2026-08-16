@@ -45,11 +45,14 @@ export function isMovePending(move) {
  */
 export function beatsUntilResolve(move) {
   if (!isMovePending(move)) return null;
+  // Number.isFinite, not `typeof === 'number'`: the latter admits Infinity and
+  // NaN, which render as the literal badge text "Infinity"/"NaN" in a 15px
+  // badge that has no overflow rule.
   const resolved = move.beats_until_resolve;
-  if (typeof resolved === 'number' && resolved > 0) return resolved;
+  if (Number.isFinite(resolved) && resolved > 0) return resolved;
   const left = move.beats_left;
   // 0 is never a correct reading: "lands this beat" is 1.
-  return typeof left === 'number' && left > 0 ? left : null;
+  return Number.isFinite(left) && left > 0 ? left : null;
 }
 
 /**

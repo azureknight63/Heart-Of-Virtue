@@ -4,7 +4,7 @@ import { colors, spacing, shadows, fonts } from '../styles/theme';
 import GameText from './GameText';
 import { useAudio } from '../context/AudioContext';
 import { getAnimationConfig, impactSfxFor } from '../utils/animationConfigs';
-import { MOVE_CATEGORY_COLOR, MOVE_CATEGORY_GLOW } from '../utils/categories';
+import { categoryColor, categoryColorOrNull, categoryGlowOrNull } from '../utils/categories';
 import { beatSfxFor } from '../utils/combatSfx';
 import { scheduleSfxChain, effectiveDuration } from '../utils/combatTiming';
 import { SFX_DURATIONS } from '../utils/sfxDurations';
@@ -39,11 +39,10 @@ const CAMERA_EPSILON = 0.004; // settle threshold (cells)
 // View modes
 // ---------------------------------------------------------------------------
 // `follow` keeps a fixed VIEW_SIZE window centered on Jean. `fit` frames every
-// living combatant instead of the whole arena: arenas scale to 3 cells per
-// combatant (src/coordinate_config.py) and can reach 100x100, so framing the
-// arena rendered thousands of empty cells and pea-sized tokens whenever the
-// fight was anything but a full-map brawl — which is what made "zoom out"
-// feel useless. Framing the action keeps tokens legible at every roster size.
+// living combatant, NOT the whole arena: arenas scale to 3 cells per combatant
+// (src/coordinate_config.py) and reach 100x100, so arena framing yields
+// thousands of empty cells and pea-sized tokens outside a full-map brawl.
+// Framing the action keeps tokens legible at every roster size.
 export const VIEW_MODE_FOLLOW = 'follow';
 export const VIEW_MODE_FIT = 'fit';
 
@@ -51,11 +50,11 @@ export const VIEW_MODE_FIT = 'fit';
 // rather than a click on the map.
 const DRAG_CLICK_THRESHOLD_PX = 6;
 
-// Cells of breathing room around the combatant bounding box in fit mode.
 // Arena ceiling, mirroring get_dynamic_grid_size's clamp in
 // src/coordinate_config.py. Bounds a gridCols^2 loop and DOM-node count.
 const MAX_MAP_SIZE = 100;
 
+// Cells of breathing room around the combatant bounding box in fit mode.
 const FIT_PADDING = 2;
 // Fit framing is quantized to this many cells and only re-derived when the
 // current frame stops working (see fitBox below), so the map does not visibly
@@ -67,8 +66,8 @@ const MAX_ANIMATION_QUEUE = 200;
 
 /**
  * Normalize the `zoom` prop onto a named view mode. The legacy encoding
- * (`1` = zoomed, `'full'` = whole arena) is still accepted so callers and
- * existing tests keep working.
+ * (`1` = follow, `'full'` = fit) is still accepted so callers and existing
+ * tests keep working.
  */
 const normalizeViewMode = (zoom) =>
   (zoom === VIEW_MODE_FIT || zoom === 'full') ? VIEW_MODE_FIT : VIEW_MODE_FOLLOW;
@@ -80,8 +79,9 @@ const formatBeatCountdown = (beats) => `in ${beats} beat${beats === 1 ? '' : 's'
 
 /**
  * Snap a float camera origin to the nearest valid integer cell.
- * Jean is always centered — no edge-clamping — so off-map cells render as
- * empty/dimmed rather than the camera stopping short near map edges.
+ * In follow mode (the only path that reaches this) Jean is always centered —
+ * no edge-clamping — so off-map cells render as empty/dimmed rather than the
+ * camera stopping short near map edges.
  */
 const computeSnapOrigin = (cam) => ({
   leftX: Math.round(cam.x),
@@ -99,30 +99,50 @@ const getPos = (entity) => entity?.position || { x: 0, y: 0 };
 const phaseDurationOf = (config, phaseName, fallback = 200) =>
   config?.phases?.find((p) => p.name === phaseName)?.duration ?? fallback;
 
-// ---------------------------------------------------------------------------
-// CombatantMarker — renders a single entity token on the grid
-// ---------------------------------------------------------------------------
-// Aliases used locally — MOVE_CATEGORY_COLOR serves as the border color map.
-const MOVE_CATEGORY_BORDER = MOVE_CATEGORY_COLOR;
+/** Finite number or the supplied default. A non-numeric field must not reach
+ *  the percentages: `Math.min(1, Math.max(0, NaN))` is `NaN`, which CSS and SVG
+ *  discard as invalid — so a broken HP field would render as *full* health in
+ *  the torus, the bars and the numerals. */
+const finiteOr = (value, fallback) => {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+};
 
-const FACING_MAP = { N: 0, NE: 45, E: 90, SE: 135, S: 180, SW: 225, W: 270, NW: 315 };
-
+/**
+ * Normalizes a combatant's HP/fatigue across both serialized shapes: flat
+ * `hp`/`max_hp`/`max_fatigue` and the nested legacy `health.{current,max}` /
+ * `maxfatigue` — src/api/serializers/combat.py emits all of them.
+ *
+ * The single derivation of these six values; every HP torus, bar and numeral
+ * in this file routes through it so a bar can never disagree with the numbers
+ * printed beside it. `hpPct`/`fatPct` are 0-1 fractions — multiply by 100
+ * before using either as a CSS width.
+ */
 function resolveEntityStats(entity) {
   if (!entity) return { hp: 0, maxHp: 1, fatigue: 0, maxFatigue: 1, hpPct: 0, fatPct: 0 };
-  const hp = entity.hp !== undefined ? entity.hp : (entity.health?.current || 0);
-  const maxHp = entity.max_hp !== undefined ? entity.max_hp : (entity.health?.max || 100);
-  const fatigue = entity.fatigue || 0;
-  const maxFatigue = entity.max_fatigue || entity.maxfatigue || 100;
-  
+  const hp = finiteOr(entity.hp ?? entity.health?.current, 0);
+  const maxHp = finiteOr(entity.max_hp ?? entity.health?.max, 100);
+  const fatigue = finiteOr(entity.fatigue, 0);
+  const maxFatigue = finiteOr(entity.max_fatigue ?? entity.maxfatigue, 100);
+
   const hpPct = maxHp > 0 ? Math.min(1, Math.max(0, hp / maxHp)) : 0;
   const fatPct = maxFatigue > 0 ? Math.min(1, Math.max(0, fatigue / maxFatigue)) : 0;
-  
+
   return { hp, maxHp, fatigue, maxFatigue, hpPct, fatPct };
 }
 
+// ---------------------------------------------------------------------------
+// CombatantMarker — renders a single entity token on the grid
+// ---------------------------------------------------------------------------
+const FACING_MAP = { N: 0, NE: 45, E: 90, SE: 135, S: 180, SW: 225, W: 270, NW: 315 };
+
 const CombatantMarker = React.memo(({
   entity,
-  isPlayer,
+  // True for Jean AND for every ally — this is side, not identity. Named
+  // `isPlayer` originally, which read as "this token is Jean" and invited
+  // changes meant for Jean alone to land on the whole friendly side.
+  // `isHero` is the one that means Jean.
+  isFriendly,
   isHero = false,
   isCompact = false,
   isHovered = false,
@@ -131,19 +151,18 @@ const CombatantMarker = React.memo(({
   displaySymbol = null,
 }) => {
   const move = entity.current_move;
-  // Only a move that has not resolved yet is intent. Keying the glow on the
-  // mere presence of a move lit up combatants in recoil/cooldown exactly like
-  // one charging an attack, so the strongest signal on the map meant nothing.
+  // Only an unresolved move is intent. A combatant in recoil/cooldown must not
+  // glow like one charging an attack — this is the strongest signal on the map.
   const pending = isMovePending(move);
   const moveCategory = pending ? (move.category || 'Miscellaneous') : null;
-  const pendingGlowColor = moveCategory ? MOVE_CATEGORY_GLOW[moveCategory] : null;
-  const pendingBorderColor = moveCategory ? MOVE_CATEGORY_BORDER[moveCategory] : null;
+  const pendingGlowColor = moveCategory ? categoryGlowOrNull(moveCategory) : null;
+  const pendingBorderColor = moveCategory ? categoryColorOrNull(moveCategory) : null;
   const beatsToResolve = beatsUntilResolve(move);
-  const [isHoveredEffect, setIsHoveredEffect] = React.useState(false);
+  const [isHoveredEffect, setIsHoveredEffect] = useState(false);
 
   // Alignment border: lime for friend/player, red for enemy. When a pending
   // move is set, its category color takes precedence on the border.
-  const alignmentBorder = isPlayer ? colors.primary : colors.danger;
+  const alignmentBorder = isFriendly ? colors.primary : colors.danger;
 
   // Facing — API may send degrees (int) or a cardinal string
   let facing = 0;
@@ -167,7 +186,7 @@ const CombatantMarker = React.memo(({
   // Config-driven marker styling: source phases read scale/glow from the
   // animation config; the target gets an outcome flash (or a fixed glow for
   // buff/debuff-style effects) during the config's impact phase.
-  const animationStyle = React.useMemo(() => {
+  const animationStyle = useMemo(() => {
     if (!animationState) return {};
     const cfg = animationState.config;
 
@@ -235,7 +254,7 @@ const CombatantMarker = React.memo(({
         ['--pending-glow']: pendingGlowColor || 'transparent',
         boxShadow: pendingGlowColor
           ? undefined
-          : `0 0 6px 1px ${isPlayer ? colors.alpha.primary[40] : colors.alpha.danger[40]}`,
+          : `0 0 6px 1px ${isFriendly ? colors.alpha.primary[40] : colors.alpha.danger[40]}`,
         // Spread last so an active animation's backgroundColor/boxShadow/transform
         // (hit flash, parry/block flash, debuff/drain glow, per-phase source glow)
         // actually take effect instead of being clobbered by the defaults above.
@@ -246,7 +265,7 @@ const CombatantMarker = React.memo(({
       <div
         className="absolute inset-0 rounded-full"
         style={{
-          backgroundColor: isPlayer ? colors.alpha.primary[30] : colors.alpha.danger[30],
+          backgroundColor: isFriendly ? colors.alpha.primary[30] : colors.alpha.danger[30],
           opacity: 0.85,
         }}
       />
@@ -400,17 +419,16 @@ const EnemiesList = React.memo(({ enemies }) => (
   <div style={{ padding: spacing.md, overflowY: 'auto', height: '100%', backgroundColor: colors.bg.main }}>
     <div style={{ display: 'flex', flexDirection: 'column', gap: spacing.sm }}>
       {enemies?.map((enemy, idx) => {
-        // Every HP read here goes through resolveEntityStats — bar AND
-        // numerals. Routing only the bar through it (as an earlier fix did)
-        // is worse than routing neither: an enemy in the nested legacy shape
-        // then renders a correct-looking bar above "HP: undefined / undefined".
+        // Bar AND numerals both come from resolveEntityStats. Routing only
+        // one through it is worse than routing neither: an enemy in the nested
+        // legacy shape renders a correct bar above "HP: undefined / undefined".
         // Local is `hpPercent` because the helper's `hpPct` is a 0-1 fraction
         // and mixing the two silently multiplies by 100.
         const { hp, maxHp, hpPct } = resolveEntityStats(enemy);
         const hpPercent = hpPct * 100;
         const move = enemy.current_move;
         const category = isMovePending(move) ? (move.category || 'Miscellaneous') : null;
-        const categoryColor = category ? MOVE_CATEGORY_BORDER[category] : null;
+        const moveColor = category ? categoryColorOrNull(category) : null;
         const beatsToResolve = beatsUntilResolve(move);
         return (
           <div
@@ -418,8 +436,8 @@ const EnemiesList = React.memo(({ enemies }) => (
             style={{
               backgroundColor: colors.alpha.danger[10],
               border: `1px solid ${colors.alpha.danger[40]}`,
-              borderLeft: categoryColor
-                ? `4px solid ${categoryColor}`
+              borderLeft: moveColor
+                ? `4px solid ${moveColor}`
                 : `1px solid ${colors.alpha.danger[40]}`,
               borderRadius: '4px',
               padding: spacing.sm
@@ -439,11 +457,11 @@ const EnemiesList = React.memo(({ enemies }) => (
                     earns a line — it just loses the category color that marks
                     live intent, and the countdown. */}
                 {move && (
-                  <GameText size="xs" style={{ marginTop: spacing.xs, color: categoryColor || colors.text.muted }}>
+                  <GameText size="xs" style={{ marginTop: spacing.xs, color: moveColor || colors.text.muted }}>
                     ◆ {formatCombatMoveStatus(move)}
                     {category && <span style={{ opacity: 0.6 }}> ({category})</span>}
                     {beatsToResolve !== null && (
-                      <span style={{ opacity: 0.85 }}> — {formatBeatCountdown(beatsToResolve)}</span>
+                      <span style={{ opacity: 0.85 }}> — resolves {formatBeatCountdown(beatsToResolve)}</span>
                     )}
                   </GameText>
                 )}
@@ -509,9 +527,9 @@ const EntityTooltip = React.memo(({ entity, showDistance }) => {
         <div className="text-white text-[10px] font-bold uppercase tracking-wider border-b border-white/10 pb-1 mb-1">
           {entity.name}
         </div>
-        {/* Distance is what the whole positional layer turns on — every move
-            carries an mvrange and ranged accuracy decays with it — yet it was
-            serialized and then never shown anywhere on the map. */}
+        {/* Distance is what the positional layer turns on — every move carries
+            an mvrange and ranged accuracy decays with it — so it belongs on
+            the hover card. */}
         <div className="text-white/70 text-[9px] font-mono flex justify-between gap-3">
           <span>{hp}/{maxHp} HP</span>
           {showDistance && entity.distance !== undefined && <span>{entity.distance} ft</span>}
@@ -613,7 +631,7 @@ const EntityLayer = React.memo(({
 
       return (
         <div
-          key={`${entityId || idx}-${item.isPlayer ? 'player' : 'enemy'}`}
+          key={`${entityId ?? idx}-${item.isFriendly ? 'friend' : 'enemy'}`}
           onMouseEnter={() => onHoverEntity(item.entity)}
           onMouseLeave={onClearHover}
           onClick={(e) => { e.stopPropagation(); onSelectEntity(item.entity); }}
@@ -648,7 +666,7 @@ const EntityLayer = React.memo(({
           }}>
             <CombatantMarker
               entity={item.entity}
-              isPlayer={item.isPlayer}
+              isFriendly={item.isFriendly}
               isHero={item.isHero}
               isCompact={isCompact}
               isHovered={(entityId != null && hoveredTargetId === entityId) || isEntityHovered}
@@ -658,9 +676,9 @@ const EntityLayer = React.memo(({
             />
           </div>
 
-          {/* Hover tooltip. Previously suppressed whenever anything was
-              selected, so inspecting one combatant blinded you to every other
-              token on the field; only the selected one needs suppressing. */}
+          {/* Hover tooltip, suppressed only for the entity already open in
+              the selection panel. Suppressing on any selection would blind
+              the player to every other token on the field. */}
           {isEntityHovered && selectedEntity?.id !== entityId && (
             <EntityTooltip entity={item.entity} showDistance={!item.isHero} />
           )}
@@ -674,8 +692,7 @@ const EntityLayer = React.memo(({
 // SelectedEntityPanel — detailed stats card shown when a combatant is clicked
 // ---------------------------------------------------------------------------
 const SelectedEntityPanel = React.memo(({ entity, onClose }) => {
-  // resolveEntityStats is the single derivation of these five values; this
-  // panel used to re-derive them with a slightly different fallback chain.
+  // resolveEntityStats is the single derivation of these five values.
   const { hp, maxHp, fatigue, maxFatigue, hpPct: hpFrac, fatPct } = resolveEntityStats(entity);
   const hpPct = hpFrac * 100;
   const fatiguePct = fatPct * 100;
@@ -1041,9 +1058,8 @@ const DeathAnimationLayer = React.memo(({ dyingEntities, getEntityStyle }) => {
 // ---------------------------------------------------------------------------
 // OffScreenMarkers — edge chevrons pointing at living enemies outside the
 // viewport. Ranged moves reach 40–50 ft while follow mode shows 13 cells, so
-// a fight can legitimately be happening entirely off-screen; before this the
-// only cue was a 2.5s banner telling the player to change view mode, which
-// said nothing about *where* or *how many*.
+// a fight can legitimately be happening entirely off-screen; these chevrons
+// carry where the enemies are and how many.
 // ---------------------------------------------------------------------------
 const MAX_OFFSCREEN_MARKERS = 6;
 
@@ -1169,23 +1185,26 @@ const ThreatLineLayer = React.memo(({ entitiesToRender, getEntityCenterPct }) =>
       if (!targetId || targetId === source.id) continue; // untargeted / self-target
 
       const targetItem = itemById.get(targetId);
-      if (!targetItem) continue; // target off-screen, dead, or gone
+      // Absent = off-screen or already gone. `isDying` is the third case the
+      // map cannot express: the target is still in entitiesToRender for its
+      // 0.65s fade, and a threat line drawn onto a corpse reads as live intent.
+      if (!targetItem || targetItem.isDying) continue;
 
       const from = getEntityCenterPct(getPos(source));
       const to = getEntityCenterPct(getPos(targetItem.entity));
       if (!from || !to) continue;
 
       // The lines the player has to react to: an enemy aimed at Jean.
-      // `isHero` is set only for combat.player, and `isPlayer` covers the
-      // player and her allies — so this is "an enemy, targeting Jean".
-      const dominant = targetItem.isHero && !item.isPlayer;
+      // `isHero` is set only for combat.player, and `isFriendly` covers the
+      // whole friendly side — so this is "an enemy, targeting Jean".
+      const dominant = targetItem.isHero && !item.isFriendly;
       result.push({
         id: `${source.id}->${targetId}`,
         sourceId: source.id,
         targetId,
         x1: from.xPct, y1: from.yPct,
         x2: to.xPct, y2: to.yPct,
-        color: MOVE_CATEGORY_COLOR[move.category] || colors.text.muted,
+        color: categoryColor(move.category),
         dominant,
       });
     }
@@ -1250,8 +1269,7 @@ const ThreatLineLayer = React.memo(({ entitiesToRender, getEntityCenterPct }) =>
 // of hit chance rather than a decorative fade.
 // Kept low deliberately: this fill can cover the entire viewport. It sits
 // under the tokens (z 20+) and over the breadcrumb (z 5) and threat-line
-// (z 6) layers, so it must not compete with either. At 0.28 it washed the
-// whole map amber.
+// (z 6) layers, so it must not compete with either.
 const FALLOFF_CORE_ALPHA = 0.12;
 // Radius percentage at which the fill stops encoding retention and starts
 // feathering out, so the disc has no hard rim.
@@ -1270,10 +1288,9 @@ const RangeRingLayer = React.memo(({ entity, getEntityStyle, gridCols }) => {
   const move = entity?.current_move;
   const maxRange = move?.mvrange?.max;
   if (!entity || !Number.isFinite(maxRange) || maxRange <= 0) return null;
-  // Gate on pending like every other telegraph. move_in_progress hands back
-  // recoil/cooldown moves by design (src/combatant.py), so without this,
-  // selecting a combatant whose shot already fired drew a live threat radius
-  // for a spent move.
+  // Gate on pending like every other telegraph: move_in_progress hands back
+  // recoil/cooldown moves by design (src/combatant.py), and a spent move must
+  // not draw a live threat radius.
   if (!isMovePending(move)) return null;
 
   const style = getEntityStyle(getPos(entity), 15);
@@ -1321,8 +1338,7 @@ const RangeRingLayer = React.memo(({ entity, getEntityStyle, gridCols }) => {
 
   // The drawn extent is the circle inscribed in the viewport: large enough to
   // cover the field the player is looking at, small enough that its edge — and
-  // so the outer ring drawn on it — is actually on screen. Reaching further
-  // (an earlier version used 1.5x) pushed that ring permanently out of view.
+  // so the outer ring drawn on it — stays on screen.
   const drawRadius = Math.min(maxRange, visibleRadiusCells);
   const plateauFraction = Math.min(0.95, Math.max(0, falloff.start / drawRadius));
   // Remaining hit chance at the drawn edge, as a fraction of a full 100
@@ -1342,8 +1358,8 @@ const RangeRingLayer = React.memo(({ entity, getEntityStyle, gridCols }) => {
             height: `${diameterCells * 100}%`,
             borderRadius: '50%',
             // Solid to the plateau edge, then a linear bleed to whatever
-            // accuracy is actually left at the drawn edge. The outer stop is
-            // the core scaled by real retention — NOT a fixed dramatic fade.
+            // accuracy is actually left at the drawn edge: the outer stop is
+            // the core alpha scaled by real retention.
             // With current engine constants a bow sheds under 3 points across
             // anything the player can see, so this is deliberately a near-flat
             // tint: a strong visible dissolve would overstate the decay by an
@@ -1424,18 +1440,13 @@ const RangeRingLayer = React.memo(({ entity, getEntityStyle, gridCols }) => {
 // ---------------------------------------------------------------------------
 // GridBackgroundLayer — the cell lattice, with off-map cells dimmed.
 //
-// Memoized as its own component rather than mapped inline in the render body.
-// The boolean array was already cached, but expanding it to elements inline
-// re-allocated gridCols^2 elements + props + style objects on EVERY render,
-// and React then reconciled that many keyed children whose props identity
-// always differed — writing no DOM. At ~15 renders per beat (each animation
-// phase, each poll) and up to 2,304 cells in a mid-size fit-mode fight, that
-// is tens of milliseconds per beat spent rebuilding a background that did not
-// change. Both props here are stable across poll/phase/hover/selection
-// renders, so the shallow compare skips the whole subtree.
+// Its own memoized component, not an array mapped inline in the render body.
+// Both props are stable across poll/phase/hover/selection renders, so the
+// shallow compare skips reconciling up to gridCols^2 keyed children (~2,300 in
+// a mid-size fit-mode fight) on every one of the ~15 renders per beat.
 //
-// Memoizing only the mapped array would not do: reconcileChildrenArray still
-// walks and clones every child fiber even when each one bails.
+// Keep it a component rather than a memoized array: reconcileChildrenArray
+// still walks and clones every child fiber even when each one bails.
 // ---------------------------------------------------------------------------
 const GridBackgroundLayer = React.memo(({ cells, gridCols }) => (
   <div style={{
@@ -1843,7 +1854,17 @@ function BattlefieldGrid({
           if (wasAlive && isNowDead) {
             const lastKnown = stateBefore.enemies.find((en) => en.id === anim.target_id);
             if (lastKnown?.position) {
-              animations.push({ type: 'death', target_id: anim.target_id, position: lastKnown.position, entity: lastKnown });
+              // friendly: false is sound here — this branch only inspects
+              // `stateBefore.enemies`, so it can only ever synthesize an
+              // enemy death. Streamed deaths (which can be an ally or Jean)
+              // carry their own alignment from `beatToAnimations`.
+              animations.push({
+                type: 'death',
+                target_id: anim.target_id,
+                position: lastKnown.position,
+                entity: lastKnown,
+                friendly: false,
+              });
               killedIds.add(anim.target_id);
             }
           }
@@ -1881,7 +1902,12 @@ function BattlefieldGrid({
     // Register the entity as dying so DeathAnimationLayer can render the burst
     // and EntityLayer can fade out the marker
     if (animData.type === 'death' && animData.position) {
-      setDyingEntities((prev) => [...prev, { id: animData.target_id, position: animData.position, entity: animData.entity }]);
+      setDyingEntities((prev) => [...prev, {
+        id: animData.target_id,
+        position: animData.position,
+        entity: animData.entity,
+        friendly: animData.friendly === true,
+      }]);
       // Enemy death SFX — play once per kill (streamed deaths are sounded by the
       // attack beat's SFX chain instead, so they carry suppressSfx).
       if (!animData.suppressSfx) playSFX('enemy_death', combatSpeed);
@@ -2142,7 +2168,12 @@ function BattlefieldGrid({
    * own idea of what is on screen.
    */
   const cellOf = useCallback((pos) => {
-    if (!pos || pos.x < leftX || pos.x >= leftX + gridCols || pos.y > topY || pos.y <= topY - gridCols) return null;
+    // Finiteness first: every comparison below is false for NaN, so a
+    // malformed coordinate would pass the off-screen test and place the token
+    // at the viewport origin instead of being culled — and NaN then propagates
+    // into the transform percentages, which CSS silently discards.
+    if (!pos || !Number.isFinite(pos.x) || !Number.isFinite(pos.y)) return null;
+    if (pos.x < leftX || pos.x >= leftX + gridCols || pos.y > topY || pos.y <= topY - gridCols) return null;
     return { col: pos.x - leftX, row: topY - pos.y };
   }, [leftX, topY, gridCols]);
 
@@ -2207,28 +2238,43 @@ function BattlefieldGrid({
   const entitiesToRender = useMemo(() => {
     const dyingIds = new Set(dyingEntities.map((d) => d.id));
     const result = [];
-    if (combat?.player) {
+    // A combatant mid-fade is rendered from its dying snapshot below, so the
+    // live pools skip it. This has to cover the friendly side too: allies and
+    // Jean can be killed, and rendering both copies collides their React keys
+    // (same id, same side suffix) as well as painting two tokens on one cell.
+    if (combat?.player && !dyingIds.has(combat.player.id)) {
       const style = getEntityStyle(getPos(combat.player));
-      if (style) result.push({ entity: combat.player, style, isPlayer: true, isHero: true });
+      if (style) result.push({ entity: combat.player, style, isFriendly: true, isHero: true });
     }
     combat?.allies?.forEach((ally) => {
+      if (dyingIds.has(ally.id)) return;
       if (isLiving(ally)) {
         const style = getEntityStyle(getPos(ally));
-        if (style) result.push({ entity: ally, style, isPlayer: true, isHero: false });
+        if (style) result.push({ entity: ally, style, isFriendly: true, isHero: false });
       }
     });
     combat?.enemies?.forEach((enemy) => {
       if (dyingIds.has(enemy.id)) return;
       if (isLiving(enemy)) {
         const style = getEntityStyle(getPos(enemy));
-        if (style) result.push({ entity: enemy, style, isPlayer: false });
+        if (style) result.push({ entity: enemy, style, isFriendly: false });
       }
     });
-    // Dying enemies rendered from last-known snapshot during fade-out
+    // Dying combatants rendered from last-known snapshot during fade-out.
+    // Alignment travels on the snapshot: by this point the entity is gone from
+    // combat.allies/enemies, so there is no pool left to infer it from, and
+    // assuming "enemy" painted a dying ally (or Jean) hostile red for the fade.
     dyingEntities.forEach((dying) => {
       if (!dying.entity) return;
       const style = getEntityStyle(dying.position);
-      if (style) result.push({ entity: dying.entity, style, isPlayer: false, isDying: true });
+      if (style) {
+        result.push({
+          entity: dying.entity,
+          style,
+          isFriendly: dying.friendly === true,
+          isDying: true,
+        });
+      }
     });
 
     // Disambiguate colliding single-letter initials (e.g. two "Rat"s) by
@@ -2280,7 +2326,10 @@ function BattlefieldGrid({
   // Enemies tab: flat list view
   // -------------------------------------------------------------------------
   if (tab === 'enemies') {
-    return <EnemiesList enemies={combat.enemies} />;
+    // livingEnemies, not combat.enemies: the roster keeps HP-0 entries for a
+    // beat, and the map already drops them. Passing the raw list left corpses
+    // listed as "HP: 0 / 30" with their last move after the token was gone.
+    return <EnemiesList enemies={livingEnemies} />;
   }
 
   return (

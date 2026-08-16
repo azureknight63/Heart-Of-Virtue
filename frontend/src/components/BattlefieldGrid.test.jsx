@@ -1224,12 +1224,30 @@ describe('BattlefieldGrid', () => {
     });
 
     it('renders an enemy with no active move and zero max_hp without crashing', () => {
+        // max_hp 0 is the edge here — the hp/maxHp division guard. hp stays
+        // above 0 so the enemies tab's living-only filter doesn't hide it.
         const combatEdge = {
             ...mockCombat,
-            enemies: [{ id: 'x', name: 'Husk', hp: 0, max_hp: 0, position: { x: 1, y: 1 } }],
+            enemies: [{ id: 'x', name: 'Husk', hp: 1, max_hp: 0, position: { x: 1, y: 1 } }],
         };
         render(<BattlefieldGrid combat={combatEdge} tab="enemies" zoom={1} />);
         expect(screen.getByText('Husk')).toBeInTheDocument();
+    });
+
+    it('leaves dead enemies out of the enemies tab, as the map already does', () => {
+        // The roster keeps HP-0 entries for a beat after the kill. Listing them
+        // showed a corpse as "HP: 0 / 30" with its last move still attached,
+        // after its token had already gone from the map.
+        const combatEdge = {
+            ...mockCombat,
+            enemies: [
+                { id: 'dead', name: 'Husk', hp: 0, max_hp: 30, position: { x: 1, y: 1 } },
+                { id: 'alive', name: 'Warden', hp: 12, max_hp: 30, position: { x: 2, y: 1 } },
+            ],
+        };
+        render(<BattlefieldGrid combat={combatEdge} tab="enemies" zoom={1} />);
+        expect(screen.getByText('Warden')).toBeInTheDocument();
+        expect(screen.queryByText('Husk')).not.toBeInTheDocument();
     });
 
     it('reads HP/max HP from a nested health object when hp/max_hp are absent (torus marker)', () => {

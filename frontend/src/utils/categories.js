@@ -57,19 +57,43 @@ export const MOVE_CATEGORY_ICON = {
   Utility:      '◈',
 }
 
+/**
+ * Look a category up in one of the maps above, ignoring inherited members.
+ *
+ * A bare `map[category]` resolves Object.prototype keys, so a category of
+ * `"constructor"` or `"toString"` yields a *function* — which is truthy, so it
+ * does not fall through to the fallback, it defeats it. The value then reaches
+ * a style property that silently discards it, and the caller loses the default
+ * it thought it had. `getAnimationConfig` guards the same way.
+ */
+const lookup = (map, category, fallback) =>
+  (typeof category === 'string' && Object.hasOwn(map, category)) ? map[category] : fallback
+
 /** Solid color for a category, falling back to muted text color. */
 export function categoryColor(category) {
-  return MOVE_CATEGORY_COLOR[category] || colors.text.muted
-}
-
-/** Glow color for a category, falling back to transparent. */
-export function categoryGlow(category) {
-  return MOVE_CATEGORY_GLOW[category] || 'transparent'
+  return lookup(MOVE_CATEGORY_COLOR, category, colors.text.muted)
 }
 
 /** Icon character for a category, falling back to '◈'. */
 export function categoryIcon(category) {
-  return MOVE_CATEGORY_ICON[category] || '◈'
+  return lookup(MOVE_CATEGORY_ICON, category, '◈')
+}
+
+/**
+ * Color / glow for a category, or `null` when it has none.
+ *
+ * These are the shape a caller needs when the *absence* of a category color
+ * selects a different rendering — an alignment border, an alignment halo —
+ * rather than a default color. The `||`-fallback variants above return a
+ * truthy value in that case (`colors.text.muted`, `'transparent'`) and would
+ * silently pick the wrong branch.
+ */
+export function categoryColorOrNull(category) {
+  return lookup(MOVE_CATEGORY_COLOR, category, null)
+}
+
+export function categoryGlowOrNull(category) {
+  return lookup(MOVE_CATEGORY_GLOW, category, null)
 }
 
 /**
