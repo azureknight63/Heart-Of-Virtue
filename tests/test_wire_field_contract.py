@@ -73,7 +73,8 @@ from src.api.serializers.combat import (
 from src.api.serializers.shop_serializer import ShopSerializer
 from src.api.services.game_service import GameService
 from src.items import Restorative
-from src.moves import ShootBow
+from src.moves import Attack, ShootBow, Wait
+from src.moves._mastery import BloodOfMartyrs
 from src.npc._enemies import Slime
 from src.npc._merchants import Merchant
 from src.player import Player
@@ -278,6 +279,131 @@ class TestCombatWireContract:
 
         assert "check_data" in result["battle_state"]
         assert result["battle_state"]["check_data"] == {"prompt": "Feel for traps?"}
+
+
+# ----------------------------------------------------------------------------
+# Move payload: combat.available_options[i] (src.api.combat_adapter
+# ApiCombatAdapter._get_available_moves)
+# ----------------------------------------------------------------------------
+# CombatMovePanel.jsx renders each move card off this shape.
+MOVE_CONTRACT = {
+    "name": "CombatMovePanel.jsx:75 move.name || move.display_name",
+    "display_name": "CombatMovePanel.jsx:75,131 displayNameOf(move)",
+    "description": "CombatMovePanel.jsx:140 move.description",
+    "available": "CombatMovePanel.jsx:73 move.available !== false",
+    "reason": "CombatMovePanel.jsx:74,109,142-146 move.reason",
+    "fatigue_cost": "CombatMovePanel.jsx:133-137 move.fatigue_cost",
+    "targeted": "CombatMovePanel.jsx:80 move.targeted",
+    "viable_targets": "CombatMovePanel.jsx:79-82 move.viable_targets",
+    "requires_target_selection": "CombatMovePanel.jsx:80 move.requires_target_selection",
+    # The commitment bar (how many beats a move locks the player out for,
+    # shown BEFORE they commit) — named sub-fields, not the engine's raw
+    # stage_beat list/index convention. See MOVE_STAGE_BEATS_CONTRACT below.
+    "stage_beats": "CombatMovePanel.jsx MoveCommitmentBar move.stage_beats",
+}
+
+MOVE_STAGE_BEATS_CONTRACT = {
+    "prep": "CombatMovePanel.jsx MoveCommitmentBar stageBeats.prep",
+    "execute": "CombatMovePanel.jsx MoveCommitmentBar stageBeats.execute",
+    "recoil": "CombatMovePanel.jsx MoveCommitmentBar stageBeats.recoil",
+    "cooldown": "CombatMovePanel.jsx MoveCommitmentBar stageBeats.cooldown",
+}
+
+
+class TestMoveWireContract:
+    def test_available_move_fields(self):
+        player = Player()
+        player.known_moves = [Attack(player)]
+        player.combat_log = []
+        player.last_move_summary = ""
+        player.combat_beat = 1
+        player.combat_list = []
+        player.combat_list_allies = [player]
+        player.combat_proximity = {}
+        player.in_combat = True
+
+        with patch("src.api.combat_adapter.CombatStrategist"):
+            adapter = ApiCombatAdapter(player)
+            move_payloads = adapter._get_available_moves()
+
+        assert move_payloads, "expected Attack to appear in available moves"
+        _assert_contract(move_payloads[0], MOVE_CONTRACT, "_get_available_moves()[0]")
+        _assert_contract(
+            move_payloads[0]["stage_beats"],
+            MOVE_STAGE_BEATS_CONTRACT,
+            "_get_available_moves()[0].stage_beats",
+        )
+
+    def test_stage_beats_are_the_real_engine_values_not_recomputed(self):
+        """Guards the Architecture rule that the engine is the source of
+        truth for move timing: the API layer must read Move.stage_beat, never
+        hardcode or re-derive it. Attack (a 10-beat commitment) and
+        BloodOfMartyrs (101 beats — prep=40, execute=1, recoil=5,
+        cooldown=55) are pinned by value so a swapped index or a hardcoded
+        constant in the adapter shows up immediately."""
+        player = Player()
+        attack = Attack(player)
+        blood = BloodOfMartyrs(player)
+        player.known_moves = [attack, blood]
+        player.combat_log = []
+        player.last_move_summary = ""
+        player.combat_beat = 1
+        player.combat_list = []
+        player.combat_list_allies = [player]
+        player.combat_proximity = {}
+        player.in_combat = True
+
+        with patch("src.api.combat_adapter.CombatStrategist"):
+            adapter = ApiCombatAdapter(player)
+            move_payloads = adapter._get_available_moves()
+
+        by_name = {m["name"]: m for m in move_payloads}
+
+        assert attack.stage_beat == [4, 1, 1, 4]  # pin the fixture's own assumption
+        assert by_name["Attack"]["stage_beats"] == {
+            "prep": 4,
+            "execute": 1,
+            "recoil": 1,
+            "cooldown": 4,
+        }
+
+        assert blood.stage_beat == [40, 1, 5, 55]  # pin the fixture's own assumption
+        assert by_name["Blood of Martyrs"]["stage_beats"] == {
+            "prep": 40,
+            "execute": 1,
+            "recoil": 5,
+            "cooldown": 55,
+        }
+
+    def test_stage_beats_handle_float_and_zero_values(self):
+        """stage_beat entries can be floats (e.g. 3.5) and can be 0 — the
+        payload must carry both through unchanged rather than truncating or
+        substituting a default. Uses Wait rather than Attack: Attack.viable()
+        calls evaluate(), which recomputes stage_beat from the player's
+        weapon and would silently clobber this test's override; Wait's
+        viable() is the unmodified Move base (no recompute)."""
+        player = Player()
+        move = Wait(player)
+        move.stage_beat = [0, 3.5, 0, 12]
+        player.known_moves = [move]
+        player.combat_log = []
+        player.last_move_summary = ""
+        player.combat_beat = 1
+        player.combat_list = []
+        player.combat_list_allies = [player]
+        player.combat_proximity = {}
+        player.in_combat = True
+
+        with patch("src.api.combat_adapter.CombatStrategist"):
+            adapter = ApiCombatAdapter(player)
+            move_payloads = adapter._get_available_moves()
+
+        assert move_payloads[0]["stage_beats"] == {
+            "prep": 0,
+            "execute": 3.5,
+            "recoil": 0,
+            "cooldown": 12,
+        }
 
 
 # ----------------------------------------------------------------------------

@@ -2237,6 +2237,28 @@ class ApiCombatAdapter:
             if is_targeted and is_viable:
                 viable_targets = self._get_available_targets(move)
 
+            # Engine source of truth for the move's full commitment: how many
+            # beats it locks the player into before another action can be
+            # taken. `stage_beat` is `[prep, execute, recoil, cooldown]` by
+            # convention (see Move.__init__ in src/moves/_base.py) — never
+            # hardcode these durations here, and never leak the raw list/index
+            # convention to the client (see `stage_beats` below). Values can
+            # be floats (e.g. 3.5) and can be 0; both are valid and rendered
+            # as-is.
+            raw_stage_beat = getattr(move, "stage_beat", None)
+            if not isinstance(raw_stage_beat, (list, tuple)):
+                # Unset/mocked moves (e.g. test doubles that don't configure
+                # stage_beat) fall back to "no declared commitment" rather
+                # than crashing on len()/indexing a non-sequence.
+                raw_stage_beat = []
+
+            def _beat_at(idx, _raw=raw_stage_beat):
+                if len(_raw) > idx:
+                    val = _raw[idx]
+                    if isinstance(val, (int, float)) and not isinstance(val, bool):
+                        return val
+                return 0
+
             move_data = {
                 "id": str(i),
                 "index": i,
@@ -2252,13 +2274,22 @@ class ApiCombatAdapter:
                 "requires_target_selection": is_targeted and len(viable_targets) > 1,
                 "cooldown_remaining": 0,
                 "cooldown_max": 0,
+                # Named fields, not the raw stage_beat list/index convention —
+                # the client must never have to know stage_beat[0] means prep.
+                "stage_beats": {
+                    "prep": _beat_at(0),
+                    "execute": _beat_at(1),
+                    "recoil": _beat_at(2),
+                    "cooldown": _beat_at(3),
+                },
             }
 
             # Check various conditions that might make the move unavailable
             if move.current_stage == 3:
-                stage_beats = getattr(move, "stage_beat", [])
                 cd_remaining = move.beats_left + 1 if move.beats_left > 0 else 1
-                cd_max = stage_beats[3] + 1 if len(stage_beats) > 3 else cd_remaining
+                cd_max = (
+                    raw_stage_beat[3] + 1 if len(raw_stage_beat) > 3 else cd_remaining
+                )
                 move_data["cooldown_remaining"] = cd_remaining
                 move_data["cooldown_max"] = max(cd_max, cd_remaining)
                 if move.beats_left > 0:
