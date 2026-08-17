@@ -17,6 +17,14 @@ export const FEATURE_FLAGS = {
       + 'and diagonals read true, at the cost of unused space in a tall panel.',
     default: false,
   },
+  beatTimeline: {
+    label: 'Beat timeline',
+    description:
+      'Replace the "Beat N / X standing" counter with a schedule of who '
+      + 'resolves next and when, so timing is read off the strip instead of '
+      + 'derived in your head.',
+    default: false,
+  },
 };
 
 const FLAG_NAMES = Object.keys(FEATURE_FLAGS);
