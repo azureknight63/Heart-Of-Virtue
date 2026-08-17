@@ -214,6 +214,11 @@ class Advance(Move):
     def evaluate(self):
         pass
 
+    def preview_hit_chance(self, target=None):
+        """Advance is pure positioning — it deals no damage and rolls no
+        to-hit, so a per-target hit chance is never meaningful."""
+        return None
+
     def prep(self, user):
         self._sentinels_vigil_triggered = False
 
@@ -508,6 +513,11 @@ class BullCharge(Move):
     def evaluate(self):
         pass
 
+    def preview_hit_chance(self, target=None):
+        """Bull Charge is a pure positioning move (no damage, no to-hit
+        roll) -- see the charge/slam narration in execute()."""
+        return None
+
     def prep(self, user):
         cprint(f"{user.name} readies for a charge...", "cyan")
 
@@ -713,6 +723,10 @@ class FlankingManeuver(Move):
     def evaluate(self):
         pass
 
+    def preview_hit_chance(self, target=None):
+        """Flanking Maneuver is pure positioning -- no damage, no to-hit roll."""
+        return None
+
     def prep(self, user):
         cprint(f"{user.name} prepares to flank...", "cyan")
 
@@ -827,6 +841,10 @@ class TacticalPositioning(Move):
 
     def evaluate(self):
         pass
+
+    def preview_hit_chance(self, target=None):
+        """Tactical Positioning only adjusts range -- no damage, no to-hit roll."""
+        return None
 
     def prep(self, user):
         # Distance is provided by the combat adapter before this stage runs
@@ -1100,6 +1118,10 @@ class QuickSwap(Move):
     def evaluate(self):
         """Adjust move attributes based on game state."""
         pass
+
+    def preview_hit_chance(self, target=None):
+        """Quick Swap repositions with an ally -- no damage, no to-hit roll."""
+        return None
 
     def prep(self, user):
         """Prep stage - show available allies."""

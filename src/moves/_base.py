@@ -411,6 +411,97 @@ class Move:  # master class for all moves
             return None
         return (getattr(self, "base_range", 0), decay)
 
+    def _viable_for(self, target):
+        """True if this move is viable with ``target`` temporarily assigned as
+        ``self.target``.
+
+        ``viable()`` implementations are written assuming ``self.target`` is
+        already the resolved target (the adapter sets it that way before
+        ``execute()`` runs), but ``preview_hit_chance`` below is called earlier,
+        while the target list is still being built — before any target has been
+        committed. This swaps ``self.target`` in for the duration of the check
+        and always restores it, so a ``viable()`` that reads ``self.target``
+        (Advance, VertigoSpin, FeintAndPivot, Riposte's proximity scan, ...)
+        sees the same combatant it would see at real execute time.
+        """
+        if target is None or target is self.user:
+            return False
+        original_target = self.target
+        self.target = target
+        try:
+            return bool(self.viable())
+        finally:
+            self.target = original_target
+
+    def _standard_preview_hit_chance(self, target, base=HIT_CHANCE_BASE, floor=None):
+        """Shared body for moves whose ``preview_hit_chance`` only diverges
+        from the default in its ``to_hit_chance`` base/floor — no situational
+        modifiers (ranged decay, Hawkeye, close-range halving, ...) interpose
+        before the roll. Handles the viability/target-swap dance once so those
+        per-move overrides stay a one-line call; moves with situational
+        modifiers still need their own override (see ``preview_hit_chance``'s
+        docstring) since those live at the call site, not here, by the same
+        rule that governs ``to_hit_chance`` itself.
+        """
+        if not self._viable_for(target):
+            return None
+        hit_chance = to_hit_chance(self.user, target, base=base, floor=floor)
+        return _apply_to_hit_modifiers(self.user, target, hit_chance)
+
+    def _unconditional_preview_hit_chance(self, target, base=HIT_CHANCE_BASE, floor=None):
+        """Shared body for moves whose execute() computes hit_chance
+        unconditionally — gated only on "target exists and is alive", never
+        on ``self.viable()`` (VertigoSpin, FeintAndPivot). Deliberately does
+        NOT call ``_viable_for``/``self.viable()``: those moves' execute()
+        never checks viability before rolling (only a target-alive early
+        return), and adding one here would make the preview auto-miss for a
+        configuration execute() would still roll for — see the two callers'
+        own docstrings for the concrete regression this caused once already.
+        """
+        if target is None or not target.is_alive():
+            return None
+        hit_chance = to_hit_chance(self.user, target, base=base, floor=floor)
+        return _apply_to_hit_modifiers(self.user, target, hit_chance)
+
+    def preview_hit_chance(self, target=None):
+        """Return the hit chance this move would actually roll against
+        ``target`` (or ``self.target`` if omitted) with its current
+        parameters, as an integer percentage — or ``None`` when a per-target
+        hit chance isn't meaningful (an untargeted move, a status/positioning
+        move with no to-hit roll, a move that isn't currently viable, or no
+        resolvable target).
+
+        This base implementation is the *default* to-hit path only:
+        ``to_hit_chance(..., floor=5)`` plus the shared
+        ``_apply_to_hit_modifiers`` chain — the same two calls
+        ``standard_execute_attack`` and most hand-rolled ``execute()`` methods
+        make with no other arguments. Per CLAUDE.md's "To-hit arithmetic"
+        note, the ``to_hit_chance`` call sites are **not uniform** — bases of
+        85/90/95/98/105 and floors of 1/5/none are all in use, and several
+        moves interpose situational modifiers (ranged accuracy decay,
+        Hawkeye, Aimed Shot's flat bonus, the crossbow close-range halving)
+        before the roll, or skip the roll entirely (Reaper's Mark, the pure
+        positioning moves, Killing Precision's guaranteed hit). **Any move
+        whose execute() path is not the plain default MUST override this
+        method** to report what its own execute() actually computes, not this
+        fallback — grep ``to_hit_chance`` call sites and read them; do not
+        trust an enumeration, including this one.
+
+        A move that already defines ``calculate_hit_chance`` (ShootBow) is
+        the authoritative estimate for that move; this delegates to it so the
+        two can never disagree.
+        """
+        if hasattr(self, "calculate_hit_chance"):
+            t = target if target is not None else self.target
+            if t is None:
+                return None
+            return self.calculate_hit_chance(t)
+
+        if not self.targeted or self.passive:
+            return None
+        t = target if target is not None else self.target
+        return self._standard_preview_hit_chance(t, floor=5)
+
     def can_use_coordinates(self, user):
         """Check if 2D coordinate-based movement is available for this move."""
         if not (hasattr(user, "combat_position") and user.combat_position is not None):

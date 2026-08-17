@@ -2349,9 +2349,18 @@ class ApiCombatAdapter:
                     },
                 }
 
-                # Add hit chance if verbose targeting
-                if move.verbose_targeting and hasattr(move, "calculate_hit_chance"):
-                    target_data["hit_chance"] = move.calculate_hit_chance(enemy)
+                # Add hit chance when the move can estimate one for this target.
+                # Move.preview_hit_chance (src/moves/_base.py) is the single
+                # source of this number for every targeted move -- it delegates
+                # to calculate_hit_chance() for moves that define one (ShootBow)
+                # and otherwise mirrors that move's own execute() to-hit path.
+                # Previously gated on verbose_targeting, which only ShootBow
+                # set, so every other targeted move showed no accuracy estimate
+                # at all in the target-selection dialog.
+                if hasattr(move, "preview_hit_chance"):
+                    hit_chance = move.preview_hit_chance(enemy)
+                    if hit_chance is not None:
+                        target_data["hit_chance"] = hit_chance
 
                 targets.append(target_data)
 
