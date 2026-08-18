@@ -880,6 +880,23 @@ class ApiCombatAdapter:
         if selected_move.current_stage != 0:
             return {"error": "Move not ready yet"}
 
+        # A move already winding up must be paid for, not walked away from.
+        # A prep longer than the per-request beat cap hands control back while
+        # the move is still in stage 0, and selecting anything else used to
+        # simply reassign player.current_move -- orphaning 20 beats of Aimed
+        # Shot at no cost and leaving it instantly re-castable. That made the
+        # costed abort below pointless, since the free path sat right beside
+        # it. Switching now requires an explicit abort first.
+        in_flight = self._abortable_move()
+        if in_flight is not None and in_flight is not selected_move:
+            return {
+                "error": (
+                    f"{display_name_of(in_flight)} is already winding up. "
+                    "Abort it first to act on something else."
+                ),
+                "requires_abort": True,
+            }
+
         self.player.current_move = selected_move
         self.player.current_move.user = self.player
 

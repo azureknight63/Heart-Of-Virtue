@@ -303,6 +303,15 @@ MOVE_CONTRACT = {
     "stage_beats": "CombatMovePanel.jsx MoveCommitmentBar move.stage_beats",
 }
 
+ABORTABLE_MOVE_CONTRACT = {
+    "name": "AbortMoveControl.jsx abortable.name",
+    "beats_left": "AbortMoveControl.jsx abortable.beats_left ('lands in N beats')",
+    "beats_invested": "AbortMoveControl.jsx abortable.beats_invested ('forfeits N beats')",
+    "cooldown_beats": "AbortMoveControl.jsx abortable.cooldown_beats ('then N beats cooldown')",
+    "prep_beats": "AbortMoveControl.jsx destructures abortable (unused today, kept on the wire)",
+}
+
+
 MOVE_STAGE_BEATS_CONTRACT = {
     "prep": "CombatMovePanel.jsx MoveCommitmentBar stageBeats.prep",
     "execute": "CombatMovePanel.jsx MoveCommitmentBar stageBeats.execute",
@@ -1099,3 +1108,65 @@ class TestSavesWireContract:
 
         assert saves, "expected list_saves to return the mocked row"
         _assert_contract(saves[0], SAVES_ROW_CONTRACT, "list_saves()[0]")
+
+
+class TestAbortableMoveWireContract:
+    """`battle_state.abortable_move` is what the abort control renders.
+
+    It is published inside battle_state, never at the top level, because
+    transformCombatData whitelists top-level keys and silently drops the rest —
+    the drop-trap CLAUDE.md records as having shipped twice.
+    """
+
+    def _adapter_mid_prep(self):
+        from src.api.combat_adapter import ApiCombatAdapter
+        from src.items import Crossbow, IronArrow
+        from src.moves import AimedShot, Wait
+        from src.narration import capture_narration
+
+        player = Player()
+        player.eq_weapon = Crossbow()
+        arrow = IronArrow()
+        arrow.count = 30
+        player.inventory.append(arrow)
+        player.combat_exp.setdefault("Crossbow", 0)
+        player.known_moves = [AimedShot(player), Wait(player)]
+        for move in player.known_moves:
+            move.user = player
+
+        enemy = Slime()
+        adapter = ApiCombatAdapter(player)
+        with capture_narration():
+            adapter.initialize_combat([enemy])
+        player.combat_list = [enemy]
+        player.combat_list_allies = [player]
+        player.combat_proximity = {enemy: 20}
+        with capture_narration():
+            adapter._handle_move_selection(0)
+        return adapter
+
+    def test_abortable_move_fields_match_what_the_control_reads(self):
+        adapter = self._adapter_mid_prep()
+        state = adapter.get_combat_state()
+        assert "abortable_move" not in state, (
+            "abortable_move must live inside battle_state — transformCombatData "
+            "drops unknown top-level keys"
+        )
+        abortable = state["battle_state"]["abortable_move"]
+        assert abortable is not None, "fixture: expected a move mid-prep"
+
+        missing = set(ABORTABLE_MOVE_CONTRACT) - set(abortable)
+        assert not missing, (
+            f"AbortMoveControl reads fields the serializer never emits: {missing}"
+        )
+
+    def test_abortable_move_is_null_when_nothing_is_in_flight(self):
+        from src.api.combat_adapter import ApiCombatAdapter
+
+        player = Player()
+        player.known_moves = []
+        player.combat_log = []
+        player.combat_beat = 1
+        adapter = ApiCombatAdapter(player)
+        state = adapter.get_combat_state()
+        assert state["battle_state"]["abortable_move"] is None

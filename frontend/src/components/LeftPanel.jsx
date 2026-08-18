@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react'
-import { colors, accessibility } from '../styles/theme'
+import { colors, spacing, accessibility } from '../styles/theme'
 import { useAudio } from '../context/AudioContext'
 import PartyPanel from './PartyPanel'
 import InventoryDialog from './InventoryDialog'
@@ -12,6 +12,7 @@ import ActionsPanel from './ActionsPanel'
 import InteractPanel from './InteractPanel'
 import HeroPanel from './HeroPanel'
 import CombatMovePanel from './CombatMovePanel'
+import AbortMoveControl from './AbortMoveControl'
 import CombatLog from './CombatLog'
 import CombatInputDialog from './CombatInputDialog'
 import { getAnimationDuration } from '../utils/animationConfigs'
@@ -192,7 +193,11 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
   }, [isBusyProcessing, onLogProcessingChange])
 
   // Determine if it's player's turn - ONLY if not processing log and combat hasn't ended
-  const isMyTurn = (combat?.awaiting_input || false) && !isBusyProcessing && !combat?.end_state && !isEventDialogActive
+  // A move still winding up: the engine hands control back mid-prep when the
+  // move outruns the per-request beat cap, but the only legal action then is to
+  // abort it (the server refuses a switch — see _handle_move_selection).
+  const abortableMove = combat?.abortable_move || null
+  const isMyTurn = (combat?.awaiting_input || false) && !isBusyProcessing && !combat?.end_state && !isEventDialogActive && !abortableMove
 
   // Flee is viable only when it's the player's turn and all enemies are >= 20 ft away
   const canFlee = isMyTurn &&
@@ -781,6 +786,15 @@ function LeftPanel({ player, location, mode, combat, isEventDialogActive = false
         )}
 
         {/* Combat Move Panel */}
+        {mode === 'combat' && abortableMove && (
+          <div style={{ marginBottom: spacing.sm }}>
+            <AbortMoveControl
+              abortable={abortableMove}
+              onAbort={() => onCombatAction('abort', {})}
+            />
+          </div>
+        )}
+
         {showCombatMoves && mode === 'combat' && isMyTurn && (
           <CombatMovePanel
             moves={availableMoves}

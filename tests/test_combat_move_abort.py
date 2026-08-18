@@ -116,15 +116,38 @@ def test_a_move_past_prep_cannot_be_abandoned():
     assert adapter._abortable_move() is None
 
 
-@pytest.mark.xfail(
-    reason="known gap: selecting another move while one is winding up abandons it "
-    "for free, so nobody would ever pay for the costed abort. Must be closed in "
-    "the same release as the abort UI -- closing it sooner leaves a player "
-    "mid-prep with no legal action at all.",
-    strict=True,
-)
-def test_switching_moves_mid_prep_does_not_dodge_the_abort_cost():
+def test_switching_moves_mid_prep_is_refused_rather_than_free():
+    """The costed abort is only meaningful if the free path is closed.
+
+    Previously this reassigned player.current_move and left the half-prepped
+    move at stage 0, immediately re-castable -- 20 beats of Aimed Shot thrown
+    away at no charge, right next to a button that charges for the same thing.
+    """
     player, adapter, aimed = _start_aimed_shot()
     with capture_narration():
-        adapter._handle_move_selection(1)  # Wait
-    assert aimed.current_stage == 3, "abandoning by switching should charge cooldown"
+        result = adapter._handle_move_selection(1)  # Wait
+
+    assert result.get("requires_abort") is True
+    assert "abort" in result["error"].lower()
+    # The in-flight move is untouched -- not silently cancelled, not advanced.
+    assert player.current_move is aimed
+    assert aimed.current_stage == 0
+
+
+def test_abort_then_act_is_the_supported_path():
+    player, adapter, aimed = _start_aimed_shot()
+    with capture_narration():
+        adapter.abort_current_move()
+        result = adapter._handle_move_selection(1)  # Wait
+    assert result.get("error") is None
+    assert aimed.current_stage == 3, "the abandoned move still pays its cooldown"
+
+
+def test_reselecting_the_same_in_flight_move_is_not_treated_as_a_switch():
+    """Re-sending the move already winding up is a no-op resend (a double click,
+    a retried request), not an attempt to abandon it -- it must not be refused
+    with an abort prompt."""
+    player, adapter, aimed = _start_aimed_shot()
+    with capture_narration():
+        result = adapter._handle_move_selection(0)
+    assert result.get("requires_abort") is None
