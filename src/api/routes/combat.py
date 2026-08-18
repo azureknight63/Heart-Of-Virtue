@@ -211,6 +211,32 @@ def toggle_suggestions_pause():
         return jsonify({"success": False, "error": "An internal error occurred"}), 500
 
 
+@combat_bp.route("/abort", methods=["POST"])
+def abort_move():
+    """Break off the move the player is winding up.
+
+    Not an undo: the beats already spent are forfeited and the move's full
+    cooldown is charged. Only a move still in its prep stage, and long enough to
+    have been worth committing to, can be aborted -- see
+    ``ApiCombatAdapter._abortable_move``.
+    """
+    try:
+        session_manager, session, player, error = get_session_and_player()
+        if error:
+            return error
+
+        from flask import current_app
+
+        result = current_app.game_service.abort_move(player)
+        if not result.get("success"):
+            return jsonify(result), 400
+        return jsonify(result), 200
+
+    except Exception:
+        logger.exception("Unhandled error in abort_move")
+        return jsonify({"success": False, "error": "An internal error occurred"}), 500
+
+
 @combat_bp.route("/collect-loot", methods=["POST"])
 def collect_loot():
     """Move selected post-combat drops from the tile into the player's inventory.

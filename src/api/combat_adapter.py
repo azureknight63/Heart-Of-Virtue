@@ -34,6 +34,14 @@ if TYPE_CHECKING:
 # Compiled once at module level for performance
 _ANSI_ESCAPE = re.compile(r"\x1B(?:[@-Z\\_-]|\[[0-?]*[ -/]*[@-~])")
 
+# Shortest prep stage that earns an abort affordance. Below this a move is over
+# before a player could react to anything, and offering a bail-out would only add
+# a decision to every swing. Above it the commitment is long enough that the
+# battlefield can change while you are still winding up: ShootBow (10),
+# ShootCrossbow / BroadheadBolt / PinningBolt (15), AimedShot (25),
+# BloodOfMartyrs (40).
+ABORTABLE_MIN_PREP_BEATS = 8
+
 logger = logging.getLogger(__name__)
 
 
@@ -2222,6 +2230,71 @@ class ApiCombatAdapter:
             ally.in_combat = False
         self.player.combat_list_allies = [self.player] + existing_allies
 
+    def _abortable_move(self):
+        """The in-flight move the player may bail out of, or None.
+
+        Only a move still winding up qualifies. Once it reaches execute there is
+        nothing left to abandon -- the blow is being thrown -- and recoil and
+        cooldown are the price already being paid.
+        """
+        move = getattr(self.player, "current_move", None)
+        if move is None:
+            return None
+        if getattr(move, "current_stage", None) != 0:
+            return None
+        if getattr(move, "beats_left", 0) <= 0:
+            return None
+        stage_beats = getattr(move, "stage_beat", None) or []
+        prep = stage_beats[0] if stage_beats else 0
+        if prep < ABORTABLE_MIN_PREP_BEATS:
+            return None
+        return move
+
+    def abort_current_move(self) -> Dict[str, Any]:
+        """Abandon the move the player is winding up, paying its full cooldown.
+
+        Delegates the actual state change to the engine: setting ``interrupted``
+        and advancing the move once drives ``Move.advance``'s interrupt branch,
+        which sends it to the cooldown stage, charges the whole cooldown and
+        detaches it from the player. That branch returns before any beat
+        processing, so no other move's cooldown drains here -- cooldowns must
+        only tick inside the combat loop.
+        """
+        move = self._abortable_move()
+        if move is None:
+            return {"error": "No move in progress that can be aborted"}
+
+        aborted_name = display_name_of(move)
+        # What the player gives up is the wind-up already invested, not the
+        # wind-up remaining: bailing at beat 20 of a 25-beat aim forfeits 20.
+        stage_beats = getattr(move, "stage_beat", None) or [0]
+        remaining = int(getattr(move, "beats_left", 0))
+        forfeited = max(0, int(stage_beats[0]) - remaining)
+        move.interrupted = True
+        with self._capture_output():
+            self.output_capture.active_entity = self.player
+            move.advance(self.player)
+            self.output_capture.active_entity = None
+        self._add_log_entry(
+            getattr(self.player, "combat_beat", 0),
+            f"{self.player.name} breaks off {aborted_name}.",
+            "system",
+        )
+
+        self.awaiting_input = True
+        self.input_type = "move_selection"
+        self.pending_move_index = None
+        self.available_options = self._get_available_moves()
+
+        result = self.get_combat_state()
+        result["aborted"] = {
+            "move": aborted_name,
+            "beats_forfeited": forfeited,
+            "beats_remaining_when_aborted": remaining,
+            "cooldown_beats": int(getattr(move, "beats_left", 0)),
+        }
+        return result
+
     def _get_available_moves(self) -> List[Dict[str, Any]]:
         """Get list of all moves for the player with availability status."""
         moves = []
@@ -2449,6 +2522,24 @@ class ApiCombatAdapter:
         battle_state["map_size"] = self.combat_grid_size[0]
         battle_state["beat"] = getattr(self.player, "combat_beat", 0)
         battle_state["heat"] = int(self.player.heat * 100)
+        abortable = self._abortable_move()
+        battle_state["abortable_move"] = (
+            {
+                "name": display_name_of(abortable),
+                "beats_left": int(getattr(abortable, "beats_left", 0)),
+                "prep_beats": int((getattr(abortable, "stage_beat", None) or [0])[0]),
+                "beats_invested": max(
+                    0,
+                    int((getattr(abortable, "stage_beat", None) or [0])[0])
+                    - int(getattr(abortable, "beats_left", 0)),
+                ),
+                "cooldown_beats": int(
+                    (getattr(abortable, "stage_beat", None) or [0, 0, 0, 0])[3]
+                ),
+            }
+            if abortable is not None
+            else None
+        )
         battle_state["awaiting_input"] = self.awaiting_input
         battle_state["input_type"] = self.input_type
         battle_state["available_options"] = self.available_options
