@@ -1,6 +1,8 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { act } from 'react';
 import Battlefield from './Battlefield';
+import { setFlag, resetFlags } from '../utils/featureFlags';
 import React from 'react';
 
 // Mock child components. Battlefield also imports VIEW_SIZE (off-screen-enemy
@@ -216,6 +218,38 @@ describe('Battlefield', () => {
         // Banner should NOT appear in fit mode
         await waitFor(() => {
             expect(screen.queryByRole('status')).toBeNull();
+        });
+    });
+
+    describe('beatTimeline feature flag', () => {
+        afterEach(() => {
+            resetFlags();
+        });
+
+        const combatWithPendingMove = {
+            ...mockCombat,
+            beat: 7,
+            beat_states: [{
+                player: {
+                    id: 'player', name: 'Jean', position: { x: 1, y: 1 },
+                    current_move: { name: 'Attack', display_name: 'Attack', category: 'Offensive', current_stage: 0, beats_until_resolve: 3 },
+                },
+                enemies: [{ id: 'e1', name: 'Slime', hp: 4, max_hp: 10, position: { x: 2, y: 1 } }],
+            }],
+        };
+
+        it('shows the old beat counter, not the timeline, by default', () => {
+            render(<Battlefield combat={combatWithPendingMove} currentLogIndex={0} />);
+            expect(screen.getByText('Beat 7')).toBeInTheDocument();
+            expect(screen.queryByLabelText('Beat timeline')).not.toBeInTheDocument();
+        });
+
+        it('shows the timeline instead of the counter once the flag is on', () => {
+            act(() => setFlag('beatTimeline', true));
+            render(<Battlefield combat={combatWithPendingMove} currentLogIndex={0} />);
+            expect(screen.getByLabelText('Beat timeline')).toBeInTheDocument();
+            expect(screen.queryByText('Beat 7')).not.toBeInTheDocument();
+            expect(screen.getByText('Jean')).toBeInTheDocument();
         });
     });
 });

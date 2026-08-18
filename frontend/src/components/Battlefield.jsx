@@ -1,8 +1,10 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 
 import BattlefieldGrid, { VIEW_SIZE, VIEW_MODE_FOLLOW, VIEW_MODE_FIT } from './BattlefieldGrid'
+import BeatTimeline from './BeatTimeline'
 import { colors, spacing } from '../styles/theme'
 import { isLiving } from '../utils/combatEntities'
+import { useFeatureFlag } from '../utils/featureFlags'
 
 const HALF_VIEW = Math.floor(VIEW_SIZE / 2);
 const MAX_BEAT_STATES = 200;
@@ -42,6 +44,7 @@ function anyEnemyOffScreen(state) {
 }
 
 export default function Battlefield({ combat, currentLogIndex, displayedLogCount, hoveredTargetId, onAnimatingChange, streaming = false, streamedAnimations = [], combatSpeed = 1 }) {
+  const beatTimelineEnabled = useFeatureFlag('beatTimeline')
   const [selectedTab, setSelectedTab] = useState('overview')
   const [zoom, setZoom] = useState(VIEW_MODE_FOLLOW)
   // Transient banner shown once per "enemy goes off-screen" transition, auto-
@@ -205,8 +208,17 @@ export default function Battlefield({ combat, currentLogIndex, displayedLogCount
         )}
       </div>
 
-      {/* Fight status strip — beat number and how many enemies are still up. */}
-      {selectedTab === 'overview' && (
+      {/* Fight status strip. Behind the `beatTimeline` flag, this is a
+          schedule of who resolves when (BeatTimeline) instead of the raw
+          beat counter — the two are mutually exclusive so they can be
+          compared, never both rendered at once. `displayState`, not `combat`:
+          BeatTimeline needs to agree with the living-enemy count and the grid
+          above it, both of which already read the scrub-consistent per-beat
+          snapshot rather than the live top-level state. */}
+      {selectedTab === 'overview' && beatTimelineEnabled && (
+        <BeatTimeline combat={displayState} />
+      )}
+      {selectedTab === 'overview' && !beatTimelineEnabled && (
         <div
           style={{
             display: 'flex', gap: spacing.md, alignItems: 'center',
