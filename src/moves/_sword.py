@@ -324,6 +324,18 @@ class VertigoSpin(Move):
                 "red",
             )
 
+    def preview_hit_chance(self, target=None):
+        """Unlike most moves, VertigoSpin's execute() never calls
+        ``self.viable()`` before rolling -- its only real gate is "target
+        exists and is alive" (checked in execute() and mirrored here), so
+        this deliberately goes through ``_unconditional_preview_hit_chance``,
+        not ``_standard_preview_hit_chance`` (which would additionally
+        require ``combat_position`` via ``viable()`` and make the preview
+        auto-miss in situations execute() itself would still roll for).
+        """
+        t = target if target is not None else self.target
+        return self._unconditional_preview_hit_chance(t, base=85)
+
     def execute(self, user):
         """Execute stage - spin attack and apply Disoriented status."""
         if not self.target or not self.target.is_alive():
@@ -345,9 +357,8 @@ class VertigoSpin(Move):
         ) * random.uniform(0.8, 1.2)
         damage = max(0, damage)
 
-        hit_chance = to_hit_chance(self.user, self.target, base=85)
-        # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
-        hit_chance = _apply_to_hit_modifiers(self.user, self.target, hit_chance)
+        preview = self.preview_hit_chance(self.target)
+        hit_chance = preview if preview is not None else -1
         roll = random.randint(0, 100)
         glance = False
         if hit_chance >= roll and hit_chance - roll < 10:

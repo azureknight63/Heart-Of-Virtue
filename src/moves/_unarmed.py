@@ -12,8 +12,6 @@ from ._base import (
     Move,
     PassiveMove,
     _apply_carry_fatigue,
-    _apply_to_hit_modifiers,
-    to_hit_chance,
 )  # noqa: F401
 
 
@@ -131,6 +129,10 @@ class PowerStrike(Move):
             "",
         ]
 
+    def preview_hit_chance(self, target=None):
+        t = target if target is not None else self.target
+        return self._standard_preview_hit_chance(t, base=85, floor=1)
+
     def execute(self, npc):
         self.refresh_announcements(npc)
         narrate(self.stage_announce[1])
@@ -148,12 +150,8 @@ class PowerStrike(Move):
 
         self.prep_colors()
         glance = False
-        if self.viable():
-            hit_chance = to_hit_chance(self.user, self.target, base=85, floor=1)
-        else:
-            hit_chance = -1
-        # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
-        hit_chance = _apply_to_hit_modifiers(self.user, self.target, hit_chance)
+        preview = self.preview_hit_chance(self.target)
+        hit_chance = preview if preview is not None else -1
         roll = random.randint(0, 100)
         damage = self.power - self.target.protection
         if damage <= 0:
@@ -266,6 +264,10 @@ class Jab(Move):
             "",
         ]
 
+    def preview_hit_chance(self, target=None):
+        t = target if target is not None else self.target
+        return self._standard_preview_hit_chance(t, floor=1)
+
     def execute(self, npc):
         self.refresh_announcements(npc)
         narrate(self.stage_announce[1])
@@ -283,12 +285,8 @@ class Jab(Move):
 
         self.prep_colors()
         glance = False
-        if self.viable():
-            hit_chance = to_hit_chance(self.user, self.target, floor=1)
-        else:
-            hit_chance = -1
-        # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
-        hit_chance = _apply_to_hit_modifiers(self.user, self.target, hit_chance)
+        preview = self.preview_hit_chance(self.target)
+        hit_chance = preview if preview is not None else -1
         roll = random.randint(0, 100)
         damage = self.power - self.target.protection
         if damage <= 0:

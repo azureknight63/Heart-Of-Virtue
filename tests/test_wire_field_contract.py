@@ -72,7 +72,7 @@ from src.api.serializers.combat import (
 )
 from src.api.serializers.shop_serializer import ShopSerializer
 from src.api.services.game_service import GameService
-from src.items import IronArrow, Restorative, Shortbow
+from src.items import IronArrow, Mace, Restorative, Shortbow
 from src.moves import PowerStrike, ShootBow
 from src.npc._enemies import Slime
 from src.npc._merchants import Merchant
@@ -718,6 +718,41 @@ class TestCombatantWireContract:
             f"hit_chance={hit_chance!r} looks like a 0-1 fraction, not the integer "
             "percentage CombatInputDialog.jsx renders unscaled"
         )
+
+    def test_hit_chance_is_populated_for_a_non_shootbow_move(self):
+        """Before Move.preview_hit_chance (src/moves/_base.py), hit_chance was
+        gated on `move.verbose_targeting and hasattr(move, "calculate_hit_chance")`
+        -- true for ShootBow only, so every other targeted move's target card
+        silently lacked an accuracy estimate (33 of 34 targeted moves). This
+        pins PowerStrike, one of those 33, as a regression guard: revert the
+        adapter's preview_hit_chance wiring and this fails while the
+        ShootBow-only test above keeps passing, since that one never exercised
+        the gap."""
+        player = Player()
+        player.known_moves = []
+        player.combat_log = []
+        player.last_move_summary = ""
+        player.combat_beat = 1
+        player.in_combat = True
+        player.eq_weapon = Mace()
+        enemy = Slime()
+        player.combat_list = [enemy]
+        player.combat_list_allies = [player]
+        player.combat_proximity = {enemy: 3}  # inside PowerStrike's (0, 5) range
+        enemy.combat_proximity = {player: 3}
+
+        with patch("src.api.combat_adapter.CombatStrategist"):
+            adapter = ApiCombatAdapter(player)
+            move = PowerStrike(player)
+            move.target = enemy
+            targets = adapter._get_available_targets(move)
+
+        assert targets, "expected the in-range Slime to produce a target entry"
+        assert "hit_chance" in targets[0], (
+            "PowerStrike (a non-ShootBow, non-verbose_targeting move) should "
+            "now expose a preview hit chance via Move.preview_hit_chance"
+        )
+        assert targets[0]["hit_chance"] == move.preview_hit_chance(enemy)
 
 
 # ============================================================================

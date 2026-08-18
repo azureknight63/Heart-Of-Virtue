@@ -25,6 +25,25 @@ def _crossbow_close_range_penalty(user, range_min):
     return any(dist < range_min for dist in user.combat_proximity.values())
 
 
+def _apply_crossbow_range_decay(move, user, target, hit_chance):
+    """Distance accuracy decay shared by the crossbow-family moves
+    (ShootCrossbow, BroadheadBolt, AimedShot, PinningBolt): subtract
+    ``move.decay`` per foot past ``move.base_range``, floored at 2.
+
+    Factored out so each move's ``preview_hit_chance`` and ``execute()`` stay
+    byte-identical to each other -- one derivation, called from both places,
+    rather than two copies that can drift apart.
+    """
+    if target in getattr(user, "combat_proximity", {}):
+        target_distance = user.combat_proximity[target]
+        if target_distance > move.base_range:
+            accuracy_decay = (target_distance - move.base_range) * move.decay
+            hit_chance -= accuracy_decay
+            if hit_chance < 2:
+                hit_chance = 2
+    return hit_chance
+
+
 class ShootBow(
     Move
 ):  # ranged attack with a bow, player only. Requires having arrows in inventory;
@@ -586,6 +605,16 @@ class ShootCrossbow(Move):
         ):
             self.decay *= 0.7
 
+    def preview_hit_chance(self, target=None):
+        t = target if target is not None else self.target
+        if not self._viable_for(t):
+            return None
+        hit_chance = to_hit_chance(self.user, t, floor=5)
+        if _crossbow_close_range_penalty(self.user, self.mvrange[0]):
+            hit_chance = int(hit_chance * 0.5)
+        hit_chance = _apply_crossbow_range_decay(self, self.user, t, hit_chance)
+        return _apply_to_hit_modifiers(self.user, t, hit_chance)
+
     def execute(self, player):
         glance = False
         self.prep_colors()
@@ -601,23 +630,8 @@ class ShootCrossbow(Move):
                 self.user.combat_position, self.target.combat_position
             )
 
-        rmin, rmax = self.mvrange
-        if not self.viable():
-            hit_chance = -1
-        else:
-            hit_chance = to_hit_chance(self.user, self.target, floor=5)
-            if _crossbow_close_range_penalty(self.user, rmin):
-                hit_chance = int(hit_chance * 0.5)
-            # Apply distance accuracy decay (like ShootBow)
-            if self.target in self.user.combat_proximity:
-                target_distance = self.user.combat_proximity[self.target]
-                if target_distance > self.base_range:
-                    accuracy_decay = (target_distance - self.base_range) * self.decay
-                    hit_chance -= accuracy_decay
-                    if hit_chance < 2:
-                        hit_chance = 2
-            # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
-            hit_chance = _apply_to_hit_modifiers(self.user, self.target, hit_chance)
+        preview = self.preview_hit_chance(self.target)
+        hit_chance = preview if preview is not None else -1
 
         roll = random.randint(0, 100)
         damage = (
@@ -738,6 +752,18 @@ class BroadheadBolt(Move):
         ):
             self.decay *= 0.7
 
+    def preview_hit_chance(self, target=None):
+        """Broadhead Bolt applies distance decay but -- unlike ShootCrossbow
+        and PinningBolt -- does NOT apply the crossbow close-range penalty;
+        this mirrors execute() exactly (see the missing
+        ``_crossbow_close_range_penalty`` call there)."""
+        t = target if target is not None else self.target
+        if not self._viable_for(t):
+            return None
+        hit_chance = to_hit_chance(self.user, t, floor=5)
+        hit_chance = _apply_crossbow_range_decay(self, self.user, t, hit_chance)
+        return _apply_to_hit_modifiers(self.user, t, hit_chance)
+
     def execute(self, player):
         glance = False
         self.prep_colors()
@@ -753,20 +779,8 @@ class BroadheadBolt(Move):
                 self.user.combat_position, self.target.combat_position
             )
 
-        if self.viable():
-            hit_chance = to_hit_chance(self.user, self.target, floor=5)
-            # Apply distance accuracy decay
-            if self.target in self.user.combat_proximity:
-                target_distance = self.user.combat_proximity[self.target]
-                if target_distance > self.base_range:
-                    accuracy_decay = (target_distance - self.base_range) * self.decay
-                    hit_chance -= accuracy_decay
-                    if hit_chance < 2:
-                        hit_chance = 2
-        else:
-            hit_chance = -1
-        # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
-        hit_chance = _apply_to_hit_modifiers(self.user, self.target, hit_chance)
+        preview = self.preview_hit_chance(self.target)
+        hit_chance = preview if preview is not None else -1
 
         roll = random.randint(0, 100)
         damage = (
@@ -891,6 +905,16 @@ class AimedShot(Move):
         ):
             self.decay *= 0.7
 
+    def preview_hit_chance(self, target=None):
+        t = target if target is not None else self.target
+        if not self._viable_for(t):
+            return None
+        hit_chance = min(100, max(5, to_hit_chance(self.user, t) + 15))
+        if _crossbow_close_range_penalty(self.user, self.mvrange[0]):
+            hit_chance = int(hit_chance * 0.5)
+        hit_chance = _apply_crossbow_range_decay(self, self.user, t, hit_chance)
+        return _apply_to_hit_modifiers(self.user, t, hit_chance)
+
     def execute(self, player):
         glance = False
         self.prep_colors()
@@ -906,25 +930,8 @@ class AimedShot(Move):
                 self.user.combat_position, self.target.combat_position
             )
 
-        rmin, rmax = self.mvrange
-        if not self.viable():
-            hit_chance = -1
-        else:
-            hit_chance = min(
-                100, max(5, to_hit_chance(self.user, self.target) + 15)
-            )
-            if _crossbow_close_range_penalty(self.user, rmin):
-                hit_chance = int(hit_chance * 0.5)
-            # Apply distance accuracy decay
-            if self.target in self.user.combat_proximity:
-                target_distance = self.user.combat_proximity[self.target]
-                if target_distance > self.base_range:
-                    accuracy_decay = (target_distance - self.base_range) * self.decay
-                    hit_chance -= accuracy_decay
-                    if hit_chance < 2:
-                        hit_chance = 2
-            # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
-            hit_chance = _apply_to_hit_modifiers(self.user, self.target, hit_chance)
+        preview = self.preview_hit_chance(self.target)
+        hit_chance = preview if preview is not None else -1
 
         roll = random.randint(0, 100)
         damage = (
@@ -1045,6 +1052,16 @@ class PinningBolt(Move):
         ):
             self.decay *= 0.7
 
+    def preview_hit_chance(self, target=None):
+        t = target if target is not None else self.target
+        if not self._viable_for(t):
+            return None
+        hit_chance = to_hit_chance(self.user, t, floor=5)
+        if _crossbow_close_range_penalty(self.user, self.mvrange[0]):
+            hit_chance = int(hit_chance * 0.5)
+        hit_chance = _apply_crossbow_range_decay(self, self.user, t, hit_chance)
+        return _apply_to_hit_modifiers(self.user, t, hit_chance)
+
     def execute(self, player):
         glance = False
         self.prep_colors()
@@ -1060,23 +1077,8 @@ class PinningBolt(Move):
                 self.user.combat_position, self.target.combat_position
             )
 
-        rmin, rmax = self.mvrange
-        if not self.viable():
-            hit_chance = -1
-        else:
-            hit_chance = to_hit_chance(self.user, self.target, floor=5)
-            if _crossbow_close_range_penalty(self.user, rmin):
-                hit_chance = int(hit_chance * 0.5)
-            # Apply distance accuracy decay
-            if self.target in self.user.combat_proximity:
-                target_distance = self.user.combat_proximity[self.target]
-                if target_distance > self.base_range:
-                    accuracy_decay = (target_distance - self.base_range) * self.decay
-                    hit_chance -= accuracy_decay
-                    if hit_chance < 2:
-                        hit_chance = 2
-            # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
-            hit_chance = _apply_to_hit_modifiers(self.user, self.target, hit_chance)
+        preview = self.preview_hit_chance(self.target)
+        hit_chance = preview if preview is not None else -1
 
         roll = random.randint(0, 100)
         damage = (
