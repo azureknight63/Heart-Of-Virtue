@@ -308,8 +308,24 @@ class SafeUnpickler(pickle.Unpickler):
         else:
             logger.debug("SafeUnpickler %s: %s.%s", kind, module, name)
 
+    @staticmethod
+    def _sanitize_type_name(raw):
+        """Coerce an arbitrary string into something ``type()`` will accept.
+
+        A crafted pickle can name a module containing characters that are legal
+        in a pickle stream but illegal in a Python type name -- most sharply a
+        NUL, which makes ``type()`` raise ``ValueError`` outright. That raise
+        happened *after* ``find_class``'s guarded ``super()`` call, so it
+        escaped as an unhandled crash rather than degrading to a placeholder.
+        Everything outside ``[A-Za-z0-9_]`` collapses to an underscore.
+        """
+        cleaned = "".join(ch if ch.isalnum() or ch == "_" else "_" for ch in raw)
+        return cleaned or "_"
+
     def _make_placeholder(self, module, name):
-        placeholder_class_name = f"LegacyMissing_{module.replace('.', '_')}_{name}"
+        placeholder_class_name = self._sanitize_type_name(
+            f"LegacyMissing_{module.replace('.', '_')}_{name}"
+        )
         attrs = dict(_PLACEHOLDER_ATTRS)
         attrs["__doc__"] = f"Placeholder for missing legacy class {module}.{name}"
         attrs["__repr__"] = lambda self: f"<LegacyMissing {module}.{name}>"

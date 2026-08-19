@@ -6,8 +6,6 @@ from pathlib import Path
 from unittest.mock import Mock
 import pytest
 
-pytestmark = pytest.mark.skip(reason="Flask app fixture isolation issues when run in full suite - tests pass individually but fail with other tests")
-
 # Setup paths
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -563,19 +561,6 @@ class TestNPCRoutes:
         assert response.status_code in [401, 403, 404]
 
 
-class TestQuestRoutes:
-    """Test quest-related routes."""
-
-    def test_quest_chains_route_exists(self):
-        """Test quest chains blueprint exists."""
-        from src.api.routes.quest_chains import quest_chains_bp
-        assert quest_chains_bp is not None
-
-    def test_quest_rewards_route_exists(self):
-        """Test quest rewards blueprint exists."""
-        from src.api.routes.quest_rewards import quest_rewards_bp
-        assert quest_rewards_bp is not None
-
 
 class TestShopRoutes:
     """Test shop routes."""
@@ -637,33 +622,6 @@ class TestLogsRoutes:
         assert response.status_code in [401, 403, 404]
 
 
-class TestDialogueContextRoutes:
-    """Test dialogue context routes."""
-
-    def test_dialogue_context_route_exists(self):
-        """Test dialogue context blueprint exists."""
-        from src.api.routes.dialogue_context import dialogue_context_bp
-        assert dialogue_context_bp is not None
-
-    def test_get_dialogue_unauthorized(self):
-        """Test get dialogue requires auth."""
-        from src.api.app import create_app
-        result = create_app()
-        app = result[0] if isinstance(result, tuple) else result
-        app.config['TESTING'] = True
-        client = app.test_client()
-
-        response = client.get('/api/dialogue')
-        assert response.status_code in [401, 403, 404]
-
-
-class TestNPCAvailabilityRoutes:
-    """Test NPC availability routes."""
-
-    def test_npc_availability_route_exists(self):
-        """Test NPC availability blueprint exists."""
-        from src.api.routes.npc_availability import npc_availability_bp
-        assert npc_availability_bp is not None
 
 
 class TestFeedbackRoutes:
@@ -815,50 +773,42 @@ class TestBlueprintRegistration:
 
     def test_all_blueprints_importable(self):
         """Test all blueprint modules can be imported."""
-        blueprint_modules = [
-            'src.api.routes.auth',
-            'src.api.routes.combat',
-            'src.api.routes.inventory',
-            'src.api.routes.player',
-            'src.api.routes.quest_chains',
-            'src.api.routes.quest_rewards',
-            'src.api.routes.saves',
-            'src.api.routes.shop',
-            'src.api.routes.world',
-            'src.api.routes.logs',
-            'src.api.routes.dialogue_context',
-            'src.api.routes.npc_availability',
-            'src.api.routes.feedback',
-            'src.api.routes.npc_chat',
-        ]
+        import importlib
+        import pkgutil
 
-        for module_name in blueprint_modules:
-            try:
-                __import__(module_name)
-            except ImportError as e:
-                # Some routes may have import issues, note but don't fail
-                pass
+        import src.api.routes as routes_pkg
+
+        # Derive the module list from the package instead of hardcoding it.
+        # The previous version listed four modules that do not exist and
+        # swallowed every ImportError with `pass`, so it could never fail --
+        # it passed just as happily with the whole package deleted.
+        discovered = [
+            name for _, name, _ in pkgutil.iter_modules(routes_pkg.__path__)
+        ]
+        assert discovered, "no route modules discovered"
+
+        for module_name in discovered:
+            importlib.import_module(f"src.api.routes.{module_name}")
 
     def test_routes_init_exports_blueprints(self):
-        """Test routes/__init__ exports all blueprints."""
-        from src.api.routes import (
-            auth_bp,
-            combat_bp,
-            inventory_bp,
-            player_bp,
-            quest_chains_bp,
-            quest_rewards_bp,
-            saves_bp,
-            shop_bp,
-            world_bp,
-            logs_bp,
-            dialogue_context_bp,
-            npc_availability_bp,
-            feedback_bp,
-        )
+        """Every name in routes.__all__ is exported and is a real Blueprint."""
+        from flask import Blueprint
 
-        assert auth_bp is not None
-        assert combat_bp is not None
+        import src.api.routes as routes_pkg
+
+        exported = getattr(routes_pkg, "__all__", [])
+        assert exported, "routes.__all__ is empty"
+
+        for name in exported:
+            assert hasattr(routes_pkg, name), f"{name} missing from src.api.routes"
+            bp = getattr(routes_pkg, name)
+            assert isinstance(bp, Blueprint), f"{name} is not a Blueprint: {type(bp)}"
+
+        # The core gameplay blueprints must be among them -- a shrinking
+        # __all__ would otherwise satisfy the loop above vacuously.
+        for required in ("auth_bp", "combat_bp", "inventory_bp", "player_bp",
+                         "saves_bp", "shop_bp", "world_bp"):
+            assert required in exported, f"{required} no longer exported"
 
 
 class TestServiceAuthenticationEdgeCases:

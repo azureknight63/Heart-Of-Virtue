@@ -15,141 +15,121 @@ from unittest.mock import MagicMock, patch
 from types import SimpleNamespace
 
 # ---------------------------------------------------------------------------
-# Helpers
+# Helpers — real engine objects wherever affordable
+#
+# Issues #411/#412/#430/#431/#432 all shipped the same way: a serializer read
+# an attribute name no engine class defines, the `getattr(obj, name, default)`
+# fallback swallowed the miss, and the only tests were bare `MagicMock()`s
+# whose attributes had been hand-set to the fabricated name. A bare MagicMock
+# materialises *whatever* attribute is asked of it, so those tests could not
+# fail — "a mock cannot catch a mock agreeing with itself" (CLAUDE.md).
+#
+# The factories below therefore return **real** `Player` / `NPC` / `State` /
+# `Item` instances (all cheap: ~0.6 ms for a Player, ~0.05 ms for an NPC), and
+# `_set()` refuses to invent an attribute the real class does not already
+# define. A serializer that reads a renamed attribute now takes the genuine
+# AttributeError path and falls back to its default, which the assertions
+# below catch.
 # ---------------------------------------------------------------------------
 
 
-def _mock_weapon(name="fists", damage=1, str_mod=1, fin_mod=1, subtype="Unarmed"):
-    """Mock an engine `Weapon` (src/items.py).
+def _set(obj, **overrides):
+    """Assign attributes to a real engine object, refusing to invent new ones.
 
-    Real weapons expose `damage`/`str_mod`/`fin_mod`/`subtype` and have **no**
-    `damage_type` attribute (the canonical accessor is
-    `items.get_base_damage_type`), so the mock deliberately omits it.
+    The guard is the whole point: a test that could fabricate
+    `combatant.attack_power` would re-open issue #430.
     """
-    return SimpleNamespace(
-        name=name, damage=damage, str_mod=str_mod, fin_mod=fin_mod, subtype=subtype
+    for key, value in overrides.items():
+        if not hasattr(obj, key):
+            raise AttributeError(
+                f"{type(obj).__name__} has no attribute {key!r} — do not "
+                f"fabricate engine attributes in tests (see issue #430)."
+            )
+        setattr(obj, key, value)
+    return obj
+
+
+def _weapon(cls=None, **overrides):
+    """A real engine weapon from `src.items` (default: Shortsword, 25 dmg)."""
+    from src import items
+
+    return _set((cls or items.Shortsword)(), **overrides)
+
+
+def _player(**overrides):
+    """A real `src.player.Player`, with a real Shortsword equipped.
+
+    Jean's own starting kit (Tattered Cloth / Cloth Hood / Wedding Band) is
+    left in place so equipment serialization sees a realistic inventory.
+    """
+    from src.player import Player
+
+    player = Player()
+    player.eq_weapon = _weapon()
+    return _set(player, **overrides)
+
+
+def _npc(name="Goblin", **overrides):
+    """A real `src.npc.NPC`.
+
+    Deliberately built from the base class rather than a mock so the absence
+    of `level`, `heat`, `battle_symbol` and `eq_weapon` on real NPCs is
+    faithfully reproduced.
+    """
+    from src.npc import NPC
+
+    npc = NPC(
+        name=name,
+        description="A generic foe",
+        damage=15,
+        aggro=True,
+        exp_award=50,
+        maxhp=100,
+        protection=5,
+        speed=8,
+        finesse=9,
+        endurance=10,
+        strength=12,
+        charisma=6,
+        intelligence=7,
     )
+    npc.hp = 80
+    return _set(npc, **overrides)
 
 
-def _mock_combatant(
-    name="Jean",
-    hp=80,
-    maxhp=100,
-    level=3,
-    is_player=True,
-    fatigue=10,
-    maxfatigue=100,
-    heat=1.2,
-    speed=8,
-    damage=15,
-    protection=5,
-    strength=12,
-    finesse=9,
-    endurance=10,
-    intelligence=7,
-    charisma=6,
-    friend=False,
-    resistance=None,
-):
-    """Mock a Player/NPC.
+def _combatant(name="Jean", is_player=True, **overrides):
+    """Real Player or real NPC, whichever the test needs."""
+    if is_player:
+        return _player(name=name, **overrides)
+    return _npc(name=name, **overrides)
 
-    Only attributes the real engine classes define are set (issue #430): the
-    combat serializer derives armour/defense/evasion/accuracy/attack_power
-    from `protection`, `finesse`, `intelligence` and the equipped weapon —
-    there are no `armor`/`defense`/`evasion`/`accuracy`/`attack_power`
-    attributes on Player, NPC or Combatant, and the resistance dict is
-    singular `resistance`.
+
+def _state(name="Poisoned", statustype="poison", beats_left=2, target=None):
+    """A real `src.states.State` (never a mock).
+
+    Real States expose `statustype` (e.g. "poison", "stun") — never
+    `state_type` — and have no damage_per_turn/healing_per_turn/resistable
+    attributes; constructing the genuine class is what keeps that honest.
     """
-    c = MagicMock()
-    if is_player:
-        # Serializers isinstance-check the real Player class; assigning it to
-        # __class__ makes the mock pass that check.
-        from src.player import Player
+    from src.states import State
 
-        c.__class__ = Player
-    else:
-        c.__class__ = type("NPC", (), {})
-    c.name = name
-    c.hp = hp
-    c.maxhp = maxhp
-    c.level = level
-    c.fatigue = fatigue
-    c.maxfatigue = maxfatigue
-    c.heat = heat
-    c.speed = speed
-    c.damage = damage
-    c.protection = protection
-    c.strength = strength
-    c.finesse = finesse
-    c.endurance = endurance
-    c.intelligence = intelligence
-    c.charisma = charisma
-    c.friend = friend
-    c.battle_symbol = "@" if is_player else "E"
-    c.combat_proximity = 0
-    c.combat_position = None
-    c.states = []
-    c.known_moves = []
-    c.inventory = []
-    c.current_move = None
-    c.suggested_moves = []
-    c.suggestions_loading = False
-    c.last_move_summary = ""
-    c.last_move_name = None
-    c.last_move_target_id = None
-    if is_player:
-        # Only the Player equips weapons; NPCs deal their flat `damage`.
-        c.eq_weapon = _mock_weapon()
-    else:
-        del c.eq_weapon
-    c.resistance = {} if resistance is None else resistance
-    return c
+    state = State(
+        name=name,
+        target=target,
+        description="Taking poison damage.",
+        statustype=statustype,
+    )
+    state.beats_left = beats_left
+    return state
 
 
-def _mock_move(
-    name="Slash",
-    description="A basic slash",
-    move_type="physical",
-    category="Attack",
-    base_damage=10,
-    damage_type="slashing",
-    mp_cost=0,
-    stamina_cost=5,
-    range_val="melee",
-    cooldown_max=0,
-    cooldown=0,
-    accuracy=100,
-    passive=False,
-    applies_state=None,
-):
-    m = MagicMock()
-    m.name = name
-    m.description = description
-    m.move_type = move_type
-    m.category = category
-    m.base_damage = base_damage
-    m.damage_type = damage_type
-    m.mp_cost = mp_cost
-    m.stamina_cost = stamina_cost
-    m.range = range_val
-    m.cooldown_max = cooldown_max
-    m.cooldown = cooldown
-    m.accuracy = accuracy
-    m.passive = passive
-    m.applies_state = applies_state
-    return m
+def _move(cls=None, **overrides):
+    """A real `src.moves` Move instance bound to a real Player."""
+    import src.moves as moves
 
-
-def _mock_state(name="Poisoned", statustype="poison", beats_left=2):
-    """Mock a src/states.py State. Real States expose `statustype` (e.g.
-    "poison", "stun", "enraged") -- never `state_type` -- and have no generic
-    damage_per_turn/healing_per_turn/resistable attributes."""
-    s = MagicMock()
-    s.name = name
-    s.statustype = statustype
-    s.description = "Taking poison damage."
-    s.beats_left = beats_left
-    return s
+    user = overrides.pop("user", None) or _player()
+    move = (cls or moves.PowerStrike)(user)
+    return _set(move, **overrides)
 
 
 # ===========================================================================
@@ -166,8 +146,8 @@ class TestCombatStateSerializer:
         self.CombatStateSerializer = CombatStateSerializer
 
     def test_serialize_combat_state_basic(self):
-        player = _mock_combatant()
-        enemy = _mock_combatant(name="Goblin", is_player=False, hp=40, maxhp=60)
+        player = _combatant()
+        enemy = _combatant(name="Goblin", is_player=False, hp=40, maxhp=60)
         result = self.CombatStateSerializer.serialize_combat_state(
             player, [enemy], current_turn_index=0, round_number=2
         )
@@ -179,9 +159,9 @@ class TestCombatStateSerializer:
         assert result["allies"] == []
 
     def test_serialize_combat_state_with_allies(self):
-        player = _mock_combatant()
-        ally = _mock_combatant(name="Ally", is_player=False, friend=True)
-        enemy = _mock_combatant(name="Troll", is_player=False)
+        player = _combatant()
+        ally = _combatant(name="Ally", is_player=False, friend=True)
+        enemy = _combatant(name="Troll", is_player=False)
         result = self.CombatStateSerializer.serialize_combat_state(
             player, [enemy], allies=[ally]
         )
@@ -190,20 +170,20 @@ class TestCombatStateSerializer:
         assert len(result["combatants"]) == 3
 
     def test_serialize_turn_data_player(self):
-        player = _mock_combatant()
+        player = _combatant()
         result = self.CombatStateSerializer.serialize_turn_data(player)
         assert result["name"] == "Jean"
         assert result["type"] == "player"
         assert "available_actions" in result
 
     def test_serialize_turn_data_enemy(self):
-        enemy = _mock_combatant(name="Orc", is_player=False)
+        enemy = _combatant(name="Orc", is_player=False)
         result = self.CombatStateSerializer.serialize_turn_data(enemy)
         assert result["type"] == "enemy"
 
     def test_serialize_battle_summary_victory(self):
-        player = _mock_combatant()
-        enemy = _mock_combatant(name="Goblin", is_player=False, hp=0, maxhp=40)
+        player = _combatant()
+        enemy = _combatant(name="Goblin", is_player=False, hp=0, maxhp=40)
         enemy.hp = 0
         enemy.exp_reward = 50
         result = self.CombatStateSerializer.serialize_battle_summary(
@@ -214,8 +194,8 @@ class TestCombatStateSerializer:
         assert result["experience_gained"] == 50
 
     def test_serialize_battle_summary_defeat(self):
-        player = _mock_combatant()
-        enemy = _mock_combatant(name="Dragon", is_player=False, hp=200, maxhp=200)
+        player = _combatant()
+        enemy = _combatant(name="Dragon", is_player=False, hp=200, maxhp=200)
         result = self.CombatStateSerializer.serialize_battle_summary(
             player, [enemy], victory=False
         )
@@ -224,49 +204,119 @@ class TestCombatStateSerializer:
         assert result["items_dropped"] == []
 
     def test_get_turn_order(self):
-        player = _mock_combatant()
-        enemy = _mock_combatant(name="Goblin", is_player=False)
+        player = _combatant()
+        enemy = _combatant(name="Goblin", is_player=False)
         order = self.CombatStateSerializer._get_turn_order(player, [enemy])
         assert order[0] == "player"
         assert "enemy_0" in order
 
     def test_get_available_actions_with_inventory(self):
-        combatant = _mock_combatant()
+        combatant = _combatant()
         actions = self.CombatStateSerializer._get_available_actions(combatant)
-        assert "attack" in actions
-        assert "use_item" in actions
+        assert actions[:3] == ["attack", "defend", "flee"]
+        assert "use_item" in actions  # real Player has an `inventory`
 
-    def test_calculate_experience_with_level_fallback(self):
-        enemy = MagicMock()
-        del enemy.exp_reward
-        enemy.level = 5
-        total = self.CombatStateSerializer._calculate_experience([enemy])
-        assert total == 50
+    def test_get_available_actions_omits_moves_because_it_reads_a_dead_name(self):
+        """KNOWN WIRE-FIELD DEFECT — src/api/serializers/combat.py:212.
 
-    def test_calculate_experience_with_exp_reward(self):
-        enemy = MagicMock()
-        enemy.exp_reward = 100
-        total = self.CombatStateSerializer._calculate_experience([enemy])
-        assert total == 100
+        `_get_available_actions` extends the action list from
+        `combatant.moves`. No engine class defines `moves`; the real
+        attribute is `known_moves` (src/combatant.py). Fed a real Player with
+        twelve castable moves, the helper therefore reports none of them.
+
+        The previous test used a bare `MagicMock()`, which materialised
+        `.moves` on demand and so could never see this. Asserting on a real
+        Player is the proof. If the serializer is corrected to read
+        `known_moves`, this test fails — update it then.
+        """
+        combatant = _combatant()
+        assert combatant.known_moves, "real Player starts with castable moves"
+        assert not hasattr(combatant, "moves")
+
+        actions = self.CombatStateSerializer._get_available_actions(combatant)
+
+        assert actions == ["attack", "defend", "flee", "use_item"]
+        assert not any(
+            m.name in actions for m in combatant.known_moves
+        )
+
+    def test_calculate_experience_reads_a_dead_name_on_real_npcs(self):
+        """KNOWN WIRE-FIELD DEFECT — src/api/serializers/combat.py:227-231.
+
+        `_calculate_experience` sums `enemy.exp_reward`, falling back to
+        `enemy.level * 10`. Real NPCs define **neither**: the engine attribute
+        is `exp_award` (see `NPC.__init__`) and NPCs carry no `level` at all.
+        Every real battle summary therefore awards 0 experience.
+
+        The two tests this replaces set `exp_reward`/`level` on a bare
+        MagicMock and asserted the number back — the mock agreeing with
+        itself. Real NPCs are the only way to see the drift.
+        """
+        slime, goblin = _npc(name="Slime"), _npc(name="Goblin")
+        for enemy in (slime, goblin):
+            assert enemy.exp_award == 50
+            assert not hasattr(enemy, "exp_reward")
+            assert not hasattr(enemy, "level")
+
+        assert self.CombatStateSerializer._calculate_experience([slime, goblin]) == 0
+
+    @pytest.mark.parametrize(
+        "attrs, expected",
+        [
+            ({"exp_reward": 100}, 100),
+            ({"exp_reward": 30}, 30),
+            ({"level": 5}, 50),
+            ({}, 0),
+        ],
+        ids=["exp_reward", "exp_reward_small", "level_fallback", "neither"],
+    )
+    def test_calculate_experience_arithmetic(self, attrs, expected):
+        """The summing arithmetic itself, on spec-locked stand-ins.
+
+        `spec=list(attrs)` is what makes this meaningful: the stand-in exposes
+        *only* the listed attributes, so the `hasattr` branch under test is
+        genuinely taken (or not) instead of being satisfied by MagicMock's
+        auto-attribute.
+        """
+        enemy = MagicMock(spec=list(attrs))
+        for key, value in attrs.items():
+            setattr(enemy, key, value)
+        assert self.CombatStateSerializer._calculate_experience([enemy]) == expected
 
     def test_get_drops_with_inventory(self):
-        enemy = _mock_combatant(name="Boss", is_player=False)
-        item = MagicMock()
-        item.name = "Gold Sword"
-        item.count = 1
-        item.subtype = "weapon"
-        item.weight = 3.5
-        item.value = 200
-        item._enchantment_count = 2
-        item.description = "A golden sword."
-        enemy.inventory = [item]
+        """Drops mirror a real `src.items` weapon field-for-field."""
+        from src import items
+
+        enemy = _combatant(name="Boss", is_player=False)
+        sword = _weapon(items.Longsword)
+        sword._enchantment_count = 2
+        enemy.inventory = [sword]
+
         drops = self.CombatStateSerializer._get_drops([enemy])
+
         assert len(drops) == 1
-        assert drops[0]["name"] == "Gold Sword"
-        assert drops[0]["enchantment_count"] == 2
+        assert drops[0] == {
+            "name": sword.name,
+            # A real weapon carries no `count`; the serializer defaults it to 1.
+            "quantity": 1,
+            "type": "Longsword",
+            "subtype": sword.subtype,
+            "weight": sword.weight,
+            "value": sword.value,
+            "enchantment_count": 2,
+            "description": sword.description,
+        }
+        # Real weights/values are non-trivial: a silently defaulted payload
+        # (the #430 signature) would show 0/None here.
+        assert drops[0]["weight"] > 0
+        assert drops[0]["subtype"] == "Sword"
+
+    def test_get_drops_reports_nothing_for_an_enemy_without_inventory(self):
+        enemy = MagicMock(spec=[])
+        assert self.CombatStateSerializer._get_drops([enemy]) == []
 
     def test_get_drops_uses_enchantment_count_fallback(self):
-        enemy = _mock_combatant(name="Boss", is_player=False)
+        enemy = _combatant(name="Boss", is_player=False)
         item = MagicMock(
             spec=[
                 "name",
@@ -290,17 +340,38 @@ class TestCombatStateSerializer:
         assert drops[0]["enchantment_count"] == 1
 
     def test_get_consumables_with_inventory(self):
-        player = _mock_combatant()
-        item = MagicMock()
-        item.name = "Health Potion"
-        item.count = 2
-        item.value = 50
-        item.description = "Restores HP."
-        player.inventory = [item]
+        """Consumables mirror a real `src.items` consumable field-for-field."""
+        from src import items
+
+        player = _combatant()
+        potion = items.Restorative()
+        potion.count = 2
+        player.inventory = [potion]
+
         consumables = self.CombatStateSerializer._get_consumables(player)
-        assert len(consumables) == 1
-        assert consumables[0]["name"] == "Health Potion"
-        assert consumables[0]["qty"] == 2
+
+        assert consumables == [
+            {
+                "name": potion.name,
+                "qty": 2,
+                "value": potion.value,
+                "description": potion.description,
+            }
+        ]
+        assert consumables[0]["value"] > 0
+        assert consumables[0]["description"]
+
+    def test_get_consumables_lists_jeans_whole_starting_inventory(self):
+        """The helper deliberately lists *everything*, not just consumables.
+
+        Pinning that against Jean's real starting kit documents the current
+        contract (the LLM strategist filters, the serializer does not) and
+        catches an accidental narrowing.
+        """
+        player = _combatant()
+        names = [c["name"] for c in self.CombatStateSerializer._get_consumables(player)]
+        assert names == [item.name for item in player.inventory]
+        assert "Tattered Cloth" in names  # armour, not a consumable
 
     def test_get_consumables_no_inventory(self):
         player = MagicMock(spec=[])
@@ -322,26 +393,34 @@ class TestCombatantSerializer:
         self.CombatantSerializer = CombatantSerializer
 
     def test_serialize_combatant_player(self):
-        player = _mock_combatant()
+        player = _combatant(hp=80)
         result = self.CombatantSerializer.serialize_combatant(player)
         assert result["id"] == "player"
         assert result["type"] == "player"
         assert result["health"]["current"] == 80
+        assert result["health"]["max"] == player.maxhp
+        # Aliases must agree with the nested block — the client reads both.
+        assert result["hp"] == 80
+        assert result["max_hp"] == player.maxhp
+        assert result["max_fatigue"] == result["maxfatigue"] == player.maxfatigue
+        assert result["name"] == player.name == "Jean"
+        assert result["level"] == player.level
+        assert result["heat"] == player.heat
 
     def test_serialize_combatant_enemy(self):
-        enemy = _mock_combatant(name="Goblin", is_player=False)
+        enemy = _combatant(name="Goblin", is_player=False)
         result = self.CombatantSerializer.serialize_combatant(enemy)
         assert result["id"].startswith("enemy_")
         assert result["type"] == "npc"
 
     def test_serialize_combatant_ally(self):
-        ally = _mock_combatant(name="Friend", is_player=False, friend=True)
+        ally = _combatant(name="Friend", is_player=False, friend=True)
         result = self.CombatantSerializer.serialize_combatant(ally)
         assert result["id"].startswith("ally_")
 
     def test_serialize_combatant_with_reference_in_range(self):
-        player = _mock_combatant()
-        enemy = _mock_combatant(name="Goblin", is_player=False)
+        player = _combatant()
+        enemy = _combatant(name="Goblin", is_player=False)
         enemy.combat_proximity = 2
         result = self.CombatantSerializer.serialize_combatant(enemy, reference=player)
         assert result["in_range"] is True
@@ -349,29 +428,29 @@ class TestCombatantSerializer:
     def test_serialize_combatant_with_reference_out_of_range(self):
         from src.api.constants import ITEM_USE_RANGE
 
-        player = _mock_combatant()
-        enemy = _mock_combatant(name="Archer", is_player=False)
+        player = _combatant()
+        enemy = _combatant(name="Archer", is_player=False)
         enemy.combat_proximity = ITEM_USE_RANGE + 5
         result = self.CombatantSerializer.serialize_combatant(enemy, reference=player)
         assert result["in_range"] is False
 
     def test_serialize_combatant_with_dict_proximity(self):
-        player = _mock_combatant()
-        enemy = _mock_combatant(name="Bandit", is_player=False)
+        player = _combatant()
+        enemy = _combatant(name="Bandit", is_player=False)
         enemy.combat_proximity = {player: 3}
         result = self.CombatantSerializer.serialize_combatant(enemy, reference=player)
         assert result["distance"] == 3
 
     def test_serialize_combatant_with_dict_proximity_no_key(self):
-        player = _mock_combatant()
-        enemy = _mock_combatant(name="Bandit", is_player=False)
+        player = _combatant()
+        enemy = _combatant(name="Bandit", is_player=False)
         other_player = MagicMock()
         enemy.combat_proximity = {other_player: 3}
         result = self.CombatantSerializer.serialize_combatant(enemy, reference=player)
         assert result["distance"] == 0
 
     def test_serialize_active_move_with_stage_beat(self):
-        combatant = _mock_combatant()
+        combatant = _combatant()
         move = MagicMock()
         move.name = "Charge"
         move.category = "Attack"
@@ -386,7 +465,7 @@ class TestCombatantSerializer:
         assert result["total_beats"] == 3
 
     def test_serialize_active_move_without_stage_beat(self):
-        combatant = _mock_combatant()
+        combatant = _combatant()
         move = MagicMock(
             spec=["name", "category", "description", "current_stage", "beats_left"]
         )
@@ -400,13 +479,13 @@ class TestCombatantSerializer:
         assert result["total_beats"] == 0
 
     def test_serialize_active_move_none(self):
-        combatant = _mock_combatant()
+        combatant = _combatant()
         combatant.current_move = None
         result = self.CombatantSerializer._serialize_active_move(combatant)
         assert result is None
 
     def test_serialize_active_move_reports_cooldown_move(self):
-        combatant = _mock_combatant(name="Goblin", is_player=False)
+        combatant = _combatant(name="Goblin", is_player=False)
         cooldown_move = MagicMock()
         cooldown_move.name = "NPC_Attack"
         cooldown_move.category = "Offensive"
@@ -423,7 +502,7 @@ class TestCombatantSerializer:
         assert result["current_stage"] == 3
 
     def test_serialize_position_with_facing(self):
-        combatant = _mock_combatant()
+        combatant = _combatant()
         pos = MagicMock()
         pos.x = 3
         pos.y = 5
@@ -437,7 +516,7 @@ class TestCombatantSerializer:
         assert result["facing"] == "N"
 
     def test_serialize_position_none(self):
-        combatant = _mock_combatant()
+        combatant = _combatant()
         combatant.combat_position = None
         result = self.CombatantSerializer._serialize_position(combatant)
         assert result is None
@@ -448,66 +527,114 @@ class TestCombatantSerializer:
         assert result is None
 
     def test_serialize_combatant_list(self):
-        p = _mock_combatant()
-        e = _mock_combatant(name="Orc", is_player=False)
+        p = _combatant()
+        e = _combatant(name="Orc", is_player=False)
         result = self.CombatantSerializer.serialize_combatant_list([p, e])
         assert len(result) == 2
 
-    def test_serialize_health_bar_healthy(self):
-        combatant = MagicMock()
-        combatant.health = 90
-        combatant.max_health = 100
-        result = self.CombatantSerializer.serialize_health_bar(combatant)
-        assert result["status"] == "healthy"
-        assert result["percent"] == 90.0
+    @pytest.mark.parametrize(
+        "current, maximum, percent, status",
+        [
+            (90, 100, 90.0, "healthy"),
+            (76, 100, 76.0, "healthy"),   # just above the injured boundary
+            (75, 100, 75.0, "injured"),   # boundary is inclusive
+            (65, 100, 65.0, "injured"),
+            (50, 100, 50.0, "wounded"),
+            (40, 100, 40.0, "wounded"),
+            (25, 100, 25.0, "critical"),
+            (20, 100, 20.0, "critical"),
+            (0, 0, 0, "critical"),        # zero max must not divide by zero
+        ],
+    )
+    def test_serialize_health_bar_bucket_boundaries(
+        self, current, maximum, percent, status
+    ):
+        """Bucket arithmetic, including every inclusive boundary.
 
-    def test_serialize_health_bar_injured(self):
-        combatant = MagicMock()
-        combatant.health = 65
-        combatant.max_health = 100
-        result = self.CombatantSerializer.serialize_health_bar(combatant)
-        assert result["status"] == "injured"
+        `spec=[...]` locks the stand-in to exactly the two attributes the
+        helper reads, so nothing else can leak in.
+        """
+        combatant = MagicMock(spec=["health", "max_health"])
+        combatant.health = current
+        combatant.max_health = maximum
 
-    def test_serialize_health_bar_wounded(self):
-        combatant = MagicMock()
-        combatant.health = 40
-        combatant.max_health = 100
         result = self.CombatantSerializer.serialize_health_bar(combatant)
-        assert result["status"] == "wounded"
 
-    def test_serialize_health_bar_critical(self):
-        combatant = MagicMock()
-        combatant.health = 20
-        combatant.max_health = 100
-        result = self.CombatantSerializer.serialize_health_bar(combatant)
+        assert result["percent"] == percent
+        assert result["status"] == status
+        assert result["current"] == current
+        assert result["max"] == maximum
+
+    def test_serialize_health_bar_reads_dead_names_on_real_combatants(self):
+        """KNOWN WIRE-FIELD DEFECT — src/api/serializers/combat.py:411-412.
+
+        `serialize_health_bar` reads `health` / `max_health`. CLAUDE.md is
+        explicit that neither exists: HP is `hp` / `maxhp`. Fed a real
+        full-health Player it reports 0% and "critical".
+
+        The five tests this consolidates each built a bare `MagicMock()` and
+        set `.health` on it, so they only ever proved MagicMock works.
+        """
+        player = _combatant()
+        assert player.hp == player.maxhp == 100
+        assert not hasattr(player, "health")
+        assert not hasattr(player, "max_health")
+
+        result = self.CombatantSerializer.serialize_health_bar(player)
+
+        assert result["current"] == 0
+        assert result["percent"] == 0.0
         assert result["status"] == "critical"
 
-    def test_serialize_health_bar_zero_max(self):
-        combatant = MagicMock()
-        combatant.health = 0
-        combatant.max_health = 0
-        result = self.CombatantSerializer.serialize_health_bar(combatant)
-        assert result["percent"] == 0
-
     def test_serialize_passives(self):
-        combatant = _mock_combatant()
-        passive_move = _mock_move(name="Shield Wall", passive=True)
+        """A real PassiveMove (`passive is True`) is reported as a passive."""
+        import src.moves as moves
+
+        combatant = _combatant()
+        passive_move = _move(moves.IronFist, user=combatant)
         combatant.known_moves = [passive_move]
         result = self.CombatantSerializer._serialize_passives(combatant)
         assert len(result) == 1
-        assert result[0]["name"] == "Shield Wall"
+        assert result[0]["name"] == passive_move.name == "Iron Fist"
         assert result[0]["type"] == "passive"
+        assert result[0]["category"] == passive_move.category == "Passive"
+        assert result[0]["description"] == passive_move.description
 
     def test_serialize_passives_skips_active_moves(self):
-        combatant = _mock_combatant()
-        active_move = _mock_move(name="Slash", passive=False)
+        """A real castable Move (`passive is False`) must not be listed."""
+        import src.moves as moves
+
+        combatant = _combatant()
+        active_move = _move(moves.PowerStrike, user=combatant)
+        assert active_move.passive is False
         combatant.known_moves = [active_move]
         result = self.CombatantSerializer._serialize_passives(combatant)
         assert result == []
 
+    def test_serialize_passives_partitions_a_real_move_list(self):
+        """Jean's genuine starting move list splits into passive/castable.
+
+        Built from `Player().known_moves` rather than a hand-made list, so a
+        move whose `passive` flag is dropped in the engine trips this test.
+        """
+        import src.moves as moves
+
+        combatant = _combatant()
+        castable = list(combatant.known_moves)
+        assert castable, "Jean should start with a non-empty move list"
+        assert not any(m.passive for m in castable), (
+            "fixture assumption: Jean's starting moves are all castable"
+        )
+        combatant.known_moves = castable + [_move(moves.IronFist, user=combatant)]
+
+        result = self.CombatantSerializer._serialize_passives(combatant)
+
+        assert {r["name"] for r in result} == {"Iron Fist"}
+        assert all(r["type"] == "passive" for r in result)
+
     def test_serialize_status_effects(self):
-        combatant = _mock_combatant()
-        state = _mock_state()
+        combatant = _combatant()
+        state = _state()
         combatant.states = [state]
         result = self.CombatantSerializer._serialize_status_effects(combatant)
         assert len(result) == 1
@@ -518,13 +645,12 @@ class TestCombatantSerializer:
 
         There is no `combatant.equipped` dict on any engine class (#430).
         """
-        combatant = _mock_combatant()
-        combatant.eq_weapon = _mock_weapon(name="Iron Sword", damage=12, subtype="Sword")
+        combatant = _combatant()
+        combatant.eq_weapon = _weapon(name="Iron Sword", damage=12, subtype="Sword")
         body = SimpleNamespace(
             name="Leather Armor", maintype="Armor", isequipped=True, protection=8
         )
         combatant.inventory = [body]
-        del combatant.inventory_list
         result = self.CombatantSerializer._serialize_combat_equipment(combatant)
         assert result["weapon"]["name"] == "Iron Sword"
         assert result["weapon"]["damage"] == 12
@@ -535,9 +661,8 @@ class TestCombatantSerializer:
     def test_serialize_combat_equipment_ignores_stale_equipped_dict(self):
         """A fabricated `equipped` dict must not be read — real combatants
         have no such attribute, so honouring it would resurrect #430."""
-        combatant = _mock_combatant(is_player=False)
+        combatant = _combatant(is_player=False)
         combatant.inventory = []
-        del combatant.inventory_list
         combatant.equipped = {
             "weapon": SimpleNamespace(name="Phantom Blade"),
             "body": SimpleNamespace(name="Phantom Mail", defense=99),
@@ -548,17 +673,15 @@ class TestCombatantSerializer:
 
     def test_serialize_combat_equipment_reads_singular_resistance(self):
         """The real attribute is `resistance`, not `resistances` (#430)."""
-        combatant = _mock_combatant(resistance={"fire": 0.5})
+        combatant = _combatant(resistance={"fire": 0.5})
         combatant.inventory = []
-        del combatant.inventory_list
         result = self.CombatantSerializer._serialize_combat_equipment(combatant)
         assert result["resistances"]["fire"] == 0.5
 
     def test_serialize_combat_equipment_ignores_plural_resistances(self):
-        combatant = _mock_combatant(is_player=False, resistance={})
+        combatant = _combatant(is_player=False, resistance={})
         combatant.resistances = {"fire": 0.25}
         combatant.inventory = []
-        del combatant.inventory_list
         result = self.CombatantSerializer._serialize_combat_equipment(combatant)
         assert result["resistances"] == {}
 
@@ -572,10 +695,10 @@ class TestCombatantSerializer:
     def test_serialize_combat_stats_derived_from_real_attributes(self):
         """`armor`/`defense`/`evasion`/`accuracy`/`attack_power` don't exist on
         any engine class; the serializer derives them (#430)."""
-        combatant = _mock_combatant(
+        combatant = _combatant(
             protection=7, finesse=20, intelligence=10, strength=12, speed=8
         )
-        combatant.eq_weapon = _mock_weapon(
+        combatant.eq_weapon = _weapon(
             name="Steel Sword", damage=20, str_mod=0.5, fin_mod=0.25
         )
         stats = self.CombatantSerializer._serialize_combat_stats(combatant)
@@ -591,7 +714,7 @@ class TestCombatantSerializer:
         """Hand-set `armor`/`defense`/`evasion`/`accuracy`/`attack_power` must
         be ignored — no engine class defines them, so honouring them would
         make the mock-only tests that shipped #430 pass again."""
-        combatant = _mock_combatant(protection=3, finesse=12, intelligence=8)
+        combatant = _combatant(protection=3, finesse=12, intelligence=8)
         combatant.armor = 99
         combatant.defense = 99
         combatant.evasion = 99
@@ -606,7 +729,7 @@ class TestCombatantSerializer:
 
     def test_serialize_combat_stats_npc_uses_flat_damage(self):
         """NPCs equip nothing — their flat `damage` is their attack power."""
-        npc = _mock_combatant(is_player=False, damage=26, protection=4)
+        npc = _combatant(is_player=False, damage=26, protection=4)
         stats = self.CombatantSerializer._serialize_combat_stats(npc)
         assert stats["damage"] == 26
         assert stats["attack_power"] == 26
@@ -632,19 +755,19 @@ class TestStateEffectSerializer:
         self.StateEffectSerializer = StateEffectSerializer
 
     def test_serialize_state_basic(self):
-        state = _mock_state()
+        state = _state()
         result = self.StateEffectSerializer.serialize_state(state)
         assert result["name"] == "Poisoned"
         assert result["type"] == "ailment"
         assert result["severity"] == "severe"
 
     def test_serialize_state_list(self):
-        states = [_mock_state("Poisoned"), _mock_state("Burned", statustype="enflamed")]
+        states = [_state("Poisoned"), _state("Burned", statustype="enflamed")]
         result = self.StateEffectSerializer.serialize_state_list(states)
         assert len(result) == 2
 
     def test_serialize_state_with_duration(self):
-        state = _mock_state()
+        state = _state()
         result = self.StateEffectSerializer.serialize_state_with_duration(
             state, duration_remaining=3
         )
@@ -652,24 +775,24 @@ class TestStateEffectSerializer:
         assert result["active"] is True
 
     def test_serialize_state_with_duration_inactive(self):
-        state = _mock_state()
+        state = _state()
         result = self.StateEffectSerializer.serialize_state_with_duration(
             state, duration_remaining=0
         )
         assert result["active"] is False
 
     def test_get_severity_light(self):
-        state = _mock_state(statustype="revive")
+        state = _state(statustype="revive")
         result = self.StateEffectSerializer._get_severity(state)
         assert result == "light"
 
     def test_get_severity_moderate(self):
-        state = _mock_state(statustype="disoriented")
+        state = _state(statustype="disoriented")
         result = self.StateEffectSerializer._get_severity(state)
         assert result == "moderate"
 
     def test_get_severity_severe(self):
-        state = _mock_state(statustype="poison")
+        state = _state(statustype="poison")
         result = self.StateEffectSerializer._get_severity(state)
         assert result == "severe"
 

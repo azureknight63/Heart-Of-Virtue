@@ -1,183 +1,247 @@
-"""Additional coverage tests for src/player/_world.py edge cases.
+"""Coverage tests for src/player/_world.py edge cases.
 
-Targets the remaining uncovered branches:
-  27, 30, 34, 36-37 — _is_merchant_instance() corner cases
-  47, 55-57 — None tile and exception in npc iteration
-  78-80 — initialize_shop() raises
-  95-96 — outer exception handler for m
+Every test here pins the *observable* outcome of ``refresh_merchants`` — the
+summary line it narrates through ``cprint`` — rather than merely asserting that
+no exception escaped. The distinction matters: the defensive ``except`` clauses
+in ``_world.py`` exist so that one broken NPC cannot abort the sweep, and the
+only way to see whether the sweep actually continued (versus silently
+short-circuiting) is the success/failure tally in that summary.
 """
 
-import sys
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-ROOT = Path(__file__).resolve().parent.parent
-
-
 import pytest
+
 from src.player import Player
 
 
-def _player():
+@pytest.fixture
+def player():
+    """A bare Player; refresh_merchants only needs ``universe``."""
     return Player()
 
 
-def _make_tile_with_npc(npc):
+def _universe_with_tile(tile):
+    """A universe whose single map holds ``tile`` at (0, 0)."""
+    universe = MagicMock()
+    universe.maps = [{"name": "test", (0, 0): tile}]
+    return universe
+
+
+def _tile_with_npc(npc):
     tile = MagicMock()
     tile.npcs_here = [npc]
     return tile
 
 
+def _refresh(player, phrase=""):
+    """Run refresh_merchants and return the narrated lines as a list of strings."""
+    lines = []
+    with patch(
+        "src.player._world.cprint", side_effect=lambda text, *a, **kw: lines.append(text)
+    ), patch("time.sleep"):
+        player.refresh_merchants(phrase)
+    return lines
+
+
+class Merchant:
+    """Stand-in base: ``_is_merchant_instance`` matches on the class *name*
+    ``Merchant`` anywhere in the MRO, so this local class is what makes the
+    subclasses below register as merchants."""
+
+
+class TestRefreshMerchantsGuards:
+    def test_no_universe_reports_and_returns(self, player):
+        player.universe = None
+        assert _refresh(player) == [
+            "Universe not initialized; cannot refresh merchants."
+        ]
+
+    def test_universe_without_maps_reports_and_returns(self, player):
+        universe = MagicMock(spec=[])  # no ``maps`` attribute at all
+        player.universe = universe
+        assert _refresh(player) == [
+            "Universe not initialized; cannot refresh merchants."
+        ]
+
+
 class TestIsMerchantInstanceEdgeCases:
-    """Force the _is_merchant_instance nested function's corner-case branches."""
+    """Objects that are not merchants must be rejected, never crash the sweep."""
 
-    def test_npc_is_none(self):
-        """Line 26-27: obj is None — _is_merchant_instance returns False immediately."""
-        p = _player()
+    def test_npc_is_none(self, player):
+        player.universe = _universe_with_tile(_tile_with_npc(None))
+        assert _refresh(player) == ["No merchants found to refresh."]
 
-        tile = _make_tile_with_npc(None)  # NPC is None
-        universe = MagicMock()
-        universe.maps = [{"name": "test", (0, 0): tile}]
-        p.universe = universe
-
-        with patch("src.player._world.cprint"), patch("time.sleep"):
-            p.refresh_merchants()  # Should not crash
-
-    def test_npc_mro_not_callable(self):
-        """Line 32-34: cls.mro is not callable — returns False."""
-        p = _player()
-
-        class NPC:
+    def test_npc_mro_not_callable(self, player):
+        class Weird:
             pass
 
-        npc = NPC()
-        # Replace mro with a non-callable
-        NPC.mro = "not_callable"
-
-        tile = _make_tile_with_npc(npc)
-        universe = MagicMock()
-        universe.maps = [{"name": "test", (0, 0): tile}]
-        p.universe = universe
-
+        Weird.mro = "not_callable"
         try:
-            with patch("src.player._world.cprint"), patch("time.sleep"):
-                p.refresh_merchants()  # Should not crash
+            player.universe = _universe_with_tile(_tile_with_npc(Weird()))
+            assert _refresh(player) == ["No merchants found to refresh."]
         finally:
-            # Restore mro
-            del NPC.mro
+            del Weird.mro
 
-    def test_npc_mro_raises_exception(self):
-        """Lines 36-37: cls.mro() raises — _is_merchant_instance returns False."""
-        p = _player()
-
-        class BrokenMROClass:
+    def test_npc_mro_raises_exception(self, player):
+        class BrokenMRO:
             @classmethod
             def mro(cls):
                 raise RuntimeError("MRO broken")
 
-        npc = object.__new__(BrokenMROClass)
+        player.universe = _universe_with_tile(
+            _tile_with_npc(object.__new__(BrokenMRO))
+        )
+        assert _refresh(player) == ["No merchants found to refresh."]
 
-        tile = _make_tile_with_npc(npc)
+    def test_none_tile_skipped(self, player):
         universe = MagicMock()
-        universe.maps = [{"name": "test", (0, 0): tile}]
-        p.universe = universe
-
-        with patch("src.player._world.cprint"), patch("time.sleep"):
-            p.refresh_merchants()  # Should not crash
-
-    def test_none_tile_skipped(self):
-        """Line 47: None tile in map is skipped."""
-        p = _player()
-        universe = MagicMock()
-        # Map with None tile at a coordinate
         universe.maps = [{"name": "test", (0, 0): None}]
-        p.universe = universe
+        player.universe = universe
+        assert _refresh(player) == ["No merchants found to refresh."]
 
-        with patch("src.player._world.cprint") as mock_cp, patch("time.sleep"):
-            p.refresh_merchants()
+    def test_non_dict_map_skipped(self, player):
+        universe = MagicMock()
+        universe.maps = ["not-a-map", None, 42]
+        player.universe = universe
+        assert _refresh(player) == ["No merchants found to refresh."]
 
-        # No merchants found — cprint may or may not be called depending on implementation
-        # The important thing is no exception was raised
+    def test_npc_body_exception_after_is_merchant_skipped(self, player):
+        """A merchant whose ``name`` explodes is dropped, not counted, not fatal."""
 
-    def test_npc_body_exception_after_is_merchant_skipped(self):
-        """Lines 55-57: exception after _is_merchant_instance returns True is silently skipped.
-
-        The NPC has Merchant in its MRO so _is_merchant_instance returns True, but
-        then accessing .name raises, which should be caught by the outer try/except.
-        """
-        p = _player()
-
-        class Merchant:
-            pass
-
-        class ExplodingNameMerchant(Merchant):
+        class ExplodingName(Merchant):
             @property
             def name(self):
                 raise RuntimeError("name property exploded")
 
-        npc = ExplodingNameMerchant()
+        player.universe = _universe_with_tile(_tile_with_npc(ExplodingName()))
+        assert _refresh(player) == ["No merchants found to refresh."]
 
-        tile = _make_tile_with_npc(npc)
-        universe = MagicMock()
-        universe.maps = [{"name": "test", (0, 0): tile}]
-        p.universe = universe
 
-        with patch("src.player._world.cprint"), patch("time.sleep"):
-            p.refresh_merchants()  # Should not crash
+class TestRefreshMerchantsOutcomes:
+    def test_initialize_shop_raises_but_update_goods_still_runs(self, player):
+        """A failing initialize_shop is non-fatal; the merchant still counts as refreshed."""
 
-    def test_initialize_shop_raises_continues(self):
-        """Lines 78-80: initialize_shop() raises — non-fatal, update_goods still tried."""
-
-        class Merchant:
-            pass
-
-        class BrokenInitMerchant(Merchant):
+        class BrokenInit(Merchant):
             def __init__(self):
                 self.name = "BrokenInit"
                 self.shop = None
-                self._update_called = False
+                self.update_calls = 0
 
             def initialize_shop(self):
                 raise RuntimeError("init failed")
 
             def update_goods(self):
-                self._update_called = True
+                self.update_calls += 1
 
-        m = BrokenInitMerchant()
-        p = _player()
+        m = BrokenInit()
+        player.universe = _universe_with_tile(_tile_with_npc(m))
 
-        tile = _make_tile_with_npc(m)
-        universe = MagicMock()
-        universe.maps = [{"name": "test", (0, 0): tile}]
-        p.universe = universe
+        lines = _refresh(player)
 
-        with patch("src.player._world.cprint"), patch("time.sleep"):
-            p.refresh_merchants()
+        assert m.update_calls == 1
+        assert lines == ["Merchant refresh complete: 1 succeeded, 0 failed."]
 
-        # update_goods should still be called despite initialize_shop failing
-        assert m._update_called is True
+    def test_outer_exception_recorded_as_named_failure(self, player):
+        """An exception reading ``shop`` is reported against that merchant by name."""
 
-    def test_outer_exception_captured_in_failures(self):
-        """Lines 95-96: outer exception for merchant captured in failures list."""
-
-        class Merchant:
-            pass
-
-        class TotallyBrokenMerchant(Merchant):
-            def __init__(self):
-                self.name = "TotallyBroken"
+        class TotallyBroken(Merchant):
+            name = "TotallyBroken"
 
             @property
             def shop(self):
                 raise RuntimeError("property exploded")
 
-        m = TotallyBrokenMerchant()
-        p = _player()
+        player.universe = _universe_with_tile(_tile_with_npc(TotallyBroken()))
 
-        tile = _make_tile_with_npc(m)
-        universe = MagicMock()
-        universe.maps = [{"name": "test", (0, 0): tile}]
-        p.universe = universe
+        lines = _refresh(player)
 
-        with patch("src.player._world.cprint"), patch("time.sleep"):
-            p.refresh_merchants()  # Should not raise
+        assert lines == [
+            "Merchant refresh complete: 0 succeeded, 1 failed.",
+            " - TotallyBroken: property exploded",
+        ]
+
+    def test_update_goods_exception_recorded_as_named_failure(self, player):
+        class UpdateExplodes(Merchant):
+            name = "Sprocket"
+            shop = object()
+
+            def update_goods(self):
+                raise ValueError("stock table missing")
+
+        player.universe = _universe_with_tile(_tile_with_npc(UpdateExplodes()))
+
+        assert _refresh(player) == [
+            "Merchant refresh complete: 0 succeeded, 1 failed.",
+            " - Sprocket: stock table missing",
+        ]
+
+    def test_merchant_without_update_goods_is_a_failure(self, player):
+        class NoUpdate(Merchant):
+            name = "Stumpy"
+            shop = object()
+
+        player.universe = _universe_with_tile(_tile_with_npc(NoUpdate()))
+
+        assert _refresh(player) == [
+            "Merchant refresh complete: 0 succeeded, 1 failed.",
+            " - Stumpy: missing update_goods",
+        ]
+
+    def test_phrase_filters_by_case_insensitive_substring(self, player):
+        class Vendor(Merchant):
+            def __init__(self, name):
+                self.name = name
+                self.shop = object()
+                self.update_calls = 0
+
+            def update_goods(self):
+                self.update_calls += 1
+
+        wanted = Vendor("Gorran the Smith")
+        other = Vendor("Fishmonger")
+        tile = MagicMock()
+        tile.npcs_here = [wanted, other]
+        player.universe = _universe_with_tile(tile)
+
+        lines = _refresh(player, phrase="  GORRAN ")
+
+        assert wanted.update_calls == 1
+        assert other.update_calls == 0
+        assert lines == ["Merchant refresh complete: 1 succeeded, 0 failed."]
+
+    def test_phrase_with_no_match_reports_the_filter(self, player):
+        class Vendor(Merchant):
+            name = "Fishmonger"
+            shop = object()
+
+            def update_goods(self):
+                pass
+
+        player.universe = _universe_with_tile(_tile_with_npc(Vendor()))
+
+        assert _refresh(player, phrase="Gorran") == [
+            "No merchants matched filter 'gorran'."
+        ]
+
+    def test_failure_list_is_capped_at_ten_lines(self, player):
+        """Twelve broken merchants produce a summary plus at most ten detail lines."""
+
+        class Broken(Merchant):
+            def __init__(self, idx):
+                self.name = f"Broken{idx}"
+                self.shop = object()
+
+            def update_goods(self):
+                raise RuntimeError("boom")
+
+        tile = MagicMock()
+        tile.npcs_here = [Broken(i) for i in range(12)]
+        player.universe = _universe_with_tile(tile)
+
+        lines = _refresh(player)
+
+        assert lines[0] == "Merchant refresh complete: 0 succeeded, 12 failed."
+        assert len(lines) == 11
+        assert lines[1] == " - Broken0: boom"
+        assert lines[-1] == " - Broken9: boom"

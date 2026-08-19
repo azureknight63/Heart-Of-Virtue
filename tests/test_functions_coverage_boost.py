@@ -539,26 +539,49 @@ class TestSafeUnpickler:
     """Lines 776-830."""
 
     def test_missing_module_creates_placeholder(self):
-        """Lines 808-830: completely missing module creates dynamic placeholder class."""
+        """A missing module yields a *tagged* placeholder, not a real class."""
         up = functions.SafeUnpickler.__new__(functions.SafeUnpickler)
         cls = up.find_class("totally_nonexistent_module_xyz", "SomeClass")
-        assert cls is not None
-        # Should be instantiable
-        obj = cls()
-        assert obj is not None
 
-    def test_rewrite_rule_applied(self):
-        """Lines 795-806: rewrite rule tries 'src.' prefix."""
+        assert cls.__name__ == "LegacyMissing_totally_nonexistent_module_xyz_SomeClass"
+        assert cls._legacy_placeholder is True
+        assert cls.name == "SomeClass"
+        assert cls.hidden is True
+        obj = cls("unexpected", kwargs="tolerated")
+        assert repr(obj) == "<LegacyMissing totally_nonexistent_module_xyz.SomeClass>"
+        # The no-op protocol old saves expect from event-like objects.
+        assert obj.process(MagicMock(), MagicMock()) is None
+        assert obj.check_conditions(MagicMock()) is None
+
+    def test_placeholder_mutable_containers_are_not_shared(self):
+        """Each placeholder class gets fresh keywords/interactions lists."""
         up = functions.SafeUnpickler.__new__(functions.SafeUnpickler)
-        # story module exists, so rewrite should succeed
+        a = up.find_class("gone_module_a", "Thing")
+        b = up.find_class("gone_module_b", "Thing")
+        a.keywords.append("poisoned")
+        assert b.keywords == []
+        assert a.keywords == ["poisoned"]
+
+    def test_rewrite_rule_resolves_to_the_real_engine_class(self):
+        """A bare legacy module path resolves to the *canonical* src class object.
+
+        Identity matters: returning a duplicate class object from a bare
+        ``story.ch01`` import is exactly the failure mode the canonical-import
+        rule exists to prevent.
+        """
+        from src.story.ch01 import Ch01StartOpenWall
+
+        up = functions.SafeUnpickler.__new__(functions.SafeUnpickler)
         cls = up.find_class("story.ch01", "Ch01StartOpenWall")
-        assert cls is not None
+        assert cls is Ch01StartOpenWall
+        assert not getattr(cls, "_legacy_placeholder", False)
 
     def test_story_rewrite_unknown_class_falls_back(self):
-        """Lines 800-806: rewrite applied but class not found → placeholder."""
+        """Rewrite applied but class not found → placeholder, not an exception."""
         up = functions.SafeUnpickler.__new__(functions.SafeUnpickler)
         cls = up.find_class("story.ch01", "NonExistentEvent99999")
-        assert cls is not None
+        assert cls._legacy_placeholder is True
+        assert cls.__name__ == "LegacyMissing_src_story_ch01_NonExistentEvent99999"
 
 
 # ---------------------------------------------------------------------------
@@ -574,38 +597,81 @@ class TestPatchPlayerIntegrity:
         result = functions._patch_player_integrity("hello")
         assert result == "hello"
 
-    def test_player_gets_inventory_if_missing(self):
-        """Lines 861-868: missing inventory gets initialized to []."""
+    @pytest.mark.parametrize(
+        "attr, expected",
+        [
+            ("inventory", []),
+            ("known_moves", []),
+            ("states", []),
+            ("combat_list", []),
+            ("combat_list_allies", []),
+            ("combat_events", []),
+            ("resistance", {}),
+            ("status_resistance", {}),
+            ("combat_log", []),
+        ],
+    )
+    def test_none_valued_attribute_is_replaced_with_its_default(self, attr, expected):
+        """A legacy save whose attr is None gets a fresh empty container."""
         p = _player()
-        if "inventory" in p.__dict__:
-            del p.__dict__["inventory"]
-        # Force inventory to None
-        p.inventory = None
+        setattr(p, attr, None)
         result = functions._patch_player_integrity(p)
-        assert result.inventory is not None
+        value = getattr(result, attr)
+        assert type(value) is type(expected)
+        # Resistance dicts are re-seeded with base keys below; the others must
+        # come back genuinely empty rather than carrying stale data.
+        if attr not in ("resistance", "status_resistance"):
+            assert value == expected
 
-    def test_player_gets_fists_if_missing(self):
-        """Lines 869-875: fists added if missing."""
+    def test_preferences_default_is_the_arrow_preference(self):
+        """preferences is not a bare dict -- it seeds the default arrow."""
+        p = _player()
+        p.preferences = None
+        result = functions._patch_player_integrity(p)
+        assert result.preferences == {"arrow": "Wooden Arrow"}
+
+    def test_existing_values_are_never_overwritten(self):
+        """The patch is conservative: it only fills gaps."""
+        p = _player()
+        sentinel = ["my-item"]
+        p.inventory = sentinel
+        p.resistance["fire"] = 0.25
+        result = functions._patch_player_integrity(p)
+        assert result.inventory is sentinel
+        assert result.resistance["fire"] == 0.25
+
+    def test_player_gets_fists_and_falls_back_to_them_as_weapon(self):
+        """Old saves without fists get a real Fists item, used as eq_weapon."""
+        import src.items as items
+
         p = _player()
         p.fists = None
+        p.eq_weapon = None
         result = functions._patch_player_integrity(p)
-        assert result.fists is not None or True  # no crash even if items unavailable
+        assert isinstance(result.fists, items.Fists)
+        assert result.eq_weapon is result.fists
 
     def test_player_resistance_keys_set(self):
-        """Lines 880-895: resistance dict gets base keys."""
+        """Every base damage type is restored at neutral 1.0."""
         p = _player()
-        if "fire" in p.resistance:
-            del p.resistance["fire"]
+        p.resistance.pop("fire", None)
+        p.resistance.pop("ice", None)
         result = functions._patch_player_integrity(p)
-        assert "fire" in result.resistance
+        for key in ("fire", "ice", "shock", "earth", "light", "dark",
+                    "piercing", "slashing", "crushing", "spiritual", "pure"):
+            assert result.resistance[key] is not None, key
+        assert result.resistance["fire"] == 1.0
+        assert result.resistance["ice"] == 1.0
 
     def test_player_status_resistance_keys_set(self):
-        """Lines 896-922: status_resistance dict gets base keys."""
+        """Every base status type is restored at 1.0."""
         p = _player()
-        if "poison" in p.status_resistance:
-            del p.status_resistance["poison"]
+        p.status_resistance.pop("poison", None)
+        p.status_resistance.pop("doom", None)
         result = functions._patch_player_integrity(p)
-        assert "poison" in result.status_resistance
+        assert result.status_resistance["poison"] == 1.0
+        assert result.status_resistance["doom"] == 1.0
+        assert {"stun", "blind", "death", "frozen"} <= set(result.status_resistance)
 
 
 # ---------------------------------------------------------------------------
@@ -617,15 +683,34 @@ class TestSafePickleLoad:
     """Lines 926-940."""
 
     def test_loads_valid_data(self):
-        """Line 928-938: loads and walks valid pickle data."""
-        p = _player()
+        """Round-trips the exact payload, including nested containers."""
+        payload = {"key": "value", "nested": [1, 2, {"deep": "ok"}], "tup": (3, 4)}
         with tempfile.NamedTemporaryFile(suffix=".pkl", delete=False) as f:
-            pickle.dump({"key": "value"}, f)
+            pickle.dump(payload, f)
             fname = f.name
         try:
             with open(fname, "rb") as f:
                 result = functions._safe_pickle_load(f)
-            assert result is not None
+            assert result == payload
+            # _walk rebuilds containers by type -- the tuple must stay a tuple.
+            assert isinstance(result["tup"], tuple)
+        finally:
+            os.unlink(fname)
+
+    def test_nested_player_is_integrity_patched(self):
+        """A Player buried in a container is repaired, not merely returned."""
+        p = _player()
+        p.inventory = None
+        p.resistance.pop("fire", None)
+        with tempfile.NamedTemporaryFile(suffix=".pkl", delete=False) as f:
+            pickle.dump({"players": [p]}, f)
+            fname = f.name
+        try:
+            with open(fname, "rb") as f:
+                result = functions._safe_pickle_load(f)
+            loaded = result["players"][0]
+            assert loaded.inventory == []
+            assert loaded.resistance["fire"] == 1.0
         finally:
             os.unlink(fname)
 
@@ -781,26 +866,38 @@ class TestInstantiateEvent:
     """Lines 1308-1350."""
 
     def test_standard_signature_with_player_tile(self):
-        """Lines 1322-1331: event class with player/tile params."""
+        """Named player/tile params are bound by keyword, not by position."""
         from src.story.ch01 import Ch01StartOpenWall
 
         p = _player()
         tile = MagicMock()
-        result = functions.instantiate_event(Ch01StartOpenWall, p, tile)
-        assert result is not None
+        result = functions.instantiate_event(
+            Ch01StartOpenWall, p, tile, params="p1", repeat=True
+        )
+        assert isinstance(result, Ch01StartOpenWall)
+        assert result.player is p
+        assert result.tile is tile
+        assert result.repeat is True
 
     def test_fallback_positional_player_tile_params_repeat(self):
-        """Lines 1334-1337: fallback positional (player, tile, params, repeat)."""
+        """Legacy (player, tile, params, repeat) arity is mapped positionally."""
 
         class LegacyEvent:
-            def __init__(self, player, tile, params, repeat):
-                self.player = player
-                self.tile = tile
+            def __init__(self, hero, room, params, repeat):
+                self.hero = hero
+                self.room = room
+                self.params = params
+                self.repeat = repeat
 
         p = _player()
         tile = MagicMock()
-        result = functions.instantiate_event(LegacyEvent, p, tile)
-        assert result is not None
+        result = functions.instantiate_event(
+            LegacyEvent, p, tile, params={"k": 1}, repeat=True
+        )
+        assert isinstance(result, LegacyEvent)
+        assert (result.hero, result.room) == (p, tile)
+        assert result.params == {"k": 1}
+        assert result.repeat is True
 
     def test_fallback_player_tile_only(self):
         """Lines 1343-1344: fallback with minimal args (player, tile)."""
@@ -815,29 +912,46 @@ class TestInstantiateEvent:
         assert result.player is p
 
     def test_no_player_tile_in_signature_tries_positional(self):
-        """Lines 1332-1341: no player/tile param names → positional fallback."""
+        """Unrecognised 4-arg signature still receives player/tile first."""
 
         class WeirdEvent:
             def __init__(self, a, b, c, d):
-                self.a = a
+                self.a, self.b, self.c, self.d = a, b, c, d
 
         p = _player()
         tile = MagicMock()
-        result = functions.instantiate_event(WeirdEvent, p, tile)
-        assert result is not None
+        result = functions.instantiate_event(WeirdEvent, p, tile, params="P", repeat=False)
+        assert isinstance(result, WeirdEvent)
+        assert result.a is p and result.b is tile
+        assert (result.c, result.d) == ("P", False)
+
+    def test_transitional_repeat_before_params_ordering(self):
+        """The (player, tile, repeat, params) variant is tried after (…params, repeat)."""
+
+        class TransitionalEvent:
+            def __init__(self, player_obj, tile_obj, repeat, params):
+                if not isinstance(repeat, bool):
+                    raise TypeError("repeat must be a bool in this signature")
+                self.repeat = repeat
+                self.params = params
+
+        p = _player()
+        result = functions.instantiate_event(
+            TransitionalEvent, p, MagicMock(), params={"a": 1}, repeat=True
+        )
+        assert isinstance(result, TransitionalEvent)
+        assert result.repeat is True
+        assert result.params == {"a": 1}
 
     def test_bare_fallback_on_total_failure(self):
-        """Lines 1345-1350: last resort bare event_cls returned if all else fails."""
+        """Every construction attempt failing returns the class itself, not None."""
 
         class ImpossibleEvent:
-            def __init__(self):
+            def __init__(self, *a, **k):
                 raise RuntimeError("no args allowed")
 
-        p = _player()
-        tile = MagicMock()
-        result = functions.instantiate_event(ImpossibleEvent, p, tile)
-        # Should return class itself or None without raising
-        assert result is not None or result is None
+        result = functions.instantiate_event(ImpossibleEvent, _player(), MagicMock())
+        assert result is ImpossibleEvent
 
 
 # ---------------------------------------------------------------------------
@@ -914,10 +1028,12 @@ class TestStringUtils:
 
 class TestSeekClass:
     def test_finds_story_event_class(self):
-        """Lines 1098-1114: seek_class finds Ch01StartOpenWall in story package."""
+        """seek_class returns the canonical class object, not a same-named twin."""
+        from src.story.ch01 import Ch01StartOpenWall
+
         cls = functions.seek_class("Ch01StartOpenWall", package="story")
-        assert cls is not None
-        assert cls.__name__ == "Ch01StartOpenWall"
+        assert cls is Ch01StartOpenWall
+        assert cls.__module__ == "src.story.ch01"
 
     def test_invalid_package_raises_value_error(self):
         """Line 1106: invalid package raises ValueError."""
@@ -930,11 +1046,18 @@ class TestSeekClass:
             functions.seek_class("ClassThatDefinitelyDoesNotExist999")
 
     def test_seek_class_allow_other_modules_false(self):
-        """Line 1091: allow_other_modules=False uses importlib."""
+        """allow_other_modules=False restricts the walk to the named subpackage."""
+        from src.story.ch01 import Ch01StartOpenWall
+
         cls = functions.seek_class(
             "Ch01StartOpenWall", package="story", allow_other_modules=False
         )
-        assert cls is not None
+        assert cls is Ch01StartOpenWall
+        # A class that lives outside src.story must NOT be reachable in this mode.
+        with pytest.raises(ValueError):
+            functions.seek_class(
+                "Shortsword", package="story", allow_other_modules=False
+            )
 
 
 # ---------------------------------------------------------------------------

@@ -107,15 +107,15 @@ class TestMoveAwayConstrainedBranches:
         # Should move away from threat (east)
         assert result.x > 5
 
-    def test_blocked_destination_falls_back(self):
+    def test_blocked_destination_retries_shorter_distances(self):
+        """A blocked 2-square retreat is not abandoned -- the 1-square retreat
+        is tried next, and only a fully blocked corridor returns ``current``."""
         current = _cp(5, 5)
         threat = _cp(3, 5)
-        # Block the natural retreat direction
-        # Moving away from (3,5) with dx=1 means x+2=7
-        occupied = [_cp(7, 5), _cp(6, 5)]
-        result = move_away_constrained(current, threat, 2, occupied)
-        # Falls back to current copy
-        assert result is not None
+        # Retreat bearing is due east, so distance 2 -> (7,5) and 1 -> (6,5).
+        assert move_away_constrained(current, threat, 2, [_cp(7, 5)]) .x == 6
+        blocked = move_away_constrained(current, threat, 2, [_cp(7, 5), _cp(6, 5)])
+        assert (blocked.x, blocked.y) == (5, 5)
 
     def test_returns_current_when_fully_blocked(self):
         current = _cp(5, 5)
@@ -136,10 +136,25 @@ class TestMoveToFlankConstrainedBranches:
     """Lines 655-656, 661: move_to_flank_constrained edge cases."""
 
     def test_no_occupied_delegates_to_flank(self):
+        """With nothing occupied the constrained form is identical to move_to_flank."""
+        from src.positions import move_to_flank
+
         current = _cp(5, 25)
         target = _cp(25, 25, Direction.E)
         result = move_to_flank_constrained(current, target, 3, [])
-        assert result is not None
+        expected = move_to_flank(current, target, 3)
+        assert (result.x, result.y) == (expected.x, expected.y)
+        # Target faces east, so its blind sides are due north/south of it.
+        assert result.x == target.x
+        assert abs(result.y - target.y) == 3
+
+    def test_blocked_primary_flank_uses_the_other_blind_side(self):
+        """A blocked flank never degrades into a head-on approach."""
+        current = _cp(25, 20)  # north of the target
+        target = _cp(25, 25, Direction.E)
+        result = move_to_flank_constrained(current, target, 3, [_cp(25, 22)])
+        # North blind side (25,22) is taken -> take the south one, still a flank.
+        assert (result.x, result.y) == (25, 28)
 
     def test_returns_copy_when_both_flanks_blocked(self):
         current = _cp(5, 25)
@@ -156,24 +171,28 @@ class TestTurnTowardFallback:
     """Line 684: turn_toward fallback to Direction.N."""
 
     def test_turn_toward_same_position(self):
-        # Same position — angle is 0, maps to North
+        """Zero displacement resolves to North, not to the current facing."""
         current = _cp(5, 5, Direction.S)
         target = _cp(5, 5, Direction.S)
-        result = turn_toward(current, target)
-        # Should return a Direction (N is fallback)
-        assert isinstance(result, Direction)
+        assert turn_toward(current, target) is Direction.N
 
-    def test_turn_toward_cardinal_directions(self):
-        for dx, dy, expected in [
+    @pytest.mark.parametrize(
+        "dx, dy, expected",
+        [
             (1, 0, Direction.E),
             (-1, 0, Direction.W),
-            (0, 1, Direction.S),
-            (0, -1, Direction.N),
-        ]:
-            current = _cp(10, 10)
-            target = _cp(10 + dx * 5, 10 + dy * 5)
-            result = turn_toward(current, target)
-            assert isinstance(result, Direction)
+            (0, 1, Direction.N),   # +y is North (angle_to_target: 0 deg = +y)
+            (0, -1, Direction.S),
+            (1, 1, Direction.NE),
+            (-1, 1, Direction.NW),
+            (1, -1, Direction.SE),
+            (-1, -1, Direction.SW),
+        ],
+    )
+    def test_turn_toward_cardinal_directions(self, dx, dy, expected):
+        current = _cp(10, 10)
+        target = _cp(10 + dx * 5, 10 + dy * 5)
+        assert turn_toward(current, target) is expected
 
 
 class TestRecalcProximityNoCombatPosition:
@@ -201,37 +220,74 @@ class TestSpawnUnitsInZoneFormations:
         u.combat_proximity = {}
         return u
 
+    @staticmethod
+    def _assert_in_zone(pos, zone):
+        (x_min, y_min), (x_max, y_max) = zone
+        assert x_min <= pos.x <= x_max, pos
+        assert y_min <= pos.y <= y_max, pos
+
     def test_cluster_formation(self):
+        """Cluster puts the first unit dead centre and the rest adjacent to it."""
         units = [self._make_unit() for _ in range(3)]
         zone = ((5, 5), (15, 15))
         _spawn_units_in_zone(units, zone, formation_type="cluster")
+        first = units[0].combat_position
+        assert (first.x, first.y) == (10, 10)  # centre of the zone
         for u in units:
-            assert u.combat_position is not None
+            self._assert_in_zone(u.combat_position, zone)
+        # "Clustered" is a real claim, but the spiral re-anchors on the running
+        # cluster centre (_calculate_center_position of everyone placed so far),
+        # not on the zone centre -- so a later unit can sit >4 from (10, 10)
+        # while still being tightly clustered. Assert the bound the algorithm
+        # actually gives: each unit lands within the spiral's max radius of the
+        # centre as it stood when that unit was placed.
+        from src.positions import _calculate_center_position
+
+        placed = [units[0].combat_position]
+        for u in units[1:]:
+            centre = _calculate_center_position(placed)
+            assert abs(u.combat_position.x - centre.x) <= 4
+            assert abs(u.combat_position.y - centre.y) <= 4
+            placed.append(u.combat_position)
 
     def test_random_formation(self):
+        """Random placement still respects the zone boundary."""
         units = [self._make_unit() for _ in range(3)]
         zone = ((5, 5), (20, 20))
         _spawn_units_in_zone(units, zone, formation_type="random")
         for u in units:
-            assert u.combat_position is not None
+            self._assert_in_zone(u.combat_position, zone)
 
-    def test_spread_formation_with_seed(self):
-        units = [self._make_unit() for _ in range(2)]
+    def test_spread_formation_is_deterministic_for_a_given_seed(self):
+        """The seed argument must actually reproduce the same layout."""
         zone = ((0, 0), (10, 10))
-        _spawn_units_in_zone(units, zone, formation_type="spread", seed=42)
-        for u in units:
-            assert u.combat_position is not None
+
+        def layout():
+            units = [self._make_unit() for _ in range(3)]
+            _spawn_units_in_zone(
+                units, zone, formation_type="spread", min_spacing=2, seed=42
+            )
+            return [(u.combat_position.x, u.combat_position.y) for u in units]
+
+        first, second = layout(), layout()
+        assert first == second
+        for pos in first:
+            assert 0 <= pos[0] <= 10 and 0 <= pos[1] <= 10
+        # min_spacing=2 in a 10x10 zone is satisfiable, so no two units overlap.
+        assert len(set(first)) == 3
 
 
 class TestFindSpacedPositionFallback:
     """Line 876: _find_spaced_position fallback when constrained."""
 
     def test_fallback_when_zone_is_tiny(self):
+        """An unsatisfiable spacing constraint still yields an in-zone square."""
         zone = ((5, 5), (6, 6))  # Very small zone
         # Fill with many occupied positions to force fallback
         occupied = [_cp(x, y) for x in range(0, 51) for y in range(0, 51)]
         result = _find_spaced_position(zone, occupied, min_spacing=10)
-        assert result is not None
+        assert 5 <= result.x <= 6
+        assert 5 <= result.y <= 6
 
 
 class TestFindClusteredPosition:
@@ -244,20 +300,31 @@ class TestFindClusteredPosition:
         assert result.y == 5
 
     def test_subsequent_unit_near_first(self):
+        """The spiral starts at radius 1, so unit two lands on the ring around unit one."""
         zone = ((0, 0), (10, 10))
         first = _cp(5, 5)
         result = _find_clustered_position(zone, [first], min_spacing=1)
-        assert result is not None
-        # Should be close to first
         dx = abs(result.x - 5)
         dy = abs(result.y - 5)
-        assert dx <= 5 and dy <= 5
+        assert max(dx, dy) == 1
+        assert (result.x, result.y) != (5, 5)
+
+    def test_min_spacing_pushes_the_next_unit_further_out(self):
+        """min_spacing is honoured within the cluster, not just the zone."""
+        zone = ((0, 0), (30, 30))
+        first = _cp(15, 15)
+        result = _find_clustered_position(zone, [first], min_spacing=3)
+        from src.positions import distance_from_coords
+
+        assert distance_from_coords(result, first) >= 3
 
     def test_cluster_fallback_when_no_valid_position(self):
+        """Unsatisfiable spacing falls back to a random *in-zone* square."""
         zone = ((5, 5), (6, 6))
         occupied = [_cp(x, y) for x in range(0, 51) for y in range(0, 51)]
         result = _find_clustered_position(zone, occupied, min_spacing=5)
-        assert result is not None
+        assert 5 <= result.x <= 6
+        assert 5 <= result.y <= 6
 
 
 class TestInitializeCombatPositions:
@@ -269,24 +336,51 @@ class TestInitializeCombatPositions:
         c.combat_proximity = {}
         return c
 
-    def test_standard_scenario(self):
+    @pytest.mark.parametrize("scenario", ["standard", "pincer", "boss_arena"])
+    def test_every_unit_is_placed_facing_the_enemy_with_proximity_wired(
+        self, scenario
+    ):
+        """Placement is only half the job: facing and combat_proximity must be set too."""
+        from src.positions import distance_from_coords
+
+        allies = [self._make_combatant() for _ in range(2)]
+        enemies = [self._make_combatant() for _ in range(2)]
+        initialize_combat_positions(allies, enemies, scenario_type=scenario)
+
+        everyone = allies + enemies
+        for c in everyone:
+            assert isinstance(c.combat_position, CombatPosition)
+            assert isinstance(c.combat_position.facing, Direction)
+            # Proximity is keyed by every *other* combatant, and the distances
+            # agree with the coordinates that were just assigned.
+            assert set(c.combat_proximity) == {o for o in everyone if o is not c}
+            for other, dist in c.combat_proximity.items():
+                assert dist == distance_from_coords(
+                    c.combat_position, other.combat_position
+                )
+
+    def test_allies_and_enemies_start_on_opposite_sides(self):
+        """The standard scenario is a face-off, not a scrum."""
         allies = [self._make_combatant() for _ in range(2)]
         enemies = [self._make_combatant() for _ in range(2)]
         initialize_combat_positions(allies, enemies, scenario_type="standard")
-        for c in allies + enemies:
-            assert c.combat_position is not None
+        # The standard face-off separates the teams along X: allies spawn in
+        # x in [0, 10], enemies in x in [20, 30], and the two share an identical
+        # y range -- so a Y-axis assertion here would be testing nothing.
+        ally_xs = [a.combat_position.x for a in allies]
+        enemy_xs = [e.combat_position.x for e in enemies]
+        assert max(ally_xs) < min(enemy_xs)
 
-    def test_pincer_scenario(self):
+    def test_pincer_splits_enemies_across_two_zones(self):
+        """"Pincer" must actually pincer -- enemies straddle the allies."""
         allies = [self._make_combatant()]
-        enemies = [self._make_combatant()]
+        enemies = [self._make_combatant() for _ in range(2)]
         initialize_combat_positions(allies, enemies, scenario_type="pincer")
-        assert allies[0].combat_position is not None
-
-    def test_boss_arena_scenario(self):
-        allies = [self._make_combatant()]
-        enemies = [self._make_combatant()]
-        initialize_combat_positions(allies, enemies, scenario_type="boss_arena")
-        assert allies[0].combat_position is not None
+        # Pincer straddles along X: the two enemy zones are x in [0, 7] and
+        # x in [43, 50], with the allies boxed between them in x in [18, 32].
+        ally_x = allies[0].combat_position.x
+        enemy_xs = sorted(e.combat_position.x for e in enemies)
+        assert enemy_xs[0] < ally_x < enemy_xs[-1]
 
 
 # ---------------------------------------------------------------------------
