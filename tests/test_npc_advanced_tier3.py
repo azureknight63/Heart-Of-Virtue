@@ -8,12 +8,9 @@ NPC Advanced Systems - Tier 3B Coverage.
 - src/npc/_llm.py: MynxLLMMixin, LLM context, text sanitization, pronouns
 
 Target: 120+ tests covering all conditional paths, edge cases, error states.
-
-NOTE: Skipped in CI due to test suite size. Runs locally for full validation.
 """
 
 import pytest
-pytestmark = pytest.mark.skip(reason="Tier 3 advanced tests - skipped in CI for timeout. Run locally for full validation.")
 import sys
 import json
 import random
@@ -21,6 +18,7 @@ import os
 from unittest.mock import MagicMock, patch, call, ANY, mock_open
 from pathlib import Path
 from io import StringIO
+from types import SimpleNamespace
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
@@ -445,10 +443,12 @@ class TestMara:
         assert mara.aggro is False
 
     def test_mara_keywords(self):
-        """Test Mara keywords."""
+        """Mara offers talk/chat verbs only -- she is not a merchant."""
         mara = Mara()
-        assert "talk" in mara.keywords
-        assert "trade" in mara.keywords
+        # "chat" is contributed by ConversationalNPCMixin._init_chat_attrs().
+        assert mara.keywords == ["talk", "chat"]
+        assert "trade" not in mara.keywords
+        assert "buy" not in mara.keywords
 
     def test_mara_battle_symbol(self):
         """Test Mara battle symbol."""
@@ -1003,15 +1003,19 @@ class TestMerchant:
             exp_award=0,
             stock_count=10,
         )
-        merchant._collect_player_merchandise = MagicMock()
-        merchant.shop = MagicMock()
-        player = MagicMock()
+        # Real player-ish object carrying one merchandise item and one personal item.
+        merchandise = Rock(merchandise=True)
+        personal = Rock()
+        personal.merchandise = False
+        player = SimpleNamespace(inventory=[merchandise, personal])
 
         merchant.trade(player)
 
-        merchant._collect_player_merchandise.assert_called_once_with(player)
-        if merchant.shop:
-            merchant.shop.run.assert_called_once()
+        # trade() absorbs unpaid merchandise into the merchant's stock and
+        # leaves Jean's own belongings alone.
+        assert merchandise not in player.inventory
+        assert personal in player.inventory
+        assert merchandise in merchant.inventory
 
     def test_merchant_buy_delegates_to_trade(self):
         """Test Merchant.buy() delegates to trade()."""
@@ -1075,11 +1079,18 @@ class TestMiloCurioDealer:
         milo = MiloCurioDealer()
         assert milo.base_gold == 5000
 
-    def test_milo_shop_exit_message(self):
-        """Test MiloCurioDealer shop exit message."""
+    def test_milo_shop_pricing_attributes(self):
+        """Milo carries the authored shop name and default price modifiers.
+
+        The terminal ShopInterface (``npc.shop``) was removed; pricing now
+        lives directly on the merchant and is read by GameService.shop_buy/
+        shop_sell and ShopSerializer.
+        """
         milo = MiloCurioDealer()
-        if milo.shop:
-            assert "nod" in milo.shop.exit_message.lower()
+        assert not hasattr(milo, "shop")
+        assert milo.shop_name == "The Wandering Curiosities Shop"
+        assert milo.buy_modifier == 1.0
+        assert milo.sell_modifier == 0.5
 
     @patch('builtins.print')
     def test_milo_talk(self, mock_print):
@@ -1090,16 +1101,19 @@ class TestMiloCurioDealer:
         mock_print.assert_called_once()
         assert "rare" in str(mock_print.call_args).lower()
 
-    def test_milo_trade_uses_custom_shop(self):
+    def test_milo_trade_absorbs_player_merchandise(self):
         """Test MiloCurioDealer.trade() absorbs player merchandise."""
         milo = MiloCurioDealer()
-        player = MagicMock()
-        milo._collect_player_merchandise = MagicMock()
+        merchandise = Rock(merchandise=True)
+        keepsake = Rock()
+        keepsake.merchandise = False
+        player = SimpleNamespace(inventory=[merchandise, keepsake])
 
         with patch('builtins.print'):
             milo.trade(player)
 
-        milo._collect_player_merchandise.assert_called_once_with(player)
+        assert merchandise in milo.inventory
+        assert player.inventory == [keepsake]
 
 
 class TestJamboHealsU:
@@ -1143,11 +1157,13 @@ class TestJamboHealsU:
         jambo = JamboHealsU()
         assert jambo.base_gold == 800
 
-    def test_jambo_initialize_shop_with_interface(self):
-        """Test JamboHealsU.initialize_shop() creates shop."""
+    def test_jambo_initialize_shop_sets_pricing(self):
+        """initialize_shop() installs the pricing attributes the web shop reads."""
         jambo = JamboHealsU()
-        # Should have initialized a shop
-        assert jambo.shop is not None or jambo.inventory is not None
+        assert jambo.shop_name == "Jambo Heals U"
+        assert jambo.buy_modifier == 1.0
+        assert jambo.sell_modifier == 0.5
+        assert isinstance(jambo.inventory, list)
 
     def test_jambo_talk(self):
         """Test JamboHealsU.talk() message."""
@@ -1718,11 +1734,29 @@ class TestMerchantsEdgeCases:
         )
         assert merchant.inventory is None or isinstance(merchant.inventory, list)
 
-    def test_jambo_initialize_shop_no_interface(self):
-        """Test JamboHealsU initialize_shop when interface import fails."""
-        jambo = JamboHealsU()
-        # Should initialize without error even if Shop is unavailable
-        assert hasattr(jambo, 'shop')
+    def test_merchant_initialize_shop_defaults_shop_name(self):
+        """A merchant that authors no shop_name gets the derived default."""
+        merchant = Merchant(
+            name="Nameless",
+            description="Test",
+            damage=5,
+            aggro=False,
+            exp_award=0,
+            stock_count=10,
+            inventory=[],
+        )
+        assert merchant.shop_name == "Nameless's Shop"
+
+    def test_merchant_initialize_shop_respects_preset_modifiers(self):
+        """initialize_shop() must not clobber modifiers a subclass preset."""
+        merchant = Merchant.__new__(Merchant)
+        merchant.name = "Gouger"
+        merchant.inventory = []
+        merchant.buy_modifier = 2.5
+        merchant.sell_modifier = 0.1
+        merchant.initialize_shop()
+        assert merchant.buy_modifier == 2.5
+        assert merchant.sell_modifier == 0.1
 
 
 class TestLlmContextBuilding:
@@ -2259,17 +2293,20 @@ class TestInteractWithPlayerPlayVariants:
 class TestMerchantInitializeShopEdgeCases:
     """Test merchant shop initialization edge cases."""
 
-    def test_jambo_initialize_shop_sets_correct_name(self):
-        """Test JamboHealsU.initialize_shop sets shop name."""
+    def test_jambo_initialize_shop_keeps_authored_name(self):
+        """JamboHealsU's authored shop_name survives initialize_shop()."""
         jambo = JamboHealsU()
-        if jambo.shop:
-            # Should use canonical shop name
-            assert jambo.shop is not None
+        # Authored in __init__ *after* super().__init__() ran initialize_shop(),
+        # so the derived "Jambo's Shop" default must not be what sticks.
+        assert jambo.shop_name == "Jambo Heals U"
 
-    def test_jambo_initialize_shop_with_empty_inventory(self):
-        """Test JamboHealsU.initialize_shop with empty inventory."""
-        jambo = JamboHealsU()
-        assert jambo.inventory is not None or jambo.shop is not None
+    def test_jambo_initialize_shop_normalizes_none_inventory(self):
+        """initialize_shop() converts a None inventory into an empty list."""
+        jambo = JamboHealsU.__new__(JamboHealsU)
+        jambo.name = "Jambo"
+        jambo.inventory = None
+        jambo.initialize_shop()
+        assert jambo.inventory == []
 
 
 if __name__ == "__main__":
