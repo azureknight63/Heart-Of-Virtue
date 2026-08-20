@@ -6,6 +6,8 @@ still drawing. Aborting is deliberately not an undo -- the wind-up already spent
 is gone and the move's full cooldown is charged.
 """
 
+import inspect
+
 import pytest
 
 from src.api.combat_adapter import ABORTABLE_MIN_PREP_BEATS, ApiCombatAdapter
@@ -132,6 +134,22 @@ def test_switching_moves_mid_prep_is_refused_rather_than_free():
     # The in-flight move is untouched -- not silently cancelled, not advanced.
     assert player.current_move is aimed
     assert aimed.current_stage == 0
+
+
+def test_the_refusal_reaches_the_client_as_a_flag_not_just_prose():
+    """`requires_abort` has to survive the route.
+
+    execute_move rebuilds its error payload from `result["error"]` alone, so a
+    flag set beside the message is dropped unless the route forwards it — and a
+    client left string-matching the prose is exactly the wire-drift CLAUDE.md
+    names as this codebase's dominant defect class.
+    """
+    import src.api.routes.combat as combat_routes
+
+    source = inspect.getsource(combat_routes.execute_move)
+    assert "requires_abort" in source, (
+        "execute_move drops requires_abort when rebuilding its error payload"
+    )
 
 
 def test_abort_then_act_is_the_supported_path():

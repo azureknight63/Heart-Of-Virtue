@@ -182,7 +182,13 @@ export const useCombat = (streamingEnabled = false) => {
       // forever in its pre-action state. Non-terminal streaming responses are still
       // applied by the socket when it arrives; terminal responses are applied here
       // immediately as a safety net.
-      if (!streamingEnabled || data.combat_active === false || data.end_state) {
+      // Abort produces no beats — it withdraws a move rather than resolving
+      // one — so nothing is ever emitted on the socket for it. Under streaming
+      // the HTTP response is therefore the ONLY carrier of the new state, and
+      // skipping it here left the abort control on screen with the action
+      // buttons greyed out until some unrelated event happened to arrive.
+      const streamsNothing = action === 'abort'
+      if (!streamingEnabled || streamsNothing || data.combat_active === false || data.end_state) {
         applyCombatState(data)
       }
       return data

@@ -139,7 +139,14 @@ def execute_move():
             # requests — return 200 with success=false so callers can distinguish
             # structural errors (4xx) from in-game conditions (200 success=false).
             # Do NOT save session on error paths — avoid persisting partial mutations.
-            return jsonify({"success": False, "error": result["error"]}), 200
+            payload = {"success": False, "error": result["error"]}
+            # Forward the machine-readable flags the adapter sets alongside the
+            # message; rebuilding the payload from `error` alone silently dropped
+            # `requires_abort`, so the client could only have re-derived it by
+            # string-matching the prose.
+            if result.get("requires_abort"):
+                payload["requires_abort"] = True
+            return jsonify(payload), 200
 
         session_manager.save_session(session.session_id)
         return jsonify({"success": True, **result}), 200
