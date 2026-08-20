@@ -561,16 +561,21 @@ describe('Tactical AI Integration Tests', () => {
         }, { timeout: 10000 });
 
         // Initially no poison icon
-        expect(screen.queryByText('🧪')).toBeNull();
+        expect(screen.queryAllByText('🧪')).toHaveLength(0);
 
-        // After some time, poison icon should appear due to poll
+        // After the poll delivers the second state, the poison effect shows.
+        //
+        // queryAllByText, not queryByText: the effect legitimately renders on
+        // more than one surface at once (the battlefield token's
+        // StatusEffectsIconPanel and the panels beside it), and queryByText
+        // THROWS on multiple matches rather than returning the first. That
+        // turned a passing render into a retry loop that ran out the waitFor
+        // budget, so the failure surfaced as a ~10s "timeout" and read as load
+        // flakiness — it was an over-specific query all along. What this test
+        // means to assert is that the effect became visible, not that exactly
+        // one element carries it.
         await waitFor(() => {
-            const poisonIcon = screen.queryByText('🧪');
-            expect(poisonIcon).toBeTruthy();
+            expect(screen.queryAllByText('🧪').length).toBeGreaterThan(0);
         }, { timeout: 10000 });
-        // The test budget must exceed the sum of the waitFor budgets above.
-        // At 10000 it equalled a single wait, so under parallel full-suite load
-        // the test timed out before its own waits could resolve — a flake that
-        // only ever reproduced in a full run, never in isolation.
     }, 25000);
 });

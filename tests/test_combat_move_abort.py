@@ -169,3 +169,48 @@ def test_reselecting_the_same_in_flight_move_is_not_treated_as_a_switch():
     with capture_narration():
         result = adapter._handle_move_selection(0)
     assert result.get("requires_abort") is None
+
+
+class TestResponseStreamedFlag:
+    """`response_streamed` tells the client whether the socket carried this.
+
+    Without it, a client under COMBAT_SOCKET_STREAMING defers to a socket event
+    that never arrives, and the UI silently keeps rendering stale state. It is
+    set by the one streaming funnel, so any path that does not stream simply
+    omits it.
+    """
+
+    def test_a_non_streaming_path_does_not_claim_to_have_streamed(self):
+        player, adapter, aimed = _start_aimed_shot()
+        with capture_narration():
+            result = adapter.abort_current_move()
+        assert "response_streamed" not in result, (
+            "abort emits no beat, so it must not claim the socket carried it"
+        )
+
+    def test_the_streaming_funnel_marks_the_response(self):
+        player, adapter, enemy = _combat()
+
+        class _Streamer:
+            def stream_beats(self, *a, **k):
+                pass
+
+            def reconcile_final(self, *a, **k):
+                pass
+
+            def emit_resolved(self, *a, **k):
+                pass
+
+        adapter._beat_streamer = _Streamer()
+        result = {"battle_state": {"combatants": []}}
+        adapter._stream_combat_result(result, [])
+        assert result["response_streamed"] is True
+
+    def test_no_streamer_leaves_the_response_unmarked(self):
+        """Flag off / no socket: the client applies the HTTP response anyway,
+        so the marker must be absent rather than falsely true."""
+        player, adapter, enemy = _combat()
+        adapter._beat_streamer = None
+        result = {"battle_state": {"combatants": []}}
+        adapter._stream_combat_result(result, [])
+        assert "response_streamed" not in result

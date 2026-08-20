@@ -262,6 +262,15 @@ class ApiCombatAdapter:
         self._departures = {}
         if streamer is None:
             return
+        # Mark the response as carried by the socket. This is the ONLY funnel
+        # that streams, so a response without this flag reached the client with
+        # nothing on the socket behind it, and the HTTP body is its only
+        # carrier. The client keys its "apply or defer" decision on this rather
+        # than on the action name, because the same action goes both ways:
+        # a target selection that completes a move streams beats, while one
+        # that only opens a further prompt (a number/direction step) does not.
+        if isinstance(result, dict):
+            result["response_streamed"] = True
         try:
             streamer.stream_beats(beat_states)
             # Surface any exit/change the per-snapshot stream missed (e.g. an
