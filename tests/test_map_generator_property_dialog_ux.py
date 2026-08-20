@@ -159,120 +159,20 @@ class TestClassDiscovery:
         }.issubset(allowed)
 
 
-class TestBulkEditAppliesToEveryInstance:
-    """Mirrors what open_property_dialog's existing/existing_list
-    normalization and auto_save() do for a bulk edit, without needing to
-    construct the real tkinter dialog (see module docstring)."""
-
-    def test_single_object_is_not_treated_as_bulk(self, map_generator_module):
-        # Re-derive open_property_dialog's normalization inline: a single
-        # instance (not a list) is wrapped to a 1-element list, is_bulk_edit
-        # is False.
-        from src.objects import Container
-
-        existing = Container(name="solo")
-        existing_list = (
-            existing
-            if isinstance(existing, list)
-            else ([existing] if existing is not None else [])
-        )
-        assert len(existing_list) == 1
-        assert (len(existing_list) > 1) is False
-
-    def test_bulk_list_change_applies_to_every_instance(self, map_generator_module):
-        from src.objects import Container
-
-        c1 = Container(name="remains-a")
-        c2 = Container(name="remains-b")
-        c3 = Container(name="remains-c")
-        existing = [c1, c2, c3]
-
-        existing_list = (
-            existing
-            if isinstance(existing, list)
-            else ([existing] if existing is not None else [])
-        )
-        is_bulk_edit = len(existing_list) > 1
-        assert is_bulk_edit is True
-
-        # auto_save()'s (unfiltered-field) apply loop: for k, v in
-        # kwargs.items(): for obj in existing_list: setattr(obj, k, v)
-        kwargs = {"locked": True, "hide_factor": 5}
-        for k, v in kwargs.items():
-            for obj in existing_list:
-                setattr(obj, k, v)
-
-        for obj in (c1, c2, c3):
-            assert obj.locked is True
-            assert obj.hide_factor == 5
-
-    def test_bulk_edit_does_not_flatten_untouched_fields_to_primary_instance(
-        self, map_generator_module
-    ):
-        """Regression test: auto_save() reruns its full kwargs rebuild on
-        every keystroke across every field (it's wired to fire on any single
-        widget's change), and every field is seeded from the primary
-        (first) instance. Without initial_kwargs diffing, editing just
-        `locked` on one of several selected containers with different names
-        would silently flatten every instance's `name` to the primary's the
-        moment ANY field was touched -- not just the field being edited.
-        """
-        from src.objects import Container
-
-        primary = Container(name="remains-a", locked=False)
-        other = Container(name="remains-b", locked=False)
-        existing_list = [primary, other]
-
-        # Snapshot taken once, right after the dialog's fields are built --
-        # mirrors initial_kwargs, seeded entirely from the primary instance.
-        initial_kwargs = {"name": primary.name, "locked": primary.locked}
-
-        # User only ever interacts with the `locked` toggle; `name`'s widget
-        # is never touched, so re-reading it still reports the primary's
-        # (unchanged) seeded value -- exactly what _collect_kwargs() would
-        # return.
-        kwargs = {"name": primary.name, "locked": True}
-
-        _UNSET = object()
-        for k, v in kwargs.items():
-            if v == initial_kwargs.get(k, _UNSET):
-                continue
-            for obj in existing_list:
-                setattr(obj, k, v)
-
-        # The untouched field must NOT have been flattened to the primary's
-        # value on the other instance.
-        assert other.name == "remains-b"
-        assert primary.name == "remains-a"
-        # The field the user actually changed applies to every instance.
-        assert primary.locked is True
-        assert other.locked is True
-
-    def test_bulk_candidates_grouped_by_class_across_tiles(self, map_generator_module):
-        # Mirrors MapEditor.bulk_edit_selected_tiles's candidate-gathering
-        # loop: scan objects/npcs/events/items across several tiles' data,
-        # grouped by type.
-        from src.objects import Container
-
-        class FakeNpc:
-            def __init__(self, name):
-                self.name = name
-
-        map_data = {
-            (0, 0): {"objects": [Container(name="a")], "npcs": [FakeNpc("m1")]},
-            (1, 0): {"objects": [Container(name="b"), Container(name="c")]},
-            (2, 0): {},  # empty tile, must not raise
-        }
-        selected_tiles = {(0, 0), (1, 0), (2, 0)}
-
-        candidates = {}
-        for pos in selected_tiles:
-            tile_data = map_data.get(pos)
-            if not tile_data:
-                continue
-            for bucket in ("objects", "npcs", "events", "items"):
-                for inst in tile_data.get(bucket, []) or []:
-                    candidates.setdefault(type(inst), []).append(inst)
-
-        assert len(candidates[Container]) == 3
-        assert len(candidates[FakeNpc]) == 1
+# NOTE: the bulk-edit tests that used to live here have MOVED to
+# ``tests/test_map_generator_open_property_dialog.py``
+# (``TestBulkEdit`` / ``TestBulkEditCandidateGathering``).
+#
+# They were not tests of ``utils/mapgen`` at all: each one re-implemented
+# open_property_dialog's ``existing``-normalization and auto_save() apply loop,
+# or MapEditor.bulk_edit_selected_tiles's candidate-gathering loop, *inline in
+# the test body*, then asserted on that copy. Their own docstrings said so
+# ("Re-derive open_property_dialog's normalization inline", "Mirrors what
+# ... does"). No change to the production code could fail them --
+# ``test_single_object_is_not_treated_as_bulk`` computed a list in the test and
+# asserted ``len(...) == 1``.
+#
+# The replacements drive the real ``open_property_dialog`` and the real
+# ``MapEditor.bulk_edit_selected_tiles`` against the permissive fake-widget
+# stub that file already maintains, including the untouched-field-flattening
+# regression this class was written to guard.

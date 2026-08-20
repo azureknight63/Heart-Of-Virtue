@@ -562,3 +562,129 @@ def ttk_calls_for(mg_module, widget_name):
     call order."""
     widget_mock = getattr(mg_module.ttk, widget_name)
     return list(widget_mock.call_args_list)
+
+
+class TestBulkEdit:
+    """``existing=[a, b, ...]`` -- one dialog editing several instances.
+
+    ``test_map_generator_property_dialog_ux.py`` used to "cover" this by
+    re-implementing open_property_dialog's normalization and auto_save() loops
+    inline in the test body and asserting on that copy. Those tests could not
+    fail for any change to ``utils/mapgen``; these drive the real dialog.
+    """
+
+    class Simple:
+        def __init__(self, name: str = "x", locked: bool = False):
+            pass
+
+    def _pair(self):
+        first, second = self.Simple(), self.Simple()
+        first.name, first.locked = "alpha", False
+        second.name, second.locked = "beta", False
+        return first, second
+
+    def test_a_changed_field_applies_to_every_selected_instance(self, mg):
+        first, second = self._pair()
+
+        mg.open_property_dialog(_FakeWidget(), self.Simple, existing=[first, second])
+        find_button("True").init_kwargs["command"]()      # flip `locked`
+        find_button("Close").init_kwargs["command"]()
+
+        assert first.locked is True
+        assert second.locked is True
+
+    def test_untouched_fields_are_not_flattened_to_the_primary_instance(self, mg):
+        """Regression: auto_save() rebuilds *every* field's kwargs on any
+        change, and each field is seeded from the primary (first) instance.
+        Without initial-value diffing, editing ``locked`` would overwrite the
+        second container's ``name`` with the first's.
+        """
+        first, second = self._pair()
+
+        mg.open_property_dialog(_FakeWidget(), self.Simple, existing=[first, second])
+        find_button("True").init_kwargs["command"]()
+        find_button("Close").init_kwargs["command"]()
+
+        assert first.name == "alpha"
+        assert second.name == "beta"
+
+    def test_callback_receives_the_whole_selection(self, mg):
+        first, second = self._pair()
+        saved = {}
+
+        mg.open_property_dialog(
+            _FakeWidget(), self.Simple, existing=[first, second],
+            callback=lambda inst: saved.setdefault("inst", inst),
+        )
+        find_button("Close").init_kwargs["command"]()
+
+        assert saved["inst"] == [first, second]
+
+    def test_a_field_differing_across_the_selection_is_seeded_from_the_primary(
+            self, mg):
+        """The ``*`` customization mark reflects the primary instance's value."""
+        first, second = self._pair()
+
+        mg.open_property_dialog(_FakeWidget(), self.Simple, existing=[first, second])
+
+        texts = widget_texts()
+        assert "name*:" in texts     # primary's "alpha" differs from default "x"
+        assert "locked:" in texts    # primary's False == the default
+
+
+class TestBulkEditCandidateGathering:
+    """``MapEditor.bulk_edit_selected_tiles`` -- the real method, driven on a
+    bare instance so no tkinter root is needed."""
+
+    def _editor(self, mg, monkeypatch, selected, map_data):
+        import utils.mapgen.editor as editor_mod
+
+        captured = {}
+        monkeypatch.setattr(
+            editor_mod, "_open_bulk_class_chooser",
+            lambda root, candidates, redraw, map_data=None:
+                captured.update(candidates=candidates, map_data=map_data),
+        )
+        editor = editor_mod.MapEditor.__new__(editor_mod.MapEditor)
+        editor.root = None
+        editor.draw_map = lambda: None
+        editor.set_status = lambda message: captured.setdefault("status", message)
+        editor.selected_tiles = selected
+        editor.map_data = map_data
+        editor.bulk_edit_selected_tiles()
+        return captured
+
+    def test_candidates_are_grouped_by_class_across_every_selected_tile(
+            self, mg, monkeypatch):
+        from src.objects import Container
+
+        class FakeNpc:
+            def __init__(self, name):
+                self.name = name
+
+        captured = self._editor(mg, monkeypatch, {(0, 0), (1, 0), (2, 0)}, {
+            (0, 0): {"objects": [Container(name="a")], "npcs": [FakeNpc("m1")]},
+            (1, 0): {"objects": [Container(name="b"), Container(name="c")]},
+            (2, 0): {},                       # empty tile must not raise
+        })
+
+        assert "status" not in captured
+        grouped = {cls.__name__: len(v) for cls, v in captured["candidates"].items()}
+        assert grouped == {"Container": 3, "FakeNpc": 1}
+
+    def test_a_single_selected_tile_is_refused_with_a_status_message(
+            self, mg, monkeypatch):
+        from src.objects import Container
+
+        captured = self._editor(mg, monkeypatch, {(0, 0)},
+                                {(0, 0): {"objects": [Container(name="a")]}})
+
+        assert "candidates" not in captured
+        assert "Select 2+ tiles" in captured["status"]
+
+    def test_a_selection_with_nothing_editable_is_refused(self, mg, monkeypatch):
+        captured = self._editor(mg, monkeypatch, {(0, 0), (1, 0)},
+                                {(0, 0): {}, (1, 0): {}})
+
+        assert "candidates" not in captured
+        assert captured["status"] == "No editable objects found on the selected tiles."

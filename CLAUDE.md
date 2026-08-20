@@ -123,7 +123,7 @@ The `tests/api/`, `tests/broken/`, and `tests/uat/` directories are excluded fro
 |-------|---------|--------|-----------|
 | Backend (Python) | 96% | 85% | 85% |
 | Frontend (React) | 95%+ | 95% | 95% |
-| Total Tests | 9,565 | - | - |
+| Total Tests | 11,285 (9,056 backend + 2,229 frontend) | - | - |
 
 ### Backend Coverage Enforcement
 
@@ -142,7 +142,17 @@ python -m pytest \
   -q
 ```
 
-(Measured 2026-08-09: `python -m pytest --cov=src --cov=ai` reports 96% over 23,367 statements; 7,303 backend tests plus 2,262 frontend. The previously recorded 47%/~75%/1,308 figures were long out of date — re-measure before quoting them.)
+(Measured 2026-08-20: `python -m pytest --cov=src --cov=ai` reports 96% over 23,545 statements;
+**9,056 backend tests plus 2,229 frontend, and zero skips**. The backend suite runs in ~20s
+because pytest.ini sets `-n auto --dist loadfile`; use `-n0` when debugging a single test.
+Re-measure before quoting these — earlier recorded figures were repeatedly stale.
+
+The suite previously carried **565 skips**, ~517 of them whole-file or whole-class
+`pytestmark = pytest.mark.skip` with reasons like "coverage requirements already met" and
+"test isolation issues". Those reasons were, without exception, false: the tests failed for
+stale API signatures, mislabelled story flags, an unrestored class attribute, and one
+infinite loop. Do not add a blanket skip to make the suite green — it hides defects for
+years and the count only ever grows.)
 
 **High-coverage areas** (>70%):
 - `src/api/routes/` — REST endpoints well-tested
@@ -233,7 +243,7 @@ See `docs/coverage/coverage-dashboard.md` for:
 ### GameService patterns (critical gotchas)
 - `GameService.__init__` is `pass` — no `self.universe`. Universe lives on `player.universe`.
 - To access universe data from a service method, use the static helpers: `self._story(player)` (returns `player.universe.story` or `{}`) and `self._game_tick(player)` (returns `player.universe.game_tick` or `0`). Never reference `self.universe.*` directly.
-- Routes must not reach into player internals. Use `game_service.some_method(player)` — not `getattr(player, "attribute", default)` in routes. Player attribute traps: `player.attack` is a combat action method (not a stat); `player.health` doesn't exist (it's `player.hp`); `player.stamina`, `player.defense`, `player.accuracy`, `player.evasion` are also absent. When in doubt, add a method to GameService.
+- Routes must not reach into player internals. Use `game_service.some_method(player)` — not `getattr(player, "attribute", default)` in routes. Player attribute traps: `player.attack` **does not exist at all** (the verb was removed in the terminal teardown; `hasattr(Player(), "attack")` is `False`); `player.health` doesn't exist (it's `player.hp`); `player.stamina`, `player.defense`, `player.accuracy`, `player.evasion` are also absent. When in doubt, add a method to GameService.
 - `player.reputation` doesn't exist initially. Methods that write to it initialize `player.reputation = {}` first. Read-only uses should do `getattr(player, 'reputation', {})`.
 - **Cooldown timing trap**: cooldowns must only drain during active combat beats. Any code path that calls cooldown drain outside the combat loop (e.g., during rest, world movement, or save/load) will silently corrupt move availability. Guard all drain calls with an active-combat check.
 
