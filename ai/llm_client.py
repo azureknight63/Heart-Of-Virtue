@@ -1115,6 +1115,10 @@ class NpcChatLLMAdapter(GenericLLMClient):
             return None
         if "npc_text" not in parsed or not isinstance(parsed["npc_text"], str):
             return None
+        flavor = parsed.get("npc_flavor", "")
+        parsed["npc_flavor"] = (
+            _JSONTools.sanitize_text(flavor) if isinstance(flavor, str) else ""
+        )
         # Normalise fields
         valid_qualities = {"positive", "neutral", "negative", "offensive"}
         quality = str(parsed.get("conversation_quality", "neutral")).lower()
@@ -1170,12 +1174,16 @@ class NpcChatLLMAdapter(GenericLLMClient):
             f"{history_block}\n\n"
             f"[TASK]\n{task}\n\n"
             "Return ONLY this JSON (no code fences, no extra keys):\n"
-            '{"npc_text": "...", '
+            '{"npc_text": "...", "npc_flavor": "...", '
             '"conversation_quality": "positive|neutral|negative|offensive", '
             '"reputation_delta": 0, "loquacity_delta": -8, '
             '"jean_options": [{"tone": "direct", "text": "..."}, '
             '{"tone": "guarded", "text": "..."}, {"tone": "open", "text": "..."}]}\n\n'
-            "conversation_quality reflects how the NPC felt about this exchange: "
+            "npc_text is the spoken words only. npc_flavor is optional third-person "
+            "physical or environmental flavor for the same beat (for example, "
+            "'She studies the dust before answering'). Keep it separate from the "
+            "spoken line and return an empty string when there is no flavor.\n"
+            "conversation_quality reflects how the NPC felt about this exchange:\n"
             "positive=enjoyed/interested, neutral=tolerated, negative=annoyed/offended, "
             "offensive=deeply offended.\n"
             "reputation_delta is a small integer from -5 to +5 for how much this exchange "
@@ -1210,6 +1218,10 @@ class NpcChatLLMAdapter(GenericLLMClient):
             return None
         if "npc_text" not in parsed or not isinstance(parsed["npc_text"], str):
             return None
+        flavor = parsed.get("npc_flavor", "")
+        parsed["npc_flavor"] = (
+            _JSONTools.sanitize_text(flavor) if isinstance(flavor, str) else ""
+        )
 
         valid_qualities = {"positive", "neutral", "negative", "offensive"}
         quality = str(parsed.get("conversation_quality", "neutral")).lower()
@@ -1393,42 +1405,94 @@ class NpcChatLLMAdapter(GenericLLMClient):
     def _call_openrouter(
         self, system: str, user: str, max_tokens: int, temperature: float
     ) -> Optional[str]:
+        """Call OpenRouter, retrying with current free models when needed.
+
+        NPC chat used to make one request against the configured model and then
+        call ``.strip()`` on ``message.content`` unconditionally. OpenRouter can
+        return a 404 for a retired ``:free`` slug, or return ``content: null``
+        for a thinking-only response; either case made every chat round fall
+        through with a noisy error and no LLM dialogue. Keep this feature's
+        per-round settings, but share the generic client's model-failure cache
+        and tolerate the response shapes OpenRouter actually sends.
+        """
         if requests is None or not self._openrouter_api_key:
             return None
-        model = self._get_openrouter_model()
-        if not model:
+
+        primary = self._get_openrouter_model()
+        if not primary:
             return None
+
+        models_to_try = [primary]
+        # OpenRouter maintains this router slug as the stable escape hatch for
+        # free accounts even as individual free model slugs are retired.
+        for model_id in ["openrouter/free", *GenericLLMClient._free_models_cache]:
+            if model_id not in models_to_try:
+                models_to_try.append(model_id)
+        for model_id in self.STABLE_FREE_FALLBACKS:
+            if model_id not in models_to_try:
+                models_to_try.append(model_id)
+
         headers = {
             "Authorization": f"Bearer {self._openrouter_api_key}",
             "Content-Type": "application/json",
+            "Accept": "application/json",
         }
         if self._openrouter_site:
             headers["HTTP-Referer"] = self._openrouter_site
         if self._openrouter_site_title:
             headers["X-Title"] = self._openrouter_site_title
-        payload = {
-            "model": model,
-            "messages": [
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
-            "max_tokens": max_tokens,
-            "temperature": temperature,
-            "top_p": 0.9,
-        }
-        try:
-            r = requests.post(
-                "https://openrouter.ai/api/v1/chat/completions",
-                json=payload,
-                headers=headers,
-                timeout=self._round_timeout(),
-            )
-            r.raise_for_status()
-            data = r.json()
-            return data["choices"][0]["message"]["content"].strip() or None
-        except Exception as e:
-            logger.warning(f"NpcChatLLMAdapter OpenRouter error: {e}")
-            return None
+
+        attempts = 0
+        for model_id in models_to_try:
+            if self._is_model_failed(model_id):
+                continue
+            attempts += 1
+            if attempts > 3:
+                break
+            payload = {
+                "model": model_id,
+                "messages": [
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user},
+                ],
+                "max_tokens": max_tokens,
+                "temperature": temperature,
+                "top_p": 0.9,
+            }
+            try:
+                response = requests.post(
+                    "https://openrouter.ai/api/v1/chat/completions",
+                    json=payload,
+                    headers=headers,
+                    timeout=self._round_timeout(),
+                )
+                if getattr(response, "status_code", None) == 429:
+                    self._mark_model_failed(model_id, duration_minutes=2)
+                    continue
+                response.raise_for_status()
+                data = response.json()
+                choices = data.get("choices") if isinstance(data, dict) else None
+                first = choices[0] if isinstance(choices, list) and choices else None
+                message = first.get("message") if isinstance(first, dict) else None
+                content = (
+                    _JSONTools.extract_text_content(message.get("content"))
+                    if isinstance(message, dict)
+                    else None
+                )
+                if not content and isinstance(message, dict):
+                    content = _JSONTools.extract_text_content(message.get("reasoning"))
+                if content:
+                    return str(content).strip() or None
+            except Exception as e:
+                logger.debug(
+                    "NpcChatLLMAdapter OpenRouter model %s failed: %s",
+                    model_id,
+                    e,
+                )
+            self._mark_model_failed(model_id)
+
+        logger.warning("NpcChatLLMAdapter OpenRouter: no usable model response")
+        return None
 
     def _get_openrouter_model(self) -> Optional[str]:
         """Return the configured model or the first available free model."""

@@ -2010,6 +2010,45 @@ class TestCallOpenrouter:
             result = adapter._call_openrouter("sys", "user", 100, 0.5)
         assert result is None
 
+    def test_skips_unavailable_model_and_extracts_non_string_content(self, monkeypatch):
+        """A stale model or thinking-only response must not kill NPC chat."""
+        monkeypatch.setenv("NPC_CHAT_LLM_ENABLED", "0")
+        adapter = NpcChatLLMAdapter()
+        adapter._openrouter_api_key = "key"
+        adapter.model = "stale/model:free"
+        adapter._openrouter_site = None
+        adapter._openrouter_site_title = None
+        GenericLLMClient._free_models_cache = ["working/model:free"]
+
+        unavailable = MagicMock(status_code=404, text="model unavailable")
+        thinking_only = MagicMock(
+            status_code=200,
+            text="",
+            json=lambda: {"choices": [{"message": {"content": None}}]},
+        )
+        working = MagicMock(
+            status_code=200,
+            text="",
+            json=lambda: {
+                "choices": [{
+                    "message": {
+                        "content": [
+                            {"type": "thinking", "thinking": "private reasoning"},
+                            {"type": "text", "text": "{\"npc_text\": \"Welcome.\"}"},
+                        ]
+                    }
+                }]
+            },
+        )
+
+        with patch("requests.post", side_effect=[unavailable, thinking_only, working]) as post:
+            result = adapter._call_openrouter("sys", "user", 100, 0.5)
+
+        assert result == '{"npc_text": "Welcome."}'
+        assert [call.kwargs["json"]["model"] for call in post.call_args_list] == [
+            "stale/model:free", "openrouter/free", "working/model:free"
+        ]
+
 
 class TestGetOpenrouterModel:
     def test_explicit_model_returned(self, monkeypatch):
