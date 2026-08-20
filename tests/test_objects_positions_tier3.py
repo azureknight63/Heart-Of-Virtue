@@ -265,7 +265,13 @@ class TestWallSwitch:
             mock_press.assert_called_once()
 
     def test_wall_switch_init_with_params(self):
-        """Test WallSwitch initialization with event params."""
+        """A single bang-param populates event_on only, with ``r`` consumed.
+
+        ``event_on``/``event_off`` both start as ``None``, so identity checks
+        against the instantiated events are what pin the wiring; ``is not
+        None`` would not notice the two being swapped, nor the ``r`` repeat
+        flag leaking into ``params``.
+        """
         player = Mock()
         tile = Mock()
         with patch("src.objects.functions.seek_class") as mock_seek:
@@ -274,10 +280,15 @@ class TestWallSwitch:
                 mock_seek.return_value = event_cls
                 event = Mock()
                 mock_inst.return_value = event
-                params = ["!TestEvent:r"]
-                switch = WallSwitch(player, tile, params=params)
-                # First event should be set to event_on
-                assert switch.event_on is not None
+                switch = WallSwitch(player, tile, params=["!TestEvent:r"])
+
+        assert switch.event_on is event
+        assert switch.event_off is None
+        mock_seek.assert_called_once_with("TestEvent", "story")
+        # ``r`` is the repeat flag, so it must be stripped from params, not
+        # passed through as a setting.
+        mock_inst.assert_called_once_with(
+            event_cls, player, tile, params=None, repeat=True)
 
 
 class TestWallInscription:
@@ -1409,46 +1420,65 @@ class TestGetCombatScenario:
 class TestInitializeCombatPositions:
     """Test suite for initialize_combat_positions function."""
 
+    # NOTE ON MOCKS: `Mock().combat_position` auto-creates a truthy attribute,
+    # so `hasattr(...)` / `is not None` pass even when
+    # `initialize_combat_positions` does nothing at all. Every assertion below
+    # therefore inspects the *real* `CombatPosition` the function assigns --
+    # its type and its coordinates against the scenario's declared spawn zones.
+
+    @staticmethod
+    def _in_zone(position, zone):
+        (x0, y0), (x1, y1) = zone
+        return x0 <= position.x <= x1 and y0 <= position.y <= y1
+
     def test_initialize_combat_positions_basic(self):
-        """Test basic combat position initialization."""
-        ally = Mock()
-        enemy = Mock()
+        """A real CombatPosition lands inside the scenario's spawn zone."""
+        ally, enemy = Mock(), Mock()
 
-        allies = [ally]
-        enemies = [enemy]
+        initialize_combat_positions([ally], [enemy], scenario_type="standard")
 
-        initialize_combat_positions(allies, enemies, scenario_type="standard")
-
-        assert hasattr(ally, "combat_position")
-        assert hasattr(enemy, "combat_position")
-        assert ally.combat_position is not None
-        assert enemy.combat_position is not None
+        scenario = get_combat_scenario("standard", 50, 50)
+        assert isinstance(ally.combat_position, CombatPosition)
+        assert isinstance(enemy.combat_position, CombatPosition)
+        assert self._in_zone(ally.combat_position, scenario.ally_spawn_zone)
+        assert self._in_zone(enemy.combat_position, scenario.enemy_spawn_zones[0])
 
     def test_initialize_combat_positions_multiple_combatants(self):
-        """Test initialization with multiple combatants."""
+        """Every unit gets its own position, and the two teams stay separated.
+
+        "standard" separates the teams along **X** (allies x<=10, enemies
+        x>=20); the Y ranges deliberately overlap, so an assertion about Y
+        would pin nothing.
+        """
         allies = [Mock() for _ in range(3)]
         enemies = [Mock() for _ in range(2)]
 
-        initialize_combat_positions(
-            allies, enemies, scenario_type="standard"
-        )
+        initialize_combat_positions(allies, enemies, scenario_type="standard")
 
-        for ally in allies:
-            assert ally.combat_position is not None
-        for enemy in enemies:
-            assert enemy.combat_position is not None
+        ally_positions = [a.combat_position for a in allies]
+        enemy_positions = [e.combat_position for e in enemies]
+        assert all(isinstance(p, CombatPosition) for p in ally_positions)
+        assert all(isinstance(p, CombatPosition) for p in enemy_positions)
+        # Distinct objects -- not one shared position handed to everyone.
+        assert len({id(p) for p in ally_positions + enemy_positions}) == 5
+        assert max(p.x for p in ally_positions) < min(p.x for p in enemy_positions)
 
     def test_initialize_combat_positions_pincer(self):
-        """Test initialization with pincer scenario."""
-        ally = Mock()
-        enemy = Mock()
+        """Pincer inverts the geometry: allies centre, enemies on both flanks."""
+        allies = [Mock() for _ in range(2)]
+        enemies = [Mock() for _ in range(2)]
 
-        initialize_combat_positions(
-            [ally], [enemy], scenario_type="pincer"
-        )
+        initialize_combat_positions(allies, enemies, scenario_type="pincer")
 
-        assert ally.combat_position is not None
-        assert enemy.combat_position is not None
+        scenario = get_combat_scenario("pincer", 50, 50)
+        assert len(scenario.enemy_spawn_zones) == 2
+        for ally in allies:
+            assert self._in_zone(ally.combat_position, scenario.ally_spawn_zone)
+        # One enemy per flank zone (round-robin distribution).
+        left, right = scenario.enemy_spawn_zones
+        enemy_positions = [e.combat_position for e in enemies]
+        assert any(self._in_zone(p, left) for p in enemy_positions)
+        assert any(self._in_zone(p, right) for p in enemy_positions)
 
     def test_initialize_combat_positions_ambush_splits_allies_across_flanks(self):
         """Issue #427: with 4 allies, ambush must distribute them across BOTH
@@ -1479,28 +1509,45 @@ class TestInitializeCombatPositions:
             assert abs(enemy.combat_position.x - center_x) <= 8
 
     def test_initialize_combat_positions_facing_direction(self):
-        """Test that combatants face toward opponents."""
-        ally = Mock()
-        enemy = Mock()
+        """Facing must actually point at the opposing team.
 
-        initialize_combat_positions([ally], [enemy], scenario_type="standard")
-
-        # Allies should face toward enemies
-        assert ally.combat_position.facing is not None
-        assert enemy.combat_position.facing is not None
-
-    def test_initialize_combat_positions_proximity_dict(self):
-        """Test that proximity dicts are set."""
-        ally = Mock()
-        enemy = Mock()
-
-        allies = [ally]
-        enemies = [enemy]
+        Allies spawn west of the enemies in "standard", so each ally faces an
+        easterly direction and each enemy a westerly one. `is not None` would
+        be satisfied by an unset Mock attribute -- and by facing the wrong way.
+        """
+        allies = [Mock() for _ in range(2)]
+        enemies = [Mock() for _ in range(2)]
 
         initialize_combat_positions(allies, enemies, scenario_type="standard")
 
-        assert hasattr(ally, "combat_proximity")
-        assert hasattr(enemy, "combat_proximity")
+        easterly = {Direction.NE, Direction.E, Direction.SE}
+        westerly = {Direction.NW, Direction.W, Direction.SW}
+        for ally in allies:
+            assert ally.combat_position.facing in easterly
+        for enemy in enemies:
+            assert enemy.combat_position.facing in westerly
+
+    def test_initialize_combat_positions_proximity_dict(self):
+        """Proximity dicts carry a real distance to every *other* combatant."""
+        allies = [Mock() for _ in range(2)]
+        enemies = [Mock() for _ in range(2)]
+
+        initialize_combat_positions(allies, enemies, scenario_type="standard")
+
+        everyone = allies + enemies
+        for unit in everyone:
+            proximity = unit.combat_proximity
+            assert isinstance(proximity, dict)
+            # Every other combatant, and never the unit itself.
+            assert set(proximity) == {o for o in everyone if o is not unit}
+            assert all(isinstance(d, int) and d >= 0 for d in proximity.values())
+        # Distance is symmetric between any two combatants...
+        a, e = allies[0], enemies[0]
+        assert a.combat_proximity[e] == e.combat_proximity[a]
+        # ...and matches the coordinate distance function, so the dict is
+        # derived from the positions rather than filled with placeholders.
+        assert a.combat_proximity[e] == distance_from_coords(
+            a.combat_position, e.combat_position)
 
 
 class TestConstrainedMovement:
@@ -1897,18 +1944,30 @@ class TestMoreContainer:
         item2.count = 2
         item2.description = "Item 2 description"
         container = Container(player=player, tile=tile, start_open=True, inventory=[item1, item2])
-        # transfer_item is imported inside the method, so patch it there
-        with patch("src.inventory_utils.transfer_item"):
+        # transfer_item is imported inside the method, so patch it there.
+        # The old assertion accepted *either* outcome ("0 or 2 items left"),
+        # which is every possible outcome -- it could not fail. take_all's real
+        # contract is that it hands each item, with its full stack count, to
+        # transfer_item exactly once, in inventory order.
+        with patch("src.inventory_utils.transfer_item") as mock_transfer:
             container.take_all(player)
-            # If we got here without error, the test passed
-            assert len(container.inventory) == 0 or len(container.inventory) == 2
+
+        assert [c.args for c in mock_transfer.call_args_list] == [
+            (container, player, item1, 1),
+            (container, player, item2, 2),
+        ]
 
 
 class TestWallSwitchParams:
     """Additional WallSwitch tests for params handling."""
 
     def test_wall_switch_init_with_double_params(self):
-        """Test WallSwitch with both on and off events."""
+        """Two bang-params bind in order: first -> event_on, second -> event_off.
+
+        Order is the whole contract here (press toggles on with the first and
+        off with the second), and it is exactly what ``is not None`` could not
+        distinguish from a reversed assignment.
+        """
         player = Mock()
         tile = Mock()
         with patch("src.objects.functions.seek_class") as mock_seek:
@@ -1918,10 +1977,16 @@ class TestWallSwitchParams:
                 event_on = Mock()
                 event_off = Mock()
                 mock_inst.side_effect = [event_on, event_off]
-                params = ["!TestEvent1:r", "!TestEvent2"]
-                switch = WallSwitch(player, tile, params=params)
-                assert switch.event_on is not None
-                assert switch.event_off is not None
+                switch = WallSwitch(
+                    player, tile, params=["!TestEvent1:r", "!TestEvent2"])
+
+        assert switch.event_on is event_on
+        assert switch.event_off is event_off
+        assert [c.args[0] for c in mock_seek.call_args_list] == [
+            "TestEvent1", "TestEvent2"]
+        # Only the first entry carried ``:r``.
+        assert [c.kwargs["repeat"] for c in mock_inst.call_args_list] == [
+            True, False]
 
 
 class TestPassagewayShopping:

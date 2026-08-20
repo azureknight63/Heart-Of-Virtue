@@ -1105,14 +1105,20 @@ class TestDatabaseClass:
             if original_url:
                 os.environ["TURSO_DATABASE_URL"] = original_url
 
-    def test_get_client_creates_client_with_url(self):
+    def test_get_client_creates_client_with_url(self, monkeypatch):
+        """monkeypatch, not os.environ: `src.api.db.Database` is a process-wide
+        singleton that reads TURSO_DATABASE_URL lazily, so a leaked value makes
+        a *later* test build a real libsql client and attempt real DNS against
+        test.example.com. That failed only in certain orderings, which
+        --dist loadfile happened to hide by putting the two files on different
+        workers. monkeypatch restores the environment at teardown.
+        """
         from src.api.db import Database
-        import os
 
         db = Database()
         db._client = None
-        os.environ["TURSO_DATABASE_URL"] = "libsql://test.example.com"
-        os.environ.setdefault("TURSO_AUTH_TOKEN", "test-token")
+        monkeypatch.setenv("TURSO_DATABASE_URL", "libsql://test.example.com")
+        monkeypatch.setenv("TURSO_AUTH_TOKEN", "test-token")
         try:
             with patch("src.api.db.libsql_client.create_client") as mock_create:
                 mock_client = MagicMock()
@@ -1135,9 +1141,8 @@ class TestDatabaseClass:
         finally:
             db._client = None
 
-    def test_get_client_recreates_when_session_closed(self):
+    def test_get_client_recreates_when_session_closed(self, monkeypatch):
         from src.api.db import Database
-        import os
 
         db = Database()
         mock_client = MagicMock()
@@ -1145,7 +1150,7 @@ class TestDatabaseClass:
         mock_session.closed = True
         mock_client._session = mock_session
         db._client = mock_client
-        os.environ["TURSO_DATABASE_URL"] = "libsql://test.example.com"
+        monkeypatch.setenv("TURSO_DATABASE_URL", "libsql://test.example.com")
         try:
             with patch("src.api.db.libsql_client.create_client") as mock_create:
                 new_client = MagicMock()

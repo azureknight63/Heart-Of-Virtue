@@ -256,9 +256,19 @@ class TestCrystalsClass:
 class TestCommodityPlayerInteractions:
     """Test commodity items interacting with player inventory."""
 
-    def test_commodity_in_player_inventory(self):
-        """Test that commodity items can be added to player inventory."""
+    def test_commodity_stack_adds_count_times_weight_to_the_player(self):
+        """Carried weight must scale with the stack, not the entry.
+
+        The previous version of this test appended the item and asserted it was
+        in the list -- i.e. it tested ``list.append``. What actually matters is
+        that ``refresh_weight`` multiplies by ``count``: a 3-stack of 1 lb
+        commodities is 3 lbs of encumbrance, and getting that wrong silently
+        changes how much Jean can carry.
+        """
         player = Player()
+        player.refresh_weight()
+        before = player.weight_current
+
         commodity = Commodity(
             name="Test Commodity",
             description="Test",
@@ -269,15 +279,28 @@ class TestCommodityPlayerInteractions:
             count=3
         )
         player.inventory.append(commodity)
-        assert commodity in player.inventory
+        player.refresh_weight()
 
-    def test_crystals_in_player_inventory(self):
-        """Test that Crystals can be added to player inventory."""
+        assert player.weight_current == round(before + 3.0, 2)
+
+        # And it scales when the stack grows.
+        commodity.count = 5
+        player.refresh_weight()
+        assert player.weight_current == round(before + 5.0, 2)
+
+    def test_crystals_stack_weight_uses_the_shipped_per_unit_weight(self):
+        """Pins Crystals' concrete per-unit weight/value alongside the scaling."""
         player = Player()
+        player.refresh_weight()
+        before = player.weight_current
+
         crystals = Crystals(count=5)
+        assert (crystals.weight, crystals.value) == (0.1, 10)
+
         player.inventory.append(crystals)
-        assert crystals in player.inventory
-        assert any(isinstance(item, Crystals) for item in player.inventory)
+        player.refresh_weight()
+
+        assert player.weight_current == round(before + 0.5, 2)
 
     def test_multiple_crystal_stacks_can_exist(self):
         """Test that multiple instances of Crystals can exist (though stacking logic should merge them)."""

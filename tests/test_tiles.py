@@ -66,10 +66,15 @@ def test_intro_text(basic_tile):
 
 
 def test_intro_text_empty_description(mock_universe, mock_map):
-    """Test intro_text with empty description"""
+    """An empty description yields an empty rendering, not a crash or filler.
+
+    ``is not None`` passed for literally any return value, including the
+    string "None".
+    """
     tile = MapTile(mock_universe, mock_map, 0, 0, "")
     result = tile.intro_text()
-    assert result is not None
+    assert isinstance(result, str)
+    assert result.strip() == ""
 
 
 def test_modify_player(basic_tile):
@@ -91,17 +96,24 @@ def test_block_exit_can_be_set(basic_tile):
 
 
 def test_available_actions_includes_defaults(basic_tile):
-    """Test available_actions includes the default API-mode actions"""
+    """The API-mode action set is Search/Menu/Save.
+
+    ``len(actions) > 0`` would still pass if the set were wrong, or if the
+    directional-move actions deleted in the terminal-mode teardown crept back.
+    """
     actions = basic_tile.available_actions()
 
-    # Should have default actions (Search, Menu, Save)
-    assert len(actions) > 0
+    names = {type(a).__name__ for a in actions}
+    assert {"Search", "Menu", "Save"} <= names
+    # The directional Move* actions were deleted with terminal mode
+    # (CLAUDE.md, "Terminal-mode removal") and must not return.
+    assert not [n for n in names if n.startswith("Move")]
 
 
 def test_evaluate_events_empty(basic_tile):
-    """Test evaluate_events with no events"""
+    """With no events, evaluate_events is a no-op that leaves the list alone."""
     basic_tile.evaluate_events()
-    # Should complete without error
+    assert basic_tile.events_here == []
 
 
 def test_evaluate_events_with_events(basic_tile):
@@ -117,12 +129,30 @@ def test_evaluate_events_with_events(basic_tile):
 
 
 def test_spawn_npc_basic(basic_tile):
-    """Test spawning an NPC"""
+    """An unknown npc_type falls back to the documented stub, not to None.
+
+    "TestNPC" is not a real class in ``src.npc``, so this exercises
+    ``spawn_npc``'s stub branch — which exists so callers that immediately
+    touch ``.name`` don't crash. Asserting the stub's actual surface is what
+    ``is not None`` could not do.
+    """
     npc = basic_tile.spawn_npc("TestNPC")
 
-    assert npc is not None
-    assert npc in basic_tile.npcs_here
-    assert len(basic_tile.npcs_here) == 1
+    assert basic_tile.npcs_here == [npc]
+    assert npc.name == "TestNPC (stub)"
+    assert npc.is_alive() is True
+    assert npc.friend is False
+
+
+def test_spawn_npc_known_type_builds_the_real_class(basic_tile):
+    """A real npc_type resolves through ``src.npc`` to the engine class."""
+    from src.npc import Slime
+
+    npc = basic_tile.spawn_npc("Slime")
+
+    assert isinstance(npc, Slime)
+    assert basic_tile.npcs_here == [npc]
+    assert npc.current_room is basic_tile
 
 
 def test_spawn_npc_hidden(basic_tile):
@@ -149,10 +179,10 @@ def test_spawn_npc_random_delay(basic_tile):
 
 
 def test_spawn_npc_sets_current_room(basic_tile):
-    """Test that spawned NPC has current_room set"""
+    """current_room must point at *this* tile, not merely exist."""
     npc = basic_tile.spawn_npc("TestNPC")
 
-    assert hasattr(npc, 'current_room')
+    assert npc.current_room is basic_tile
 
 
 def test_spawn_multiple_npcs(basic_tile):
@@ -165,80 +195,93 @@ def test_spawn_multiple_npcs(basic_tile):
     assert npc2 in basic_tile.npcs_here
 
 
-@patch('src.tiles.importlib.import_module')
-def test_spawn_item_gold(mock_import, basic_tile):
-    """Test spawning gold"""
-    mock_items = Mock()
-    mock_gold_cls = Mock(return_value=Mock())
-    mock_items.Gold = mock_gold_cls
-    mock_import.return_value = mock_items
+# ``spawn_item`` used to be tested with ``src.tiles.importlib.import_module``
+# patched to a Mock module, so every "item" was a Mock: ``item is not None``
+# was trivially true, and the stackable/non-stackable split -- the only real
+# logic in the method -- was decided by the *test's* mock spec rather than by
+# any engine class. These use the real ``src.items`` classes instead:
+# ``Restorative`` genuinely has ``count`` (stackable), ``Shortsword`` genuinely
+# does not (one instance per unit).
+
+def test_spawn_item_gold(basic_tile):
+    """Gold takes its amount through the constructor, not through ``count``."""
+    from src.items import Gold
 
     item = basic_tile.spawn_item("Gold", amt=50)
 
-    assert item is not None
-    assert len(basic_tile.items_here) == 1
+    assert isinstance(item, Gold)
+    assert basic_tile.items_here == [item]
+    assert item.amt == 50
 
 
-@patch('src.tiles.importlib.import_module')
-def test_spawn_item_stackable(mock_import, basic_tile):
-    """Test spawning stackable items"""
-    mock_items = Mock()
-    mock_item_instance = Mock()
-    mock_item_instance.count = 1
-    mock_item_instance.merchandise = False
-    mock_item_cls = Mock(return_value=mock_item_instance)
-    mock_items.Potion = mock_item_cls
-    mock_import.return_value = mock_items
+def test_spawn_item_stackable_collapses_into_one_instance(basic_tile):
+    """A stackable item spawns once with ``count`` set to the amount."""
+    from src.items import Restorative
 
-    item = basic_tile.spawn_item("Potion", amt=5)
+    item = basic_tile.spawn_item("Restorative", amt=5)
 
-    assert mock_item_instance.count == 5
-    assert len(basic_tile.items_here) == 1
+    assert isinstance(item, Restorative)
+    assert basic_tile.items_here == [item]
+    assert item.count == 5
 
 
-@patch('src.tiles.importlib.import_module')
-def test_spawn_item_non_stackable(mock_import, basic_tile):
-    """Test spawning non-stackable items"""
-    mock_items = Mock()
-    mock_item_instance = Mock(spec=[])  # No 'count' attribute
-    mock_item_cls = Mock(return_value=mock_item_instance)
-    mock_items.Sword = mock_item_cls
-    mock_import.return_value = mock_items
+def test_spawn_item_non_stackable_creates_separate_instances(basic_tile):
+    """A non-stackable item spawns ``amt`` distinct objects."""
+    from src.items import Shortsword
 
-    item = basic_tile.spawn_item("Sword", amt=3)
+    item = basic_tile.spawn_item("Shortsword", amt=3)
 
-    # Should create 3 separate instances
     assert len(basic_tile.items_here) == 3
+    assert all(isinstance(i, Shortsword) for i in basic_tile.items_here)
+    assert len({id(i) for i in basic_tile.items_here}) == 3
+    assert item is basic_tile.items_here[0]
 
 
-@patch('src.tiles.importlib.import_module')
-def test_spawn_item_hidden(mock_import, basic_tile):
-    """Test spawning hidden items"""
-    mock_items = Mock()
-    mock_item = Mock()
-    mock_item.count = 1
-    mock_items.Item = Mock(return_value=mock_item)
-    mock_import.return_value = mock_items
+def test_spawn_item_hidden_marks_every_spawned_instance(basic_tile):
+    """``hidden``/``hfactor`` apply to the whole batch, not just the return."""
+    basic_tile.spawn_item("Shortsword", amt=3, hidden=True, hfactor=10)
 
-    item = basic_tile.spawn_item("Item", hidden=True, hfactor=10)
-
-    assert item.hidden is True
-    assert item.hide_factor == 10
+    assert all(i.hidden is True for i in basic_tile.items_here)
+    assert all(i.hide_factor == 10 for i in basic_tile.items_here)
 
 
-@patch('src.tiles.importlib.import_module')
-def test_spawn_item_merchandise(mock_import, basic_tile):
-    """Test spawning merchandise items"""
-    mock_items = Mock()
-    mock_item = Mock()
-    mock_item.count = 1
-    mock_item.merchandise = False
-    mock_items.Item = Mock(return_value=mock_item)
-    mock_import.return_value = mock_items
+def test_spawn_item_merchandise_flag(basic_tile):
+    """merchandise defaults False and is set on every spawned instance."""
+    from src.items import Restorative
 
-    item = basic_tile.spawn_item("Item", merchandise=True)
+    plain = basic_tile.spawn_item("Restorative")
+    assert plain.merchandise is False
 
-    assert item.merchandise is True
+    basic_tile.items_here.clear()
+    basic_tile.spawn_item("Shortsword", amt=2, merchandise=True)
+    assert all(i.merchandise is True for i in basic_tile.items_here)
+
+
+def test_spawn_item_unknown_type_falls_back_to_a_named_stub(basic_tile):
+    """An unknown item_type must not crash the spawner; it yields the stub
+    documented in ``spawn_item`` so callers touching ``.name`` survive."""
+    item = basic_tile.spawn_item("NoSuchItemXYZ", amt=4)
+
+    assert basic_tile.items_here == [item]
+    assert item.name == "NoSuchItemXYZ (unknown)"
+    assert item.count == 4
+    assert item.merchandise is False
+
+
+def test_spawn_item_template_carries_enchantment_across_a_stack_split(basic_tile):
+    """``template`` exists so splitting a stack keeps enchantments; a bare
+    ``cls()`` rebuild would silently discard them."""
+    from src.items import Shortsword
+
+    original = Shortsword()
+    original.enchantment_level = 3
+    original.description = "A sword with a story."
+
+    spawned = basic_tile.spawn_item("Shortsword", amt=1, template=original)
+
+    assert spawned is not original
+    assert spawned.enchantment_level == 3
+    assert spawned.description == "A sword with a story."
 
 
 @patch('src.tiles.functions.seek_class')
@@ -253,8 +296,11 @@ def test_spawn_event(mock_instantiate, mock_seek, basic_tile):
     mock_player = Mock()
     event = basic_tile.spawn_event("TestEvent", mock_player, basic_tile)
 
-    assert event is not None
-    assert event in basic_tile.events_here
+    assert event is mock_event
+    assert basic_tile.events_here == [mock_event]
+    mock_seek.assert_called_once_with("TestEvent", "story")
+    mock_instantiate.assert_called_once_with(
+        mock_event_cls, mock_player, basic_tile, params=None, repeat=False)
 
 
 @patch('src.tiles.functions.seek_class')
@@ -288,105 +334,126 @@ def test_spawn_event_returns_none_on_failure(mock_instantiate, mock_seek, basic_
     assert len(basic_tile.events_here) == 0
 
 
-def test_spawn_object(basic_tile):
-    """Test spawning an object"""
+# Like spawn_item above, these previously replaced ``src.objects`` with a Mock
+# module, so the "object" spawned was a Mock whose ``hidden``/``hide_factor``
+# the test itself had already set -- the assertions could not distinguish
+# spawn_object doing its job from spawn_object doing nothing. They now spawn a
+# real ``src.objects.Container``.
+
+def test_spawn_object_legacy_positional_params(basic_tile):
+    """The legacy branch (no kwargs) calls ``obj_cls(player, tile, params)``.
+
+    ``WallSwitch`` is the shape that branch was written for -- its constructor
+    really is ``(player, tile, params)``.
+    """
+    from src.objects import WallSwitch
+
     mock_player = Mock()
+    obj = basic_tile.spawn_object("WallSwitch", mock_player, basic_tile, None)
 
-    with patch('src.tiles.importlib.import_module') as mock_import:
-        mock_objects_module = Mock()
-        mock_obj = Mock()
-        mock_obj.hidden = False
-        mock_obj.hide_factor = 0
-        mock_obj_cls = Mock(return_value=mock_obj)
-        mock_objects_module.Chest = mock_obj_cls
-        mock_import.return_value = mock_objects_module
+    assert isinstance(obj, WallSwitch)
+    assert basic_tile.objects_here == [obj]
+    assert obj.player is mock_player
+    assert obj.tile is basic_tile
+    assert obj.hidden is False
 
-        obj = basic_tile.spawn_object("Chest", mock_player, basic_tile, {})
 
-        assert obj is not None
-        assert obj in basic_tile.objects_here
+def test_spawn_object_modern_kwargs_reach_the_constructor(basic_tile):
+    """Any **kwargs switch spawn_object to ``obj_cls(player=, tile=, **kwargs)``."""
+    from src.objects import Container
+
+    mock_player = Mock()
+    obj = basic_tile.spawn_object("Container", mock_player, basic_tile,
+                                  nickname="chest", locked=True)
+
+    assert isinstance(obj, Container)
+    assert basic_tile.objects_here == [obj]
+    assert obj.nickname == "chest"
+    assert obj.locked is True
+    assert obj.player is mock_player
 
 
 def test_spawn_object_hidden(basic_tile):
-    """Test spawning a hidden object"""
+    """hidden/hfactor are applied by spawn_object after construction."""
+    from src.objects import WallSwitch
+
     mock_player = Mock()
+    obj = basic_tile.spawn_object("WallSwitch", mock_player, basic_tile, None,
+                                  hidden=True, hfactor=8)
 
-    with patch('src.tiles.importlib.import_module') as mock_import:
-        mock_objects_module = Mock()
-        mock_obj = Mock()
-        mock_obj.hidden = False
-        mock_obj.hide_factor = 0
-        mock_obj_cls = Mock(return_value=mock_obj)
-        mock_objects_module.Chest = mock_obj_cls
-        mock_import.return_value = mock_objects_module
-
-        obj = basic_tile.spawn_object("Chest", mock_player, basic_tile, {},
-                                      hidden=True, hfactor=8)
-
-        assert obj.hidden is True
-        assert obj.hide_factor == 8
+    assert isinstance(obj, WallSwitch)
+    assert obj.hidden is True
+    assert obj.hide_factor == 8
 
 
-@patch('src.tiles.importlib.import_module')
-def test_stack_duplicate_items(mock_import, basic_tile):
-    """Test stacking duplicate items"""
-    mock_items = Mock()
+def test_stack_duplicate_items(basic_tile):
+    """Two stacks of the same real item class merge into one.
 
-    # Create mock stackable items
-    item1 = Mock()
-    item1.count = 3
-    item1.__class__ = Mock
-    item1.stack_grammar = Mock()
+    Using real ``Restorative`` instances (rather than Mocks whose
+    ``__class__`` the test itself equalises) also exercises ``stack_grammar``,
+    which rewrites the ground announcement for a multi-item stack.
+    """
+    from src.items import Restorative
 
-    item2 = Mock()
-    item2.count = 2
-    item2.__class__ = item1.__class__  # Same class
-    item2.stack_grammar = Mock()
-
+    item1, item2 = Restorative(), Restorative()
+    item1.count, item2.count = 3, 2
     basic_tile.items_here = [item1, item2]
 
     basic_tile.stack_duplicate_items()
 
-    # item1 should have combined count
+    assert basic_tile.items_here == [item1]
     assert item1.count == 5
-    # item2 should be removed
-    assert item2 not in basic_tile.items_here
-    assert len(basic_tile.items_here) == 1
+    # stack_grammar ran on the survivor: the announcement is now plural.
+    assert "box of small glass vials" in item1.announce
 
 
-@patch('src.tiles.importlib.import_module')
-def test_stack_duplicate_items_calls_stack_grammar(mock_import, basic_tile):
-    """Test that stack_grammar is called when count > 1"""
-    item1 = Mock()
-    item1.count = 2
-    item1.__class__ = Mock
-    item1.stack_grammar = Mock()
+def test_stack_duplicate_items_leaves_different_classes_alone(basic_tile):
+    """Only same-class items merge; a mixed pile keeps every entry."""
+    from src.items import Restorative, Gold
 
-    item2 = Mock()
-    item2.count = 3
-    item2.__class__ = item1.__class__
-    item2.stack_grammar = Mock()
-
-    basic_tile.items_here = [item1, item2]
+    potion, gold = Restorative(), Gold(10)
+    potion.count = 2
+    basic_tile.items_here = [potion, gold]
 
     basic_tile.stack_duplicate_items()
 
-    # stack_grammar should be called
-    assert item1.stack_grammar.called
+    assert basic_tile.items_here == [potion, gold]
+    assert potion.count == 2
+
+
+def test_stack_duplicate_items_refreshes_grammar_even_without_duplicates(
+        basic_tile):
+    """stack_grammar runs for every stackable item, not only merged ones.
+
+    A lone stack whose count was raised elsewhere (e.g. spawn_item with amt>1)
+    still needs its ground announcement pluralised, so the call is outside the
+    duplicate-merge branch. The previous version of this test asserted only
+    ``stack_grammar.called`` on a Mock, which passed for either behaviour.
+    """
+    from src.items import Restorative
+
+    lone = Restorative()
+    lone.count = 4
+    basic_tile.items_here = [lone]
+
+    basic_tile.stack_duplicate_items()
+
+    assert basic_tile.items_here == [lone]
+    assert lone.count == 4  # nothing merged into it
+    assert "box of small glass vials" in lone.announce
 
 
 def test_stack_duplicate_items_no_stackable(basic_tile):
-    """Test stacking with non-stackable items"""
-    item1 = Mock(spec=[])  # No count attribute
-    item2 = Mock(spec=[])
+    """Non-stackable items (no ``count``) are left as separate entries."""
+    from src.items import Shortsword
 
-    basic_tile.items_here = [item1, item2]
+    sword1, sword2 = Shortsword(), Shortsword()
+    assert not hasattr(sword1, "count")  # guards the premise of this test
+    basic_tile.items_here = [sword1, sword2]
 
-    # Should not raise error
     basic_tile.stack_duplicate_items()
 
-    # Both items should remain
-    assert len(basic_tile.items_here) == 2
+    assert basic_tile.items_here == [sword1, sword2]
 
 
 def test_remove_event_by_name(basic_tile):
@@ -442,24 +509,6 @@ def test_tile_respawn_rate_default(basic_tile):
 def test_tile_symbol_default(basic_tile):
     """Test default symbol"""
     assert basic_tile.symbol == '●'
-
-
-@patch('src.tiles.importlib.import_module')
-def test_spawn_item_unknown_type_returns_stub(mock_import, basic_tile):
-    """An unknown item type degrades to a stub instead of raising AttributeError.
-
-    Mirrors spawn_npc's stub fallback so callers that immediately touch the
-    returned item (e.g. .name) don't crash on a typo'd type name.
-    """
-    mock_items = Mock(spec=[])  # no attributes -> getattr(...) raises AttributeError
-    mock_import.return_value = mock_items
-
-    item = basic_tile.spawn_item("NoSuchItem", amt=2)
-
-    assert item is not None
-    assert "unknown" in item.name.lower()
-    assert item.count == 2
-    assert item in basic_tile.items_here
 
 
 def test_spawn_object_unknown_type_returns_none(basic_tile):

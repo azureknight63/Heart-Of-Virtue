@@ -374,13 +374,31 @@ class TestAuthRoutes:
         assert response.status_code in [400, 422, 401]
 
     def test_login_endpoint_invalid_credentials(self, client, app_with_session):
-        """Test login with invalid credentials."""
-        response = client.post('/api/auth/login', json={
-            "username": "baduser",
-            "password": "badpass"
-        })
-        # Should reject invalid credentials or return error status
-        assert response.status_code in [401, 400, 404, 422, 503]
+        """Bad credentials must be rejected with 401, specifically.
+
+        This accepted any of [401, 400, 404, 422, 503]. In practice it passed on
+        the 503 the route returns when TURSO_DATABASE_URL is unset -- i.e. it
+        was green because the database was *unconfigured*, never because the
+        credentials were rejected. Stubbing the authenticator makes the auth
+        decision the only thing under test.
+        """
+        from unittest.mock import AsyncMock, patch as _patch
+
+        with _patch(
+            "src.api.routes.auth.auth_service.authenticate_user",
+            new=AsyncMock(return_value=None),
+        ) as mock_auth:
+            response = client.post('/api/auth/login', json={
+                "username": "baduser",
+                "password": "badpass"
+            })
+
+        assert response.status_code == 401
+        mock_auth.assert_awaited_once_with("baduser", "badpass")
+        body = response.get_json()
+        assert body["success"] is False
+        # The reply must not disclose which half was wrong, nor echo the secret.
+        assert "badpass" not in response.get_data(as_text=True)
 
     def test_logout_endpoint_unauthorized(self, client):
         """Test logout without auth token."""

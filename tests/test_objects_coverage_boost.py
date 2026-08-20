@@ -37,38 +37,69 @@ def _mock_tile():
     return t
 
 
+def _narrated(callable_, *args, **kwargs):
+    """Run ``callable_`` under a narration sink and return the emitted texts.
+
+    Several tests here used ``patch("builtins.print")`` + ``assert
+    mock_print.called``, which cannot tell one message from another -- and is
+    doubly fragile because the engine emits through ``src.narration``, which
+    only falls back to ``print`` when no capture is installed (CLAUDE.md,
+    "Terminal-mode removal").
+    """
+    from src.narration import capture_narration
+
+    with capture_narration() as messages:
+        callable_(*args, **kwargs)
+    return [m["text"] for m in messages]
+
+
 # ---------------------------------------------------------------------------
 # TileDescription — line-wrapping branches
 # ---------------------------------------------------------------------------
 
 
 class TestTileDescription:
+    """``assert td is not None`` held for every input -- the constructor always
+    returns an object -- so none of these could fail. The interesting output is
+    ``td.description``: the indented, wrapped, end-marked text."""
+
+    WRAP_INDENT = " " * 8
+
     def test_tile_description_short_params(self):
-        """Lines 85-92: TileDescription wraps short descriptions."""
+        """Lines 85-92: a short description stays on one indented line."""
         p = _player()
         tile = _mock_tile()
         # params: index 0=x, 1=y, rest is description text
         params = ["0", "0", "A short room description"]
         td = objects.TileDescription(player=p, tile=tile, params=params)
-        assert td is not None
+
+        assert td.description == f"{self.WRAP_INDENT}A short room description\n"
 
     def test_tile_description_long_params_wraps(self):
-        """Lines 87-91: long description triggers line wrapping (else branch)."""
+        """Lines 87-91: a description over the wrap width breaks onto new lines."""
         p = _player()
         tile = _mock_tile()
         # Create a description that exceeds 104 chars to trigger line wrapping
         long_word = "word " * 25  # 125 chars
         params = ["0", "0", long_word.strip()]
         td = objects.TileDescription(player=p, tile=tile, params=params)
-        assert td is not None
+
+        lines = td.description.rstrip("\n").split("\n")
+        assert len(lines) == 2, td.description
+        assert all(line.startswith(self.WRAP_INDENT) for line in lines)
+        # Wrapping must not lose or duplicate a single word.
+        assert td.description.split() == long_word.split()
+        assert all(len(line) <= 112 for line in lines)
 
     def test_tile_description_tilde_end_mark(self):
-        """Lines 71-76: tilde at end of last param uses period end mark."""
+        """Lines 71-76: a trailing tilde is replaced by a period."""
         p = _player()
         tile = _mock_tile()
         params = ["0", "0", "A description with period~"]
         td = objects.TileDescription(player=p, tile=tile, params=params)
-        assert td is not None
+
+        assert td.description == f"{self.WRAP_INDENT}A description with period.\n"
+        assert "~" not in td.description
 
 
 # ---------------------------------------------------------------------------
@@ -115,16 +146,19 @@ class TestWallInscription:
         assert any("Jean" in str(c) for c in mock_cp.call_args_list)
 
     def test_read_player_without_name(self):
-        """Lines 217-218: read() without player having name attr uses generic text."""
+        """Lines 217-218: read() with no player falls back to generic text."""
         tile = _mock_tile()
         wi = objects.WallInscription(player=None, tile=tile, text="Ancient text.")
         with (
-            patch("src.functions.print_slow"),
+            patch("src.functions.print_slow") as mock_slow,
             patch("src.functions.await_input"),
-            patch("src.objects.cprint") as mock_cp,
         ):
-            wi.read()
-        assert mock_cp.called
+            texts = _narrated(wi.read)
+
+        # The named variant addresses Jean by name; with no player it must not.
+        assert texts == ["You begin reading..."]
+        # The inscription body still goes out, via print_slow.
+        mock_slow.assert_called_once_with("Ancient text.", speed="fast")
 
     def test_examine_aliases_read(self):
         """Line 224-226: examine() calls read()."""
@@ -198,42 +232,72 @@ class TestContainer:
         assert c.state == "closed"
 
     def test_open_already_open(self):
-        """Opening an already-open container prints message."""
+        """Re-opening an open container explains itself and changes nothing."""
         c, _, _ = self._make_container(start_open=True)
-        with patch("builtins.print") as mock_print:
-            c.open()
-        assert mock_print.called
+
+        texts = _narrated(c.open)
+
+        assert any("already open" in t for t in texts)
+        assert c.state == "opened"
 
     def test_take_all_empty_container(self):
-        """Lines 449-451: take_all from empty opened container."""
+        """Lines 449-451: an empty opened container says so and stays empty."""
         c, p, _ = self._make_container(start_open=True)
-        with patch("builtins.print") as mock_print:
-            c.take_all(p)
-        assert mock_print.called
 
-    def test_take_all_closed_container(self):
-        """take_all returns early if container is closed."""
+        texts = _narrated(c.take_all, p)
+
+        assert texts == ["The container is already empty."]
+        assert c.inventory == []
+
+    def test_take_all_on_a_closed_container_opens_it_first(self):
+        """take_all does NOT return early on a closed container -- it opens it.
+
+        The old test asserted nothing and its comment ("should return early")
+        described behaviour the method does not have: ``take_all`` begins with
+        ``if self.state == "closed": self.open()``.
+        """
         c, p, _ = self._make_container()
-        # Don't open it
-        with patch("builtins.print"):
-            c.take_all(p)
-        # Should return early — no crash
-
-    def test_take_all_with_items(self):
-        """Lines 453-464: take_all transfers items to player."""
-        c, p, _ = self._make_container(start_open=True)
         import src.items as items
 
         gold = items.Gold(5)
         c.inventory = [gold]
+
         with (
             patch("src.inventory_utils.transfer_item") as mock_transfer,
-            patch("builtins.print"),
             patch.object(c, "refresh_description"),
             patch.object(c, "process_events"),
         ):
-            c.take_all(p)
-        mock_transfer.assert_called()
+            texts = _narrated(c.take_all, p)
+
+        assert c.state == "opened"
+        mock_transfer.assert_called_once_with(c, p, gold, gold.count)
+        assert any("revealing the contents" in t for t in texts)
+
+    def test_take_all_with_items(self):
+        """Lines 453-464: every item is handed to transfer_item with its count."""
+        c, p, _ = self._make_container(start_open=True)
+        import src.items as items
+
+        gold = items.Gold(5)
+        potion = items.Restorative()
+        potion.count = 3
+        c.inventory = [gold, potion]
+
+        with (
+            patch("src.inventory_utils.transfer_item") as mock_transfer,
+            patch.object(c, "refresh_description") as mock_refresh,
+            patch.object(c, "process_events") as mock_events,
+        ):
+            texts = _narrated(c.take_all, p)
+
+        assert [call.args for call in mock_transfer.call_args_list] == [
+            (c, p, gold, gold.count),
+            (c, p, potion, 3),
+        ]
+        # The summary line names every item, pluralising multi-item stacks.
+        assert any("Gold" in t and "3\u00d7 Restorative" in t for t in texts)
+        mock_refresh.assert_called_once()
+        mock_events.assert_called_once()
 
     def test_open_reveals_closed_container(self):
         """open() reveals a closed container (transfer is handled by LootEvent)."""
@@ -251,15 +315,22 @@ class TestContainer:
         a2 = items.Antidote()
         c.inventory = [a1, a2]
         c.stack_items()
-        # After stacking, should have fewer items with combined count
-        total = sum(getattr(i, "count", 1) for i in c.inventory)
-        assert total >= 2
+
+        # ``total >= 2`` was true before stack_items ran (two items, count 1
+        # each), so it could not detect stacking failing entirely.
+        assert len(c.inventory) == 1
+        assert c.inventory[0].count == 2
 
     def test_process_events_empty(self):
-        """Line 505: process_events with no events returns early."""
-        c, _, _ = self._make_container()
+        """Line 505: with no events, nothing is pushed onto the tile."""
+        c, _, tile = self._make_container()
         c.events = []
-        c.process_events()  # Should not raise
+        tile.events_here = []
+
+        c.process_events()
+
+        assert tile.events_here == []
+        tile.evaluate_events.assert_not_called()
 
     def test_process_events_with_event(self):
         """Lines 509-516: process_events processes events via tile."""
@@ -650,9 +721,11 @@ class TestStreetLantern:
         p = _player()
         tile = _mock_tile()
         lantern = objects.StreetLantern(player=p, tile=tile, lit=True)
-        with patch("builtins.print") as mock_print:
-            lantern.light()
-        assert mock_print.called
+
+        texts = _narrated(lantern.light)
+
+        assert texts == ["The lantern is already lit."]
+        assert lantern.lit is True
 
     def test_douse_lit_lantern(self):
         """Lines 1021-1028: douse turns lantern off."""
@@ -668,9 +741,11 @@ class TestStreetLantern:
         p = _player()
         tile = _mock_tile()
         lantern = objects.StreetLantern(player=p, tile=tile, lit=False)
-        with patch("builtins.print") as mock_print:
-            lantern.douse()
-        assert mock_print.called
+
+        texts = _narrated(lantern.douse)
+
+        assert texts == ["The lantern is already dark."]
+        assert lantern.lit is False
 
     def test_light_with_event(self):
         """Lines 1011-1014: lighting with event_on processes it."""
@@ -749,10 +824,11 @@ class TestPrayerCandleRack:
         p = _player()
         tile = _mock_tile()
         rack = objects.PrayerCandleRack(player=p, tile=tile, lit_candles=20)
-        with patch("builtins.print") as mock_print, patch("src.functions.await_input"):
-            rack.light()
+        with patch("src.functions.await_input"):
+            texts = _narrated(rack.light)
+
         assert rack.lit_candles == 20
-        assert mock_print.called
+        assert texts == ["All the candles are already lit."]
 
     def test_pray_no_event(self):
         """Lines 1121-1132: pray without event prints message."""

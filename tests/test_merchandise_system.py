@@ -270,22 +270,24 @@ class TestShopSerializerFiltering:
 # ---------------------------------------------------------------------------
 
 class TestGetShopStateMessage:
-    """Integration tests against game_service.get_shop_state using a fake merchant.
-
-    These skip gracefully when the argon2 or auth stack is unavailable.
-    """
+    """Integration tests against game_service.get_shop_state using a fake merchant."""
 
     @pytest.fixture
     def game_service(self):
-        """Attempt to import and return a lightly-configured GameService instance."""
-        try:
-            from src.api.services.game_service import GameService
-            gs = GameService.__new__(GameService)
-            # Provide the minimal attributes game_service internals need
-            gs._sessions = {}
-            return gs
-        except Exception:
-            pytest.skip("GameService unavailable in this environment")
+        """A bare ``GameService`` (``__init__`` is ``pass``; see CLAUDE.md).
+
+        The import used to be wrapped in ``except Exception: pytest.skip(...)``,
+        which turned any real breakage in the auth/game-service import chain
+        into a silent skip rather than a failure. ``GameService`` is a hard
+        dependency of these tests -- if it stops importing, that is the bug and
+        it must surface.
+        """
+        from src.api.services.game_service import GameService
+
+        gs = GameService.__new__(GameService)
+        # Provide the minimal attributes game_service internals need
+        gs._sessions = {}
+        return gs
 
     def _make_player_with_merch(self):
         player = FakePlayer()

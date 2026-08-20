@@ -530,11 +530,12 @@ def test_each_tamper_mode_is_detected_independently(mutate, label):
         sp.verify_and_strip_header(mutate(_wrapped()))
 
 
-@pytest.mark.parametrize("version", [0, 2, 99, 255])
+# Filtered rather than skipped inside the body: a runtime skip would silently
+# shrink the matrix if HEADER_VERSION ever moved into it.
+@pytest.mark.parametrize(
+    "version", [v for v in (0, 2, 99, 255) if v != sp.HEADER_VERSION])
 def test_unknown_header_versions_are_rejected(version):
     payload = pickle.dumps({"a": 1}, pickle.HIGHEST_PROTOCOL)
-    if version == sp.HEADER_VERSION:
-        pytest.skip("current version")
     digest = __import__("hashlib").sha256(payload).digest()
     bad = sp._HEADER_STRUCT.pack(sp.HEADER_MAGIC, version, digest) + payload
     with pytest.raises(sp.SaveIntegrityError) as exc:
@@ -673,3 +674,203 @@ def test_rlimit_preexec_sets_address_space_limit():
         resource.setrlimit = orig
     assert applied == {"which": resource.RLIMIT_AS, "limits": (123456, 123456)}
     assert resource.getrlimit(resource.RLIMIT_AS) == (soft, hard)
+
+
+
+# ---------------------------------------------------------------------------
+# Dotted-name traversal: strict mode must not inherit trust from the *named*
+# module when the object it resolves to lives somewhere else.
+#
+# From protocol 4 onward pickle's STACK_GLOBAL carries the module and a dotted
+# *attribute path* as two independent strings, and resolution walks that path
+# with getattr. Attribute traversal can leave the named module entirely -- e.g.
+# ``("src.secure_pickle", "os.system")`` names a genuine engine module (so the
+# engine-module trust rule says yes) yet lands on ``os.system``. Neither
+# ``pickle.dumps`` nor a ``__reduce__`` fixture can express that pair, so these
+# tests hand-assemble the opcodes; nor can a direct ``find_class`` call, since
+# the C unpickler reads ``proto`` off the stream and ignores an assignment.
+# ---------------------------------------------------------------------------
+
+def _short_unicode(text):
+    encoded = text.encode()
+    assert len(encoded) < 256, "helper only emits SHORT_BINUNICODE"
+    return b"\x8c" + bytes([len(encoded)]) + encoded
+
+
+def craft_stack_global(module, name):
+    """A protocol-4 pickle that resolves ``module:name`` and returns it."""
+    return (b"\x80\x04" + _short_unicode(module) + _short_unicode(name)
+            + b"\x93" + b".")
+
+
+def craft_stack_global_call(module, name, args=()):
+    """A protocol-4 pickle that resolves ``module:name`` and *calls* it."""
+    out = b"\x80\x04" + _short_unicode(module) + _short_unicode(name) + b"\x93"
+    out += b"("                              # MARK
+    for arg in args:
+        out += _short_unicode(arg)
+    out += b"tR."                            # TUPLE, REDUCE, STOP
+    return out
+
+
+# Each pair is a *real* attribute path that resolves today: the module is a
+# genuine engine module (``_is_engine_module`` says yes) but the object it
+# reaches is not engine code at all.
+SMUGGLED_VIA_ENGINE_MODULE = [
+    ("src.secure_pickle", "os.system"),
+    ("src.secure_pickle", "os.popen"),
+    ("src.secure_pickle", "os.mkdir"),
+    ("src.secure_pickle", "importlib.import_module"),
+    ("src.secure_pickle", "pickle.loads"),
+    ("src.save_format", "os.system"),
+    ("src.items", "random.SystemRandom"),
+    # Bare legacy path: canonical_module_name rewrites it to src.secure_pickle
+    # first, so the rewrite must not launder the traversal either.
+    ("secure_pickle", "os.system"),
+]
+
+
+@pytest.mark.parametrize("module,name", SMUGGLED_VIA_ENGINE_MODULE)
+def test_smuggled_path_really_resolves_in_legacy_mode(module, name):
+    """Non-vacuity guard for the rejection tests below, and an honest statement
+    of the trust model (mirrors ``test_legacy_mode_still_resolves_gadgets``):
+    every pair here genuinely reaches a non-engine object.
+
+    If this starts failing, the *fixture* is stale -- the path stopped
+    resolving -- and the rejection tests below would be proving nothing.
+    """
+    target = sp.safe_pickle_load(
+        io.BytesIO(craft_stack_global(module, name)), strict=False)
+    assert not sp._is_engine_module(getattr(target, "__module__", "") or ""), (
+        f"{module}:{name} no longer escapes the engine module"
+    )
+
+
+@pytest.mark.parametrize("module,name", SMUGGLED_VIA_ENGINE_MODULE)
+def test_smuggled_path_is_rejected_in_strict_mode(module, name):
+    events = []
+    with pytest.raises(sp.RestrictedUnpicklingError) as exc:
+        sp.safe_pickle_load(io.BytesIO(craft_stack_global(module, name)),
+                            strict=True, events=events)
+    assert name in str(exc.value)
+    assert events[-1]["kind"] == "rejected"
+
+
+def test_smuggled_gadget_never_executes_end_to_end(tmp_path):
+    """The attack is live in legacy mode and dead in strict mode.
+
+    ``os.mkdir`` is used as the payload because its effect is observable,
+    reversible and confined to ``tmp_path`` -- executing it in the legacy leg
+    is what proves the strict leg is blocking something real.
+    """
+    legacy_dir = tmp_path / "legacy_fired"
+    sp.safe_pickle_load(
+        io.BytesIO(craft_stack_global_call(
+            "src.secure_pickle", "os.mkdir", (str(legacy_dir),))),
+        strict=False)
+    assert legacy_dir.is_dir(), "the smuggled call never ran; test is vacuous"
+
+    strict_dir = tmp_path / "strict_blocked"
+    with pytest.raises(sp.RestrictedUnpicklingError):
+        sp.safe_pickle_load(
+            io.BytesIO(craft_stack_global_call(
+                "src.secure_pickle", "os.mkdir", (str(strict_dir),))),
+            strict=True)
+    assert not strict_dir.exists(), "smuggled gadget executed under strict mode!"
+
+
+def test_smuggled_gadget_gains_nothing_from_a_valid_integrity_header(tmp_path):
+    """A hostile save is self-signed: the HOVS header proves transport
+    integrity, never intent. A validly-headered crafted stream must still be
+    rejected at class-resolution time."""
+    sentinel = tmp_path / "signed_smuggle"
+    payload = craft_stack_global_call(
+        "src.secure_pickle", "os.mkdir", (str(sentinel),))
+    signed = sp.add_integrity_header(payload)
+    assert sp.verify_and_strip_header(signed) == payload  # header is genuinely valid
+    with pytest.raises(sp.RestrictedUnpicklingError):
+        sp.safe_pickle_load(io.BytesIO(signed), strict=True)
+    assert not sentinel.exists()
+
+
+def test_sandbox_also_blocks_a_smuggled_gadget(tmp_path):
+    sentinel = tmp_path / "sandbox_smuggle"
+    payload = craft_stack_global_call(
+        "src.secure_pickle", "os.mkdir", (str(sentinel),))
+    with pytest.raises(sp.SandboxError) as exc:
+        sp.load_in_subprocess(sp.add_integrity_header(payload),
+                              strict=True, timeout=60)
+    assert "allow-list" in str(exc.value)
+    assert not sentinel.exists()
+
+
+def test_module_objects_are_never_handed_back_in_strict_mode():
+    """``src.secure_pickle:os`` resolves to the ``os`` *module* itself.
+    Admitting a module object leaves the traversal open one indirection later,
+    so it is refused outright."""
+    stream = craft_stack_global("src.secure_pickle", "os")
+    import os as _os
+    assert sp.safe_pickle_load(io.BytesIO(stream), strict=False) is _os
+    with pytest.raises(sp.RestrictedUnpicklingError):
+        sp.safe_pickle_load(io.BytesIO(stream), strict=True)
+
+
+@pytest.mark.parametrize("module,name", [
+    ("src.items", "Gold"),                       # plain engine class
+    ("src.player", "Player"),
+    ("copyreg", "_reconstructor"),               # curated safe stdlib
+    ("builtins", "dict"),
+    # Re-export: canonical_module_name is *defined* in src.secure_pickle but
+    # reachable through src.functions. The provenance gate follows the
+    # definition, not the import site, or every engine re-export would break.
+    ("src.functions", "canonical_module_name"),
+    # Nested attribute path that stays inside engine code -- unbound methods
+    # pickle exactly like this and must keep working.
+    ("src.player", "Player.gain_exp"),
+])
+def test_provenance_gate_still_admits_legitimate_globals(module, name):
+    events = []
+    resolved = sp.safe_pickle_load(
+        io.BytesIO(craft_stack_global(module, name)), strict=True, events=events)
+    assert resolved is not None
+    assert [e for e in events if e["kind"] == "rejected"] == []
+
+
+def test_resolved_global_is_trusted_unit():
+    import os as _os
+
+    from src.items import Gold
+
+    assert sp._resolved_global_is_trusted(Gold) is True
+    assert sp._resolved_global_is_trusted(dict) is True
+    assert sp._resolved_global_is_trusted(_os.system) is False
+    assert sp._resolved_global_is_trusted(_os) is False          # module object
+    assert sp._resolved_global_is_trusted(object()) is False     # no __module__
+
+
+# ---------------------------------------------------------------------------
+# _sanitize_type_name: attacker-controlled text reaching type()
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("raw,expected", [
+    ("LegacyMissing_src_items_Gold", "LegacyMissing_src_items_Gold"),
+    ("has\x00nul", "has_nul"),
+    ("dots.and-dashes", "dots_and_dashes"),
+    ("", "_"),                       # never yields the empty name type() rejects
+    ("\x00\x00\x00", "___"),
+    ("emoji\U0001f600", "emoji_"),   # non-alphanumeric symbols collapse too
+])
+def test_sanitize_type_name(raw, expected):
+    assert sp.SafeUnpickler._sanitize_type_name(raw) == expected
+    # Whatever comes out must be accepted by type() -- that is the whole point.
+    assert type(sp.SafeUnpickler._sanitize_type_name(raw), (object,), {})
+
+
+def test_placeholder_for_a_nul_bearing_module_does_not_crash():
+    """Regression: a crafted module path containing a NUL used to reach
+    ``type()`` unsanitized and raise ValueError *after* find_class's guarded
+    super() call, escaping the loader as an unhandled crash."""
+    up = sp.SafeUnpickler(io.BytesIO(b""), strict=False)
+    cls = up.find_class("mod\x00ule", "Na\x00me")
+    assert "\x00" not in cls.__name__
+    assert getattr(cls(), "_legacy_placeholder", False) is True
