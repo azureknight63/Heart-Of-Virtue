@@ -293,17 +293,26 @@ class TestStMichael:
         for i, opt in enumerate(event.input_options):
             assert opt["value"] == str(i)
 
-    def test_get_input_prompt_returns_string(self, mock_player, mock_tile):
+    def test_get_input_prompt_returns_the_shrines_question(
+        self, mock_player, mock_tile
+    ):
         event = self._make_event(mock_player, mock_tile)
-        prompt = event.get_input_prompt()
-        assert isinstance(prompt, str)
-        assert len(prompt) > 0
+        assert (
+            event.get_input_prompt()
+            == "TELL ME THE INSTRUMENT OF JUSTICE THOU DESIREST."
+        )
 
-    def test_get_input_options_returns_list(self, mock_player, mock_tile):
+    def test_get_input_options_exposes_the_rolled_weapon_choices(
+        self, mock_player, mock_tile
+    ):
+        """The client's buttons must be the same three weapons process() honours."""
         event = self._make_event(mock_player, mock_tile)
         opts = event.get_input_options()
-        assert isinstance(opts, list)
-        assert len(opts) == 3
+        assert opts is event.input_options
+        assert [o["label"] for o in opts] == [
+            c[0] for c in event.available_choices
+        ]
+        assert [o["value"] for o in opts] == ["0", "1", "2"]
 
     def test_process_first_pass_sets_needs_input(self, mock_player, mock_tile):
         event = self._make_event(mock_player, mock_tile)
@@ -314,49 +323,49 @@ class TestStMichael:
             event.process(user_input=None)
         assert event.needs_input is True
 
-    def test_process_second_pass_spawns_item(self, mock_player, mock_tile):
-        event = self._make_event(mock_player, mock_tile)
-        event.tile = mock_tile
-        mock_tile.events_here = [event]
-        spawned_item = MagicMock()
-        spawned_item.name = "Shortsword"
-        mock_tile.spawn_item.return_value = spawned_item
-        with (
-            patch("src.story.effects.functions.add_random_enchantments"),
-            patch("src.story.effects.cprint"),
-        ):
-            event.process(user_input="0")
-        mock_tile.spawn_item.assert_called()
-
-    def test_process_second_pass_invalid_input_defaults_to_zero(
-        self, mock_player, mock_tile
+    @pytest.mark.parametrize(
+        "user_input, expected_index",
+        [
+            ("0", 0),
+            ("1", 1),
+            ("2", 2),
+            ("xyz", 0),   # non-integer -> first option
+            ("99", 0),    # out of range (high) -> first option
+            ("-1", 0),    # out of range (low) -> first option
+        ],
+    )
+    def test_process_second_pass_spawns_the_selected_weapon(
+        self, mock_player, mock_tile, user_input, expected_index
     ):
-        event = self._make_event(mock_player, mock_tile)
-        event.tile = mock_tile
-        mock_tile.events_here = [event]
-        spawned_item = MagicMock()
-        mock_tile.spawn_item.return_value = spawned_item
-        with (
-            patch("src.story.effects.functions.add_random_enchantments"),
-            patch("src.story.effects.cprint"),
-        ):
-            event.process(user_input="xyz")
-        mock_tile.spawn_item.assert_called()
+        """The choice index must select the matching weapon, and every invalid
+        input must fall back to option 0.
 
-    def test_process_second_pass_out_of_range_clamps_to_zero(
-        self, mock_player, mock_tile
-    ):
+        Asserting only that spawn_item "was called" cannot tell the fallback
+        apart from a shrine that hands out a random weapon regardless of input,
+        so assert the class name the shrine actually asked for.
+        """
         event = self._make_event(mock_player, mock_tile)
         event.tile = mock_tile
         mock_tile.events_here = [event]
         spawned_item = MagicMock()
+        spawned_item.name = "SpawnedWeapon"
         mock_tile.spawn_item.return_value = spawned_item
+        expected_weapon = event.available_choices[expected_index][1]
+
         with (
-            patch("src.story.effects.functions.add_random_enchantments"),
-            patch("src.story.effects.cprint"),
+            patch(
+                "src.story.effects.functions.add_random_enchantments"
+            ) as mock_enchant,
+            patch("src.story.effects.cprint") as mock_cprint,
         ):
-            event.process(user_input="99")
-        mock_tile.spawn_item.assert_called()
+            event.process(user_input=user_input)
+
+        mock_tile.spawn_item.assert_called_once_with(
+            expected_weapon, amt=1, hidden=False, hfactor=0
+        )
+        # The gift is enchanted once, at level 1, and announced by name.
+        mock_enchant.assert_called_once_with(spawned_item, 1)
+        assert "SpawnedWeapon" in mock_cprint.call_args[0][0]
 
     def test_process_second_pass_marks_completed(self, mock_player, mock_tile):
         event = self._make_event(mock_player, mock_tile)
@@ -463,7 +472,8 @@ class TestNPCSpawnerEvent:
         event.spawn_tile = mock_tile
         event.has_run = True
         event.process()
-        mock_tile.spawn_npc.assert_called()
+        assert mock_tile.spawn_npc.call_args_list == [call("Slime")]
+        assert event.spawned_npcs == [spawned]
 
     def test_evaluate_for_map_entry_triggers_when_same_map(
         self, mock_player, mock_tile
@@ -588,9 +598,15 @@ class TestWhisperingStatue:
         prompt = statue.get_input_prompt()
         assert "mouth" in prompt.lower() or "river" in prompt.lower()
 
-    def test_get_input_options_returns_list(self, mock_player, mock_tile):
+    def test_get_input_options_returns_the_three_riddle_answers(
+        self, mock_player, mock_tile
+    ):
         statue = self._make_statue(mock_player, mock_tile)
-        assert isinstance(statue.get_input_options(), list)
+        assert statue.get_input_options() == [
+            {"value": "1", "label": "A River"},
+            {"value": "2", "label": "The Wind"},
+            {"value": "3", "label": "A Shadow"},
+        ]
 
     def test_correct_answer_spawns_gold(self, mock_player, mock_tile):
         statue = self._make_statue(mock_player, mock_tile)
@@ -819,8 +835,22 @@ class TestTheAdjutantKeywordDispatch:
     @pytest.mark.parametrize(
         "method_name", ["talk", "set", "adjust", "configure", "help"]
     )
-    def test_keyword_verb_narrates(self, adj, method_name):
+    def test_keyword_verb_narrates_flavour_only(self, adj, method_name):
+        """Every configuration verb is an alias of talk() and only narrates.
+
+        Real configuration goes through /api/debug; if one of these aliases
+        ever gained a side effect it would be an unreachable, undocumented
+        debug surface. Assert the emitted line, not just "narrate was called".
+        """
+        from src.narration import capture_narration
+
         player = MagicMock()
-        with patch("src.npc._adjutant.narrate") as mock_narrate:
+        with capture_narration() as msgs:
             getattr(adj, method_name)(player)
-        mock_narrate.assert_called_once()
+
+        assert len(msgs) == 1
+        assert msgs[0]["text"] == (
+            "The Adjutant inclines its head. 'Speak your needs through the "
+            "preparation interface, and I will shape you for the trial ahead.'"
+        )
+        assert getattr(type(adj), method_name) is type(adj).talk

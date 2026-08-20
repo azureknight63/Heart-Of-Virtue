@@ -61,19 +61,45 @@ class FakeUniverse:
         self.locked_chests = []
 
 def test_memory_border():
-    with patch('src.animations.animate_to_main_screen') as mock_anim, patch('src.story.effects.cprint') as mock_cprint:
-        # style = top
-        memory_border("top")
-        assert mock_anim.called
-        
+    """memory_border emits tagged chrome through the narration sink.
+
+    Every line must carry mtype="memory_chrome" — that tag is the only thing
+    that stops the ASCII rules leaking into the web client's segments and
+    output_text (the React client draws its own Memory Flash frame instead).
+    Only the "top" style plays the entry animation.
+    """
+    from src.narration import capture_narration
+
+    border = "═" * 79
+
+    with patch('src.animations.animate_to_main_screen') as mock_anim:
+        with capture_narration() as top_msgs:
+            memory_border("top")
+        assert mock_anim.call_args_list == [(("memory_flash",),)]
+
         mock_anim.reset_mock()
-        # style = bottom
-        memory_border("bottom")
-        assert not mock_anim.called
-        
-        # style = other
-        memory_border("other")
-        assert not mock_anim.called
+        with capture_narration() as bottom_msgs:
+            memory_border("bottom")
+        with capture_narration() as other_msgs:
+            memory_border("other")
+        mock_anim.assert_not_called()
+
+    for msgs in (top_msgs, bottom_msgs, other_msgs):
+        assert msgs, "memory_border emitted nothing"
+        assert all(m["type"] == "memory_chrome" for m in msgs)
+        assert all(m["color"] == "magenta" for m in msgs)
+
+    assert [m["text"] for m in top_msgs] == [
+        border,
+        "✧ A MEMORY STIRS ✧".center(79),
+        border,
+    ]
+    assert [m["text"] for m in bottom_msgs] == [
+        border,
+        "✧ THE MEMORY FADES ✧".center(79),
+        border,
+    ]
+    assert [m["text"] for m in other_msgs] == [border]
 
 def test_memory_flash_edge_cases():
     player = FakePlayer()
@@ -112,13 +138,25 @@ def test_memory_flash_edge_cases():
         ev_combat.process(user_input="continue")
         assert ev_combat not in player.combat_events
 
-def test_effect_base():
+def test_effect_runs_process_but_does_not_retire_itself():
+    """Effect overrides pass_conditions_to_process to skip the one-shot cleanup.
+
+    Base Event removes a non-repeating event from tile.events_here once it has
+    run. Effects are attached to moves/items and are re-processed every time
+    they trigger, so they must survive the call — regressing this to the base
+    implementation would make an item's on-hit effect fire exactly once.
+    """
     player = FakePlayer()
     ev = Effect("BaseEffect", player)
-    # process spy
-    ev.process = MagicMock()
+    ran = []
+    ev.process = lambda: ran.append(ev.name)
+
+    player.tile.events_here.append(ev)
     ev.pass_conditions_to_process()
-    assert ev.process.called
+
+    assert ran == ["BaseEffect"]
+    assert ev in player.tile.events_here
+    assert ev.tile is player.tile  # Effect adopts the player's tile at build time
 
 def test_flare_arrow_impact():
     player = FakePlayer()
@@ -139,8 +177,10 @@ def test_flare_arrow_impact():
     # Mock functions.inflict
     with patch('src.functions.inflict') as mock_inflict:
         ev.process()
-        assert mock_inflict.called
-        assert isinstance(mock_inflict.call_args[0][0], states.Enflamed)
+        mock_inflict.assert_called_once()
+        state_arg, target_arg = mock_inflict.call_args[0][:2]
+        assert isinstance(state_arg, states.Enflamed)
+        assert target_arg is move.target
 
 
 def test_flare_arrow_impact_landing_floor_at_full_resistance():
@@ -272,13 +312,24 @@ def test_teleport():
     ev.check_conditions()
     assert player.teleport_dest == ("map_b", (5, 5))
 
-def test_shrine_base():
+def test_shrine_base_is_inert():
+    """The Shrine base class is a hook point — it must not act on its own.
+
+    Every real shrine (StMichael and friends) overrides process(); if the base
+    ever grew a side effect, every plain Shrine placed on a map would start
+    handing out gifts.
+    """
     player = FakePlayer()
     tile = player.tile
     ev = Shrine(player, tile)
+
     ev.check_conditions()
-    # base process does nothing
     ev.process()
+
+    assert tile.spawned_items == []
+    assert tile.spawned_npcs == []
+    assert getattr(ev, "needs_input", False) is False
+    assert player.teleport_dest is None
 
 def test_st_michael_shrine(capsys):
     player = FakePlayer()
@@ -362,8 +413,11 @@ def test_pulsing_gland_event():
     pg = PulsingGlandEvent(player, tile, npc_cls="Slime")
     assert pg.npc_cls == "Slime"
     
-    # evaluate_for_map_entry is a no-op
+    # evaluate_for_map_entry is a deliberate no-op: the gland spawns on
+    # process(), not on map entry, so entering the map must spawn nothing.
     pg.evaluate_for_map_entry(player)
+    assert tile.spawned_npcs == []
+    assert pg.has_run is False
     
     # process
     with patch('time.sleep'), patch('builtins.print'):
@@ -382,16 +436,27 @@ def test_pulsing_gland_event():
 # Additional coverage: StMichael duplicate-rejection loop (line 385)
 # ---------------------------------------------------------------------------
 def test_st_michael_duplicate_rejection():
-    """Force random to always return the same value so the while-loop fires."""
+    """The re-roll loop must reject duplicates, not just run.
+
+    randint yields 0, 0, 0, 1, 0, 2: index 0 is drawn three times and 1 once
+    before a distinct third pick, so a broken loop would leave a repeated
+    weapon in the roster (and a menu with two identical buttons).
+    """
     player = FakePlayer()
     tile = player.tile
-    # Patch random.randint to cycle: first two calls return 0 (duplicate), third returns 1
-    side_effects = [0, 0, 0, 1, 0, 2]
-    with patch('random.randint', side_effect=side_effects):
+    with patch('random.randint', side_effect=[0, 0, 0, 1, 0, 2]):
         ev = StMichael(player, tile)
-    # We just need the constructor to complete without error; choices may not be 3-unique
-    # due to limited side_effect length, but the loop path was exercised.
-    assert isinstance(ev.available_choices, list)
+
+    assert ev.available_choices == [
+        ("A crafty dagger.", "Dagger"),
+        ("A trusty sword.", "Shortsword"),
+        ("An imposing battleaxe.", "Battleaxe"),
+    ]
+    assert ev.input_options == [
+        {"value": "0", "label": "A crafty dagger."},
+        {"value": "1", "label": "A trusty sword."},
+        {"value": "2", "label": "An imposing battleaxe."},
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -543,6 +608,9 @@ def test_evaluate_for_map_entry_exception_returns():
     ev.spawn_tile = None
     ev.tile = None
     ev.evaluate_for_map_entry(player)  # must not raise
+    # Swallowing the error must also mean spawning nothing and staying armed.
+    assert ev.spawned_npcs == []
+    assert ev.has_run is False
 
 
 # ---------------------------------------------------------------------------
@@ -630,18 +698,25 @@ def test_whispering_statue_repeat_stays_in_tile():
 
 
 def test_whispering_statue_check_conditions():
-    """check_conditions() routes to process() (CLI path with no user_input)."""
+    """check_conditions() routes straight to process() with no user_input.
+
+    There is no terminal prompt left in the engine, so this path must resolve
+    itself: the riddle falls back to the safe "1" and pays out rather than
+    blocking on input. (No builtins.input patch — if one were needed again the
+    call would hang, which is the point.)
+    """
     player = FakePlayer()
     tile = player.tile
     tile.events_here = []
     ev = WhisperingStatue(player, tile)
     tile.events_here.append(ev)
 
-    # In CLI mode process(user_input=None) calls input() — patch it
-    with patch('src.story.effects.cprint'), patch('src.story.effects.time.sleep'), \
-            patch('builtins.input', return_value="1"):
+    with patch('src.story.effects.time.sleep'):
         ev.check_conditions()
-        assert ev.completed is True
+
+    assert ev.completed is True
+    assert any(item.name == "Gold" for item in tile.spawned_items)
+    assert tile.spawned_npcs == []
 
 
 # ---------------------------------------------------------------------------

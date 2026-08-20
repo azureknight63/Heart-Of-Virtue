@@ -1,122 +1,179 @@
 """
-Test for Chapter 1 Gorran rescue event - battlefield map position updates.
+Tests for the Chapter 1 Gorran rescue beat (``Ch01PostRumbler3``).
 
-This test verifies that when Gorran rescues Jean and new enemies are spawned,
-the battlefield map properly updates with accurate enemy positions.
+This is a combat-effect event: it fires mid-fight once Jean has cleared the
+first wave, then recruits Gorran as an ally and spawns a second wave. Getting
+the wiring wrong here is invisible in prose but fatal in play — an ally whose
+combat lists point at the wrong rosters attacks nobody, and enemies appended
+straight to ``combat_list`` never receive battlefield positions.
 """
 
-import pytest
-import sys
-from pathlib import Path
-
-# Add src to path
-
-
 from unittest.mock import Mock, patch
+
+import pytest
+
 from src.player import Player
 from src.tiles import MapTile
-from src.story.ch01 import Ch01PostRumbler3
+from src.story.ch01 import Ch01PostRumbler3, AfterTheRumblerFight
 
 
-def test_gorran_rescue_updates_battlefield_positions():
-    """Test that Gorran rescue event properly updates battlefield positions."""
-    # Create mock player
-    player = Mock(spec=Player)
-    player.combat_list = []
-    player.combat_list_allies = [player]
-    player.in_combat = True
-    player.current_room = Mock(spec=MapTile)
-    player.combat_events = []
+@pytest.fixture
+def player():
+    p = Mock(spec=Player)
+    p.combat_list = []
+    p.combat_list_allies = [p]
+    p.in_combat = True
+    p.level = 4
+    p.current_room = Mock(spec=MapTile)
+    p.combat_events = []
+    return p
 
-    # Create mock tile
-    tile = Mock(spec=MapTile)
 
-    # Mock spawn_npc to return mock NPCs
-    mock_gorran = Mock()
-    mock_gorran.name = "Gorran"
-    mock_gorran.in_combat = False
+@pytest.fixture
+def gorran():
+    npc = Mock()
+    npc.name = "Gorran"
+    npc.in_combat = False
+    return npc
 
-    mock_rumblers = []
+
+@pytest.fixture
+def rumblers():
+    wave = []
     for i in range(5):
         rumbler = Mock()
         rumbler.name = f"RockRumbler{i}"
         rumbler.in_combat = False
-        mock_rumblers.append(rumbler)
+        wave.append(rumbler)
+    return wave
 
-    spawn_calls = [mock_gorran] + mock_rumblers
-    tile.spawn_npc = Mock(side_effect=spawn_calls)
-    tile.events_here = []
 
-    # Create the event
-    event = Ch01PostRumbler3(player=player, tile=tile)
+@pytest.fixture
+def tile(gorran, rumblers):
+    t = Mock(spec=MapTile)
+    t.spawn_npc = Mock(side_effect=[gorran] + rumblers)
+    t.events_here = []
+    return t
 
-    # Mock the cprint and time.sleep to avoid delays
-    with patch('src.story.ch01.cprint'), \
-         patch('src.story.ch01.time.sleep'), \
-         patch('src.functions.add_enemies_to_combat') as mock_add_enemies:
 
-        # Stage 1: show narrative, advance to stage 2
+@pytest.fixture
+def event(player, tile):
+    return Ch01PostRumbler3(player=player, tile=tile)
+
+
+def _rescue(event, choice="a"):
+    """Run stage 1 (prompt) then stage 2 (the rescue), with I/O stubbed."""
+    with (
+        patch('src.story.ch01.time.sleep'),
+        patch('src.functions.add_enemies_to_combat') as mock_add_enemies,
+    ):
         event.process(user_input=None)
-        # Stage 2: submit choice 'a' (help Gorran)
-        event.process(user_input='a')
+        event.process(user_input=choice)
+    return mock_add_enemies
 
-        # Verify Gorran was added to allies
-        assert mock_gorran in player.combat_list_allies
-        assert mock_gorran.in_combat == True
 
-        # Verify add_enemies_to_combat was called with the new enemies
+class TestRescueWiring:
+    def test_stage_one_only_prompts(self, event, player, tile):
+        """The first pass must not spawn anything — it just asks the question."""
+        with patch('src.story.ch01.time.sleep'):
+            event.process(user_input=None)
+
+        assert event.needs_input is True
+        assert [o["value"] for o in event.input_options] == ["a"]
+        assert "rock-man is still standing" in event.description
+        tile.spawn_npc.assert_not_called()
+        assert player.combat_list_allies == [player]
+        assert event.completed is False
+
+    def test_gorran_joins_the_party_and_shares_the_players_rosters(
+        self, event, player, gorran
+    ):
+        _rescue(event)
+
+        assert gorran in player.combat_list_allies
+        assert gorran.in_combat is True
+        # Same objects, not copies: Gorran must see the player's live rosters
+        # or he will keep swinging at a stale enemy list.
+        assert gorran.combat_list is player.combat_list
+        assert gorran.combat_list_allies is player.combat_list_allies
+        # He arrives scaled to Jean and with a clean move set.
+        gorran.sync_level.assert_called_once_with(4)
+        gorran.reset_combat_moves.assert_called_once_with()
+
+    def test_second_wave_goes_through_add_enemies_to_combat(
+        self, event, player, tile, rumblers
+    ):
+        """Enemies must be routed through the helper that assigns positions."""
+        mock_add_enemies = _rescue(event)
+
         mock_add_enemies.assert_called_once()
-        call_args = mock_add_enemies.call_args
-        assert call_args[0][0] == player  # First arg is player
-        assert len(call_args[0][1]) == 5  # Second arg is list of 5 enemies
+        added_player, added_enemies = mock_add_enemies.call_args[0]
+        assert added_player is player
+        assert added_enemies == rumblers
+        # The event must not shortcut the helper by appending directly.
+        assert player.combat_list == []
+        assert tile.spawn_npc.call_args_list[0] == (("Gorran",), {"delay": 0})
+        assert all(
+            c.args == ("RockRumbler",) and "delay" in c.kwargs
+            for c in tile.spawn_npc.call_args_list[1:]
+        )
 
-        # Verify all rumblers are in the list passed to add_enemies_to_combat
-        enemies_added = call_args[0][1]
-        for rumbler in mock_rumblers:
-            assert rumbler in enemies_added
+    def test_event_retires_and_queues_the_follow_up_scene(
+        self, event, player, tile
+    ):
+        player.combat_events.append(event)
+
+        _rescue(event)
+
+        assert event.completed is True
+        assert event.needs_input is False
+        # combat_effect events aren't on the tile, so they must clear themselves
+        # out of player.combat_events or they re-fire every beat.
+        assert event not in player.combat_events
+        assert any(
+            isinstance(e, AfterTheRumblerFight) for e in tile.events_here
+        )
+
+    def test_gorran_already_in_the_party_is_reused_not_duplicated(
+        self, player, tile, rumblers
+    ):
+        """Starting the chapter with Gorran in the party must not clone him."""
+
+        class Gorran:  # name is what the event matches on
+            def __init__(self):
+                self.in_combat = False
+                self.sync_level = Mock()
+                self.reset_combat_moves = Mock()
+
+        existing = Gorran()
+        player.combat_list_allies = [player, existing]
+        tile.spawn_npc = Mock(side_effect=rumblers)
+
+        event = Ch01PostRumbler3(player=player, tile=tile)
+        _rescue(event)
+
+        assert player.combat_list_allies == [player, existing]
+        assert existing.in_combat is True
+        existing.sync_level.assert_called_once_with(4)
+        # Only the five rumblers were spawned — no second Gorran.
+        assert [c.args[0] for c in tile.spawn_npc.call_args_list] == [
+            "RockRumbler"
+        ] * 5
 
 
-def test_gorran_rescue_sets_combat_lists():
-    """Test that Gorran's combat lists are properly configured."""
-    # Create mock player
-    player = Mock(spec=Player)
-    player.combat_list = []
-    player.combat_list_allies = [player]
-    player.in_combat = True
-    player.current_room = Mock(spec=MapTile)
-    player.combat_events = []
+class TestRescueTrigger:
+    def test_fires_only_once_the_first_wave_is_cleared(self, event, player):
+        """The rescue must wait for an empty combat_list, and never re-fire."""
+        event.pass_conditions_to_process = Mock()
 
-    # Create mock tile
-    tile = Mock(spec=MapTile)
+        player.combat_list = [Mock()]
+        event.check_combat_conditions()
+        event.pass_conditions_to_process.assert_not_called()
 
-    # Mock spawn_npc to return mock NPCs
-    mock_gorran = Mock()
-    mock_gorran.name = "Gorran"
-    mock_gorran.in_combat = False
+        player.combat_list = []
+        event.check_combat_conditions()
+        event.pass_conditions_to_process.assert_called_once()
 
-    mock_rumblers = [Mock() for _ in range(5)]
-
-    spawn_calls = [mock_gorran] + mock_rumblers
-    tile.spawn_npc = Mock(side_effect=spawn_calls)
-    tile.events_here = []
-
-    # Create the event
-    event = Ch01PostRumbler3(player=player, tile=tile)
-
-    # Mock the cprint and time.sleep to avoid delays
-    with patch('src.story.ch01.cprint'), \
-         patch('src.story.ch01.time.sleep'), \
-         patch('src.functions.add_enemies_to_combat'):
-
-        # Stage 1: show narrative, advance to stage 2
-        event.process(user_input=None)
-        # Stage 2: submit choice 'a' (help Gorran)
-        event.process(user_input='a')
-
-        # Verify Gorran's combat lists are set correctly
-        assert mock_gorran.combat_list == player.combat_list  # Gorran targets enemies
-        assert mock_gorran.combat_list_allies == player.combat_list_allies  # Gorran is allied with player
-
-
-if __name__ == '__main__':
-    pytest.main([__file__, '-v'])
+        event.completed = True
+        event.check_combat_conditions()
+        event.pass_conditions_to_process.assert_called_once()

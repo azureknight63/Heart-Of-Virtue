@@ -2,7 +2,7 @@
 
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 # Ensure the project's src directory is on sys.path
 ROOT = Path(__file__).resolve().parent.parent
@@ -119,12 +119,23 @@ class TestEvent:
         # Should not try to remove from events_here since it already checked that first
         mock_tile.events_here.remove.assert_not_called()
 
-    def test_event_process_default(self):
-        """Test default process method (should be overridden)."""
-        event = Event("TestEvent")
+    def test_event_process_default_is_an_inert_hook(self):
+        """The base process() is a hook for subclasses and must do nothing.
 
-        # Should not raise an exception
-        event.process()
+        Every Event subclass overrides it; if the base ever grew behaviour,
+        every event that forgot to override would silently inherit it.
+        """
+        mock_tile = MagicMock()
+        mock_player = MagicMock()
+        event = Event("TestEvent", player=mock_player, tile=mock_tile)
+
+        assert event.process() is None
+
+        assert event.has_run is False
+        assert event.completed is False
+        assert getattr(event, "needs_input", False) is False
+        assert mock_tile.method_calls == []
+        assert mock_player.method_calls == []
 
 
 class TestCombatEvent:
@@ -197,8 +208,8 @@ class TestCombatEvent:
         # Call process with combat_start input
         result = event.process(user_input="combat_start")
 
-        # Should spawn enemies and return combat_ready signal
-        mock_tile.spawn_npc.assert_called_with("Goblin")
+        # Should spawn ONE enemy per count in the list, all aggroed.
+        assert mock_tile.spawn_npc.call_args_list == [call("Goblin"), call("Goblin")]
         assert mock_enemy.aggro is True
         assert result == {"combat_ready": True}
         assert event.completed is True
@@ -392,64 +403,107 @@ class TestLootEvent:
         assert event.input_options[2]["value"] == "all"
         assert event.input_options[3]["value"] == "exit"
 
-    @patch('src.narration.cprint')
     @patch('src.inventory_utils.transfer_item')
-    def test_loot_event_process_take_all(self, mock_transfer_item, mock_cprint):
-        """Test LootEvent process with 'all' input."""
+    def test_loot_event_process_take_all(self, mock_transfer_item):
+        """'all' transfers every item at its full stack count, then closes."""
+        from src.narration import capture_narration
+
         mock_container = MagicMock()
-        mock_item = MagicMock()
-        mock_item.name = "Test Item"
-        mock_item.count = 1  # Set count to int
-        mock_container.inventory = [mock_item]
+        sword = MagicMock()
+        sword.name = "Iron Sword"
+        sword.count = 1
+        potions = MagicMock()
+        potions.name = "Restorative"
+        potions.count = 3
+        mock_container.inventory = [sword, potions]
 
         mock_player = MagicMock()
 
         event = LootEvent("TestLoot", player=mock_player, container=mock_container)
 
-        result = event.process(user_input="all")
+        with capture_narration() as msgs:
+            result = event.process(user_input="all")
 
-        # Should transfer all items
-        mock_transfer_item.assert_called_once()
-        mock_cprint.assert_called_once()
-        assert "Test Item" in mock_cprint.call_args[0][0]
+        assert mock_transfer_item.call_args_list == [
+            call(mock_container, mock_player, sword, 1),
+            call(mock_container, mock_player, potions, 3),
+        ]
+        # The narration names every item taken, in order.
+        assert [m["text"] for m in msgs] == [
+            "Jean takes everything: Iron Sword, Restorative"
+        ]
+        assert msgs[0]["color"] == "green"
+        mock_container.refresh_description.assert_called_once_with()
         assert event.completed is True
         assert event.needs_input is False
         assert result == {"success": True}
 
-    @patch('src.narration.cprint')
     @patch('src.inventory_utils.transfer_item')
-    def test_loot_event_process_take_specific_item(self, mock_transfer_item, mock_cprint):
-        """Test LootEvent process with specific item index."""
+    def test_loot_event_process_take_all_on_empty_container(self, mock_transfer_item):
+        """An empty container reports itself instead of claiming a haul."""
+        from src.narration import capture_narration
+
+        mock_container = MagicMock()
+        mock_container.inventory = []
+
+        event = LootEvent("TestLoot", player=MagicMock(), container=mock_container)
+
+        with capture_narration() as msgs:
+            result = event.process(user_input="all")
+
+        mock_transfer_item.assert_not_called()
+        assert [m["text"] for m in msgs] == ["The container is empty."]
+        assert msgs[0]["color"] == "yellow"
+        assert result == {"success": True}
+        assert event.completed is True
+
+    @patch('src.inventory_utils.transfer_item')
+    def test_loot_event_process_take_specific_item(self, mock_transfer_item):
+        """A numeric choice takes that one item and keeps the loot menu open."""
+        from src.narration import capture_narration
+
         mock_container = MagicMock()
         mock_item = MagicMock()
         mock_item.name = "Test Item"
         mock_item.count = 1
-        mock_container.inventory = [mock_item]
+        other = MagicMock()
+        other.name = "Left Behind"
+        other.count = 1
+        mock_container.inventory = [mock_item, other]
 
         mock_player = MagicMock()
 
         event = LootEvent("TestLoot", player=mock_player, container=mock_container)
 
-        result = event.process(user_input="0")
+        with capture_narration() as msgs:
+            result = event.process(user_input="0")
 
-        # Should transfer the specific item
         mock_transfer_item.assert_called_once_with(mock_container, mock_player, mock_item, 1)
-        mock_cprint.assert_called_once()
-        assert "Test Item" in mock_cprint.call_args[0][0]
+        assert [m["text"] for m in msgs] == ["Jean takes the Test Item."]
         assert result == {"success": True}
+        # Still open — the player can keep looting.
+        assert event.completed is False
+        assert event.needs_input is True
+        # Options were rebuilt from the (mock) container contents.
+        assert [o["value"] for o in event.input_options][-2:] == ["all", "exit"]
 
     def test_loot_event_process_invalid_index(self):
-        """Test LootEvent process with invalid item index."""
+        """An out-of-range choice takes nothing and leaves the event open."""
+        from src.narration import capture_narration
+
         mock_container = MagicMock()
         mock_container.inventory = []
 
         event = LootEvent("TestLoot", container=mock_container)
 
-        with patch('src.narration.cprint') as mock_cprint:
+        with capture_narration() as msgs:
             result = event.process(user_input="999")
 
-            mock_cprint.assert_called_once_with("Invalid item choice.", "red")
-            assert result == {"success": True}
+        assert msgs == [
+            {"text": "Invalid item choice.", "type": "narration", "color": "red"}
+        ]
+        assert result == {"success": True}
+        assert event.completed is False
 
     def test_loot_event_process_exit(self):
         """Test LootEvent process with exit input."""

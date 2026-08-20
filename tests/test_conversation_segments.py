@@ -795,3 +795,198 @@ def test_memory_chrome_entries_are_dropped(game_service):
     assert "MEMORY STIRS" not in out
     assert "═" not in out
     assert "A real spoken line." in out
+
+
+# --------------------------------------------------------------------------- #
+# Multi-stage staged events: one fresh, complete payload PER stage
+# --------------------------------------------------------------------------- #
+# The client mounts a single ConversationStage instance and re-feeds it the
+# `segments` array of every stage of the same event. A stage that returned a
+# truncated array, repeated the previous stage's beats, or omitted its roster
+# would strand the player (CLAUDE.md: "ConversationStage reset trap"). These
+# tests pin the payload contract from the backend side: each round-trip must
+# hand back THIS stage's beats and nothing else, and every stage must be
+# advanceable.
+
+
+def _guide_to_citadel_player():
+    """A player stand-in wired for a full Ch02GuideToCitadel play-through."""
+    from unittest.mock import Mock
+
+    class Ally:
+        name = "Gorran"
+
+    player = FakePlayer(name="Jean", allies=[Ally()])
+    player.skip_dialog = False
+    player.combat_list = []
+    player.inventory = []
+    player.location_x = 0
+    player.location_y = 0
+    player.current_room = None
+    player.in_combat = False
+    player.pending_attribute_points = 0
+    player.teleported = None
+    player.universe = Mock()
+    player.universe.story = {}
+    # The completion path calls trigger_tile_events on the destination tile.
+    dest_tile = Mock()
+    dest_tile.x, dest_tile.y = 0, 0
+    dest_tile.events_here = []
+    dest_tile.npcs_here = []
+    player.universe.get_tile.return_value = dest_tile
+    player.tile = dest_tile
+    player.add_items_to_inventory = player.inventory.extend
+    player.teleport = lambda m, coords: setattr(player, "teleported", (m, coords))
+    return player
+
+
+def _play_staged_event(game_service, player, event, answers):
+    """Drive `event` to completion through process_event_input; return per-stage results.
+
+    ``answers`` supplies the input for each round-trip; the last answer repeats
+    if the event needs more. Mirrors what the client does: read the re-minted
+    ``event_id`` out of each response and send it back on the next call.
+    """
+    from unittest.mock import patch
+
+    session_data = {"pending_events": {"evt-0": {"event": event, "event_data": {}}}}
+    event_id = "evt-0"
+    results = []
+    with patch("src.api.services.game_service.check_for_combat", return_value=[]):
+        for i in range(20):
+            answer = answers[i] if i < len(answers) else answers[-1]
+            result = game_service.process_event_input(
+                player, event_id, answer, session_data
+            )
+            assert result["success"] is True, result.get("error")
+            results.append(result)
+            if not result.get("needs_input"):
+                break
+            event_id = result["event"]["event_id"]
+        else:  # pragma: no cover - only on a runaway stage machine
+            raise AssertionError("event never completed within 20 stages")
+    return results, session_data
+
+
+def test_guide_to_citadel_hands_every_stage_a_fresh_complete_payload(game_service):
+    from src.story.ch02 import Ch02GuideToCitadel
+
+    player = _guide_to_citadel_player()
+    event = Ch02GuideToCitadel(player=player, tile=player.tile, params=None)
+
+    results, session_data = _play_staged_event(
+        game_service, player, event, ["continue"]
+    )
+
+    # Eight authored stages; the eighth is the cleanup stage that completes.
+    assert len(results) == 8
+    assert [r.get("needs_input") for r in results] == [True] * 7 + [False]
+    assert event.completed is True
+    assert session_data["pending_events"] == {}
+
+    # Stages 1-2 are legacy description-driven; 3-7 are staged; 8 is silent cleanup.
+    staged = results[2:-1]
+    assert len(staged) == 5
+    assert not results[-1].get("segments")
+    assert all(r.get("segments") for r in staged)
+    assert all(r.get("conversation") for r in staged)
+
+    # THE soft-lock guard. Each stage must hand back a COMPLETE array that
+    # starts at its own first beat — never an accumulation of what came before,
+    # and never a repeat of the previous stage. A component that carries its
+    # beat index across stages then has no way to appear correct by accident.
+    # (Beats may legitimately recur across stages — Votha Krr's "He watched
+    # Jean's face" line does — so this compares arrays, not the text pool.)
+    stage_beats = [[s["text"] for s in r["segments"]] for r in staged]
+    for i, texts in enumerate(stage_beats):
+        assert texts, f"staged round-trip {i} returned an empty segments array"
+    for i, (prev, cur) in enumerate(zip(stage_beats, stage_beats[1:])):
+        assert cur[0] != prev[0], f"stage {i + 1} re-opened on stage {i}'s first beat"
+        assert cur != prev, f"stage {i + 1} replayed stage {i} verbatim"
+        assert cur[: len(prev)] != prev, (
+            f"stage {i + 1} appended to stage {i}'s beats instead of replacing them"
+        )
+
+    # Every stage but the last is advanceable — a terminal beat with no option
+    # is the soft-lock itself.
+    for r in results[:-1]:
+        assert r["event"]["input_options"], "a stage offered no way to continue"
+    assert [o["value"] for o in results[-2]["event"]["input_options"]] == ["done"]
+
+    # Stage content lands where the scene says it does.
+    assert any(
+        s.get("speaker") == "Votha Krr" and "I am Elder Votha Krr" in s["text"]
+        for s in staged[1]["segments"]
+    )
+    assert [o["value"] for o in results[4]["event"]["input_options"]] == ["a", "b"]
+
+    # The cleanup stage actually pays out and moves Jean.
+    assert sorted(type(i).__name__ for i in player.inventory) == [
+        "Antidote",
+        "Restorative",
+    ]
+    assert player.teleported == ("grondia", (10, 5))
+
+
+def test_guide_to_citadel_pending_payload_tracks_the_stage_the_player_is_on(
+    game_service,
+):
+    """Each stage re-keys pending_events and stores THAT stage's payload.
+
+    A stale id would make the client dedupe the new stage away; stale
+    ``event_data`` would replay the previous stage's prose on reload.
+    """
+    from src.story.ch02 import Ch02GuideToCitadel
+
+    player = _guide_to_citadel_player()
+    event = Ch02GuideToCitadel(player=player, tile=player.tile, params=None)
+    results, session_data = _play_staged_event(
+        game_service, player, event, ["continue"]
+    )
+
+    ids = [r["event"]["event_id"] for r in results if r.get("needs_input")]
+    assert len(set(ids)) == len(ids), "a stage reused the previous stage's event_id"
+    assert "evt-0" not in ids
+
+    # Replay the recovery read GET /world/events/pending performs at each stage.
+    player2 = _guide_to_citadel_player()
+    event2 = Ch02GuideToCitadel(player=player2, tile=player2.tile, params=None)
+    from unittest.mock import patch
+
+    session2 = {"pending_events": {"evt-0": {"event": event2, "event_data": {}}}}
+    event_id = "evt-0"
+    with patch("src.api.services.game_service.check_for_combat", return_value=[]):
+        for _ in range(7):
+            result = game_service.process_event_input(
+                player2, event_id, "continue", session2
+            )
+            assert len(session2["pending_events"]) == 1
+            stored_id, stored = next(iter(session2["pending_events"].items()))
+            assert stored_id == result["event"]["event_id"]
+            recovered = stored["event_data"]
+            assert recovered.get("segments") == result.get("segments")
+            assert recovered.get("conversation") == result.get("conversation")
+            assert recovered.get("output_text") == result.get("output_text")
+            event_id = stored_id
+
+
+def test_guide_to_citadel_quest_choice_selects_different_beats(game_service):
+    """Stage 6 branches on the player's answer — 'tell me more' is the long path."""
+    from src.story.ch02 import Ch02GuideToCitadel
+
+    def beats_for(answer):
+        player = _guide_to_citadel_player()
+        event = Ch02GuideToCitadel(player=player, tile=player.tile, params=None)
+        answers = ["continue"] * 5 + [answer] + ["continue"] * 4
+        results, _ = _play_staged_event(game_service, player, event, answers)
+        return [s["text"] for s in results[5]["segments"]]
+
+    long_path = beats_for("a")
+    short_path = beats_for("b")
+
+    assert any("Humans." == t for t in long_path)
+    assert not any("Humans." == t for t in short_path)
+    assert len(long_path) > len(short_path)
+    # Both branches still converge on Votha Krr accepting the job.
+    assert any("Thank you, Jean" in t for t in long_path)
+    assert any("Thank you, Jean" in t for t in short_path)

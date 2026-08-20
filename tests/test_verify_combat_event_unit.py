@@ -1,113 +1,109 @@
 """
-Verification tests for CombatEvent loading and configuration.
-Tests that:
-1. Universe builds and loads all maps
-2. CombatEvents are properly configured in test maps
-3. CombatEventConfig is correctly deserialized
-4. Combat can be triggered via events
+Verification tests for CombatEvent loading out of the shipped map JSON.
+
+These pin the deserialization contract for scripted combat: a `CombatEvent`
+entry in a map file must come back as a real `CombatEvent` carrying a real
+`CombatEventConfig`, with its enemy roster intact. A map that silently loads
+its events as inert dicts still "loads fine" — the fight just never happens.
+
+The universe is built once for the whole module (it is expensive and mutates
+module-level item/NPC registries); every test here is read-only.
 """
-import sys
-import unittest
-from unittest.mock import patch
-import os
 
-sys.path.append(os.path.join(os.path.dirname(__file__), "."))
+import pytest
 
-from src.universe import Universe  # noqa: E402
-from src.player import Player  # noqa: E402
-from src.events import CombatEvent  # noqa: E402
-from src.combat_event_config import CombatEventConfig  # noqa: E402
+from src.combat_event_config import CombatEventConfig
+from src.events import CombatEvent
+from src.player import Player
+from src.universe import Universe
 
 
-class TestCombatEventLoading(unittest.TestCase):
-    def setUp(self):
-        self.player = Player()
-        self.universe = Universe(self.player)
-        if hasattr(self.player, "attach_universe"):
-            self.player.attach_universe(self.universe)
-        else:
-            self.player.universe = self.universe
+@pytest.fixture(scope="module")
+def built_universe():
+    player = Player()
+    universe = Universe(player)
+    if hasattr(player, "attach_universe"):
+        player.attach_universe(universe)
+    else:
+        player.universe = universe
+    universe.build(player)
+    return player, universe
 
-    def test_combat_event_loading(self):
-        """Test universe builds and can access combat events"""
-        print("Building universe (loading maps)...")
-        self.universe.build(self.player)
 
-        # Find the map "testing-map"
-        testing_map = None
-        for m in self.universe.maps:
-            if m.get("name") == "testing-map":
-                testing_map = m
-                break
+@pytest.fixture(scope="module")
+def testing_map(built_universe):
+    _player, universe = built_universe
+    for game_map in universe.maps:
+        if game_map.get("name") == "testing-map":
+            return game_map
+    pytest.fail("Could not find 'testing-map' among the loaded maps")
 
-        self.assertIsNotNone(testing_map, "Could not find 'testing-map'")
 
-        # Get tile (2, 3)
+class TestUniverseBuild:
+    def test_build_attaches_the_universe_to_the_player(self, built_universe):
+        player, universe = built_universe
+        assert player.universe is universe
+
+    def test_build_loads_every_shipped_map_exactly_once(self, built_universe):
+        """Every map JSON on disk must load, and none twice.
+
+        A duplicate here means two live copies of the same tiles, so an event
+        cleared on one is still armed on the other.
+        """
+        _player, universe = built_universe
+        names = [m.get("name") for m in universe.maps]
+        assert None not in names
+        assert len(names) == len(set(names))
+        # Named anchors from three different chapters — a partial load that
+        # dropped later maps would still satisfy a bare "len(maps) > 0".
+        assert {"testing-map", "verdette-caverns", "grondia"} <= set(names)
+
+
+class TestCombatEventLoading:
+    def test_rock_rumbler_ambush_deserializes_into_a_live_combat_event(
+        self, testing_map
+    ):
         tile = testing_map.get((2, 3))
-        self.assertIsNotNone(tile, "Could not find tile (2, 3) in testing-map")
-        print(f"Found tile (2, 3): {tile.description}")
+        assert tile is not None, "Could not find tile (2, 3) in testing-map"
 
-        # Check events - may be empty
-        events_here = getattr(tile, 'events_here', [])
-        print(f"Events on tile: {len(events_here)}")
+        combat_events = [
+            ev for ev in tile.events_here if isinstance(ev, CombatEvent)
+        ]
+        assert len(combat_events) == 1, (
+            "testing-map (2,3) must carry exactly one scripted CombatEvent; "
+            f"found {[type(e).__name__ for e in tile.events_here]}"
+        )
 
-        # Look for any CombatEvent
-        combat_event = None
-        for ev in events_here:
-            if isinstance(ev, CombatEvent):
-                combat_event = ev
-                break
+        event = combat_events[0]
+        assert event.name == "Rock Rumbler Ambush"
+        config = event.config
+        assert isinstance(config, CombatEventConfig)
+        # The roster survives the JSON round-trip as [class_name, count] pairs.
+        assert [list(pair) for pair in config.enemy_list] == [["RockRumbler", 2]]
+        assert config.scenario_type == "standard"
+        assert "Rock Rumblers block your path" in config.narrative_text
+        # The event advertises itself as awaiting the client's combat_start.
+        assert event.needs_input is True
+        assert [o["value"] for o in event.input_options] == ["combat_start"]
 
-        # If we found one, verify it
-        if combat_event is not None:
-            config = combat_event.config
-            print(f"CombatEvent config: {config}")
-            self.assertIsInstance(config, CombatEventConfig)
-            # Config should have expected structure
-            self.assertTrue(hasattr(config, 'enemy_list') or hasattr(config, 'scenario_type'))
+    def test_every_tile_exposes_a_list_of_events(self, testing_map):
+        """events_here must be a real list on every tile, not None or a dict."""
+        checked = 0
+        for coord, tile in testing_map.items():
+            if not isinstance(coord, tuple) or tile is None:
+                continue
+            assert isinstance(tile.events_here, list), coord
+            checked += 1
+        assert checked > 0, "testing-map contained no tiles"
 
-    def test_universe_loads_maps(self):
-        """Test that universe.build() successfully loads maps"""
-        self.universe.build(self.player)
-        # Should have maps
-        self.assertTrue(len(self.universe.maps) > 0)
 
-    def test_combat_event_config_structure(self):
-        """Test CombatEventConfig can be instantiated"""
+class TestCombatEventConfigDefaults:
+    def test_defaults_are_inert(self):
+        """A bare config must not conjure enemies, allies, or a grid override."""
         config = CombatEventConfig()
-        # Should be instantiable and have event config structure
-        self.assertIsNotNone(config)
-
-    def test_player_universe_attachment(self):
-        """Test player-universe relationship"""
-        self.assertIsNotNone(self.player.universe)
-        # Should be able to access universe from player
-        self.assertEqual(self.player.universe, self.universe)
-
-    def test_universe_map_access(self):
-        """Test maps can be accessed from universe"""
-        self.universe.build(self.player)
-        maps = self.universe.maps
-        self.assertIsNotNone(maps)
-        self.assertGreater(len(maps), 0)
-
-    def test_tile_event_structure(self):
-        """Test tiles have proper event structure"""
-        self.universe.build(self.player)
-        testing_map = None
-        for m in self.universe.maps:
-            if m.get("name") == "testing-map":
-                testing_map = m
-                break
-
-        if testing_map:
-            # Get any tile
-            for tile in testing_map.values() if hasattr(testing_map, 'values') else []:
-                # Should have events_here attribute
-                events = getattr(tile, 'events_here', [])
-                self.assertIsInstance(events, (list, tuple))
-                break
-
-
-if __name__ == "__main__":
-    unittest.main()
+        assert config.enemy_list == []
+        assert config.ally_list == []
+        assert config.grid_size_override is None
+        assert config.scenario_type == "standard"
+        assert config.narrative_text == ""
+        assert config.on_victory_text == ""

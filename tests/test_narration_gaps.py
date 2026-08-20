@@ -120,3 +120,151 @@ def test_collect_inside_capture_returns_copy_of_buffer():
 
     assert collected == messages
     assert collected is not messages  # collect() returns a copy, not the live list
+
+
+# --- The positional-colour trap ---------------------------------------------
+# ``narrate(*parts, color=None, ...)`` joins its POSITIONAL parts like print, so a
+# colour passed positionally silently becomes part of the message text instead of
+# the structured ``color`` field. ``cprint(text, color)`` keeps the old positional
+# signature. CLAUDE.md flags this as a live gotcha; these tests pin both halves so
+# nobody "harmonises" the two signatures without noticing what breaks.
+
+
+def test_narrate_positional_colour_is_swallowed_into_the_text():
+    with narration.capture_narration() as messages:
+        narration.narrate("Danger", "red")
+
+    assert messages[0]["text"] == "Danger red"
+    assert "color" not in messages[0]
+
+
+def test_narrate_keyword_colour_is_a_structured_field():
+    with narration.capture_narration() as messages:
+        narration.narrate("Danger", color="red")
+
+    assert messages[0]["text"] == "Danger"
+    assert messages[0]["color"] == "red"
+
+
+def test_cprint_keeps_the_positional_colour_signature():
+    """cprint(text, color) is the neotermcolor-compatible shim, unlike narrate()."""
+    with narration.capture_narration() as messages:
+        narration.cprint("Danger", "red")
+
+    assert messages[0]["text"] == "Danger"
+    assert messages[0]["color"] == "red"
+
+
+def test_narrate_joins_multiple_parts_with_sep_and_merges_meta():
+    with narration.capture_narration() as messages:
+        narration.narrate("a", "b", "c", sep="-", mtype="combat", attrs=["bold"], beat=7)
+
+    entry = messages[0]
+    assert entry["text"] == "a-b-c"
+    assert entry["type"] == "combat"
+    assert entry["attrs"] == ["bold"]
+    assert entry["beat"] == 7
+
+
+def test_narrate_strips_ansi_from_the_structured_text():
+    with narration.capture_narration() as messages:
+        narration.narrate("plain \x1b[31mred bit\x1b[0m tail")
+
+    assert messages[0]["text"] == "plain red bit tail"
+
+
+# --- Capture / echo switching -----------------------------------------------
+# The combat adapter reads this buffer through a live listener, so which of
+# {buffer, stdout, listeners} is active at any moment is load-bearing.
+
+
+def test_capture_suppresses_stdout_and_restores_the_echo_afterwards(capsys):
+    with narration.capture_narration() as messages:
+        narration.narrate("inside the capture")
+    narration.narrate("outside the capture")
+
+    out = capsys.readouterr().out
+    assert "inside the capture" not in out
+    assert "outside the capture" in out
+    assert [m["text"] for m in messages] == ["inside the capture"]
+
+
+def test_capture_with_echo_true_both_records_and_prints(capsys):
+    with narration.capture_narration(echo=True) as messages:
+        narration.narrate("both places")
+
+    assert [m["text"] for m in messages] == ["both places"]
+    assert "both places" in capsys.readouterr().out
+
+
+def test_nested_captures_do_not_leak_into_each_other():
+    with narration.capture_narration() as outer:
+        narration.narrate("outer-before")
+        with narration.capture_narration() as inner:
+            narration.narrate("inner-only")
+        narration.narrate("outer-after")
+
+    assert [m["text"] for m in outer] == ["outer-before", "outer-after"]
+    assert [m["text"] for m in inner] == ["inner-only"]
+
+
+def test_listener_fires_live_and_is_removed_when_the_capture_exits():
+    seen = []
+
+    with narration.capture_narration(listener=seen.append):
+        narration.narrate("first")
+        # The adapter attributes animations as messages arrive, not at exit.
+        assert [e["text"] for e in seen] == ["first"]
+        narration.end_conversation()
+        assert seen[-1]["type"] == "conversation_end"
+
+    with narration.capture_narration():
+        narration.narrate("after the listener was popped")
+
+    assert [e.get("text") for e in seen if "text" in e] == ["first"]
+
+
+def test_blank_message_is_not_recorded_but_still_echoes_a_newline(capsys):
+    """Whitespace-only text is skipped structurally; the stdout echo keeps spacing."""
+    with narration.capture_narration(echo=True) as messages:
+        narration.narrate("   ")
+
+    assert messages == []
+    assert capsys.readouterr().out == "   \n"
+
+
+def test_control_entries_outside_a_capture_are_dropped_not_echoed(capsys):
+    narration.begin_conversation([("jean", "left", "neutral")])
+    narration.end_conversation()
+
+    assert capsys.readouterr().out == ""
+    assert narration.collect() == []
+
+
+# --- Stage-op builders -------------------------------------------------------
+
+
+def test_exit_op_omits_span_unless_given():
+    assert narration.exit_op("gorran") == {"id": "gorran", "transition": "fade"}
+    assert narration.exit_op("gorran", transition="instant", span=3) == {
+        "id": "gorran",
+        "transition": "instant",
+        "span": 3,
+    }
+
+
+def test_enter_op_defers_side_and_normalizes_an_unknown_emotion():
+    assert narration.enter_op("gorran", emotion="furious") == {
+        "id": "gorran",
+        "name": "gorran",
+        "side": None,  # None => resolved by the API layer's party rule
+        "emotion": "neutral",
+        "transition": "fade",
+    }
+
+
+def test_exit_character_emits_the_same_shape_as_exit_op_plus_a_type():
+    with narration.capture_narration() as messages:
+        narration.exit_character("gorran", span=2)
+
+    assert messages[0] == {"type": "stage_exit", **narration.exit_op("gorran", span=2)}
