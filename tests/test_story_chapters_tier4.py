@@ -1,7 +1,5 @@
 """
 
-import pytest
-pytestmark = pytest.mark.skip(reason="Tier 4 advanced tests - coverage requirements already met")
 TIER 4A: Complete 100% coverage for story chapters ch01.py, ch02.py, ch03.py
 
 Comprehensive test coverage for all story events, memory flashes, dialogue trees,
@@ -111,11 +109,24 @@ class TestCh01MemoryAmelia(unittest.TestCase):
     def test_memory_amelia_memory_line_format(self):
         """Test that memory lines are tuples with text and duration."""
         memory = Ch01_Memory_Amelia(self.player, self.tile)
+        # The portrait-dialogue rollout added a third element to *tagged* lines:
+        # a dict carrying speaker/emotion (and optionally reactions / stage ops)
+        # that drives the portraits. Untagged lines stay 2-tuples and render as
+        # narration. Asserting a uniform length-2 shape predates that change.
+        tagged = 0
         for line in memory.memory_lines:
             self.assertIsInstance(line, tuple)
-            self.assertEqual(len(line), 2)
+            self.assertIn(len(line), (2, 3), line)
             self.assertIsInstance(line[0], str)
             self.assertTrue(isinstance(line[1], (int, float)))
+            if len(line) == 3:
+                tagged += 1
+                self.assertIsInstance(line[2], dict, line)
+                self.assertIn("speaker", line[2], line)
+        # Both shapes must actually be present, or this would still pass against
+        # a memory that had silently lost all of its portrait tagging.
+        self.assertGreater(tagged, 0)
+        self.assertLess(tagged, len(memory.memory_lines))
 
     def test_memory_amelia_with_params(self):
         """Test memory init with params."""
@@ -1299,7 +1310,18 @@ class TestMaraObservationEvent(unittest.TestCase):
         self.assertEqual(event.name, "MaraObservation")
 
     def test_check_conditions_blocked_when_already_reached(self):
-        self.player.universe.story = {"nomad_camp_reached": "1"}
+        # The gate flag is "nomad_ferry_ready" -- "nomad_camp_reached" is set
+        # nowhere in src/. With the ghost name this passed for the wrong reason:
+        # the three intro flags were absent, so check_conditions returned at the
+        # *intro* gate and the already-reached branch was never exercised.
+        # Supplying the intros leaves the already-reached gate as the only thing
+        # that can block, which is what this test claims to cover.
+        self.player.universe.story = {
+            "nomad_ferry_ready": "1",
+            "mara_intro_done": "1",
+            "devet_intro_done": "1",
+            "liss_gorran_done": "1",
+        }
         event = MaraObservationEvent(self.player, self.tile)
         self.tile.events_here = [event]
         with patch.object(event, 'pass_conditions_to_process') as mock_pass:
@@ -1325,7 +1347,7 @@ class TestMaraObservationEvent(unittest.TestCase):
             event.check_conditions()
             mock_pass.assert_called_once()
 
-    def test_process_sets_nomad_camp_reached(self):
+    def test_process_sets_nomad_ferry_ready(self):
         self.player.universe.story = {
             "mara_intro_done": "1",
             "devet_intro_done": "1",
@@ -1333,7 +1355,7 @@ class TestMaraObservationEvent(unittest.TestCase):
         }
         event = MaraObservationEvent(self.player, self.tile)
         event.process()
-        self.assertEqual(self.player.universe.story.get("nomad_camp_reached"), "1")
+        self.assertEqual(self.player.universe.story.get("nomad_ferry_ready"), "1")
 
     def test_process_mace_branch(self):
         """Mara says 'That\'s religious kit.' when Jean carries a Mace."""
@@ -1348,7 +1370,7 @@ class TestMaraObservationEvent(unittest.TestCase):
         event = MaraObservationEvent(self.player, self.tile)
         # should not raise; mace branch selects alternate dialogue
         event.process()
-        self.assertEqual(self.player.universe.story.get("nomad_camp_reached"), "1")
+        self.assertEqual(self.player.universe.story.get("nomad_ferry_ready"), "1")
 
 
 if __name__ == "__main__":

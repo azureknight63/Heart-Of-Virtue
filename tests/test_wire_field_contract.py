@@ -78,6 +78,7 @@ from src.npc._enemies import Slime
 from src.npc._merchants import Merchant
 from src.player import Player
 import src.states as states
+from tests._gs_fixtures import GRID_3X3
 
 
 def _assert_contract(payload: dict, contract: dict, label: str):
@@ -628,3 +629,278 @@ class TestSavesWireContract:
 
         assert saves, "expected list_saves to return the mocked row"
         _assert_contract(saves[0], SAVES_ROW_CONTRACT, "list_saves()[0]")
+
+
+# ============================================================================
+# Room / location payload
+# ============================================================================
+# useApi.js's transformLocationData(response.data.room) becomes the client-side
+# `location` object. It spreads `...room` and then normalises exits/items/npcs/
+# objects into fresh array references, so every other key rides through
+# untouched — which is exactly why a rename here is silent.
+
+ROOM_CONTRACT = {
+    "x": "MapGrid.jsx:93,98,208 location.x; GamePage.jsx:190 tile cache key",
+    "y": "MapGrid.jsx:94,98,209 location.y; GamePage.jsx:190 tile cache key",
+    "name": "CollapsibleRoomDescription.jsx:56 location.name || 'Current Location'",
+    "map_name": "MapGrid.jsx:97,188 location.map_name (grid title + tile key)",
+    "description": "RoomContents.jsx:61 location.description",
+    "exits": "useApi.js:28-30 transformLocationData normalises room.exits -> [direction]",
+    "items": "useApi.js:31 items: room.items ? [...room.items] : []",
+    "npcs": "useApi.js:32 npcs: room.npcs ? [...room.npcs] : []",
+    "objects": "useApi.js:33 objects: room.objects ? [...room.objects] : []",
+    "bgm": "GamePage.jsx:423 const track = location?.bgm || 'adventure'",
+}
+
+# Room items flow through ItemSerializer.serialize_list -> RoomContents /
+# InteractPanel target cards.
+ROOM_ITEM_CONTRACT = {
+    "id": "RoomContents.jsx:44 id: item.id; InteractPanel.jsx:491 takeOne(item.id, …)",
+    "name": "RoomContents.jsx:38,42 item.name",
+    "announce": "RoomContents.jsx:38 item.announce || `There is a ${item.name} here.`",
+    "count": "InteractPanel.jsx:486 item.count > 1 ? `x${item.count}` : ''",
+    "hidden": "InteractPanel.jsx:83 allTargets.filter(t => !t.hidden)",
+    "keywords": "InteractPanel.jsx:512 selectedTarget.keywords.length > 0",
+}
+
+# Room NPCs flow through NPCSerializer.serialize_list.
+ROOM_NPC_CONTRACT = {
+    "id": "InteractPanel.jsx:339 key={`${target.id}-${idx}`}",
+    "name": "RoomContents.jsx:28 name: npc.name",
+    "type": "InteractPanel.jsx:78 npc_class: n.type -> NpcChatPanel npcId",
+    "idle_message": "RoomContents.jsx:24,27 if (npc.idle_message) …",
+    "llm_chat_enabled": "InteractPanel.jsx:192 selectedTarget?.llm_chat_enabled",
+    "loquacity_available": "InteractPanel.jsx:193 selectedTarget?.loquacity_available !== false",
+}
+
+# Room objects flow through ObjectSerializer.serialize_list.
+ROOM_OBJECT_CONTRACT = {
+    "id": "InteractPanel.jsx:339 key={`${target.id}-${idx}`}",
+    "name": "RoomContents.jsx:54 name: obj.name",
+    "idle_message": "RoomContents.jsx:50,53 if (obj.idle_message) …",
+    "keywords": "InteractPanel.jsx:62,512 objectState.keywords ?? prev.keywords",
+}
+
+
+class TestRoomWireContract:
+    """`GameService.get_current_room` against a real Player/Universe/MapTile.
+
+    ``live_world`` builds the world graph by hand rather than via
+    ``Universe.build()``, so no module-level item/merchant registry is mutated
+    and this stays safe for the default suite (see CLAUDE.md, Running Tests).
+    """
+
+    @staticmethod
+    def _populated_room():
+        from src.items import Longsword
+        from src.objects import Container
+        from tests._gs_fixtures import live_world
+
+        player, game_map = live_world(coords=GRID_3X3, start=(0, 0))
+        tile = game_map[(0, 0)]
+        tile.items_here = [Longsword()]
+        tile.npcs_here = [Slime()]
+        tile.objects_here = [Container(name="Chest", inventory=[Longsword()])]
+        return player, tile
+
+    def test_room_fields(self):
+        player, _ = self._populated_room()
+
+        room = GameService().get_current_room(player)
+
+        _assert_contract(room, ROOM_CONTRACT, "get_current_room()")
+
+    def test_exits_is_a_direction_keyed_mapping_the_client_can_take_keys_of(self):
+        """transformLocationData calls `Object.keys(room.exits)`. If the server
+        ever switched to a list of dicts the client would render `["0","1"]`
+        as its compass directions — no error, just wrong exits."""
+        player, _ = self._populated_room()
+
+        exits = GameService().get_current_room(player)["exits"]
+
+        assert isinstance(exits, dict)
+        assert "north" in exits and "southwest" in exits
+        assert set(exits["north"]) == {"x", "y"}
+
+    def test_room_item_fields(self):
+        player, _ = self._populated_room()
+
+        items = GameService().get_current_room(player)["items"]
+
+        assert items, "expected the Longsword on the tile"
+        _assert_contract(items[0], ROOM_ITEM_CONTRACT, "get_current_room()['items'][0]")
+
+    def test_room_npc_fields(self):
+        player, _ = self._populated_room()
+
+        npcs = GameService().get_current_room(player)["npcs"]
+
+        assert npcs, "expected the Slime on the tile"
+        _assert_contract(npcs[0], ROOM_NPC_CONTRACT, "get_current_room()['npcs'][0]")
+
+    def test_room_object_fields(self):
+        player, _ = self._populated_room()
+
+        objects = GameService().get_current_room(player)["objects"]
+
+        assert objects, "expected the Container on the tile"
+        _assert_contract(
+            objects[0], ROOM_OBJECT_CONTRACT, "get_current_room()['objects'][0]"
+        )
+
+
+# ============================================================================
+# Inventory payload
+# ============================================================================
+# useApi.js:59 — `inventory: data.inventory?.items || []`. Each entry is an
+# InventoryItemSerializer.serialize() dict, read by InventoryDialog (list rows)
+# and ItemDetailDialog (detail pane).
+
+INVENTORY_ITEM_CONTRACT = {
+    "id": "InventoryDialog.jsx:258,280 key={item.id}; ItemDetailDialog.jsx:104 item_id",
+    "name": "InventoryDialog.jsx:407 {item.name}",
+    "type": "ItemDetailDialog.jsx item.type",
+    "maintype": "InventoryDialog.jsx / ItemDetailDialog.jsx item.maintype (slot grouping)",
+    "subtype": "InventoryDialog.jsx / ItemDetailDialog.jsx item.subtype",
+    "quantity": "InventoryDialog.jsx item.quantity (stack count badge)",
+    "rarity": "InventoryDialog.jsx item.rarity (row colour)",
+    "weight": "InventoryDialog.jsx item.weight",
+    "value": "InventoryDialog.jsx item.value",
+    "is_equipped": "InventoryDialog.jsx item.is_equipped; ItemDetailDialog.jsx:159",
+    "is_merchandise": "ItemDetailDialog.jsx item.is_merchandise",
+    "description": "ItemDetailDialog.jsx:489,502 item.description",
+    "can_equip": "ItemDetailDialog.jsx item.can_equip (Equip button gate)",
+    "can_use": "ItemDetailDialog.jsx item.can_use (Use button gate)",
+    "can_read": "ItemDetailDialog.jsx item.can_read (Read button gate)",
+    "can_drop": "ItemDetailDialog.jsx item.can_drop (Drop button gate)",
+}
+
+
+class TestInventoryWireContract:
+    def test_inventory_envelope_and_item_fields(self):
+        from src.api.serializers.inventory import InventorySerializer
+        from src.items import Longsword
+
+        player = Player()
+        player.inventory = [Longsword()]
+
+        payload = InventorySerializer.serialize(player)
+
+        # useApi.js reads `data.inventory?.items`; anything else is invisible.
+        assert "items" in payload
+        _assert_contract(
+            payload["items"][0], INVENTORY_ITEM_CONTRACT, "inventory.items[0]"
+        )
+
+    def test_weapon_rows_carry_the_weapon_stat_block(self):
+        from src.api.serializers.inventory import InventoryItemSerializer
+        from src.items import Longsword
+
+        row = InventoryItemSerializer.serialize(Longsword(), 0)
+
+        # ItemStatGrid renders damage/damage_type for weapons.
+        assert row["damage"] == 30
+        assert row["damage_type"] == "slashing"
+
+    def test_armor_rows_carry_protection(self):
+        from src.api.serializers.inventory import InventoryItemSerializer
+        from src.items import IronCuirass
+
+        row = InventoryItemSerializer.serialize(IronCuirass(), 0)
+
+        assert row["protection"] == 14
+
+    def test_comparison_block_shape_for_an_equippable_candidate(self):
+        """ItemDetailDialog renders `item.comparison.differences.*`."""
+        from src.api.serializers.inventory import InventoryItemSerializer
+        from src.items import Shortsword, Longsword
+
+        equipped = Shortsword()
+        equipped.isequipped = True
+        candidate = Longsword()
+        player = Player()
+        player.inventory = [equipped, candidate]
+
+        row = InventoryItemSerializer.serialize(candidate, 1, player)
+
+        comparison = row["comparison"]
+        assert comparison["comparison_type"] == "item_to_item"
+        assert set(comparison) >= {"current", "candidate", "differences",
+                                   "recommendation", "reason"}
+        assert set(comparison["differences"]) >= {
+            "damage_diff", "protection_diff", "weight_diff", "value_diff",
+            "bonus_diffs", "resistance_diffs", "status_resistance_diffs",
+        }
+
+
+# ============================================================================
+# Skills payload
+# ============================================================================
+# GET /player/skills -> GameService.get_player_skills(). SkillsPanel.jsx reads
+# `skills.skill_tree` / `skills.skill_exp`; CombatMovePanel / CooldownTray /
+# BattlefieldGrid read the move dicts.
+
+SKILLS_CONTRACT = {
+    "known_moves": "CombatMovePanel.jsx move list source",
+    "skill_tree": "SkillsPanel.jsx:31,85,149 skills.skill_tree",
+    "skill_exp": "SkillsPanel.jsx:32,86,135 skills.skill_exp",
+}
+
+MOVE_CONTRACT = {
+    "name": "CombatMovePanel.jsx:75 move.name || move.display_name",
+    "display_name": "CombatMovePanel.jsx:75 move.display_name",
+    # `category` routes the move to a radial button via CATEGORY_GROUPS
+    # (utils/categories.js). A category no group claims leaves the move with no
+    # button at all — that is how 8 castable moves became unreachable.
+    "category": "CooldownTray.jsx:66,100 / BattlefieldGrid.jsx:89 move.category",
+    "description": "CombatMovePanel.jsx move tooltip",
+    "fatigue_cost": "CombatMovePanel.jsx:133-135 move.fatigue_cost > 0",
+    "beats_left": "CooldownTray.jsx cooldown countdown",
+    "xp_gain": "SkillsPanel/CombatMovePanel move xp readout",
+}
+
+SKILL_TREE_ENTRY_CONTRACT = {
+    "name": "SkillsPanel.jsx:175 handleLearn(skill.name, selectedCategory)",
+    "display_name": "SkillsPanel.jsx skill card title",
+    "description": "SkillsPanel.jsx:186 {skill.description}",
+    "required_exp": "SkillsPanel.jsx:180,191 LEARN ({skill.required_exp})",
+    "is_known": "SkillsPanel.jsx:151,161,167,173 skill.is_known",
+    "can_learn": "SkillsPanel.jsx:176,177,189 skill.can_learn",
+}
+
+
+class TestSkillsWireContract:
+    def test_skills_envelope_fields(self):
+        payload = GameService().get_player_skills(Player())
+
+        _assert_contract(payload, SKILLS_CONTRACT, "get_player_skills()")
+
+    def test_known_move_fields_on_a_real_move(self):
+        player = Player()
+        player.known_moves = [ShootBow(player)]
+
+        payload = GameService().get_player_skills(player)
+
+        assert payload["known_moves"], "expected the ShootBow in known_moves"
+        _assert_contract(
+            payload["known_moves"][0], MOVE_CONTRACT, "get_player_skills().known_moves[0]"
+        )
+
+    def test_move_category_is_one_the_ui_routes(self):
+        """A category string CATEGORY_GROUPS does not claim means no button."""
+        player = Player()
+        player.known_moves = [ShootBow(player)]
+
+        move = GameService().get_player_skills(player)["known_moves"][0]
+
+        assert move["category"] == ShootBow(player).category
+        assert isinstance(move["category"], str) and move["category"]
+
+    def test_skill_tree_entry_fields(self):
+        payload = GameService().get_player_skills(Player())
+
+        entries = [e for cat in payload["skill_tree"].values() for e in cat]
+        assert entries, "expected the real skill tree to offer at least one skill"
+        _assert_contract(
+            entries[0], SKILL_TREE_ENTRY_CONTRACT, "skill_tree[category][0]"
+        )

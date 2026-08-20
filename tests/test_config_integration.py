@@ -1,44 +1,186 @@
-"""Integration tests for ConfigManager with Player and Universe."""
+"""Integration tests for the config chain: INI file -> SessionManager -> Player.
 
-import sys
+Scope note: the exhaustive field-by-field parsing proof lives in
+``tests/test_config_manager_basic.py::test_every_field_round_trips_from_ini``,
+which writes a non-default value for *every* ``GameConfig`` field and asserts
+each one comes back. Nine per-section "are these settings accessible?" tests
+that used to live here were strictly weaker copies of that and were removed.
+What remains here is the part that file cannot cover: how ``CONFIG_FILE``
+selects a config, how the path is resolved, and which of the loaded values
+actually reach the SessionManager / Player.
+"""
+
+import configparser
 from pathlib import Path
 
-# Ensure the project's src directory is on sys.path so absolute imports in src modules resolve
+import pytest
+
+from src.api.services import session_manager as session_manager_module
+from src.api.services.session_manager import SessionManager
+from src.config_manager import ConfigManager, GameConfig
+from src.player import Player
+from src.universe import Universe
+
 ROOT = Path(__file__).resolve().parent.parent
 
-
-from src.config_manager import ConfigManager, GameConfig  # type: ignore
-from src.player import Player  # type: ignore
-from src.universe import Universe  # type: ignore
-
-
-def test_config_manager_loads_config_dev_ini_if_exists():
-    """Test that ConfigManager loads config_dev.ini if it exists in project root."""
-    config_dev_path = ROOT / "config_dev.ini"
-
-    if config_dev_path.exists():
-        mgr = ConfigManager(str(config_dev_path))
-        config = mgr.load()
-
-        # Verify config loaded some settings (not all defaults)
-        assert isinstance(config, GameConfig)
-        # At minimum, check that basic structure is intact
-        assert hasattr(config, 'testmode')
-        assert hasattr(config, 'coordinate_grid_size')
+# A real repo-root config, used to prove relative-path resolution. Its values
+# are read from the file rather than hardcoded, so editing the config can't
+# make this test lie.
+_ROOT_CONFIG_NAME = "config_combat_testing.ini"
 
 
-def test_player_receives_config_attributes():
-    """Test that Player instance has config-related attributes."""
+@pytest.fixture
+def config_env(monkeypatch, tmp_path):
+    """Write an INI file and point CONFIG_FILE at it."""
+
+    def _write(text, name="probe.ini"):
+        path = tmp_path / name
+        path.write_text(text)
+        monkeypatch.setenv("CONFIG_FILE", str(path))
+        return path
+
+    return _write
+
+
+def test_session_manager_applies_every_config_field_it_reads(config_env):
+    """CONFIG_FILE -> SessionManager: map, position, gold, items, equipment."""
+    config_env(
+        "[game]\n"
+        "startmap = combat-testing-arena\n"
+        "startposition = (3, 4)\n"
+        "testmode = true\n"
+        "starting_gold = 777\n"
+        "starting_items = Restorative, Bitterroot\n"
+        "starting_equipment = Longsword\n"
+    )
+
+    manager = SessionManager()
+
+    assert manager.starting_map_name == "combat-testing-arena"
+    assert (manager.start_x, manager.start_y) == (3, 4)
+    assert manager.starting_gold == 777
+    assert manager.starting_item_types == ["Restorative", "Bitterroot"]
+    assert manager.starting_equipment == ["Longsword"]
+    # The full GameConfig is loaded alongside the hand-parsed fields.
+    assert manager.game_config.testmode is True
+    assert manager.game_config.startmap == "combat-testing-arena"
+    assert manager.game_config.startposition == (3, 4)
+
+
+def test_session_manager_falls_back_to_defaults_without_config_file(monkeypatch):
+    """No CONFIG_FILE: the documented defaults, and no GameConfig at all."""
+    monkeypatch.delenv("CONFIG_FILE", raising=False)
+
+    manager = SessionManager()
+
+    assert manager.starting_map_name == "dark-grotto"
+    assert (manager.start_x, manager.start_y) == (1, 1)
+    assert manager.starting_gold == 0
+    assert manager.starting_item_types == []
+    assert manager.starting_equipment == []
+
+
+def test_session_manager_ignores_a_config_file_that_does_not_exist(monkeypatch):
+    """A stale CONFIG_FILE path degrades to defaults instead of crashing."""
+    monkeypatch.setenv("CONFIG_FILE", "no_such_config_anywhere.ini")
+
+    manager = SessionManager()
+
+    assert manager.starting_map_name == "dark-grotto"
+    assert (manager.start_x, manager.start_y) == (1, 1)
+    assert manager.game_config is None
+
+
+def test_session_manager_resolves_a_relative_config_path_against_project_root(
+    monkeypatch, tmp_path
+):
+    """`CONFIG_FILE=config_x.ini` must resolve from the repo root, not cwd."""
+    monkeypatch.setenv("CONFIG_FILE", _ROOT_CONFIG_NAME)
+    monkeypatch.chdir(tmp_path)  # a cwd where the file definitely is not
+
+    parser = configparser.ConfigParser()
+    parser.read(ROOT / _ROOT_CONFIG_NAME)
+    expected_map = parser.get("game", "startmap")
+    expected_pos = tuple(
+        int(part) for part in parser.get("game", "startposition").split(",")
+    )
+
+    manager = SessionManager()
+
+    assert manager.starting_map_name == expected_map
+    assert (manager.start_x, manager.start_y) == expected_pos
+
+
+@pytest.mark.parametrize("quote", ["'", '"'])
+def test_session_manager_strips_dotenv_quotes_from_config_file(
+    monkeypatch, tmp_path, quote
+):
+    """`.env` files often quote the value; the quotes are not part of the path."""
+    path = tmp_path / "quoted.ini"
+    path.write_text("[game]\nstartmap = quoted-map\nstartposition = 8, 9\n")
+    monkeypatch.setenv("CONFIG_FILE", f"{quote}{path}{quote}")
+
+    manager = SessionManager()
+
+    assert manager.starting_map_name == "quoted-map"
+    assert (manager.start_x, manager.start_y) == (8, 9)
+
+
+def test_game_config_defaults_to_config_dev_ini(monkeypatch):
+    """With CONFIG_FILE unset, _load_game_config still looks for config_dev.ini.
+
+    Documented in CLAUDE.md ("Omit CONFIG_FILE to fall back to CONFIG_FILE from
+    .env, or config_dev.ini"). config_dev.ini is not checked in, so the lookup
+    is observed by forcing the existence check to succeed and recording which
+    path ConfigManager is handed.
+    """
+    monkeypatch.delenv("CONFIG_FILE", raising=False)
+    seen = []
+
+    class _RecordingConfigManager:
+        def __init__(self, path):
+            seen.append(path)
+
+        def load(self):
+            return GameConfig(startmap="from-config-dev")
+
+    monkeypatch.setattr(Path, "exists", lambda self: True)
+    monkeypatch.setattr(
+        session_manager_module, "ConfigManager", _RecordingConfigManager
+    )
+
+    manager = SessionManager()
+
+    assert seen == [str(ROOT / "config_dev.ini")]
+    assert manager.game_config.startmap == "from-config-dev"
+
+
+def test_malformed_startposition_in_config_does_not_break_session_manager(
+    config_env,
+):
+    """A broken coordinate degrades to the default spawn rather than crashing.
+
+    KNOWN DEFECT (src/api/services/session_manager.py:262-350): the int() parse
+    of `startposition` and the read of `startmap` share one try/except, so an
+    unparseable coordinate aborts the method before `startmap` is read — the
+    game silently boots on the *default map*, not just the default tile. The
+    assertion below pins today's behaviour; flip it to "ok-map" if that read
+    order is ever fixed. GameConfig itself parses both fields independently
+    and is unaffected, which is why manager.game_config still sees the map.
+    """
+    config_env("[game]\nstartmap = ok-map\nstartposition = not, coords\n")
+
+    manager = SessionManager()
+
+    assert manager.starting_map_name == "dark-grotto"          # startmap lost
+    assert (manager.start_x, manager.start_y) == (1, 1)
+    assert manager.game_config.startmap == "ok-map"            # but not by ConfigManager
+
+
+def test_player_config_attribute_defaults():
+    """Config-derived Player attributes start neutral until a config is applied."""
     player = Player()
 
-    # Verify new attributes exist
-    assert hasattr(player, 'testing_mode')
-    assert hasattr(player, 'use_colour')
-    assert hasattr(player, 'enable_animations')
-    assert hasattr(player, 'animation_speed')
-    assert hasattr(player, 'game_config')
-
-    # Verify default values
     assert player.testing_mode is False
     assert player.use_colour is True
     assert player.enable_animations is True
@@ -46,36 +188,26 @@ def test_player_receives_config_attributes():
     assert player.game_config is None
 
 
-def test_universe_receives_config_attributes():
-    """Test that Universe instance has config-related attributes."""
-    player = Player()
-    universe = Universe(player)
+def test_universe_config_attribute_defaults():
+    """Universe does not inherit config from its player implicitly."""
+    universe = Universe(Player())
 
-    # Verify new attributes exist
-    assert hasattr(universe, 'testing_mode')
-    assert hasattr(universe, 'game_config')
-
-    # Verify default values
     assert universe.testing_mode is False
     assert universe.game_config is None
 
 
-def test_player_config_can_be_set_from_gameconfig(tmp_path):
-    """Test that Player config attributes can be set from GameConfig."""
-    config_file = tmp_path / "test.ini"
-    config_file.write_text("""
-[game]
-testmode = true
-use_colour = false
-enable_animations = false
-animation_speed = 0.5
-""")
+def test_loaded_config_drives_player_display_settings(tmp_path):
+    """The INI values a caller copies onto the Player survive the round trip."""
+    path = tmp_path / "display.ini"
+    path.write_text(
+        "[game]\n"
+        "testmode = true\n"
+        "use_colour = false\n"
+        "enable_animations = false\n"
+        "animation_speed = 0.5\n"
+    )
+    config = ConfigManager(str(path)).load()
 
-    # Load config
-    mgr = ConfigManager(str(config_file))
-    config = mgr.load()
-
-    # Create player and apply config
     player = Player()
     player.testing_mode = config.testmode
     player.use_colour = config.use_colour
@@ -83,284 +215,8 @@ animation_speed = 0.5
     player.animation_speed = config.animation_speed
     player.game_config = config
 
-    # Verify settings applied
-    assert player.testing_mode is True
-    assert player.use_colour is False
+    assert (player.testing_mode, player.use_colour) == (True, False)
     assert player.enable_animations is False
     assert player.animation_speed == 0.5
-    assert player.game_config is not None
-    assert player.game_config.testmode is True
-
-
-def test_universe_config_can_be_set_from_gameconfig(tmp_path):
-    """Test that Universe config attributes can be set from GameConfig."""
-    config_file = tmp_path / "test.ini"
-    config_file.write_text("""
-[game]
-testmode = true
-
-[combat_testing]
-npc_flanking_threshold = 60.0
-""")
-
-    # Load config
-    mgr = ConfigManager(str(config_file))
-    config = mgr.load()
-
-    # Create universe and apply config
-    player = Player()
-    universe = Universe(player)
-    universe.testing_mode = config.testmode
-    universe.game_config = config
-
-    # Verify settings applied
-    assert universe.testing_mode is True
-    assert universe.game_config is not None
-    assert universe.game_config.npc_flanking_threshold == 60.0
-
-
-def test_config_coordinate_grid_size_as_tuple(tmp_path):
-    """Test that coordinate_grid_size parses and propagates as tuple."""
-    config_file = tmp_path / "test.ini"
-    config_file.write_text("""
-[game]
-coordinate_grid_size = 100, 150
-""")
-
-    mgr = ConfigManager(str(config_file))
-    config = mgr.load()
-
-    # Verify tuple parsing
-    assert config.coordinate_grid_size == (100, 150)
-    assert isinstance(config.coordinate_grid_size, tuple)
-
-    # Apply to universe and verify
-    player = Player()
-    universe = Universe(player)
-    universe.game_config = config
-
-    # Can access through universe
-    assert universe.game_config.coordinate_grid_size == (100, 150)
-
-
-def test_testing_locations_all_accessible(tmp_path):
-    """Test that all testing location coordinates are accessible."""
-    config_file = tmp_path / "test.ini"
-    config_file.write_text("""
-[testing_locations]
-standard_player_x = 15
-standard_player_y = 5
-standard_enemy_x = 15
-standard_enemy_y = 45
-pincer_player_x = 20
-pincer_player_y = 30
-pincer_enemy1_x = 5
-pincer_enemy1_y = 30
-pincer_enemy2_x = 35
-pincer_enemy2_y = 30
-melee_center_x = 30
-melee_center_y = 30
-melee_spread_radius = 8
-boss_arena_x = 20
-boss_arena_y = 20
-boss_start_distance = 35
-""")
-
-    mgr = ConfigManager(str(config_file))
-    config = mgr.load()
-
-    # Verify all location coordinates loaded
-    assert config.standard_player_x == 15
-    assert config.standard_player_y == 5
-    assert config.standard_enemy_x == 15
-    assert config.standard_enemy_y == 45
-    assert config.pincer_player_x == 20
-    assert config.pincer_player_y == 30
-    assert config.pincer_enemy1_x == 5
-    assert config.pincer_enemy1_y == 30
-    assert config.pincer_enemy2_x == 35
-    assert config.pincer_enemy2_y == 30
-    assert config.melee_center_x == 30
-    assert config.melee_center_y == 30
-    assert config.melee_spread_radius == 8
-    assert config.boss_arena_x == 20
-    assert config.boss_arena_y == 20
-    assert config.boss_start_distance == 35
-
-
-def test_all_debug_flags_accessible(tmp_path):
-    """Test that all debug flags are accessible through config."""
-    config_file = tmp_path / "test.ini"
-    config_file.write_text("""
-[game]
-debug_mode = true
-debug_positions = true
-debug_movement = true
-debug_damage_calc = true
-debug_accuracy = true
-debug_ai_decisions = true
-debug_npc_positions = true
-""")
-
-    mgr = ConfigManager(str(config_file))
-    config = mgr.load()
-
-    # Verify all debug flags loaded
-    assert config.debug_mode is True
-    assert config.debug_positions is True
-    assert config.debug_movement is True
-    assert config.debug_damage_calc is True
-    assert config.debug_accuracy is True
-    assert config.debug_ai_decisions is True
-    assert config.debug_npc_positions is True
-
-
-def test_validation_flags_accessible(tmp_path):
-    """Test that validation flags in combat_testing section are accessible."""
-    config_file = tmp_path / "test.ini"
-    config_file.write_text("""
-[combat_testing]
-validate_grid_bounds = false
-validate_distance_calc = false
-validate_angle_calc = false
-validate_modifier_calc = false
-validate_npc_formations = false
-""")
-
-    mgr = ConfigManager(str(config_file))
-    config = mgr.load()
-
-    # Verify all validation flags loaded and can be toggled
-    assert config.validate_grid_bounds is False
-    assert config.validate_distance_calc is False
-    assert config.validate_angle_calc is False
-    assert config.validate_modifier_calc is False
-    assert config.validate_npc_formations is False
-
-
-def test_development_settings_all_accessible(tmp_path):
-    """Test that all development settings are accessible."""
-    config_file = tmp_path / "test.ini"
-    config_file.write_text("""
-[development]
-enable_hot_reload = true
-show_all_items = true
-god_mode = true
-skip_combat = true
-""")
-
-    mgr = ConfigManager(str(config_file))
-    config = mgr.load()
-
-    # Verify all development settings
-    assert config.enable_hot_reload is True
-    assert config.show_all_items is True
-    assert config.god_mode is True
-    assert config.skip_combat is True
-
-    # Ensure they can be applied to player
-    player = Player()
-    player.game_config = config
-    assert player.game_config.god_mode is True
-
-
-def test_display_settings_all_accessible(tmp_path):
-    """Test that all display settings are accessible."""
-    config_file = tmp_path / "test.ini"
-    config_file.write_text("""
-[game]
-show_combat_distance = false
-show_unit_positions = false
-show_facing_directions = false
-show_damage_modifiers = false
-show_accuracy_modifiers = false
-show_coordinate_display = false
-show_full_grid = true
-""")
-
-    mgr = ConfigManager(str(config_file))
-    config = mgr.load()
-
-    # Verify all display settings
-    assert config.show_combat_distance is False
-    assert config.show_unit_positions is False
-    assert config.show_facing_directions is False
-    assert config.show_damage_modifiers is False
-    assert config.show_accuracy_modifiers is False
-    assert config.show_coordinate_display is False
-    assert config.show_full_grid is True
-
-
-def test_npc_ai_settings_accessible(tmp_path):
-    """Test that NPC AI settings are accessible."""
-    config_file = tmp_path / "test.ini"
-    config_file.write_text("""
-[game]
-npc_flanking_enabled = false
-npc_tactical_retreat = false
-ai_difficulty = 7
-
-[combat_testing]
-npc_flanking_threshold = 60.0
-npc_retreat_health_threshold = 0.5
-npc_flanking_distance_range = 15.0 to 50.0
-""")
-
-    mgr = ConfigManager(str(config_file))
-    config = mgr.load()
-
-    # Verify NPC AI settings
-    assert config.npc_flanking_enabled is False
-    assert config.npc_tactical_retreat is False
-    assert config.ai_difficulty == 7
-    assert config.npc_flanking_threshold == 60.0
-    assert config.npc_retreat_health_threshold == 0.5
-    assert config.npc_flanking_distance_range == "15.0 to 50.0"
-
-
-def test_scenario_settings_accessible(tmp_path):
-    """Test that scenario settings are accessible."""
-    config_file = tmp_path / "test.ini"
-    config_file.write_text("""
-[game]
-max_enemies_standard = 5
-max_enemies_pincer = 8
-max_enemies_melee = 10
-max_enemies_boss = 2
-""")
-
-    mgr = ConfigManager(str(config_file))
-    config = mgr.load()
-
-    # Verify scenario settings
-    assert config.max_enemies_standard == 5
-    assert config.max_enemies_pincer == 8
-    assert config.max_enemies_melee == 10
-    assert config.max_enemies_boss == 2
-
-
-def test_logging_settings_accessible(tmp_path):
-    """Test that logging settings are accessible."""
-    config_file = tmp_path / "test.ini"
-    config_file.write_text("""
-[game]
-log_combat_moves = false
-log_distance_calculations = false
-log_angle_calculations = false
-log_npc_decisions = false
-log_file = custom_log.txt
-log_performance = true
-monitor_bps = true
-""")
-
-    mgr = ConfigManager(str(config_file))
-    config = mgr.load()
-
-    # Verify logging settings
-    assert config.log_combat_moves is False
-    assert config.log_distance_calculations is False
-    assert config.log_angle_calculations is False
-    assert config.log_npc_decisions is False
-    assert config.log_file == "custom_log.txt"
-    assert config.log_performance is True
-    assert config.monitor_bps is True
+    # The whole config rides along, so downstream code can read rarer fields.
+    assert player.game_config.startposition == (0, 0)

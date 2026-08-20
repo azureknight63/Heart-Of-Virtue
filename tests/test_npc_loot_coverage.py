@@ -1,131 +1,341 @@
+"""``NPCLootMixin`` — what a corpse actually leaves on the floor.
+
+Rewritten to drop onto a **real ``MapTile``** instead of a ``MagicMock`` room.
+The mocked version could not see what it was asserting: its headline test did
+``room.spawn_item.assert_any_call("FireArrow")`` and passed, even though
+``FireArrow`` is not a class in ``src.items`` at all — on a real tile that call
+prints ``### ERR: Unknown item type 'FireArrow'`` and spawns a stub. A mock
+room accepts any item name you invent, which is exactly the failure mode
+CLAUDE.md warns about.
+
+Quantities are pinned under a seeded RNG rather than asserted to be "non-empty",
+since the drop count is the whole point of ``drop_inventory``'s survival roll.
+"""
+
+import random
+from unittest.mock import patch
+
 import pytest
-from unittest.mock import MagicMock, patch
+
+import src.items as items
 from src.npc._loot import NPCLootMixin
 
-class MockNPC(NPCLootMixin):
-    def __init__(self):
-        self.name = "MockNPC"
+from tests._gs_fixtures import live_world
+
+
+class LootableNPC(NPCLootMixin):
+    """Minimal host carrying the attribute contract ``NPCLootMixin`` documents."""
+
+    def __init__(self, room=None, player=None, loot=None, name="Bandit"):
+        self.name = name
         self.inventory = []
-        self.loot = None
-        self.current_room = None
-        self.player_ref = None
+        self.loot = loot
+        self.current_room = room
+        self.player_ref = player
         self.embedded_arrows = []
 
-def test_stack_items_list_called():
-    npc = MockNPC()
-    npc.current_room = MagicMock()
-    # current_room has items_here
-    npc.current_room.items_here = [MagicMock()]
-    
-    with patch("src.functions.stack_items_list") as mock_stack:
-        npc.before_death()
-        mock_stack.assert_called_once()
 
-def test_drop_inventory_various_branches():
-    # 1. Item without count attribute
-    npc = MockNPC()
-    item_no_count = MagicMock(spec=["__class__"])
-    item_no_count.__class__.__name__ = "Herb"
-    # Do not set item_no_count.count
-    npc.inventory = [item_no_count]
-    npc.current_room = MagicMock()
-    
-    with patch("random.random", return_value=0.7): # random > 0.6 -> decrements quantity
-        npc.drop_inventory()
-        # quantity was 1, decremented to 0, so spawn_item shouldn't be called
-        npc.current_room.spawn_item.assert_not_called()
+@pytest.fixture
+def world():
+    """A real player on a real tile. ``_combat_adapter`` marks API combat mode,
+    which is what makes the mixin record ``player.combat_drops``."""
+    player, game_map = live_world()
+    player._combat_adapter = object()
+    return player, game_map[(0, 0)]
 
-    # 2. Player ref without combat_drops attribute
-    npc = MockNPC()
-    item = MagicMock()
-    item.count = 2
-    item.__class__.__name__ = "Gold"
-    item.name = "Gold Coin"
-    npc.inventory = [item]
-    npc.current_room = MagicMock()
-    
-    player = MagicMock()
-    player._combat_adapter = MagicMock()
-    # Deliberately do not have player.combat_drops
-    if hasattr(player, "combat_drops"):
-        del player.combat_drops
-        
-    npc.player_ref = player
-    
-    with patch("random.random", return_value=0.1): # random < 0.6 -> quantity stays 2
+
+def _floor(tile):
+    return [(type(i).__name__, i.count) for i in tile.items_here]
+
+
+def patch_random_above_threshold():
+    """Force every survival roll to fail (``random.random() > 0.6``)."""
+    return patch("random.random", return_value=0.99)
+
+
+class TestDropEmbeddedArrows:
+    """Issue #418: arrows that stuck are 100% recoverable — no survival roll."""
+
+    def test_every_embedded_arrow_spawns_as_a_real_item(self, world):
+        player, tile = world
+        npc = LootableNPC(tile, player)
+        npc.embedded_arrows = ["WoodenArrow", "WoodenArrow", "IronArrow"]
+
+        npc.drop_embedded_arrows()
+
+        assert _floor(tile) == [
+            ("WoodenArrow", 1),
+            ("WoodenArrow", 1),
+            ("IronArrow", 1),
+        ]
+        assert npc.embedded_arrows == []
+
+    def test_embedded_arrows_are_visible_not_hidden(self, world):
+        """Unlike scattered inventory, an arrow in a corpse is not concealed."""
+        player, tile = world
+        npc = LootableNPC(tile, player)
+        npc.embedded_arrows = ["WoodenArrow"]
+
+        npc.drop_embedded_arrows()
+
+        assert tile.items_here[0].hidden is False
+
+    def test_no_survival_roll_is_applied(self, world):
+        """Ten arrows in, ten arrows out, whatever the RNG says."""
+        player, tile = world
+        npc = LootableNPC(tile, player)
+        npc.embedded_arrows = ["WoodenArrow"] * 10
+
+        random.seed(1)
+        npc.drop_embedded_arrows()
+
+        assert len(tile.items_here) == 10
+
+    def test_noop_when_empty(self, world):
+        player, tile = world
+        npc = LootableNPC(tile, player)
+        npc.embedded_arrows = []
+
+        npc.drop_embedded_arrows()
+
+        assert tile.items_here == []
+
+    def test_noop_without_a_room_and_the_arrows_are_kept(self, world):
+        """No room means nowhere to drop; the list must not be cleared, or the
+        arrows would vanish from the world entirely."""
+        player, _ = world
+        npc = LootableNPC(None, player)
+        npc.embedded_arrows = ["WoodenArrow"]
+
+        npc.drop_embedded_arrows()
+
+        assert npc.embedded_arrows == ["WoodenArrow"]
+
+
+class TestDropInventory:
+    def test_a_stack_survives_partially_under_a_seeded_roll(self, world):
+        """Each unit independently survives with p=0.6. Seeded, so the exact
+        surviving count is pinned rather than merely "some items dropped"."""
+        player, tile = world
+        npc = LootableNPC(tile, player)
+        arrows = items.WoodenArrow()
+        arrows.count = 10
+        npc.inventory = [arrows]
+
+        random.seed(0)
         npc.drop_inventory()
-        assert hasattr(player, "combat_drops")
+
+        assert _floor(tile) == [("WoodenArrow", 7)]
+        assert npc.inventory == []
+
+    @pytest.mark.parametrize("seed, expected", [(0, 7), (1, 6), (2, 3), (5, 2)])
+    def test_the_surviving_count_tracks_the_rng(self, world, seed, expected):
+        """Different seeds must give different counts — proof the roll is real
+        and not, say, always dropping the whole stack."""
+        player, tile = world
+        npc = LootableNPC(tile, player)
+        arrows = items.WoodenArrow()
+        arrows.count = 10
+        npc.inventory = [arrows]
+
+        random.seed(seed)
+        npc.drop_inventory()
+
+        assert _floor(tile) == [("WoodenArrow", expected)]
+
+    def test_dropped_inventory_is_hidden(self, world):
+        """Scattered contents are concealed (hfactor 20-60), unlike arrows."""
+        player, tile = world
+        npc = LootableNPC(tile, player)
+        arrows = items.WoodenArrow()
+        arrows.count = 10
+        npc.inventory = [arrows]
+
+        random.seed(0)
+        npc.drop_inventory()
+
+        assert tile.items_here[0].hidden is True
+
+    def test_a_wiped_out_stack_spawns_nothing(self, world):
+        player, tile = world
+        npc = LootableNPC(tile, player)
+        arrows = items.WoodenArrow()
+        arrows.count = 1
+        npc.inventory = [arrows]
+
+        with patch_random_above_threshold():
+            npc.drop_inventory()
+
+        assert tile.items_here == []
+        assert not hasattr(player, "combat_drops")
+        assert npc.inventory == []
+
+    def test_the_drop_is_recorded_for_the_victory_summary(self, world):
+        player, tile = world
+        npc = LootableNPC(tile, player)
+        arrows = items.WoodenArrow()
+        arrows.count = 10
+        npc.inventory = [arrows]
+
+        random.seed(0)
+        npc.drop_inventory()
+
+        assert player.combat_drops == [
+            {
+                "name": "Wooden Arrow",
+                "quantity": 7,
+                "source": "Bandit",
+                "kind": "inventory",
+            }
+        ]
+
+    def test_no_combat_drops_are_recorded_outside_api_combat(self, world):
+        """``combat_drops`` is only for the API victory summary."""
+        player, tile = world
+        del player._combat_adapter
+        npc = LootableNPC(tile, player)
+        arrows = items.WoodenArrow()
+        arrows.count = 10
+        npc.inventory = [arrows]
+
+        random.seed(0)
+        npc.drop_inventory()
+
+        assert _floor(tile) == [("WoodenArrow", 7)]
+        assert not hasattr(player, "combat_drops")
+
+    def test_a_missing_room_aborts_without_losing_the_inventory(self, world):
+        player, _ = world
+        npc = LootableNPC(None, player)
+        arrows = items.WoodenArrow()
+        arrows.count = 3
+        npc.inventory = [arrows]
+
+        npc.drop_inventory()
+
+        assert npc.inventory == [arrows]
+
+    def test_an_empty_inventory_is_a_noop(self, world):
+        player, tile = world
+        npc = LootableNPC(tile, player)
+
+        npc.drop_inventory()
+
+        assert tile.items_here == []
+
+
+class TestRollLoot:
+    def test_a_guaranteed_entry_drops_the_named_item(self, world):
+        player, tile = world
+        npc = LootableNPC(tile, player, loot={"WoodenArrow": {"chance": 100, "qty": 3}})
+
+        random.seed(7)
+        npc.roll_loot()
+
+        assert _floor(tile) == [("WoodenArrow", 3)]
+        assert player.combat_drops == [
+            {
+                "name": "Wooden Arrow",
+                "quantity": 3,
+                "source": "Bandit",
+                "kind": "loot",
+            }
+        ]
+
+    def test_an_impossible_entry_drops_nothing(self, world):
+        player, tile = world
+        npc = LootableNPC(tile, player, loot={"WoodenArrow": {"chance": 0, "qty": 3}})
+
+        random.seed(7)
+        npc.roll_loot()
+
+        assert tile.items_here == []
+        assert not hasattr(player, "combat_drops")
+
+    def test_at_most_one_entry_drops_per_death(self, world):
+        """The loop breaks on the first success — a two-entry table with two
+        guaranteed items must still yield exactly one."""
+        player, tile = world
+        npc = LootableNPC(
+            tile,
+            player,
+            loot={
+                "WoodenArrow": {"chance": 100, "qty": 2},
+                "IronArrow": {"chance": 100, "qty": 2},
+            },
+        )
+
+        random.seed(2)
+        npc.roll_loot()
+
+        assert len(tile.items_here) == 1
         assert len(player.combat_drops) == 1
-        assert player.combat_drops[0]["quantity"] == 2
 
-def test_drop_embedded_arrows_spawns_each_and_clears_list():
-    """Issue #418: arrows that hit and stuck are 100% recoverable from the
-    corpse -- no randomized survival roll, unlike drop_inventory()."""
-    npc = MockNPC()
-    npc.current_room = MagicMock()
-    npc.embedded_arrows = ["WoodenArrow", "WoodenArrow", "FireArrow"]
+    def test_the_equipment_branch_spawns_a_real_generated_item(self, world):
+        """``Equipment_<level>_<enchantments>`` routes through the loot tables'
+        random-equipment generator rather than a named item class."""
+        player, tile = world
+        npc = LootableNPC(tile, player, loot={"Equipment_1_0": {"chance": 100, "qty": 1}})
 
-    npc.drop_embedded_arrows()
+        random.seed(3)
+        npc.roll_loot()
 
-    assert npc.current_room.spawn_item.call_count == 3
-    npc.current_room.spawn_item.assert_any_call("WoodenArrow")
-    npc.current_room.spawn_item.assert_any_call("FireArrow")
-    assert npc.embedded_arrows == []
+        assert len(tile.items_here) == 1
+        spawned = tile.items_here[0]
+        assert isinstance(spawned, items.Item)
+        # The victory summary must name the item that actually spawned.
+        assert player.combat_drops == [
+            {
+                "name": spawned.name,
+                "quantity": 1,
+                "source": "Bandit",
+                "kind": "loot",
+            }
+        ]
 
+    def test_a_missing_room_aborts_the_roll(self, world):
+        player, _ = world
+        npc = LootableNPC(None, player, loot={"WoodenArrow": {"chance": 100, "qty": 1}})
 
-def test_drop_embedded_arrows_noop_when_empty():
-    npc = MockNPC()
-    npc.current_room = MagicMock()
-    npc.embedded_arrows = []
+        npc.roll_loot()
 
-    npc.drop_embedded_arrows()
-
-    npc.current_room.spawn_item.assert_not_called()
-
-
-def test_drop_embedded_arrows_noop_without_current_room():
-    npc = MockNPC()
-    npc.current_room = None
-    npc.embedded_arrows = ["WoodenArrow"]
-
-    npc.drop_embedded_arrows()  # must not raise
-
-    assert npc.embedded_arrows == ["WoodenArrow"]  # left untouched, nothing spawned
+        assert not hasattr(player, "combat_drops")
 
 
-def test_before_death_calls_drop_embedded_arrows():
-    npc = MockNPC()
-    npc.current_room = MagicMock()
-    npc.current_room.items_here = []
+class TestBeforeDeath:
+    def test_the_full_death_sequence_leaves_one_stacked_pile(self, world):
+        """``before_death`` rolls loot, scatters inventory, drops arrows, then
+        stacks the floor so duplicates merge into one entry."""
+        player, tile = world
+        npc = LootableNPC(tile, player, loot={"WoodenArrow": {"chance": 100, "qty": 2}})
+        carried = items.WoodenArrow()
+        carried.count = 10
+        npc.inventory = [carried]
+        npc.embedded_arrows = ["WoodenArrow", "WoodenArrow"]
 
-    with patch.object(npc, "drop_embedded_arrows") as mock_drop:
-        npc.before_death()
+        random.seed(0)
+        assert npc.before_death() is True
 
-    mock_drop.assert_called_once()
+        # 2 (loot roll) + 7 (inventory survivors at this seed, the loot roll
+        # having consumed the first draws) + 2 (embedded), stacked into a
+        # single WoodenArrow entry rather than three separate piles.
+        assert len(tile.items_here) == 1
+        assert type(tile.items_here[0]).__name__ == "WoodenArrow"
+        assert tile.items_here[0].count == 11
 
+    def test_no_loot_table_means_no_loot_roll(self, world):
+        player, tile = world
+        npc = LootableNPC(tile, player, loot=None)
+        npc.embedded_arrows = ["IronArrow"]
 
-def test_roll_loot_equipment_branches():
-    npc = MockNPC()
-    npc.loot = {"Equipment_1_2": {"chance": 100, "qty": 1}}
-    npc.current_room = MagicMock()
-    
-    player = MagicMock()
-    player._combat_adapter = MagicMock()
-    # Deliberately do not have player.combat_drops
-    if hasattr(player, "combat_drops"):
-        del player.combat_drops
-    npc.player_ref = player
+        assert npc.before_death() is True
 
-    with patch("random.shuffle"):
-        with patch("random.randint", return_value=50): # success (chance 100 >= 50)
-            with patch("src.functions.randomize_amount", return_value=1):
-                with patch("src.npc._loot.loot.random_equipment") as mock_random_eq:
-                    drop = MagicMock()
-                    drop.name = "Fine Dagger"
-                    mock_random_eq.return_value = drop
-                    
-                    npc.roll_loot()
-                    
-                    mock_random_eq.assert_called_once_with(npc.current_room, "1", "2")
-                    assert hasattr(player, "combat_drops")
-                    assert player.combat_drops[0]["name"] == "Fine Dagger"
+        assert _floor(tile) == [("IronArrow", 1)]
+
+    def test_a_bare_corpse_leaves_nothing(self, world):
+        player, tile = world
+        npc = LootableNPC(tile, player)
+
+        assert npc.before_death() is True
+
+        assert tile.items_here == []

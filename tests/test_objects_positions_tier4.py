@@ -33,7 +33,6 @@ Coverage requirements already met. Tests pass in isolation. To be revisited.
 """
 
 import pytest
-pytestmark = pytest.mark.skip(reason="Test framework isolation issues - 6 failures. Coverage met.")
 import math
 import random
 import sys
@@ -236,19 +235,40 @@ class TestContainerStartOpenProperty:
         assert container.locked is False
 
     def test_container_start_open_setter_explicit_exception(self):
-        """Test start_open setter when locked.setter raises Exception."""
+        """A raising `locked` setter must not stop start_open from taking effect.
+
+        This previously did `type(container).locked = PropertyMock(...)`, which
+        rebinds the attribute on the **Container class itself** and never puts it
+        back -- every later test that touched `.locked` then raised "Lock error".
+        That leak is what the module's blanket skip ("test framework isolation
+        issues - 6 failures") was hiding; scoping the patch fixes all six.
+
+        The body was also `try: ... except Exception: pass`, which asserted
+        nothing and could not fail. The setter's real contract is that it
+        swallows the error from `self.locked = False` while still committing
+        `_start_open` and `state`, so that is what is asserted now.
+        """
         player = Mock()
         tile = Mock()
         container = Container(player=player, tile=tile)
 
-        # Modify locked to raise an exception when set
-        type(container).locked = PropertyMock(side_effect=Exception("Lock error"))
-
-        # This should catch the exception and continue
-        try:
+        # `locked` lives on the instance, not the class, so the raising
+        # descriptor has to be *created* on the class -- and create=True is
+        # exactly what guarantees patch removes it again on exit.
+        assert not hasattr(Container, "locked")
+        with patch.object(
+            Container,
+            "locked",
+            new_callable=PropertyMock,
+            side_effect=Exception("Lock error"),
+            create=True,
+        ):
             container.start_open = True
-        except Exception:
-            pass  # Exception is caught and silently handled
+
+        assert container._start_open is True
+        assert container.state == Container._POSSIBLE_STATES[1]
+        # Restored, so no later test inherits a raising `locked`.
+        assert not hasattr(Container, "locked")
 
 
 class TestContainerInitException:

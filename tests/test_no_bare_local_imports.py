@@ -13,6 +13,8 @@ AST-based so docstrings and comments can't false-positive.
 """
 
 import ast
+import functools
+import re
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parents[1]
@@ -31,6 +33,37 @@ _LOCAL_MODULES = frozenset(
 )
 
 
+# A file can only contain a bare local import if its raw text mentions the
+# module name right after an `import`/`from` keyword, or performs a dynamic
+# import. Anything else cannot produce an offending AST node, so it is skipped
+# without paying for ast.parse — which dominates this test's runtime (~3.3s of
+# parsing across src/ + tests/ collapses to ~0.25s). The filter is deliberately
+# over-inclusive (it also matches inside strings/comments); the AST pass below
+# is still the sole arbiter of what counts as an offense.
+_IMPORT_KEYWORD_RE = re.compile(r"(?:import|from)\s+(\w+)")
+_DYNAMIC_IMPORT_TOKENS = ("import_module", "__import__")
+
+_SYS_PATH_SRC_RE = re.compile(r"sys\.path\.(insert|append)\(.*['\"]src['\"]")
+
+
+@functools.lru_cache(maxsize=None)
+def _source_files(root):
+    """(path, text) for every .py under `root`, read once per session."""
+    out = []
+    for py in sorted(root.rglob("*.py")):
+        try:
+            out.append((py, py.read_text(encoding="utf-8")))
+        except UnicodeDecodeError:  # pragma: no cover - defensive
+            continue
+    return tuple(out)
+
+
+def _might_import(text, modules):
+    if any(token in text for token in _DYNAMIC_IMPORT_TOKENS):
+        return True
+    return any(m.group(1) in modules for m in _IMPORT_KEYWORD_RE.finditer(text))
+
+
 def _is_dynamic_import_call(node):
     """Match importlib.import_module(...) / import_module(...) / __import__(...)."""
     func = node.func
@@ -43,9 +76,11 @@ def _is_dynamic_import_call(node):
 
 def _bare_import_offenders(root, modules):
     offenders = []
-    for py in sorted(root.rglob("*.py")):
+    for py, text in _source_files(root):
+        if not _might_import(text, modules):
+            continue
         try:
-            tree = ast.parse(py.read_text(encoding="utf-8"), filename=str(py))
+            tree = ast.parse(text, filename=str(py))
         except SyntaxError:
             continue  # scratch/broken scripts are not import-graph citizens
         rel = py.relative_to(_ROOT)
@@ -105,15 +140,14 @@ def test_no_src_dir_on_sys_path_in_tests():
     that runs afterwards. Only the project root belongs on sys.path (the
     conftests handle that).
     """
-    import re
-
-    pattern = re.compile(r"sys\.path\.(insert|append)\(.*['\"]src['\"]")
     offenders = []
-    for py in sorted(_TESTS.rglob("*.py")):
+    for py, text in _source_files(_TESTS):
         if py.name == "test_no_bare_local_imports.py":
             continue
-        for i, line in enumerate(py.read_text(encoding="utf-8").splitlines(), 1):
-            if pattern.search(line):
+        if "sys.path" not in text:
+            continue
+        for i, line in enumerate(text.splitlines(), 1):
+            if _SYS_PATH_SRC_RE.search(line):
                 offenders.append(f"{py.relative_to(_ROOT)}:{i}")
     assert not offenders, (
         "Test files putting src/ on sys.path (masks bare-import regressions "

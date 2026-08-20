@@ -1,13 +1,87 @@
 """Basic tests for ConfigManager class."""
 
-import sys
+import ast
+import dataclasses
+from collections import defaultdict
 from pathlib import Path
 
-# Ensure the project's src directory is on sys.path so absolute imports in src modules resolve
-ROOT = Path(__file__).resolve().parent.parent
+import pytest
+
+from src.config_manager import ConfigManager, GameConfig
+
+_CONFIG_MANAGER_SRC = Path(__file__).resolve().parent.parent / "src" / "config_manager.py"
+
+# _parse_* method name -> the INI section it reads. The parser uses the field
+# name verbatim as the INI key, which is what makes the generic round-trip
+# below possible.
+_SECTION_FOR_PARSER = {
+    "_parse_game_section": "game",
+    "_parse_development_section": "development",
+    "_parse_combat_testing_section": "combat_testing",
+    "_parse_testing_locations_section": "testing_locations",
+}
+
+# Fields whose INI spelling is not just `repr(value)` (tuples, comma lists).
+_SPECIAL_FIELDS = {
+    "startposition": ("11, 13", (11, 13)),
+    "coordinate_grid_size": ("77, 88", (77, 88)),
+    "starting_story_flags": ("alpha, beta=2", ["alpha", "beta=2"]),
+    "starting_party_members": ("Gorran, Votha", ["Gorran", "Votha"]),
+}
 
 
-from src.config_manager import ConfigManager, GameConfig  # type: ignore
+def _field_sections():
+    """field name -> INI section, derived from which _parse_* method sets it."""
+    tree = ast.parse(_CONFIG_MANAGER_SRC.read_text(encoding="utf-8"))
+    mapping = {}
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.FunctionDef)
+                and node.name in _SECTION_FOR_PARSER):
+            continue
+        for inner in ast.walk(node):
+            if not isinstance(inner, ast.Assign):
+                continue
+            for target in inner.targets:
+                if (
+                    isinstance(target, ast.Attribute)
+                    and isinstance(target.value, ast.Attribute)
+                    and target.value.attr == "config"
+                ):
+                    mapping[target.attr] = _SECTION_FOR_PARSER[node.name]
+    return mapping
+
+
+def _non_default_ini(defaults):
+    """Build INI text setting every field to a distinct non-default value."""
+    sections = defaultdict(list)
+    expected = {}
+    for field in dataclasses.fields(defaults):
+        current = getattr(defaults, field.name)
+        if field.name in _SPECIAL_FIELDS:
+            raw, value = _SPECIAL_FIELDS[field.name]
+        elif isinstance(current, bool):
+            raw, value = str(not current).lower(), not current
+        elif isinstance(current, int):
+            raw, value = str(current + 7), current + 7
+        elif isinstance(current, float):
+            raw, value = str(current + 1.5), current + 1.5
+        elif isinstance(current, str):
+            value = (current or "x") + "_override"
+            raw = value
+        else:  # pragma: no cover - guards against a new unhandled field type
+            raise AssertionError(
+                f"{field.name} has unhandled type {type(current).__name__}; "
+                "teach _non_default_ini how to spell it in INI"
+            )
+        sections[_FIELD_SECTIONS[field.name]].append(f"{field.name} = {raw}")
+        expected[field.name] = value
+    text = "".join(
+        f"[{name}]\n" + "\n".join(rows) + "\n" for name, rows in sections.items()
+    )
+    return text, expected
+
+
+_FIELD_SECTIONS = _field_sections()
 
 
 def test_config_manager_creates_default_config():
@@ -230,12 +304,21 @@ boss_start_distance = 30
     mgr = ConfigManager(str(config_file))
     config = mgr.load()
 
-    # Verify all major settings loaded
+    # Fields the per-section tests above don't reach, all read from one file.
     assert config.debug_mode is True
     assert config.coordinate_grid_size == (50, 50)
     assert config.standard_player_x == 25
     assert config.standard_player_y == 10
     assert config.show_all_items is False
+    assert config.ai_difficulty == 3
+    assert config.autosave_enabled is False
+    assert config.log_file == "combat.log"
+    assert config.max_enemies_standard == 3
+    assert config.max_enemies_melee == 6
+    assert config.grid_display_interval == 1
+    assert config.npc_flanking_distance_range == "20.0 to 40.0"
+    assert config.monitor_bps is False
+    assert config.validate_npc_formations is True
 
 
 def test_gameconfig_defaults():
@@ -249,3 +332,73 @@ def test_gameconfig_defaults():
     assert config.coordinate_grid_size == (50, 50)
     assert config.ai_difficulty == 3
     assert config.allow_quicksave is True
+
+
+def test_every_gameconfig_field_is_read_by_the_parser():
+    """A field nobody parses is a setting that silently never applies.
+
+    ``config.<field> = ...`` assignments in the four ``_parse_*_section``
+    methods are the only way an INI value reaches ``GameConfig``; a field added
+    to the dataclass without a matching read would sit at its default forever
+    with no error anywhere.
+    """
+    declared = {f.name for f in dataclasses.fields(GameConfig())}
+    parsed = set(_FIELD_SECTIONS)
+
+    assert declared - parsed == set(), (
+        "GameConfig fields never read from the INI file: "
+        f"{sorted(declared - parsed)}"
+    )
+    assert parsed - declared == set(), (
+        "ConfigManager writes attributes that are not GameConfig fields "
+        f"(typo?): {sorted(parsed - declared)}"
+    )
+
+
+def test_every_field_round_trips_from_ini(tmp_path):
+    """Exhaustive: every field, set to a non-default value, comes back exactly.
+
+    Complements the per-section tests above by covering the whole surface, so
+    a field that stops being read (or is read from the wrong section, with the
+    wrong getter, or with a swapped default) fails here immediately.
+    """
+    defaults = GameConfig()
+    text, expected = _non_default_ini(defaults)
+
+    path = tmp_path / "all_fields.ini"
+    path.write_text(text)
+    config = ConfigManager(str(path)).load()
+
+    mismatches = {
+        name: (getattr(config, name), want)
+        for name, want in expected.items()
+        if getattr(config, name) != want
+    }
+    assert mismatches == {}, f"fields that did not round-trip: {mismatches}"
+
+    # Sanity: the fixture really did differ from the defaults everywhere,
+    # otherwise the comparison above could pass on untouched defaults.
+    unchanged = [
+        name for name, want in expected.items()
+        if want == getattr(defaults, name)
+    ]
+    assert unchanged == [], f"round-trip values equal to defaults: {unchanged}"
+
+
+@pytest.mark.parametrize(
+    "section,field,raw,expected",
+    [
+        ("game", "testmode", "yes", True),
+        ("game", "testmode", "on", True),
+        ("game", "testmode", "0", False),
+        ("game", "testmode", "maybe", False),   # unparseable -> default
+        ("development", "god_mode", "TRUE", True),
+        ("development", "god_mode", "False", False),
+    ],
+)
+def test_boolean_spellings(tmp_path, section, field, raw, expected):
+    """configparser's boolean vocabulary, plus the degrade-to-default path."""
+    path = tmp_path / "bool.ini"
+    path.write_text(f"[{section}]\n{field} = {raw}\n")
+    config = ConfigManager(str(path)).load()
+    assert getattr(config, field) is expected

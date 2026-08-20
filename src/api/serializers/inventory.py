@@ -38,8 +38,10 @@ _CONSUMABLE_EFFECTS = {
     "Bitterroot": [
         {"type": "heal", "stat": "hp", "power": 60, "range": [51, 69]},
     ],
+    # DriedCrystalSap.use() heals a flat `self.power` with no variance, so the
+    # range is a point. Declared 20 until 2026-08; the item's power is 25.
     "DriedCrystalSap": [
-        {"type": "heal", "stat": "hp", "power": 20, "range": [20, 20]},
+        {"type": "heal", "stat": "hp", "power": 25, "range": [25, 25]},
     ],
 }
 
