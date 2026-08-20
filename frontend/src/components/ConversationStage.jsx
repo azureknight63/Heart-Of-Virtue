@@ -210,8 +210,19 @@ function Portrait({ member, isSpeaker }) {
  * @param {Object}   conversation - { cast: [...] } initial roster (optional)
  * @param {Function} onComplete - called once after the final beat is revealed
  * @param {number}   [speed]    - typewriter speed (ms/char)
+ * @param {boolean}  [interactive] - whether click/keyboard advances the stage
+ * @param {boolean}  [showAdvanceHint] - whether to show the advance affordance
+ * @param {boolean}  [followTail] - keep the newest appended beat visible
  */
-function ConversationStage({ segments = [], conversation = null, onComplete, speed = 25 }) {
+function ConversationStage({
+    segments = [],
+    conversation = null,
+    onComplete,
+    speed = 25,
+    interactive = true,
+    showAdvanceHint = true,
+    followTail = false,
+}) {
     const [beatIndex, setBeatIndex] = useState(0)
     const completedRef = useRef(false)
     const containerRef = useRef(null)
@@ -231,9 +242,9 @@ function ConversationStage({ segments = [], conversation = null, onComplete, spe
     // — otherwise the stage resumes at a stale index and onComplete (gated by
     // completedRef) never fires again for the new conversation.
     useEffect(() => {
-        setBeatIndex(0)
+        setBeatIndex(followTail ? Math.max(0, segments.length - 1) : 0)
         completedRef.current = false
-    }, [segments])
+    }, [segments.length, followTail])
 
     const advance = useCallback(() => {
         if (!isComplete) {
@@ -259,6 +270,7 @@ function ConversationStage({ segments = [], conversation = null, onComplete, spe
 
     // Enter/Space advance the conversation while it is active.
     useEffect(() => {
+        if (!interactive) return undefined
         const node = containerRef.current
         if (!node) return undefined
         const onKey = (e) => {
@@ -270,7 +282,7 @@ function ConversationStage({ segments = [], conversation = null, onComplete, spe
         }
         node.addEventListener('keydown', onKey)
         return () => node.removeEventListener('keydown', onKey)
-    }, [advance])
+    }, [advance, interactive])
 
     const leftMembers = members.filter((m) => m.side === 'left')
     const rightMembers = members.filter((m) => m.side === 'right')
@@ -300,10 +312,10 @@ function ConversationStage({ segments = [], conversation = null, onComplete, spe
         <div
             ref={containerRef}
             data-testid="conversation-stage"
-            tabIndex={-1}
+            tabIndex={interactive ? -1 : undefined}
             onClick={(e) => {
                 e.stopPropagation()
-                advance()
+                if (interactive) advance()
             }}
             style={{
                 display: 'flex',
@@ -345,6 +357,22 @@ function ConversationStage({ segments = [], conversation = null, onComplete, spe
                         {(members.find((m) => m.id === activeSpeaker) || {}).name || current.speaker}
                     </span>
                 )}
+                {current.flavor && (
+                    <div
+                        data-testid="conversation-flavor"
+                        style={{
+                            color: colors.text.muted,
+                            fontSize: '13px',
+                            lineHeight: 1.45,
+                            fontStyle: 'italic',
+                            textAlign: isDialogue ? 'left' : 'center',
+                            padding: `${spacing.xs} ${spacing.sm}`,
+                            borderLeft: `2px solid ${colors.border.light}`,
+                        }}
+                    >
+                        {current.flavor}
+                    </div>
+                )}
                 <div
                     style={{
                         color: isDialogue ? colors.text.main : colors.success,
@@ -357,19 +385,22 @@ function ConversationStage({ segments = [], conversation = null, onComplete, spe
                 >
                     {displayedText}
                 </div>
-                <span
-                    style={{
-                        marginTop: spacing.sm,
-                        fontSize: '12px',
-                        color: colors.text.muted,
-                        fontStyle: 'italic',
-                        textAlign: 'center',
-                        opacity: isComplete ? 1 : 0,
-                        transition: 'opacity 0.3s ease',
-                    }}
-                >
-                    {beatIndex < lastIndex ? '▾ click or press Enter to continue' : '▾ click to finish'}
-                </span>
+                {showAdvanceHint && (
+                    <span
+                        data-testid="conversation-advance-hint"
+                        style={{
+                            marginTop: spacing.sm,
+                            fontSize: '12px',
+                            color: colors.text.muted,
+                            fontStyle: 'italic',
+                            textAlign: 'center',
+                            opacity: isComplete ? 1 : 0,
+                            transition: 'opacity 0.3s ease',
+                        }}
+                    >
+                        {beatIndex < lastIndex ? '▾ click or press Enter to continue' : '▾ click to finish'}
+                    </span>
+                )}
             </div>
 
             {staged && renderColumn(rightMembers)}

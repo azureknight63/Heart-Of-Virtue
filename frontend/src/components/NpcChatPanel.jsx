@@ -2,10 +2,49 @@ import { useState, useEffect, useRef } from 'react'
 import npcChat from '../api/npcChat'
 import BaseDialog from './BaseDialog'
 import GameButton from './GameButton'
-import TypewriterOutput from './TypewriterOutput'
+import ConversationStage from './ConversationStage'
 import ScrollFadeIndicator from './ScrollFadeIndicator'
 import useScrollIndicators from '../hooks/useScrollIndicators'
 import { colors, spacing, fonts } from '../styles/theme'
+
+const TONE_EMOTIONS = {
+  direct: 'neutral',
+  guarded: 'skeptical',
+  open: 'curious',
+}
+
+const QUALITY_EMOTIONS = {
+  positive: 'happy',
+  neutral: 'neutral',
+  negative: 'concerned',
+  offensive: 'angry',
+}
+
+export function toneEmotion(tone) {
+  return TONE_EMOTIONS[String(tone || '').toLowerCase()] || 'neutral'
+}
+
+export function qualityEmotion(quality) {
+  return QUALITY_EMOTIONS[String(quality || '').toLowerCase()] || 'neutral'
+}
+
+function npcCast(npcId, npcName) {
+  return [
+    { id: 'Jean', name: 'Jean', side: 'left', emotion: 'neutral' },
+    { id: npcId, name: npcName || npcId, side: 'right', emotion: 'neutral' },
+  ]
+}
+
+function chatSegment({ text, speaker, emotion = 'neutral', flavor = '', reactions = {} }) {
+  return {
+    text: text || '',
+    speaker,
+    emotion,
+    flavor: flavor || '',
+    reactions,
+    in_conversation: true,
+  }
+}
 
 /**
  * NpcChatPanel - A full NPC conversation UI component
@@ -18,7 +57,8 @@ export default function NpcChatPanel({ npcId, npcName, onClose }) {
   const [phase, setPhase] = useState('opening') // 'opening' | 'waiting_jean' | 'waiting_npc' | 'ended'
   const [npcKey, setNpcKey] = useState(null)
   const [displayName, setDisplayName] = useState(npcName)
-  const [messages, setMessages] = useState([])
+  const [conversationSegments, setConversationSegments] = useState([])
+  const [conversationCast, setConversationCast] = useState(null)
   const [currentOptions, setCurrentOptions] = useState([])
   const [loquacity, setLoquacity] = useState({ current: 0, max: 1 })
   const [loading, setLoading] = useState(true)
@@ -31,7 +71,7 @@ export default function NpcChatPanel({ npcId, npcName, onClose }) {
   const endTimeoutRef = useRef(null)
   const { showTop, showBottom, check, ref: messagesRef } = useScrollIndicators()
 
-  useEffect(() => { check() }, [messages, check])
+  useEffect(() => { check() }, [conversationSegments, check])
 
   useEffect(() => {
     isMountedRef.current = true
@@ -53,6 +93,7 @@ export default function NpcChatPanel({ npcId, npcName, onClose }) {
 
         setNpcKey(data.npc_key)
         setDisplayName(data.npc_name || npcName)
+        setConversationCast(npcCast(npcId, data.npc_name || npcName))
         setLoquacity({
           current: data.loquacity_current ?? 0,
           max: data.loquacity_max ?? 1,
@@ -61,9 +102,16 @@ export default function NpcChatPanel({ npcId, npcName, onClose }) {
         setRelationship(data.relationship || null)
 
         if (data.npc_opening) {
-          setMessages([{ speaker: 'npc', text: data.npc_opening }])
+          setConversationSegments([
+            chatSegment({
+              text: data.npc_opening,
+              speaker: npcId,
+              emotion: 'neutral',
+              flavor: data.npc_flavor,
+            }),
+          ])
         } else {
-          setMessages([])
+          setConversationSegments([])
         }
 
         setPhase('waiting_jean')
@@ -90,32 +138,36 @@ export default function NpcChatPanel({ npcId, npcName, onClose }) {
     setError(null)
     retryFnRef.current = null
 
-    // Optimistically shown before the request resolves; removed again on
-    // failure so a retry doesn't append a second copy of the same line.
-    const newJeanMessage = {
-      speaker: 'jean',
+    const jeanSegment = chatSegment({
       text: option.text,
-      tone: option.tone,
-    }
+      speaker: 'Jean',
+      emotion: toneEmotion(option.tone),
+      reactions: { [npcId]: 'curious' },
+    })
 
     try {
       setPhase('waiting_npc')
       setLoading(true)
 
-      // Add Jean's response to messages
-      setMessages((prev) => [...prev, newJeanMessage])
+      // Add Jean's response to the portrait-backed conversation stage.
+      setConversationSegments((prev) => [...prev, jeanSegment])
 
       // Call the respond endpoint
       const response = await npcChat.respond(npcKey, option.text, option.tone)
       if (!isMountedRef.current) return
       const data = response.data
 
-      // Add NPC response to messages
-      const newNpcMessage = {
-        speaker: 'npc',
-        text: data.npc_response,
-      }
-      setMessages((prev) => [...prev, newNpcMessage])
+      // Add NPC response to messages and to the portrait-backed conversation stage.
+      setConversationSegments((prev) => [
+        ...prev,
+        chatSegment({
+          text: data.npc_response,
+          speaker: npcId,
+          emotion: qualityEmotion(data.conversation_quality),
+          flavor: data.npc_flavor,
+          reactions: { Jean: toneEmotion(option.tone) },
+        }),
+      ])
 
       // Update loquacity, options, and relationship standing
       setLoquacity({
@@ -138,8 +190,8 @@ export default function NpcChatPanel({ npcId, npcName, onClose }) {
     } catch (err) {
       if (!isMountedRef.current) return
       const errorMsg = err.response?.data?.error || 'NPC did not respond'
-      // Roll back the optimistic line by identity — the retry re-adds it.
-      setMessages((prev) => prev.filter((msg) => msg !== newJeanMessage))
+      // Roll back the optimistic segment — the retry re-adds it.
+      setConversationSegments((prev) => prev.filter((segment) => segment !== jeanSegment))
       retryFnRef.current = () => handleOptionClick(option)
       setError(errorMsg)
       setPhase('waiting_jean')
@@ -239,32 +291,40 @@ export default function NpcChatPanel({ npcId, npcName, onClose }) {
         </div>
       )}
 
-      {/* Messages Area */}
-      <div style={{ position: 'relative', marginBottom: spacing.md }}>
+      {/* Portrait-backed conversation stage. The stage uses the same renderer as
+          authored event conversations, so spoken lines, flavor text, portraits,
+          and reactions have one consistent visual language. */}
       <div
         ref={messagesRef}
-        style={{
-          maxHeight: '280px',
-          overflowY: 'auto',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: spacing.md,
-        }}
+        style={{ position: 'relative', marginBottom: spacing.md }}
       >
-        {loading && messages.length === 0 ? (
+        {conversationSegments.length > 0 ? (
+          <ConversationStage
+            segments={conversationSegments}
+            conversation={{ cast: conversationCast || npcCast(npcId, displayName) }}
+            speed={20}
+            interactive={false}
+            showAdvanceHint={false}
+            followTail
+          />
+        ) : loading ? (
           <div
+            data-testid="npc-chat-loading"
+            role="status"
+            aria-live="polite"
             style={{
               color: colors.text.muted,
               fontFamily: fonts.main,
               fontSize: '14px',
               textAlign: 'center',
-              padding: spacing.md,
+              padding: spacing.xl,
               animation: 'pulse 1s infinite',
             }}
           >
-            …
+            <span className="npc-chat-spinner" aria-hidden="true" />
+            <span>Waiting for {displayName}…</span>
           </div>
-        ) : messages.length === 0 ? (
+        ) : (
           <div
             style={{
               color: colors.text.muted,
@@ -274,82 +334,38 @@ export default function NpcChatPanel({ npcId, npcName, onClose }) {
               padding: spacing.md,
             }}
           >
-            Waiting for NPC to speak...
+            Waiting for NPC to speak…
           </div>
-        ) : (
-          messages.map((msg, idx) => {
-            const isLatestNpcLine =
-              msg.speaker === 'npc' &&
-              idx === messages.length - 1 &&
-              phase !== 'opening'
-            return (
-              <div
-                key={idx}
-                style={{
-                  color:
-                    msg.speaker === 'npc'
-                      ? colors.secondary
-                      : colors.text.muted,
-                  fontFamily: fonts.main,
-                  fontSize: '13px',
-                  fontStyle: msg.speaker === 'jean' ? 'italic' : 'normal',
-                  lineHeight: '1.5',
-                }}
-              >
-                {msg.speaker === 'npc' ? (
-                  <div>
-                    <strong>{displayName}:</strong>{' '}
-                    {isLatestNpcLine ? (
-                      <TypewriterOutput
-                        text={msg.text}
-                        speed={20}
-                        onComplete={check}
-                        style={{
-                          display: 'inline',
-                          padding: 0,
-                          margin: 0,
-                          backgroundColor: 'transparent',
-                          border: 'none',
-                          borderRadius: 0,
-                          minHeight: 'auto',
-                          color: 'inherit',
-                          fontFamily: 'inherit',
-                          fontSize: 'inherit',
-                          lineHeight: 'inherit',
-                        }}
-                      />
-                    ) : (
-                      msg.text
-                    )}
-                  </div>
-                ) : (
-                  <div>
-                    <strong>Jean:</strong> <em>{msg.text}</em>
-                    {msg.tone && (
-                      <span
-                        style={{
-                          marginLeft: spacing.sm,
-                          color: colors.text.dim,
-                          fontSize: '11px',
-                        }}
-                      >
-                        [{msg.tone}]
-                      </span>
-                    )}
-                  </div>
-                )}
-              </div>
-            )
-          })
+        )}
+        {loading && conversationSegments.length > 0 && (
+          <div
+            data-testid="npc-chat-loading"
+            role="status"
+            aria-live="polite"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: spacing.sm,
+              color: colors.text.muted,
+              fontFamily: fonts.main,
+              fontSize: '12px',
+              padding: spacing.sm,
+              animation: 'pulse 1s infinite',
+            }}
+          >
+            <span className="npc-chat-spinner" aria-hidden="true" />
+            <span>{displayName} is gathering a reply…</span>
+          </div>
+        )}
+        {showTop && (
+          <ScrollFadeIndicator position="top" color={colors.secondary} bgColor="#0a0a0a" />
+        )}
+        {showBottom && (
+          <ScrollFadeIndicator position="bottom" color={colors.secondary} bgColor="#0a0a0a" />
         )}
       </div>
-      {showTop && (
-        <ScrollFadeIndicator position="top" color={colors.secondary} bgColor="#0a0a0a" />
-      )}
-      {showBottom && (
-        <ScrollFadeIndicator position="bottom" color={colors.secondary} bgColor="#0a0a0a" />
-      )}
-      </div>
+
 
       {/* Error State */}
       {error && (
@@ -453,6 +469,19 @@ export default function NpcChatPanel({ npcId, npcName, onClose }) {
         @keyframes pulse {
           0%, 100% { opacity: 1; }
           50% { opacity: 0.5; }
+        }
+        .npc-chat-spinner {
+          display: inline-block;
+          width: 12px;
+          height: 12px;
+          border: 2px solid ${colors.border.light};
+          border-top-color: ${colors.secondary};
+          border-radius: 50%;
+          animation: npc-chat-spin 0.8s linear infinite;
+          vertical-align: -2px;
+        }
+        @keyframes npc-chat-spin {
+          to { transform: rotate(360deg); }
         }
       `}</style>
     </BaseDialog>

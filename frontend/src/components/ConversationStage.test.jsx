@@ -429,6 +429,41 @@ describe('ConversationStage rendering', () => {
         expect(screen.getByAltText(/Jean \(surprised\)/i)).toBeDefined()
     })
 
+    it('renders separate flavor text without treating it as spoken dialogue', () => {
+        render(
+            <ConversationStage
+                segments={[{
+                    text: 'The road is open.',
+                    flavor: 'She studies the dust before answering.',
+                    speaker: 'Mara',
+                    in_conversation: true,
+                }]}
+                conversation={{ cast: CAST }}
+                onComplete={vi.fn()}
+            />
+        )
+
+        expect(screen.getByTestId('conversation-flavor')).toHaveTextContent(
+            'She studies the dust before answering.'
+        )
+        act(() => vi.advanceTimersByTime(3000))
+        expect(screen.getByText('The road is open.')).toBeInTheDocument()
+    })
+
+    it('can render as a non-interactive live stage without an advance hint', () => {
+        render(
+            <ConversationStage
+                segments={[{ text: 'Live line.', speaker: 'Mara', in_conversation: true }]}
+                conversation={{ cast: CAST }}
+                interactive={false}
+                showAdvanceHint={false}
+            />
+        )
+
+        expect(screen.queryByTestId('conversation-advance-hint')).not.toBeInTheDocument()
+        expect(screen.getByTestId('conversation-stage')).not.toHaveAttribute('tabindex')
+    })
+
     it('resets beatIndex and re-arms onComplete when a new segments array arrives mid-conversation', () => {
         // Simulates a multi-stage event (e.g. Ch02GuideToCitadel) where the same
         // mounted ConversationStage receives a fresh segments/conversation payload

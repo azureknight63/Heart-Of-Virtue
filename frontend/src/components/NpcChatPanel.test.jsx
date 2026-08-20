@@ -149,6 +149,20 @@ describe('NpcChatPanel', () => {
       // Component should render during loading
       expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
     })
+
+    it('shows a loader while a response is pending', async () => {
+      let resolveRespond
+      npcChat.respond.mockReturnValue(new Promise((resolve) => { resolveRespond = resolve }))
+      render(<NpcChatPanel npcId={mockNpcId} npcName={mockNpcName} onClose={mockOnClose} />)
+
+      await screen.findByText('Hi there')
+      fireEvent.click(screen.getByText('Hi there'))
+      expect(screen.getByTestId('npc-chat-loading')).toBeInTheDocument()
+
+      await act(async () => {
+        resolveRespond({ data: { npc_response: 'Done.', jean_options: [], conversation_ended: false } })
+      })
+    })
   })
 
   describe('Message Display', () => {
@@ -166,7 +180,7 @@ describe('NpcChatPanel', () => {
       })
     })
 
-    it('renders NPC messages with typewriter effect', async () => {
+    it('renders NPC messages in the portrait-backed conversation stage', async () => {
       render(
         <NpcChatPanel
           npcId={mockNpcId}
@@ -176,8 +190,8 @@ describe('NpcChatPanel', () => {
       )
 
       await waitFor(() => {
-        const typewriter = screen.getByTestId('typewriter')
-        expect(typewriter).toBeInTheDocument()
+        expect(screen.getByTestId('conversation-stage')).toBeInTheDocument()
+        expect(screen.getByAltText(/Mynx the Swift/)).toBeInTheDocument()
       })
     })
 
@@ -684,10 +698,8 @@ describe('NpcChatPanel', () => {
 
       // The optimistic line is rolled back on failure, so the retry re-adds it
       // exactly once instead of stacking a second copy in the transcript.
-      const jeanLines = screen
-        .getAllByText(/Hi there/)
-        .filter((node) => node.tagName === 'EM')
-      expect(jeanLines).toHaveLength(1)
+      const jeanLine = screen.getByText('Hi there')
+      expect(jeanLine).toBeInTheDocument()
     })
 
     it('clears the error and restores the dialogue options after a successful retry', async () => {
@@ -778,7 +790,7 @@ describe('NpcChatPanel', () => {
       })
       const { container } = render(<NpcChatPanel npcId={mockNpcId} npcName={mockNpcName} onClose={mockOnClose} />)
 
-      await waitFor(() => expect(screen.getByTestId('typewriter')).toHaveTextContent('Hello.'))
+      await waitFor(() => expect(screen.getByTestId('conversation-stage')).toHaveTextContent('Hello.'))
       // loquacity_current/max both default (0/1) -> 0% width, danger color
       const bar = container.querySelector('[style*="height: 100%"]')
       expect(bar.style.width).toBe('0%')
@@ -796,7 +808,7 @@ describe('NpcChatPanel', () => {
       await waitFor(() => expect(npcChat.open).toHaveBeenCalled())
       fireEvent.click(screen.getByText('Hi there'))
 
-      await waitFor(() => expect(screen.getByTestId('typewriter')).toHaveTextContent('A terse reply.'))
+      await waitFor(() => expect(screen.getByTestId('conversation-stage')).toHaveTextContent('A terse reply.'))
       const bar = container.querySelector('[style*="height: 100%"]')
       expect(bar.style.width).toBe('0%')
       expect(screen.queryByText('Leave me alone')).not.toBeInTheDocument()
