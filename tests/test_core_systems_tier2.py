@@ -35,6 +35,7 @@ from unittest.mock import Mock, MagicMock, patch
 # CRITICAL: Import these modules directly so coverage sees them
 import src.states as states
 import src.combatant as combatant
+import src.items as items
 from src.moves import Move, PassiveMove
 from src.moves import (
     Attack, Dodge, Parry, Advance, Withdraw, StrategicInsight, Check, Wait, Rest, UseItem,
@@ -549,11 +550,72 @@ class TestMoveBaseClass:
 
         assert hasattr(move, 'advance')
 
-    @pytest.mark.skip(reason="Attack requires complex player setup with equipped weapons")
-    def test_attack_move_initialization(self, fake_player):
-        """Attack move initializes with correct properties."""
-        # Attack initialization requires weapon equipment
-        pass
+    def test_attack_move_initialization(self, make_player):
+        """Attack derives power/range/fatigue from the equipped weapon, not placeholders."""
+        player = make_player(weapon="Sword", strength=10, finesse=10, speed=10,
+                             endurance=10)
+        weapon = player.eq_weapon
+        move = Attack(player)
+
+        assert move.name == "Attack"
+        assert move.category == "Offensive"
+        assert move.targeted is True
+        # __init__ ships placeholders (mvrange (0, 5), fatigue 10, stage_beat all 1s);
+        # evaluate() must have overwritten every one of them from the real weapon.
+        assert move.mvrange == weapon.wpnrange
+        assert move.mvrange != (0, 5)
+        expected_power = (
+            weapon.damage
+            + player.strength * weapon.str_mod
+            + player.finesse * weapon.fin_mod
+        )
+        assert move.power == pytest.approx(expected_power)
+        assert move.base_damage_type == items.get_base_damage_type(weapon)
+        # prep = (40 + weight*3) / speed; cooldown = 5 - endurance//10; recoil = 1 + weight/2
+        assert move.stage_beat == [
+            int((40 + weapon.weight * 3) / player.speed),
+            1,
+            int(1 + weapon.weight / 2),
+            5 - int(player.endurance / 10),
+        ]
+        assert weapon.name in move.stage_announce[1]
+
+    def test_attack_move_reevaluates_on_weapon_swap(self, make_player, make_weapon):
+        """viable() re-runs evaluate(), so a freshly equipped weapon is not stale."""
+        player = make_player(weapon="Dagger")
+        move = Attack(player)
+        dagger_power, dagger_range = move.power, move.mvrange
+
+        player.eq_weapon = make_weapon("Halberd")
+        player.combat_proximity = {}
+        move.viable()  # viable() is the re-evaluation hook
+
+        assert move.mvrange == player.eq_weapon.wpnrange
+        assert move.mvrange != dagger_range
+        assert move.power != dagger_power
+
+    def test_attack_viability_requires_weapon_and_enemy_in_range(
+        self, make_player, make_npc
+    ):
+        """Attack is viable only with a weapon AND an enemy inside the weapon's range."""
+        player = make_player(weapon="Sword")
+        enemy = make_npc()
+        rmin, rmax = player.eq_weapon.wpnrange
+
+        player.combat_proximity = {}
+        assert Attack(player).viable() is False, "no enemies at all"
+
+        player.combat_proximity = {enemy: rmax + 5}
+        assert Attack(player).viable() is False, "enemy beyond weapon range"
+
+        player.combat_proximity = {enemy: rmin}
+        assert Attack(player).viable() is True
+
+        # Losing the weapon mid-fight: viable()'s try/except swallows the
+        # evaluate() failure and the has_weapon check then returns False.
+        move = Attack(player)
+        player.eq_weapon = None
+        assert move.viable() is False, "no weapon -> not viable"
 
     def test_dodge_move_initialization(self, fake_player):
         """Dodge move initializes correctly."""
@@ -612,10 +674,35 @@ class TestMoveBaseClass:
         assert move.name == "Strategic Insight"
         assert move.viable() is False
 
-    @pytest.mark.skip(reason="Complex move initialization requires weapon setup")
-    def test_unarmed_power_strike(self, fake_player):
-        """PowerStrike move initializes correctly."""
-        pass
+    def test_unarmed_power_strike(self, make_player, make_npc):
+        """PowerStrike is a bludgeon-only move; it rejects every other weapon class."""
+        player = make_player(weapon="Bludgeon")
+        enemy = make_npc()
+        move = PowerStrike(player)
+
+        assert move.name == "Power Strike"
+        assert move.category == "Offensive"
+        assert move.web_animation == "heavy_attack"
+        assert move.weapon is player.eq_weapon
+        assert move.power > 0
+        # viable() uses a strict `range_min < distance < range_max` window on (0, 5)
+        player.combat_proximity = {}
+        assert move.viable() is False
+        player.combat_proximity = {enemy: 3}
+        assert move.viable() is True
+        player.combat_proximity = {enemy: 5}
+        assert move.viable() is False, "range_max is exclusive"
+
+        sword_user = make_player(weapon="Sword")
+        sword_user.combat_proximity = {enemy: 3}
+        assert PowerStrike(sword_user).viable() is False, "Bludgeon subtype required"
+
+    def test_power_strike_falls_back_to_a_rock_when_unarmed(self, make_player):
+        """With no weapon equipped PowerStrike substitutes a Rock rather than crashing."""
+        player = make_player()
+        player.eq_weapon = None
+        move = PowerStrike(player)
+        assert isinstance(move.weapon, items.Rock)
 
     def test_unarmed_jab(self, fake_player):
         """Jab move initializes correctly."""
@@ -735,15 +822,64 @@ class TestMoveBaseClass:
         assert move.name == "Death's Harvest"
         assert move.fatigue_cost >= 0
 
-    @pytest.mark.skip(reason="Ranged moves require complex weapon setup")
-    def test_ranged_shoot_bow(self, fake_player):
-        """ShootBow move initializes correctly."""
-        pass
+    def test_ranged_shoot_bow(self, make_player, make_npc):
+        """ShootBow needs a bow, an enemy past minimum range, AND arrows in the pack."""
+        player = make_player(weapon="Bow", endurance=10)
+        enemy = make_npc()
+        move = ShootBow(player)
 
-    @pytest.mark.skip(reason="Ranged moves require complex weapon setup")
-    def test_ranged_shoot_crossbow(self, fake_player):
-        """ShootCrossbow move initializes correctly."""
-        pass
+        assert move.name == "Shoot Bow"
+        assert move.web_animation == "projectile"
+        assert move.mvrange == (6, 50)
+        # Base cost is 100 - 2*endurance, then scaled up by carry burden.
+        assert move.fatigue_cost >= max(10, 100 - 2 * player.endurance)
+        tough = make_player(weapon="Bow", endurance=40)
+        assert ShootBow(tough).fatigue_cost < move.fatigue_cost, (
+            "higher endurance must lower the draw cost"
+        )
+        # Damage type follows the *arrow*, not the bow (a bow alone is "crushing").
+        assert move.base_damage_type == items.get_base_damage_type(move.arrow)
+        assert move.base_damage_type != items.get_base_damage_type(player.eq_weapon)
+        assert move.power == move.arrow.power
+        # Effective max range comes from the weapon's decay curve, not mvrange[1].
+        assert move.get_effective_range_max(player) == (
+            player.eq_weapon.range_base + 100 / player.eq_weapon.range_decay
+        )
+
+        player.combat_proximity = {enemy: 10}
+        assert move.viable() is False, "no arrows in inventory"
+
+        player.inventory.append(items.WoodenArrow())
+        assert move.viable() is True
+
+        player.combat_proximity = {enemy: 2}
+        assert move.viable() is False, "enemy inside the 6-tile minimum range"
+
+    def test_ranged_shoot_crossbow(self, make_player, make_npc):
+        """ShootCrossbow gates on the Crossbow subtype and its own mvrange window."""
+        player = make_player(weapon="Crossbow", strength=10, finesse=10, endurance=10)
+        enemy = make_npc()
+        weapon = player.eq_weapon
+        move = ShootCrossbow(player)
+
+        assert move.name == "Shoot Crossbow"
+        assert move.web_animation == "projectile"
+        assert move.mvrange == (6, 40)
+        assert move.power == max(
+            1,
+            weapon.damage + 15
+            + int(player.strength * weapon.str_mod)
+            + int(player.finesse * weapon.fin_mod),
+        )
+
+        player.combat_proximity = {enemy: 10}
+        assert move.viable() is True
+        player.combat_proximity = {enemy: 41}
+        assert move.viable() is False, "beyond mvrange[1]"
+
+        bow_user = make_player(weapon="Bow")
+        bow_user.combat_proximity = {enemy: 10}
+        assert ShootCrossbow(bow_user).viable() is False, "Crossbow subtype required"
 
     def test_ranged_aimed_shot(self, fake_player):
         """AimedShot move initializes correctly."""
@@ -781,10 +917,34 @@ class TestMoveBaseClass:
 class TestNPCMoves:
     """Test NPC-specific move implementations."""
 
-    @pytest.mark.skip(reason="NPC moves require complex weapon setup")
-    def test_npc_attack_move(self, fake_npc):
-        """NpcAttack move initializes correctly."""
-        pass
+    def test_npc_attack_move(self, make_player, make_npc, engage, place,
+                             repair_proximity, seeded):
+        """NpcAttack adopts the NPC's combat_range and lands real damage on its target."""
+        player = make_player(hp=200, maxhp=200)
+        npc = make_npc(name="Brute", damage=12)
+        engage(player, [npc])
+        place(player, 10, 10)
+        place(npc, 11, 10)
+        repair_proximity([player, npc])
+        npc.target = player
+
+        move = NpcAttack(npc)
+        assert move.name == "NPC_Attack"
+        assert move.category == "Offensive"
+        assert move.targeted is True
+        assert move.mvrange == npc.combat_range
+        assert move.user is npc and move.target is player
+        assert move.viable() is True
+
+        npc.current_move = move
+        before = player.hp
+        with seeded(11):
+            move.execute(npc)
+        assert player.hp < before, "NpcAttack must actually damage its target"
+
+        # Out of reach -> not viable.
+        npc.combat_proximity = {player: npc.combat_range[1] + 10}
+        assert move.viable() is False
 
     def test_npc_rest_move(self, fake_npc):
         """NpcRest move initializes correctly."""
@@ -795,41 +955,123 @@ class TestNPCMoves:
 
 
 class TestMoveViability:
-    """Test move viability constraints."""
+    """Where each availability gate actually lives.
 
-    @pytest.mark.skip(reason="Attack requires complex weapon setup")
-    def test_move_viable_with_sufficient_fatigue(self, fake_player):
-        """Move is viable when player has sufficient fatigue."""
-        pass
+    ``Move.viable()`` answers only "could this move ever be used right now"
+    (weapon class, range, ammunition). Fatigue and cooldown are **not** checked
+    there — they are enforced one layer up, in
+    ``ApiCombatAdapter._get_available_moves``, which is the single surface the
+    web client reads. These tests pin that split so a future refactor cannot
+    quietly move a gate and leave the UI showing an unusable button.
+    """
 
-    @pytest.mark.skip(reason="Attack requires complex weapon setup")
-    def test_move_not_viable_with_insufficient_fatigue(self, fake_player):
-        """Move is not viable when player lacks fatigue."""
-        pass
+    @pytest.fixture
+    def armed_encounter(self, make_player, make_npc, make_adapter, place,
+                        repair_proximity):
+        """A real adapter over a sword-armed Jean with one enemy two tiles away."""
+        player = make_player(weapon="Sword", fatigue=1000, maxfatigue=1000)
+        enemy = make_npc(hp=100, maxhp=100)
+        attack = Attack(player)
+        player.known_moves = [attack]
+        adapter = make_adapter(player, [enemy])
+        place(player, 10, 10)
+        place(enemy, 12, 10)
+        repair_proximity([player, enemy])
+        return player, enemy, attack, adapter
 
-    @pytest.mark.skip(reason="Attack requires complex weapon setup")
-    def test_move_viable_respects_current_stage(self, fake_player):
-        """Move viability may depend on current_stage."""
-        pass
+    def test_move_viable_with_sufficient_fatigue(self, armed_encounter):
+        """With fatigue to spare the move is both viable and offered to the client."""
+        player, enemy, attack, adapter = armed_encounter
+        assert player.fatigue > attack.fatigue_cost
+        assert attack.viable() is True
+
+        entry = adapter._get_available_moves()[0]
+        assert entry["name"] == "Attack"
+        assert entry["available"] is True
+        assert entry["reason"] is None
+        assert [t["name"] for t in entry["viable_targets"]] == [enemy.name]
+
+    def test_move_not_viable_with_insufficient_fatigue(self, armed_encounter):
+        """Fatigue is gated by the adapter, not by ``viable()``."""
+        player, _enemy, attack, adapter = armed_encounter
+        player.fatigue = attack.fatigue_cost - 1
+
+        assert attack.viable() is True, (
+            "Move.viable() deliberately ignores fatigue; the gate is the adapter"
+        )
+        entry = adapter._get_available_moves()[0]
+        assert entry["available"] is False
+        assert entry["reason"] == "Not enough fatigue"
+
+    def test_move_viable_respects_current_stage(self, armed_encounter):
+        """A move parked in the cooldown stage reports beats remaining, not fatigue."""
+        player, _enemy, attack, adapter = armed_encounter
+        attack.current_stage = 3
+        attack.beats_left = 2
+
+        entry = adapter._get_available_moves()[0]
+        assert entry["available"] is False
+        assert entry["reason"] == "Available in 3 beats"
+        assert entry["cooldown_remaining"] == 3
+        assert entry["cooldown_max"] >= 3
+
+        attack.beats_left = 0
+        entry = adapter._get_available_moves()[0]
+        assert entry["reason"] == "Available next beat"
 
 
 class TestMoveTargeting:
     """Test move targeting and distance constraints."""
 
-    @pytest.mark.skip(reason="Attack requires complex weapon setup")
-    def test_move_has_target_attribute(self, fake_player):
-        """Moves have a target attribute."""
-        pass
+    @pytest.mark.parametrize(
+        "move_cls, weapon, targeted, target_is_user",
+        [
+            (Attack, "Sword", True, False),
+            (PowerStrike, "Bludgeon", True, True),
+            (Rest, None, False, True),
+            (Check, None, False, True),
+        ],
+    )
+    def test_move_default_target_matches_declared_targeting(
+        self, make_player, move_cls, weapon, targeted, target_is_user
+    ):
+        """A targeted move starts unbound; a self/untargeted move starts on its user.
 
-    @pytest.mark.skip(reason="Attack requires complex weapon setup")
-    def test_move_target_can_be_set(self, fake_player, fake_npc):
-        """Move target can be assigned."""
-        pass
+        (Previously three skipped stubs named ``test_move_has_target_attribute`` /
+        ``_target_can_be_set`` / ``_target_none_initially``, all with empty bodies —
+        and the last one's name contradicted the second's.)
+        """
+        player = make_player(weapon=weapon) if weapon else make_player()
+        move = move_cls(player)
 
-    @pytest.mark.skip(reason="Attack requires complex weapon setup")
-    def test_move_target_none_initially(self, fake_player):
-        """Move target starts as player initially."""
-        pass
+        assert move.targeted is targeted
+        assert move.user is player
+        if target_is_user:
+            assert move.target is player
+        else:
+            assert move.target is None
+
+    def test_move_target_drives_who_takes_the_damage(
+        self, make_player, make_npc, engage, place, repair_proximity, seeded
+    ):
+        """Assigning ``move.target`` decides which combatant loses hp."""
+        player = make_player(weapon="Sword", strength=20, finesse=20)
+        near = make_npc(name="Near", hp=200, maxhp=200)
+        far = make_npc(name="Far", hp=200, maxhp=200)
+        engage(player, [near, far])
+        place(player, 10, 10)
+        place(near, 12, 10)
+        place(far, 13, 10)
+        repair_proximity([player, near, far])
+
+        move = Attack(player)
+        player.current_move = move
+        move.target = far
+        with seeded(4321):
+            move.execute(player)
+
+        assert far.hp < 200, "the assigned target must take the hit"
+        assert near.hp == 200, "a bystander in range must be untouched"
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

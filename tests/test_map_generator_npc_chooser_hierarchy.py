@@ -33,7 +33,7 @@ import pytest
 from conftest import restore_mapgen_modules, snapshot_and_clear_mapgen_modules
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def map_generator_module():
     """Import utils.map_generator with tkinter stubbed out.
 
@@ -214,11 +214,22 @@ class TestClassTypeChooserBehaviorPreserved:
 
 class TestFixpointIsRobustToCyclesAndAliases:
     def test_fixpoint_terminates_and_is_correct_on_a_synthetic_cycle(
-        self, map_generator_module, tmp_path
+        self, map_generator_module, tmp_path, monkeypatch
     ):
-        """A malformed/typo'd inheritance cycle elsewhere in the tree must
-        not hang or crash discovery for an unrelated class query."""
-        cyclic_src = (
+        """A malformed/typo'd inheritance cycle must not hang discovery.
+
+        The previous version of this test wrote a cyclic module into
+        ``tmp_path`` and then never pointed the scanner at it -- it queried the
+        real (acyclic) ``src/`` tree and asserted the result was truthy. It
+        proved nothing about cycle handling. Repointing ``project_root`` at the
+        temp tree (the same technique the alias test below uses) puts the cycle
+        genuinely in the scanner's path.
+        """
+        import utils.mapgen.class_discovery as class_discovery
+
+        src_dir = tmp_path / "src"
+        src_dir.mkdir()
+        (src_dir / "cyclic_module.py").write_text(
             "class A(B):\n"
             "    pass\n"
             "\n"
@@ -228,17 +239,23 @@ class TestFixpointIsRobustToCyclesAndAliases:
             "class Unrelated:\n"
             "    pass\n"
         )
-        cyclic_file = tmp_path / "cyclic_module.py"
-        cyclic_file.write_text(cyclic_src)
+        (src_dir / "descendant_module.py").write_text(
+            "from cyclic_module import A\n"
+            "\n"
+            "class RealChild(A):\n"
+            "    pass\n"
+        )
+        monkeypatch.setattr(class_discovery, "project_root", str(tmp_path))
 
-        # Directly exercise the underlying scan against a src/ tree that
-        # contains a cycle, by monkeypatching os.path.dirname indirectly is
-        # overkill -- instead just confirm the real src/ tree (which has no
-        # cycles) still resolves without hanging, as a smoke test, and that
-        # the helper completes in-process (no infinite loop) for a base
-        # class with many descendants.
-        module_paths = map_generator_module._get_module_paths_for_class("NPC")
-        assert module_paths  # completed without hanging
+        # Must terminate (a naive transitive walk over A->B->A loops forever)
+        # and must still find the genuine descendant reached through the cycle.
+        result = map_generator_module._get_module_paths_for_class("A")
+        assert str(src_dir / "cyclic_module.py") in result
+        assert str(src_dir / "descendant_module.py") in result
+
+        # An unrelated class in the same cyclic tree must not be dragged in.
+        unrelated = map_generator_module._get_module_paths_for_class("Unrelated")
+        assert str(src_dir / "descendant_module.py") not in unrelated
 
     def test_alias_imported_base_class_is_still_resolved(
         self, map_generator_module, tmp_path, monkeypatch

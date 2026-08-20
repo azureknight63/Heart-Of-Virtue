@@ -1,26 +1,17 @@
 """
 Coverage tests for src/api/routes/world.py (11% -> target ~80%)
 
-Strategy: minimal Flask app with mocked session_manager and game_service,
-mirroring the pattern in test_routes_coverage.py.
+Strategy: a one-blueprint Flask app built by the shared ``make_route_app``
+harness (tests/conftest.py) — a real ``Session`` plus a ``spec``-constrained
+``SessionManager`` mock — with the game service stubbed per route group.
 """
 
 import pytest
 from unittest.mock import MagicMock, patch
-from flask import Flask
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-
-def _make_session(session_id="sid_w1", db_user_id="db_1"):
-    s = MagicMock()
-    s.session_id = session_id
-    s.db_user_id = db_user_id
-    s.data = {"pending_events": {}}
-    s.player_id = "player_1"
-    return s
 
 
 def _make_player():
@@ -32,14 +23,6 @@ def _make_player():
     p.location_x = 0
     p.location_y = 0
     return p
-
-
-def _make_session_manager(session, player):
-    sm = MagicMock()
-    sm.get_session.return_value = session
-    sm.get_player.return_value = player
-    sm.save_session.return_value = None
-    return sm
 
 
 def _make_game_service():
@@ -98,26 +81,36 @@ NO_AUTH = {}
 BAD_AUTH = {"Authorization": "NotBearer sid_w1"}
 
 
-def _make_app(session=None, player=None, game_service=None):
-    from src.api.routes.world import world_bp
+@pytest.fixture
+def world_app(make_route_app, make_stub_session):
+    """A one-blueprint app for ``world_bp`` on the shared route harness.
 
-    if session is None:
-        session = _make_session()
-    if player is None:
-        player = _make_player()
-    sm = _make_session_manager(session, player)
-    gs = game_service or _make_game_service()
+    ``make_route_app`` supplies a *real* ``Session`` and a ``spec``-constrained
+    ``SessionManager`` mock, so a route reading an attribute ``Session`` does
+    not define, or calling a manager method that does not exist, fails here
+    instead of being silently answered by a bare ``MagicMock``. It exposes
+    ``app.stub_session`` / ``app.stub_session_manager`` / ``app.game_service``.
+    """
 
-    app = Flask(__name__)
-    app.config["TESTING"] = True
-    app.register_blueprint(world_bp)
-    app.session_manager = sm
-    app.game_service = gs
-    app._test_session = session
-    app._test_player = player
-    app._test_sm = sm
-    app._test_gs = gs
-    return app
+    def _world_app(session=None, player=None, game_service=None):
+        from src.api.routes.world import world_bp
+
+        if session is None:
+            session = make_stub_session(
+                session_id="sid_w1", db_user_id="db_1", pending_events={}
+            )
+        if player is None:
+            player = _make_player()
+        app = make_route_app(
+            world_bp,
+            session=session,
+            player=player,
+            game_service=game_service or _make_game_service(),
+        )
+        app._test_player = player
+        return app
+
+    return _world_app
 
 
 # ===========================================================================
@@ -127,8 +120,8 @@ def _make_app(session=None, player=None, game_service=None):
 
 class TestGetCurrentRoom:
     @pytest.fixture
-    def app(self):
-        return _make_app()
+    def app(self, world_app):
+        return world_app()
 
     @pytest.fixture
     def client(self, app):
@@ -155,40 +148,31 @@ class TestGetCurrentRoom:
         assert rv.status_code == 401
 
     def test_invalid_session(self, app):
-        app._test_sm.get_session.return_value = None
+        app.stub_session_manager.get_session.return_value = None
         with app.test_client() as c:
             rv = c.get("/world", headers=AUTH)
         assert rv.status_code == 401
 
     def test_player_not_found(self, app):
-        app._test_sm.get_player.return_value = None
+        app.stub_session_manager.get_player.return_value = None
         with app.test_client() as c:
             rv = c.get("/world", headers=AUTH)
         assert rv.status_code == 404
 
     def test_room_has_error(self, app):
-        app._test_gs.get_current_room.return_value = {"error": "Tile not found"}
+        app.game_service.get_current_room.return_value = {"error": "Tile not found"}
         with app.test_client() as c:
             rv = c.get("/world", headers=AUTH)
         assert rv.status_code == 404
 
-    def test_game_service_none(self):
-        from src.api.routes.world import world_bp
-
-        session = _make_session()
-        player = _make_player()
-        sm = _make_session_manager(session, player)
-        app = Flask(__name__)
-        app.config["TESTING"] = True
-        app.register_blueprint(world_bp)
-        app.session_manager = sm
+    def test_game_service_none(self, app):
         app.game_service = None
         with app.test_client() as c:
             rv = c.get("/world", headers=AUTH)
         assert rv.status_code == 500
 
     def test_exception_returns_500(self, app):
-        app._test_gs.get_current_room.side_effect = RuntimeError("unexpected")
+        app.game_service.get_current_room.side_effect = RuntimeError("unexpected")
         with app.test_client() as c:
             rv = c.get("/world", headers=AUTH)
         assert rv.status_code == 500
@@ -201,8 +185,8 @@ class TestGetCurrentRoom:
 
 class TestMovePlayer:
     @pytest.fixture
-    def app(self):
-        return _make_app()
+    def app(self, world_app):
+        return world_app()
 
     @pytest.fixture
     def client(self, app):
@@ -235,7 +219,7 @@ class TestMovePlayer:
         assert rv.status_code in (400, 500)
 
     def test_move_returns_error_from_service(self, app):
-        app._test_gs.move_player.return_value = {"error": "Wall in the way"}
+        app.game_service.move_player.return_value = {"error": "Wall in the way"}
         with app.test_client() as c:
             rv = c.post("/world/move", json={"direction": "west"}, headers=AUTH)
         assert rv.status_code == 400
@@ -243,7 +227,7 @@ class TestMovePlayer:
         assert data["success"] is False
 
     def test_move_exception_returns_500(self, app):
-        app._test_gs.move_player.side_effect = RuntimeError("crash")
+        app.game_service.move_player.side_effect = RuntimeError("crash")
         with app.test_client() as c:
             rv = c.post("/world/move", json={"direction": "north"}, headers=AUTH)
         assert rv.status_code == 500
@@ -256,8 +240,8 @@ class TestMovePlayer:
 
 class TestSubmitEventInput:
     @pytest.fixture
-    def app(self):
-        return _make_app()
+    def app(self, world_app):
+        return world_app()
 
     @pytest.fixture
     def client(self, app):
@@ -324,7 +308,7 @@ class TestSubmitEventInput:
         assert "Input too long" in rv.get_json()["error"]
 
     def test_event_result_failure(self, app):
-        app._test_gs.process_event_input.return_value = {
+        app.game_service.process_event_input.return_value = {
             "success": False,
             "error": "Event not found",
         }
@@ -342,7 +326,7 @@ class TestSubmitEventInput:
 
     def test_player_death_sets_game_over(self, app):
         app._test_player.hp = 0
-        app._test_gs.is_player_dead.return_value = True
+        app.game_service.is_player_dead.return_value = True
         with patch(
             self._SANITIZER_PATH,
             return_value=("ok", None),
@@ -359,7 +343,7 @@ class TestSubmitEventInput:
 
     def test_exception_returns_500(self, app):
         # Crash in process_event_input after sanitizer passes
-        app._test_gs.process_event_input.side_effect = RuntimeError("crash")
+        app.game_service.process_event_input.side_effect = RuntimeError("crash")
         with patch(
             self._SANITIZER_PATH,
             return_value=("ok", None),
@@ -423,8 +407,8 @@ class TestSubmitEventInput:
 
 class TestGetTile:
     @pytest.fixture
-    def app(self):
-        return _make_app()
+    def app(self, world_app):
+        return world_app()
 
     @pytest.fixture
     def client(self, app):
@@ -452,7 +436,7 @@ class TestGetTile:
         assert "integers" in rv.get_json()["error"]
 
     def test_tile_not_found(self, app):
-        app._test_gs.get_tile.return_value = {"error": "No tile here"}
+        app.game_service.get_tile.return_value = {"error": "No tile here"}
         with app.test_client() as c:
             rv = c.get("/world/tile?x=99&y=99", headers=AUTH)
         assert rv.status_code == 404
@@ -462,7 +446,7 @@ class TestGetTile:
         assert rv.status_code == 401
 
     def test_exception_returns_500(self, app):
-        app._test_gs.get_tile.side_effect = RuntimeError("crash")
+        app.game_service.get_tile.side_effect = RuntimeError("crash")
         with app.test_client() as c:
             rv = c.get("/world/tile?x=0&y=0", headers=AUTH)
         assert rv.status_code == 500
@@ -475,8 +459,8 @@ class TestGetTile:
 
 class TestGetExploredTiles:
     @pytest.fixture
-    def app(self):
-        return _make_app()
+    def app(self, world_app):
+        return world_app()
 
     @pytest.fixture
     def client(self, app):
@@ -495,7 +479,7 @@ class TestGetExploredTiles:
         assert rv.status_code == 401
 
     def test_exception_returns_500(self, app):
-        app._test_gs.get_explored_tiles.side_effect = RuntimeError("crash")
+        app.game_service.get_explored_tiles.side_effect = RuntimeError("crash")
         with app.test_client() as c:
             rv = c.get("/world/explored", headers=AUTH)
         assert rv.status_code == 500
@@ -508,8 +492,8 @@ class TestGetExploredTiles:
 
 class TestGetTilesBatch:
     @pytest.fixture
-    def app(self):
-        return _make_app()
+    def app(self, world_app):
+        return world_app()
 
     @pytest.fixture
     def client(self, app):
@@ -558,7 +542,7 @@ class TestGetTilesBatch:
         assert "20" in rv.get_json()["error"]
 
     def test_invalid_coord_skipped(self, app):
-        app._test_gs.get_tile.return_value = {
+        app.game_service.get_tile.return_value = {
             "x": 0,
             "y": 0,
             "name": "Floor",
@@ -576,7 +560,7 @@ class TestGetTilesBatch:
         assert len(data["tiles"]) == 1
 
     def test_tile_with_error_excluded(self, app):
-        app._test_gs.get_tile.return_value = {"error": "No tile"}
+        app.game_service.get_tile.return_value = {"error": "No tile"}
         with app.test_client() as c:
             rv = c.post(
                 "/world/tiles/batch",
@@ -588,7 +572,7 @@ class TestGetTilesBatch:
         assert data["tiles"] == []
 
     def test_exception_returns_500(self, app):
-        app._test_gs.get_tile.side_effect = RuntimeError("crash")
+        app.game_service.get_tile.side_effect = RuntimeError("crash")
         with app.test_client() as c:
             rv = c.post(
                 "/world/tiles/batch",
@@ -605,8 +589,8 @@ class TestGetTilesBatch:
 
 class TestGetAvailableCommands:
     @pytest.fixture
-    def app(self):
-        return _make_app()
+    def app(self, world_app):
+        return world_app()
 
     @pytest.fixture
     def client(self, app):
@@ -625,7 +609,7 @@ class TestGetAvailableCommands:
         assert rv.status_code == 401
 
     def test_exception_returns_500(self, app):
-        app._test_gs.get_available_commands.side_effect = RuntimeError("crash")
+        app.game_service.get_available_commands.side_effect = RuntimeError("crash")
         with app.test_client() as c:
             rv = c.get("/world/commands", headers=AUTH)
         assert rv.status_code == 500
@@ -638,8 +622,8 @@ class TestGetAvailableCommands:
 
 class TestInteractWithTarget:
     @pytest.fixture
-    def app(self):
-        return _make_app()
+    def app(self, world_app):
+        return world_app()
 
     @pytest.fixture
     def client(self, app):
@@ -722,7 +706,7 @@ class TestInteractWithTarget:
         assert rv.status_code == 200
 
     def test_interact_failure_returns_200(self, app):
-        app._test_gs.interact_with_target.return_value = {
+        app.game_service.interact_with_target.return_value = {
             "success": False,
             "message": "Locked",
         }
@@ -737,7 +721,7 @@ class TestInteractWithTarget:
         assert data["success"] is False
 
     def test_exception_returns_500(self, app):
-        app._test_gs.interact_with_target.side_effect = RuntimeError("crash")
+        app.game_service.interact_with_target.side_effect = RuntimeError("crash")
         with app.test_client() as c:
             rv = c.post(
                 "/world/interact",
@@ -754,8 +738,8 @@ class TestInteractWithTarget:
 
 class TestTriggerRoomEvents:
     @pytest.fixture
-    def app(self):
-        return _make_app()
+    def app(self, world_app):
+        return world_app()
 
     @pytest.fixture
     def client(self, app):
@@ -767,7 +751,7 @@ class TestTriggerRoomEvents:
         tile.x = 0
         tile.y = 0
         tile.block_exit = []
-        app._test_gs.get_current_tile_object.return_value = tile
+        app.game_service.get_current_tile_object.return_value = tile
         with app.test_client() as c:
             rv = c.post("/world/events", headers=AUTH)
         assert rv.status_code == 200
@@ -775,7 +759,7 @@ class TestTriggerRoomEvents:
         assert data["success"] is True
 
     def test_tile_not_found(self, app):
-        app._test_gs.get_current_tile_object.return_value = None
+        app.game_service.get_current_tile_object.return_value = None
         with app.test_client() as c:
             rv = c.post("/world/events", headers=AUTH)
         assert rv.status_code == 404
@@ -785,7 +769,7 @@ class TestTriggerRoomEvents:
         assert rv.status_code == 401
 
     def test_exception_returns_500(self, app):
-        app._test_gs.get_current_tile_object.side_effect = RuntimeError("crash")
+        app.game_service.get_current_tile_object.side_effect = RuntimeError("crash")
         with app.test_client() as c:
             rv = c.post("/world/events", headers=AUTH)
         assert rv.status_code == 500
@@ -798,8 +782,8 @@ class TestTriggerRoomEvents:
 
 class TestGetPendingEvents:
     @pytest.fixture
-    def app(self):
-        return _make_app()
+    def app(self, world_app):
+        return world_app()
 
     @pytest.fixture
     def client(self, app):
@@ -814,7 +798,7 @@ class TestGetPendingEvents:
         assert data["events"] == []
 
     def test_with_pending_events(self, app):
-        app._test_session.data = {
+        app.stub_session.data = {
             "pending_events": {
                 "evt_001": {"event_data": {"type": "combat", "npc": "Guard"}},
                 "evt_002": {"event_data": {"type": "story"}},
@@ -836,7 +820,7 @@ class TestGetPendingEvents:
 
     def test_exception_returns_500(self, app):
         # Make get_session raise after auth passes
-        original = app._test_sm.get_session.return_value
+        original = app.stub_session_manager.get_session.return_value
         call_count = [0]
 
         def _get_session_side_effect(sid):
@@ -846,12 +830,12 @@ class TestGetPendingEvents:
                 return original
             raise RuntimeError("db crash")
 
-        app._test_sm.get_session.side_effect = _get_session_side_effect
+        app.stub_session_manager.get_session.side_effect = _get_session_side_effect
         # Directly raise on session property access via a bad data object
         bad_session = MagicMock()
         bad_session.data = None  # accessing "pending_events" on None raises TypeError
-        app._test_sm.get_session.side_effect = None
-        app._test_sm.get_session.return_value = bad_session
+        app.stub_session_manager.get_session.side_effect = None
+        app.stub_session_manager.get_session.return_value = bad_session
         # session.data is None, so "pending_events" in None raises TypeError
         with app.test_client() as c:
             rv = c.get("/world/events/pending", headers=AUTH)
@@ -865,8 +849,8 @@ class TestGetPendingEvents:
 
 class TestSearchRoom:
     @pytest.fixture
-    def app(self):
-        return _make_app()
+    def app(self, world_app):
+        return world_app()
 
     @pytest.fixture
     def client(self, app):
@@ -884,7 +868,7 @@ class TestSearchRoom:
         assert rv.status_code == 401
 
     def test_exception_returns_500(self, app):
-        app._test_gs.search.side_effect = RuntimeError("crash")
+        app.game_service.search.side_effect = RuntimeError("crash")
         with app.test_client() as c:
             rv = c.post("/world/search", headers=AUTH)
         assert rv.status_code == 500

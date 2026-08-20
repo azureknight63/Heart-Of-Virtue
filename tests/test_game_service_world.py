@@ -18,19 +18,12 @@ and the error dicts returned on the two failure paths.
 
 import pytest
 
-from src.api.services.game_service import GameService
 from src.events import Event
 from src.items import Gold
 from src.npc import NPC
 from src.objects import WallSwitch
 from src.tiles import MapTile
 from tests._gs_fixtures import GRID_3X3, live_world, make_tile
-
-
-@pytest.fixture(scope="session")
-def game_service():
-    """``GameService.__init__`` is ``pass`` — the service is stateless."""
-    return GameService()
 
 
 @pytest.fixture

@@ -24,16 +24,9 @@ bought nothing.
 
 import pytest
 
-from src.api.services.game_service import GameService
 from src.items import Gold, Item, Restorative
 from src.npc import NPC
 from tests._gs_fixtures import GRID_3X3, get_player_gold, live_world, set_player_gold
-
-
-@pytest.fixture(scope="session")
-def game_service():
-    """GameService is stateless — ``__init__`` is ``pass`` — so one instance is safe."""
-    return GameService()
 
 
 @pytest.fixture

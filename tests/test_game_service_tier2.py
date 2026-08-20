@@ -23,16 +23,9 @@ thoroughly in ``test_game_service_world.py`` and are not duplicated.
 
 import pytest
 
-from src.api.services.game_service import GameService
 from src.items import Gold, RustedDagger, Restorative
 from src.npc import NPC
 from tests._gs_fixtures import GRID_3X3, live_world
-
-
-@pytest.fixture(scope="session")
-def game_service():
-    """``GameService.__init__`` is ``pass`` — the service is stateless."""
-    return GameService()
 
 
 @pytest.fixture

@@ -13,13 +13,6 @@ import pytest
 from unittest.mock import patch
 
 
-@pytest.fixture
-def game_service():
-    from src.api.services.game_service import GameService
-
-    return GameService()
-
-
 class FakePlayer:
     """Minimal player stand-in for side resolution."""
 

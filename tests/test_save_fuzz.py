@@ -113,3 +113,40 @@ def test_protocol0_crafting_cannot_express_the_dotted_traversal_vector():
               b"\x93.")
     with pytest.raises(sp.RestrictedUnpicklingError):
         sp.safe_pickle_load(io.BytesIO(proto4), strict=True)
+
+
+# ---------------------------------------------------------------------------
+# Meta-tests on the fuzzer itself.
+#
+# ``test_fuzz_no_security_violations`` passing is only meaningful if the fuzzer
+# is (a) reproducible from its seed and (b) actually capable of reporting a
+# breach. A fuzzer that can never fail is the most expensive no-op in a suite.
+# ---------------------------------------------------------------------------
+
+def test_fuzz_run_is_deterministic_for_a_seed():
+    first = fuzzer.run_fuzz(iterations=120, seed=4242)
+    second = fuzzer.run_fuzz(iterations=120, seed=4242)
+    assert [str(f) for f in first] == [str(f) for f in second]
+
+
+def test_fuzzer_reports_a_breach_when_the_allow_list_is_disabled(monkeypatch):
+    """Injected defect: strict mode trusts every global.
+
+    The fuzzer must then report gadgets getting through *and* a malicious
+    ``__reduce__`` actually firing -- if it stays silent, its clean runs prove
+    nothing about the loader.
+    """
+    import src.secure_pickle as secure_pickle
+
+    monkeypatch.setattr(secure_pickle, "_is_allowed", lambda module, name: True)
+    findings = fuzzer.security_findings(fuzzer.run_fuzz(iterations=400, seed=5))
+
+    assert findings, "fuzzer failed to notice a disabled allow-list"
+    categories = {f.category for f in findings}
+    assert "disallowed-not-blocked" in categories
+    assert "reduce-side-effect-fired" in categories
+
+
+def test_fuzzer_is_clean_again_once_the_defect_is_reverted():
+    """The monkeypatched defect above must not bleed into later runs."""
+    assert fuzzer.security_findings(fuzzer.run_fuzz(iterations=400, seed=5)) == []

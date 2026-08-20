@@ -22,7 +22,7 @@ import pytest
 from conftest import restore_mapgen_modules, snapshot_and_clear_mapgen_modules
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def map_generator_module():
     tk_module_names = [
         "tkinter",

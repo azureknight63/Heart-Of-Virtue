@@ -9,6 +9,8 @@ import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -40,26 +42,38 @@ def _make_player():
 
 
 def test_tile_description_with_params_tilde():
-    """TileDescription constructed from params list with tilde end mark."""
+    """A trailing tilde is the map format's stand-in for a final period."""
     from src.objects import TileDescription
 
     player = MagicMock()
     tile = _make_tile()
-    params = ["unused", "unused", "A fine description~"]
-    td = TileDescription(player, tile, params=params)
-    assert td is not None
-    assert "A fine description" in td.description
+    td = TileDescription(player, tile,
+                         params=["unused", "unused", "A fine description~"])
+    assert td.description.strip() == "A fine description."
 
 
 def test_tile_description_with_params_no_tilde():
-    """TileDescription constructed from params without tilde."""
+    """Without the tilde no punctuation is added.
+
+    The old test asserted only ``td is not None`` -- it would have passed on a
+    constructor that dropped the text entirely.
+    """
     from src.objects import TileDescription
 
     player = MagicMock()
     tile = _make_tile()
-    params = ["unused", "unused", "No tilde here"]
-    td = TileDescription(player, tile, params=params)
-    assert td is not None
+    td = TileDescription(player, tile,
+                         params=["unused", "unused", "No tilde here"])
+    assert td.description.strip() == "No tilde here"
+
+
+def test_tile_description_joins_trailing_params_with_periods():
+    """params[2:] are period-joined -- the map format splits sentences on '.'."""
+    from src.objects import TileDescription
+
+    td = TileDescription(MagicMock(), _make_tile(),
+                         params=["unused", "unused", "one", "two~"])
+    assert td.description.strip() == "one.two."
 
 
 def test_tile_description_missing_both_raises():
@@ -995,19 +1009,32 @@ def test_market_bell_ring_event_repeat_raises_exception():
 
 
 def test_container_start_open_setter_exception_suppressed():
-    """start_open setter suppresses exceptions when setting self.locked."""
+    """A subclass whose ``locked`` cannot be assigned must not break the setter.
+
+    The old body could not reach the ``except`` at all -- it just re-ran
+    ``test_container_start_open_true`` under a name promising exception
+    suppression. A subclass with a getter-only ``locked`` property really does
+    raise ``AttributeError`` on assignment, which is the branch under test.
+    """
     from src.objects import Container
 
-    player = MagicMock()
-    tile = _make_tile()
-    # Create a container, then make locked raise on assignment
-    c = Container(name="Box", player=player, tile=tile, start_open=False)
+    class _ReadOnlyLockedContainer(Container):
+        @property
+        def locked(self):
+            return True
 
-    class _Raiser:
-        def __set__(self, obj, value):
-            raise AttributeError("locked cannot be set")
+    # Build a normal Container first (``__init__`` assigns ``self.locked``, so
+    # the read-only subclass cannot be constructed directly), then rebind this
+    # one instance's class. Instance-level, so nothing leaks to other tests --
+    # unlike assigning onto ``type(obj)``, which permanently poisons the class.
+    c = Container(name="Box", player=MagicMock(), tile=_make_tile(),
+                  locked=True)
+    c.__class__ = _ReadOnlyLockedContainer
 
-    # Can't easily trigger the except without patching __class__
-    # Instead just verify that start_open=True works even in edge cases
-    c.start_open = True
+    with pytest.raises(AttributeError):
+        c.locked = False           # proves the branch is genuinely reachable
+
+    c.start_open = True            # must swallow that same AttributeError
+    assert c.start_open is True
     assert c.state == "opened"
+    assert c.locked is True        # the failed assignment left it untouched

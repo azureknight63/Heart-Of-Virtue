@@ -29,7 +29,6 @@ its own and now tests it properly: **character progression**.
 
 import pytest
 
-from src.api.services.game_service import GameService
 from src.items import RustedDagger
 from tests._gs_fixtures import GRID_3X3, live_world, set_player_gold
 
@@ -42,12 +41,6 @@ ATTRIBUTES = [
     "intelligence_base",
     "faith_base",
 ]
-
-
-@pytest.fixture(scope="session")
-def game_service():
-    """``GameService.__init__`` is ``pass`` — the service is stateless."""
-    return GameService()
 
 
 @pytest.fixture

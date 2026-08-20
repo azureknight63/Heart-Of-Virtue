@@ -23,16 +23,9 @@ loadout, and what ``search`` finds. ``move_player`` moved to
 
 import pytest
 
-from src.api.services.game_service import GameService
 from src.items import Gold, Restorative, RustedDagger
 from src.npc import NPC
 from tests._gs_fixtures import GRID_3X3, get_player_gold, live_world
-
-
-@pytest.fixture(scope="session")
-def game_service():
-    """``GameService.__init__`` is ``pass`` — the service is stateless."""
-    return GameService()
 
 
 @pytest.fixture

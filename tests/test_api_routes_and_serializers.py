@@ -30,18 +30,6 @@ from conftest import wire_real_allocate_level_up_points
 # ---------------------------------------------------------------------------
 
 
-def _make_session(
-    session_id="test_session_123", username="jean_claire", db_user_id="db_user_1"
-):
-    """Return a minimal session mock."""
-    s = MagicMock()
-    s.session_id = session_id
-    s.username = username
-    s.db_user_id = db_user_id
-    s.data = {"timezone": "America/New_York"}
-    return s
-
-
 def _make_player():
     """Return a minimal player mock."""
     p = MagicMock()
@@ -65,17 +53,6 @@ def _make_player():
     p.charisma_base = 6
     p.intelligence_base = 5
     return p
-
-
-def _make_session_manager(session, player):
-    """Return a mock session manager wired to session/player."""
-    sm = MagicMock()
-    sm.get_session.return_value = session
-    sm.get_player.return_value = player
-    sm.save_session.return_value = None
-    sm.set_player.return_value = None
-    sm.start_new_game.return_value = True
-    return sm
 
 
 def _make_game_service():
@@ -108,37 +85,54 @@ def _make_game_service():
     return gs
 
 
-def _make_minimal_app(blueprints_to_register):
+@pytest.fixture
+def minimal_app(make_stub_session, make_stub_session_manager):
     """Create a minimal Flask test app with mocked game objects.
 
-    blueprints_to_register: list of (blueprint, url_prefix) tuples.
-    Pass url_prefix=None to use the blueprint's own built-in url_prefix.
+    ``minimal_app(blueprints_to_register)`` where the argument is a list of
+    ``(blueprint, url_prefix)`` tuples; pass ``url_prefix=None`` to use the
+    blueprint's own built-in prefix.
+
+    The session comes from the shared ``make_stub_session`` factory — a *real*
+    ``Session``, so ``session.data`` and friends behave as production's do and
+    an attribute the routes read but ``Session`` never defines raises instead
+    of being invented — and the manager from ``make_stub_session_manager``,
+    which is ``spec``-constrained against ``SessionManager``.
     """
-    session = _make_session()
-    player = _make_player()
-    sm = _make_session_manager(session, player)
-    gs = _make_game_service()
 
-    app = Flask(__name__)
-    app.config["TESTING"] = True
-    app.config["DEBUG"] = True
+    def _make_minimal_app(blueprints_to_register):
+        session = make_stub_session(
+            session_id="test_session_123",
+            username="jean_claire",
+            db_user_id="db_user_1",
+            timezone="America/New_York",
+        )
+        player = _make_player()
+        sm = make_stub_session_manager(session, player)
+        gs = _make_game_service()
 
-    for bp, prefix in blueprints_to_register:
-        if prefix is None:
-            app.register_blueprint(bp)
-        else:
-            app.register_blueprint(bp, url_prefix=prefix)
+        app = Flask(__name__)
+        app.config["TESTING"] = True
+        app.config["DEBUG"] = True
 
-    app.session_manager = sm
-    app.game_service = gs
+        for bp, prefix in blueprints_to_register:
+            if prefix is None:
+                app.register_blueprint(bp)
+            else:
+                app.register_blueprint(bp, url_prefix=prefix)
 
-    # Store for test access
-    app._test_session = session
-    app._test_player = player
-    app._test_sm = sm
-    app._test_gs = gs
+        app.session_manager = sm
+        app.game_service = gs
 
-    return app
+        # Store for test access
+        app._test_session = session
+        app._test_player = player
+        app._test_sm = sm
+        app._test_gs = gs
+
+        return app
+
+    return _make_minimal_app
 
 
 AUTH_HEADER = {"Authorization": "Bearer test_session_123"}
@@ -557,13 +551,13 @@ class TestFeedbackRoute:
     """Test the /feedback/issue endpoint."""
 
     @pytest.fixture
-    def client(self):
+    def client(self, minimal_app):
         from src.api.routes.feedback import feedback_bp, _feedback_limiter
 
         # Clear rate limit store to avoid cross-test contamination
         _feedback_limiter.clear_all()
 
-        app = _make_minimal_app([(feedback_bp, "/api/feedback")])
+        app = minimal_app([(feedback_bp, "/api/feedback")])
         with app.test_client() as c:
             yield c, app
 
@@ -977,10 +971,10 @@ class TestCombatRoutes:
     """Test combat API route endpoints."""
 
     @pytest.fixture
-    def client(self):
+    def client(self, minimal_app):
         from src.api.routes.combat import combat_bp
 
-        app = _make_minimal_app([(combat_bp, "/api/combat")])
+        app = minimal_app([(combat_bp, "/api/combat")])
         with app.test_client() as c:
             yield c, app
 
@@ -1110,10 +1104,10 @@ class TestPlayerRoutes:
     """Test player status/stats/skills API endpoints."""
 
     @pytest.fixture
-    def client(self):
+    def client(self, minimal_app):
         from src.api.routes.player import player_bp
 
-        app = _make_minimal_app([(player_bp, "/api/player")])
+        app = minimal_app([(player_bp, "/api/player")])
         with app.test_client() as c:
             yield c, app
 
@@ -1276,10 +1270,10 @@ class TestShopRoutes:
     """Test shop API endpoints."""
 
     @pytest.fixture
-    def client(self):
+    def client(self, minimal_app):
         from src.api.routes.shop import shop_bp
 
-        app = _make_minimal_app([(shop_bp, "/api/shop")])
+        app = minimal_app([(shop_bp, "/api/shop")])
         with app.test_client() as c:
             yield c, app
 
@@ -1411,10 +1405,10 @@ class TestSavesRoutesAuthGuards:
     """Test auth guards on saves routes without exercising async game service."""
 
     @pytest.fixture
-    def client(self):
+    def client(self, minimal_app):
         from src.api.routes.saves import saves_bp
 
-        app = _make_minimal_app([(saves_bp, "/api")])
+        app = minimal_app([(saves_bp, "/api")])
         with app.test_client() as c:
             yield c, app
 

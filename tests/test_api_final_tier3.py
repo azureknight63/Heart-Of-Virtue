@@ -878,12 +878,6 @@ class TestGameServicePlayerOperations:
     """Test GameService player-related operations."""
 
     @pytest.fixture
-    def game_service(self):
-        """Get GameService instance."""
-        from src.api.services.game_service import GameService
-        return GameService()
-
-    @pytest.fixture
     def mock_player(self):
         """Create comprehensive mock player."""
         player = Mock()

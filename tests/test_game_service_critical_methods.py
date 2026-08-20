@@ -22,15 +22,8 @@ each class docstring.
 
 import pytest
 
-from src.api.services.game_service import GameService
 from src.items import Gold
 from tests._gs_fixtures import GRID_3X3, live_world
-
-
-@pytest.fixture(scope="session")
-def game_service():
-    """``GameService.__init__`` is ``pass`` — the service is stateless."""
-    return GameService()
 
 
 @pytest.fixture

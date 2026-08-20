@@ -27,16 +27,9 @@ polls every beat, and **item use**.
 
 import pytest
 
-from src.api.services.game_service import GameService
 from src.items import Gold, Restorative, RustedDagger
 from src.npc import NPC
 from tests._gs_fixtures import GRID_3X3, live_world, set_player_gold
-
-
-@pytest.fixture(scope="session")
-def game_service():
-    """``GameService.__init__`` is ``pass`` — the service is stateless."""
-    return GameService()
 
 
 @pytest.fixture

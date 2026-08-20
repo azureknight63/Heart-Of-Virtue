@@ -45,23 +45,32 @@ def test_book_pagination_boundary_conditions():
     pages = book._paginate_text(exact_text)
     assert len(pages) == 1
 
-    # Test with just over chars_per_page
+    # Test with just over chars_per_page: one character of overflow must spill
+    # onto a second page, not be dropped. ``>= 1`` was true even if the
+    # overflow vanished entirely.
     over_text = "a" * 801
     book2 = Book(text=over_text, chars_per_page=800)
     pages2 = book2._paginate_text(over_text)
-    assert len(pages2) >= 1
+    assert [len(page) for page in pages2] == [800, 1]
+    assert "".join(pages2) == over_text
 
 
 def test_book_pagination_preserves_sentences():
-    """Test that pagination breaks at sentence boundaries when possible."""
-    text_with_sentences = "First sentence. Second sentence. Third sentence. Fourth sentence. Fifth sentence."
+    """Pages must break *at* sentence boundaries, never mid-sentence.
+
+    The old body only asserted each page was non-blank, which a paginator that
+    chopped every 40 characters mid-word would also satisfy.
+    """
+    text_with_sentences = ("First sentence. Second sentence. Third sentence. "
+                           "Fourth sentence. Fifth sentence.")
     book = Book(text=text_with_sentences, chars_per_page=40)
     pages = book._paginate_text(text_with_sentences)
 
-    # Should break into multiple pages at sentence boundaries
+    assert len(pages) > 1
     for page in pages:
-        # Each page should end at a reasonable point (not mid-word if possible)
-        assert page.strip()  # No empty pages
+        assert page.strip()
+        assert page.rstrip().endswith("."), f"page broke mid-sentence: {page!r}"
+    assert " ".join(pages) == text_with_sentences
 
 
 def test_book_with_event(monkeypatch, capsys):
@@ -105,19 +114,19 @@ def test_book_empty_text(monkeypatch, capsys):
 
 
 def test_book_custom_chars_per_page():
-    """Test custom chars_per_page parameter."""
+    """chars_per_page is the real page-size knob, not a decorative parameter."""
     text = "a" * 1000
 
-    # Default pagination
     book1 = Book(text=text)
+    assert book1.chars_per_page == 800          # documented default
     pages1 = book1._paginate_text(text)
 
-    # Custom smaller pages
     book2 = Book(text=text, chars_per_page=100)
     pages2 = book2._paginate_text(text)
 
-    # Smaller page size should create more pages
-    assert len(pages2) > len(pages1)
+    assert [len(p) for p in pages1] == [800, 200]
+    assert [len(p) for p in pages2] == [100] * 10
+    assert "".join(pages1) == "".join(pages2) == text
 
 
 def test_book_text_from_file_only(tmp_path, monkeypatch, capsys):

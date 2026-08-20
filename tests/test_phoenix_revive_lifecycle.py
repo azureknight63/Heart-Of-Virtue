@@ -13,7 +13,6 @@ import random
 from src.states import PhoenixRevive
 from src.enchant_tables import OfThePhoenix
 from src.items import Weapon
-from src.player import Player
 from src.universe import Universe
 
 
@@ -21,14 +20,11 @@ class TestPhoenixReviveState:
     """Test PhoenixRevive state mechanics."""
 
     @pytest.fixture
-    def player(self):
-        """Create a test player with initialized states."""
-        p = MagicMock(spec=Player)
-        p.name = "TestPlayer"
-        p.hp = 100
-        p.maxhp = 100
-        p.states = []
-        return p
+    def player(self, make_spec_player):
+        """A ``Player``-specced mock at full health with no states yet."""
+        return make_spec_player(
+            name="TestPlayer", hp=100, maxhp=100, states=[]
+        )
 
     def test_revive_state_initialization(self, player):
         """Test PhoenixRevive initializes with correct properties."""
@@ -100,19 +96,12 @@ class TestPhoenixReviveEquip:
     """Test PhoenixRevive state application via equip."""
 
     @pytest.fixture
-    def mock_player(self):
-        """Create a mock player for equip testing."""
-        p = MagicMock(spec=Player)
-        p.name = "TestPlayer"
-        p.hp = 100
-        p.maxhp = 100
-        p.states = []
-        p.equipped = {}
-
-        def mock_get_equipped_items():
-            return list(p.equipped.values())
-
-        p.get_equipped_items = mock_get_equipped_items
+    def mock_player(self, make_spec_player):
+        """A ``Player``-specced mock whose equipment slots are test-controlled."""
+        p = make_spec_player(
+            name="TestPlayer", hp=100, maxhp=100, states=[], equipped={}
+        )
+        p.get_equipped_items = lambda: list(p.equipped.values())
         return p
 
     def test_equip_phoenix_item_applies_revive_state(self, mock_player):
@@ -170,15 +159,11 @@ class TestPhoenixReviveApplyMerge:
     """Test apply_equip_states stacking guard."""
 
     @pytest.fixture
-    def player_with_methods(self):
+    def player_with_methods(self, make_spec_player):
         """Create a player with apply_equip_states method."""
-        from src.player import Player
-
-        p = MagicMock(spec=Player)
-        p.name = "TestPlayer"
-        p.hp = 100
-        p.maxhp = 100
-        p.states = []
+        p = make_spec_player(
+            name="TestPlayer", hp=100, maxhp=100, states=[]
+        )
 
         # Use real apply_equip_states logic
         def apply_equip_states(item):
@@ -232,14 +217,11 @@ class TestPhoenixReviveUnequip:
     """Test PhoenixRevive removal on unequip."""
 
     @pytest.fixture
-    def player_with_methods(self):
+    def player_with_methods(self, make_spec_player):
         """Create a player with full equip/unequip methods."""
-        p = MagicMock(spec=Player)
-        p.name = "TestPlayer"
-        p.hp = 100
-        p.maxhp = 100
-        p.states = []
-        p.equipped = {}
+        p = make_spec_player(
+            name="TestPlayer", hp=100, maxhp=100, states=[], equipped={}
+        )
 
         def get_equipped_items():
             return list(p.equipped.values())
@@ -304,14 +286,11 @@ class TestPhoenixReviveVictoryRecharge:
     """Test PhoenixRevive recharge on combat victory."""
 
     @pytest.fixture
-    def player_with_methods(self):
+    def player_with_methods(self, make_spec_player):
         """Create a player with recharge_equip_states method."""
-        p = MagicMock(spec=Player)
-        p.name = "TestPlayer"
-        p.hp = 100
-        p.maxhp = 100
-        p.states = []
-        p.equipped = {}
+        p = make_spec_player(
+            name="TestPlayer", hp=100, maxhp=100, states=[], equipped={}
+        )
 
         def get_equipped_items():
             return list(p.equipped.values())
@@ -412,13 +391,10 @@ class TestPhoenixReviveSecondLethalHit:
     """Test that second lethal hit in same battle does not retrigger revive."""
 
     @pytest.fixture
-    def player(self):
-        p = MagicMock(spec=Player)
-        p.name = "TestPlayer"
-        p.hp = 100
-        p.maxhp = 100
-        p.states = []
-        return p
+    def player(self, make_spec_player):
+        return make_spec_player(
+            name="TestPlayer", hp=100, maxhp=100, states=[]
+        )
 
     def test_revive_not_available_after_first_trigger(self, player):
         """Test that second lethal hit does not revive if state was consumed."""
@@ -452,14 +428,11 @@ class TestPhoenixReviveIntegration:
     """Integration tests for full PhoenixRevive lifecycle."""
 
     @pytest.fixture
-    def realistic_player(self):
+    def realistic_player(self, make_spec_player):
         """Create a more realistic player object for integration testing."""
-        p = MagicMock(spec=Player)
-        p.name = "Jean Claire"
-        p.hp = 100
-        p.maxhp = 100
-        p.states = []
-        p.equipped = {}
+        p = make_spec_player(
+            name="Jean Claire", hp=100, maxhp=100, states=[], equipped={}
+        )
 
         def get_equipped_items():
             return list(p.equipped.values())

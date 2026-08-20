@@ -23,7 +23,6 @@ integration tests pollute — see CLAUDE.md, "Running Tests".
 import pytest
 
 from src.api.serializers.shop_serializer import ShopSerializer
-from src.api.services.game_service import GameService
 from src.items import Gold, Restorative, RustedDagger
 from src.npc import NPC
 from src.npc._merchants import JamboHealsU, Merchant, MiloCurioDealer
@@ -74,12 +73,6 @@ def _live_world(merchant):
 #: ``_fund_player``/``_player_gold`` were local copies of the shared factories.
 _fund_player = set_player_gold
 _player_gold = get_player_gold
-
-
-@pytest.fixture(scope="session")
-def game_service():
-    """``GameService.__init__`` is ``pass`` — the service is stateless."""
-    return GameService()
 
 
 class TestRealMerchantLookup:

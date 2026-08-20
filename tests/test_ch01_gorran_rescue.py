@@ -12,20 +12,27 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from src.player import Player
 from src.tiles import MapTile
 from src.story.ch01 import Ch01PostRumbler3, AfterTheRumblerFight
 
 
 @pytest.fixture
-def player():
-    p = Mock(spec=Player)
-    p.combat_list = []
+def player(make_spec_player):
+    """Jean mid-fight, alone on his side, with no queued combat events.
+
+    ``make_spec_player`` specs against a real ``Player`` *instance*, so every
+    attribute below is one the engine actually has and a read of one it does
+    not (``health``, ``stamina``, ``evasion``) raises rather than inventing a
+    value.
+    """
+    p = make_spec_player(
+        combat_list=[],
+        in_combat=True,
+        level=4,
+        current_room=Mock(spec=MapTile),
+        combat_events=[],
+    )
     p.combat_list_allies = [p]
-    p.in_combat = True
-    p.level = 4
-    p.current_room = Mock(spec=MapTile)
-    p.combat_events = []
     return p
 
 

@@ -24,7 +24,6 @@ from unittest.mock import MagicMock, Mock, patch, PropertyMock, call
 
 
 from src.universe import Universe, tile_exists
-from src.api.services.game_service import GameService
 
 
 # ============================================================================
@@ -69,12 +68,6 @@ def mock_tile():
     tile.events_here = []
     tile.is_passable = True
     return tile
-
-
-@pytest.fixture
-def game_service():
-    """Create GameService instance."""
-    return GameService()
 
 
 # ============================================================================

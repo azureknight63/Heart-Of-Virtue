@@ -630,32 +630,28 @@ class TestSpiderBite:
 
 
 # ---------------------------------------------------------------------------
-# BatBite (if it exists in moves)
+# BatBite (vampiric) — fatigue accounting
 # ---------------------------------------------------------------------------
 
 
 class TestBatBite:
-    """Lines 773+: BatBite (vampiric)."""
+    """BatBite's fatigue bookkeeping.
 
-    def test_batbite_init(self):
-        """BatBite instantiates correctly."""
-        import src.moves as moves
-
-        if not hasattr(moves, "BatBite"):
-            pytest.skip("BatBite not available")
-        p = _make_player_target()
-        npc = _make_npc()
-        npc.target = p
-        bb = moves.BatBite(npc)
-        assert bb.name == "BatBite"
+    The two ``if not hasattr(moves, "BatBite"): pytest.skip(...)`` guards that
+    used to open these tests were dead: ``BatBite`` is exported from
+    ``src/moves/__init__.py`` and wired onto the CaveBat in
+    ``src/npc/_enemies.py``. A conditional skip on a move the engine ships would
+    only ever hide its removal, so both guards are gone. The former
+    ``test_batbite_init`` here was a strict subset of
+    ``TestBatBiteReal.test_batbite_init`` below (which also asserts ``power``)
+    and was deleted rather than duplicated.
+    """
 
     def test_batbite_execute(self):
         """BatBite execute runs without error and deducts its fatigue cost
         regardless of hit/miss outcome."""
         import src.moves as moves
 
-        if not hasattr(moves, "BatBite"):
-            pytest.skip("BatBite not available")
         p = _make_player_target()
         npc = _make_npc(damage=5)
         npc.target = p

@@ -12,29 +12,12 @@ from flask import Flask
 # ---------------------------------------------------------------------------
 
 
-def _make_session(session_id="sid_m1"):
-    s = MagicMock()
-    s.session_id = session_id
-    s.db_user_id = "db_1"
-    s.data = {}
-    s.player_id = "player_1"
-    return s
-
-
 def _make_player():
     p = MagicMock()
     p.name = "Jean Claire"
     p.hp = 100
     p.maxhp = 100
     return p
-
-
-def _make_sm(session, player):
-    sm = MagicMock()
-    sm.get_session.return_value = session
-    sm.get_player.return_value = player
-    sm.save_session.return_value = None
-    return sm
 
 
 def _make_gs():
@@ -47,31 +30,45 @@ def _make_gs():
     return gs
 
 
+@pytest.fixture
+def app_for(make_stub_session, make_stub_session_manager):
+    """Build a one-blueprint Flask app on the shared session/manager stubs.
+
+    The session comes from ``make_stub_session`` (a *real* ``Session``, so a
+    typo'd attribute raises instead of being invented) and the manager from
+    ``make_stub_session_manager`` (``spec``-constrained, so a route calling a
+    method ``SessionManager`` does not have fails the test). Only the blueprint
+    registration stays local, because these routes are mounted under a URL
+    prefix and the shared ``make_route_app`` registers at the app root.
+    """
+
+    def _app_for(bp, url_prefix=None, session=None, player=None):
+        if session is None:
+            session = make_stub_session(session_id="sid_m1", db_user_id="db_1")
+        if player is None:
+            player = _make_player()
+        sm = make_stub_session_manager(session, player)
+        gs = _make_gs()
+
+        app = Flask(__name__)
+        app.config["TESTING"] = True
+        if url_prefix is not None:
+            app.register_blueprint(bp, url_prefix=url_prefix)
+        else:
+            app.register_blueprint(bp)
+        app.session_manager = sm
+        app.game_service = gs
+        app._test_session = session
+        app._test_player = player
+        app._test_sm = sm
+        app._test_gs = gs
+        return app
+
+    return _app_for
+
+
 AUTH = {"Authorization": "Bearer sid_m1"}
 NO_AUTH = {}
-
-
-def _app_for(bp, url_prefix=None, session=None, player=None):
-    if session is None:
-        session = _make_session()
-    if player is None:
-        player = _make_player()
-    sm = _make_sm(session, player)
-    gs = _make_gs()
-
-    app = Flask(__name__)
-    app.config["TESTING"] = True
-    if url_prefix is not None:
-        app.register_blueprint(bp, url_prefix=url_prefix)
-    else:
-        app.register_blueprint(bp)
-    app.session_manager = sm
-    app.game_service = gs
-    app._test_session = session
-    app._test_player = player
-    app._test_sm = sm
-    app._test_gs = gs
-    return app
 
 
 # ===========================================================================
@@ -81,10 +78,10 @@ def _app_for(bp, url_prefix=None, session=None, player=None):
 
 class TestNpcChat:
     @pytest.fixture
-    def app(self):
+    def app(self, app_for):
         from src.api.routes.npc_chat import npc_chat_bp
 
-        return _app_for(npc_chat_bp, url_prefix="/npc-chat")
+        return app_for(npc_chat_bp, url_prefix="/npc-chat")
 
     @pytest.fixture
     def client(self, app):

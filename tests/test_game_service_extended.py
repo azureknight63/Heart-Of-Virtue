@@ -14,19 +14,6 @@ Target: Increase game_service.py coverage from 27% → 60%+ with 35-40 tests.
 
 import pytest
 from unittest.mock import MagicMock, Mock, patch, PropertyMock
-from src.api.services.game_service import GameService
-
-
-@pytest.fixture(scope="session")
-def _cached_game_service():
-    """Cache GameService instance across the session (stateless singleton)."""
-    return GameService()
-
-
-@pytest.fixture
-def game_service(_cached_game_service):
-    """Return the cached GameService (function-scoped to isolate mocks)."""
-    return _cached_game_service
 
 
 @pytest.fixture(scope="session")

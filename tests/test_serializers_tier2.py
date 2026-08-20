@@ -9,6 +9,7 @@ import uuid
 import json
 from unittest.mock import Mock, MagicMock, patch, PropertyMock
 from typing import Any, Dict, List
+import src.items as items
 
 from src.api.combat_adapter import (
     ApiCombatAdapter,
@@ -26,6 +27,47 @@ from src.api.serializers.item_serializer import ItemSerializer
 # ============================================================================
 # FIXTURES
 # ============================================================================
+
+
+@pytest.fixture
+def live_player(make_player):
+    """A **real** ``Player`` in combat.
+
+    ``CombatantSerializer`` branches on ``isinstance(combatant, Player)``, so a
+    ``Mock`` with ``__class__.__name__ = "Player"`` is serialized as an *enemy*
+    -- which is exactly why the serializer tests below were skipped as an
+    "implementation mismatch" instead of being fixed.
+    """
+    player = make_player(weapon="Sword", hp=80, maxhp=100)
+    return player
+
+
+@pytest.fixture
+def live_goblin(make_npc):
+    """A real ``NPC`` standing in for an enemy combatant."""
+    return make_npc(name="Goblin", hp=30, maxhp=40, damage=6)
+
+
+@pytest.fixture
+def live_encounter(live_player, live_goblin, engage, place, repair_proximity):
+    """Real player + real enemy, positioned three feet apart on the real grid."""
+    engage(live_player, [live_goblin])
+    place(live_player, 10, 10)
+    place(live_goblin, 13, 10)
+    repair_proximity([live_player, live_goblin])
+    return live_player, live_goblin
+
+
+class _AnimEntity:
+    """A combatant stand-in carrying a real ``_pending_animation`` dict.
+
+    ``CombatOutputCapture.write`` both mutates and ``delattr``s that attribute,
+    neither of which a bare ``Mock`` models honestly: a Mock answers
+    ``hasattr`` for an attribute that was never set, and swallows the delete.
+    """
+
+    def __init__(self, move_name="Attack"):
+        self._pending_animation = {"outcome": None, "move_name": move_name}
 
 
 @pytest.fixture
@@ -216,50 +258,77 @@ class TestCombatOutputCapture:
         logs = capture.get_log()
         assert len(logs) == 0
 
-    @pytest.mark.skip(reason="Mock setup issue - requires MagicMock for attribute assignment")
-    def test_capture_detects_hit_outcome(self):
-        """Test detection of hit outcomes in combat log."""
+    @pytest.mark.parametrize(
+        "text, outcome",
+        [
+            ("Goblin is struck for 15 damage!", "hit"),
+            ("Goblin just missed!", "miss"),
+            ("Jean missed!", "miss"),
+            ("Attack parried!", "parry"),
+        ],
+    )
+    def test_capture_attaches_the_outcome_to_the_log_entry(self, text, outcome):
+        """An impact line stamps the outcome onto the entry and consumes the pending anim.
+
+        These three cases were skipped as a "Mock setup issue". The real problem
+        was the assertion: ``write()`` calls ``delattr(entity,
+        "_pending_animation")`` once it fires, so reading
+        ``player._pending_animation`` afterwards can never see the outcome. The
+        outcome travels out on the log entry's ``animation_data``, which is what
+        the client actually consumes -- so that is what this now asserts.
+        """
+        entity = _AnimEntity(move_name="Attack")
         capture = CombatOutputCapture()
-        player = Mock()
-        player._pending_animation = {"outcome": None, "move_name": "Attack"}
-        capture.player = player
-        capture.active_entity = player
+        capture.player = entity
+        capture.active_entity = entity
+
+        capture.write(text)
+
+        (entry,) = capture.get_log()
+        assert entry["message"] == text
+        assert entry["trigger_animation"] is True
+        assert entry["animation_data"] == {"outcome": outcome, "move_name": "Attack"}
+        assert not hasattr(entity, "_pending_animation"), (
+            "the pending animation must be consumed so it fires exactly once"
+        )
+
+    def test_capture_fires_the_animation_only_once(self):
+        """A second impact line with no fresh pending animation must not re-trigger."""
+        entity = _AnimEntity(move_name="Attack")
+        capture = CombatOutputCapture()
+        capture.active_entity = entity
 
         capture.write("Goblin is struck for 15 damage!")
+        capture.write("Goblin is struck for 3 damage!")
 
-        logs = capture.get_log()
-        assert len(logs) == 1
-        assert player._pending_animation["outcome"] == "hit"
+        first, second = capture.get_log()
+        assert first["trigger_animation"] is True
+        assert "trigger_animation" not in second
+        assert "animation_data" not in second
 
-    @pytest.mark.skip(reason="Mock setup issue - requires MagicMock for attribute assignment")
-    def test_capture_detects_miss_outcome(self):
-        """Test detection of miss outcomes."""
+    def test_capture_non_impact_text_leaves_the_pending_animation_alone(self):
+        entity = _AnimEntity(move_name="Attack")
         capture = CombatOutputCapture()
-        player = Mock()
-        player._pending_animation = {"outcome": None}
-        capture.player = player
-        capture.active_entity = player
+        capture.active_entity = entity
 
-        capture.write("Goblin just missed!")
+        capture.write("Jean winds up for a strike...")
 
-        logs = capture.get_log()
-        assert len(logs) == 1
-        assert player._pending_animation["outcome"] == "miss"
+        (entry,) = capture.get_log()
+        assert "trigger_animation" not in entry
+        assert entity._pending_animation == {"outcome": None, "move_name": "Attack"}
 
-    @pytest.mark.skip(reason="Mock setup issue - requires MagicMock for attribute assignment")
-    def test_capture_detects_parry_outcome(self):
-        """Test detection of parry outcomes."""
-        capture = CombatOutputCapture()
-        player = Mock()
-        player._pending_animation = {"outcome": None}
-        capture.player = player
-        capture.active_entity = player
+    def test_capture_prefers_active_entity_over_player(self):
+        """Impact text must never be misattributed to a different combatant."""
+        player = _AnimEntity(move_name="Attack")
+        npc = _AnimEntity(move_name="NPC_Attack")
+        capture = CombatOutputCapture(player)
+        capture.active_entity = npc
 
-        capture.write("Attack parried!")
+        capture.write("Jean is struck for 8 damage!")
 
-        logs = capture.get_log()
-        assert len(logs) == 1
-        assert player._pending_animation["outcome"] == "parry"
+        (entry,) = capture.get_log()
+        assert entry["animation_data"]["move_name"] == "NPC_Attack"
+        assert player._pending_animation["outcome"] is None, "player must be untouched"
 
     def test_capture_empty_text_ignored(self):
         """Test that empty or whitespace-only text is ignored."""
@@ -345,15 +414,24 @@ class TestApiCombatAdapterInit:
 
         assert adapter.session_id == "test_123"
 
-    @pytest.mark.skip(reason="Mock setup issue - player fixture doesn't allow attribute assignment")
-    def test_adapter_creates_state_dict(self, mock_player):
-        """Test adapter creates combat_adapter_state if missing."""
-        mock_player.combat_adapter_state = None
+    def test_adapter_creates_state_dict(self, live_player):
+        """A player with no ``combat_adapter_state`` gets the full default dict.
 
-        adapter = ApiCombatAdapter(mock_player)
+        Was skipped as a "Mock setup issue"; the real problem is that the
+        adapter guards on ``hasattr``, and a ``Mock`` answers ``hasattr`` for
+        every name, so the branch could never be reached with a mock at all.
+        A real ``Player`` genuinely lacks the attribute until an adapter runs.
+        """
+        assert not hasattr(live_player, "combat_adapter_state")
 
-        assert hasattr(mock_player, "combat_adapter_state")
-        assert isinstance(mock_player.combat_adapter_state, dict)
+        ApiCombatAdapter(live_player)
+
+        assert live_player.combat_adapter_state == {
+            "awaiting_input": False,
+            "input_type": None,
+            "pending_move_index": None,
+            "available_options": [],
+        }
 
     def test_adapter_preserves_existing_state(self, mock_player):
         """Test adapter preserves existing combat_adapter_state."""
@@ -483,37 +561,52 @@ class TestAddLogEntry:
 class TestCombatStateSerializer:
     """Test combat state serialization."""
 
-    @pytest.mark.skip(reason="Serializer implementation mismatch with test expectations")
-    def test_serialize_empty_combat_state(self, mock_player):
-        """Test serializing combat state with no enemies."""
-        result = CombatStateSerializer.serialize_combat_state(mock_player, [])
+    def test_serialize_empty_combat_state(self, live_player):
+        """No enemies: both rosters are empty and ``combatants`` holds only Jean."""
+        result = CombatStateSerializer.serialize_combat_state(live_player, [])
 
         assert result["status"] == "active"
         assert result["round"] == 1
-        assert result["player"]["name"] == "Jean Claire"
+        assert result["current_turn_index"] == 0
+        assert result["player"]["name"] == live_player.name
+        assert result["player"]["id"] == "player"
         assert result["enemies"] == []
         assert result["allies"] == []
+        assert [c["id"] for c in result["combatants"]] == ["player"]
 
-    @pytest.mark.skip(reason="Serializer implementation mismatch with test expectations")
-    def test_serialize_combat_state_with_enemies(self, mock_player, mock_npc):
-        """Test serializing combat state with enemies."""
-        result = CombatStateSerializer.serialize_combat_state(mock_player, [mock_npc])
+    def test_serialize_combat_state_with_enemies(self, live_encounter):
+        """Enemies appear in ``enemies`` and are appended after the player."""
+        player, goblin = live_encounter
+
+        result = CombatStateSerializer.serialize_combat_state(player, [goblin])
 
         assert result["status"] == "active"
-        assert len(result["enemies"]) == 1
-        assert result["enemies"][0]["name"] == "Goblin"
+        assert [e["name"] for e in result["enemies"]] == ["Goblin"]
+        assert result["enemies"][0]["id"] == f"enemy_{id(goblin)}"
+        assert result["enemies"][0]["type"] == "npc"
+        # Distance is measured against the player reference, not invented.
+        assert result["enemies"][0]["distance"] == 3
+        assert [c["id"] for c in result["combatants"]] == [
+            "player",
+            f"enemy_{id(goblin)}",
+        ]
 
-    @pytest.mark.skip(reason="Serializer implementation mismatch with test expectations")
-    def test_serialize_combat_state_with_allies(self, mock_player, mock_npc):
-        """Test serializing combat state with allies."""
-        mock_npc.friend = True
+    def test_serialize_combat_state_with_allies(self, live_player, live_goblin):
+        """A ``friend`` NPC lands in ``allies`` and carries an ``ally_`` wire id."""
+        live_goblin.friend = True
 
         result = CombatStateSerializer.serialize_combat_state(
-            mock_player, [], allies=[mock_npc]
+            live_player, [], allies=[live_goblin]
         )
 
-        assert len(result["allies"]) == 1
-        assert result["allies"][0]["name"] == "Goblin"
+        assert [a["name"] for a in result["allies"]] == ["Goblin"]
+        assert result["allies"][0]["id"] == f"ally_{id(live_goblin)}"
+        assert result["enemies"] == []
+        # combatants = player, then allies, then enemies -- order is the contract.
+        assert [c["id"] for c in result["combatants"]] == [
+            "player",
+            f"ally_{id(live_goblin)}",
+        ]
 
     def test_serialize_battle_summary_victory(self, mock_player, mock_npc):
         """Test battle summary for victory."""
@@ -559,64 +652,84 @@ class TestCombatStateSerializer:
 # ============================================================================
 
 
-@pytest.mark.skip(reason="Serializer implementation mismatch - skipping to maintain CI stability")
 class TestCombatantSerializer:
     """Test combatant serialization."""
 
-    def test_serialize_player(self, mock_player):
-        """Test serializing a player combatant."""
-        result = CombatantSerializer.serialize_combatant(mock_player)
+    def test_serialize_player(self, live_player):
+        """The player's wire id is the literal string ``player``."""
+        result = CombatantSerializer.serialize_combatant(live_player)
 
         assert result["id"] == "player"
         assert result["type"] == "player"
-        assert result["name"] == "Jean Claire"
-        assert result["health"]["current"] == 80
-        assert result["health"]["max"] == 100
-        assert result["heat"] == 1.0
+        assert result["name"] == live_player.name
+        assert result["health"] == {"current": 80, "max": 100}
+        assert result["hp"] == 80 and result["max_hp"] == 100
+        assert result["heat"] == live_player.heat
 
-    def test_serialize_enemy_npc(self, mock_npc):
-        """Test serializing an enemy NPC."""
-        result = CombatantSerializer.serialize_combatant(mock_npc)
+    def test_serialize_enemy_npc(self, live_goblin):
+        result = CombatantSerializer.serialize_combatant(live_goblin)
 
         assert result["type"] == "npc"
         assert result["name"] == "Goblin"
-        assert result["id"].startswith("enemy_")
+        assert result["id"] == f"enemy_{id(live_goblin)}"
+        assert result["health"] == {"current": 30, "max": 40}
 
-    def test_serialize_ally_npc(self, mock_npc):
-        """Test serializing an ally NPC."""
-        mock_npc.friend = True
+    def test_serialize_ally_npc(self, live_goblin):
+        """``friend`` is what flips the id prefix -- nothing else changes."""
+        enemy_id = CombatantSerializer.serialize_combatant(live_goblin)["id"]
+        live_goblin.friend = True
 
-        result = CombatantSerializer.serialize_combatant(mock_npc)
+        result = CombatantSerializer.serialize_combatant(live_goblin)
 
-        assert result["id"].startswith("ally_")
+        assert result["id"] == f"ally_{id(live_goblin)}"
+        assert result["id"] != enemy_id
+        assert result["type"] == "npc", "allies are still NPCs, not players"
 
-    def test_serialize_combatant_with_distance(self, mock_player, mock_npc):
-        """Test serializing combatant calculates distance to reference."""
-        with patch.object(CombatantSerializer, '_get_distance', return_value=10):
-            result = CombatantSerializer.serialize_combatant(
-                mock_npc, reference=mock_player
-            )
+    def test_serialize_combatant_with_distance(self, live_encounter, place,
+                                               repair_proximity):
+        """``distance`` is computed from real grid coordinates, not stubbed."""
+        player, goblin = live_encounter
 
-            assert result["distance"] == 10
+        assert CombatantSerializer.serialize_combatant(
+            goblin, reference=player
+        )["distance"] == 3
 
-    def test_serialize_status_effects(self, mock_player):
-        """Test status effects are included in serialization."""
-        mock_player.status_effects = [
-            Mock(name="Poison", stacks=1),
-            Mock(name="Bleed", stacks=2)
+        place(goblin, 20, 10)
+        repair_proximity([player, goblin])
+        assert CombatantSerializer.serialize_combatant(
+            goblin, reference=player
+        )["distance"] == 10
+
+    def test_serialize_status_effects(self, live_player):
+        """Real ``State`` objects are serialized with their name and beats left."""
+        from src.states import Poisoned
+
+        poison = Poisoned(live_player)
+        poison.beats_left = 5
+        live_player.states = [poison]
+
+        result = CombatantSerializer.serialize_combatant(live_player)
+
+        assert result["status_effects"] == [
+            {
+                "name": "Poisoned",
+                "type": "ailment",
+                "description": poison.description,
+                "severity": "severe",
+                "beats_left": 5,
+            }
         ]
 
-        result = CombatantSerializer.serialize_combatant(mock_player)
+    def test_serialize_equipment(self, live_player):
+        """Equipment mirrors the real equipped weapon, not a placeholder."""
+        result = CombatantSerializer.serialize_combatant(live_player)
 
-        assert "status_effects" in result
-
-    def test_serialize_equipment(self, mock_player, mock_item):
-        """Test equipment is serialized."""
-        mock_player.eq_weapon = mock_item
-
-        result = CombatantSerializer.serialize_combatant(mock_player)
-
-        assert "equipment" in result
+        assert result["equipment"]["weapon"] == {
+            "name": live_player.eq_weapon.name,
+            "damage": live_player.eq_weapon.damage,
+            "damage_type": items.get_base_damage_type(live_player.eq_weapon),
+        }
+        assert result["stats"]["damage"] == live_player.eq_weapon.damage
 
 
 # ============================================================================
@@ -624,26 +737,38 @@ class TestCombatantSerializer:
 # ============================================================================
 
 
-@pytest.mark.skip(reason="Serializer implementation mismatch - skipping to maintain CI stability")
 class TestNPCSerializer:
     """Test NPC serialization."""
 
-    def test_serialize_npc_basic(self, mock_npc):
-        """Test basic NPC serialization."""
-        result = NPCSerializer.serialize_npc(mock_npc)
+    def test_serialize_npc_basic(self, live_goblin):
+        """The wire keys are ``health``/``max_health`` -- not ``hp``/``maxhp``.
+
+        The previous version of this test called ``NPCSerializer.serialize_npc``
+        (no such method; it is ``serialize``) and asserted ``"hp" in result``.
+        Both were wrong, and the skip marker hid it.
+        """
+        result = NPCSerializer.serialize(live_goblin)
 
         assert result["name"] == "Goblin"
-        assert result["level"] == 2
-        assert "hp" in result
-        assert "maxhp" in result
+        assert result["type"] == "NPC"
+        assert result["level"] == 1, "NPC has no level attribute; 1 is the default"
+        assert result["health"] == 30
+        assert result["max_health"] == 40
+        assert result["is_hostile"] is True
+        assert "attack" in result["keywords"]
+        assert "hp" not in result and "maxhp" not in result
 
-    def test_serialize_npc_with_inventory(self, mock_npc, mock_item):
-        """Test NPC with inventory items."""
-        mock_npc.inventory = [mock_item]
+    def test_serialize_npc_friendly_is_not_hostile(self, live_goblin):
+        live_goblin.friend = True
+        assert NPCSerializer.serialize(live_goblin)["is_hostile"] is False
 
-        result = NPCSerializer.serialize_npc(mock_npc)
+    def test_serialize_npc_list_preserves_order(self, make_npc):
+        first = make_npc(name="Alpha")
+        second = make_npc(name="Beta")
 
-        assert "inventory" in result
+        result = NPCSerializer.serialize_list([first, second])
+
+        assert [n["name"] for n in result] == ["Alpha", "Beta"]
 
 
 # ============================================================================
@@ -823,23 +948,51 @@ class TestProcessCommand:
 # ============================================================================
 
 
-@pytest.mark.skip(reason="Serializer implementation mismatch - skipping to maintain CI stability")
 class TestInventorySerializer:
     """Test inventory serialization."""
 
-    def test_serialize_empty_inventory(self, mock_player):
-        """Test serializing empty inventory."""
-        result = InventorySerializer.serialize_inventory(mock_player.inventory)
+    def test_serialize_empty_inventory(self, live_player):
+        """``InventorySerializer.serialize`` takes the *player*, not a list.
 
-        assert result == []
+        (The prior version called ``serialize_inventory``, which does not exist,
+        and asserted the result was a bare list. The real payload is a dict
+        carrying the weight/slot summary the HUD reads.)
+        """
+        live_player.inventory = []
 
-    def test_serialize_inventory_with_items(self, mock_item):
-        """Test serializing inventory with items."""
-        inventory = [mock_item]
+        result = InventorySerializer.serialize(live_player)
 
-        result = InventorySerializer.serialize_inventory(inventory)
+        assert result["items"] == []
+        assert result["item_count"] == 0
+        assert result["slots_used"] == 0
+        assert result["total_weight"] == 0.0
+        assert result["weight_percentage"] == 0.0
 
-        assert len(result) == 1
+    def test_serialize_inventory_with_items(self, live_player, make_weapon):
+        """Item count, slots used and total weight all track the real inventory."""
+        dagger = make_weapon("Dagger")
+        live_player.inventory = [dagger]
+
+        result = InventorySerializer.serialize(live_player)
+
+        assert result["item_count"] == 1
+        assert result["slots_used"] == 1
+        assert result["total_weight"] == pytest.approx(dagger.weight)
+        (entry,) = result["items"]
+        assert entry["name"] == dagger.name
+        assert entry["index"] == 0
+        assert entry["can_equip"] is True
+
+    def test_serialize_inventory_weight_percentage_tracks_the_limit(
+        self, live_player, make_weapon
+    ):
+        live_player.inventory = [make_weapon("Halberd")]
+        result = InventorySerializer.serialize(live_player)
+
+        expected = round(
+            result["total_weight"] / result["weight_limit"] * 100, 1
+        )
+        assert result["weight_percentage"] == pytest.approx(expected, abs=0.05)
 
 
 # ============================================================================
@@ -847,7 +1000,6 @@ class TestInventorySerializer:
 # ============================================================================
 
 
-@pytest.mark.skip(reason="Serializer implementation mismatch - skipping to maintain CI stability")
 class TestRoundTripSerialization:
     """Test serializing and deserializing data."""
 
@@ -858,17 +1010,16 @@ class TestRoundTripSerialization:
         json_str = json.dumps(serialized)
         assert len(json_str) > 0
 
-    def test_combat_state_roundtrip(self, mock_player, mock_npc):
-        """Test serializing and deserializing combat state."""
-        serialized = CombatStateSerializer.serialize_combat_state(
-            mock_player, [mock_npc]
-        )
+    def test_combat_state_roundtrip(self, live_encounter):
+        """The whole payload survives a real JSON round trip byte for byte."""
+        player, goblin = live_encounter
+        serialized = CombatStateSerializer.serialize_combat_state(player, [goblin])
 
-        json_str = json.dumps(serialized)
-        restored = json.loads(json_str)
+        restored = json.loads(json.dumps(serialized))
 
-        assert restored["player"]["name"] == "Jean Claire"
-        assert len(restored["enemies"]) == 1
+        assert restored == serialized, "no value in the payload is JSON-lossy"
+        assert restored["player"]["name"] == player.name
+        assert [e["name"] for e in restored["enemies"]] == ["Goblin"]
 
     def test_multiple_combatants_roundtrip(self, mock_player, mock_npc):
         """Test roundtrip with multiple combatants."""
@@ -891,33 +1042,56 @@ class TestRoundTripSerialization:
 # ============================================================================
 
 
-@pytest.mark.skip(reason="Serializer implementation mismatch - skipping to maintain CI stability")
 class TestErrorHandlingEdgeCases:
     """Test error handling and edge case serialization."""
 
     def test_serialize_combatant_null_values(self):
-        """Test serializing combatant with null values."""
-        combatant = Mock()
-        combatant.__class__.__name__ = "NPC"
-        combatant.name = None
-        combatant.hp = None
-        combatant.maxhp = None
-        combatant.friend = False
+        """``None`` hp/name pass through instead of crashing the serializer.
 
-        result = CombatantSerializer.serialize_combatant(combatant)
+        Previously this asserted only ``result is not None`` -- which the
+        ``@safe_serializer`` decorator satisfies with ``{}`` even when the
+        serializer blows up, so the test passed while proving nothing.
+        """
 
-        assert result is not None
+        class NullCombatant:
+            name = None
+            hp = None
+            maxhp = None
+            friend = False
+
+        result = CombatantSerializer.serialize_combatant(NullCombatant())
+
+        assert result != {}, "an empty dict means the serializer raised"
+        assert result["name"] is None
+        assert result["health"] == {"current": None, "max": None}
+        assert result["type"] == "npc"
 
     def test_serialize_player_missing_attributes(self):
-        """Test serializing player with missing attributes."""
-        player = Mock()
-        player.__class__.__name__ = "Player"
-        player.name = "Test"
+        """A combatant with nothing but a name falls back to documented defaults.
 
-        result = CombatantSerializer.serialize_combatant(player)
+        Note the ``type``: ``serialize_combatant`` branches on
+        ``isinstance(combatant, Player)``, so an object that merely *claims* the
+        name "Player" is still serialized as an NPC. The old version of this
+        test set ``Mock().__class__.__name__ = "Player"`` and expected
+        ``type == "player"``, which the real code has never done.
+        """
 
-        assert result is not None
+        class BareCombatant:
+            name = "Test"
+
+        result = CombatantSerializer.serialize_combatant(BareCombatant())
+
         assert result["name"] == "Test"
+        assert result["type"] == "npc"
+        assert result["level"] == 1
+        assert result["hp"] == 0 and result["max_hp"] == 100
+        assert result["status_effects"] == []
+        assert result["equipment"] == {
+            "weapon": None,
+            "armor": None,
+            "resistances": {},
+        }
+        assert result["position"] is None
 
     def test_combat_log_with_special_characters(self, adapter_setup, mock_player):
         """Test log entries with special characters."""

@@ -11,7 +11,6 @@ import importlib
 import pytest
 
 from src.api.serializers.shop_serializer import ShopSerializer
-from src.api.services.game_service import GameService
 from src.items import Restorative
 from src.npc._merchants import JamboHealsU, Merchant, MiloCurioDealer
 from src.player import Player
@@ -28,11 +27,6 @@ def _base_merchant():
         exp_award=0,
         stock_count=5,
     )
-
-
-@pytest.fixture
-def game_service():
-    return GameService()
 
 
 @pytest.fixture

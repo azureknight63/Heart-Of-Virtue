@@ -10,15 +10,7 @@ short-circuiting) is the success/failure tally in that summary.
 
 from unittest.mock import MagicMock, patch
 
-import pytest
 
-from src.player import Player
-
-
-@pytest.fixture
-def player():
-    """A bare Player; refresh_merchants only needs ``universe``."""
-    return Player()
 
 
 def _universe_with_tile(tile):
