@@ -2,7 +2,8 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import React from 'react';
 import { MemoryRouter } from 'react-router-dom';
-import GamePage from './GamePage';
+import GamePage from './GamePage'
+import { makeStatusEffect } from '../test/payloads';
 import { capabilitiesDisabled } from '../test/mockHelpers';
 import * as api from '../api/endpoints';
 import { usePlayer, useWorld, useCombat, useExploration, useExits, useAutosave } from '../hooks/useApi';
@@ -297,12 +298,14 @@ describe('Tactical AI Integration Tests', () => {
             expect(api.combat.getStatus).toHaveBeenCalled();
         }, { timeout: 10000 });
 
-        // Verify suggested moves panel appears (waits for log processing + visibility timer)
-        await waitFor(() => {
-            const advisorText = screen.queryByText(/TACTICAL ADVISOR/i) || screen.queryByText(/Suggested Moves/i);
-            expect(advisorText).toBeTruthy();
-        }, { timeout: 10000 });
-    }, 10000);
+        // The panel HEADER was the only thing asserted here, so the panel
+        // could have rendered empty — or dropped every suggestion the API
+        // returned — and the test still passed. Assert the suggestions.
+        expect(await screen.findByText(/TACTICAL ADVISOR/i, {}, { timeout: 10000 })).toBeInTheDocument();
+        expect(screen.getByText('Slash')).toBeInTheDocument();
+        expect(screen.getByText('Dodge')).toBeInTheDocument();
+        expect(screen.getByText(/High damage potential against low HP enemy\./)).toBeInTheDocument();
+    }, 15000);
 
     it('executes combined move and target from AI suggestion click', async () => {
         api.combat.getStatus.mockResolvedValue({
@@ -390,19 +393,25 @@ describe('Tactical AI Integration Tests', () => {
                         name: 'Jean',
                         hp: 75,
                         max_hp: 100,
+                        // `beats_left`, not `duration_remaining`:
+                        // StateEffectSerializer.serialize_state (the live path
+                        // that actually feeds this component) emits the former;
+                        // the latter comes from serialize_state_with_duration,
+                        // which has no callers. Encoding the dead name here was
+                        // wire-drift bug #4 reproduced inside the fixture.
                         status_effects: [
-                            {
+                            makeStatusEffect({
                                 name: 'Burn',
                                 type: 'ailment',
                                 description: 'Taking fire damage',
-                                duration_remaining: 3,
-                            },
-                            {
+                                beats_left: 3,
+                            }),
+                            makeStatusEffect({
                                 name: 'Shield',
                                 type: 'buff',
                                 description: 'Increased protection',
-                                duration_remaining: 5,
-                            },
+                                beats_left: 5,
+                            }),
                         ]
                     },
                     input_type: 'move_selection',
@@ -471,17 +480,14 @@ describe('Tactical AI Integration Tests', () => {
             expect(api.combat.getStatus).toHaveBeenCalled();
         }, { timeout: 10000 });
 
-        // Look for previous cycle analysis
-        await waitFor(() => {
-            const advisorText = screen.queryByText(/TACTICAL ADVISOR/i);
-            const analysisText = screen.queryByText(/ANALYSIS OF PREVIOUS CYCLE/i);
-            const outcomeText = screen.queryByText(/previous attack dealt 20 damage/i);
-
-            // Header and either analysis label or outcome should be visible
-            expect(advisorText).toBeTruthy();
-            expect(analysisText || outcomeText).toBeTruthy();
-        }, { timeout: 10000 });
-    }, 10000);
+        // `expect(analysisText || outcomeText).toBeTruthy()` let the test pass
+        // on the analysis LABEL alone — i.e. with last_move_outcome dropped
+        // entirely, which is the one field this test is named for. Assert the
+        // outcome copy itself.
+        expect(await screen.findByText(/TACTICAL ADVISOR/i, {}, { timeout: 10000 })).toBeInTheDocument();
+        expect(screen.getByText(/ANALYSIS OF PREVIOUS CYCLE/i)).toBeInTheDocument();
+        expect(screen.getByText(/previous attack dealt 20 damage/i)).toBeInTheDocument();
+    }, 15000);
 
     it('updates status effects when combat state changes', async () => {
         let callCount = 0;
@@ -537,12 +543,12 @@ describe('Tactical AI Integration Tests', () => {
                                 hp: 95,
                                 max_hp: 100,
                                 status_effects: [
-                                    {
+                                    makeStatusEffect({
                                         name: 'Poison',
                                         type: 'ailment',
                                         description: 'Losing HP over time',
-                                        duration_remaining: 4,
-                                    },
+                                        beats_left: 4,
+                                    }),
                                 ],
                             },
                             input_type: 'move_selection',

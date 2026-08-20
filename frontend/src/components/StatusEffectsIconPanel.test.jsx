@@ -116,38 +116,32 @@ describe('StatusEffectsIconPanel', () => {
             expect(screen.getByText).toBeDefined();
         });
 
-        it('displays effect expiring soon (1 beat remaining)', () => {
-            const expiring = [
-                { name: 'Ending Effect', type: 'buff', description: 'Almost gone', beats_left: 1 }
-            ];
-            render(<StatusEffectsIconPanel effects={expiring} />);
-            expect(screen.getByText).toBeDefined();
+        // These three previously asserted `expect(screen.getByText).toBeDefined()`
+        // — i.e. that testing-library's own query function exists. They would
+        // have passed against a component that rendered the duration line for
+        // every effect, or for none of them. They now read the line.
+        it.each([[1], [99]])('renders the remaining-beats line for beats_left=%i', (beats) => {
+            render(<StatusEffectsIconPanel effects={[
+                { name: 'Shield', type: 'buff', description: 'Guard', beats_left: beats }
+            ]} />);
+            fireEvent.mouseEnter(screen.getByText('🛡️'));
+            expect(screen.getByText(`${beats} beats remaining`)).toBeInTheDocument();
         });
 
-        it('displays effect with long duration', () => {
-            const longDuration = [
-                { name: 'Long Buff', type: 'buff', description: 'Extended protection', beats_left: 99 }
-            ];
-            render(<StatusEffectsIconPanel effects={longDuration} />);
-            expect(screen.getByText).toBeDefined();
-        });
-
-        it('handles zero duration remaining', () => {
-            const noDuration = [
-                { name: 'Expired', type: 'buff', description: 'Already expired', beats_left: 0 }
-            ];
-            render(<StatusEffectsIconPanel effects={noDuration} />);
-            expect(screen.getByText).toBeDefined();
-        });
-
-        it('handles negative duration gracefully', () => {
-            const negativeDuration = [
-                { name: 'Over-expired', type: 'ailment', description: 'Should not happen', beats_left: -1 }
-            ];
-            expect(() => {
-                render(<StatusEffectsIconPanel effects={negativeDuration} />);
-            }).not.toThrow();
-        });
+        it.each([[0], [-1]])(
+            'omits the remaining-beats line entirely for a non-positive beats_left=%i',
+            (beats) => {
+                // `> 0` rather than `!== undefined` is load-bearing: permanent
+                // states carry beats_left fixed at 0, and the earlier check
+                // labelled every permanent buff "0 beats remaining".
+                render(<StatusEffectsIconPanel effects={[
+                    { name: 'Shield', type: 'buff', description: 'Guard', beats_left: beats }
+                ]} />);
+                fireEvent.mouseEnter(screen.getByText('🛡️'));
+                expect(screen.getByText('SHIELD')).toBeInTheDocument();
+                expect(screen.queryByText(/beats remaining/)).not.toBeInTheDocument();
+            }
+        );
 
         it('renders the remaining-beats line from the beats_left the API actually sends', () => {
             // StateEffectSerializer.serialize_state emits `beats_left`; this is the
@@ -165,24 +159,29 @@ describe('StatusEffectsIconPanel', () => {
             expect(screen.getByText('7 beats remaining')).toBeInTheDocument();
         });
 
-        it('omits the remaining-beats line for an expired effect', () => {
-            const effects = [{ name: 'Burn', type: 'ailment', description: 'Fire', beats_left: 0 }];
-            render(<StatusEffectsIconPanel effects={effects} />);
-            fireEvent.mouseEnter(screen.getByText('🔥'));
-            expect(screen.queryByText(/beats remaining/)).not.toBeInTheDocument();
-        });
     });
 
     describe('Multiple Effects', () => {
-        it('renders many effects', () => {
+        it('renders one icon per effect and colours each by its own type', () => {
+            // beats_left was Math.random() here, and the only assertion was
+            // that screen.getByText exists — so the list length and the
+            // per-effect type styling were both unproven.
             const manyEffects = Array.from({ length: 15 }, (_, i) => ({
                 name: `Effect ${i}`,
                 type: i % 2 === 0 ? 'buff' : 'ailment',
                 description: `Description ${i}`,
-                beats_left: Math.floor(Math.random() * 10) + 1
+                beats_left: i + 1,
             }));
             render(<StatusEffectsIconPanel effects={manyEffects} />);
-            expect(screen.getByText).toBeDefined();
+
+            // Every name falls through getEffectIcon's keyword table to the
+            // default glyph, so all 15 render and none are collapsed.
+            expect(screen.getAllByText('✨')).toHaveLength(15);
+            // buff -> success green, ailment -> gold; the tile border carries it.
+            const borders = screen.getAllByText('✨').map((el) => el.style.border);
+            expect(borders[0]).not.toBe(borders[1]);
+            expect(borders[0]).toBe(borders[2]);
+            expect(borders[1]).toBe(borders[3]);
         });
 
         it('handles duplicate effect names', () => {
@@ -205,27 +204,32 @@ describe('StatusEffectsIconPanel', () => {
     });
 
     describe('Hover and Interaction', () => {
-        it('handles hover on single effect', () => {
-            const { container } = render(<StatusEffectsIconPanel effects={mockEffects} />);
+        it('opens the tooltip on mouseenter and closes it on mouseleave', () => {
+            render(<StatusEffectsIconPanel effects={mockEffects} />);
             const shield = screen.getByText('🛡️');
 
+            expect(screen.queryByText('SHIELD')).not.toBeInTheDocument();
             fireEvent.mouseEnter(shield);
-            expect(shield).toBeDefined();
+            expect(screen.getByText('SHIELD')).toBeInTheDocument();
+            expect(screen.getByText('Increases protection.')).toBeInTheDocument();
 
             fireEvent.mouseLeave(shield);
-            expect(shield).toBeDefined();
+            expect(screen.queryByText('SHIELD')).not.toBeInTheDocument();
         });
 
-        it('handles rapid hover on multiple effects', () => {
-            const { container } = render(<StatusEffectsIconPanel effects={mockEffects} />);
-            const icons = screen.getAllByText(/🔥|🛡️/);
+        it('shows only the currently-hovered effect\'s tooltip when moving between icons', () => {
+            // Hover state is a single `hoveredEffectName`, so moving from one
+            // icon to the next must swap the tooltip, never stack both.
+            render(<StatusEffectsIconPanel effects={mockEffects} />);
 
-            icons.forEach(icon => {
-                fireEvent.mouseEnter(icon);
-                fireEvent.mouseLeave(icon);
-            });
+            fireEvent.mouseEnter(screen.getByText('🔥'));
+            expect(screen.getByText('BURN')).toBeInTheDocument();
+            expect(screen.queryByText('SHIELD')).not.toBeInTheDocument();
 
-            expect(screen.getByText('🔥')).toBeDefined();
+            fireEvent.mouseLeave(screen.getByText('🔥'));
+            fireEvent.mouseEnter(screen.getByText('🛡️'));
+            expect(screen.getByText('SHIELD')).toBeInTheDocument();
+            expect(screen.queryByText('BURN')).not.toBeInTheDocument();
         });
 
         it('handles hover and unmount', () => {
@@ -240,47 +244,47 @@ describe('StatusEffectsIconPanel', () => {
     });
 
     describe('Description Handling', () => {
-        it('displays effects with descriptions', () => {
-            const withDesc = [
+        const hoverFirstIcon = () => fireEvent.mouseEnter(screen.getByText('✨'));
+
+        it('renders the supplied description in the tooltip', () => {
+            render(<StatusEffectsIconPanel effects={[
                 { name: 'Known Effect', type: 'buff', description: 'Clear description', beats_left: 5 }
-            ];
-            render(<StatusEffectsIconPanel effects={withDesc} />);
-            expect(screen.getByText).toBeDefined();
+            ]} />);
+            hoverFirstIcon();
+            expect(screen.getByText('Clear description')).toBeInTheDocument();
         });
 
-        it('handles missing descriptions', () => {
-            const noDesc = [
+        it('falls back to placeholder copy when the effect has no description', () => {
+            // Previously only `not.toThrow()`, which would have passed against
+            // a tooltip that rendered a blank gap where the copy belongs.
+            render(<StatusEffectsIconPanel effects={[
                 { name: 'Mystery Effect', type: 'buff', beats_left: 3 }
-            ];
-            expect(() => {
-                render(<StatusEffectsIconPanel effects={noDesc} />);
-            }).not.toThrow();
+            ]} />);
+            hoverFirstIcon();
+            expect(screen.getByText('No description available.')).toBeInTheDocument();
         });
 
-        it('handles very long descriptions', () => {
-            const longDesc = [
-                {
-                    name: 'Complex Effect',
-                    type: 'buff',
-                    description: 'This is a very long description that explains in great detail what this effect does and how it impacts the player. '.repeat(5),
-                    beats_left: 5
-                }
-            ];
-            render(<StatusEffectsIconPanel effects={longDesc} />);
-            expect(screen.getByText).toBeDefined();
+        it('renders a long description in full rather than truncating it', () => {
+            const long = 'This is a very long description that explains in great detail what this effect does and how it impacts the player. '.repeat(5);
+            render(<StatusEffectsIconPanel effects={[
+                { name: 'Complex Effect', type: 'buff', description: long, beats_left: 5 }
+            ]} />);
+            hoverFirstIcon();
+            expect(screen.getByText(long.trim())).toBeInTheDocument();
         });
 
-        it('handles special characters in descriptions', () => {
-            const specialDesc = [
-                {
-                    name: 'Special',
-                    type: 'buff',
-                    description: 'Effect with special chars: <>&"\'',
-                    beats_left: 3
-                }
-            ];
-            render(<StatusEffectsIconPanel effects={specialDesc} />);
-            expect(screen.getByText).toBeDefined();
+        it('renders special characters as literal text, not markup', () => {
+            const description = 'Effect with special chars: <>&"\'';
+            render(<StatusEffectsIconPanel effects={[
+                { name: 'Special', type: 'buff', description, beats_left: 3 }
+            ]} />);
+            hoverFirstIcon();
+            const node = screen.getByText(description);
+            expect(node).toBeInTheDocument();
+            // React escapes by default; assert it, so a future switch to
+            // dangerouslySetInnerHTML shows up here rather than as an XSS.
+            expect(node.textContent).toBe(description);
+            expect(node.querySelector('*')).toBeNull();
         });
     });
 
@@ -295,13 +299,15 @@ describe('StatusEffectsIconPanel', () => {
             expect(container.firstChild).toBeNull();
         });
 
-        it('handles effects with missing optional properties', () => {
-            const incomplete = [
-                { name: 'Minimal Effect', type: 'buff' }
-            ];
-            expect(() => {
-                render(<StatusEffectsIconPanel effects={incomplete} />);
-            }).not.toThrow();
+        it('renders an effect carrying only a name and type', () => {
+            // A serializer that dropped description/beats_left must degrade to
+            // the default glyph plus placeholder copy, with no duration line —
+            // `not.toThrow()` proved none of that.
+            render(<StatusEffectsIconPanel effects={[{ name: 'Minimal Effect', type: 'buff' }]} />);
+            fireEvent.mouseEnter(screen.getByText('✨'));
+            expect(screen.getByText('MINIMAL EFFECT')).toBeInTheDocument();
+            expect(screen.getByText('No description available.')).toBeInTheDocument();
+            expect(screen.queryByText(/beats remaining/)).not.toBeInTheDocument();
         });
     });
 
@@ -394,28 +400,31 @@ describe('StatusEffectsIconPanel', () => {
     });
 
     describe('Performance', () => {
-        it('handles rendering large effect list efficiently', () => {
+        it('renders every entry of a large effect list', () => {
             const largeList = Array.from({ length: 100 }, (_, i) => ({
                 name: `Effect ${i}`,
                 type: 'buff',
                 description: `Effect number ${i}`,
-                beats_left: i % 20
+                beats_left: (i % 20) + 1,
             }));
 
-            expect(() => {
-                render(<StatusEffectsIconPanel effects={largeList} />);
-            }).not.toThrow();
+            render(<StatusEffectsIconPanel effects={largeList} />);
+            expect(screen.getAllByText('✨')).toHaveLength(100);
         });
 
-        it('re-renders when effects change', () => {
+        it('drops the previous effects when the list is replaced', () => {
+            // The old assertion could not distinguish a re-render from a
+            // component that ignored the new prop entirely.
             const { rerender } = render(<StatusEffectsIconPanel effects={mockEffects} />);
+            expect(screen.getByText('🔥')).toBeInTheDocument();
 
-            const newEffects = [
+            rerender(<StatusEffectsIconPanel effects={[
                 { name: 'New Effect', type: 'buff', description: 'Different', beats_left: 5 }
-            ];
+            ]} />);
 
-            rerender(<StatusEffectsIconPanel effects={newEffects} />);
-            expect(screen.getByText).toBeDefined();
+            expect(screen.queryByText('🔥')).not.toBeInTheDocument();
+            expect(screen.queryByText('🛡️')).not.toBeInTheDocument();
+            expect(screen.getByText('✨')).toBeInTheDocument();
         });
     });
 });

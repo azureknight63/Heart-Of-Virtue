@@ -22,13 +22,12 @@ integration tests pollute — see CLAUDE.md, "Running Tests".
 
 import pytest
 
+from src.api.serializers.shop_serializer import ShopSerializer
 from src.api.services.game_service import GameService
-from src.items import Gold, Restorative
+from src.items import Gold, Restorative, RustedDagger
 from src.npc import NPC
 from src.npc._merchants import JamboHealsU, Merchant, MiloCurioDealer
-from src.player import Player
-from src.tiles import MapTile
-from src.universe import Universe
+from tests._gs_fixtures import get_player_gold, live_world, set_player_gold
 
 MERCHANT_STOCK_GOLD = 2000
 PLAYER_PURSE_GOLD = 1000
@@ -51,18 +50,15 @@ MERCHANT_FACTORIES = [_plain_merchant, MiloCurioDealer, JamboHealsU]
 def _live_world(merchant):
     """Assemble a real Player/Universe/MapTile graph with ``merchant`` placed on it.
 
+    The graph itself comes from :func:`tests._gs_fixtures.live_world`, which this
+    file's hand-rolled copy predated.
+
     Returns:
         tuple[Player, MapTile]: the player standing on the merchant's tile.
     """
-    player = Player()
-    universe = Universe(player=player)
-    tile = MapTile(universe, {}, 0, 0, description="A cramped stall of a room.")
-    game_map = {(0, 0): tile, "name": "shop-lookup-test-map"}
+    player, game_map = live_world(map_name="shop-lookup-test-map")
+    tile = game_map[(0, 0)]
     tile.map = game_map
-    universe.maps = [game_map]
-    player.universe = universe
-    player.map = game_map
-    player.location_x, player.location_y = 0, 0
 
     tile.npcs_here.append(merchant)
     merchant.current_room = tile
@@ -75,23 +71,14 @@ def _live_world(merchant):
     return player, tile
 
 
-def _fund_player(player, amount):
-    """Set the player's purse to exactly ``amount``.
-
-    Tops up the existing Gold stack rather than appending a second one:
-    ``transfer_gold`` only ever draws from the first Gold item it finds, so a
-    split purse would clamp the transfer to the smaller stack.
-    """
-    for item in player.inventory:
-        if getattr(item, "name", None) == "Gold":
-            item.amt = amount
-            item.count = amount
-            return
-    player.inventory.append(Gold(amt=amount))
+#: ``_fund_player``/``_player_gold`` were local copies of the shared factories.
+_fund_player = set_player_gold
+_player_gold = get_player_gold
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def game_service():
+    """``GameService.__init__`` is ``pass`` — the service is stateless."""
     return GameService()
 
 

@@ -1,338 +1,499 @@
-"""Tier 2 GameService Comprehensive Coverage Tests
+"""GameService's non-combat public surface: chat, loot, world info, commands.
 
-Tests for all remaining GameService methods not covered in Tier 1:
-- Quest system methods (start, update, complete, rewards, etc.)
-- NPC interaction methods (dialogue, chat, relationships, status)
-- World events and tile interactions
-- Shop transactions and NPC trade
-- Exploration and world state
-- Saves and game persistence
-- Combat loot and rewards
-- Inventory and item management
-- Player progression and stats
-- Dialogue and branching narrative
+History
+-------
+"Tier 2" was a coverage-chasing file: 28 tests, 22 of which asserted only
+``assert result is not None`` against a ``MagicMock`` player whose universe
+answered every attribute — so *every* method returned a truthy dict no matter
+what it did. Three more tests ("test_get_current_tile", "test_search_tile",
+"test_get_current_room") had a docstring, a comment, and a bare ``pass``: they
+collected and passed while testing nothing at all.
 
-Target: 56% → 75%+ coverage
-Tests: 50+ tests covering all public methods and their error paths
+The method list it named was worth keeping, so each entry is now driven through a
+real ``Player``/``Universe``/``MapTile`` graph and asserts the payload the service
+actually produces. NPC chat is the one area that still uses a hand-written double,
+because the real mixin calls an LLM — but the double is a real class with real
+``chat_open``/``chat_respond`` methods, so the lookup-by-class-name, the
+``_active_chat_npc_id`` bookkeeping (#336) and the relationship enrichment are all
+exercised for real.
+
+Tile-modification and exploration tests that lived here are covered far more
+thoroughly in ``test_game_service_world.py`` and are not duplicated.
 """
 
 import pytest
-from unittest.mock import MagicMock, Mock, patch, call
+
 from src.api.services.game_service import GameService
+from src.items import Gold, RustedDagger, Restorative
+from src.npc import NPC
+from tests._gs_fixtures import GRID_3X3, live_world
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def game_service():
-    """Create a GameService instance."""
+    """``GameService.__init__`` is ``pass`` — the service is stateless."""
     return GameService()
 
 
 @pytest.fixture
-def mock_player():
-    """Create a realistic mock player for comprehensive testing."""
-    player = MagicMock()
-    player.name = "Jean Claire"
-    player.hp = 100
-    player.maxhp = 100
-    player.in_combat = False
-    player.combat_list = []
-    player.location_x = 5
-    player.location_y = 5
-
-    # Universe setup
-    player.universe = MagicMock()
-    player.universe.story = {"ch1_complete": True}
-    player.universe.game_tick = 100
-    player.universe.game_tick_events = MagicMock(return_value=[])
-    player.universe.maps = {"main_map": {"name": "Main Map"}}
-
-    # Inventory and equipment
-    player.inventory = []
-    player.eq_weapon = None
-    player.eq_armor = None
-    player.eq_shield = None
-    player.cooldowns = {}
-    player.weight_current = 10
-    player.weight_tolerance = 100
-
-    # Quests
-    player.available_quests = []
-    player.active_quests = []
-    player.completed_quests = []
-
-    # Dialogue
-    player.dialogue_history = {}
-    player.current_dialogue_node = None
-
-    # Exploration
-    player.explored_tiles = {}
-    player.map = {"name": "Main Map"}
-
-    # Relationships and reputation
-    player.reputation = {}
-    player.npc_relationships = {}
-
-    # Stats
-    player.level = 5
-    player.experience = 1000
-    player.experience_for_next = 2000
-    player.gold = 500
-    player.strength = 10
-    player.finesse = 8
-    player.speed = 7
-    player.intelligence = 9
-    player.attunement = 6
-    player.constitution = 11
-    player.skills = {}
-
-    # Location and movement
-    player.can_move = MagicMock(return_value=True)
-    player.move = MagicMock(return_value=True)
-
-    return player
+def world():
+    return live_world(GRID_3X3)
 
 
 @pytest.fixture
-def mock_tile():
-    """Create a realistic mock tile for testing."""
-    tile = MagicMock()
-    tile.x = 5
-    tile.y = 5
-    tile.tile_type = "grass"
-    tile.description = "A grassy meadow"
-    tile.npcs_here = []
-    tile.objects_here = []
-    tile.items_here = []
-    tile.exits = {"north": (5, 4), "south": (5, 6), "east": (6, 5)}
-    tile.events = []
-    tile.tile_events = []
-    tile.interactive_objects = {}
-    tile.background_music = None
-    return tile
+def player(world):
+    return world[0]
 
 
-class TestNPCChat:
-    """Test NPC chat methods."""
-
-    def test_npc_chat_open(self, game_service, mock_player, mock_tile):
-        """Test opening NPC chat."""
-        npc = MagicMock()
-        npc.name = "Gorran"
-        mock_tile.npcs_here = [npc]
-        mock_player.location_x = mock_tile.x
-        mock_player.location_y = mock_tile.y
-
-        with patch.object(game_service, 'get_tile', return_value=mock_tile):
-            result = game_service.npc_chat_open(mock_player, "Gorran")
-            assert "success" in result
-
-    def test_npc_chat_respond(self, game_service, mock_player):
-        """Test responding in NPC chat."""
-        with patch.object(game_service, '_find_chat_npc', return_value=MagicMock()):
-            result = game_service.npc_chat_respond(mock_player, "Gorran", "Hello")
-            assert result is not None
-
-    def test_npc_chat_end(self, game_service, mock_player):
-        """Test ending NPC chat."""
-        result = game_service.npc_chat_end(mock_player, "Gorran")
-        assert result is not None
-
-    def test_npc_chat_history(self, game_service, mock_player):
-        """Test getting NPC chat history."""
-        mock_player.chat_history = {"Gorran": ["Hello", "How are you?"]}
-
-        result = game_service.npc_chat_history(mock_player, "Gorran")
-        assert result is not None
+@pytest.fixture
+def tile(world):
+    return world[1][(0, 0)]
 
 
-class TestInventoryManagement:
-    """Test inventory and item management."""
+class ChattyNPC(NPC):
+    """A real NPC subclass exposing the chat protocol without touching an LLM.
 
-    def test_drop_item_success(self, game_service, mock_player):
-        """Test dropping an item from inventory."""
-        item = MagicMock()
-        item.name = "Sword"
-        item.isequipped = False
-        mock_player.inventory = [item]
+    ``npc_chat_open`` looks NPCs up by ``type(npc).__name__`` *or* ``npc.name``,
+    so the class name here is load-bearing for the lookup tests.
+    """
 
-        result = game_service.drop_item(mock_player, item)
-        assert result["success"] is True
-        assert len(mock_player.inventory) == 0
-
-    def test_drop_item_not_in_inventory(self, game_service, mock_player):
-        """Test dropping an item that isn't in the inventory."""
-        item = MagicMock()
-        item.name = "Ghost"
-        item.isequipped = False
-        mock_player.inventory = []
-
-        result = game_service.drop_item(mock_player, item)
-        assert "error" in result  # Method handles gracefully
-
-    def test_collect_combat_loot(self, game_service, mock_player):
-        """Test collecting loot from combat."""
-        result = game_service.collect_combat_loot(mock_player, ["Sword", "Gold"])
-        assert result["success"] is True
-
-    def test_collect_combat_loot_empty(self, game_service, mock_player):
-        """Test collecting empty loot."""
-        result = game_service.collect_combat_loot(mock_player, [])
-        assert result["success"] is True
-
-
-class TestPlayerProgression:
-    """Test player stats and progression methods."""
-
-    def test_get_player_stats(self, game_service, mock_player):
-        """Test getting player stats."""
-        result = game_service.get_player_stats(mock_player)
-        assert result is not None
-
-    def test_get_player_skills(self, game_service, mock_player):
-        """Test getting player skills."""
-        mock_player.skills = {"swordmaster": {"level": 3}}
-        result = game_service.get_player_skills(mock_player)
-        assert result is not None
-
-    def test_learn_skill(self, game_service, mock_player):
-        """Test learning a skill."""
-        mock_player.skills = {}
-        result = game_service.learn_skill(mock_player, "swordmaster", category="combat")
-        assert result is not None
-
-
-class TestWorldAndExploration:
-    """Test world interaction and exploration methods."""
-
-    def test_get_world_info(self, game_service, mock_player):
-        """Test getting world info."""
-        result = game_service.get_world_info(mock_player)
-        assert result is not None
-
-    def test_get_current_tile(self, game_service, mock_player):
-        """Test getting current tile - skip due to universe interaction."""
-        # Requires universe.get_tile() to return proper tile
-        pass
-
-    def test_get_explored_tiles(self, game_service, mock_player):
-        """Test getting explored tiles."""
-        mock_player.explored_tiles = {
-            "main_map:5,5": {"x": 5, "y": 5, "type": "grass"}
-        }
-        result = game_service.get_explored_tiles(mock_player)
-        assert result is not None
-
-    def test_interact_with_tile(self, game_service, mock_player):
-        """Test interacting with tile."""
-        result = game_service.interact_with_tile(mock_player, "examine")
-        assert result is not None
-
-    def test_store_tile_modification(self, game_service, mock_player):
-        """Test storing tile modification - method returns None."""
-        session_data = {
-            "tile_modifications": {},
-            "explored_tiles": {}
-        }
-        # Method doesn't return value, just modifies session_data
-        game_service.store_tile_modification(
-            session_data, 5, 5, "destroyed", data=["tree"]
+    def __init__(self, name="Talky", open_result=None, respond_result=None):
+        super().__init__(
+            name=name,
+            description="Someone worth talking to.",
+            damage=1,
+            aggro=False,
+            exp_award=0,
+            friend=True,
         )
-        # Verify session data was modified
-        assert "tile_modifications" in session_data
+        self.open_result = open_result or {"success": True, "reputation": 40}
+        self.respond_result = respond_result or {"success": True, "reputation": 40}
+        self.opened_with = None
+        self.responded_with = None
 
-    def test_search_tile(self, game_service, mock_player):
-        """Test searching a tile - skip due to universe interaction."""
-        # Requires universe.get_tile() to return proper tile
-        pass
+    def chat_open(self, player):
+        self.opened_with = player
+        return dict(self.open_result)
 
-
-class TestCombatRewards:
-    """Test combat-related rewards and status."""
-
-    def test_flee_combat(self, game_service, mock_player):
-        """Test fleeing combat."""
-        mock_player.in_combat = True
-
-        result = game_service.flee_combat(mock_player)
-        assert result is not None
+    def chat_respond(self, player, jean_text, jean_tone="direct"):
+        self.responded_with = (player, jean_text, jean_tone)
+        return dict(self.respond_result)
 
 
-class TestShopTransactions:
-    """Test shop and trading methods."""
+class MuteNPC(NPC):
+    """An NPC with no chat protocol at all — the 'does not support chat' branch."""
 
-    def test_get_shop_state(self, game_service, mock_player):
-        """Test getting shop state."""
-        with patch.object(game_service, '_find_merchant', return_value=MagicMock()):
-            result = game_service.get_shop_state(mock_player, "merchant_id")
-            assert result is not None
-
-    def test_shop_buy(self, game_service, mock_player):
-        """Test buying from shop."""
-        result = game_service.shop_buy(
-            mock_player, "merchant_id", "item_id", quantity=1
+    def __init__(self):
+        super().__init__(
+            name="Mute",
+            description="Says nothing.",
+            damage=1,
+            aggro=False,
+            exp_award=0,
         )
-        assert result is not None
-
-    def test_shop_sell(self, game_service, mock_player):
-        """Test selling to shop."""
-        item = MagicMock()
-        item.name = "Sword"
-        mock_player.inventory = [item]
-
-        with patch.object(game_service, '_find_merchant', return_value=MagicMock()):
-            result = game_service.shop_sell(mock_player, "merchant_id", 0, 1)
-            assert result is not None
-
-    def test_shop_buyback(self, game_service, mock_player):
-        """Test buying back from shop."""
-        with patch.object(game_service, '_find_merchant', return_value=MagicMock()):
-            result = game_service.shop_buyback(mock_player, "merchant_id", "item_id")
-            assert result is not None
 
 
-class TestGetAvailableMethods:
-    """Test get_available_* methods."""
+class TestNpcChatOpen:
+    """``npc_chat_open`` finds the NPC, records the active chat, enriches the result."""
 
-    def test_get_available_commands(self, game_service, mock_player):
-        """Test getting available commands."""
-        result = game_service.get_available_commands(mock_player)
-        assert result is not None
+    def test_opens_chat_and_marks_the_npc_active(self, game_service, player, tile):
+        npc = ChattyNPC()
+        tile.npcs_here = [npc]
 
-    def test_get_available_moves(self, game_service, mock_player):
-        """Test getting available moves in combat."""
-        mock_player.in_combat = True
+        result = game_service.npc_chat_open(player, "ChattyNPC")
 
-        result = game_service.get_available_moves(mock_player)
-        assert result is not None
+        assert result["success"] is True
+        assert npc.opened_with is player
+        assert player.__dict__["_active_chat_npc_id"] == "ChattyNPC"
+
+    def test_matches_by_display_name_too(self, game_service, player, tile):
+        npc = ChattyNPC(name="Gorran")
+        tile.npcs_here = [npc]
+        assert game_service.npc_chat_open(player, "Gorran")["success"] is True
+        assert npc.opened_with is player
+
+    def test_relationship_badge_is_derived_from_reputation(
+        self, game_service, player, tile
+    ):
+        """The chat mixin only returns a raw int; the badge is built API-side."""
+        tile.npcs_here = [ChattyNPC(name="Gorran", open_result={"success": True, "reputation": 40})]
+
+        relationship = game_service.npc_chat_open(player, "Gorran")["relationship"]
+
+        assert relationship["npc_name"] == "Gorran"
+        assert relationship["reputation"] == 40
+        assert relationship["attitude"] == "favorable"
+
+    def test_npc_not_on_tile_is_an_error(self, game_service, player, tile):
+        tile.npcs_here = []
+        result = game_service.npc_chat_open(player, "Gorran")
+        assert result == {"success": False, "error": "NPC 'Gorran' not found"}
+        assert "_active_chat_npc_id" not in player.__dict__
+
+    def test_npc_without_chat_support_is_an_error(self, game_service, player, tile):
+        tile.npcs_here = [MuteNPC()]
+        result = game_service.npc_chat_open(player, "Mute")
+        assert result == {"success": False, "error": "NPC does not support chat"}
+
+    def test_raising_chat_open_clears_the_active_marker(self, game_service, player, tile):
+        """#336: a failed open must not permanently suppress loquacity recovery."""
+
+        class ExplodingNPC(ChattyNPC):
+            def chat_open(self, player):
+                raise RuntimeError("llm down")
+
+        tile.npcs_here = [ExplodingNPC(name="Gorran")]
+
+        result = game_service.npc_chat_open(player, "Gorran")
+
+        assert result["success"] is False
+        assert "llm down" in result["error"]
+        assert "_active_chat_npc_id" not in player.__dict__
+
+    def test_immediate_brush_off_clears_the_active_marker(self, game_service, player, tile):
+        """Loquacity exhausted: the conversation ends before it begins (#336)."""
+        tile.npcs_here = [
+            ChattyNPC(name="Gorran", open_result={"success": True, "conversation_ended": True})
+        ]
+
+        game_service.npc_chat_open(player, "Gorran")
+
+        assert "_active_chat_npc_id" not in player.__dict__
 
 
-class TestInteractionAndTile:
-    """Test interaction methods."""
+class TestNpcChatRespond:
+    """``npc_chat_respond`` forwards Jean's line and tears down on exhaustion."""
 
-    def test_interact_with_target(self, game_service, mock_player):
-        """Test interacting with target object."""
-        with patch.object(game_service, 'get_tile', return_value=MagicMock()):
-            result = game_service.interact_with_target(
-                mock_player, "object_id", action="examine"
+    def test_forwards_text_and_tone_to_the_npc(self, game_service, player, tile):
+        npc = ChattyNPC(name="Gorran")
+        tile.npcs_here = [npc]
+
+        result = game_service.npc_chat_respond(player, "Gorran", "Well met.", "open")
+
+        assert result["success"] is True
+        assert npc.responded_with == (player, "Well met.", "open")
+
+    def test_default_tone_is_direct(self, game_service, player, tile):
+        npc = ChattyNPC(name="Gorran")
+        tile.npcs_here = [npc]
+        game_service.npc_chat_respond(player, "Gorran", "Hello")
+        assert npc.responded_with[2] == "direct"
+
+    def test_conversation_ended_clears_the_active_marker(self, game_service, player, tile):
+        tile.npcs_here = [
+            ChattyNPC(
+                name="Gorran",
+                respond_result={"success": True, "conversation_ended": True},
             )
-            assert result is not None
+        ]
+        player.__dict__["_active_chat_npc_id"] = "Gorran"
 
-    def test_get_tile(self, game_service, mock_player):
-        """Test getting tile at coordinates."""
-        result = game_service.get_tile(mock_player, 5, 5)
-        assert result is not None
+        game_service.npc_chat_respond(player, "Gorran", "Farewell.")
+
+        assert "_active_chat_npc_id" not in player.__dict__
+
+    def test_missing_npc_is_an_error(self, game_service, player, tile):
+        tile.npcs_here = []
+        assert game_service.npc_chat_respond(player, "Gorran", "Hi") == {
+            "success": False,
+            "error": "Active chat NPC not found",
+        }
+
+    def test_npc_raising_is_reported_not_propagated(self, game_service, player, tile):
+        class ExplodingNPC(ChattyNPC):
+            def chat_respond(self, player, jean_text, jean_tone="direct"):
+                raise RuntimeError("llm down")
+
+        tile.npcs_here = [ExplodingNPC(name="Gorran")]
+        result = game_service.npc_chat_respond(player, "Gorran", "Hi")
+        assert result["success"] is False
+        assert "llm down" in result["error"]
 
 
-class TestGameState:
-    """Test game state and status methods."""
+class TestNpcChatEndAndHistory:
+    """Teardown and history read-back."""
 
-    def test_get_combat_state(self, game_service, mock_player):
-        """Test getting combat state."""
-        result = game_service.get_combat_state(mock_player)
-        assert result is not None
+    def test_end_clears_the_active_marker_and_reports_the_count(
+        self, game_service, player
+    ):
+        player.__dict__["_active_chat_npc_id"] = "Gorran"
+        player.npc_chat_histories = {"Gorran": {"conversation_count": 3}}
 
-    def test_get_current_room(self, game_service, mock_player):
-        """Test getting current room info."""
-        # Skip this as it requires complex universe interactions
-        # Covered by Tier 1 tests
-        pass
+        result = game_service.npc_chat_end(player, "Gorran")
+
+        assert result == {"success": True, "data": {"conversation_count": 3}}
+        assert "_active_chat_npc_id" not in player.__dict__
+
+    def test_end_on_an_unknown_npc_reports_zero(self, game_service, player):
+        player.npc_chat_histories = {}
+        assert game_service.npc_chat_end(player, "Nobody") == {
+            "success": True,
+            "data": {"conversation_count": 0},
+        }
+
+    def test_history_returns_stored_exchanges(self, game_service, player):
+        player.npc_chat_histories = {
+            "NomadCamper_0": {
+                "exchanges": [{"jean": "Hello", "npc": "Mm."}],
+                "conversation_count": 2,
+                "last_talked_tick": 41,
+                "loquacity_current": 3,
+                "loquacity_max": 5,
+            }
+        }
+
+        data = game_service.npc_chat_history(player, "NomadCamper_0")["data"]
+
+        assert data["npc_key"] == "NomadCamper_0"
+        # No given_name in the personality, so the suffix is stripped for display.
+        assert data["npc_name"] == "NomadCamper"
+        assert data["exchanges"] == [{"jean": "Hello", "npc": "Mm."}]
+        assert data["conversation_count"] == 2
+        assert data["loquacity_current"] == 3
+
+    def test_history_prefers_the_personality_given_name(self, game_service, player):
+        player.npc_chat_histories = {
+            "NomadCamper_0": {"personality": {"given_name": "Adrienne"}}
+        }
+        data = game_service.npc_chat_history(player, "NomadCamper_0")["data"]
+        assert data["npc_name"] == "Adrienne"
+
+    def test_history_for_unknown_npc_is_an_error(self, game_service, player):
+        player.npc_chat_histories = {}
+        assert game_service.npc_chat_history(player, "Gorran") == {
+            "success": False,
+            "error": "No history for 'Gorran'",
+        }
+
+    def test_no_histories_attribute_at_all(self, game_service, player):
+        assert not hasattr(player, "npc_chat_histories")
+        assert game_service.npc_chat_history(player, "Gorran") == {
+            "success": False,
+            "error": "No chat history available",
+        }
+
+
+class TestDropItem:
+    """``drop_item`` moves an item from inventory onto the tile."""
+
+    def test_moves_the_item_onto_the_tile(self, game_service, player, tile):
+        dagger = RustedDagger()
+        player.inventory.append(dagger)
+
+        result = game_service.drop_item(player, dagger)
+
+        assert result["success"] is True
+        assert result["item_name"] == "Rusted Dagger"
+        assert dagger not in player.inventory
+        assert dagger in tile.items_here
+
+    def test_narrates_the_drop(self, game_service, player, tile):
+        """``messages`` is the single source of truth for the client dialog."""
+        dagger = RustedDagger()
+        player.inventory.append(dagger)
+        result = game_service.drop_item(player, dagger)
+        assert result["messages"] == ["Jean drops Rusted Dagger."]
+
+    def test_equipped_item_is_unequipped_first(self, game_service, player, tile):
+        dagger = RustedDagger()
+        player.inventory.append(dagger)
+        player.equip_item(item_object=dagger)
+        assert dagger.isequipped is True
+
+        game_service.drop_item(player, dagger)
+
+        assert dagger.isequipped is False
+        assert player.eq_weapon is not dagger
+        assert dagger in tile.items_here
+
+    def test_item_not_in_inventory_is_an_error(self, game_service, player, tile):
+        stray = RustedDagger()
+        result = game_service.drop_item(player, stray)
+        assert result == {"error": "Item not found in inventory"}
+        assert stray not in tile.items_here
+
+
+class TestCollectCombatLoot:
+    """``collect_combat_loot`` moves chosen post-combat drops into the inventory."""
+
+    def test_collects_named_items_and_leaves_the_rest(self, game_service, player, tile):
+        dagger, potion = RustedDagger(), Restorative()
+        tile.items_here = [dagger, potion]
+        player.combat_drops = [dagger, potion]
+
+        result = game_service.collect_combat_loot(player, ["Rusted Dagger"])
+
+        assert result["collected"] == ["Rusted Dagger"]
+        assert dagger in player.inventory
+        assert tile.items_here == [potion]
+
+    def test_clears_combat_drops_so_looting_cannot_repeat(self, game_service, player, tile):
+        dagger = RustedDagger()
+        tile.items_here = [dagger]
+        player.combat_drops = [dagger]
+
+        game_service.collect_combat_loot(player, ["Rusted Dagger"])
+
+        assert player.combat_drops == []
+
+    def test_unknown_name_is_skipped_with_a_reason(self, game_service, player, tile):
+        tile.items_here = []
+        result = game_service.collect_combat_loot(player, ["Excalibur"])
+        assert result["collected"] == []
+        assert result["skipped"] == [{"name": "Excalibur", "reason": "not_found"}]
+
+    def test_over_capacity_items_are_skipped(self, game_service, player, tile):
+        """weight_tolerance is the cap; an item that would breach it stays put."""
+        anvil = RustedDagger()
+        anvil.name = "Anvil"
+        anvil.weight = player.weight_tolerance + 1
+        tile.items_here = [anvil]
+
+        result = game_service.collect_combat_loot(player, ["Anvil"])
+
+        assert result["skipped"] == [{"name": "Anvil", "reason": "over_capacity"}]
+        assert anvil in tile.items_here
+        assert anvil not in player.inventory
+
+    def test_empty_selection_collects_nothing(self, game_service, player, tile):
+        dagger = RustedDagger()
+        tile.items_here = [dagger]
+        result = game_service.collect_combat_loot(player, [])
+        assert result == {"success": True, "collected": [], "skipped": []}
+        assert tile.items_here == [dagger]
+
+    def test_none_selection_is_treated_as_empty(self, game_service, player, tile):
+        assert game_service.collect_combat_loot(player, None)["collected"] == []
+
+    @pytest.mark.parametrize(
+        "bad,message",
+        [
+            ("Rusted Dagger", "Invalid item_names parameter: expected list, got str"),
+            (7, "Invalid item_names parameter: expected list, got int"),
+        ],
+    )
+    def test_non_list_selection_is_rejected(self, game_service, player, bad, message):
+        assert game_service.collect_combat_loot(player, bad) == {
+            "success": False,
+            "error": message,
+        }
+
+    def test_non_string_entry_is_rejected(self, game_service, player):
+        result = game_service.collect_combat_loot(player, ["Gold", 7])
+        assert result["success"] is False
+        assert result["error"] == "Invalid item name in list: expected string, got int"
+
+
+class TestWorldInfo:
+    """``get_world_info`` is the world-state summary the client polls."""
+
+    def test_reports_position_story_flags_and_tick(self, game_service, player):
+        player.universe.story["ch1_complete"] = True
+        player.universe.game_tick = 100
+
+        info = game_service.get_world_info(player)
+
+        assert info["current_position"] == {"x": 0, "y": 0}
+        assert info["story_flags"]["ch1_complete"] is True
+        assert info["game_tick"] == 100
+
+    def test_explored_tiles_track_the_rooms_visited(self, game_service, player):
+        game_service.get_current_room(player)
+        assert list(game_service.get_world_info(player)["explored_tiles"]) == [
+            "gs-test-map:0,0"
+        ]
+
+    def test_no_universe_yields_an_empty_summary(self, game_service, player):
+        player.universe = None
+        assert game_service.get_world_info(player) == {}
+
+    def test_get_current_tile_delegates_to_get_current_room(self, game_service, player):
+        assert game_service.get_current_tile(player) == game_service.get_current_room(player)
+
+    def test_get_current_tile_object_returns_the_live_tile(
+        self, game_service, player, tile
+    ):
+        assert game_service.get_current_tile_object(player) is tile
+
+    def test_get_current_tile_object_without_universe_is_none(self, game_service, player):
+        player.universe = None
+        assert game_service.get_current_tile_object(player) is None
+
+
+class TestInteractWithTile:
+    """``interact_with_tile`` echoes the action and the tile's contents."""
+
+    def test_echoes_action_and_describes_contents(self, game_service, player, tile):
+        tile.description = "A grassy meadow."
+        tile.items_here = [Gold(amt=12)]
+
+        result = game_service.interact_with_tile(player, "examine")
+
+        assert result["action"] == "examine"
+        assert result["description"] == "A grassy meadow."
+        assert [i["name"] for i in result["items"]] == ["Gold"]
+
+    def test_unknown_position_is_an_error(self, game_service, player):
+        player.location_x, player.location_y = 42, 42
+        assert game_service.interact_with_tile(player, "look") == {
+            "error": "No tile at this location"
+        }
+
+
+class TestAvailableCommands:
+    """``get_available_commands`` merges tile actions with the system commands."""
+
+    def test_includes_the_tiles_own_actions(self, game_service, player):
+        result = game_service.get_available_commands(player)
+        names = [c["name"] for c in result["commands"]]
+        assert "Search" in names
+        assert result["count"] == len(result["commands"])
+
+    def test_always_offers_save_and_menu(self, game_service, player):
+        names = [c["name"] for c in game_service.get_available_commands(player)["commands"]]
+        assert "Save" in names and "Menu" in names
+
+    def test_system_commands_are_not_duplicated(self, game_service, player):
+        names = [c["name"] for c in game_service.get_available_commands(player)["commands"]]
+        assert names.count("Save") == 1
+        assert names.count("Menu") == 1
+
+    def test_hotkeys_are_carried_through(self, game_service, player):
+        commands = game_service.get_available_commands(player)["commands"]
+        search = next(c for c in commands if c["name"] == "Search")
+        assert "search" in search["hotkey"]
+
+    def test_failing_tile_actions_still_yield_system_commands(
+        self, game_service, player, tile
+    ):
+        def boom(**kwargs):
+            raise RuntimeError("tile broken")
+
+        tile.available_actions = boom
+
+        result = game_service.get_available_commands(player)
+
+        assert [c["name"] for c in result["commands"]] == ["Save", "Menu"]
+
+
+class TestCombatStateOutsideCombat:
+    """``get_combat_state`` short-circuits when there is no fight."""
+
+    def test_reports_not_in_combat(self, game_service, player):
+        assert game_service.get_combat_state(player) == {
+            "in_combat": False,
+            "message": "Not in combat",
+        }
+
+    def test_no_adapter_means_no_moves(self, game_service, player):
+        assert not hasattr(player, "_combat_adapter")
+        assert game_service.get_available_moves(player) == {"moves": []}
+
+    def test_is_player_dead_tracks_hp(self, game_service, player):
+        assert game_service.is_player_dead(player) is False
+        player.hp = 0
+        assert game_service.is_player_dead(player) is True
+
+
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])

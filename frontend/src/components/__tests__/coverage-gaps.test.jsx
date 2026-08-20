@@ -10,6 +10,7 @@ import { BrowserRouter } from 'react-router-dom'
 import GameInput from '../GameInput'
 import GameButton from '../GameButton'
 import RoomContents from '../RoomContents'
+import { colors } from '../../styles/theme'
 
 describe('Coverage Gap Tests', () => {
   describe('GameInput Edge Cases', () => {
@@ -71,45 +72,15 @@ describe('Coverage Gap Tests', () => {
   })
 
   describe('GameButton Variant Coverage', () => {
-    it('renders with danger variant', () => {
-      const { container } = render(
-        <GameButton variant="danger" onClick={vi.fn()}>
-          Danger
-        </GameButton>
-      )
-      const button = container.querySelector('button')
-      expect(button).toBeInTheDocument()
-    })
-
-    it('renders with warning variant', () => {
-      const { container } = render(
-        <GameButton variant="warning" onClick={vi.fn()}>
-          Warning
-        </GameButton>
-      )
-      const button = container.querySelector('button')
-      expect(button).toBeInTheDocument()
-    })
-
-    it('renders with success variant', () => {
-      const { container } = render(
-        <GameButton variant="success" onClick={vi.fn()}>
-          Success
-        </GameButton>
-      )
-      const button = container.querySelector('button')
-      expect(button).toBeInTheDocument()
-    })
-
-    it('applies size prop correctly', () => {
-      const { container } = render(
-        <GameButton size="large" onClick={vi.fn()}>
-          Large
-        </GameButton>
-      )
-      const button = container.querySelector('button')
-      expect(button).toBeInTheDocument()
-    })
+    // The four tests that used to open this block ("renders with danger /
+    // warning / success variant", "applies size prop correctly") each asserted
+    // only `expect(button).toBeInTheDocument()`. Removing every variant and
+    // size style from GameButton.jsx would have left all four green, and one
+    // of them passed `variant="success"`, which GameButton.jsx does not define
+    // at all. The real per-variant and per-size style assertions live in
+    // GameButton.test.jsx's "Variants" and "Sizes" blocks, which cover the same
+    // lines and actually read the resulting backgroundColor/borderColor/
+    // fontSize — so these were deleted rather than duplicated here.
 
     it('disables button when disabled prop is true', () => {
       const onClick = vi.fn()
@@ -145,83 +116,19 @@ describe('Coverage Gap Tests', () => {
     })
   })
 
-  describe('RoomContents Edge Cases', () => {
-    it('renders with null location', () => {
-      const { container } = render(
-        <RoomContents location={null} />
-      )
-      // Should return null without crashing
-      expect(container.firstChild).toBeFalsy()
-    })
-
-    it('renders with empty content', () => {
-      const location = {
-        description: 'An empty room.',
-        items: [],
-        npcs: [],
-        objects: []
-      }
-      const { container } = render(
-        <RoomContents location={location} />
-      )
-      expect(container.textContent).toContain('An empty room.')
-    })
-
-    it('renders with items', () => {
-      const location = {
-        description: 'A room.',
-        items: [{ id: 1, name: 'Sword', announce: 'A sword lies here.' }],
-        npcs: [],
-        objects: []
-      }
-      const { container } = render(
-        <RoomContents location={location} />
-      )
-      expect(container.textContent).toContain('A sword lies here.')
-    })
-
-    it('handles hidden items', () => {
-      const location = {
-        description: 'A room.',
-        items: [{ id: 1, name: 'Hidden', hidden: true }],
-        npcs: [],
-        objects: []
-      }
-      const { container } = render(
-        <RoomContents location={location} />
-      )
-      expect(container.textContent).not.toContain('Hidden')
-    })
-
-    it('renders with NPCs', () => {
-      const location = {
-        description: 'A room.',
-        items: [],
-        npcs: [{ id: 1, name: 'Guard', idle_message: 'The guard stands watch.' }],
-        objects: []
-      }
-      const { container } = render(
-        <RoomContents location={location} />
-      )
-      expect(container.textContent).toContain('The guard stands watch.')
-    })
-
-    it('renders with objects', () => {
-      const location = {
-        description: 'A room.',
-        items: [],
-        npcs: [],
-        objects: [{ id: 1, name: 'Door', idle_message: 'A locked door.' }]
-      }
-      const { container } = render(
-        <RoomContents location={location} />
-      )
-      expect(container.textContent).toContain('A locked door.')
-    })
-  })
+  // A "RoomContents Edge Cases" block used to sit here with six tests (null
+  // location, empty content, items, hidden items, NPCs, objects). Every one is
+  // strictly subsumed by the "Resilience to absent data" and "Interaction
+  // wiring on room entities" blocks further down THIS file, which drive the
+  // same component with the same inputs and assert more (the empty-room line,
+  // the default "There is a X here." phrasing, per-entity skipping). They were
+  // removed rather than kept as a second, weaker copy.
 
   describe('Props Combination Coverage', () => {
-    it('handles multiple props together', () => {
+    it('composes variant, size and className without one clobbering another', () => {
+      // The point of this test is that the three style sources merge; the
+      // previous version asserted only the className, so a variant or size
+      // regression passed straight through it.
       const { container } = render(
         <GameButton
           variant="danger"
@@ -234,8 +141,10 @@ describe('Coverage Gap Tests', () => {
         </GameButton>
       )
       const button = container.querySelector('button')
-      expect(button).toHaveClass('custom')
-      expect(button).toBeInTheDocument()
+      expect(button).toHaveClass('game-btn', 'custom')
+      expect(button).toHaveStyle({ backgroundColor: colors.danger, borderColor: colors.danger })
+      expect(button).toHaveStyle({ fontSize: '15px', padding: '12px 24px' })
+      expect(button.disabled).toBe(false)
     })
 
     it('handles prop overrides correctly', () => {
@@ -305,10 +214,21 @@ describe('Coverage Gap Tests', () => {
       expect(input.value).toBe('ab')
     })
 
-    it('does not emit change events while disabled', () => {
+    it('forwards disabled to the DOM input, so focus and typing are blocked', () => {
+      // Renamed from "does not emit change events while disabled", which the
+      // body never checked — and could not: fireEvent.change dispatches
+      // directly and bypasses the disabled gate a real user hits. What IS
+      // assertable is that the flag reaches the DOM node, which is what makes
+      // the browser refuse focus and keystrokes.
       const onChange = vi.fn()
       const { container } = render(<GameInput value="" onChange={onChange} disabled />)
-      expect(container.querySelector('input').disabled).toBe(true)
+      const input = container.querySelector('input')
+
+      expect(input.disabled).toBe(true)
+      input.focus()
+      expect(input).not.toHaveFocus()
+      fireEvent.keyDown(input, { key: 'a' })
+      expect(onChange).not.toHaveBeenCalled()
     })
   })
 

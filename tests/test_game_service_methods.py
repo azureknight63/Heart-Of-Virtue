@@ -1,334 +1,279 @@
-"""Unit tests for GameService high-impact methods.
+"""Inventory, equipment and search read paths, against a real Player.
 
-Tests focused on the most frequently-called methods:
-- move_player: Core movement and tile interaction
-- get_inventory: Inventory retrieval and serialization
-- get_equipment: Equipment state retrieval
-- equip_item / unequip_item: Equipment management
-- interact_with_target: NPC/object interaction
+History
+-------
+16 of this file's 23 tests asserted only ``isinstance(result, dict)`` on a
+``MagicMock`` player, and two were outright tautologies::
 
-Target: 8% → 30%+ coverage by testing main code paths and error handling.
+    tiles = game_service.get_explored_tiles(realistic_mock_player)
+    assert tiles is not None or tiles is None  # Always true
+
+Because the fixture's inventory held ``MagicMock`` items, the serializers never
+had to serialize anything real, so a wire-field rename in ``InventorySerializer``
+or ``EquipmentSerializer`` would not have failed a single test — the exact
+"field-name drift" failure mode CLAUDE.md names as this codebase's dominant bug
+class.
+
+The file now owns the **read paths over the player's own possessions**: what
+``get_inventory`` and ``get_equipment`` actually emit for a real starting
+loadout, and what ``search`` finds. ``move_player`` moved to
+``test_game_service_critical_methods.py`` and the room/tile reads to
+``test_game_service_world.py``; both were duplicated here with weaker assertions.
 """
 
 import pytest
-from unittest.mock import MagicMock, Mock, patch
+
 from src.api.services.game_service import GameService
+from src.items import Gold, Restorative, RustedDagger
+from src.npc import NPC
+from tests._gs_fixtures import GRID_3X3, get_player_gold, live_world
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def game_service():
-    """Create a GameService instance."""
+    """``GameService.__init__`` is ``pass`` — the service is stateless."""
     return GameService()
 
 
 @pytest.fixture
-def realistic_mock_tile():
-    """Create a realistic mock tile with all necessary attributes."""
-    tile = MagicMock()
-    tile.name = "StartingArea"
-    tile.description = "A safe starting area"
-    tile.events_here = []
-    tile.items_here = []
-    tile.npcs_here = []
-    tile.objects_here = []
-    return tile
+def world():
+    return live_world(GRID_3X3)
 
 
 @pytest.fixture
-def realistic_mock_universe():
-    """Create a realistic mock universe."""
-    universe = MagicMock()
-    universe.story = {}
-    universe.game_tick = 0
-
-    # Mock get_tile to return our test tile
-    test_tile = MagicMock()
-    test_tile.name = "StartingArea"
-    test_tile.description = "A safe starting area"
-    test_tile.events_here = []
-    test_tile.items_here = []
-    test_tile.npcs_here = []
-    test_tile.objects_here = []
-
-    universe.get_tile = MagicMock(return_value=test_tile)
-    return universe
+def player(world):
+    return world[0]
 
 
 @pytest.fixture
-def realistic_mock_player(realistic_mock_universe):
-    """Create a realistic mock player that matches actual Player structure."""
-    player = MagicMock()
-
-    # Basic player attributes
-    player.name = "Jean"
-    player.location_x = 5
-    player.location_y = 5
-    player.hp = 100
-    player.maxhp = 100
-    player.fatigue = 50
-    player.maxfatigue = 100
-    player.strength = 10
-    player.finesse = 10
-    player.speed = 10
-    player.wisdom = 10
-    player.constitution = 10
-    player.level = 1
-
-    # Universe and map
-    player.universe = realistic_mock_universe
-    player.map = {}  # Empty map dict
-
-    # Inventory and equipment
-    player.inventory = []
-    player.eq_weapon = None
-    player.eq_armor = None
-    player.eq_helmet = None
-    player.eq_gauntlets = None
-    player.eq_leggings = None
-    player.eq_boots = None
-    player.eq_offhand = None
-
-    # Combat state
-    player.in_combat = False
-    player.heat = 0
-
-    # Story state
-    player.visited_tiles = set()
-
-    return player
+def tile(world):
+    return world[1][(0, 0)]
 
 
-class TestGameServiceGetInventory:
-    """Tests for get_inventory() - high-frequency inventory retrieval."""
+class TestGetInventory:
+    """``get_inventory`` is ``InventorySerializer.serialize`` over the real bag."""
 
-    def test_get_inventory_empty_returns_dict(self, game_service, realistic_mock_player):
-        """Test getting empty inventory returns a dict."""
-        realistic_mock_player.inventory = []
-        result = game_service.get_inventory(realistic_mock_player)
-        assert isinstance(result, dict), "get_inventory should return a dict"
+    def test_starting_loadout_is_itemised(self, game_service, player):
+        result = game_service.get_inventory(player)
+        names = [i["name"] for i in result["items"]]
+        # Jean starts with a purse and the clothes on his back.
+        assert "Gold" in names
+        assert result["item_count"] == len(player.inventory)
 
-    def test_get_inventory_with_single_item(self, game_service, realistic_mock_player):
-        """Test getting inventory with one item."""
-        mock_item = MagicMock()
-        mock_item.name = "Sword"
-        mock_item.quantity = 1
-        realistic_mock_player.inventory = [mock_item]
+    def test_every_item_carries_the_wire_fields_the_client_reads(
+        self, game_service, player
+    ):
+        """Guards against field-name drift in InventorySerializer."""
+        entry = game_service.get_inventory(player)["items"][0]
+        assert {
+            "id",
+            "index",
+            "name",
+            "type",
+            "maintype",
+            "subtype",
+            "quantity",
+            "weight",
+            "value",
+            "can_equip",
+            "can_use",
+            "can_drop",
+            "is_equipped",
+            "description",
+        } <= set(entry)
 
-        result = game_service.get_inventory(realistic_mock_player)
-        assert isinstance(result, dict)
+    def test_weight_totals_track_what_is_carried(self, game_service, player):
+        before = game_service.get_inventory(player)
+        dagger = RustedDagger()
+        player.inventory.append(dagger)
 
-    def test_get_inventory_with_multiple_items(self, game_service, realistic_mock_player):
-        """Test getting inventory with multiple different items."""
-        items = [
-            MagicMock(name="Sword", quantity=1),
-            MagicMock(name="Shield", quantity=1),
-            MagicMock(name="Gold", quantity=50),
-        ]
-        realistic_mock_player.inventory = items
+        after = game_service.get_inventory(player)
 
-        result = game_service.get_inventory(realistic_mock_player)
-        assert isinstance(result, dict)
+        assert after["item_count"] == before["item_count"] + 1
+        assert after["total_weight"] == pytest.approx(
+            before["total_weight"] + dagger.weight
+        )
+        assert after["weight_limit"] == player.weight_tolerance
 
+    def test_weight_percentage_is_relative_to_tolerance(self, game_service, player):
+        result = game_service.get_inventory(player)
+        expected = round(result["total_weight"] / result["weight_limit"] * 100, 1)
+        assert result["weight_percentage"] == pytest.approx(expected, abs=0.1)
 
-class TestGameServiceGetEquipment:
-    """Tests for get_equipment() - equipment state retrieval."""
+    def test_an_empty_bag_serializes_cleanly(self, game_service, player):
+        player.inventory = []
+        result = game_service.get_inventory(player)
+        assert result["items"] == []
+        assert result["item_count"] == 0
+        assert result["total_weight"] == 0
 
-    def test_get_equipment_empty_returns_dict(self, game_service, realistic_mock_player):
-        """Test getting equipment with nothing equipped returns a dict."""
-        realistic_mock_player.eq_weapon = None
-        realistic_mock_player.eq_armor = None
+    def test_a_consumable_is_marked_usable(self, game_service, player):
+        player.inventory = [Restorative()]
+        entry = game_service.get_inventory(player)["items"][0]
+        assert entry["name"] == "Restorative"
+        assert entry["can_use"] is True
+        assert entry["can_equip"] is False
 
-        result = game_service.get_equipment(realistic_mock_player)
-        assert isinstance(result, dict), "get_equipment should return a dict"
+    def test_a_weapon_is_marked_equippable(self, game_service, player):
+        player.inventory = [RustedDagger()]
+        entry = game_service.get_inventory(player)["items"][0]
+        assert entry["can_equip"] is True
+        assert entry["is_equipped"] is False
 
-    def test_get_equipment_with_weapon(self, game_service, realistic_mock_player):
-        """Test getting equipment with a weapon equipped."""
-        mock_weapon = MagicMock()
-        mock_weapon.name = "Iron Sword"
-        mock_weapon.damage = 10
-        realistic_mock_player.eq_weapon = mock_weapon
-
-        result = game_service.get_equipment(realistic_mock_player)
-        assert isinstance(result, dict)
-
-    def test_get_equipment_with_armor(self, game_service, realistic_mock_player):
-        """Test getting equipment with armor equipped."""
-        mock_armor = MagicMock()
-        mock_armor.name = "Leather Armor"
-        mock_armor.defense = 5
-        realistic_mock_player.eq_armor = mock_armor
-
-        result = game_service.get_equipment(realistic_mock_player)
-        assert isinstance(result, dict)
+    def test_gold_quantity_reflects_the_purse(self, game_service, player):
+        player.inventory = [Gold(amt=250)]
+        entry = game_service.get_inventory(player)["items"][0]
+        assert entry["name"] == "Gold"
+        assert entry["quantity"] == 250
+        assert get_player_gold(player) == 250
 
 
-class TestGameServiceHelperMethods:
-    """Tests for internal helper methods that support main operations."""
+class TestGetEquipment:
+    """``get_equipment`` is ``EquipmentSerializer.serialize`` over the real slots."""
 
-    def test_story_with_flags(self, game_service, realistic_mock_player):
-        """Test _story() returns story flags dict."""
-        realistic_mock_player.universe.story = {
-            "chapter_1_complete": True,
-            "visited_grotto": True,
+    def test_reports_the_starting_kit_by_slot(self, game_service, player):
+        """Slots come from the equipped items themselves — ``Player`` has only
+        ``eq_weapon``; there is no ``eq_armor``/``eq_helmet`` attribute (the old
+        fixture invented them, which is why nothing here was ever checked)."""
+        equipped = game_service.get_equipment(player)["equipped"]
+        assert set(equipped) == {"body", "head", "accessory_1", "weapon"}
+        assert equipped["body"]["item_name"] == "Tattered Cloth"
+        assert equipped["body"]["equipped"] is True
+        assert equipped["body"]["protection"] == 1
+
+    def test_total_stat_bonuses_sum_across_slots(self, game_service, player):
+        """Hood +1 finesse, wedding band +1 endurance/-1 charisma/+1 faith."""
+        assert game_service.get_equipment(player)["total_stat_bonuses"] == {
+            "finesse": 1,
+            "endurance": 1,
+            "charisma": -1,
+            "faith": 1,
         }
 
-        result = game_service._story(realistic_mock_player)
-        assert isinstance(result, dict)
-        assert result.get("chapter_1_complete") is True
+    def test_unequipped_equippables_are_counted(self, game_service, player):
+        before = game_service.get_equipment(player)["unequipped_equippable_count"]
+        player.inventory.append(RustedDagger())
+        after = game_service.get_equipment(player)["unequipped_equippable_count"]
+        assert after == before + 1
 
-    def test_story_empty(self, game_service, realistic_mock_player):
-        """Test _story() with empty story dict."""
-        realistic_mock_player.universe.story = {}
+    def test_equipping_a_weapon_changes_the_weapon_slot(self, game_service, player):
+        dagger = RustedDagger()
+        player.inventory.append(dagger)
+        player.equip_item(item_object=dagger)
 
-        result = game_service._story(realistic_mock_player)
-        assert isinstance(result, dict)
-        assert len(result) == 0
+        weapon = game_service.get_equipment(player)["equipped"]["weapon"]
 
-    def test_game_tick_value(self, game_service, realistic_mock_player):
-        """Test _game_tick() returns the game tick value."""
-        realistic_mock_player.universe.game_tick = 42
+        assert weapon["item_name"] == "Rusted Dagger"
+        assert weapon["damage"] == dagger.damage
 
-        result = game_service._game_tick(realistic_mock_player)
-        assert result == 42
+    def test_stat_bonuses_are_published_per_slot(self, game_service, player):
+        """The hood grants +1 finesse; the client renders it from this field."""
+        head = game_service.get_equipment(player)["equipped"]["head"]
+        assert head["stat_bonuses"] == {"finesse": 1}
 
-    def test_game_tick_zero(self, game_service, realistic_mock_player):
-        """Test _game_tick() with zero tick."""
-        realistic_mock_player.universe.game_tick = 0
-
-        result = game_service._game_tick(realistic_mock_player)
-        assert result == 0
-
-
-class TestGameServiceMovePlayer:
-    """Tests for move_player() - the most critical game loop method."""
-
-    def test_move_player_north(self, game_service, realistic_mock_player):
-        """Test moving player north."""
-        realistic_mock_player.location_y = 5
-
-        # Mock the player's ability to move
-        realistic_mock_player.can_move_to = MagicMock(return_value=True)
-        realistic_mock_player.move = MagicMock()
-
-        result = game_service.move_player(realistic_mock_player, "north")
-        assert isinstance(result, dict), "move_player should return a dict"
-
-    def test_move_player_east(self, game_service, realistic_mock_player):
-        """Test moving player east."""
-        realistic_mock_player.location_x = 5
-        realistic_mock_player.can_move_to = MagicMock(return_value=True)
-        realistic_mock_player.move = MagicMock()
-
-        result = game_service.move_player(realistic_mock_player, "east")
-        assert isinstance(result, dict)
-
-    def test_move_player_south(self, game_service, realistic_mock_player):
-        """Test moving player south."""
-        realistic_mock_player.location_y = 5
-        realistic_mock_player.can_move_to = MagicMock(return_value=True)
-        realistic_mock_player.move = MagicMock()
-
-        result = game_service.move_player(realistic_mock_player, "south")
-        assert isinstance(result, dict)
-
-    def test_move_player_west(self, game_service, realistic_mock_player):
-        """Test moving player west."""
-        realistic_mock_player.location_x = 5
-        realistic_mock_player.can_move_to = MagicMock(return_value=True)
-        realistic_mock_player.move = MagicMock()
-
-        result = game_service.move_player(realistic_mock_player, "west")
-        assert isinstance(result, dict)
+    def test_unequipping_removes_the_slot_entirely(self, game_service, player):
+        armor = next(i for i in player.inventory if i.name == "Tattered Cloth")
+        player.unequip_item(item_object=armor)
+        equipped = game_service.get_equipment(player)["equipped"]
+        assert "body" not in equipped
+        assert armor.isequipped is False
 
 
-class TestGameServiceInteraction:
-    """Tests for interact_with_target() - NPC and object interaction."""
+class TestSearch:
+    """``search`` reveals hidden entities the player's roll can uncover.
 
-    def test_interact_with_target_returns_dict(self, game_service, realistic_mock_player):
-        """Test that interact_with_target returns a dict."""
-        mock_target = MagicMock()
-        mock_target.name = "Chest"
+    The roll is ``((finesse*2) + (intelligence*3) + faith) * uniform(0.5, 1.5)``,
+    so tests pin outcomes with ``hide_factor`` extremes rather than seeding RNG:
+    0 is always beaten, a huge value never is.
+    """
 
-        result = game_service.interact_with_target(
-            realistic_mock_player, mock_target, "open"
+    def test_nothing_hidden_reports_a_fruitless_search(self, game_service, player):
+        result = game_service.search(player)
+        assert result["success"] is True
+        assert result["found"] == []
+        assert "couldn't find anything of interest" in result["messages"][-1]
+
+    def test_finds_and_reveals_a_hidden_npc(self, game_service, player, tile):
+        lurker = NPC(
+            name="Lurker",
+            description="Something in the dark.",
+            damage=1,
+            aggro=False,
+            exp_award=1,
+            hidden=True,
+            hide_factor=0,
+            discovery_message="something lurking in the shadows.",
         )
-        assert isinstance(result, dict), "interact_with_target should return a dict"
+        tile.npcs_here = [lurker]
 
+        result = game_service.search(player)
 
-class TestGameServiceRoomAndTiles:
-    """Tests for room and tile information retrieval."""
+        assert lurker.hidden is False
+        assert result["found"] == [
+            {"type": "npc", "name": "Lurker", "id": str(id(lurker))}
+        ]
+        assert any("something lurking" in m for m in result["messages"])
 
-    def test_get_current_room_returns_dict(self, game_service, realistic_mock_player):
-        """Test getting current room returns a dict."""
-        result = game_service.get_current_room(realistic_mock_player)
-        assert isinstance(result, dict), "get_current_room should return a dict"
+    def test_a_well_hidden_entity_stays_hidden(self, game_service, player, tile):
+        buried = RustedDagger()
+        buried.hidden = True
+        buried.hide_factor = 10_000
+        tile.items_here = [buried]
 
-    def test_get_tile_returns_dict_or_none(self, game_service, realistic_mock_player):
-        """Test getting a tile returns dict or None."""
-        result = game_service.get_tile(realistic_mock_player, 5, 5)
-        # Should return dict or None
-        assert result is None or isinstance(result, dict)
+        result = game_service.search(player)
 
-    def test_get_explored_tiles_returns_dict(self, game_service, realistic_mock_player):
-        """Test getting explored tiles returns some result."""
-        result = game_service.get_explored_tiles(realistic_mock_player)
-        # get_explored_tiles may return various types, just verify it doesn't crash
-        assert result is not None or result is None  # Always true
+        assert buried.hidden is True
+        assert result["found"] == []
+        assert buried in tile.items_here
 
+    def test_an_openly_findable_item_is_auto_taken(self, game_service, player, tile):
+        """hide_factor 0 means "meant to be found" — it goes straight into the bag."""
+        loot = RustedDagger()
+        loot.hidden = True
+        loot.hide_factor = 0
+        tile.items_here = [loot]
 
-class TestGameServiceSearch:
-    """Tests for search functionality."""
+        result = game_service.search(player)
 
-    def test_search_returns_dict(self, game_service, realistic_mock_player):
-        """Test that search returns a dict."""
-        result = game_service.search(realistic_mock_player)
-        assert isinstance(result, dict), "search should return a dict"
+        assert result["found"][0]["auto_taken"] is True
+        assert loot in player.inventory
+        assert loot not in tile.items_here
 
+    def test_an_over_capacity_find_is_left_on_the_ground(self, game_service, player, tile):
+        anvil = RustedDagger()
+        anvil.name = "Anvil"
+        anvil.hidden = True
+        anvil.hide_factor = 0
+        anvil.weight = player.weight_tolerance * 2
+        tile.items_here = [anvil]
 
-class TestGameServiceIntegration:
-    """Integration tests combining multiple methods."""
+        result = game_service.search(player)
 
-    def test_inventory_and_equipment_workflow(self, game_service, realistic_mock_player):
-        """Test complete inventory → equipment workflow."""
-        # Setup inventory
-        mock_item = MagicMock(name="Item", maintype="Weapon")
-        realistic_mock_player.inventory = [mock_item]
+        assert "auto_taken" not in result["found"][0]
+        assert anvil in tile.items_here
+        assert anvil not in player.inventory
 
-        # Get inventory
-        inv = game_service.get_inventory(realistic_mock_player)
-        assert isinstance(inv, dict)
+    def test_visible_items_are_not_reported_as_finds(self, game_service, player, tile):
+        plain = RustedDagger()
+        assert plain.hidden is False
+        tile.items_here = [plain]
 
-        # Get equipment
-        equip = game_service.get_equipment(realistic_mock_player)
-        assert isinstance(equip, dict)
+        result = game_service.search(player)
 
-    def test_multiple_story_operations(self, game_service, realistic_mock_player):
-        """Test multiple story-related operations."""
-        realistic_mock_player.universe.story = {"event_triggered": True}
-        realistic_mock_player.universe.game_tick = 100
+        assert result["found"] == []
+        assert plain in tile.items_here
 
-        story = game_service._story(realistic_mock_player)
-        tick = game_service._game_tick(realistic_mock_player)
+    def test_result_carries_the_refreshed_room(self, game_service, player, tile):
+        tile.description = "A dusty alcove."
+        result = game_service.search(player)
+        assert result["room"]["description"] == "A dusty alcove."
 
-        assert isinstance(story, dict)
-        assert isinstance(tick, int)
-
-    def test_room_and_tiles_workflow(self, game_service, realistic_mock_player):
-        """Test getting room and tiles information."""
-        room = game_service.get_current_room(realistic_mock_player)
-        assert isinstance(room, dict)
-
-        # get_explored_tiles may return various types - just verify it doesn't crash
-        tiles = game_service.get_explored_tiles(realistic_mock_player)
-        assert tiles is not None or tiles is None  # Always true
-
-    def test_search_and_inventory(self, game_service, realistic_mock_player):
-        """Test searching and inventory workflow."""
-        search_result = game_service.search(realistic_mock_player)
-        assert isinstance(search_result, dict)
-
-        inventory = game_service.get_inventory(realistic_mock_player)
-        assert isinstance(inventory, dict)
+    def test_searching_off_the_map_fails_cleanly(self, game_service, player):
+        player.location_x, player.location_y = 77, 77
+        assert game_service.search(player) == {
+            "success": False,
+            "message": "Invalid location",
+        }
 
 
 if __name__ == "__main__":

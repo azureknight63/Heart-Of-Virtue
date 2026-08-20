@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { render, screen, fireEvent, act } from '@testing-library/react'
 import ShopDialog from './ShopDialog'
 import { useShop } from '../hooks/useShop'
+import { makePlayer } from '../test/payloads'
 
 vi.mock('../hooks/useShop', () => ({
   useShop: vi.fn(),
@@ -302,16 +303,44 @@ describe('ShopDialog', () => {
   })
 
   it('falls back to player prop values when shopState is not yet loaded', () => {
+    // The fixture used to carry `weight_tolerance: 80` — the ENGINE-side
+    // attribute name, which no player serializer emits (get_player_status /
+    // get_player_stats emit weight_current + max_weight/carrying_capacity).
+    // Reading it was wire-drift bug #3, and because the test asserted only on
+    // gold, the weight half of the fallback it is named for was unproven:
+    // deleting `player?.weight_current` and `player?.max_weight` from
+    // ShopDialog left it green. It now uses the real payload shape and reads
+    // the weight bar back.
     useShop.mockReturnValue({ ...makeShopState(), shopState: null })
     render(
       <ShopDialog
         npcId="1"
         npcName="Jambo"
-        player={{ gold: 42, weight_current: 5, weight_tolerance: 80 }}
+        player={makePlayer({ gold: 42, weight_current: 5, max_weight: 80 })}
         onClose={onClose}
       />
     )
     expect(screen.getByText(/💰\s*42/)).toBeInTheDocument()
+    expect(screen.getByText('5.0')).toBeInTheDocument()
+    expect(screen.getByText(/max 80\.0/)).toBeInTheDocument()
+  })
+
+  it('falls back to carrying_capacity when the player payload has no max_weight', () => {
+    // get_player_stats emits BOTH keys; get_player_status emits only
+    // max_weight. The `?? carrying_capacity` arm exists for payloads assembled
+    // from stats alone, and nothing exercised it.
+    useShop.mockReturnValue({ ...makeShopState(), shopState: null })
+    const player = makePlayer({ gold: 1, weight_current: 3, carrying_capacity: 55 })
+    delete player.max_weight
+    render(<ShopDialog npcId="1" npcName="Jambo" player={player} onClose={onClose} />)
+    expect(screen.getByText(/max 55\.0/)).toBeInTheDocument()
+  })
+
+  it('falls back to a 100 capacity when the player carries no capacity field at all', () => {
+    useShop.mockReturnValue({ ...makeShopState(), shopState: null })
+    render(<ShopDialog npcId="1" npcName="Jambo" player={{ gold: 0 }} onClose={onClose} />)
+    expect(screen.getByText(/max 100\.0/)).toBeInTheDocument()
+    expect(screen.getByText('0.0')).toBeInTheDocument()
   })
 
   it('shows a transaction success message', () => {
@@ -346,11 +375,15 @@ describe('ShopDialog', () => {
       <ShopDialog
         npcId="1"
         npcName="Jambo"
-        player={{ gold: 77, weight_current: 3, weight_tolerance: 90 }}
+        player={makePlayer({ gold: 77, weight_current: 3, max_weight: 90 })}
         onClose={onClose}
       />
     )
     expect(screen.getByText(/💰\s*77/)).toBeInTheDocument()
+    // Same omission as above: the weight half of the fallback was untested
+    // while the fixture named a key the API never sends.
+    expect(screen.getByText('3.0')).toBeInTheDocument()
+    expect(screen.getByText(/max 90\.0/)).toBeInTheDocument()
   })
 
   it('treats a missing price/offer/count as 0/0/1 defaults', () => {

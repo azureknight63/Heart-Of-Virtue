@@ -352,6 +352,50 @@ describe('MainMenuPage', () => {
         });
     });
 
+    it.each([['CET'], ['CEST'], ['JST'], ['IST'], ['AEST'], ['PKT']])(
+        'points Continue at the newest save when the display timestamps carry a %s abbreviation',
+        async (tz) => {
+            // The regression this guards: rows render a server-formatted
+            // "%Y-%m-%d %H:%M:%S %Z" string, and Date.parse returns Invalid Date
+            // for most non-US abbreviations. Sorting on it made EVERY row NaN,
+            // so "Continue" could load whichever save happened to come first
+            // out of the DB. compareSavesByRecency keys on timestamp_ms
+            // instead. The existing Continue tests both use ISO-8601 stamps,
+            // which Date.parse handles — i.e. they cannot see this bug.
+            expect(Number.isNaN(Date.parse(`2026-08-09 12:00:00 ${tz}`))).toBe(true);
+
+            // Deliberately listed OLDEST-LAST so a comparator that collapses to
+            // NaN (which sorts as "equal", preserving input order) picks 'old'.
+            const mockSaves = [
+                { id: 'old', name: 'Old Save', timestamp: `2026-08-08 12:00:00 ${tz}`, timestamp_ms: 1_754_654_400_000, level: 1, map_name: 'M', room_title: 'R' },
+                { id: 'new', name: 'New Save', timestamp: `2026-08-09 12:00:00 ${tz}`, timestamp_ms: 1_754_740_800_000, level: 2, map_name: 'M', room_title: 'R' },
+            ];
+            saves.list.mockResolvedValue({ data: { saves: mockSaves } });
+            saves.load.mockResolvedValue({ success: true });
+
+            render(<MemoryRouter><MainMenuPage /></MemoryRouter>);
+            fireEvent.click(await screen.findByText(/Continue/i));
+
+            expect(saves.load).toHaveBeenCalledWith('new');
+        }
+    );
+
+    it('renders the server timestamp verbatim rather than routing it through Date', async () => {
+        // The display half of the same bug: rows used
+        // `new Date(save.timestamp).toLocaleString()`, so every row in the Load
+        // Game list read the literal text "Invalid Date" for those accounts.
+        const mockSaves = [
+            { id: 'a', name: 'Cloud Save', timestamp: '2026-08-09 12:00:00 JST', level: 1, map_name: 'M', room_title: 'R' },
+        ];
+        saves.list.mockResolvedValue({ data: { saves: mockSaves } });
+
+        render(<MemoryRouter><MainMenuPage /></MemoryRouter>);
+        fireEvent.click(await screen.findByText(/Load Game/i));
+
+        expect(await screen.findByText('2026-08-09 12:00:00 JST')).toBeInTheDocument();
+        expect(screen.queryByText(/Invalid Date/)).toBeNull();
+    });
+
     it('loads the newest cloud save on Continue', async () => {
         const mockSaves = [
             { id: 'old', name: 'Old Save', timestamp: '2020-01-01T00:00:00Z', level: 1, map_name: 'Map 1', room_title: 'Room 1' },
@@ -512,32 +556,45 @@ describe('MainMenuPage', () => {
         expect(mockNavigate).toHaveBeenCalledWith('/landing');
     });
 
-    it('handles hover on the back-to-home button and the Nexus Fidei link', async () => {
+    // These two tests previously had NO assertions — they fired mouseEnter and
+    // mouseLeave and ended. Every hover handler on the page could have been
+    // deleted and both would have passed. They now assert the handler actually
+    // changed the element and restored it.
+    it('highlights the back-to-home button and the Nexus Fidei link on hover, and restores on leave', async () => {
         saves.list.mockResolvedValue({ data: { saves: [] } });
         render(<MemoryRouter><MainMenuPage /></MemoryRouter>);
 
-        const backBtn = screen.getByText(/Back to home/i);
-        fireEvent.mouseEnter(backBtn);
-        fireEvent.mouseLeave(backBtn);
+        for (const label of [/Back to home/i, /Nexus Fidei/i]) {
+            const el = await screen.findByText(label);
+            const resting = el.style.color;
+            expect(resting).toBeTruthy();
 
-        await waitFor(() => screen.getByText(/Nexus Fidei/i));
-        const nexusLink = screen.getByText(/Nexus Fidei/i);
-        fireEvent.mouseEnter(nexusLink);
-        fireEvent.mouseLeave(nexusLink);
+            fireEvent.mouseEnter(el);
+            expect(el.style.color).not.toBe(resting);
+
+            fireEvent.mouseLeave(el);
+            expect(el.style.color).toBe(resting);
+        }
     });
 
-    it('handles hover on a save-list row', async () => {
+    it('highlights a save-list row on hover, and restores it on leave', async () => {
         const mockSaves = [{ id: 'cloud-1', name: 'Cloud Save', timestamp: '2023-01-01', level: 1, map_name: 'M', room_title: 'R' }];
         saves.list.mockResolvedValue({ data: { saves: mockSaves } });
 
         render(<MemoryRouter><MainMenuPage /></MemoryRouter>);
-        await waitFor(() => screen.getByText(/Load Game/i));
-        fireEvent.click(screen.getByText(/Load Game/i));
-        await waitFor(() => screen.getByText(/Cloud Save/i));
+        fireEvent.click(await screen.findByText(/Load Game/i));
 
-        const row = screen.getByText(/Cloud Save/i).closest('[style*="cursor: pointer"]');
+        const row = (await screen.findByText(/Cloud Save/i)).closest('[style*="cursor: pointer"]');
+        const restingBg = row.style.background;
+        const restingBorder = row.style.borderColor;
+
         fireEvent.mouseEnter(row);
+        expect(row.style.background).not.toBe(restingBg);
+        expect(row.style.borderColor).not.toBe(restingBorder);
+
         fireEvent.mouseLeave(row);
+        expect(row.style.background).toBe(restingBg);
+        expect(row.style.borderColor).toBe(restingBorder);
     });
 
     it('marks a save with the Autosave badge when is_autosave is set', async () => {

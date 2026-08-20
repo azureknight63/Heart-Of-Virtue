@@ -1,9 +1,22 @@
 import { createElement } from 'react';
-import { renderHook, act } from '@testing-library/react';
+import { renderHook, act, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useAuth, usePlayer, useCombat, useWorld, useExploration, useAutosave } from './useApi';
 import { AuthProvider } from '../context/AuthContext';
 import apiEndpoints from '../api/endpoints';
+import {
+  COMBAT_TOP_LEVEL_WHITELIST,
+  makeCombatResponse,
+  makeEnemy,
+  makeRoomResponse,
+} from '../test/payloads';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
+// Read once: the whitelist assertion below inspects transformCombatData's own
+// source because the helper is module-private and there is no other way to
+// prove the copied key set without re-implementing it in the test.
+const useApiSource = readFileSync(resolve(process.cwd(), 'src/hooks/useApi.js'), 'utf8');
 
 vi.mock('../api/endpoints', () => ({
   default: {
@@ -173,9 +186,17 @@ describe('useCombat', () => {
     vi.clearAllMocks();
   });
 
-  it('fetches combat status', async () => {
-    const mockCombat = { battle_state: { turn: 1 }, combat_active: true };
-    apiEndpoints.combat.getStatus.mockResolvedValue({ data: mockCombat });
+  // `turn` is not a key any serializer emits — the pre-existing versions of the
+  // two tests below asserted `combat.turn === 1` against a hand-written
+  // `battle_state: { turn: 1 }`, i.e. they proved only that the object spread
+  // in transformCombatData works. They would have stayed green if battle_state
+  // had been dropped from the response entirely, or renamed. Both now drive a
+  // realistic payload (src/test/payloads.js) and assert on the fields the
+  // engine actually sends.
+  it('spreads every battle_state field the adapter emits onto the combat object', async () => {
+    apiEndpoints.combat.getStatus.mockResolvedValue({
+      data: makeCombatResponse({ battle_state: { round: 3, beat: 7 } }),
+    });
 
     const { result } = renderHook(() => useCombat());
 
@@ -184,12 +205,26 @@ describe('useCombat', () => {
     });
 
     expect(result.current.inCombat).toBe(true);
-    expect(result.current.combat.turn).toBe(1);
+    // LeftPanel keys its move-clearing effect on exactly these two.
+    expect(result.current.combat.round).toBe(3);
+    expect(result.current.combat.beat).toBe(7);
+    // Battlefield reads these two off the top-level combat object and passes
+    // them to BattlefieldGrid; both live inside battle_state precisely so the
+    // spread carries them (see the whitelist test below).
+    expect(result.current.combat.combat_id).toBe('fight-0001');
+    expect(result.current.combat.map_size).toBe(9);
+    expect(result.current.combat.player.hp).toBe(100);
+    expect(result.current.combat.enemies[0].id).toBe('enemy_1');
+    expect(result.current.combat.awaiting_input).toBe(false);
   });
 
-  it('performs combat action', async () => {
-    const mockResponse = { data: { battle_state: { turn: 2 }, combat_active: true, log: ['Attack!'] } };
-    apiEndpoints.combat.performAction.mockResolvedValue(mockResponse);
+  it('performs combat action and applies the returned battle_state and log', async () => {
+    apiEndpoints.combat.performAction.mockResolvedValue({
+      data: makeCombatResponse({
+        battle_state: { round: 2, beat: 4, enemies: [makeEnemy({ hp: 6 })] },
+        log: ['Attack!'],
+      }),
+    });
 
     const { result } = renderHook(() => useCombat());
 
@@ -197,8 +232,65 @@ describe('useCombat', () => {
       await result.current.performAction('attack', { target: 'enemy' });
     });
 
-    expect(result.current.combat.turn).toBe(2);
+    expect(apiEndpoints.combat.performAction).toHaveBeenCalledWith('attack', { target: 'enemy' });
+    expect(result.current.combat.round).toBe(2);
+    expect(result.current.combat.beat).toBe(4);
+    expect(result.current.combat.enemies[0].hp).toBe(6);
     expect(result.current.combat.log).toContain('Attack!');
+  });
+
+  it('drops top-level combat fields outside transformCombatData\'s whitelist', () => {
+    // Documented trap (CLAUDE.md): transformCombatData spreads
+    // data.battle_state and then copies a FIXED set of top-level keys.
+    // Anything emitted at the top level and absent from that set never reaches
+    // the client — this silently caused two of the six wire-drift bugs
+    // (combat_id and map_size, both since moved into battle_state).
+    //
+    // Pinning it here means a future author who adds a top-level field and
+    // forgets the whitelist sees a failing test naming the rule, instead of a
+    // feature that quietly does nothing.
+    const source = useApiSource;
+    const transform = source.slice(
+      source.indexOf('const transformCombatData'),
+      source.indexOf('// Helper to transform location data')
+    );
+    const whitelisted = [...transform.matchAll(/^\s{2}(\w+):\s*data\./gm)].map((m) => m[1]);
+    expect(new Set(whitelisted)).toEqual(new Set(COMBAT_TOP_LEVEL_WHITELIST));
+    // battle_state is carried by the spread, not by a whitelist entry.
+    expect(transform).toContain('...data.battle_state');
+  });
+
+  it('keeps combat_id stable across polls of one fight and changes it for a new fight', async () => {
+    // combat_id identifies a FIGHT, not a call: BattlefieldGrid uses it to
+    // reset the camera pan once per fight. A per-poll value would reset the
+    // camera on every status poll; a missing one never resets it. Both are
+    // wrong, so pin the property the client depends on.
+    const { result } = renderHook(() => useCombat());
+
+    apiEndpoints.combat.getStatus.mockResolvedValue({
+      data: makeCombatResponse({ battle_state: { combat_id: 'fight-A', beat: 1 } }),
+    });
+    await act(async () => { await result.current.fetchCombatStatus(); });
+    const first = result.current.combat.combat_id;
+    expect(first).toBe('fight-A');
+
+    // Same fight, next beat (and a reinforcement wave, which reinits the
+    // adapter server-side but keeps the id).
+    apiEndpoints.combat.getStatus.mockResolvedValue({
+      data: makeCombatResponse({
+        battle_state: { combat_id: 'fight-A', beat: 2, enemies: [makeEnemy(), makeEnemy({ id: 'enemy_2' })] },
+      }),
+    });
+    await act(async () => { await result.current.fetchCombatStatus(); });
+    expect(result.current.combat.combat_id).toBe(first);
+    expect(result.current.combat.enemies).toHaveLength(2);
+
+    // A genuinely new combat.
+    apiEndpoints.combat.getStatus.mockResolvedValue({
+      data: makeCombatResponse({ battle_state: { combat_id: 'fight-B', beat: 1 } }),
+    });
+    await act(async () => { await result.current.fetchCombatStatus(); });
+    expect(result.current.combat.combat_id).toBe('fight-B');
   });
 
   it('applies a terminal HTTP response even when socket streaming is enabled', async () => {
@@ -313,19 +405,22 @@ describe('useWorld', () => {
     vi.clearAllMocks();
   });
 
-  it('fetches current location', async () => {
-    const mockRoom = { room: { x: 0, y: 0, name: 'Start', exits: { north: 'Room 2' } } };
-    apiEndpoints.world.getCurrentLocation.mockResolvedValue({ data: mockRoom });
-
-    const { result } = renderHook(() => useWorld());
-
-    // Wait for initial useEffect
-    await act(async () => {
-      await new Promise(resolve => setTimeout(resolve, 0));
+  it('normalises the server exits dict into an array of direction names', async () => {
+    // The wire shape is a dict (GameService._calculate_exits returns
+    // direction -> {x, y}); every component downstream reads `exits` as an
+    // array of names (MapGrid does `location.exits.includes(direction)` and
+    // `exits.join(', ')`), so this transform is the whole seam. The fixture is
+    // the real serializer shape, not `{ north: 'Room 2' }`.
+    apiEndpoints.world.getCurrentLocation.mockResolvedValue({
+      data: { room: makeRoomResponse({ name: 'Start' }) },
     });
 
+    const { result } = renderHook(() => useWorld());
+    await waitFor(() => expect(result.current.location).not.toBeNull());
+
     expect(result.current.location.name).toBe('Start');
-    expect(result.current.location.exits).toContain('north');
+    expect(result.current.location.exits).toEqual(['north', 'east']);
+    expect(result.current.location.map_name).toBe('Dark Grotto');
   });
 
   it('moves to a new location', async () => {

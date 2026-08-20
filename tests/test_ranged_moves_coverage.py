@@ -521,29 +521,39 @@ class TestShootBowExecute:
             move.execute(user)
         assert arrow not in user.inventory
 
-    def test_execute_miss_path(self):
+    def test_execute_miss_leaves_the_target_untouched(self):
         move, user, enemy, arrow = self._setup_execute()
+        hp_before = enemy.hp
         with (
             patch.object(move, "calculate_hit_chance", return_value=5),
-            patch.object(move, "miss") as mock_miss,
             patch("src.moves._ranged.functions.check_parry", return_value=False),
             patch("src.moves._ranged.random.randint", return_value=100),
             patch("src.moves._ranged.random.uniform", return_value=1.0),
         ):
             move.execute(user)
-        mock_miss.assert_called_once()
 
-    def test_execute_parry_path(self):
+        # A miss must withhold damage entirely. The old version
+        # stubbed miss() out and asserted only that it was called.
+        assert enemy.hp == hp_before
+
+    def test_execute_parry_deals_no_damage_and_staggers_the_user(self):
         move, user, enemy, arrow = self._setup_execute()
+        hp_before = enemy.hp
+        recovery_before = move.stage_beat[2]
         with (
             patch.object(move, "calculate_hit_chance", return_value=100),
-            patch.object(move, "parry") as mock_parry,
             patch("src.moves._ranged.functions.check_parry", return_value=True),
             patch("src.moves._ranged.random.randint", return_value=50),
             patch("src.moves._ranged.random.uniform", return_value=1.0),
         ):
             move.execute(user)
-        mock_parry.assert_called_once()
+
+        # A parry converts a landed shot into zero damage and adds 10
+        # beats of stagger to the attacker's recovery stage. The old
+        # version stubbed out parry() and asserted only that it was
+        # called, so neither effect was ever checked.
+        assert enemy.hp == hp_before
+        assert move.stage_beat[2] == recovery_before + 10
 
     def test_execute_glancing_blow(self):
         """hit_chance >= roll but hit_chance - roll < 10: glancing blow.
@@ -652,7 +662,18 @@ class TestShootBowExecute:
             patch("src.moves._ranged.random.random", return_value=0.0),
         ):
             move.execute(user)
-        user.current_room.spawn_item.assert_called()
+
+        # A recovered arrow must be dropped as a real, retrievable item on the
+        # tile -- asserting only `spawn_item.assert_called()` would pass even
+        # if the wrong item (or a None) were spawned in the wrong place.
+        user.current_room.spawn_item.assert_called_once()
+        (spawned_name,), spawn_kwargs = user.current_room.spawn_item.call_args
+        assert spawned_name == type(arrow).__name__
+        # Recovered arrows land hidden, so the player has to search the tile
+        # to get them back rather than picking them up for free. hfactor comes
+        # from a random.randint(40, 80) roll, which this test pins to 100.
+        assert spawn_kwargs["hidden"] == 1
+        assert spawn_kwargs["hfactor"] == 100
 
 
 # ---------------------------------------------------------------------------
@@ -873,16 +894,20 @@ class TestShootCrossbowExecute:
             move.execute(user)
         mock_hit.assert_called_once_with(23, False)
 
-    def test_execute_not_viable_hit_chance_minus1(self):
+    def test_execute_not_viable_auto_misses_and_deals_no_damage(self):
         move, user, enemy = self._setup()
+        hp_before = enemy.hp
         with (
             patch.object(move, "viable", return_value=False),
-            patch.object(move, "miss") as mock_miss,
             patch("src.moves._ranged.random.randint", return_value=50),
             patch("src.moves._ranged.random.uniform", return_value=1.0),
         ):
             move.execute(user)
-        mock_miss.assert_called_once()
+
+        # viable() False -> hit_chance is the -1 auto-miss sentinel, which no
+        # roll can beat. The old version stubbed miss() out and asserted only
+        # that it was called, never that damage was actually withheld.
+        assert enemy.hp == hp_before
 
     def test_execute_close_range_penalty_applied(self):
         """With no penalty, hit_chance=98 would beat a roll of 60 (a hit). The
@@ -1087,21 +1112,24 @@ class TestAimedShot:
             move.execute(user)
         mock_hit.assert_called_once_with(59, False)
 
-    def test_execute_not_viable_miss(self):
+    def test_execute_not_viable_auto_misses_and_deals_no_damage(self):
         user = _make_crossbow_user(finesse=10, intelligence=5)
         enemy = _make_enemy()
         user.combat_proximity = {enemy: 15}
         move = AimedShot(user)
         move.target = enemy
         move.mvrange = (6, 40)
+        hp_before = enemy.hp
         with (
             patch.object(move, "viable", return_value=False),
-            patch.object(move, "miss") as mock_miss,
             patch("src.moves._ranged.random.randint", return_value=50),
             patch("src.moves._ranged.random.uniform", return_value=1.0),
         ):
             move.execute(user)
-        mock_miss.assert_called_once()
+
+        # Aimed Shot's flat +15 accuracy bonus must not rescue an auto-miss:
+        # the -1 sentinel stays a miss, so the target takes nothing.
+        assert enemy.hp == hp_before
 
 
 # ---------------------------------------------------------------------------
@@ -1359,21 +1387,28 @@ class TestShootCrossbowExecuteRealPath:
             move.execute(user)
         mock_hit.assert_called_once_with(19, True)
 
-    def test_execute_parry_path(self):
+    def test_execute_parry_deals_no_damage_and_staggers_the_user(self):
         """Line 462: functions.check_parry True routes to self.parry()."""
         user = _make_crossbow_user(finesse=10, intelligence=5)
         enemy = _make_enemy(finesse=8)
         user.combat_proximity = {enemy: 15}
         move = ShootCrossbow(user)
         move.target = enemy
+        hp_before = enemy.hp
+        recovery_before = move.stage_beat[2]
         with (
             patch("src.moves._ranged.functions.check_parry", return_value=True),
-            patch.object(move, "parry") as mock_parry,
             patch("src.moves._ranged.random.randint", return_value=0),
             patch("src.moves._ranged.random.uniform", return_value=1.0),
         ):
             move.execute(user)
-        mock_parry.assert_called_once()
+
+        # A parry converts a landed shot into zero damage and adds 10
+        # beats of stagger to the attacker's recovery stage. The old
+        # version stubbed out parry() and asserted only that it was
+        # called, so neither effect was ever checked.
+        assert enemy.hp == hp_before
+        assert move.stage_beat[2] == recovery_before + 10
 
 
 class TestBroadheadBoltEdgeCases:
@@ -1464,36 +1499,46 @@ class TestBroadheadBoltExecuteRealPath:
             move.execute(user)
         mock_hit.assert_called_once_with(24, True)
 
-    def test_execute_parry_path(self):
+    def test_execute_parry_deals_no_damage_and_staggers_the_user(self):
         """Line 606: functions.check_parry True routes to self.parry()."""
         user = _make_crossbow_user(finesse=10, intelligence=5)
         enemy = _make_enemy(finesse=8)
         user.combat_proximity = {enemy: 15}
         move = BroadheadBolt(user)
         move.target = enemy
+        hp_before = enemy.hp
+        recovery_before = move.stage_beat[2]
         with (
             patch("src.moves._ranged.functions.check_parry", return_value=True),
-            patch.object(move, "parry") as mock_parry,
             patch("src.moves._ranged.random.randint", return_value=0),
             patch("src.moves._ranged.random.uniform", return_value=1.0),
         ):
             move.execute(user)
-        mock_parry.assert_called_once()
 
-    def test_execute_miss_path(self):
+        # A parry converts a landed shot into zero damage and adds 10
+        # beats of stagger to the attacker's recovery stage. The old
+        # version stubbed out parry() and asserted only that it was
+        # called, so neither effect was ever checked.
+        assert enemy.hp == hp_before
+        assert move.stage_beat[2] == recovery_before + 10
+
+    def test_execute_miss_leaves_the_target_untouched(self):
         """Line 610: miss() called when hit_chance < roll."""
         user = _make_crossbow_user(finesse=10, intelligence=5)
         enemy = _make_enemy(finesse=999)
         user.combat_proximity = {enemy: 15}
         move = BroadheadBolt(user)
         move.target = enemy
+        hp_before = enemy.hp
         with (
-            patch.object(move, "miss") as mock_miss,
             patch("src.moves._ranged.random.randint", return_value=50),
             patch("src.moves._ranged.random.uniform", return_value=1.0),
         ):
             move.execute(user)
-        mock_miss.assert_called_once()
+
+        # A miss must withhold damage entirely. The old version
+        # stubbed miss() out and asserted only that it was called.
+        assert enemy.hp == hp_before
 
 
 class TestAimedShotEdgeCases:
@@ -1597,21 +1642,28 @@ class TestAimedShotExecuteRealPath:
             move.execute(user)
         mock_hit.assert_called_once_with(29, True)
 
-    def test_execute_parry_path(self):
+    def test_execute_parry_deals_no_damage_and_staggers_the_user(self):
         """Line 759: functions.check_parry True routes to self.parry()."""
         user = _make_crossbow_user(finesse=10, intelligence=5)
         enemy = _make_enemy(finesse=8)
         user.combat_proximity = {enemy: 15}
         move = AimedShot(user)
         move.target = enemy
+        hp_before = enemy.hp
+        recovery_before = move.stage_beat[2]
         with (
             patch("src.moves._ranged.functions.check_parry", return_value=True),
-            patch.object(move, "parry") as mock_parry,
             patch("src.moves._ranged.random.randint", return_value=0),
             patch("src.moves._ranged.random.uniform", return_value=1.0),
         ):
             move.execute(user)
-        mock_parry.assert_called_once()
+
+        # A parry converts a landed shot into zero damage and adds 10
+        # beats of stagger to the attacker's recovery stage. The old
+        # version stubbed out parry() and asserted only that it was
+        # called, so neither effect was ever checked.
+        assert enemy.hp == hp_before
+        assert move.stage_beat[2] == recovery_before + 10
 
 
 class TestPinningBoltEdgeCases:
@@ -1729,7 +1781,7 @@ class TestPinningBoltExecuteRealPath:
         assert len(enemy.states) == 1
         assert type(enemy.states[0]).__name__ == "Disoriented"
 
-    def test_execute_parry_path(self):
+    def test_execute_parry_deals_no_damage_and_staggers_the_user(self):
         """Line 906: functions.check_parry True routes to self.parry()."""
         user = _make_crossbow_user(finesse=10, intelligence=5)
         enemy = _make_enemy(finesse=8)
@@ -1737,14 +1789,21 @@ class TestPinningBoltExecuteRealPath:
         user.combat_proximity = {enemy: 15}
         move = PinningBolt(user)
         move.target = enemy
+        hp_before = enemy.hp
+        recovery_before = move.stage_beat[2]
         with (
             patch("src.moves._ranged.functions.check_parry", return_value=True),
-            patch.object(move, "parry") as mock_parry,
             patch("src.moves._ranged.random.randint", return_value=0),
             patch("src.moves._ranged.random.uniform", return_value=1.0),
         ):
             move.execute(user)
-        mock_parry.assert_called_once()
+
+        # A parry converts a landed shot into zero damage and adds 10
+        # beats of stagger to the attacker's recovery stage. The old
+        # version stubbed out parry() and asserted only that it was
+        # called, so neither effect was ever checked.
+        assert enemy.hp == hp_before
+        assert move.stage_beat[2] == recovery_before + 10
 
     def test_execute_disoriented_append_exception_swallowed(self):
         """Lines 919-920: exception raised while applying Disoriented is swallowed.

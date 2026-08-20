@@ -190,15 +190,44 @@ class TestKeepAway:
 
         monkeypatch.setattr(random, "randint", lambda a, b: 0)
         monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
+        # `hit` is deliberately NOT patched: the old version stubbed it out and
+        # asserted only `mock_hit.assert_called_once()`, so the test named
+        # "reduces target hp" never touched the target's hp at all.
         with patch("src.moves._spear.functions.check_parry", return_value=False), \
-             patch.object(move, "hit") as mock_hit, \
              patch.object(move, "viable", return_value=True), \
              patch("src.moves._spear.cprint"), \
              patch("src.moves._spear.colored", side_effect=lambda t, *a, **k: t):
             move.execute(user)
-        mock_hit.assert_called_once()
 
-    def test_execute_miss_calls_miss(self, monkeypatch):
+        # damage = (power 40 * resistance 1.0 - protection 0) * heat 1.0
+        #          * uniform 1.0 = 40, and hit_chance (108) - roll (0) >= 10
+        # so it is not halved into a glancing blow.
+        assert tgt.hp == 60
+        assert user.fatigue == 200 - move.fatigue_cost
+
+    def test_execute_hit_grants_weapon_and_basic_exp(self, monkeypatch):
+        user = _make_user("Spear")
+        tgt = _make_target(hp=100, finesse=0, protection=0)
+        move = KeepAway(user)
+        move.target = tgt
+        move.power = 40
+        move.base_damage_type = "piercing"
+        user.combat_proximity = {tgt: 5}
+        user.heat = 1.0
+
+        monkeypatch.setattr(random, "randint", lambda a, b: 0)
+        monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
+        with patch("src.moves._spear.functions.check_parry", return_value=False), \
+             patch.object(move, "viable", return_value=True), \
+             patch("src.moves._spear.cprint"), \
+             patch("src.moves._spear.colored", side_effect=lambda t, *a, **k: t):
+            move.execute(user)
+
+        # +4 Spear / +3 Basic from execute, plus damage/4 Spear from hit().
+        assert user.combat_exp["Spear"] == 4 + 40 / 4
+        assert user.combat_exp["Basic"] == 3
+
+    def test_execute_miss_leaves_the_target_untouched(self, monkeypatch):
         user = _make_user("Spear")
         tgt = _make_target()
         move = KeepAway(user)
@@ -209,30 +238,40 @@ class TestKeepAway:
         monkeypatch.setattr(random, "randint", lambda a, b: 100)
         monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
         with patch("src.moves._spear.functions.check_parry", return_value=False), \
-             patch.object(move, "miss") as mock_miss, \
              patch.object(move, "viable", return_value=False), \
              patch("src.moves._spear.cprint"), \
              patch("src.moves._spear.colored", side_effect=lambda t, *a, **k: t):
             move.execute(user)
-        mock_miss.assert_called_once()
 
-    def test_execute_parry_calls_parry(self, monkeypatch):
+        # viable() is False -> hit_chance is the -1 auto-miss sentinel, which
+        # can never beat the roll, so no damage and no push-back.
+        assert tgt.hp == 100
+        assert tgt not in user.combat_proximity
+
+    def test_execute_parry_deals_no_damage_and_staggers_the_user(
+        self, monkeypatch
+    ):
         user = _make_user("Spear")
         tgt = _make_target(finesse=0)
         move = KeepAway(user)
         move.target = tgt
         move.power = 40
         move.base_damage_type = "piercing"
+        recovery_before = move.stage_beat[2]
 
         monkeypatch.setattr(random, "randint", lambda a, b: 0)
         monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
         with patch("src.moves._spear.functions.check_parry", return_value=True), \
-             patch.object(move, "parry") as mock_parry, \
              patch.object(move, "viable", return_value=True), \
              patch("src.moves._spear.cprint"), \
              patch("src.moves._spear.colored", side_effect=lambda t, *a, **k: t):
             move.execute(user)
-        mock_parry.assert_called_once()
+
+        # A parry converts a landed hit into zero damage and costs the attacker
+        # 10 extra beats of recovery.
+        assert tgt.hp == 100
+        assert move.stage_beat[2] == recovery_before + 10
+        user.change_heat.assert_called_once_with(0.75)
 
     def test_push_target_legacy_path(self, monkeypatch):
         """Test _push_target with no combat_position (legacy proximity path)."""
@@ -337,21 +376,33 @@ class TestKeepAway:
         assert (tgt.combat_position.x, tgt.combat_position.y) != (5, 8)
         assert user.combat_proximity[tgt] == tgt.combat_proximity[user]
 
-    def test_push_target_exception_is_silently_caught(self):
-        """Any exception raised while pushing the target should not propagate."""
+    def test_push_target_exception_leaves_position_and_proximity_intact(self):
+        """A failed push must be a clean no-op, not a half-applied move.
+
+        The old version only checked that nothing propagated, which a bare
+        ``except: pass`` satisfies even if the target had already been teleported
+        and the proximity dict left disagreeing with the coordinates.
+        """
         user = _make_user("Spear")
         tgt = _make_target()
         move = KeepAway(user)
         move.target = tgt
         user.combat_position = positions.CombatPosition(x=5, y=5, facing=positions.Direction.N)
         tgt.combat_position = positions.CombatPosition(x=5, y=8, facing=positions.Direction.S)
+        tgt.combat_proximity = {user: 3}
         user.combat_proximity = {tgt: 3}
+        original_target_pos = tgt.combat_position
 
         with patch(
             "src.moves._spear.positions.move_away_constrained",
             side_effect=Exception("boom"),
         ), patch("src.moves._spear.cprint"):
-            move._push_target(user)  # should not raise
+            move._push_target(user)
+
+        assert tgt.combat_position is original_target_pos
+        assert (tgt.combat_position.x, tgt.combat_position.y) == (5, 8)
+        assert user.combat_proximity[tgt] == 3
+        assert tgt.combat_proximity[user] == 3
 
 
 class TestLunge:
@@ -387,7 +438,7 @@ class TestLunge:
         move = Lunge(user)
         assert move.viable() is False
 
-    def test_execute_hit(self, monkeypatch):
+    def test_execute_hit_applies_full_power_as_damage(self, monkeypatch):
         user = _make_user("Spear")
         tgt = _make_target(finesse=0, protection=0)
         move = Lunge(user)
@@ -399,12 +450,42 @@ class TestLunge:
         monkeypatch.setattr(random, "randint", lambda a, b: 0)
         monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
         with patch("src.moves._spear.functions.check_parry", return_value=False), \
-             patch.object(move, "hit") as mock_hit, \
              patch.object(move, "viable", return_value=True), \
              patch("src.moves._spear.cprint"), \
              patch("src.moves._spear.colored", side_effect=lambda t, *a, **k: t):
             move.execute(user)
-        mock_hit.assert_called_once()
+
+        # damage = (power 35 * resistance 1.0 - protection 0) * heat 1.0
+        #          * uniform 1.0 = 35. hit_chance (108) - roll (0) >= 10, so
+        # this is a clean hit rather than a halved glancing blow.
+        assert tgt.hp == 65
+        # Lunge grants +5 to the weapon subtype and +5 Basic, plus damage/4
+        # to the subtype from hit().
+        assert user.combat_exp["Spear"] == 5 + 35 / 4
+        assert user.combat_exp["Basic"] == 5
+
+    def test_execute_hit_within_ten_of_the_roll_glances_for_half(
+        self, monkeypatch
+    ):
+        user = _make_user("Spear")
+        tgt = _make_target(finesse=0, protection=0)
+        move = Lunge(user)
+        move.target = tgt
+        move.power = 35
+        move.base_damage_type = "piercing"
+        tgt.is_alive = lambda: True
+
+        # hit_chance is 108, so a roll of 100 still lands but only just
+        # (108 - 100 = 8 < 10), halving the damage to int(35 / 2) == 17.
+        monkeypatch.setattr(random, "randint", lambda a, b: 100)
+        monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
+        with patch("src.moves._spear.functions.check_parry", return_value=False), \
+             patch.object(move, "viable", return_value=True), \
+             patch("src.moves._spear.cprint"), \
+             patch("src.moves._spear.colored", side_effect=lambda t, *a, **k: t):
+            move.execute(user)
+
+        assert tgt.hp == 100 - 17
 
     def test_execute_legacy_proximity_advance(self, monkeypatch):
         """Execute should decrease proximity when no combat_position."""
@@ -471,7 +552,14 @@ class TestLunge:
         assert user.combat_position.x == 3
         mock_hit.assert_called_once()
 
-    def test_execute_movement_exception_is_caught(self, monkeypatch):
+    def test_execute_movement_failure_leaves_position_intact_and_still_attacks(
+        self, monkeypatch
+    ):
+        """A failed step-in must not abort the strike, nor half-apply the move.
+
+        The old version asserted nothing at all, so a bare ``except: pass``
+        that also swallowed the attack would have passed.
+        """
         user = _make_user("Spear")
         tgt = _make_target(finesse=0, protection=0)
         move = Lunge(user)
@@ -488,11 +576,19 @@ class TestLunge:
             "src.moves._spear.positions.move_toward_constrained",
             side_effect=Exception("boom"),
         ), patch("src.moves._spear.functions.check_parry", return_value=False), \
-             patch.object(move, "miss"), \
              patch.object(move, "viable", return_value=False), \
              patch("src.moves._spear.cprint"), \
              patch("src.moves._spear.colored", side_effect=lambda t, *a, **k: t):
-            move.execute(user)  # should not raise
+            move.execute(user)
+
+        # The step never happened, so both the coordinates and the derived
+        # proximity must be exactly as they were.
+        assert (user.combat_position.x, user.combat_position.y) == (0, 0)
+        assert user.combat_proximity[tgt] == 10
+        # ...and execution continued past the swallowed error into the attack,
+        # which auto-misses here (viable() is False -> hit_chance -1).
+        assert tgt.hp == 100
+        assert user.combat_exp["Basic"] == 5
 
     def test_execute_glancing_blow(self, monkeypatch):
         user = _make_user("Spear")
@@ -514,23 +610,32 @@ class TestLunge:
         args, _ = mock_hit.call_args
         assert args[1] is True
 
-    def test_execute_parry(self, monkeypatch):
+    def test_execute_parry_deals_no_damage_and_staggers_the_user(
+        self, monkeypatch
+    ):
         user = _make_user("Spear")
         tgt = _make_target(finesse=0, protection=0)
         move = Lunge(user)
         move.target = tgt
         move.power = 40
         move.base_damage_type = "piercing"
+        hp_before = tgt.hp
+        recovery_before = move.stage_beat[2]
 
         monkeypatch.setattr(random, "randint", lambda a, b: 0)
         monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
         with patch("src.moves._spear.functions.check_parry", return_value=True), \
-             patch.object(move, "parry") as mock_parry, \
              patch.object(move, "viable", return_value=True), \
              patch("src.moves._spear.cprint"), \
              patch("src.moves._spear.colored", side_effect=lambda t, *a, **k: t):
             move.execute(user)
-        mock_parry.assert_called_once()
+
+        # A parry converts a landed hit into zero damage and adds 10
+        # beats of stagger to the attacker's recovery stage. The old
+        # version stubbed out parry() and asserted only that it was
+        # called, so neither effect was ever checked.
+        assert tgt.hp == hp_before
+        assert move.stage_beat[2] == recovery_before + 10
 
     def test_execute_fatigue_floor_at_zero(self, monkeypatch):
         user = _make_user("Spear")
@@ -632,24 +737,28 @@ class TestImpale:
 
         assert user.combat_position.facing.name == "E"
 
-    def test_execute_not_viable_causes_miss(self, monkeypatch):
+    def test_execute_not_viable_deals_no_damage(self, monkeypatch):
         user = _make_user("Spear")
         tgt = _make_target(finesse=0, protection=0)
         move = Impale(user)
         move.target = tgt
         move.power = 30
         move.base_damage_type = "piercing"
+        hp_before = tgt.hp
 
         monkeypatch.setattr(random, "randint", lambda a, b: 0)
         monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
         with patch("src.moves._spear.functions.check_parry", return_value=False), \
-             patch.object(move, "miss") as mock_miss, \
              patch.object(move, "viable", return_value=False), \
              patch("src.moves._spear.cprint"), \
              patch("src.moves._spear.colored", side_effect=lambda t, *a, **k: t):
             move.execute(user)
 
-        mock_miss.assert_called_once()
+        # viable() is False -> hit_chance is the -1 auto-miss
+        # sentinel, which no roll can beat, so the target takes
+        # nothing. The old version stubbed miss() out and asserted
+        # only that it was called, never that damage was withheld.
+        assert tgt.hp == hp_before
 
     def test_execute_glancing_blow(self, monkeypatch):
         user = _make_user("Spear")
@@ -671,24 +780,32 @@ class TestImpale:
         args, _ = mock_hit.call_args
         assert args[1] is True
 
-    def test_execute_parry(self, monkeypatch):
+    def test_execute_parry_deals_no_damage_and_staggers_the_user(
+        self, monkeypatch
+    ):
         user = _make_user("Spear")
         tgt = _make_target(finesse=0, protection=0)
         move = Impale(user)
         move.target = tgt
         move.power = 40
         move.base_damage_type = "piercing"
+        hp_before = tgt.hp
+        recovery_before = move.stage_beat[2]
 
         monkeypatch.setattr(random, "randint", lambda a, b: 0)
         monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
         with patch("src.moves._spear.functions.check_parry", return_value=True), \
-             patch.object(move, "parry") as mock_parry, \
              patch.object(move, "viable", return_value=True), \
              patch("src.moves._spear.cprint"), \
              patch("src.moves._spear.colored", side_effect=lambda t, *a, **k: t):
             move.execute(user)
 
-        mock_parry.assert_called_once()
+        # A parry converts a landed hit into zero damage and adds 10
+        # beats of stagger to the attacker's recovery stage. The old
+        # version stubbed out parry() and asserted only that it was
+        # called, so neither effect was ever checked.
+        assert tgt.hp == hp_before
+        assert move.stage_beat[2] == recovery_before + 10
 
     def test_execute_fatigue_floor_at_zero(self, monkeypatch):
         user = _make_user("Spear")
@@ -798,7 +915,7 @@ class TestArmorPierce:
 
         assert user.combat_position.facing.name == "E"
 
-    def test_execute_not_viable_causes_miss(self, monkeypatch):
+    def test_execute_not_viable_deals_no_damage(self, monkeypatch):
         user = _make_user("Pick")
         user.eq_weapon.subtype = "Pick"
         user.combat_exp["Pick"] = 0
@@ -807,17 +924,21 @@ class TestArmorPierce:
         move.target = tgt
         move.power = 30
         move.base_damage_type = "piercing"
+        hp_before = tgt.hp
 
         monkeypatch.setattr(random, "randint", lambda a, b: 0)
         monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
         with patch("src.moves._spear.functions.check_parry", return_value=False), \
-             patch.object(move, "miss") as mock_miss, \
              patch.object(move, "viable", return_value=False), \
              patch("src.moves._spear.cprint"), \
              patch("src.moves._spear.colored", side_effect=lambda t, *a, **k: t):
             move.execute(user)
 
-        mock_miss.assert_called_once()
+        # viable() is False -> hit_chance is the -1 auto-miss
+        # sentinel, which no roll can beat, so the target takes
+        # nothing. The old version stubbed miss() out and asserted
+        # only that it was called, never that damage was withheld.
+        assert tgt.hp == hp_before
 
     def test_execute_glancing_blow(self, monkeypatch):
         user = _make_user("Pick")
@@ -841,7 +962,9 @@ class TestArmorPierce:
         args, _ = mock_hit.call_args
         assert args[1] is True
 
-    def test_execute_parry(self, monkeypatch):
+    def test_execute_parry_deals_no_damage_and_staggers_the_user(
+        self, monkeypatch
+    ):
         user = _make_user("Pick")
         user.eq_weapon.subtype = "Pick"
         user.combat_exp["Pick"] = 0
@@ -850,17 +973,23 @@ class TestArmorPierce:
         move.target = tgt
         move.power = 40
         move.base_damage_type = "piercing"
+        hp_before = tgt.hp
+        recovery_before = move.stage_beat[2]
 
         monkeypatch.setattr(random, "randint", lambda a, b: 0)
         monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
         with patch("src.moves._spear.functions.check_parry", return_value=True), \
-             patch.object(move, "parry") as mock_parry, \
              patch.object(move, "viable", return_value=True), \
              patch("src.moves._spear.cprint"), \
              patch("src.moves._spear.colored", side_effect=lambda t, *a, **k: t):
             move.execute(user)
 
-        mock_parry.assert_called_once()
+        # A parry converts a landed hit into zero damage and adds 10
+        # beats of stagger to the attacker's recovery stage. The old
+        # version stubbed out parry() and asserted only that it was
+        # called, so neither effect was ever checked.
+        assert tgt.hp == hp_before
+        assert move.stage_beat[2] == recovery_before + 10
 
     def test_execute_fatigue_floor_at_zero(self, monkeypatch):
         user = _make_user("Pick")
@@ -1016,12 +1145,18 @@ class TestReap:
         move.evaluate()
         assert move.power == 1
 
-    def test_prep_prints_message(self):
-        user = _make_user("Scythe")
+    def test_prep_announces_the_wind_up_by_name(self):
+        user = _make_user("Scythe", name="Gorran")
         move = Reap(user)
+
         with patch("src.moves._scythe.cprint") as mock_cprint:
             move.prep(user)
-        mock_cprint.assert_called_once()
+
+        # The prep line is the player's only warning that a wide sweep is
+        # coming, so pin the text and colour rather than just the call count.
+        mock_cprint.assert_called_once_with(
+            "Gorran raises the scythe for a wide sweep...", "magenta"
+        )
 
     def test_execute_frontal_hit_with_coordinates(self, monkeypatch):
         """Enemy directly ahead within the frontal hemisphere should be struck."""
@@ -1445,24 +1580,32 @@ class TestDeathsHarvest:
 
         assert tgt._reapers_mark is False
 
-    def test_execute_parry(self, monkeypatch):
+    def test_execute_parry_deals_no_damage_and_staggers_the_user(
+        self, monkeypatch
+    ):
         user = _make_user("Scythe")
         tgt = _make_target(finesse=0, protection=0)
         move = DeathsHarvest(user)
         move.target = tgt
         move.power = 40
         move.base_damage_type = "slashing"
+        hp_before = tgt.hp
+        recovery_before = move.stage_beat[2]
 
         monkeypatch.setattr(random, "randint", lambda a, b: 0)
         monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
         with patch("src.moves._scythe.functions.check_parry", return_value=True), \
-             patch.object(move, "parry") as mock_parry, \
              patch.object(move, "viable", return_value=True), \
              patch("src.moves._scythe.cprint"), \
              patch("src.moves._scythe.colored", side_effect=lambda t, *a, **k: t):
             move.execute(user)
 
-        mock_parry.assert_called_once()
+        # A parry converts a landed hit into zero damage and adds 10
+        # beats of stagger to the attacker's recovery stage. The old
+        # version stubbed out parry() and asserted only that it was
+        # called, so neither effect was ever checked.
+        assert tgt.hp == hp_before
+        assert move.stage_beat[2] == recovery_before + 10
 
     def test_execute_fatigue_floor_at_zero(self, monkeypatch):
         user = _make_user("Scythe")
@@ -1613,12 +1756,16 @@ class TestChipAway:
 
         assert user.fatigue == 80
 
-    def test_prep_prints_message(self):
-        user = _make_user("Pick")
+    def test_prep_announces_the_wind_up_by_name(self):
+        user = _make_user("Pick", name="Gorran")
         move = ChipAway(user)
+
         with patch("src.moves._pick.cprint") as mock_cprint:
             move.prep(user)
-        mock_cprint.assert_called_once()
+
+        mock_cprint.assert_called_once_with(
+            "Gorran raises the pick for a rapid flurry...", "cyan"
+        )
 
     def test_execute_updates_facing_with_coordinates(self, monkeypatch):
         user = _make_user("Pick")
@@ -1789,7 +1936,7 @@ class TestExploitWeakness:
 
         assert user.combat_position.facing.name == "E"
 
-    def test_execute_not_viable_causes_miss(self, monkeypatch):
+    def test_execute_not_viable_deals_no_damage(self, monkeypatch):
         user = _make_user("Pick")
         user.eq_weapon.subtype = "Pick"
         tgt = _make_target(finesse=0, protection=0)
@@ -1797,17 +1944,21 @@ class TestExploitWeakness:
         move.target = tgt
         move.power = 30
         move.base_damage_type = "piercing"
+        hp_before = tgt.hp
 
         monkeypatch.setattr(random, "randint", lambda a, b: 0)
         monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
         with patch("src.moves._pick.functions.check_parry", return_value=False), \
-             patch.object(move, "miss") as mock_miss, \
              patch.object(move, "viable", return_value=False), \
              patch("src.moves._pick.cprint"), \
              patch("src.moves._pick.colored", side_effect=lambda t, *a, **k: t):
             move.execute(user)
 
-        mock_miss.assert_called_once()
+        # viable() is False -> hit_chance is the -1 auto-miss
+        # sentinel, which no roll can beat, so the target takes
+        # nothing. The old version stubbed miss() out and asserted
+        # only that it was called, never that damage was withheld.
+        assert tgt.hp == hp_before
 
     def test_execute_glancing_blow(self, monkeypatch):
         user = _make_user("Pick")
@@ -1830,7 +1981,9 @@ class TestExploitWeakness:
         args, _ = mock_hit.call_args
         assert args[1] is True
 
-    def test_execute_parry(self, monkeypatch):
+    def test_execute_parry_deals_no_damage_and_staggers_the_user(
+        self, monkeypatch
+    ):
         user = _make_user("Pick")
         user.eq_weapon.subtype = "Pick"
         tgt = _make_target(finesse=0, protection=0)
@@ -1838,19 +1991,33 @@ class TestExploitWeakness:
         move.target = tgt
         move.power = 40
         move.base_damage_type = "piercing"
+        hp_before = tgt.hp
+        recovery_before = move.stage_beat[2]
 
         monkeypatch.setattr(random, "randint", lambda a, b: 0)
         monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
         with patch("src.moves._pick.functions.check_parry", return_value=True), \
-             patch.object(move, "parry") as mock_parry, \
              patch.object(move, "viable", return_value=True), \
              patch("src.moves._pick.cprint"), \
              patch("src.moves._pick.colored", side_effect=lambda t, *a, **k: t):
             move.execute(user)
 
-        mock_parry.assert_called_once()
+        # A parry converts a landed hit into zero damage and adds 10
+        # beats of stagger to the attacker's recovery stage. The old
+        # version stubbed out parry() and asserted only that it was
+        # called, so neither effect was ever checked.
+        assert tgt.hp == hp_before
+        assert move.stage_beat[2] == recovery_before + 10
 
-    def test_execute_inflict_exception_swallowed(self, monkeypatch):
+    def test_a_failed_status_application_still_leaves_the_damage_landed(
+        self, monkeypatch
+    ):
+        """The Disoriented rider is best-effort; the strike itself is not.
+
+        The old version patched out ``hit`` and asserted nothing, so it could
+        not tell "the status failed but the blow landed" (correct) from "the
+        whole strike was swallowed" (a real bug).
+        """
         user = _make_user("Pick")
         user.eq_weapon.subtype = "Pick"
         tgt = _make_target(finesse=0, protection=0)
@@ -1865,11 +2032,14 @@ class TestExploitWeakness:
         monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
         with patch("src.moves._pick.functions.check_parry", return_value=False), \
              patch("src.moves._pick.functions.inflict", side_effect=Exception("boom")), \
-             patch.object(move, "hit"), \
              patch.object(move, "viable", return_value=True), \
              patch("src.moves._pick.cprint"), \
              patch("src.moves._pick.colored", side_effect=lambda t, *a, **k: t):
-            move.execute(user)  # should not raise
+            move.execute(user)
+
+        assert tgt.hp == 70, "the strike must land even though the status failed"
+        assert tgt.states == [], "no state may be left half-applied"
+        assert user.fatigue == 200 - move.fatigue_cost
 
     def test_execute_fatigue_floor_at_zero(self, monkeypatch):
         user = _make_user("Pick")
@@ -2000,7 +2170,7 @@ class TestStupefy:
 
         assert user.combat_position.facing.name == "E"
 
-    def test_execute_not_viable_causes_miss(self, monkeypatch):
+    def test_execute_not_viable_deals_no_damage(self, monkeypatch):
         user = _make_user("Pick")
         user.eq_weapon.subtype = "Pick"
         tgt = _make_target(finesse=0, protection=0)
@@ -2008,17 +2178,21 @@ class TestStupefy:
         move.target = tgt
         move.power = 30
         move.base_damage_type = "crushing"
+        hp_before = tgt.hp
 
         monkeypatch.setattr(random, "randint", lambda a, b: 50)
         monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
         with patch("src.moves._pick.functions.check_parry", return_value=False), \
-             patch.object(move, "miss") as mock_miss, \
              patch.object(move, "viable", return_value=False), \
              patch("src.moves._pick.cprint"), \
              patch("src.moves._pick.colored", side_effect=lambda t, *a, **k: t):
             move.execute(user)
 
-        mock_miss.assert_called_once()
+        # viable() is False -> hit_chance is the -1 auto-miss
+        # sentinel, which no roll can beat, so the target takes
+        # nothing. The old version stubbed miss() out and asserted
+        # only that it was called, never that damage was withheld.
+        assert tgt.hp == hp_before
 
     def test_execute_glancing_blow(self, monkeypatch):
         user = _make_user("Pick")
@@ -2041,7 +2215,9 @@ class TestStupefy:
         args, _ = mock_hit.call_args
         assert args[1] is True
 
-    def test_execute_parry(self, monkeypatch):
+    def test_execute_parry_deals_no_damage_and_staggers_the_user(
+        self, monkeypatch
+    ):
         user = _make_user("Pick")
         user.eq_weapon.subtype = "Pick"
         tgt = _make_target(finesse=0, protection=0)
@@ -2049,19 +2225,33 @@ class TestStupefy:
         move.target = tgt
         move.power = 40
         move.base_damage_type = "crushing"
+        hp_before = tgt.hp
+        recovery_before = move.stage_beat[2]
 
         monkeypatch.setattr(random, "randint", lambda a, b: 0)
         monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
         with patch("src.moves._pick.functions.check_parry", return_value=True), \
-             patch.object(move, "parry") as mock_parry, \
              patch.object(move, "viable", return_value=True), \
              patch("src.moves._pick.cprint"), \
              patch("src.moves._pick.colored", side_effect=lambda t, *a, **k: t):
             move.execute(user)
 
-        mock_parry.assert_called_once()
+        # A parry converts a landed hit into zero damage and adds 10
+        # beats of stagger to the attacker's recovery stage. The old
+        # version stubbed out parry() and asserted only that it was
+        # called, so neither effect was ever checked.
+        assert tgt.hp == hp_before
+        assert move.stage_beat[2] == recovery_before + 10
 
-    def test_execute_disoriented_append_exception_swallowed(self, monkeypatch):
+    def test_a_failed_disoriented_append_still_leaves_the_damage_landed(
+        self, monkeypatch
+    ):
+        """Same contract as ExploitWeakness: the rider may fail, the blow may not.
+
+        Stupefy also *clears* any pre-existing Disoriented before re-applying a
+        fresh one, so a failure here must not leave the target better off than
+        before the strike either -- assert the cleared-then-empty end state.
+        """
         user = _make_user("Pick")
         user.eq_weapon.subtype = "Pick"
         tgt = _make_target(finesse=0, protection=0)
@@ -2076,11 +2266,14 @@ class TestStupefy:
         monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
         with patch("src.moves._pick.functions.check_parry", return_value=False), \
              patch("src.moves._pick.states.Disoriented", side_effect=Exception("boom")), \
-             patch.object(move, "hit"), \
              patch.object(move, "viable", return_value=True), \
              patch("src.moves._pick.cprint"), \
              patch("src.moves._pick.colored", side_effect=lambda t, *a, **k: t):
-            move.execute(user)  # should not raise
+            move.execute(user)
+
+        assert tgt.hp == 70, "the strike must land even though the status failed"
+        assert tgt.states == []
+        assert user.fatigue == 200 - move.fatigue_cost
 
     def test_execute_fatigue_floor_at_zero(self, monkeypatch):
         user = _make_user("Pick")

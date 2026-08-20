@@ -54,14 +54,45 @@ describe('AudioContext', () => {
     });
 
     it('plays and stops BGM', () => {
+        // This test had NO assertions at all — it clicked both buttons and
+        // ended. Every line of playBGM/stopBGM could have been deleted and it
+        // would still have passed. It now pins what those two actually do to
+        // the shared <audio> element: load the track, start it, and on stop
+        // pause it and clear the current-track state.
         render(
             <AudioProvider>
                 <TestComponent />
             </AudioProvider>
         );
+        const bgmElement = global.__audioInstances[0];
 
         fireEvent.click(screen.getByText('Play BGM'));
+        expect(bgmElement.src).toContain('adventure');
+        expect(bgmElement.play).toHaveBeenCalledTimes(1);
+
         fireEvent.click(screen.getByText('Stop BGM'));
+        expect(bgmElement.pause).toHaveBeenCalledTimes(1);
+
+        // currentBGM was reset, so re-playing the same track is not swallowed
+        // by playBGM's `if (currentBGMRef.current === trackName) return` guard.
+        fireEvent.click(screen.getByText('Play BGM'));
+        expect(bgmElement.play).toHaveBeenCalledTimes(2);
+    });
+
+    it('ignores a request to play the track that is already playing', () => {
+        // The early-return guard is what stops a re-render from restarting the
+        // map theme from the top on every poll.
+        render(
+            <AudioProvider>
+                <TestComponent />
+            </AudioProvider>
+        );
+        const bgmElement = global.__audioInstances[0];
+
+        fireEvent.click(screen.getByText('Play BGM'));
+        fireEvent.click(screen.getByText('Play BGM'));
+
+        expect(bgmElement.play).toHaveBeenCalledTimes(1);
     });
 
     it('playBGM reference stays stable after switching tracks (regression: battle BGM override bug)', () => {

@@ -1,350 +1,429 @@
-"""Extended game_service.py tests for combat methods.
+"""Combat entry, exit and event dispatch, driven through a real fight.
 
-Tests for high-impact combat-related methods:
-- execute_move: Damage calculation, cooldown tracking, status effects
-- start_combat: Combat initialization, enemy spawning
-- trigger_combat_events: Event resolution
+History
+-------
+Every one of this file's 23 tests was ineffective, and most called the service
+with the *wrong signature* — which is exactly why nobody noticed:
 
-Target: Increase game_service.py coverage from 15% → 35%+ with combat tests.
+* ``start_combat(player, [enemy])`` — the real parameter is ``enemy_id``, the
+  ``str(id(npc))`` of an NPC on the tile. A list never matches, so all four
+  "start combat" tests were asserting ``isinstance`` on ``{"error": "Enemy not
+  found"}``.
+* ``trigger_combat_events(player, tile)`` — the second parameter is
+  ``session_data``. The tile was silently accepted as a session dict.
+* ``execute_move(player, [enemy], move)`` — the real signature is
+  ``(player, move_type, move_id, ...)``.
+* ``assert mock_combat_player.in_combat or True`` and ``assert "combat_started"
+  in result or result is not None`` — tautologies that pass for any value.
+
+A real fight is cheap to build in-process (a real ``Player``, a real ``Slime``,
+a real ``ApiCombatAdapter``), so this file now starts one and asserts the state
+transitions: combat enrolment, ``combat_id`` identity semantics, move-availability
+gating, the flee distance rule, and the teardown flee performs. Damage numbers are
+deliberately not asserted — hit rolls are random — but every structural invariant is.
+
+``flee_combat`` coverage absorbed from the deleted ``test_game_service_additional.py``
+(whose three flee tests asserted only ``isinstance(result, dict)``).
 """
 
 import pytest
-from unittest.mock import MagicMock, Mock, patch, call
+
 from src.api.services.game_service import GameService
+from src.events import Event
+from src.npc import NPC, Slime
+from tests._gs_fixtures import GRID_3X3, live_world
 
 
 @pytest.fixture(scope="session")
-def _cached_game_service():
-    """Cache GameService instance across the session (stateless singleton)."""
+def game_service():
+    """``GameService.__init__`` is ``pass`` — the service is stateless."""
     return GameService()
 
 
 @pytest.fixture
-def game_service(_cached_game_service):
-    """Return the cached GameService."""
-    return _cached_game_service
+def world():
+    return live_world(GRID_3X3)
 
 
 @pytest.fixture
-def mock_combat_player():
-    """Create a player in active combat."""
-    player = MagicMock()
-    player.name = "Jean"
-    player.hp = 80
-    player.maxhp = 100
-    player.fatigue = 60
-    player.maxfatigue = 100
-    player.strength = 12
-    player.finesse = 10
-    player.speed = 11
-    player.wisdom = 9
-    player.constitution = 10
-    player.level = 5
-
-    # Combat state
-    player.in_combat = True
-    player.combat_enemies = []
-    player.heat = 45
-    player.max_heat = 100
-
-    # Equipment
-    player.eq_weapon = MagicMock()
-    player.eq_weapon.name = "Iron Sword"
-    player.eq_armor = MagicMock()
-    player.eq_armor.name = "Leather Armor"
-
-    # Combat properties
-    player.current_move = None
-    player.last_move_accurate = True
-    player.combat_round = 1
-    player.combat_turn_index = 0
-
-    # Universe and moves
-    player.universe = MagicMock()
-    player.universe.story = {}
-    player.universe.game_tick = 100
-
-    # Moves
-    player.moves = [
-        MagicMock(name="Slash", cooldown=0, viable=MagicMock(return_value=True)),
-        MagicMock(name="Parry", cooldown=0, viable=MagicMock(return_value=True)),
-    ]
-
-    return player
+def player(world):
+    return world[0]
 
 
 @pytest.fixture
-def mock_enemy():
-    """Create a mock enemy NPC."""
-    enemy = MagicMock()
-    enemy.name = "Slime"
-    enemy.hp = 20
-    enemy.maxhp = 20
-    enemy.level = 2
-    enemy.moves = []
-    enemy.is_dead = MagicMock(return_value=False)
-    enemy.take_damage = MagicMock()
-    enemy.get_current_hp = MagicMock(return_value=20)
+def tile(world):
+    return world[1][(0, 0)]
+
+
+@pytest.fixture
+def slime(player, tile):
+    """One real hostile NPC standing on the player's tile."""
+    enemy = Slime()
+    tile.npcs_here = [enemy]
+    player.current_room = tile
     return enemy
 
 
-@pytest.fixture
-def mock_tile_with_events():
-    """Create a mock tile with events."""
-    tile = MagicMock()
-    tile.name = "BattleGround"
-    tile.description = "A place for battle"
-    tile.events_here = []
-    tile.npcs_here = []
-    tile.items_here = []
-    tile.objects_here = []
-    return tile
+def enemy_id(npc):
+    """The id string ``start_combat`` matches against."""
+    return str(id(npc))
 
 
-class TestGameServiceExecuteMove:
-    """Tests for execute_move() - the core combat action method."""
-
-    def test_execute_move_returns_dict(self, game_service, mock_combat_player, mock_enemy):
-        """Test that execute_move returns a dict."""
-        move = mock_combat_player.moves[0]
-
-        result = game_service.execute_move(mock_combat_player, [mock_enemy], move)
-        assert isinstance(result, dict), "execute_move should return a dict"
-
-    def test_execute_move_with_valid_move(self, game_service, mock_combat_player, mock_enemy):
-        """Test executing a valid move."""
-        move = MagicMock()
-        move.name = "Slash"
-        move.action = MagicMock(return_value={"damage": 10})
-
-        result = game_service.execute_move(mock_combat_player, [mock_enemy], move)
-        assert isinstance(result, dict)
-
-    def test_execute_move_decreases_fatigue(self, game_service, mock_combat_player, mock_enemy):
-        """Test that moves consume fatigue."""
-        initial_fatigue = mock_combat_player.fatigue
-        move = MagicMock()
-        move.name = "Attack"
-        move.fatigue_cost = 10
-        move.action = MagicMock(return_value={"damage": 5})
-
-        result = game_service.execute_move(mock_combat_player, [mock_enemy], move)
-        assert isinstance(result, dict)
-
-    def test_execute_move_with_cooldown(self, game_service, mock_combat_player, mock_enemy):
-        """Test that moves can have cooldowns."""
-        move = MagicMock()
-        move.name = "PowerStrike"
-        move.cooldown = 3
-        move.action = MagicMock(return_value={"damage": 20})
-
-        result = game_service.execute_move(mock_combat_player, [mock_enemy], move)
-        assert isinstance(result, dict)
-
-    def test_execute_move_multiple_enemies(self, game_service, mock_combat_player):
-        """Test move that targets multiple enemies."""
-        enemies = [
-            MagicMock(name="Slime1", is_dead=MagicMock(return_value=False)),
-            MagicMock(name="Slime2", is_dead=MagicMock(return_value=False)),
-        ]
-
-        move = MagicMock()
-        move.name = "Whirlwind"
-        move.action = MagicMock(return_value={"damage": 5, "targets": "all"})
-
-        result = game_service.execute_move(mock_combat_player, enemies, move)
-        assert isinstance(result, dict)
+def _move_index(player, move_name):
+    """The adapter option index for ``move_name``, as a command string."""
+    names = [o["name"] for o in player._combat_adapter.available_options]
+    return str(names.index(move_name))
 
 
-class TestGameServiceStartCombat:
-    """Tests for start_combat() - initiating combat."""
-
-    def test_start_combat_returns_dict(self, game_service, mock_combat_player, mock_enemy):
-        """Test that start_combat returns combat state."""
-        result = game_service.start_combat(mock_combat_player, [mock_enemy])
-        assert isinstance(result, dict), "start_combat should return a dict"
-
-    def test_start_combat_initializes_combat_state(self, game_service, mock_combat_player, mock_enemy):
-        """Test that combat state is initialized."""
-        result = game_service.start_combat(mock_combat_player, [mock_enemy])
-        assert "combat_started" in result or result is not None
-
-    def test_start_combat_with_multiple_enemies(self, game_service, mock_combat_player):
-        """Test starting combat with multiple enemies."""
-        enemies = [
-            MagicMock(name="Enemy1", level=2),
-            MagicMock(name="Enemy2", level=3),
-        ]
-
-        result = game_service.start_combat(mock_combat_player, enemies)
-        assert isinstance(result, dict)
-
-    def test_start_combat_with_reinforcements(self, game_service, mock_combat_player, mock_enemy):
-        """Test combat with reinforcements."""
-        # Setup universe with reinforcement events
-        mock_combat_player.universe.maps = [
-            MagicMock(get=MagicMock(return_value=None))
-        ]
-
-        result = game_service.start_combat(mock_combat_player, [mock_enemy])
-        assert isinstance(result, dict)
+def _set_distance(player, enemy, paces):
+    """Pin the combat distance on both sides (the opening roll is random)."""
+    player.combat_proximity[enemy] = paces
+    enemy.combat_proximity[player] = paces
 
 
-class TestGameServiceTriggerCombatEvents:
-    """Tests for trigger_combat_events() - event resolution."""
+class TestStartCombat:
+    """``start_combat`` enrols the clicked enemy and every other hostile present."""
 
-    def test_trigger_combat_events_returns_list(self, game_service, mock_combat_player, mock_tile_with_events):
-        """Test that trigger_combat_events returns a list."""
-        result = game_service.trigger_combat_events(mock_combat_player, mock_tile_with_events)
-        assert isinstance(result, list), "trigger_combat_events should return a list"
+    def test_enrols_the_clicked_enemy(self, game_service, player, slime):
+        result = game_service.start_combat(player, enemy_id(slime))
 
-    def test_trigger_combat_events_empty_tile(self, game_service, mock_combat_player, mock_tile_with_events):
-        """Test triggering events on tile with no events."""
-        mock_tile_with_events.events_here = []
+        assert player.in_combat is True
+        assert player.combat_list == [slime]
+        assert slime.in_combat is True and slime.aggro is True
+        assert result["combat_active"] is True
 
-        result = game_service.trigger_combat_events(mock_combat_player, mock_tile_with_events)
-        assert isinstance(result, list)
-        assert len(result) == 0 or isinstance(result, list)
+    def test_unknown_enemy_id_is_an_error(self, game_service, player, slime):
+        assert game_service.start_combat(player, "not-an-id") == {"error": "Enemy not found"}
+        assert player.in_combat is not True
 
-    def test_trigger_combat_events_multiple_events(self, game_service, mock_combat_player, mock_tile_with_events):
-        """Test triggering multiple events on a tile."""
-        mock_tile_with_events.events_here = [
-            MagicMock(name="Event1"),
-            MagicMock(name="Event2"),
-        ]
+    def test_other_aggro_hostiles_join_the_fight(self, game_service, player, tile):
+        clicked, bystander = Slime(), Slime()
+        bystander.aggro = True
+        tile.npcs_here = [clicked, bystander]
+        player.current_room = tile
 
-        result = game_service.trigger_combat_events(mock_combat_player, mock_tile_with_events)
-        assert isinstance(result, list)
+        game_service.start_combat(player, enemy_id(clicked))
 
-    def test_trigger_combat_events_when_not_in_combat(self, game_service, mock_combat_player, mock_tile_with_events):
-        """Test that events don't trigger when not in combat."""
-        mock_combat_player.in_combat = False
-        mock_tile_with_events.events_here = [MagicMock(name="Event1")]
+        assert set(player.combat_list) == {clicked, bystander}
+        # The clicked enemy leads the roster regardless of tile order.
+        assert player.combat_list[0] is clicked
 
-        result = game_service.trigger_combat_events(mock_combat_player, mock_tile_with_events)
-        assert isinstance(result, list)
-        assert len(result) == 0
+    def test_passive_hostiles_are_left_out(self, game_service, player, tile):
+        clicked, dozing = Slime(), Slime()
+        dozing.aggro = False
+        tile.npcs_here = [clicked, dozing]
+        player.current_room = tile
 
+        game_service.start_combat(player, enemy_id(clicked))
 
-class TestGameServiceCombatIntegration:
-    """Integration tests combining combat methods."""
+        assert player.combat_list == [clicked]
+        assert dozing.in_combat is not True
 
-    def test_combat_workflow(self, game_service, mock_combat_player, mock_enemy):
-        """Test complete combat workflow: initiate → execute move → resolve."""
-        # Start combat
-        combat_result = game_service.start_combat(mock_combat_player, [mock_enemy])
-        assert isinstance(combat_result, dict)
+    def test_friendly_npcs_never_join_as_enemies(self, game_service, player, tile):
+        clicked = Slime()
+        ally = NPC(
+            name="Gorran",
+            description="A golemite.",
+            damage=1,
+            aggro=True,
+            exp_award=0,
+            friend=True,
+        )
+        tile.npcs_here = [clicked, ally]
+        player.current_room = tile
 
-        # Execute a move
-        move = MagicMock()
-        move.name = "Attack"
-        move.action = MagicMock(return_value={"damage": 10})
+        game_service.start_combat(player, enemy_id(clicked))
 
-        move_result = game_service.execute_move(mock_combat_player, [mock_enemy], move)
-        assert isinstance(move_result, dict)
+        assert player.combat_list == [clicked]
 
-    def test_multiple_rounds_combat(self, game_service, mock_combat_player, mock_enemy):
-        """Test multiple combat rounds."""
-        game_service.start_combat(mock_combat_player, [mock_enemy])
+    def test_combatant_roster_lists_the_player_first(self, game_service, player, slime):
+        result = game_service.start_combat(player, enemy_id(slime))
 
-        moves = [
-            MagicMock(name="Move1", action=MagicMock(return_value={"damage": 5})),
-            MagicMock(name="Move2", action=MagicMock(return_value={"damage": 7})),
-        ]
+        assert result["combatants"][0] == {
+            "id": "player",
+            "name": player.name,
+            "is_player": True,
+            "is_ally": False,
+        }
+        assert result["combatants"][1]["id"] == f"enemy_{id(slime)}"
+        assert result["combatants"][1]["is_ally"] is False
+        assert result["turn_order"] == [c["id"] for c in result["combatants"]]
 
-        for move in moves:
-            result = game_service.execute_move(mock_combat_player, [mock_enemy], move)
-            assert isinstance(result, dict)
+    def test_starting_the_same_fight_twice_is_refused(self, game_service, player, slime):
+        game_service.start_combat(player, enemy_id(slime))
+        assert game_service.start_combat(player, enemy_id(slime)) == {
+            "error": "Already in combat with these enemies"
+        }
 
-    def test_enemy_defeat_scenario(self, game_service, mock_combat_player, mock_enemy):
-        """Test defeating an enemy."""
-        mock_enemy.hp = 5
-        mock_enemy.is_dead = MagicMock(return_value=True)
-
-        move = MagicMock()
-        move.name = "FinalStrike"
-        move.action = MagicMock(return_value={"damage": 10})
-
-        result = game_service.execute_move(mock_combat_player, [mock_enemy], move)
-        assert isinstance(result, dict)
-
-
-class TestGameServiceCombatEdgeCases:
-    """Edge case tests for combat methods."""
-
-    def test_execute_move_insufficient_fatigue(self, game_service, mock_combat_player, mock_enemy):
-        """Test executing move with low fatigue."""
-        mock_combat_player.fatigue = 5
-
-        move = MagicMock()
-        move.name = "HighCostMove"
-        move.fatigue_cost = 50
-        move.action = MagicMock(return_value={"damage": 20})
-
-        result = game_service.execute_move(mock_combat_player, [mock_enemy], move)
-        assert isinstance(result, dict)
-
-    def test_execute_move_at_max_heat(self, game_service, mock_combat_player, mock_enemy):
-        """Test executing move at maximum heat."""
-        mock_combat_player.heat = 100
-
-        move = MagicMock()
-        move.name = "HeatMove"
-        move.heat_cost = 10
-        move.action = MagicMock(return_value={"damage": 15})
-
-        result = game_service.execute_move(mock_combat_player, [mock_enemy], move)
-        assert isinstance(result, dict)
-
-    def test_start_combat_with_empty_enemy_list(self, game_service, mock_combat_player):
-        """Test starting combat with no enemies."""
-        result = game_service.start_combat(mock_combat_player, [])
-        assert isinstance(result, dict)
-
-    def test_execute_move_with_special_effects(self, game_service, mock_combat_player, mock_enemy):
-        """Test move with special effects (status, buffs, etc)."""
-        move = MagicMock()
-        move.name = "PoisonStrike"
-        move.action = MagicMock(return_value={
-            "damage": 10,
-            "status_effects": ["poison"],
-            "duration": 3
-        })
-
-        result = game_service.execute_move(mock_combat_player, [mock_enemy], move)
-        assert isinstance(result, dict)
+    def test_a_combat_adapter_is_attached(self, game_service, player, slime):
+        game_service.start_combat(player, enemy_id(slime))
+        adapter = player._combat_adapter
+        assert adapter.awaiting_input is True
+        assert adapter.input_type == "move_selection"
+        assert "Attack" in [o["name"] for o in adapter.available_options]
 
 
-class TestGameServiceCombatState:
-    """Tests for combat state management."""
+class TestCombatIdentity:
+    """``combat_id`` identifies a *fight*, not a call (CLAUDE.md)."""
 
-    def test_combat_state_tracking(self, game_service, mock_combat_player, mock_enemy):
-        """Test that combat state is properly tracked."""
-        game_service.start_combat(mock_combat_player, [mock_enemy])
+    def test_published_id_matches_the_adapter_state(self, game_service, player, slime):
+        result = game_service.start_combat(player, enemy_id(slime))
+        adapter_id = player._combat_adapter.get_combat_state()["battle_state"]["combat_id"]
+        assert result["combat_id"] == adapter_id
+        assert result["combat_id"] is not None
 
-        # Player should be marked as in combat
-        assert mock_combat_player.in_combat or True  # May be set by execute_move
+    def test_id_is_stable_across_polls_of_the_same_fight(self, game_service, player, slime):
+        first = game_service.start_combat(player, enemy_id(slime))["combat_id"]
+        polled = game_service.get_combat_status(player)["battle_state"]["combat_id"]
+        assert polled == first
 
-    def test_round_advancement(self, game_service, mock_combat_player, mock_enemy):
-        """Test that combat rounds advance properly."""
-        initial_round = mock_combat_player.combat_round
+    def test_a_new_fight_gets_a_new_id(self, game_service, player, tile):
+        first_enemy = Slime()
+        tile.npcs_here = [first_enemy]
+        player.current_room = tile
+        first_id = game_service.start_combat(player, enemy_id(first_enemy))["combat_id"]
 
-        game_service.start_combat(mock_combat_player, [mock_enemy])
-        move = MagicMock(action=MagicMock(return_value={"damage": 5}))
-        game_service.execute_move(mock_combat_player, [mock_enemy], move)
+        first_enemy.combat_proximity = {player: 40}
+        game_service.flee_combat(player)
 
-        # Round should advance or stay same
-        assert mock_combat_player.combat_round >= initial_round
+        second_enemy = Slime()
+        tile.npcs_here = [second_enemy]
+        second_id = game_service.start_combat(player, enemy_id(second_enemy))["combat_id"]
 
-    def test_turn_index_management(self, game_service, mock_combat_player, mock_enemy):
-        """Test turn index tracking during combat."""
-        initial_turn = mock_combat_player.combat_turn_index
+        assert second_id != first_id
 
-        move = MagicMock(action=MagicMock(return_value={"damage": 5}))
-        game_service.execute_move(mock_combat_player, [mock_enemy], move)
 
-        # Turn index should be valid
-        assert mock_combat_player.combat_turn_index >= 0
+class TestExecuteMove:
+    """``execute_move`` routes a structured command into the adapter."""
+
+    def test_not_in_combat_is_refused(self, game_service, player):
+        assert game_service.execute_move(player, "move", "0") == {
+            "success": False,
+            "error": "Not in combat",
+        }
+
+    def test_a_pending_input_event_blocks_combat_actions(self, game_service, player, slime):
+        game_service.start_combat(player, enemy_id(slime))
+        session_data = {
+            "pending_events": {
+                "e1": {"event_data": {"needs_input": True, "completed": False}}
+            }
+        }
+
+        result = game_service.execute_move(
+            player, "move", "0", session_data=session_data
+        )
+
+        assert result["success"] is False
+        assert result["error"] == "Event pending"
+        assert result["pending_events_count"] == 1
+
+    def test_stale_pending_events_are_cleared_not_blocking(
+        self, game_service, player, slime
+    ):
+        game_service.start_combat(player, enemy_id(slime))
+        session_data = {
+            "pending_events": {
+                "e1": {"event_data": {"needs_input": False, "completed": True}}
+            }
+        }
+
+        game_service.execute_move(player, "move", "0", session_data=session_data)
+
+        assert session_data["pending_events"] == {}
+
+    def test_a_move_out_of_range_is_reported_unavailable(
+        self, game_service, player, slime
+    ):
+        """Attack needs the enemy in reach; from 20 paces it is gated off.
+
+        Opening distance is rolled per fight, so it is pinned explicitly here
+        rather than assumed.
+        """
+        game_service.start_combat(player, enemy_id(slime))
+        _set_distance(player, slime, 20)
+
+        result = game_service.execute_move(player, "move", _move_index(player, "Attack"))
+
+        assert result == {"error": "Move is not currently available"}
+
+    def test_advancing_closes_the_distance(self, game_service, player, slime):
+        game_service.start_combat(player, enemy_id(slime))
+        _set_distance(player, slime, 20)
+
+        result = game_service.execute_move(player, "move", _move_index(player, "Advance"))
+
+        assert "error" not in result
+        assert player.combat_proximity[slime] < 20
+
+    def test_an_out_of_range_index_is_rejected(self, game_service, player, slime):
+        game_service.start_combat(player, enemy_id(slime))
+        result = game_service.execute_move(player, "move", "999")
+        assert "error" in result
+        # The fight is untouched by the bad command.
+        assert player.in_combat is True
+
+
+class TestFleeCombat:
+    """``flee_combat`` — distance gate, then full teardown."""
+
+    def test_not_in_combat_is_an_error(self, game_service, player):
+        assert game_service.flee_combat(player) == {"error": "Not in combat"}
+
+    def test_nearby_enemies_block_the_escape(self, game_service, player, slime):
+        game_service.start_combat(player, enemy_id(slime))
+        assert slime.combat_proximity[player] < 20
+
+        result = game_service.flee_combat(player)
+
+        assert result == {
+            "success": False,
+            "fled": False,
+            "error": "Cannot flee — enemies are too close",
+        }
+        assert player.in_combat is True
+
+    def test_distant_enemies_allow_the_escape(self, game_service, player, slime):
+        game_service.start_combat(player, enemy_id(slime))
+        slime.combat_proximity = {player: 40}
+
+        result = game_service.flee_combat(player)
+
+        assert result == {
+            "success": True,
+            "fled": True,
+            "message": "Fled from combat successfully",
+        }
+
+    def test_escape_clears_player_combat_state(self, game_service, player, slime):
+        game_service.start_combat(player, enemy_id(slime))
+        slime.combat_proximity = {player: 40}
+
+        game_service.flee_combat(player)
+
+        assert player.in_combat is False
+        assert player.combat_list == []
+        assert player.current_move is None
+        assert not hasattr(player, "_combat_adapter")
+
+    def test_escape_disengages_the_enemies(self, game_service, player, slime):
+        """Enemies must drop aggro, or they immediately re-engage on re-entry."""
+        game_service.start_combat(player, enemy_id(slime))
+        slime.combat_proximity = {player: 40}
+
+        game_service.flee_combat(player)
+
+        assert slime.in_combat is False
+        assert slime.aggro is False
+
+    def test_escape_strips_non_persistent_states(self, game_service, player, slime):
+        game_service.start_combat(player, enemy_id(slime))
+        slime.combat_proximity = {player: 40}
+
+        transient = type("Transient", (), {"persistent": False, "name": "Rattled"})()
+        lasting = type("Lasting", (), {"persistent": True, "name": "Poisoned"})()
+        player.states = [transient, lasting]
+
+        game_service.flee_combat(player)
+
+        assert player.states == [lasting]
+
+    def test_escape_is_repeatable_only_once(self, game_service, player, slime):
+        game_service.start_combat(player, enemy_id(slime))
+        slime.combat_proximity = {player: 40}
+        game_service.flee_combat(player)
+        assert game_service.flee_combat(player) == {"error": "Not in combat"}
+
+
+class _CombatEvent(Event):
+    """A real ``Event`` flagged ``combat_effect`` so the combat dispatcher picks it up."""
+
+    def __init__(self, name="CombatEvent", output="The ground trembles."):
+        super().__init__(name=name, combat_effect=True)
+        self.fired = 0
+        self.output = output
+
+    def check_conditions(self):
+        from src.narration import narrate
+
+        self.fired += 1
+        if self.output:
+            narrate(self.output)
+
+
+class TestTriggerCombatEvents:
+    """``trigger_combat_events(player, session_data)`` — note the *second* argument."""
+
+    def test_no_events_yields_an_empty_list(self, game_service, player, tile):
+        tile.events_here = []
+        player.combat_events = []
+        assert game_service.trigger_combat_events(player) == []
+
+    def test_a_combat_flagged_tile_event_fires(self, game_service, player, tile):
+        event = _CombatEvent()
+        tile.events_here = [event]
+
+        result = game_service.trigger_combat_events(player)
+
+        assert event.fired == 1
+        assert len(result) == 1
+        assert "The ground trembles." in result[0]["output_text"]
+
+    def test_events_without_combat_effect_are_ignored(self, game_service, player, tile):
+        class _Quiet(Event):
+            def __init__(self):
+                super().__init__(name="Quiet")
+                self.fired = 0
+
+            def check_conditions(self):
+                self.fired += 1
+
+        quiet = _Quiet()
+        tile.events_here = [quiet]
+
+        assert game_service.trigger_combat_events(player) == []
+        assert quiet.fired == 0
+
+    def test_a_silent_event_is_not_reported(self, game_service, player, tile):
+        """Only events that actually produced something reach the client."""
+        event = _CombatEvent(output="")
+        tile.events_here = [event]
+
+        assert game_service.trigger_combat_events(player) == []
+        assert event.fired == 1
+
+    def test_player_and_tile_are_rebound_onto_the_event(self, game_service, player, tile):
+        """Session-loaded events can hold stale references."""
+        event = _CombatEvent()
+        event.player = None
+        event.tile = None
+        tile.events_here = [event]
+
+        game_service.trigger_combat_events(player)
+
+        assert event.player is player
+        assert event.tile is tile
+
+    def test_player_scoped_combat_events_also_fire(self, game_service, player, tile):
+        tile.events_here = []
+        event = _CombatEvent(name="Reinforcements")
+        player.combat_events = [event]
+
+        result = game_service.trigger_combat_events(player)
+
+        assert event.fired == 1
+        assert [e["name"] for e in result] == ["Reinforcements"]
+
+    def test_a_raising_event_is_reported_not_propagated(self, game_service, player, tile):
+        class _Exploding(Event):
+            def check_conditions(self):
+                raise RuntimeError("event boom")
+
+        tile.events_here = [_Exploding(name="Boom", combat_effect=True)]
+
+        # The error is recorded on the event data, but a silent failure produces
+        # no output, so it is not surfaced as a triggered event.
+        assert game_service.trigger_combat_events(player) == []
 
 
 if __name__ == "__main__":
