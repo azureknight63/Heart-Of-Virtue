@@ -367,3 +367,17 @@ class TestAdapterGenerateTurn:
     def test_none_raw_returns_none(self):
         adapter = self._adapter(None)
         assert adapter.generate_turn("sys", [], is_opening=True) is None
+
+    def test_preserves_optional_narrative_flavor_separately_from_dialogue(self):
+        adapter = self._adapter(
+            '{"npc_text": "The road is open.", "npc_flavor": "She studies the dust before answering.", '
+            '"conversation_quality": "neutral", "jean_options": []}'
+        )
+        result = adapter.generate_turn("sys", [], is_opening=True)
+        assert result["npc_text"] == "The road is open."
+        assert result["npc_flavor"] == "She studies the dust before answering."
+
+    def test_missing_narrative_flavor_defaults_to_empty_string(self):
+        adapter = self._adapter('{"npc_text": "The road is open.", "jean_options": []}')
+        result = adapter.generate_turn("sys", [], is_opening=True)
+        assert result["npc_flavor"] == ""

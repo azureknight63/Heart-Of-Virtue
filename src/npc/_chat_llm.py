@@ -760,10 +760,11 @@ class ConversationalNPCMixin:
         call — the round-latency budget depends on this), and falls back to the
         legacy two-method adapter interface for backwards compatibility.
 
-        Returns a normalized dict with keys npc_text, conversation_quality,
-        reputation_delta, loquacity_delta (None if the adapter did not supply
-        one), and raw_options (the combined call's options list, or None when the
-        adapter produces options via a separate call). Returns None on failure.
+        Returns a normalized dict with keys npc_text, npc_flavor,
+        conversation_quality, reputation_delta, loquacity_delta (None if the
+        adapter did not supply one), and raw_options (the combined call's
+        options list, or None when the adapter produces options via a separate
+        call). Returns None on failure.
         """
         if hasattr(adapter, "generate_turn"):
             if is_opening:
@@ -776,6 +777,7 @@ class ConversationalNPCMixin:
                 return None
             return {
                 "npc_text": res.get("npc_text"),
+                "npc_flavor": res.get("npc_flavor", "") or "",
                 "conversation_quality": res.get("conversation_quality", "neutral"),
                 "reputation_delta": res.get("reputation_delta", 0),
                 "loquacity_delta": res.get("loquacity_delta"),
@@ -793,6 +795,7 @@ class ConversationalNPCMixin:
             return None
         return {
             "npc_text": res.get("npc_text"),
+            "npc_flavor": res.get("npc_flavor", "") or "",
             "conversation_quality": res.get("conversation_quality", "neutral"),
             "reputation_delta": res.get("reputation_delta", 0),
             "loquacity_delta": res.get("loquacity_delta"),
@@ -919,6 +922,7 @@ class ConversationalNPCMixin:
                 "npc_key": npc_key,
                 "npc_name": self._display_name(),
                 "npc_opening": npc_opening,
+                "npc_flavor": turn.get("npc_flavor", "") if turn else "",
                 "jean_options": jean_options,
                 "loquacity_current": self.loquacity_current,
                 "loquacity_max": self.loquacity_max,
@@ -968,9 +972,11 @@ class ConversationalNPCMixin:
             reputation_delta = 0
             loquacity_delta = None
             npc_response = None
+            npc_flavor = ""
 
             if turn is not None:
                 npc_response = turn["npc_text"]
+                npc_flavor = turn.get("npc_flavor", "") or ""
                 conversation_quality = turn["conversation_quality"]
                 reputation_delta = turn["reputation_delta"]
                 loquacity_delta = turn["loquacity_delta"]
@@ -1072,7 +1078,9 @@ class ConversationalNPCMixin:
                 "success": True,
                 "npc_key": npc_key,
                 "npc_response": npc_response,
+                "npc_flavor": npc_flavor,
                 "jean_options": jean_options,
+                "conversation_quality": conversation_quality,
                 "loquacity_current": self.loquacity_current,
                 "loquacity_max": self.loquacity_max,
                 "turn": len(self._chat_history),
