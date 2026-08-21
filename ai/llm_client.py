@@ -1260,6 +1260,8 @@ class NpcChatLLMAdapter(GenericLLMClient):
       NPC_CHAT_TEMP_PERSONALITY   float override for personality call (default 0.7)
       NPC_CHAT_TEMP_NPC           float override for NPC turn call (default 0.65)
       NPC_CHAT_TEMP_OPTIONS       float override for Jean options call (default 0.8)
+      NPC_CHAT_TEMP_TURN          float override for the combined turn call (default 0.7)
+      NPC_CHAT_TEMP_GUARD         float override for the state-guard revision (default 0.5)
     """
 
     # Per-class singleton cache so we don't re-init the adapter on every API call.
@@ -1582,6 +1584,86 @@ class NpcChatLLMAdapter(GenericLLMClient):
             parsed["jean_options"] = []
 
         return parsed
+
+    # ------------------------------------------------------------------
+    # Guard escalation — steer a turn that implied a game-state change
+    # ------------------------------------------------------------------
+
+    def revise_turn(
+        self,
+        system_prompt: str,
+        npc_text: str,
+        jean_options: List[Dict[str, str]],
+        guidance: str,
+    ) -> Optional[Dict[str, Any]]:
+        """Rewrite a turn that implied something the game cannot deliver.
+
+        Called only when the cheap tripwire in ``src/npc/_chat_guard.py`` fires,
+        so this is off the common path and costs nothing on a well-behaved turn.
+        The caller re-scans whatever comes back and falls through to a
+        deterministic hedge if it is still dirty, so a bad revision is safe —
+        which is why this method validates shape only, not content.
+
+        Returns ``{npc_text, jean_options}``, or None if the response is
+        unusable.
+        """
+        options_block = "\n".join(
+            "{}. [{}] {}".format(
+                i + 1, opt.get("tone", "direct"), opt.get("text", "")
+            )
+            for i, opt in enumerate(jean_options or [])
+        )
+        user = (
+            "[REVISE] A reviewer rejected the draft below: it implies a change to "
+            "the world that this conversation cannot make. Conversations are lore "
+            "and character only — nothing said in one reaches the game.\n\n"
+            "NPC LINE: " + (npc_text or "") + "\n"
+            "JEAN'S OPTIONS:\n" + (options_block or "(none)") + "\n\n"
+            "[PROBLEMS]\n" + (guidance or "") + "\n\n"
+            "Rewrite the NPC line and all three options in the same voice, "
+            "subject, and length, with every problem above removed. Stay on the "
+            "same topic — steer toward what the character knows, remembers, or "
+            "believes about it rather than what they might do about it.\n"
+            "Return ONLY this JSON (no code fences, no extra keys):\n"
+            '{"npc_text": "...", "jean_options": [{"tone": "direct", "text": "..."}, '
+            '{"tone": "guarded", "text": "..."}, {"tone": "open", "text": "..."}]}'
+        )
+
+        # Lower temperature than generation: this is a corrective pass, and a
+        # creative one tends to re-offer the same thing in fresh words.
+        temp = float(os.getenv("NPC_CHAT_TEMP_GUARD", "0.5"))
+        raw = self._call_llm(system_prompt, user, max_tokens=600, temperature=temp)
+        if not raw:
+            logger.warning("revise_turn LLM returned no raw response.")
+            return None
+        parsed = _JSONTools.try_parse_json(raw)
+        if not isinstance(parsed, dict):
+            logger.warning("revise_turn JSON parse failed. raw_chars=%s", len(raw))
+            return None
+
+        result: Dict[str, Any] = {}
+        revised_text = parsed.get("npc_text")
+        if isinstance(revised_text, str) and revised_text.strip():
+            result["npc_text"] = _JSONTools.sanitize_text(revised_text)
+
+        expected_tones = ["direct", "guarded", "open"]
+        cleaned: List[Dict[str, str]] = []
+        for item in parsed.get("jean_options") or []:
+            if not isinstance(item, dict) or "text" not in item:
+                continue
+            # Default the tone by kept position, not source position — a
+            # dropped malformed entry must not leave a gap in the tone cycle.
+            tone = str(item.get("tone", expected_tones[len(cleaned) % 3])).lower()
+            if tone not in expected_tones:
+                tone = expected_tones[len(cleaned) % 3]
+            cleaned.append({"tone": tone, "text": str(item["text"])[:200]})
+        result["jean_options"] = cleaned
+
+        logger.info(
+            "revise_turn produced revision. npc_text=%s options=%s",
+            bool(result.get("npc_text")), len(cleaned),
+        )
+        return result
 
     # ------------------------------------------------------------------
     # Call 3 — Jean's three response options (single call)

@@ -31,6 +31,7 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from . import _chat_guard
 from ._llm import _load_llm_client_module
 from src.narration import narrate
 
@@ -119,6 +120,94 @@ def _has_real_npc_text(text: str) -> bool:
 # Fallback drain amounts keyed by conversation_quality — used only when the LLM
 # does not supply an explicit signed loquacity_delta (legacy adapter / fallback).
 _LOQUACITY_DRAIN = {"positive": 3, "neutral": 8, "negative": 15, "offensive": 30}
+
+# Craft vocabulary a progressing ally is licensed to teach about. The system
+# prompt's COMBAT SELF-KNOWLEDGE block exists precisely so an ally can discuss
+# its own growth, so these keep the state guard from rewriting intended content.
+# They only ever excuse a teaching/growth flag — never a handover or a promise.
+_ALLY_CRAFT_TOPICS = frozenset(
+    {
+        "technique",
+        "techniques",
+        "guard",
+        "grip",
+        "stance",
+        "footwork",
+        "swordwork",
+        "craft",
+        "training",
+        "practice",
+        "fight",
+        "fighting",
+    }
+)
+
+# Words that carry no subject matter, dropped when knowledge_scope entries are
+# reduced to guard topics. A topic only ever excuses a teaching/growth flag, but
+# it excuses it for the whole sentence, so a generic word slipping through
+# switches that half of the guard off for the character entirely: the authored
+# scopes yield "will" (Liss), "like"/"wait" (Devet) and "work"/"knows"
+# (Vespera), each of which would excuse almost any teaching offer they make.
+_TOPIC_STOPWORDS = frozenset(
+    {
+        # structural
+        "that",
+        "this",
+        "with",
+        "from",
+        "their",
+        "them",
+        "they",
+        "when",
+        "what",
+        "which",
+        "about",
+        "into",
+        "over",
+        "have",
+        "been",
+        "some",
+        "than",
+        "then",
+        "there",
+        "where",
+        "while",
+        "would",
+        "could",
+        "should",
+        "because",
+        "other",
+        "your",
+        "yours",
+        # generic verbs / adjectives / adverbs with no subject matter
+        "anyone",
+        "better",
+        "everyone",
+        "know",
+        "knows",
+        "like",
+        "look",
+        "many",
+        "more",
+        "most",
+        "much",
+        "need",
+        "noticed",
+        "people",
+        "rather",
+        "really",
+        "take",
+        "tell",
+        "things",
+        "think",
+        "very",
+        "wait",
+        "want",
+        "will",
+        # Jean is the listener, never a subject the guard should excuse
+        "jean",
+    }
+)
 
 # Jean options fallback pool (rotated to avoid repetition)
 _JEAN_FALLBACK_POOL = [
@@ -542,6 +631,15 @@ class ConversationalNPCMixin:
         blocks.append(
             "Jean is he/him. Do not write Jean's dialogue. Do not describe Jean's "
             "internal state.\n"
+            # Prevention half of the state guard: nothing said in a chat reaches
+            # the engine, so an offer or an appointment is a promise the game
+            # cannot keep. Cheaper to not generate one than to catch and revise
+            # it (see src/npc/_chat_guard.py). Terse by design — this block is
+            # static and re-sent every round.
+            "Talk changes nothing here: never give, lend, sell, mend, or hand "
+            "anything over; never travel with Jean or promise to meet him later; "
+            "never describe his belongings, wounds, or coin — you cannot see "
+            "them. Speak of such things in the past or in general instead.\n"
             f"It is currently chapter {chapter}. Only reference things your character "
             "would plausibly know by now. Never reveal or hint at events, places, "
             "people, or revelations from later in the story."
@@ -1016,6 +1114,176 @@ class ConversationalNPCMixin:
             options.append(dict(fb))
         return options
 
+    # ------------------------------------------------------------------
+    # Adversarial state-implication guard
+    # ------------------------------------------------------------------
+
+    def _guard_allowed_topics(self) -> set:
+        """Subject matter this NPC is deliberately licensed to speak about.
+
+        Some real game state is fed into the system prompt on purpose: a
+        progressing ally's own techniques and growth (COMBAT SELF-KNOWLEDGE),
+        Gorran's speech stage (JEAN'S KNOWN CONTEXT), and a story character's
+        authored ``knowledge_scope``. Naming those here keeps intended content
+        out of the reviser's way. The licence is narrow by construction — a
+        topic can only excuse a teaching/growth flag, never a handover or an
+        appointment (see ``_chat_guard._EXCUSABLE_SUBCATEGORIES``), so a
+        knowledge_scope entry like "the ferry crossing" can never license
+        "I'll give you a knife for the crossing".
+        """
+        topics = {"gorran"}
+        if getattr(self, "growth_profile", None):
+            topics |= set(_ALLY_CRAFT_TOPICS)
+            for move in getattr(self, "known_moves", None) or []:
+                name = getattr(move, "name", "")
+                if name:
+                    topics.add(str(name).lower())
+        config = getattr(self, "_chat_char_config", None) or {}
+        for entry in config.get("knowledge_scope") or []:
+            for word in re.findall(r"[a-z]{4,}", str(entry).lower()):
+                if word not in _TOPIC_STOPWORDS:
+                    topics.add(word)
+        return topics
+
+    def _request_guard_revision(
+        self, adapter, system: str, npc_text: str, options: List[Dict[str, str]], flags
+    ) -> Optional[Dict[str, Any]]:
+        """Ask the model to steer a flagged turn away from what tripped the guard.
+
+        The only place the guard spends an LLM call, and only on a tripped turn.
+        Returns None when there is no reviser or the call fails, which drops the
+        caller onto the deterministic hedge.
+        """
+        if adapter is None or not hasattr(adapter, "revise_turn"):
+            logger.info(
+                "_guard_turn no reviser available (adapter=%s); using deterministic hedge.",
+                type(adapter).__name__ if adapter is not None else None,
+            )
+            return None
+        try:
+            return adapter.revise_turn(
+                system, npc_text, options, _chat_guard.guidance_for(flags)
+            )
+        except Exception as e:  # provider errors must never cost the player a turn
+            logger.warning("_guard_turn revise_turn failed: %s", e)
+            return None
+
+    def _guard_turn(
+        self,
+        adapter,
+        system: str,
+        npc_text: str,
+        npc_flavor: str,
+        jean_options: List[Dict[str, str]],
+    ) -> tuple:
+        """Strip implied game-state changes from a turn before the player sees it.
+
+        Conversations are lore only — nothing said in one is wired to the engine
+        — so an offered blade, an offered escort, a claim about Jean's pack, or a
+        meeting arranged for dawn is a promise the game cannot keep. Returns
+        ``(npc_text, npc_flavor, jean_options)``.
+
+        Costs nothing when the tripwire stays quiet, which is the common case. A
+        tripped turn spends at most one extra call; if that call is unavailable
+        or comes back still dirty, the deterministic hedge ships instead, so the
+        player always gets a turn.
+        """
+        options = [dict(o) for o in (jean_options or [])]
+        topics = self._guard_allowed_topics()
+        text_flags = _chat_guard.scan_npc_text(npc_text or "", topics)
+        flavor_flags = _chat_guard.scan_npc_text(npc_flavor or "", topics)
+        option_flags = [
+            _chat_guard.scan_option_text(o.get("text", ""), topics) for o in options
+        ]
+        all_flags = list(text_flags) + list(flavor_flags)
+        for flags in option_flags:
+            all_flags.extend(flags)
+        if not all_flags:
+            return npc_text, npc_flavor, options
+
+        logger.info(
+            "_guard_turn tripwire hit npc=%s categories=%s line_flags=%s flavor_flags=%s option_flags=%s",
+            getattr(self, "name", "?"),
+            sorted({f.category for f in all_flags}),
+            len(text_flags),
+            len(flavor_flags),
+            sum(len(f) for f in option_flags),
+        )
+
+        # Only the line and the options can be *repaired*; flagged flavor is
+        # dropped outright below. Escalating on flavor alone would spend a real
+        # round trip whose answer is then thrown away, so the guidance — and the
+        # decision to call at all — is built from the repairable flags only.
+        escalation_flags = list(text_flags)
+        for flags in option_flags:
+            escalation_flags.extend(flags)
+        revision = None
+        if escalation_flags:
+            revision = self._request_guard_revision(
+                adapter, system, npc_text, options, escalation_flags
+            )
+
+        # NPC line: accept the revision only if it comes back clean; otherwise
+        # hedge the original, which is at least a known quantity.
+        final_text = npc_text
+        if text_flags:
+            # The revision comes straight off the provider and has never been
+            # through the normal QC pipeline, so it can carry invented proper
+            # nouns, slang, or a prohibited phrase that _run_npc_turn would have
+            # caught. Clean it the same way before re-scanning it.
+            candidate = (revision or {}).get("npc_text")
+            if isinstance(candidate, str) and candidate.strip():
+                candidate, _reason, _aside = self._qc_npc_text_ex(
+                    candidate, self._chat_history, allow_rewrite=True
+                )
+            else:
+                candidate = None
+            if candidate and not _chat_guard.scan_npc_text(candidate, topics):
+                final_text = candidate
+                logger.info("_guard_turn accepted revised npc_text.")
+            else:
+                final_text = _chat_guard.hedge_npc_text(npc_text, text_flags)
+                logger.info("_guard_turn hedged npc_text deterministically.")
+
+        # Flavor is decorative (same policy as _qc_flavor_text) — a flagged beat
+        # is dropped rather than rewritten. It is never worth a turn.
+        final_flavor = "" if flavor_flags else npc_flavor
+
+        # Options: prefer clean revised options; otherwise drop the soliciting
+        # ones and top the set back up from the deterministic pool.
+        final_options = options
+        if any(option_flags):
+            final_options = self._rebuild_guarded_options(
+                options, option_flags, revision, topics
+            )
+
+        return final_text, final_flavor, final_options
+
+    def _rebuild_guarded_options(
+        self,
+        options: List[Dict[str, str]],
+        option_flags: List[List[Any]],
+        revision: Optional[Dict[str, Any]],
+        topics: set,
+    ) -> List[Dict[str, str]]:
+        """Return three clean Jean options after at least one was flagged."""
+        rebuilt: List[Dict[str, str]] = []
+        revised = (revision or {}).get("jean_options")
+        if isinstance(revised, list):
+            # Same QC the generated options get (length caps, meta-speech
+            # filter, tone defaulting, near-duplicate dedup) — the reviser's
+            # output has never seen it, and its own cap is 200 chars against
+            # _qc_jean_options' 160.
+            for opt in self._qc_jean_options(revised) or []:
+                if _chat_guard.scan_option_text(opt["text"], topics):
+                    continue
+                rebuilt.append(dict(opt))
+        if not rebuilt:
+            rebuilt = [
+                dict(opt) for opt, flags in zip(options, option_flags) if not flags
+            ]
+        return self._top_up_jean_options(rebuilt)
+
     def _generate_turn(
         self, adapter, system: str, is_opening: bool, jean_text: Optional[str]
     ) -> Optional[Dict[str, Any]]:
@@ -1218,6 +1486,27 @@ class ConversationalNPCMixin:
             jean_options = self._resolve_jean_options(turn, adapter, npc_opening, 0)
             logger.info("chat_open resolved jean_options count=%s llm_available=%s", len(jean_options), llm_available)
 
+            # State guard runs on the assembled turn (line + flavor + options)
+            # so one escalation call covers all three, and runs BEFORE the
+            # persist below: _load_history_from_persistence hands the saved
+            # rows straight back to the model next round, so persisting the
+            # raw line would feed the implication back in and breed more of
+            # them. Only the guarded text is ever written.
+            #
+            # Only model output is guarded. When turn is None everything here
+            # is authored — the fallback opening comes from the character's
+            # conversation_starters and the options from _JEAN_FALLBACK_POOL —
+            # and the tripwire is not a judge of hand-written lines: Mara's
+            # chapter-1 starter says "inventory, not greeting" and Kaelen's
+            # closing line says "come back when you need something sharpened",
+            # both of which it would replace with a generic hedge (and spend a
+            # revision call doing it).
+            npc_flavor = turn.get("npc_flavor", "") if turn else ""
+            if turn is not None:
+                npc_opening, npc_flavor, jean_options = self._guard_turn(
+                    adapter, system, npc_opening, npc_flavor, jean_options
+                )
+
             game_tick = getattr(getattr(player, "universe", None), "game_tick", 0) or 0
             chapter = self._get_chapter(player)
             self._save_exchange_to_persistence(
@@ -1229,7 +1518,7 @@ class ConversationalNPCMixin:
                 "npc_key": npc_key,
                 "npc_name": self._display_name(),
                 "npc_opening": npc_opening,
-                "npc_flavor": turn.get("npc_flavor", "") if turn else "",
+                "npc_flavor": npc_flavor,
                 "jean_options": jean_options,
                 "loquacity_current": self.loquacity_current,
                 "loquacity_max": self.loquacity_max,
@@ -1371,22 +1660,37 @@ class ConversationalNPCMixin:
             # line it replied to, not attached to the line it *prompted*).
             # conversation_count is bumped separately since it no longer rides
             # on _save_exchange_to_persistence's own jean_text-truthy check.
+            # Jean's options for the next round. Once loquacity is spent the
+            # options are omitted so the NPC's own (lore- and context-aware) reply
+            # stands as the graceful closing line, with nothing left to say back.
+            # Resolved before the persist below (it used to come after) so the
+            # state guard can review the line, the flavor, and the options in a
+            # single pass — and, more importantly, so only guarded text is ever
+            # written: _load_history_from_persistence feeds the saved rows
+            # straight back to the model next round, and a persisted "here, take
+            # this blade" would keep breeding offers for the rest of the
+            # conversation. +1 on the turn number preserves the old value, which
+            # was read after the persist appended this round's row.
+            jean_options: List[Dict[str, str]] = []
+            if not conversation_ended:
+                turn_number = len(self._chat_history) + 1
+                jean_options = self._resolve_jean_options(
+                    turn, adapter, npc_response, turn_number
+                )
+
+            # Model output only — see chat_open for why authored fallback
+            # lines are left alone.
+            if turn is not None:
+                npc_response, npc_flavor, jean_options = self._guard_turn(
+                    adapter, system, npc_response, npc_flavor, jean_options
+                )
+
             game_tick = getattr(getattr(player, "universe", None), "game_tick", 0) or 0
             chapter = self._get_chapter(player)
             self._save_exchange_to_persistence(
                 player, npc_response, "", game_tick, chapter
             )
             self._bump_conversation_count(player)
-
-            # Jean's options for the next round. Once loquacity is spent the
-            # options are omitted so the NPC's own (lore- and context-aware) reply
-            # stands as the graceful closing line, with nothing left to say back.
-            jean_options: List[Dict[str, str]] = []
-            if not conversation_ended:
-                turn_number = len(self._chat_history)
-                jean_options = self._resolve_jean_options(
-                    turn, adapter, npc_response, turn_number
-                )
 
             return {
                 "success": True,

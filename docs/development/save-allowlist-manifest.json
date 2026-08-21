@@ -1205,6 +1205,10 @@
       "name": "NonCombatantMixin"
     },
     {
+      "module": "src.npc._chat_guard",
+      "name": "GuardFlag"
+    },
+    {
       "module": "src.npc._chat_llm",
       "name": "ConversationalNPCMixin"
     },
@@ -1913,6 +1917,6 @@
       "name": "UUID"
     }
   ],
-  "count": 478,
+  "count": 479,
   "header_version": 1
 }
