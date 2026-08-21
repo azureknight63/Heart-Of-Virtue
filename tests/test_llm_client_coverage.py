@@ -10,6 +10,7 @@ All network access is mocked: `requests.get`/`requests.post` are patched per-tes
 real (infinite-loop) background thread.
 """
 import json
+import logging
 import os
 import threading
 import time
@@ -1016,15 +1017,25 @@ class TestGenerateStructured:
             result = client.generate_structured("sys", "user")
         assert result is None
 
-    def test_non_dict_result_logs_warning(self, monkeypatch):
+    def test_non_dict_result_logs_warning(self, monkeypatch, caplog):
+        """A non-dict provider response is rejected, not passed through.
+
+        This previously asserted the list came back verbatim, which contradicted
+        both the method's Optional[Dict] signature and its own name -- and every
+        caller (e.g. MynxLLMAdapter.generate_structured) type-checks the result
+        anyway, so a list could only ever be discarded one frame later.
+        """
         monkeypatch.setenv("MYNX_LLM_ENABLED", "1")
         monkeypatch.setenv("MYNX_LLM_PROVIDER", "ollama")
         monkeypatch.setenv("MYNX_LLM_MODEL", "m")
         client = GenericLLMClient()
         client._available = True
-        with patch.object(client, "_ollama_chat", return_value=["not", "a", "dict"]):
-            result = client.generate_structured("sys", "user")
-        assert result == ["not", "a", "dict"]
+        with caplog.at_level(logging.WARNING, logger="ai.llm_client"):
+            with patch.object(client, "_ollama_chat", return_value=["not", "a", "dict"]):
+                result = client.generate_structured("sys", "user")
+        assert result is None
+        assert "received non-dict" in caplog.text
+        assert "type=list" in caplog.text
 
 
 # ---------------------------------------------------------------------------
@@ -2118,8 +2129,15 @@ class TestCallOpenrouter:
             "stale/model:free", "openrouter/free", "working/model:free"
         ]
 
-    def test_logs_model_errors_and_fallback_success(self, monkeypatch, caplog):
-        monkeypatch.setenv("NPC_CHAT_LLM_DEBUG", "1")
+    def test_logs_model_errors_and_fallback_success(self, caplog):
+        """A failing model is logged and the next candidate serves the reply.
+
+        The log assertions track the structured `field=value` style the adapter
+        emits now; they previously looked for [NPC_CHAT_LLM_FALLBACK] /
+        [NPC_CHAT_LLM_DEBUG] markers and an NPC_CHAT_LLM_DEBUG env var, none of
+        which have existed since the logging rewrite. The fallback behaviour
+        being asserted is unchanged.
+        """
         adapter = NpcChatLLMAdapter()
         adapter._openrouter_api_key = "key"
         adapter.model = "stale/model:free"
@@ -2131,16 +2149,15 @@ class TestCallOpenrouter:
             text="",
             json=lambda: {"choices": [{"message": {"content": "reply"}}]},
         )
-        with patch("requests.post", side_effect=[unavailable, working]):
-            result = adapter._call_openrouter("system prompt", "user prompt", 100, 0.5)
+        with caplog.at_level(logging.DEBUG, logger="ai.llm_client"):
+            with patch("requests.post", side_effect=[unavailable, working]):
+                result = adapter._call_openrouter("system prompt", "user prompt", 100, 0.5)
 
         assert result == "reply"
         logs = caplog.text
-        assert "[NPC_CHAT_LLM_FALLBACK]" in logs
-        assert "model=stale/model:free" in logs
-        assert "status=404" in logs
-        assert "[NPC_CHAT_LLM_DEBUG]" in logs
-        assert "result=success" in logs
+        assert "primary=stale/model:free" in logs
+        assert "attempting model_id=stale/model:free" in logs
+        assert "succeeded model=" in logs
 
 
 class TestGetOpenrouterModel:
