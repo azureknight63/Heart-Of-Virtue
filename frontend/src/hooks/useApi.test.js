@@ -400,6 +400,17 @@ describe('useCombat', () => {
   });
 });
 
+/**
+ * Wait for a hook's initial fetch effect to settle.
+ *
+ * Replaces `await act(async () => { await new Promise(r => setTimeout(r, 0)) })`,
+ * which was repeated nine times in this file. That idiom flushes one macrotask
+ * and hopes the effect finished inside it — it asserts nothing, and it silently
+ * yields a half-loaded hook the moment a fetch grows a second await. Waiting on
+ * `loading` turning false is both the real condition and a proof the effect ran.
+ */
+const settle = (result) => waitFor(() => expect(result.current.loading).toBe(false))
+
 describe('useWorld', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -432,9 +443,7 @@ describe('useWorld', () => {
 
     const { result } = renderHook(() => useWorld());
 
-    await act(async () => {
-      await new Promise(resolve => setTimeout(resolve, 0));
-    });
+    await settle(result);
 
     await act(async () => {
       await result.current.moveToLocation('north');
@@ -448,9 +457,7 @@ describe('useWorld', () => {
     apiEndpoints.world.getCurrentLocation.mockRejectedValue(new Error('offline'));
 
     const { result } = renderHook(() => useWorld());
-    await act(async () => {
-      await new Promise(resolve => setTimeout(resolve, 0));
-    });
+    await settle(result);
 
     expect(result.current.error).toBe('offline');
     expect(result.current.loading).toBe(false);
@@ -467,9 +474,7 @@ describe('useWorld', () => {
     apiEndpoints.world.move.mockResolvedValue({ data: authoritativeRoom });
 
     const { result } = renderHook(() => useWorld());
-    await act(async () => {
-      await new Promise(resolve => setTimeout(resolve, 0));
-    });
+    await settle(result);
 
     await act(async () => {
       await result.current.moveToLocation('north');
@@ -477,7 +482,19 @@ describe('useWorld', () => {
 
     // The authoritative server response always wins by the time the promise resolves.
     expect(result.current.location.name).toBe('Authoritative Room');
-    expect(TileCache.set).toHaveBeenCalled();
+    // The cache is READ for the optimistic hop and then WRITTEN with the
+    // authoritative room keyed by its own coordinates. A bare
+    // toHaveBeenCalled() passed even if the hop's stale tile were cached over
+    // the real one, or filed under the wrong coordinates.
+    expect(TileCache.get).toHaveBeenCalledWith(0, -1);
+    // The LAST write must be the authoritative room, filed under its own
+    // coordinates — a bare toHaveBeenCalled() passed even if the optimistic
+    // stale tile were cached over the real one, or filed at the wrong x/y.
+    // (fetchLocation also caches the starting room, hence "last", not "once".)
+    expect(TileCache.set).toHaveBeenLastCalledWith(
+      0, -1, expect.objectContaining({ name: 'Authoritative Room' })
+    );
+    expect(TileCache.prefetchAdjacent).toHaveBeenLastCalledWith(0, -1);
     TileCache.get.mockReturnValue(undefined);
   });
 
@@ -488,9 +505,7 @@ describe('useWorld', () => {
     apiEndpoints.world.move.mockRejectedValue(new Error('move blocked'));
 
     const { result } = renderHook(() => useWorld());
-    await act(async () => {
-      await new Promise(resolve => setTimeout(resolve, 0));
-    });
+    await settle(result);
 
     let caught;
     await act(async () => {
@@ -519,9 +534,7 @@ describe('useWorld', () => {
     });
 
     const { result } = renderHook(() => useWorld());
-    await act(async () => {
-      await new Promise(resolve => setTimeout(resolve, 0));
-    });
+    await settle(result);
 
     expect(result.current.location.exits).toEqual(['north', 'south']);
     expect(result.current.location.items).toEqual([{ id: 'i1' }]);
@@ -535,9 +548,7 @@ describe('useWorld', () => {
     });
 
     const { result } = renderHook(() => useWorld());
-    await act(async () => {
-      await new Promise(resolve => setTimeout(resolve, 0));
-    });
+    await settle(result);
 
     expect(result.current.location.exits).toEqual([]);
     expect(result.current.location.items).toEqual([]);
@@ -562,9 +573,7 @@ describe('useExploration', () => {
     });
 
     const { result } = renderHook(() => useExploration());
-    await act(async () => {
-      await new Promise(resolve => setTimeout(resolve, 0));
-    });
+    await settle(result);
 
     expect(result.current.exploredTiles.get('0,0').exits).toEqual(['north']);
     expect(result.current.exploredTiles.get('0,-1').exits).toEqual(['south']);
@@ -577,9 +586,7 @@ describe('useExploration', () => {
     });
 
     const { result } = renderHook(() => useExploration());
-    await act(async () => {
-      await new Promise(resolve => setTimeout(resolve, 0));
-    });
+    await settle(result);
 
     expect(result.current.exploredTiles.get('1,1').exits).toEqual([]);
   });
@@ -589,9 +596,7 @@ describe('useExploration', () => {
     apiEndpoints.world.getExploredTiles.mockRejectedValue(new Error('offline'));
 
     const { result } = renderHook(() => useExploration());
-    await act(async () => {
-      await new Promise(resolve => setTimeout(resolve, 0));
-    });
+    await settle(result);
 
     expect(errorSpy).toHaveBeenCalledWith('Error fetching explored tiles:', expect.any(Error));
     expect(result.current.loading).toBe(false);

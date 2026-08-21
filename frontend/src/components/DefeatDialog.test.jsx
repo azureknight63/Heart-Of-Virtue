@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import DefeatDialog from './DefeatDialog';
 import apiEndpoints from '../api/endpoints';
 import { useAuth } from '../hooks/useApi';
+import { makeSaveRow } from '../test/payloads';
 
 // Mock apiEndpoints
 vi.mock('../api/endpoints', () => ({
@@ -22,9 +23,38 @@ vi.mock('../hooks/useApi', () => ({
 describe('DefeatDialog', () => {
   const mockLogout = vi.fn();
   const mockOnLoadedSave = vi.fn();
+  /**
+   * Rows in the shape GameService.list_saves actually returns — id, name,
+   * timestamp(+_ms), is_autosave, level, map_name, room_title, playtime.
+   *
+   * !!! PRODUCT BUG (found while replacing the old hand-written fixture) !!!
+   *
+   * FIXED: DefeatDialog.jsx's `saveOptions` memo used to build its label from `s.location`.
+   * **No serializer emits `location`** — GameService.list_saves
+   * (src/api/services/game_service.py:~3588) emits `map_name` and
+   * `room_title`, and MainMenuPage.jsx:447 reads exactly those two. So the
+   * defeat-screen save picker silently drops the place and shows only
+   * "Name • Lv N", which is textbook wire-field-name drift: the read sits
+   * behind `if (s.location)` and failed closed. It now reads map_name/room_title.
+   *
+   * The previous fixture invented `location: 'Dark Forest'`, so the test agreed
+   * with the component and the drift was invisible — the exact failure mode
+   * CLAUDE.md calls this codebase's dominant bug class.
+   *
+   * The expectations below therefore pin the CURRENT (wrong) label against a
+   * REAL payload. When DefeatDialog is fixed to read map_name/room_title,
+   * `LABELS` is the one place to update if the emitted fields ever change.
+   */
   const mockSaves = [
-    { id: 'save1', name: 'Hero Save', level: 5, location: 'Dark Forest' },
-    { id: 'save2', name: 'Auto Save', level: 4, location: 'Village' }
+    makeSaveRow({ id: 'save1', name: 'Hero Save', level: 5, map_name: 'Dark Grotto', room_title: 'Entry Hall' }),
+    makeSaveRow({ id: 'save2', name: 'Auto Save', level: 4, map_name: 'Village', room_title: 'Well Square', is_autosave: true }),
+  ];
+  // DefeatDialog now reads the fields list_saves actually emits (map_name,
+  // room_title), matching MainMenuPage. Previously it read `s.location`,
+  // which no serializer sends, so the place was silently dropped.
+  const LABELS = [
+    'Hero Save • Lv 5 • Dark Grotto • Entry Hall',
+    'Auto Save • Lv 4 • Village • Well Square',
   ];
 
   beforeEach(() => {
@@ -36,14 +66,21 @@ describe('DefeatDialog', () => {
   it('renders defeat message and loads saves on mount', async () => {
     render(<DefeatDialog endState={{ message: 'You died.' }} onLoadedSave={mockOnLoadedSave} />);
 
-    expect(screen.getByText('Defeat')).toBeDefined();
-    expect(screen.getByText('You died.')).toBeDefined();
-    expect(screen.getByText('Loading…')).toBeDefined();
+    expect(screen.getByText('Defeat').textContent).toBe('Defeat');
+    expect(screen.getByText('You died.').textContent).toBe('You died.');
+    expect(screen.getByText('Loading…').textContent).toBe('Loading…');
+    // The save list only exists once the fetch resolves.
+    expect(screen.queryByRole('combobox')).toBeNull();
 
-    await waitFor(() => {
-      expect(screen.getByText('Hero Save • Lv 5 • Dark Forest')).toBeDefined();
-      expect(screen.getByText('Auto Save • Lv 4 • Village')).toBeDefined();
-    });
+    await waitFor(() => expect(screen.queryByText('Loading…')).toBeNull());
+
+    // One <option> per save, in server order (list_saves sorts newest first),
+    // and the first is preselected so LOAD is immediately usable.
+    const options = Array.from(screen.getByRole('combobox').options);
+    expect(options.map((o) => o.textContent)).toEqual(LABELS);
+    expect(options.map((o) => o.value)).toEqual(['save1', 'save2']);
+    expect(screen.getByRole('combobox').value).toBe('save1');
+    expect(apiEndpoints.saves.list).toHaveBeenCalledTimes(1);
   });
 
   it('handles save loading successfully', async () => {
@@ -52,16 +89,31 @@ describe('DefeatDialog', () => {
     render(<DefeatDialog endState={{}} onLoadedSave={mockOnLoadedSave} />);
 
     await waitFor(() => {
-      expect(screen.getByText('Hero Save • Lv 5 • Dark Forest')).toBeDefined();
+      expect(screen.getByText(LABELS[0])).toBeDefined();
     });
 
     const loadBtn = screen.getByText('LOAD');
     fireEvent.click(loadBtn);
 
     await waitFor(() => {
+      // The SELECTED save's id, not the first row's name or index.
       expect(apiEndpoints.saves.load).toHaveBeenCalledWith('save1');
       expect(mockOnLoadedSave).toHaveBeenCalledTimes(1);
     });
+    expect(screen.queryByText(/Failed/)).toBeNull();
+  });
+
+  it('loads the save the player actually picked, not the default', async () => {
+    apiEndpoints.saves.load.mockResolvedValue({ success: true });
+    render(<DefeatDialog endState={{}} onLoadedSave={mockOnLoadedSave} />);
+    await waitFor(() => expect(screen.getByText(LABELS[0])).toBeDefined());
+
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'save2' } });
+    expect(screen.getByRole('combobox').value).toBe('save2');
+    fireEvent.click(screen.getByText('LOAD'));
+
+    await waitFor(() => expect(apiEndpoints.saves.load).toHaveBeenCalledWith('save2'));
+    expect(apiEndpoints.saves.load).toHaveBeenCalledTimes(1);
   });
 
   it('handles save loading error', async () => {
@@ -70,15 +122,21 @@ describe('DefeatDialog', () => {
     render(<DefeatDialog endState={{}} onLoadedSave={mockOnLoadedSave} />);
 
     await waitFor(() => {
-      expect(screen.getByText('Hero Save • Lv 5 • Dark Forest')).toBeDefined();
+      expect(screen.getByText(LABELS[0])).toBeDefined();
     });
 
     const loadBtn = screen.getByText('LOAD');
     fireEvent.click(loadBtn);
 
     await waitFor(() => {
-      expect(screen.getByText('Load Failed')).toBeDefined();
+      expect(screen.getByText('Load Failed').textContent).toBe('Load Failed');
     });
+    // A failed load must leave the dialog usable: the button comes back out of
+    // its LOADING… state and a retry actually reaches the endpoint.
+    expect(screen.getByText('LOAD').closest('button').disabled).toBe(false);
+    expect(mockOnLoadedSave).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByText('LOAD'));
+    await waitFor(() => expect(apiEndpoints.saves.load).toHaveBeenCalledTimes(2));
   });
 
   it('handles start over (logout)', async () => {
@@ -94,6 +152,10 @@ describe('DefeatDialog', () => {
     await waitFor(() => {
       expect(mockLogout).toHaveBeenCalledTimes(1);
     });
+    expect(mockLogout).toHaveBeenCalledWith();
+    // Starting over is not loading a save.
+    expect(apiEndpoints.saves.load).not.toHaveBeenCalled();
+    expect(mockOnLoadedSave).not.toHaveBeenCalled();
   });
 
   it('renders "No saves found" if list is empty', async () => {
@@ -130,7 +192,7 @@ describe('DefeatDialog', () => {
     apiEndpoints.saves.load.mockRejectedValue({});
 
     render(<DefeatDialog endState={{}} onLoadedSave={mockOnLoadedSave} />);
-    await waitFor(() => expect(screen.getByText('Hero Save • Lv 5 • Dark Forest')).toBeDefined());
+    await waitFor(() => expect(screen.getByText(LABELS[0])).toBeDefined());
 
     fireEvent.click(screen.getByText('LOAD'));
     await waitFor(() => {
@@ -150,17 +212,22 @@ describe('DefeatDialog', () => {
     });
   });
 
-  it('changes selected save', async () => {
+  it('omits the level segment when the server reports it as "?"', () => {
+    // list_saves emits the STRING "?" when the row has no level, and the label
+    // builder guards with `typeof s.level === 'number'` — so the fallback must
+    // not leak "Lv ?" into the picker.
+    apiEndpoints.saves.list.mockResolvedValue({
+      data: { saves: [makeSaveRow({ id: 's3', name: 'Broken Save', level: '?' })] },
+    });
     render(<DefeatDialog endState={{}} onLoadedSave={mockOnLoadedSave} />);
 
-    await waitFor(() => {
-      expect(screen.getByText('Hero Save • Lv 5 • Dark Forest')).toBeDefined();
+    return waitFor(() => {
+      const label = screen.getByRole('combobox').options[0].textContent;
+      // The claim is the level guard, not the place fields: a string level must
+      // not leak "Lv ?" into the picker, while map_name/room_title still show.
+      expect(label).not.toMatch(/Lv/);
+      expect(label).toBe('Broken Save • Dark Grotto • Entry Hall');
     });
-
-    const select = screen.getByRole('combobox');
-    fireEvent.change(select, { target: { value: 'save2' } });
-    
-    expect(select.value).toBe('save2');
   });
 
   it('shows error if trying to load without a selected save', async () => {
@@ -195,7 +262,7 @@ describe('DefeatDialog', () => {
     apiEndpoints.saves.load.mockReturnValue(new Promise((r) => { resolveLoad = r; }));
     render(<DefeatDialog endState={{}} onLoadedSave={mockOnLoadedSave} />);
 
-    await waitFor(() => expect(screen.getByText('Hero Save • Lv 5 • Dark Forest')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(LABELS[0])).toBeInTheDocument());
     fireEvent.click(screen.getByText('LOAD'));
 
     expect(screen.getByText('LOADING…')).toBeInTheDocument();
@@ -207,7 +274,7 @@ describe('DefeatDialog', () => {
     apiEndpoints.saves.load.mockRejectedValue({ response: { data: { error: 'Save is corrupted.' } } });
     render(<DefeatDialog endState={{}} onLoadedSave={mockOnLoadedSave} />);
 
-    await waitFor(() => expect(screen.getByText('Hero Save • Lv 5 • Dark Forest')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(LABELS[0])).toBeInTheDocument());
     fireEvent.click(screen.getByText('LOAD'));
 
     await waitFor(() => {

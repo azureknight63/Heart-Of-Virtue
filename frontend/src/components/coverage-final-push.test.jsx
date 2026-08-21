@@ -79,6 +79,9 @@ describe('TypewriterOutput onDamageHit', () => {
   })
 
   it('fires once per damage line, staggered 300ms apart', () => {
+    // The stagger is what the name promises, so drain it in 300ms steps rather
+    // than one big advance: a component that fired all three at once would
+    // still have satisfied the old `toHaveBeenCalledTimes(3)` after 5000ms.
     const onDamageHit = vi.fn()
     render(
       <TypewriterOutput
@@ -88,8 +91,21 @@ describe('TypewriterOutput onDamageHit', () => {
       />
     )
 
-    typeAll()
+    act(() => { vi.advanceTimersByTime(5000) }) // type the whole block out
+    // The first hit is scheduled at +0ms, so it lands as soon as timers run.
+    act(() => { vi.advanceTimersByTime(0) })
+    expect(onDamageHit).toHaveBeenCalledTimes(1)
 
+    act(() => { vi.advanceTimersByTime(299) })
+    expect(onDamageHit).toHaveBeenCalledTimes(1)
+    act(() => { vi.advanceTimersByTime(1) })
+    expect(onDamageHit).toHaveBeenCalledTimes(2)
+
+    act(() => { vi.advanceTimersByTime(300) })
+    expect(onDamageHit).toHaveBeenCalledTimes(3)
+
+    // And no fourth from a stale scheduled callback.
+    act(() => { vi.advanceTimersByTime(5000) })
     expect(onDamageHit).toHaveBeenCalledTimes(3)
   })
 

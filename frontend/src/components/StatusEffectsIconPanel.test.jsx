@@ -1,21 +1,24 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect } from 'vitest';
 import StatusEffectsIconPanel from './StatusEffectsIconPanel';
+import { makeStatusEffect } from '../test/payloads';
+import { colors } from '../styles/theme';
+
+/** jsdom normalises inline colours to rgb(); theme.js stores hex. */
+const rgb = (hex) => {
+    const n = parseInt(hex.slice(1), 16);
+    return `rgb(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255})`;
+};
+const border = (hex) => `1px solid ${rgb(hex)}`;
 
 describe('StatusEffectsIconPanel', () => {
+    // Derived from the shared fixture so the field names stay the ones
+    // StateEffectSerializer.serialize_state actually emits (`beats_left`, not
+    // `duration_remaining`) — a hand-written literal here could agree with a
+    // wrong component read forever.
     const mockEffects = [
-        {
-            name: 'Burn',
-            type: 'ailment',
-            description: 'Taking fire damage over time.',
-            beats_left: 3
-        },
-        {
-            name: 'Shield',
-            type: 'buff',
-            description: 'Increases protection.',
-            beats_left: 5
-        }
+        makeStatusEffect({ name: 'Burn', type: 'ailment', description: 'Taking fire damage over time.', beats_left: 3 }),
+        makeStatusEffect({ name: 'Shield', type: 'buff', description: 'Increases protection.', beats_left: 5 }),
     ];
 
     it('does not render when no effects', () => {
@@ -23,100 +26,82 @@ describe('StatusEffectsIconPanel', () => {
         expect(container.firstChild).toBeNull();
     });
 
-    it('renders effect icons', () => {
+    // getEffectIcon's full keyword table, one case per branch, matched
+    // case-insensitively on a substring of the name. Four separate tests
+    // previously covered five of these twelve branches with `toBeDefined()`.
+    it.each([
+        ['Burn', '🔥'], ['Fire Aura', '🔥'],
+        ['Poisoned', '🧪'], ['Toxic Cloud', '🧪'],
+        ['Bleeding', '🩸'],
+        ['Stunned', '💫'], ['Dazed', '💫'],
+        ['Blinded', '🕶️'],
+        ['Slowed', '🐢'],
+        ['Hastened', '👟'], ['Quickened', '👟'],
+        ['Regeneration', '💖'],
+        ['Shield', '🛡️'], ['Protected', '🛡️'],
+        ['str', '💪'], ['Strength Boost', '💪'], ['Mighty', '💪'],
+        ['Weakness', '🥀'],
+        ['Mystic Energy', '✨'],
+    ])('renders %s as %s', (name, icon) => {
+        render(<StatusEffectsIconPanel effects={[makeStatusEffect({ name, type: 'buff' })]} />);
+        expect(screen.getByText(icon).textContent).toBe(icon);
+    });
+
+    it('scales the hovered tile up and returns it to rest on leave', () => {
+        // Was "responds to hover events", which only re-asserted the icon still
+        // existed after a hover — true of a component with no hover state at all.
         render(<StatusEffectsIconPanel effects={mockEffects} />);
+        const burn = screen.getByText('🔥');
+        const shield = screen.getByText('🛡️');
 
-        expect(screen.getByText('🔥')).toBeDefined();
-        expect(screen.getByText('🛡️')).toBeDefined();
-    });
+        expect(burn.style.transform).toBe('scale(1)');
+        fireEvent.mouseEnter(burn);
+        expect(burn.style.transform).toBe('scale(1.1)');
+        // Only the hovered tile grows.
+        expect(shield.style.transform).toBe('scale(1)');
 
-    it('responds to hover events', () => {
-        const { container } = render(<StatusEffectsIconPanel effects={mockEffects} />);
-
-        const burnIcon = screen.getByText('🔥');
-
-        // Verify icon exists
-        expect(burnIcon).toBeDefined();
-
-        // Trigger hover - component should handle this gracefully
-        fireEvent.mouseEnter(burnIcon);
-        fireEvent.mouseLeave(burnIcon);
-
-        // Component should still be rendered
-        expect(screen.getByText('🔥')).toBeDefined();
-    });
-
-    it('picks the correct icon for bleed/stun/blind/slow/regen effects', () => {
-        const effects = [
-            { name: 'Bleeding', type: 'ailment' },
-            { name: 'Stunned', type: 'ailment' },
-            { name: 'Blinded', type: 'ailment' },
-            { name: 'Slowed', type: 'debuff' },
-            { name: 'Regeneration', type: 'buff' },
-        ];
-        render(<StatusEffectsIconPanel effects={effects} />);
-
-        expect(screen.getByText('🩸')).toBeDefined();
-        expect(screen.getByText('💫')).toBeDefined();
-        expect(screen.getByText('🕶️')).toBeDefined();
-        expect(screen.getByText('🐢')).toBeDefined();
-        expect(screen.getByText('💖')).toBeDefined();
-    });
-
-    it('uses default icon for unknown effects', () => {
-        const unknownEffects = [{ name: 'Mystic Energy', type: 'buff' }];
-        render(<StatusEffectsIconPanel effects={unknownEffects} />);
-        expect(screen.getByText('✨')).toBeDefined();
+        fireEvent.mouseLeave(burn);
+        expect(burn.style.transform).toBe('scale(1)');
     });
 
     describe('Effect Type Variations', () => {
-        it('renders buff effects', () => {
-            const buffs = [
-                { name: 'Strength Boost', type: 'buff', description: 'Increased strength', beats_left: 5 }
-            ];
-            render(<StatusEffectsIconPanel effects={buffs} />);
-            expect(screen.getByText('💪')).toBeDefined();
+        // getEffectColor's switch, exhaustively. "renders debuff effects"
+        // previously asserted `expect(screen.getByText).toBeDefined()` — that
+        // testing-library exports a function — so the debuff branch, and the
+        // colour mapping generally, was entirely unproven.
+        it.each([
+            ['buff', 'Shield', '🛡️', colors.success],
+            ['ailment', 'Poisoned', '🧪', colors.gold],
+            ['debuff', 'Weakness', '🥀', colors.danger],
+            ['passive', 'Vigilance', '✨', colors.info],
+            ['an unrecognised type', 'Curious', '✨', colors.primary],
+        ])('colours a %s tile', (type, name, icon, expected) => {
+            render(<StatusEffectsIconPanel effects={[makeStatusEffect({ name, type: type === 'an unrecognised type' ? 'strange-type' : type })]} />);
+            expect(screen.getByText(icon).style.border).toBe(border(expected));
         });
 
-        it('renders ailment effects', () => {
-            const ailments = [
-                { name: 'Poisoned', type: 'ailment', description: 'Poison damage', beats_left: 3 }
-            ];
-            render(<StatusEffectsIconPanel effects={ailments} />);
-            expect(screen.getByText('🧪')).toBeDefined();
+        it('falls back to the default colour when the effect carries no type', () => {
+            render(<StatusEffectsIconPanel effects={[{ name: 'Blank', description: 'No type set', beats_left: 2 }]} />);
+            expect(screen.getByText('✨').style.border).toBe(border(colors.primary));
         });
 
-        it('renders debuff effects', () => {
-            const debuffs = [
-                { name: 'Weakness', type: 'debuff', description: 'Reduced damage', beats_left: 4 }
-            ];
-            render(<StatusEffectsIconPanel effects={debuffs} />);
-            // Should render without error
-            expect(screen.getByText).toBeDefined();
-        });
-
-        it('handles mixed effect types', () => {
+        it('renders a mixed list with each effect keeping its own icon and colour', () => {
             const mixed = [
-                { name: 'Burn', type: 'ailment', description: 'Fire damage', beats_left: 2 },
-                { name: 'Shield', type: 'buff', description: 'Protection', beats_left: 5 },
-                { name: 'Weakness', type: 'debuff', description: 'Low defense', beats_left: 3 }
+                makeStatusEffect({ name: 'Burn', type: 'ailment', description: 'Fire damage', beats_left: 2 }),
+                makeStatusEffect({ name: 'Shield', type: 'buff', description: 'Protection', beats_left: 5 }),
+                makeStatusEffect({ name: 'Weakness', type: 'debuff', description: 'Low defense', beats_left: 3 }),
             ];
-            render(<StatusEffectsIconPanel effects={mixed} />);
-            expect(screen.getByText('🔥')).toBeDefined();
-            expect(screen.getByText('🛡️')).toBeDefined();
+            const { container } = render(<StatusEffectsIconPanel effects={mixed} />);
+            const tiles = Array.from(container.firstChild.children);
+            expect(tiles.map((t) => t.textContent)).toEqual(['🔥', '🛡️', '🥀']);
+            expect(tiles.map((t) => t.style.border)).toEqual([
+                border(colors.gold), border(colors.success), border(colors.danger),
+            ]);
         });
     });
 
     describe('Duration Display', () => {
-        it('displays effect with remaining duration', () => {
-            const shortDuration = [
-                { name: 'Quick Effect', type: 'buff', description: 'Brief boost', beats_left: 1 }
-            ];
-            render(<StatusEffectsIconPanel effects={shortDuration} />);
-            expect(screen.getByText).toBeDefined();
-        });
-
-        // These three previously asserted `expect(screen.getByText).toBeDefined()`
+        // These previously asserted `expect(screen.getByText).toBeDefined()`
         // — i.e. that testing-library's own query function exists. They would
         // have passed against a component that rendered the duration line for
         // every effect, or for none of them. They now read the line.
@@ -323,24 +308,6 @@ describe('StatusEffectsIconPanel', () => {
             expect(screen.getByText('3 beats remaining')).toBeInTheDocument();
         });
 
-        it('hides the tooltip after mouse leave', () => {
-            render(<StatusEffectsIconPanel effects={mockEffects} />);
-            const burnIcon = screen.getByText('🔥');
-
-            fireEvent.mouseEnter(burnIcon);
-            expect(screen.getByText('BURN')).toBeInTheDocument();
-
-            fireEvent.mouseLeave(burnIcon);
-            expect(screen.queryByText('BURN')).not.toBeInTheDocument();
-        });
-
-        it('falls back to a default message when description is missing', () => {
-            const noDesc = [{ name: 'Mystery Effect', type: 'buff' }];
-            render(<StatusEffectsIconPanel effects={noDesc} />);
-            fireEvent.mouseEnter(screen.getByText('✨'));
-            expect(screen.getByText('No description available.')).toBeInTheDocument();
-        });
-
         it('omits the duration line when beats_left is undefined', () => {
             const noDuration = [{ name: 'Mystery Effect', type: 'buff', description: 'Something' }];
             render(<StatusEffectsIconPanel effects={noDuration} />);
@@ -348,18 +315,17 @@ describe('StatusEffectsIconPanel', () => {
             expect(screen.queryByText(/beats remaining/)).not.toBeInTheDocument();
         });
 
-        it('shows only the hovered effect\'s tooltip, not others', () => {
-            render(<StatusEffectsIconPanel effects={mockEffects} />);
-            fireEvent.mouseEnter(screen.getByText('🔥'));
-            expect(screen.getByText('BURN')).toBeInTheDocument();
-            expect(screen.queryByText('SHIELD')).not.toBeInTheDocument();
-        });
-
-        it('applies the debuff color to a debuff effect tooltip', () => {
-            const debuffs = [{ name: 'Weakness', type: 'debuff', description: 'Reduced damage', beats_left: 4 }];
+        it('applies the debuff color to the tooltip frame and its title', () => {
+            // Was: hover, then assert the WEAKNESS text exists — which says
+            // nothing about "the debuff color" the test name promises.
+            const debuffs = [makeStatusEffect({ name: 'Weakness', type: 'debuff', description: 'Reduced damage', beats_left: 4 })];
             render(<StatusEffectsIconPanel effects={debuffs} />);
             fireEvent.mouseEnter(screen.getByText('🥀'));
-            expect(screen.getByText('WEAKNESS')).toBeInTheDocument();
+
+            const title = screen.getByText('WEAKNESS');
+            const tooltip = title.parentElement;
+            expect(title.style.color).toBe(rgb(colors.danger));
+            expect(tooltip.style.border).toBe(`1.5px solid ${rgb(colors.danger)}`);
         });
 
         it('renders a passive effect and an unrecognized-type effect without error', () => {
@@ -377,12 +343,6 @@ describe('StatusEffectsIconPanel', () => {
             expect(screen.getByText('CURIOUS')).toBeInTheDocument();
         });
 
-        it('handles an effect with no type using the default color', () => {
-            const noType = [{ name: 'Blank', description: 'No type set', beats_left: 2 }]
-            render(<StatusEffectsIconPanel effects={noType} />);
-            fireEvent.mouseEnter(screen.getByText('✨'));
-            expect(screen.getByText('BLANK')).toBeInTheDocument();
-        });
     });
 
     describe('Vertical Layout', () => {

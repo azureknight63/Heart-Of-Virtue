@@ -19,16 +19,22 @@ test('renders room description and links for entity names', () => {
         ]
     }
 
-    render(<RoomContents location={location} onInteract={onInteract} />)
+    const { container } = render(<RoomContents location={location} onInteract={onInteract} />)
 
-    // Check if "wooden chest" is rendered as a link (we find it in the idle message)
-    // getAllByText will find the exact span with the text
+    // The room description is plain prose: only the CONTENT lines get links,
+    // so the chest is linked exactly once even though its name appears twice.
+    expect(container.textContent).toContain('A dusty room with a wooden chest.')
     const links = screen.getAllByText('wooden chest')
-    expect(links.length).toBeGreaterThan(0)
+    expect(links).toHaveLength(1)
+    expect(links[0].style.textDecoration).toBe('underline')
 
-    // Click the link
     fireEvent.click(links[0])
-    expect(onInteract).toHaveBeenCalled()
+    // The handler receives the ENTITY, not the matched string — routing an
+    // interaction by display text is exactly how the wrong target gets opened.
+    expect(onInteract).toHaveBeenCalledTimes(1)
+    expect(onInteract).toHaveBeenCalledWith(
+        expect.objectContaining({ name: 'wooden chest', type: 'object' })
+    )
 })
 
 test('renders links for entity aliases', () => {
@@ -55,9 +61,12 @@ test('renders links for entity aliases', () => {
     expect(links.length).toBe(1) // Only matches in the idle_message, as room description doesn't render links
     expect(links[0].style.textDecoration).toBe('underline')
 
-    // Click one
+    // Clicking an ALIAS still resolves to the entity that owns it.
     fireEvent.click(links[0])
-    expect(onInteract).toHaveBeenCalled()
+    expect(onInteract).toHaveBeenCalledTimes(1)
+    expect(onInteract).toHaveBeenCalledWith(
+        expect.objectContaining({ name: 'Inscription', type: 'object' })
+    )
 })
 
 test('sorts aliases by length to avoid partial matches', () => {

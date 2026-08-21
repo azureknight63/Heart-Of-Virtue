@@ -295,8 +295,11 @@ describe('Tactical AI Integration Tests', () => {
 
         // Wait for combat state to load (via polling or initial effects)
         // We might need to wait for the 2s poll if it doesn't fetch on mount
+        // `getStatus` takes no arguments, so there is nothing to assert about
+        // the call itself — it is used purely as a "combat has loaded" gate,
+        // and the real assertions follow.
         await waitFor(() => {
-            expect(api.combat.getStatus).toHaveBeenCalled();
+            expect(api.combat.getStatus).toHaveBeenCalledWith();
         }, { timeout: 10000 });
 
         // The panel HEADER was the only thing asserted here, so the panel
@@ -357,29 +360,27 @@ describe('Tactical AI Integration Tests', () => {
 
         renderGamePage();
 
+        // The entire body of this test used to sit inside
+        // `if (attackSuggestion) { ... }` within a waitFor callback. When the
+        // suggestion never rendered — the exact regression the test exists to
+        // catch — the callback returned undefined, waitFor resolved, and the
+        // test passed having asserted nothing at all. findByText makes the
+        // missing suggestion a failure instead.
+        const attackSuggestion = await screen.findByText('Attack', {}, { timeout: 8000 });
+        fireEvent.click(attackSuggestion.closest('div'));
+
         await waitFor(() => {
-            expect(api.combat.getStatus).toHaveBeenCalled();
-        }, { timeout: 10000 });
-
-        // Wait for suggestions to appear and click one
-        await waitFor(async () => {
-            const attackSuggestion = screen.queryByText('Attack');
-            if (attackSuggestion) {
-                fireEvent.click(attackSuggestion.closest('div'));
-
-                // Verify combined action was called
-                await waitFor(() => {
-                    expect(api.combat.performAction).toHaveBeenCalledWith(
-                        'select_move_and_target',
-                        expect.objectContaining({
-                            move_name: 'Attack',
-                            target_id: 'enemy_456',
-                        })
-                    );
-                });
-            }
+            expect(api.combat.performAction).toHaveBeenCalledWith(
+                'select_move_and_target',
+                expect.objectContaining({
+                    move_name: 'Attack',
+                    target_id: 'enemy_456',
+                })
+            );
         }, { timeout: 8000 });
-    }, 10000);
+        // One click, one action: a double dispatch burns two combat beats.
+        expect(api.combat.performAction).toHaveBeenCalledTimes(1);
+    }, 20000);
 
     it('displays status effects with icons', async () => {
         api.combat.getStatus.mockResolvedValue({
@@ -424,21 +425,20 @@ describe('Tactical AI Integration Tests', () => {
 
         renderGamePage();
 
+        // Both effects must reach the panel. The previous assertion was
+        // `burnIcons.length + shieldIcons.length > 0`, which passes when one of
+        // the two is dropped — and would still pass if the list were truncated
+        // to a single entry.
         await waitFor(() => {
-            expect(api.combat.getStatus).toHaveBeenCalled();
+            expect(screen.queryAllByText('🔥').length).toBeGreaterThan(0);
         }, { timeout: 8000 });
+        expect(screen.queryAllByText('🛡️').length).toBeGreaterThan(0);
 
-        // Check for status effect icons (rendered in HeroPanel, always visible)
-        await waitFor(() => {
-            // Look for emoji icons (🔥 for burn, 🛡️ for shield)
-            // Use queryAllByText because emojis may appear in both HeroPanel and BattlefieldGrid
-            const burnIcons = screen.queryAllByText('🔥');
-            const shieldIcons = screen.queryAllByText('🛡️');
-
-            // At least one should be present if effects are rendering
-            expect(burnIcons.length + shieldIcons.length).toBeGreaterThan(0);
-        }, { timeout: 8000 });
-    }, 10000);
+        // And the tooltip reads the effect's own beats_left, so a fixture using
+        // the dead `duration_remaining` name would show nothing here.
+        fireEvent.mouseEnter(screen.queryAllByText('🔥')[0]);
+        expect(screen.getByText('3 beats remaining').textContent).toBe('3 beats remaining');
+    }, 15000);
 
     it('shows previous move analysis in suggestions panel', async () => {
         api.combat.getStatus.mockResolvedValue({
@@ -477,8 +477,9 @@ describe('Tactical AI Integration Tests', () => {
 
         renderGamePage();
 
+        // Zero-argument poll; a load gate, not an assertion (see above).
         await waitFor(() => {
-            expect(api.combat.getStatus).toHaveBeenCalled();
+            expect(api.combat.getStatus).toHaveBeenCalledWith();
         }, { timeout: 10000 });
 
         // `expect(analysisText || outcomeText).toBeTruthy()` let the test pass
@@ -544,18 +545,20 @@ describe('Tactical AI Integration Tests', () => {
 
         renderGamePage();
 
+        // Zero-argument poll; a load gate, not an assertion (see above).
         await waitFor(() => {
-            expect(api.combat.getStatus).toHaveBeenCalled();
+            expect(api.combat.getStatus).toHaveBeenCalledWith();
         }, { timeout: 10000 });
 
         // Initially no poison icon
         expect(screen.queryByText('🧪')).toBeNull();
 
-        // After some time, poison icon should appear due to poll
-        await waitFor(() => {
-            const poisonIcon = screen.queryByText('🧪');
-            expect(poisonIcon).toBeTruthy();
-        }, { timeout: 10000 });
+        // The second poll's payload adds Poison; the panel must pick it up
+        // without a remount.
+        const poison = await screen.findByText('🧪', {}, { timeout: 10000 });
+        fireEvent.mouseEnter(poison);
+        expect(screen.getByText('POISON').textContent).toBe('POISON');
+        expect(screen.getByText('4 beats remaining').textContent).toBe('4 beats remaining');
         // The test budget must exceed the sum of the waitFor budgets above.
         // At 10000 it equalled a single wait, so under parallel full-suite load
         // the test timed out before its own waits could resolve — a flake that

@@ -41,8 +41,15 @@ describe('Coverage Gap Tests', () => {
       const input = container.querySelector('input')
       expect(input.disabled).toBe(true)
       fireEvent.change(input, { target: { value: 'new' } })
-      // onChange should still fire even though input is disabled (browser behavior)
-      expect(handleChange).toHaveBeenCalled()
+      // fireEvent.change dispatches straight at the node, bypassing the
+      // disabled gate a real user hits — so the handler does run here. What
+      // matters is that GameInput forwards the event UNWRAPPED, with the DOM
+      // node as target; a bare toHaveBeenCalled() would pass even if it
+      // synthesised its own `{ value }` object and broke every caller.
+      expect(handleChange).toHaveBeenCalledTimes(1)
+      expect(handleChange.mock.calls[0][0].target).toBe(input)
+      // The value prop still wins — GameInput is controlled.
+      expect(input.value).toBe('test')
     })
 
     it('handles autoFocus prop', () => {
@@ -183,9 +190,14 @@ describe('Coverage Gap Tests', () => {
       expect(screen.getByText('(Nothing else here...)')).toBeInTheDocument()
     })
 
-    it('renders a GameButton with no onClick without crashing when clicked', () => {
+    it('renders a GameButton with no onClick as a live, inert button', () => {
       render(<GameButton>Inert</GameButton>)
-      expect(() => fireEvent.click(screen.getByText('Inert'))).not.toThrow()
+      const button = screen.getByRole('button')
+      // Not disabled — GameButton must not infer "no handler" as "disabled",
+      // or a button whose handler arrives on a later render stays dead.
+      expect(button.disabled).toBe(false)
+      expect(button.textContent).toBe('Inert')
+      expect(() => fireEvent.click(button)).not.toThrow()
     })
   })
 

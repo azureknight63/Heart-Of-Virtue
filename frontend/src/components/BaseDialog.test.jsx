@@ -2,6 +2,14 @@ import React from 'react'
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import BaseDialog from './BaseDialog'
+import { colors } from '../styles/theme'
+
+/** jsdom normalises inline colours to rgb(); theme.js mixes hex and rgba(). */
+const cssColor = (value) => {
+  if (!value.startsWith('#')) return value
+  const n = parseInt(value.slice(1), 16)
+  return `rgb(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255})`
+}
 
 describe('BaseDialog', () => {
   const mockOnClose = vi.fn()
@@ -61,44 +69,37 @@ describe('BaseDialog', () => {
   })
 
   describe('Variants', () => {
-    it('applies default variant styles', () => {
+    // Three of the four variant tests here asserted only that `.modal-content`
+    // was in the document — i.e. that BaseDialog renders at all — under names
+    // promising "applies danger variant styles" / "applies warning variant
+    // styles". The fourth checked the border merely *contained* "solid", which
+    // is true of every variant. The variant's whole job is this palette.
+    it.each([
+      ['default', colors.primary, colors.bg.main, colors.primary],
+      ['danger', colors.danger, 'rgba(25, 10, 10, 0.98)', '#ff5555'],
+      ['warning', colors.secondary, 'rgba(30, 15, 0, 0.95)', colors.gold],
+      // 'no-blur' is not a palette — it falls through to the default colours.
+      ['no-blur', colors.primary, colors.bg.main, colors.primary],
+    ])('variant="%s" paints its frame, background and title', (variant, borderHex, bg, titleHex) => {
       const { container } = render(
-        <BaseDialog title="Test" variant="default" onClose={mockOnClose}>
+        <BaseDialog title="Test" variant={variant} onClose={mockOnClose}>
           <p>Content</p>
         </BaseDialog>
       )
       const modalContent = container.querySelector('.modal-content')
-      expect(modalContent).toHaveStyle({ border: expect.stringContaining('solid') })
+      expect(modalContent.style.border).toBe(`3px solid ${cssColor(borderHex)}`)
+      expect(modalContent.style.backgroundColor).toBe(cssColor(bg))
+      expect(screen.getByText('Test').style.color).toBe(cssColor(titleHex))
     })
 
-    it('applies danger variant styles', () => {
-      const { container } = render(
-        <BaseDialog title="Test" variant="danger" onClose={mockOnClose}>
-          <p>Content</p>
-        </BaseDialog>
+    it('blurs the backdrop for every variant except no-blur', () => {
+      const { container, rerender } = render(
+        <BaseDialog title="Test" onClose={mockOnClose}><p>Content</p></BaseDialog>
       )
-      const modalContent = container.querySelector('.modal-content')
-      expect(modalContent).toBeInTheDocument()
-    })
+      expect(container.querySelector('.modal-overlay').style.backdropFilter).toBe('blur(3px)')
 
-    it('applies warning variant styles', () => {
-      const { container } = render(
-        <BaseDialog title="Test" variant="warning" onClose={mockOnClose}>
-          <p>Content</p>
-        </BaseDialog>
-      )
-      const modalContent = container.querySelector('.modal-content')
-      expect(modalContent).toBeInTheDocument()
-    })
-
-    it('applies no-blur variant correctly', () => {
-      const { container } = render(
-        <BaseDialog title="Test" variant="no-blur" onClose={mockOnClose}>
-          <p>Content</p>
-        </BaseDialog>
-      )
-      const overlay = container.querySelector('.modal-overlay')
-      expect(overlay.style.backdropFilter).toBe('none')
+      rerender(<BaseDialog title="Test" variant="no-blur" onClose={mockOnClose}><p>Content</p></BaseDialog>)
+      expect(container.querySelector('.modal-overlay').style.backdropFilter).toBe('none')
     })
   })
 
@@ -198,15 +199,20 @@ describe('BaseDialog', () => {
       expect(modalContent).toHaveClass('custom-content')
     })
 
-    it('respects allowInternalScroll prop', () => {
-      const { container } = render(
-        <BaseDialog allowInternalScroll={false} onClose={mockOnClose}>
+    it.each([
+      [true, 'auto'],
+      [false, 'hidden'],
+      [undefined, 'auto'],
+    ])('allowInternalScroll=%s sets overflowY: %s on the content well', (allow, expected) => {
+      // Was: assert the inner div "is rendered", which is true for either
+      // value of the prop — the one thing the prop controls went untested.
+      const props = allow === undefined ? {} : { allowInternalScroll: allow }
+      render(
+        <BaseDialog onClose={mockOnClose} {...props}>
           <p>Content</p>
         </BaseDialog>
       )
-      const contentDiv = container.querySelector('.modal-content').querySelector('div[style*="flex"]')
-      // Check that the inner content div is rendered
-      expect(contentDiv).toBeInTheDocument()
+      expect(screen.getByText('Content').parentElement.style.overflowY).toBe(expected)
     })
 
     it('respects containerCentered prop', () => {
@@ -221,35 +227,42 @@ describe('BaseDialog', () => {
   })
 
   describe('Accessibility', () => {
-    it('has proper dialog role', () => {
+    it('marks the content well as a modal dialog', () => {
       const { container } = render(
         <BaseDialog onClose={mockOnClose}>
           <p>Content</p>
         </BaseDialog>
       )
-      const dialog = container.querySelector('[role="dialog"]')
-      expect(dialog).toBeInTheDocument()
+      // Both attributes belong to .modal-content, not the overlay — a screen
+      // reader that trapped on the overlay would announce the page behind it.
+      const dialog = container.querySelector('.modal-content')
+      expect(dialog.getAttribute('role')).toBe('dialog')
+      expect(dialog.getAttribute('aria-modal')).toBe('true')
     })
 
-    it('has aria-modal attribute', () => {
-      const { container } = render(
-        <BaseDialog onClose={mockOnClose}>
-          <p>Content</p>
-        </BaseDialog>
-      )
-      const dialog = container.querySelector('[aria-modal="true"]')
-      expect(dialog).toBeInTheDocument()
-    })
-
-    it('has aria-labelledby when title exists', () => {
+    it('labels the dialog by its title element when there is a title', () => {
       const { container } = render(
         <BaseDialog title="Test Title" onClose={mockOnClose}>
           <p>Content</p>
         </BaseDialog>
       )
-      const dialog = container.querySelector('[aria-labelledby]')
-      expect(dialog).toBeInTheDocument()
-      expect(dialog).toHaveAttribute('aria-labelledby', 'base-dialog-title')
+      const dialog = container.querySelector('.modal-content')
+      expect(dialog.getAttribute('aria-labelledby')).toBe('base-dialog-title')
+      // ...and that id must actually resolve to the visible title.
+      expect(container.querySelector('#base-dialog-title').textContent).toBe('Test Title')
+    })
+
+    it('omits aria-labelledby entirely when there is no title', () => {
+      // Pointing at a non-existent id is worse than omitting the attribute:
+      // the dialog announces as unlabelled either way, but the dangling
+      // reference hides the omission from an automated audit.
+      const { container } = render(
+        <BaseDialog onClose={mockOnClose}>
+          <p>Content</p>
+        </BaseDialog>
+      )
+      expect(container.querySelector('.modal-content').hasAttribute('aria-labelledby')).toBe(false)
+      expect(container.querySelector('#base-dialog-title')).toBeNull()
     })
   })
 })

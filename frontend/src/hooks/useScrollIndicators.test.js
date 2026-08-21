@@ -99,7 +99,71 @@ describe('useScrollIndicators', () => {
     const { result } = renderHook(() => useScrollIndicators())
     act(() => { result.current.ref(el) })
     act(() => { result.current.ref(null) })
-    expect(el.removeEventListener).toHaveBeenCalledWith('scroll', expect.any(Function))
-    expect(ro.disconnect).toHaveBeenCalled()
+    // Same handler identity on add and remove, or the listener leaks.
+    const added = el.addEventListener.mock.calls.at(-1)[1]
+    expect(el.removeEventListener).toHaveBeenCalledWith('scroll', added)
+    // disconnect() takes no arguments, so the count is the whole claim: the
+    // observer is torn down exactly once, not left observing a detached node.
+    expect(ro.disconnect).toHaveBeenCalledTimes(1)
+    expect(ro.disconnect).toHaveBeenCalledWith()
+  })
+
+  it('observes the element with a ResizeObserver driving the same check', () => {
+    const ro = makeRo()
+    const el = makeEl(0, 100, 300)
+    const { result } = renderHook(() => useScrollIndicators())
+    act(() => { result.current.ref(el) })
+
+    expect(ro.observe).toHaveBeenCalledWith(el)
+    // The observer callback and the scroll listener must be the same `check`,
+    // otherwise a resize updates nothing.
+    expect(ResizeObserver).toHaveBeenCalledWith(el.addEventListener.mock.calls[0][1])
+  })
+
+  describe('the 4px dead zone', () => {
+    // check() uses `scrollTop > 4` and `scrollTop + clientHeight < scrollHeight - 4`
+    // to avoid flickering the fades on sub-pixel scroll. Every other test in
+    // this file sits far outside that band, so the constant was unpinned:
+    // dropping it entirely (`> 0`) broke nothing.
+    it.each([
+      [0, false],
+      [4, false],
+      [5, true],
+    ])('scrollTop=%i gives showTop=%s', (scrollTop, expected) => {
+      const el = makeEl(scrollTop, 100, 1000)
+      const { result } = renderHook(() => useScrollIndicators())
+      act(() => { result.current.ref(el) })
+      expect(result.current.showTop).toBe(expected)
+    })
+
+    it.each([
+      [300, false],   // exactly flush
+      [304, false],   // 4px of hidden content — still within the dead zone
+      [305, true],    // 5px — worth signalling
+    ])('scrollHeight=%i gives showBottom=%s', (scrollHeight, expected) => {
+      const el = makeEl(0, 300, scrollHeight)
+      const { result } = renderHook(() => useScrollIndicators())
+      act(() => { result.current.ref(el) })
+      expect(result.current.showBottom).toBe(expected)
+    })
+  })
+
+  it('check() is a no-op before an element is attached', () => {
+    const { result } = renderHook(() => useScrollIndicators())
+    act(() => { result.current.check() })
+    expect(result.current.showTop).toBe(false)
+    expect(result.current.showBottom).toBe(false)
+  })
+
+  it('keeps a stable ref callback across renders', () => {
+    // Components pass `ref` straight to a DOM node; a new identity every render
+    // would detach and re-attach the node on each render, resetting the
+    // subscription and losing the indicator state.
+    const el = makeEl(0, 100, 300)
+    const { result, rerender } = renderHook(() => useScrollIndicators())
+    const first = result.current.ref
+    act(() => { result.current.ref(el) })
+    rerender()
+    expect(result.current.ref).toBe(first)
   })
 })
