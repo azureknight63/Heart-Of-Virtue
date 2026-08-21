@@ -551,14 +551,27 @@ describe('Tactical AI Integration Tests', () => {
         }, { timeout: 10000 });
 
         // Initially no poison icon
-        expect(screen.queryByText('🧪')).toBeNull();
+        expect(screen.queryAllByText('🧪')).toHaveLength(0);
 
-        // The second poll's payload adds Poison; the panel must pick it up
-        // without a remount.
-        const poison = await screen.findByText('🧪', {}, { timeout: 10000 });
-        fireEvent.mouseEnter(poison);
-        expect(screen.getByText('POISON').textContent).toBe('POISON');
-        expect(screen.getByText('4 beats remaining').textContent).toBe('4 beats remaining');
+        // After the poll delivers the second state, the poison effect shows —
+        // picked up without a remount.
+        //
+        // queryAllByText, not findByText/queryByText: the effect legitimately
+        // renders on more than one surface at once (the battlefield token's
+        // StatusEffectsIconPanel and the panels beside it), and the
+        // single-match queries THROW on multiple matches rather than returning
+        // the first. That turned a passing render into a retry loop that ran out
+        // the waitFor budget, so the failure surfaced as a ~10s "timeout" and
+        // read as load flakiness — it was an over-specific query all along.
+        await waitFor(() => {
+            expect(screen.queryAllByText('🧪').length).toBeGreaterThan(0);
+        }, { timeout: 10000 });
+
+        // Visibility is only half of it: the effect must also carry its name and
+        // remaining duration, which is what the player actually reads.
+        fireEvent.mouseEnter(screen.queryAllByText('🧪')[0]);
+        expect(screen.getAllByText('POISON').length).toBeGreaterThan(0);
+        expect(screen.getAllByText('4 beats remaining').length).toBeGreaterThan(0);
         // The test budget must exceed the sum of the waitFor budgets above.
         // At 10000 it equalled a single wait, so under parallel full-suite load
         // the test timed out before its own waits could resolve — a flake that

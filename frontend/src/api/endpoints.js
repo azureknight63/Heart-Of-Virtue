@@ -40,6 +40,13 @@ export const combat = {
   startCombat: () => apiClient.post('/combat/start'),
   getStatus: () => apiClient.get('/combat/status'),
   performAction: (actionType, params) => {
+    // Abort is its own endpoint, not a move_type: it does not select a move,
+    // it withdraws one already in flight. Routed through performAction anyway
+    // so callers keep using the single combat-action dispatcher.
+    if (actionType === 'abort') {
+      return apiClient.post('/combat/abort')
+    }
+
     let payload = {}
 
     if (actionType === 'move') {
@@ -86,6 +93,7 @@ export const combat = {
   },
   collectLoot: (itemNames) => apiClient.post('/combat/collect-loot', { item_names: itemNames }),
   pauseSuggestions: (paused) => apiClient.post('/combat/suggestions/pause', { paused }),
+  abortMove: () => apiClient.post('/combat/abort'),
 }
 
 // Inventory endpoints

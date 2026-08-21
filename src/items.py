@@ -1765,7 +1765,13 @@ class Shortbow(Weapon):
             enchantment_level=enchantment_level,
         )
         self.range_base: Union[int, float] = 20
-        self.range_decay: Union[int, float] = 0.05
+        # Points of hit chance shed per foot past range_base. Combat happens
+        # between 1 and ~90 ft (arenas are max(9, min(100, combatants*3+3))
+        # cells at ~1 ft per cell), so this rate is what decides whether
+        # distance is a tactical choice at all. At the original 0.05 a shot
+        # reached zero accuracy at 2,020 ft and cost 1-2 points anywhere a
+        # fight could actually occur, which made range free.
+        self.range_decay: Union[int, float] = 1.5
 
 
 class Longbow(Weapon):
@@ -1791,7 +1797,8 @@ class Longbow(Weapon):
             enchantment_level=enchantment_level,
         )
         self.range_base: Union[int, float] = 25
-        self.range_decay: Union[int, float] = 0.04
+        # Lowest decay of the three: the longbow is the long-range weapon.
+        self.range_decay: Union[int, float] = 1.2
 
 
 class Crossbow(Weapon):
@@ -1817,7 +1824,11 @@ class Crossbow(Weapon):
             enchantment_level=enchantment_level,
         )
         self.range_base: Union[int, float] = 15
-        self.range_decay: Union[int, float] = 0.06
+        # Highest decay and the shortest plateau — the crossbow trades reach
+        # for its damage and str_mod. At 1.65 its shots reach zero accuracy at
+        # ~76 ft, so crossing the biggest arenas is deliberately out of reach:
+        # a crossbowman there has to close distance rather than plink.
+        self.range_decay: Union[int, float] = 1.65
 
 
 class Pole(Weapon):

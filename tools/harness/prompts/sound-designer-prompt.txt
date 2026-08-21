@@ -56,7 +56,7 @@ Heart of Virtue has a **procedural audio synthesis system** for creating all SFX
 class NewAttackSFX(Song):
     """A sharp downward electronic slash."""
     def __init__(self):
-        super().__init__("SFX: New Attack", "sfx_new_attack.wav")
+        super().__init__("SFX: New Attack", "sfx/new_attack.wav")
 
     def render(self, tempo_scale=1.0, pitch_shift=0) -> bytes:
         def d(dur): return dur / tempo_scale

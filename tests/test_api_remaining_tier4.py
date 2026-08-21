@@ -73,6 +73,8 @@ def player(world):
 #: a caller's test (which is exactly how ~20 tests in this file came to run no
 #: production code at all).
 GAME_SERVICE_PUBLIC_API = {
+    # Added with the combat abort control (master).
+    "abort_move",
     "allocate_level_up_points", "apply_tile_modifications",
     "capture_tile_object_baseline", "collect_combat_loot", "delete_save",
     "drop_item", "equip_item", "execute_move", "flee_combat",

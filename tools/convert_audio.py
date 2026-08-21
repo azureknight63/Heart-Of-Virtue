@@ -32,8 +32,10 @@ def main():
     # Define the directory
     sound_dir = os.path.join(os.getcwd(), 'frontend', 'public', 'assets', 'sounds')
 
-    # Find all bgm_*.wav files recursively and theme_snippet.wav
+    # Find all BGM WAV files recursively, including title-named tracks in bgm/,
+    # plus the standalone theme snippet.
     wav_files = glob.glob(os.path.join(sound_dir, '**', 'bgm_*.wav'), recursive=True)
+    wav_files.extend(glob.glob(os.path.join(sound_dir, 'bgm', '*.wav')))
     wav_files.extend(glob.glob(os.path.join(sound_dir, 'theme_snippet.wav')))
 
     print(f"Found {len(wav_files)} files to convert.")

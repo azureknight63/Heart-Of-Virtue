@@ -478,12 +478,23 @@ class TestCombatantSerializer:
         from types import SimpleNamespace
 
         combatant = _combatant()
+        # A namespace, not a MagicMock: a mock auto-vivifies `stage_beat`, so
+        # the fallback under test would never be reached. The range/falloff/
+        # resolve callables are the rest of the Move API the serializer now
+        # invokes unguarded — supplied explicitly so this stays a test about the
+        # missing `stage_beat`, and so a *new* unguarded call shows up here as a
+        # clear AttributeError rather than being silently absorbed.
         combatant.current_move = SimpleNamespace(
             name="Slash",
             category="Attack",
             description="Slash",
             current_stage=0,
             beats_left=1,
+            # Signatures mirror the real Move API: both range helpers take the
+            # acting user, beats_until_resolve takes none.
+            get_effective_range_max=lambda user: None,
+            get_accuracy_falloff=lambda user: None,
+            beats_until_resolve=lambda: None,
         )
         result = self.CombatantSerializer._serialize_active_move(combatant)
         assert result["total_beats"] == 0

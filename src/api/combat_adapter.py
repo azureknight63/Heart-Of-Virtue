@@ -34,6 +34,14 @@ if TYPE_CHECKING:
 # Compiled once at module level for performance
 _ANSI_ESCAPE = re.compile(r"\x1B(?:[@-Z\\_-]|\[[0-?]*[ -/]*[@-~])")
 
+# Shortest prep stage that earns an abort affordance. Below this a move is over
+# before a player could react to anything, and offering a bail-out would only add
+# a decision to every swing. Above it the commitment is long enough that the
+# battlefield can change while you are still winding up: ShootBow (10),
+# ShootCrossbow / BroadheadBolt / PinningBolt (15), AimedShot (25),
+# BloodOfMartyrs (40).
+ABORTABLE_MIN_PREP_BEATS = 8
+
 logger = logging.getLogger(__name__)
 
 
@@ -254,6 +262,15 @@ class ApiCombatAdapter:
         self._departures = {}
         if streamer is None:
             return
+        # Mark the response as carried by the socket. This is the ONLY funnel
+        # that streams, so a response without this flag reached the client with
+        # nothing on the socket behind it, and the HTTP body is its only
+        # carrier. The client keys its "apply or defer" decision on this rather
+        # than on the action name, because the same action goes both ways:
+        # a target selection that completes a move streams beats, while one
+        # that only opens a further prompt (a number/direction step) does not.
+        if isinstance(result, dict):
+            result["response_streamed"] = True
         try:
             streamer.stream_beats(beat_states)
             # Surface any exit/change the per-snapshot stream missed (e.g. an
@@ -877,6 +894,23 @@ class ApiCombatAdapter:
 
         if selected_move.current_stage != 0:
             return {"error": "Move not ready yet"}
+
+        # A move already winding up must be paid for, not walked away from.
+        # A prep longer than the per-request beat cap hands control back while
+        # the move is still in stage 0, and selecting anything else used to
+        # simply reassign player.current_move -- orphaning 20 beats of Aimed
+        # Shot at no cost and leaving it instantly re-castable. That made the
+        # costed abort below pointless, since the free path sat right beside
+        # it. Switching now requires an explicit abort first.
+        in_flight = self._abortable_move()
+        if in_flight is not None and in_flight is not selected_move:
+            return {
+                "error": (
+                    f"{display_name_of(in_flight)} is already winding up. "
+                    "Abort it first to act on something else."
+                ),
+                "requires_abort": True,
+            }
 
         self.player.current_move = selected_move
         self.player.current_move.user = self.player
@@ -2228,6 +2262,71 @@ class ApiCombatAdapter:
             ally.in_combat = False
         self.player.combat_list_allies = [self.player] + existing_allies
 
+    def _abortable_move(self):
+        """The in-flight move the player may bail out of, or None.
+
+        Only a move still winding up qualifies. Once it reaches execute there is
+        nothing left to abandon -- the blow is being thrown -- and recoil and
+        cooldown are the price already being paid.
+        """
+        move = getattr(self.player, "current_move", None)
+        if move is None:
+            return None
+        if getattr(move, "current_stage", None) != 0:
+            return None
+        if getattr(move, "beats_left", 0) <= 0:
+            return None
+        stage_beats = getattr(move, "stage_beat", None) or []
+        prep = stage_beats[0] if stage_beats else 0
+        if prep < ABORTABLE_MIN_PREP_BEATS:
+            return None
+        return move
+
+    def abort_current_move(self) -> Dict[str, Any]:
+        """Abandon the move the player is winding up, paying its full cooldown.
+
+        Delegates the actual state change to the engine: setting ``interrupted``
+        and advancing the move once drives ``Move.advance``'s interrupt branch,
+        which sends it to the cooldown stage, charges the whole cooldown and
+        detaches it from the player. That branch returns before any beat
+        processing, so no other move's cooldown drains here -- cooldowns must
+        only tick inside the combat loop.
+        """
+        move = self._abortable_move()
+        if move is None:
+            return {"error": "No move in progress that can be aborted"}
+
+        aborted_name = display_name_of(move)
+        # What the player gives up is the wind-up already invested, not the
+        # wind-up remaining: bailing at beat 20 of a 25-beat aim forfeits 20.
+        stage_beats = getattr(move, "stage_beat", None) or [0]
+        remaining = int(getattr(move, "beats_left", 0))
+        forfeited = max(0, int(stage_beats[0]) - remaining)
+        move.interrupted = True
+        with self._capture_output():
+            self.output_capture.active_entity = self.player
+            move.advance(self.player)
+            self.output_capture.active_entity = None
+        self._add_log_entry(
+            getattr(self.player, "combat_beat", 0),
+            f"{self.player.name} breaks off {aborted_name}.",
+            "system",
+        )
+
+        self.awaiting_input = True
+        self.input_type = "move_selection"
+        self.pending_move_index = None
+        self.available_options = self._get_available_moves()
+
+        result = self.get_combat_state()
+        result["aborted"] = {
+            "move": aborted_name,
+            "beats_forfeited": forfeited,
+            "beats_remaining_when_aborted": remaining,
+            "cooldown_beats": int(getattr(move, "beats_left", 0)),
+        }
+        return result
+
     def _get_available_moves(self) -> List[Dict[str, Any]]:
         """Get list of all moves for the player with availability status."""
         moves = []
@@ -2242,6 +2341,28 @@ class ApiCombatAdapter:
             viable_targets = []
             if is_targeted and is_viable:
                 viable_targets = self._get_available_targets(move)
+
+            # Engine source of truth for the move's full commitment: how many
+            # beats it locks the player into before another action can be
+            # taken. `stage_beat` is `[prep, execute, recoil, cooldown]` by
+            # convention (see Move.__init__ in src/moves/_base.py) — never
+            # hardcode these durations here, and never leak the raw list/index
+            # convention to the client (see `stage_beats` below). Values can
+            # be floats (e.g. 3.5) and can be 0; both are valid and rendered
+            # as-is.
+            raw_stage_beat = getattr(move, "stage_beat", None)
+            if not isinstance(raw_stage_beat, (list, tuple)):
+                # Unset/mocked moves (e.g. test doubles that don't configure
+                # stage_beat) fall back to "no declared commitment" rather
+                # than crashing on len()/indexing a non-sequence.
+                raw_stage_beat = []
+
+            def _beat_at(idx, _raw=raw_stage_beat):
+                if len(_raw) > idx:
+                    val = _raw[idx]
+                    if isinstance(val, (int, float)) and not isinstance(val, bool):
+                        return val
+                return 0
 
             move_data = {
                 "id": str(i),
@@ -2258,13 +2379,22 @@ class ApiCombatAdapter:
                 "requires_target_selection": is_targeted and len(viable_targets) > 1,
                 "cooldown_remaining": 0,
                 "cooldown_max": 0,
+                # Named fields, not the raw stage_beat list/index convention —
+                # the client must never have to know stage_beat[0] means prep.
+                "stage_beats": {
+                    "prep": _beat_at(0),
+                    "execute": _beat_at(1),
+                    "recoil": _beat_at(2),
+                    "cooldown": _beat_at(3),
+                },
             }
 
             # Check various conditions that might make the move unavailable
             if move.current_stage == 3:
-                stage_beats = getattr(move, "stage_beat", [])
                 cd_remaining = move.beats_left + 1 if move.beats_left > 0 else 1
-                cd_max = stage_beats[3] + 1 if len(stage_beats) > 3 else cd_remaining
+                cd_max = (
+                    raw_stage_beat[3] + 1 if len(raw_stage_beat) > 3 else cd_remaining
+                )
                 move_data["cooldown_remaining"] = cd_remaining
                 move_data["cooldown_max"] = max(cd_max, cd_remaining)
                 if move.beats_left > 0:
@@ -2355,9 +2485,18 @@ class ApiCombatAdapter:
                     },
                 }
 
-                # Add hit chance if verbose targeting
-                if move.verbose_targeting and hasattr(move, "calculate_hit_chance"):
-                    target_data["hit_chance"] = move.calculate_hit_chance(enemy)
+                # Add hit chance when the move can estimate one for this target.
+                # Move.preview_hit_chance (src/moves/_base.py) is the single
+                # source of this number for every targeted move -- it delegates
+                # to calculate_hit_chance() for moves that define one (ShootBow)
+                # and otherwise mirrors that move's own execute() to-hit path.
+                # Previously gated on verbose_targeting, which only ShootBow
+                # set, so every other targeted move showed no accuracy estimate
+                # at all in the target-selection dialog.
+                if hasattr(move, "preview_hit_chance"):
+                    hit_chance = move.preview_hit_chance(enemy)
+                    if hit_chance is not None:
+                        target_data["hit_chance"] = hit_chance
 
                 targets.append(target_data)
 
@@ -2455,6 +2594,24 @@ class ApiCombatAdapter:
         battle_state["map_size"] = self.combat_grid_size[0]
         battle_state["beat"] = getattr(self.player, "combat_beat", 0)
         battle_state["heat"] = int(self.player.heat * 100)
+        abortable = self._abortable_move()
+        battle_state["abortable_move"] = (
+            {
+                "name": display_name_of(abortable),
+                "beats_left": int(getattr(abortable, "beats_left", 0)),
+                "prep_beats": int((getattr(abortable, "stage_beat", None) or [0])[0]),
+                "beats_invested": max(
+                    0,
+                    int((getattr(abortable, "stage_beat", None) or [0])[0])
+                    - int(getattr(abortable, "beats_left", 0)),
+                ),
+                "cooldown_beats": int(
+                    (getattr(abortable, "stage_beat", None) or [0, 0, 0, 0])[3]
+                ),
+            }
+            if abortable is not None
+            else None
+        )
         battle_state["awaiting_input"] = self.awaiting_input
         battle_state["input_type"] = self.input_type
         battle_state["available_options"] = self.available_options

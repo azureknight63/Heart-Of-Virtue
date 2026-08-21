@@ -202,6 +202,11 @@ class ReapersMark(Move):
     def evaluate(self):
         pass
 
+    def preview_hit_chance(self, target=None):
+        """Reaper's Mark only flags the target for a future bonus -- it deals
+        no damage and rolls no to-hit itself."""
+        return None
+
     def execute(self, user):
         if self.target and self.target.is_alive():
             self.target._reapers_mark = True

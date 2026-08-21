@@ -1278,3 +1278,68 @@ describe('LeftPanel', () => {
         expect(btn.style.backgroundColor).toBe(rgb(colors.primaryDark));
     });
 });
+
+describe('LeftPanel — revealed log resets per fight', () => {
+  const combatWith = (combatId, messages) => ({
+    combat_id: combatId,
+    round: 1,
+    beat: 1,
+    awaiting_input: true,
+    enemies: [],
+    player: { hp: 10, max_hp: 10 },
+    available_options: [],
+    log: messages.map((message, i) => ({ message, round: 1, type: 'combat', beat_index: i })),
+  });
+
+  const baseProps = {
+    player: { name: 'Jean', hp: 10, max_hp: 10 },
+    location: { name: 'Arena' },
+    mode: 'combat',
+    isMobile: false,
+  };
+
+  // This one assertion guards three downstream consequences: BattlefieldGrid's
+  // animation cursor indexing a different space from the count, the revealed-key
+  // dedup swallowing repeated lines in later fights, and hasPendingLogs comparing
+  // a short new log against a cumulative count. A sibling test asserting that a
+  // REPEATED line reappears was deleted as vacuous: with identical messages,
+  // fight #1's leftover entry renders identically to fight #2's fresh one, so it
+  // passed with the fix reverted.
+  it('clears the revealed log when a new fight starts, and reports the new count', async () => {
+    // The server clears combat_log per fight. If the client's revealed set does
+    // not restart with it, displayedLogCount stays cumulative while
+    // BattlefieldGrid's cursor resets on unmount — the two then index different
+    // spaces and combat animations break from the second fight onward.
+    const onDisplayedLogCountChange = vi.fn();
+    const { rerender } = render(
+      <LeftPanel
+        {...baseProps}
+        combat={combatWith('fight-1', ['one', 'two'])}
+        onDisplayedLogCountChange={onDisplayedLogCountChange}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('combat-log').textContent).toContain('two');
+    });
+    expect(onDisplayedLogCountChange).toHaveBeenLastCalledWith(2);
+
+    rerender(
+      <LeftPanel
+        {...baseProps}
+        combat={combatWith('fight-2', ['fresh'])}
+        onDisplayedLogCountChange={onDisplayedLogCountChange}
+      />
+    );
+
+    // Count must drop back, not continue from 2.
+    await waitFor(() => {
+      expect(onDisplayedLogCountChange).toHaveBeenCalledWith(0);
+    });
+    await waitFor(() => {
+      const shown = screen.getByTestId('combat-log').textContent;
+      expect(shown).toContain('fresh');
+      expect(shown).not.toContain('one');
+    });
+  });
+});

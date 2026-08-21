@@ -267,6 +267,18 @@ class FeintAndPivot(Move):
                 "yellow",
             )
 
+    def preview_hit_chance(self, target=None):
+        """Like VertigoSpin, FeintAndPivot's execute() never calls
+        ``self.viable()`` before rolling -- only "target exists and is
+        alive" gates it (checked in execute() and mirrored here), so this
+        goes through ``_unconditional_preview_hit_chance``, not
+        ``_standard_preview_hit_chance`` (which would additionally require
+        ``combat_position`` via ``viable()`` and could auto-miss a preview
+        for a configuration execute() would still roll for).
+        """
+        t = target if target is not None else self.target
+        return self._unconditional_preview_hit_chance(t, base=90)
+
     def _get_relative_position(self, user_pos, target_pos, target_facing):
         """Determine user's position relative to target's facing.
 
@@ -388,9 +400,8 @@ class FeintAndPivot(Move):
         ) * random.uniform(0.8, 1.2)
         damage = max(0, damage)
 
-        hit_chance = to_hit_chance(self.user, self.target, base=90)
-        # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
-        hit_chance = _apply_to_hit_modifiers(self.user, self.target, hit_chance)
+        preview = self.preview_hit_chance(self.target)
+        hit_chance = preview if preview is not None else -1
         roll = random.randint(0, 100)
         glance = False
         if hit_chance >= roll and hit_chance - roll < 10:

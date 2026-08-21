@@ -16,6 +16,10 @@ Usage (in each subclass __init__):
 
 import math
 
+# Move stages, in the order Move.advance walks them. 0/1 are "not resolved
+# yet" (the move's effect is still coming); 2/3 are aftermath.
+MOVE_STAGE_PREP = 0
+MOVE_STAGE_EXECUTE = 1
 MOVE_STAGE_RECOIL = 2
 MOVE_STAGE_COOLDOWN = 3
 

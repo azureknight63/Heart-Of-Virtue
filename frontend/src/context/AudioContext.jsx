@@ -55,8 +55,8 @@ const getAssetPath = (path) => {
 };
 
 const BGM_MAP = {
-    'adventure': getAssetPath('/assets/sounds/bgm_adventure.wav'),
-    'battle': getAssetPath('/assets/sounds/bgm_battle.mp3'),
+    'adventure': getAssetPath('/assets/sounds/bgm/Virtue Quest.mp3'),
+    'battle': getAssetPath('/assets/sounds/bgm/Crossing Blades.mp3'),
     'dark_grotto': getAssetPath('/assets/sounds/dark_grotto.mp3'),
     'dungeon': getAssetPath('/assets/sounds/bgm_dungeon.mp3'),
     'eastern_descent': getAssetPath('/assets/sounds/bgm_eastern_descent.mp3'),
@@ -200,7 +200,7 @@ export const AudioProvider = ({ children }) => {
     // playbackRate scales tempo; preservesPitch keeps it from sounding
     // chipmunked/slowed — browser-native pitch-preserving time-stretch, no DSP.
     const playSFX = useCallback((sfxName, speed = 1) => {
-        const path = getAssetPath(`/assets/sounds/sfx_${sfxName}.wav`);
+        const path = getAssetPath(`/assets/sounds/sfx/${sfxName}.wav`);
         const audio = new Audio(path);
         audio.volume = isSfxMuted ? 0 : sfxVolume;
         // normalizeSpeed guards against a corrupted/garbage combatSpeed (e.g. a

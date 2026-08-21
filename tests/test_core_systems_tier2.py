@@ -856,8 +856,19 @@ class TestMoveBaseClass:
         assert move.base_damage_type == items.get_base_damage_type(move.arrow)
         assert move.base_damage_type != items.get_base_damage_type(player.eq_weapon)
         assert move.power == move.arrow.power
-        # Effective max range comes from the weapon's decay curve, not mvrange[1].
+        # Effective max range comes from the decay curve, not mvrange[1] -- and
+        # from the decay as scaled by the LOADED ARROW, not the bow's bare rate.
+        # That distinction is load-bearing: reading the weapon directly made the
+        # targeting ceiling disagree with the accuracy curve beneath it, so the
+        # last stretch of "legal" shots sat at a floored 2% hit chance.
+        effective_decay = move._decay_for(player)
         assert move.get_effective_range_max(player) == (
+            player.eq_weapon.range_base + 100 / effective_decay
+        )
+        # And the arrow really does move it: a ceiling computed from the bow's
+        # bare range_decay would be a different number, which is the bug above.
+        assert effective_decay != player.eq_weapon.range_decay
+        assert move.get_effective_range_max(player) != (
             player.eq_weapon.range_base + 100 / player.eq_weapon.range_decay
         )
 

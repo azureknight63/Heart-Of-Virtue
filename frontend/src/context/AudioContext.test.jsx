@@ -72,7 +72,11 @@ describe('AudioContext', () => {
         const bgmElement = global.__audioInstances[0];
 
         fireEvent.click(screen.getByText('Play BGM'));
-        expect(bgmElement.src).toContain('adventure');
+        // BGM_MAP resolves the logical track name ('adventure') to a titled
+        // file under sounds/bgm/, so assert the path actually loaded rather
+        // than the lookup key.
+        expect(bgmElement.src).toContain('sounds/bgm/');
+        expect(bgmElement.src).toContain('Virtue Quest.mp3');
         expect(bgmElement.play).toHaveBeenCalledTimes(1);
 
         fireEvent.click(screen.getByText('Stop BGM'));
@@ -309,7 +313,7 @@ describe('AudioContext', () => {
         act(() => { result.current.setIsMusicMuted(true); });
         act(() => { result.current.playBGM('battle'); });
 
-        const bgmInstance = global.__audioInstances.find(a => a.src.includes('bgm_battle'));
+        const bgmInstance = global.__audioInstances.find(a => a.src.includes('Crossing Blades.mp3'));
         expect(bgmInstance.volume).toBe(0);
     });
 
@@ -361,7 +365,7 @@ describe('AudioContext', () => {
         act(() => { result.current.setIsSfxMuted(true); });
         act(() => { result.current.playSFX('click'); });
         const muted = global.__audioInstances[global.__audioInstances.length - 1];
-        expect(muted.src).toContain('sfx_click.wav');
+        expect(muted.src).toContain('sounds/sfx/click.wav');
         expect(muted.volume).toBe(0);
         expect(muted.play).toHaveBeenCalledTimes(1);
 
@@ -428,7 +432,7 @@ describe('AudioContext', () => {
         const sfxInstance = global.__audioInstances[global.__audioInstances.length - 1];
 
         expect(typeof sfxInstance.onended).toBe('function');
-        expect(sfxInstance.src).toContain('sfx_click.wav');
+        expect(sfxInstance.src).toContain('sounds/sfx/click.wav');
         sfxInstance.onended();
         sfxInstance.onended();
         // Double-firing must not resurrect playback or raise.

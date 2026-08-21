@@ -25,6 +25,25 @@ def _crossbow_close_range_penalty(user, range_min):
     return any(dist < range_min for dist in user.combat_proximity.values())
 
 
+def _apply_crossbow_range_decay(move, user, target, hit_chance):
+    """Distance accuracy decay shared by the crossbow-family moves
+    (ShootCrossbow, BroadheadBolt, AimedShot, PinningBolt): subtract
+    ``move.decay`` per foot past ``move.base_range``, floored at 2.
+
+    Factored out so each move's ``preview_hit_chance`` and ``execute()`` stay
+    byte-identical to each other -- one derivation, called from both places,
+    rather than two copies that can drift apart.
+    """
+    if target in getattr(user, "combat_proximity", {}):
+        target_distance = user.combat_proximity[target]
+        if target_distance > move.base_range:
+            accuracy_decay = (target_distance - move.base_range) * move.decay
+            hit_chance -= accuracy_decay
+            if hit_chance < 2:
+                hit_chance = 2
+    return hit_chance
+
+
 class ShootBow(
     Move
 ):  # ranged attack with a bow, player only. Requires having arrows in inventory;
@@ -71,17 +90,47 @@ class ShootBow(
         self.power = 0
         self.base_damage_type = items.get_base_damage_type(player.eq_weapon)
         self.accuracy = 1.0
-        self.base_range = 20
-        self.decay = 0.05
+        # Seeded from the equipped weapon, not hardcoded. A literal here is what
+        # let this silently drift a whole balance pass out of date: it matched
+        # the Shortbow's old range_decay by coincidence, so nothing looked wrong
+        # until that constant moved and the placeholder stayed put.
+        wpn = getattr(player, "eq_weapon", None)
+        self.base_range = getattr(wpn, "range_base", 20)
+        self.decay = getattr(wpn, "range_decay", 1.5)
         self.evaluate()
 
     def get_effective_range_max(self, user):
-        """Return the effective maximum range, accounting for weapon range and decay."""
+        """Distance at which this shot's accuracy reaches zero.
+
+        Uses `self.decay` -- the weapon rate scaled by the loaded arrow -- not
+        the weapon's bare rate. Reading the weapon directly made the targeting
+        ceiling disagree with the accuracy curve underneath it: a Shortbow with
+        iron arrows allowed shots out to 87 ft while hit chance had already
+        bottomed out at 62, so the last 25 ft were legal shots floored at 2%.
+        """
         wpn = getattr(user, "eq_weapon", None)
-        decay = getattr(wpn, "range_decay", 0) if wpn else 0
-        if wpn and decay:
-            return getattr(wpn, "range_base", 0) + (100 / decay)
-        return None
+        decay = self._decay_for(user)
+        if wpn is None or not decay:
+            return None
+        # The weapon's range_base, not self.base_range: calculate_hit_chance
+        # subtracts from the weapon's plateau, so zero accuracy lands there too.
+        return getattr(wpn, "range_base", 0) + (100 / decay)
+
+    def get_accuracy_falloff(self, user):
+        """Falloff measured from the *weapon's* range_base, not ``self.base_range``.
+
+        ShootBow is the one move where those two differ: ``evaluate`` folds the
+        arrow's range modifier into ``self.base_range``, but
+        ``calculate_hit_chance`` above subtracts from ``wpn_range_base``. This
+        override reports what the hit-chance calculation actually does, since
+        that — not the unused attribute — is the accuracy the player will see.
+        """
+        if not self.decay or self.decay <= 0:
+            return None
+        wpn = getattr(user, "eq_weapon", None)
+        if wpn is None:
+            return None
+        return (getattr(wpn, "range_base", 0), self.decay)
 
     def calculate_hit_chance(
         self, enemy
@@ -165,47 +214,96 @@ class ShootBow(
             viability = True
         return viability
 
-    def prep(self, player):
-        # first, check if there is more than one type of arrow. If so, build a menu, else skip to modifying effects
-        arrowtypes = []
-        for arrowtype in self.user.inventory:
-            if arrowtype.subtype == "Arrow":
-                if (
-                    arrowtype.count > 0
-                ):  # in case the arrow stack hasn't had a chance to remove itself, check the count
-                    arrowtypes.append(arrowtype)
-        if len(arrowtypes) > 1:
-            # Use the player's preferred arrow if available; otherwise default to
-            # the first type (no terminal menu).
-            self.arrow = arrowtypes[0]
-            preferred = player.preferences.get("arrow")
-            for arrow in arrowtypes:
-                if arrow.name == preferred:
-                    self.arrow = arrow
-                    break
-        else:
-            self.arrow = arrowtypes[0]
-        narrate(
-            "{} knocks a {} and takes aim!".format(player.name, self.arrow.name.lower())
-        )
-        self.base_range = player.eq_weapon.range_base * self.arrow.range_base_modifier
-        self.decay = player.eq_weapon.range_decay * self.arrow.range_decay_modifier
+    @staticmethod
+    def _select_arrow(player):
+        """The arrow this shot will use, chosen with no side effects.
+
+        Deliberately pure: `evaluate` calls it every beat, on every known move,
+        for every combatant -- `Move.advance` runs `evaluate()` before it checks
+        whether the move is the current one -- so anything that narrates,
+        mutates the player, or fires an effect cannot live here. `prep` calls it
+        too, so the line the player reads and the effects that fire describe the
+        same arrow the aim preview has been showing.
+
+        Returns None when the quiver is empty; `viable()` already blocks the
+        move in that case, but `evaluate` runs regardless of viability.
+        """
+        arrowtypes = [
+            item
+            for item in getattr(player, "inventory", [])
+            # count guards a stack that has not had a chance to remove itself
+            if getattr(item, "subtype", None) == "Arrow" and getattr(item, "count", 0) > 0
+        ]
+        if not arrowtypes:
+            return None
+        preferred = getattr(player, "preferences", {}).get("arrow")
+        for arrow in arrowtypes:
+            if arrow.name == preferred:
+                return arrow
+        return arrowtypes[0]
+
+    def _decay_for(self, user, arrow=None):
+        """Accuracy decay per foot for this shot: weapon rate, scaled by the
+        loaded arrow and by Eagle Eye.
+
+        The single derivation of that number. `get_effective_range_max` reads
+        it live rather than trusting `self.decay`, so swapping a weapon cannot
+        leave the reported reach a beat behind the accuracy it describes.
+        """
+        wpn = getattr(user, "eq_weapon", None)
+        if wpn is None:
+            return None
+        decay = getattr(wpn, "range_decay", 0)
+        if not decay:
+            return None
+        if arrow is None:
+            arrow = getattr(self, "arrow", None)
+        if arrow is not None:
+            decay *= getattr(arrow, "range_decay_modifier", 1)
         # EagleEye passive: reduce accuracy decay at long range
         if any(
             getattr(m, "name", "") == "Eagle Eye"
-            for m in getattr(player, "known_moves", [])
+            for m in getattr(user, "known_moves", [])
         ):
-            self.decay *= 0.7
-        self.base_damage_type = items.get_base_damage_type(
-            self.arrow
-        )  # in case the arrow has a different base damage type than Piercing
-        self.power = self.arrow.power
+            decay *= 0.7
+        return decay or None
+
+    def _apply_arrow(self, player, arrow):
+        """Fold the weapon and the chosen arrow into this shot's range profile.
+
+        Recomputed from scratch every call rather than adjusted in place, so
+        running it once per beat lands on the same numbers as running it once --
+        Eagle Eye's multiplier in particular must not compound.
+        """
+        if arrow is None:
+            return
+        self.arrow = arrow
+        wpn = getattr(player, "eq_weapon", None)
+        if wpn is None:
+            return
+        self.base_range = wpn.range_base * arrow.range_base_modifier
+        self.decay = self._decay_for(player, arrow) or 0
+        # in case the arrow has a different base damage type than Piercing
+        self.base_damage_type = items.get_base_damage_type(arrow)
+        self.power = arrow.power
+
+    def prep(self, player):
+        arrow = self._select_arrow(player)
+        if arrow is None:
+            return
+        self._apply_arrow(player, arrow)
+        narrate(
+            "{} knocks a {} and takes aim!".format(player.name, self.arrow.name.lower())
+        )
         if self.arrow.effects:
             for effect in self.arrow.effects:
                 if effect.trigger == "prep":
                     # Arrow effects are constructed once, with no player/move
                     # context (see FlareArrowImpact) -- rebind to this live
                     # shot before firing so process() sees the real target/user.
+                    # This stays in prep, not in the shared derivation above:
+                    # firing it from evaluate() would re-trigger it every beat
+                    # of the aim instead of once per shot.
                     effect.move = self
                     effect.process()
 
@@ -218,6 +316,14 @@ class ShootBow(
         # hard reset here wiped the arrow's contribution so only the finesse term
         # ever reached the damage calc. self.arrow defaults to a WoodenArrow set
         # in __init__ and is replaced with the chosen arrow in prep().
+        # Re-derive the shot's arrow and range profile every beat. Without this
+        # the aim preview described the __init__ placeholder rather than the
+        # arrow that would actually be loosed: a 10-beat aim reported 0.05
+        # decay and a 97% hit chance for a shot that resolved at 2.1 and 45%.
+        # The client's range gradient and the Check dialog both read these, and
+        # both are only shown while the move is pending -- i.e. almost entirely
+        # during prep, so the stale values were the ones players actually saw.
+        self._apply_arrow(self.user, self._select_arrow(self.user))
         arrow = getattr(self, "arrow", None)
         power = getattr(arrow, "power", 0) if arrow is not None else 0
         prep = int(
@@ -499,6 +605,16 @@ class ShootCrossbow(Move):
         ):
             self.decay *= 0.7
 
+    def preview_hit_chance(self, target=None):
+        t = target if target is not None else self.target
+        if not self._viable_for(t):
+            return None
+        hit_chance = to_hit_chance(self.user, t, floor=5)
+        if _crossbow_close_range_penalty(self.user, self.mvrange[0]):
+            hit_chance = int(hit_chance * 0.5)
+        hit_chance = _apply_crossbow_range_decay(self, self.user, t, hit_chance)
+        return _apply_to_hit_modifiers(self.user, t, hit_chance)
+
     def execute(self, player):
         glance = False
         self.prep_colors()
@@ -514,23 +630,8 @@ class ShootCrossbow(Move):
                 self.user.combat_position, self.target.combat_position
             )
 
-        rmin, rmax = self.mvrange
-        if not self.viable():
-            hit_chance = -1
-        else:
-            hit_chance = to_hit_chance(self.user, self.target, floor=5)
-            if _crossbow_close_range_penalty(self.user, rmin):
-                hit_chance = int(hit_chance * 0.5)
-            # Apply distance accuracy decay (like ShootBow)
-            if self.target in self.user.combat_proximity:
-                target_distance = self.user.combat_proximity[self.target]
-                if target_distance > self.base_range:
-                    accuracy_decay = (target_distance - self.base_range) * self.decay
-                    hit_chance -= accuracy_decay
-                    if hit_chance < 2:
-                        hit_chance = 2
-            # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
-            hit_chance = _apply_to_hit_modifiers(self.user, self.target, hit_chance)
+        preview = self.preview_hit_chance(self.target)
+        hit_chance = preview if preview is not None else -1
 
         roll = random.randint(0, 100)
         damage = (
@@ -651,6 +752,18 @@ class BroadheadBolt(Move):
         ):
             self.decay *= 0.7
 
+    def preview_hit_chance(self, target=None):
+        """Broadhead Bolt applies distance decay but -- unlike ShootCrossbow
+        and PinningBolt -- does NOT apply the crossbow close-range penalty;
+        this mirrors execute() exactly (see the missing
+        ``_crossbow_close_range_penalty`` call there)."""
+        t = target if target is not None else self.target
+        if not self._viable_for(t):
+            return None
+        hit_chance = to_hit_chance(self.user, t, floor=5)
+        hit_chance = _apply_crossbow_range_decay(self, self.user, t, hit_chance)
+        return _apply_to_hit_modifiers(self.user, t, hit_chance)
+
     def execute(self, player):
         glance = False
         self.prep_colors()
@@ -666,20 +779,8 @@ class BroadheadBolt(Move):
                 self.user.combat_position, self.target.combat_position
             )
 
-        if self.viable():
-            hit_chance = to_hit_chance(self.user, self.target, floor=5)
-            # Apply distance accuracy decay
-            if self.target in self.user.combat_proximity:
-                target_distance = self.user.combat_proximity[self.target]
-                if target_distance > self.base_range:
-                    accuracy_decay = (target_distance - self.base_range) * self.decay
-                    hit_chance -= accuracy_decay
-                    if hit_chance < 2:
-                        hit_chance = 2
-        else:
-            hit_chance = -1
-        # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
-        hit_chance = _apply_to_hit_modifiers(self.user, self.target, hit_chance)
+        preview = self.preview_hit_chance(self.target)
+        hit_chance = preview if preview is not None else -1
 
         roll = random.randint(0, 100)
         damage = (
@@ -804,6 +905,16 @@ class AimedShot(Move):
         ):
             self.decay *= 0.7
 
+    def preview_hit_chance(self, target=None):
+        t = target if target is not None else self.target
+        if not self._viable_for(t):
+            return None
+        hit_chance = min(100, max(5, to_hit_chance(self.user, t) + 15))
+        if _crossbow_close_range_penalty(self.user, self.mvrange[0]):
+            hit_chance = int(hit_chance * 0.5)
+        hit_chance = _apply_crossbow_range_decay(self, self.user, t, hit_chance)
+        return _apply_to_hit_modifiers(self.user, t, hit_chance)
+
     def execute(self, player):
         glance = False
         self.prep_colors()
@@ -819,25 +930,8 @@ class AimedShot(Move):
                 self.user.combat_position, self.target.combat_position
             )
 
-        rmin, rmax = self.mvrange
-        if not self.viable():
-            hit_chance = -1
-        else:
-            hit_chance = min(
-                100, max(5, to_hit_chance(self.user, self.target) + 15)
-            )
-            if _crossbow_close_range_penalty(self.user, rmin):
-                hit_chance = int(hit_chance * 0.5)
-            # Apply distance accuracy decay
-            if self.target in self.user.combat_proximity:
-                target_distance = self.user.combat_proximity[self.target]
-                if target_distance > self.base_range:
-                    accuracy_decay = (target_distance - self.base_range) * self.decay
-                    hit_chance -= accuracy_decay
-                    if hit_chance < 2:
-                        hit_chance = 2
-            # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
-            hit_chance = _apply_to_hit_modifiers(self.user, self.target, hit_chance)
+        preview = self.preview_hit_chance(self.target)
+        hit_chance = preview if preview is not None else -1
 
         roll = random.randint(0, 100)
         damage = (
@@ -958,6 +1052,16 @@ class PinningBolt(Move):
         ):
             self.decay *= 0.7
 
+    def preview_hit_chance(self, target=None):
+        t = target if target is not None else self.target
+        if not self._viable_for(t):
+            return None
+        hit_chance = to_hit_chance(self.user, t, floor=5)
+        if _crossbow_close_range_penalty(self.user, self.mvrange[0]):
+            hit_chance = int(hit_chance * 0.5)
+        hit_chance = _apply_crossbow_range_decay(self, self.user, t, hit_chance)
+        return _apply_to_hit_modifiers(self.user, t, hit_chance)
+
     def execute(self, player):
         glance = False
         self.prep_colors()
@@ -973,23 +1077,8 @@ class PinningBolt(Move):
                 self.user.combat_position, self.target.combat_position
             )
 
-        rmin, rmax = self.mvrange
-        if not self.viable():
-            hit_chance = -1
-        else:
-            hit_chance = to_hit_chance(self.user, self.target, floor=5)
-            if _crossbow_close_range_penalty(self.user, rmin):
-                hit_chance = int(hit_chance * 0.5)
-            # Apply distance accuracy decay
-            if self.target in self.user.combat_proximity:
-                target_distance = self.user.combat_proximity[self.target]
-                if target_distance > self.base_range:
-                    accuracy_decay = (target_distance - self.base_range) * self.decay
-                    hit_chance -= accuracy_decay
-                    if hit_chance < 2:
-                        hit_chance = 2
-            # Shared to-hit modifiers: facing/angle accuracy (#394) + HauntingPresence (#421).
-            hit_chance = _apply_to_hit_modifiers(self.user, self.target, hit_chance)
+        preview = self.preview_hit_chance(self.target)
+        hit_chance = preview if preview is not None else -1
 
         roll = random.randint(0, 100)
         damage = (

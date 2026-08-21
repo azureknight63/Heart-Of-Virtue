@@ -218,6 +218,59 @@ describe('useCombat', () => {
     expect(result.current.combat.awaiting_input).toBe(false);
   });
 
+  it('applies an abort response even under streaming', async () => {
+    // Abort withdraws a move rather than resolving one, so it emits no beat on
+    // the socket. Under streaming the HTTP response is the only carrier of the
+    // resulting state; skipping it left the abort control on screen with the
+    // action buttons greyed out until an unrelated event arrived.
+    const mockResponse = {
+      data: {
+        battle_state: { turn: 9, abortable_move: null },
+        combat_active: true,
+        // No response_streamed: nothing went out on the socket for this.
+      },
+    };
+    apiEndpoints.combat.performAction.mockResolvedValue(mockResponse);
+
+    const { result } = renderHook(() => useCombat(true)); // streaming ON
+
+    await act(async () => {
+      await result.current.performAction('abort', {});
+    });
+
+    expect(result.current.combat.turn).toBe(9);
+    expect(result.current.combat.abortable_move).toBeNull();
+  });
+
+  it('still defers a beat-producing action to the socket under streaming', async () => {
+    // The counterpart: a normal move DOES stream beats, so its non-terminal
+    // HTTP response must not be applied here or it would race the socket.
+    const mockResponse = {
+      data: { battle_state: { turn: 42 }, combat_active: true, response_streamed: true },
+    };
+    apiEndpoints.combat.performAction.mockResolvedValue(mockResponse);
+
+    const { result } = renderHook(() => useCombat(true));
+
+    await act(async () => {
+      await result.current.performAction('move', { move_id: '0' });
+    });
+
+    expect(result.current.combat?.turn).not.toBe(42);
+  });
+
+  it('applies a cancelled selection under streaming', async () => {
+    // _handle_cancel_selection returns state with no beats run and nothing
+    // emitted, exactly like abort — so the same rule has to cover it, which a
+    // per-action check keyed on 'abort' would not have.
+    apiEndpoints.combat.performAction.mockResolvedValue({
+      data: { battle_state: { turn: 7, input_type: 'move_selection' }, combat_active: true },
+    });
+    const { result } = renderHook(() => useCombat(true));
+    await act(async () => { await result.current.performAction('cancel', {}); });
+    expect(result.current.combat.input_type).toBe('move_selection');
+  });
+
   it('performs combat action and applies the returned battle_state and log', async () => {
     apiEndpoints.combat.performAction.mockResolvedValue({
       data: makeCombatResponse({

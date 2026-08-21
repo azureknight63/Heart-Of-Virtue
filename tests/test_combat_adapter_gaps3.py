@@ -1762,15 +1762,24 @@ class TestGetAvailableMovesRemainingBranches:
         # that the list was non-empty. The client renders each entry directly,
         # so the entry's shape is the contract.
         assert moves[0]["targeted"] is True
-        assert moves[0]["viable_targets"] == [
-            {
-                "id": f"enemy_{id(enemy)}",
-                "name": "Goblin",
-                "distance": 5,
-                "is_ally": False,
-                "health": {"current": 50, "max": 50},
-            }
-        ]
+        (target,) = moves[0]["viable_targets"]
+        # Identity/position/health are pinned exactly — the client renders each
+        # entry directly, so the entry's shape is the contract.
+        assert {k: target[k] for k in ("id", "name", "distance", "is_ally", "health")} == {
+            "id": f"enemy_{id(enemy)}",
+            "name": "Goblin",
+            "distance": 5,
+            "is_ally": False,
+            "health": {"current": 50, "max": 50},
+        }
+        # `hit_chance` is the per-target preview. Its value comes from the
+        # engine (mocked here), so pin its presence and that it is sourced from
+        # the move rather than invented by the adapter.
+        assert "hit_chance" in target
+        assert target["hit_chance"] is move.preview_hit_chance.return_value
+        assert set(target) == {
+            "id", "name", "distance", "is_ally", "health", "hit_chance",
+        }
         # A single viable target is auto-resolved, so no selection prompt.
         assert moves[0]["requires_target_selection"] is False
         assert moves[0]["available"] is True
