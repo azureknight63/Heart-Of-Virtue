@@ -170,7 +170,11 @@ describe('CombatMovePanel', () => {
 
     const closeBtn = screen.getByText('✕');
     fireEvent.click(closeBtn);
-    expect(mockOnClose).toHaveBeenCalled();
+    // Exactly once, and closing must not also fire a move — a panel that
+    // dismissed by "selecting" whatever was under the cursor would burn the
+    // player's beat.
+    expect(mockOnClose).toHaveBeenCalledTimes(1);
+    expect(mockOnMoveClick).not.toHaveBeenCalled();
   });
 
   it('notifies onTargetHover with the single viable enemy target on hover, and clears it on click/leave', () => {

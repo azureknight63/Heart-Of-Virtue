@@ -446,7 +446,10 @@ describe('useWorldInteract', () => {
       })
 
       expect(errorSpy).toHaveBeenCalledWith('Failed to trigger events:', expect.any(Error))
-      expect(onInteractionComplete).toHaveBeenCalled()
+      // Exactly once: a completion callback fired twice re-runs the caller's
+      // post-interaction refetch/close chain, which is how a dialog ends up
+      // closing itself out from under a follow-up event.
+      expect(onInteractionComplete).toHaveBeenCalledTimes(1)
       errorSpy.mockRestore()
     })
 
@@ -472,15 +475,24 @@ describe('useWorldInteract', () => {
         })
 
         expect(onRefetch).toHaveBeenCalledTimes(1)
-        expect(onInteractionComplete).toHaveBeenCalled()
+        expect(onInteractionComplete).toHaveBeenCalledTimes(1)
         expect(onClose).not.toHaveBeenCalled()
         expect(apiEndpoints.world.getEvents).not.toHaveBeenCalled()
         expect(result.current.loading).toBe(false)
 
+        // Pin the boundary, not "eventually": the 800ms hold is what lets the
+        // player read "The floor gives way!" before the dialog vanishes, and a
+        // bare advanceTimersByTime(800) + toHaveBeenCalled() passed for any
+        // delay from 0 to 800.
         act(() => {
-          vi.advanceTimersByTime(800)
+          vi.advanceTimersByTime(799)
         })
-        expect(onClose).toHaveBeenCalled()
+        expect(onClose).not.toHaveBeenCalled()
+
+        act(() => {
+          vi.advanceTimersByTime(1)
+        })
+        expect(onClose).toHaveBeenCalledTimes(1)
       })
     })
   })

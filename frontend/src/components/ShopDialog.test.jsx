@@ -2,7 +2,12 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { render, screen, fireEvent, act } from '@testing-library/react'
 import ShopDialog from './ShopDialog'
 import { useShop } from '../hooks/useShop'
-import { makePlayer } from '../test/payloads'
+import {
+  makePlayer,
+  makeShopState as makeApiShopState,
+  makeShopBuyItem,
+  makeShopSellItem,
+} from '../test/payloads'
 
 vi.mock('../hooks/useShop', () => ({
   useShop: vi.fn(),
@@ -15,20 +20,44 @@ vi.mock('../utils/itemUtils', async (importOriginal) => ({
   getItemIcon: vi.fn(() => '⚔️'),
 }))
 
+// Every shop payload below is built from the shared payload factories, which
+// mirror ShopSerializer.serialize_state / serialize_player_sellable. Hand-rolled
+// shop fixtures previously omitted `sell_modifier`, `type`/`subtype` and
+// `is_buyback` entirely, so the price-breakdown line, the category column and the
+// buyback branch were all rendered from `undefined` in every test — the exact
+// "mock agreeing with itself" shape that hid wire-drift bug #3 in this file.
+const IRON_SWORD = makeShopBuyItem({
+  id: 'item-1',
+  name: 'Iron Sword',
+  type: 'Weapon',
+  subtype: 'Sword',
+  value: 100,
+  price: 100,
+  weight: 2.5,
+  count: 1,
+  is_stackable: false,
+})
+
+/** The fill <div> of the WeightBar (first child of the 8px-tall track). */
+function weightBarFill(container) {
+  const track = container.querySelector('div[style*="height: 8px"]')
+  expect(track).not.toBeNull()
+  return track.firstChild
+}
+
 function makeShopState(overrides = {}) {
   return {
-    shopState: {
+    shopState: makeApiShopState({
+      npc_name: 'Jambo',
       shop_name: "Jambo's Shop",
-      stock: [
-        { id: 'item-1', name: 'Iron Sword', price: 100, weight: 2.5, count: 1, is_stackable: false },
-      ],
+      stock: [IRON_SWORD],
       buyback_items: [],
       player_gold: 500,
       player_weight_current: 10,
       player_weight_max: 100,
       merchant_gold: 1000,
       ...overrides.shopState,
-    },
+    }),
     sellInventory: overrides.sellInventory ?? [],
     isLoading: overrides.isLoading ?? false,
     error: overrides.error ?? null,
@@ -56,6 +85,13 @@ describe('ShopDialog', () => {
     expect(screen.getByText('Jambo')).toBeInTheDocument()
     expect(screen.getByText(/When you blue, Jambo Heals U!/)).toBeInTheDocument()
     expect(screen.getByText('Iron Sword')).toBeInTheDocument()
+    // A row that renders the wrong price or weight is the defect that costs a
+    // player gold, so pin all four columns, not the row's existence.
+    expect(screen.getByText('Sword')).toBeInTheDocument()
+    expect(screen.getByText('2.50 lb')).toBeInTheDocument()
+    expect(screen.getByText('100 💰')).toBeInTheDocument()
+    // Header purse = shopState.player_gold.
+    expect(screen.getByText(/💰\s*500/)).toBeInTheDocument()
   })
 
   it('shows a generic tagline for non-Jambo merchants', () => {
@@ -106,7 +142,12 @@ describe('ShopDialog', () => {
     render(<ShopDialog npcId="1" npcName="Jambo" player={{}} onClose={onClose} />)
     fireEvent.click(screen.getByText('⬆ Sell'))
     expect(screen.getByText('Old Boots')).toBeInTheDocument()
-    expect(screen.getByText(/gold:/)).toBeInTheDocument()
+    // The merchant's purse gates every sale, so assert the number, not just
+    // that a "gold:" label rendered.
+    expect(screen.getByText("Jambo's gold:")).toBeInTheDocument()
+    expect(screen.getByText('1000 💰')).toBeInTheDocument()
+    // Sell rows quote `offer` (the post-sell_modifier price), never `value`.
+    expect(screen.getByText('5 💰')).toBeInTheDocument()
   })
 
   it('shows "Nothing to sell." when the sell inventory is empty', () => {
@@ -155,7 +196,13 @@ describe('ShopDialog', () => {
     }))
     render(<ShopDialog npcId="1" npcName="Jambo" player={{}} onClose={onClose} />)
     fireEvent.click(screen.getByText('Iron Sword'))
-    expect(screen.getAllByText(/Exceeds carry limit/).length).toBeGreaterThan(0)
+    // Two independent renders of the same condition: the weight bar's warning
+    // and the button's disabled reason. Both must appear, and the button must
+    // actually be disabled — asserting only "some text matched" left a purchase
+    // that overloads the player perfectly clickable.
+    expect(screen.getAllByText(/Exceeds carry limit/)).toHaveLength(2)
+    expect(screen.getByText(/Buy · 100 💰/).closest('button')).toBeDisabled()
+    expect(screen.getByText(/→ 101\.5 lb after/)).toBeInTheDocument()
   })
 
   it('completes a buy transaction, clears selection, and calls onRefetch', async () => {
@@ -234,7 +281,8 @@ describe('ShopDialog', () => {
       fireEvent.click(screen.getByText(/Buyback · 40 💰/))
     })
     expect(buybackFn).toHaveBeenCalledWith('bb-1')
-    expect(onRefetch).toHaveBeenCalled()
+    expect(onRefetch).toHaveBeenCalledTimes(1)
+    expect(screen.queryByText(/Buying back:/)).not.toBeInTheDocument()
   })
 
   it('shows a quantity picker for stackable items and updates the total price', () => {
@@ -458,22 +506,67 @@ describe('ShopDialog', () => {
     expect(screen.getByText(/💰\s*0/)).toBeInTheDocument()
   })
 
-  it('does not color the weight bar red/orange when max carry weight is 0', () => {
+  // These two used to assert only `expect(() => render(...)).not.toThrow()`,
+  // under names that promised a specific colour. Deleting the whole
+  // `currentPct >= 90 ? danger : currentPct >= 75 ? secondary : primary` ladder
+  // and hardcoding one colour left both green. The encumbrance readout is the
+  // player's only warning before a purchase is refused, so pin the band
+  // boundaries and the fill width.
+  it.each([
+    ['under 75% — primary', 10, 100, 'rgb(0, 255, 136)', '10%'],
+    ['exactly 75% — secondary', 75, 100, 'rgb(255, 170, 0)', '75%'],
+    ['between 75 and 90% — secondary', 80, 100, 'rgb(255, 170, 0)', '80%'],
+    ['exactly 90% — danger', 90, 100, 'rgb(255, 68, 68)', '90%'],
+    ['over capacity — danger, clamped to 100%', 150, 100, 'rgb(255, 68, 68)', '100%'],
+    // max 0 must not produce NaN%/Infinity%: the guard collapses it to 0.
+    ['zero capacity — primary, no NaN width', 5, 0, 'rgb(0, 255, 136)', '0%'],
+  ])('colors the weight bar for %s', (_label, current, max, expectedColor, expectedWidth) => {
     useShop.mockReturnValue(makeShopState({
-      shopState: { player_weight_max: 0 },
+      shopState: { player_weight_current: current, player_weight_max: max },
     }))
-    expect(() =>
-      render(<ShopDialog npcId="1" npcName="Jambo" player={{}} onClose={onClose} />)
-    ).not.toThrow()
+    const { container } = render(
+      <ShopDialog npcId="1" npcName="Jambo" player={{}} onClose={onClose} />
+    )
+    const fill = weightBarFill(container)
+    expect(fill.style.background).toContain(expectedColor)
+    expect(fill.style.width).toBe(expectedWidth)
+    expect(screen.getByText(`max ${max.toFixed(1)} lb`)).toBeInTheDocument()
   })
 
-  it('uses the secondary (mid) weight-bar color between 75% and 90% capacity', () => {
+  it('renders the pending-purchase weight segment in danger colour once it overloads Jean', () => {
     useShop.mockReturnValue(makeShopState({
-      shopState: { player_weight_current: 80, player_weight_max: 100 },
+      shopState: { player_weight_current: 99, player_weight_max: 100 },
     }))
-    expect(() =>
-      render(<ShopDialog npcId="1" npcName="Jambo" player={{}} onClose={onClose} />)
-    ).not.toThrow()
+    const { container } = render(
+      <ShopDialog npcId="1" npcName="Jambo" player={{}} onClose={onClose} />
+    )
+    fireEvent.click(screen.getByText('Iron Sword'))
+    const track = container.querySelector('div[style*="height: 8px"]')
+    const [fill, pending] = track.children
+    // 99/100 committed, and the 2.5 lb sword is clamped to the 1% headroom left.
+    expect(fill.style.width).toBe('99%')
+    expect(pending.style.width).toBe('1%')
+    expect(pending.style.background).toContain('rgb(255, 68, 68)')
+    expect(screen.getByText('(+2.50)')).toBeInTheDocument()
+  })
+
+  it('renders the pending-sale weight segment as a green give-back', () => {
+    useShop.mockReturnValue(makeShopState({
+      shopState: { player_weight_current: 10, player_weight_max: 100 },
+      sellInventory: [makeShopSellItem({ id: 'sell-1', name: 'Old Boots', offer: 5, weight: 4 })],
+    }))
+    const { container } = render(
+      <ShopDialog npcId="1" npcName="Jambo" player={{}} onClose={onClose} />
+    )
+    fireEvent.click(screen.getByText('⬆ Sell'))
+    fireEvent.click(screen.getByText('Old Boots'))
+    const track = container.querySelector('div[style*="height: 8px"]')
+    const [fill, pending] = track.children
+    // A sale shrinks the committed bar and shows the 4 lb it gives back.
+    expect(fill.style.width).toBe('6%')
+    expect(pending.style.width).toBe('4%')
+    expect(screen.getByText('(−4.00)')).toBeInTheDocument()
+    expect(screen.getByText(/→ 6\.0 lb after/)).toBeInTheDocument()
   })
 
   it('defaults a listed item\'s weight to 0 lb when absent', () => {
@@ -505,5 +598,141 @@ describe('ShopDialog', () => {
     fireEvent.click(screen.getByText('⬆ Sell'))
     fireEvent.click(screen.getByText('Odd Trinket'))
     expect(screen.getByText(/Sell · \+0 💰/)).toBeInTheDocument()
+  })
+
+  // ── Price arithmetic must agree with what the server charges ───────────────
+  // GameService.shop_buy charges `max(1, int(value * buy_modifier)) * quantity`
+  // and ShopSerializer already bakes buy_modifier into the `price` it sends;
+  // shop_buyback charges `buyback_price * count`. A quoted total that disagrees
+  // with the charge is a gold-losing defect, so these pin the arithmetic
+  // against the server's own formulas rather than against the component.
+
+  it('quotes the server-sent price verbatim instead of re-applying buy_modifier', () => {
+    // ShopSerializer._serialize_shop_item already computed
+    // price = max(1, int(value * buy_modifier)) = int(100 * 1.5) = 150.
+    // A client that multiplied by buy_modifier again would quote 225 for a
+    // 150-gold charge.
+    useShop.mockReturnValue(makeShopState({
+      shopState: {
+        buy_modifier: 1.5,
+        stock: [makeShopBuyItem({
+          id: 'marked-up', name: 'Iron Sword', value: 100, price: 150,
+          weight: 1, count: 1, is_stackable: false,
+        })],
+      },
+    }))
+    render(<ShopDialog npcId="1" npcName="Jambo" player={{}} onClose={onClose} />)
+    fireEvent.click(screen.getByText('Iron Sword'))
+    expect(screen.getByText(/Buy · 150 💰/)).toBeInTheDocument()
+    expect(screen.queryByText(/225/)).not.toBeInTheDocument()
+  })
+
+  it('quotes a buyback stack at price × count, matching shop_buyback', async () => {
+    // The qty picker is suppressed for buyback, so `quantity` is stuck at 1 and
+    // the total has to come from the entry's own `count`. GameService.shop_buyback
+    // charges `buyback_price * count` = 40 × 3 = 120; quoting the unit price here
+    // would advertise 40 for a 120-gold charge.
+    const buybackFn = vi.fn().mockResolvedValue({ success: true })
+    useShop.mockReturnValue(makeShopState({
+      buyback: buybackFn,
+      shopState: {
+        player_gold: 100,
+        buyback_items: [makeShopBuyItem({
+          id: 'bb-stack', name: 'Reclaimed Dagger', price: 40,
+          weight: 1, count: 3, is_buyback: true, is_stackable: true,
+        })],
+      },
+    }))
+    render(<ShopDialog npcId="1" npcName="Jambo" player={{}} onClose={onClose} onRefetch={onRefetch} />)
+    fireEvent.click(screen.getByText('Reclaimed Dagger'))
+    expect(screen.getByText(/Buyback · 120 💰/)).toBeInTheDocument()
+    // 100 gold cannot cover 120 …
+    expect(screen.getByText(/Not enough gold — need 20 more/)).toBeInTheDocument()
+    // … and the pending weight is the whole stack, not one unit.
+    expect(screen.getByText('(+3.00)')).toBeInTheDocument()
+    // Buyback has no qty picker: the ×3 badge on the row is the only multiplier shown.
+    expect(screen.getByText('×3')).toBeInTheDocument()
+    expect(screen.queryByRole('spinbutton')).not.toBeInTheDocument()
+  })
+
+  it('quotes a sell offer that matches value × sell_modifier as the server computed it', () => {
+    // serialize_player_sellable sends offer = max(1, int(value * sell_modifier)).
+    // The breakdown line re-states that derivation to the player, so the three
+    // numbers on it must be mutually consistent — and the Sell button total must
+    // be a multiple of `offer`, never of `value`.
+    const sellModifier = 0.5
+    const item = makeShopSellItem({
+      id: 'sell-stack', name: 'Restorative', value: 100,
+      offer: Math.max(1, Math.trunc(100 * sellModifier)), count: 4, is_stackable: true,
+    })
+    useShop.mockReturnValue(makeShopState({
+      shopState: { sell_modifier: sellModifier, merchant_gold: 1000 },
+      sellInventory: [item],
+    }))
+    render(<ShopDialog npcId="1" npcName="Jambo" player={{}} onClose={onClose} />)
+    fireEvent.click(screen.getByText('⬆ Sell'))
+    fireEvent.click(screen.getByText('Restorative'))
+    expect(screen.getByText('Value 100 💰 · Offer 50% = 50 💰')).toBeInTheDocument()
+    expect(screen.getByText(/Sell · \+50 💰/)).toBeInTheDocument()
+    fireEvent.click(screen.getByText('+'))
+    fireEvent.click(screen.getByText('+'))
+    expect(screen.getByText(/Sell 3 · \+150 💰/)).toBeInTheDocument()
+    expect(screen.getByText('= 150 💰')).toBeInTheDocument()
+  })
+
+  it('caps sell quantity at what the merchant can actually pay for', () => {
+    // maxQty = floor(merchant_gold / offer) — selling past it would hand the
+    // merchant a bill it cannot settle.
+    useShop.mockReturnValue(makeShopState({
+      shopState: { merchant_gold: 120 },
+      sellInventory: [makeShopSellItem({
+        id: 'sell-stack', name: 'Restorative', offer: 50, count: 9, is_stackable: true,
+      })],
+    }))
+    render(<ShopDialog npcId="1" npcName="Jambo" player={{}} onClose={onClose} />)
+    fireEvent.click(screen.getByText('⬆ Sell'))
+    fireEvent.click(screen.getByText('Restorative'))
+    const input = screen.getByDisplayValue('1')
+    fireEvent.change(input, { target: { value: '9' } })
+    // floor(120 / 50) = 2, so 9 clamps to 2 and the total stays payable.
+    expect(input).toHaveValue(2)
+    expect(screen.getByText(/Sell 2 · \+100 💰/)).toBeInTheDocument()
+    expect(screen.queryByText(/Merchant has insufficient funds/)).not.toBeInTheDocument()
+  })
+
+  it('caps buy quantity at what the player can afford', () => {
+    useShop.mockReturnValue(makeShopState({
+      shopState: {
+        player_gold: 35,
+        stock: [makeShopBuyItem({
+          id: 'stack', name: 'Torch', price: 10, weight: 0.1, count: 9, is_stackable: true,
+        })],
+      },
+    }))
+    render(<ShopDialog npcId="1" npcName="Jambo" player={{}} onClose={onClose} />)
+    fireEvent.click(screen.getByText('Torch'))
+    const input = screen.getByDisplayValue('1')
+    fireEvent.change(input, { target: { value: '9' } })
+    // floor(35 / 10) = 3.
+    expect(input).toHaveValue(3)
+    expect(screen.getByText(/Buy 3 · 30 💰/)).toBeInTheDocument()
+    expect(screen.getByText(/Buy 3 · 30 💰/).closest('button')).not.toBeDisabled()
+  })
+
+  it('renders an untouched ShopSerializer payload without any test-local overrides', () => {
+    // The defaults in test/payloads.js were captured from the real serializer.
+    // Rendering them straight through is the check that ShopDialog reads the
+    // field NAMES the API actually emits — the failure mode CLAUDE.md calls this
+    // codebase's dominant bug class.
+    useShop.mockReturnValue({ ...makeShopState(), shopState: makeApiShopState() })
+    render(<ShopDialog npcId="1" npcName="Jambo" player={{}} onClose={onClose} />)
+    expect(screen.getByText(/💰\s*15/)).toBeInTheDocument()      // player_gold
+    expect(screen.getByText('1.1')).toBeInTheDocument()          // player_weight_current
+    expect(screen.getByText('max 30.5 lb')).toBeInTheDocument()  // player_weight_max
+    expect(screen.getByText('Restorative')).toBeInTheDocument()  // stock[0].name
+    expect(screen.getByText('100 💰')).toBeInTheDocument()        // stock[0].price
+    expect(screen.getByText('0.25 lb')).toBeInTheDocument()      // stock[0].weight
+    expect(screen.getByText('×2')).toBeInTheDocument()           // stock[0].count
+    expect(screen.getByText('Potion')).toBeInTheDocument()       // stock[0].subtype
   })
 })

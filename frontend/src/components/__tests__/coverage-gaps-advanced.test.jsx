@@ -9,10 +9,9 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { BrowserRouter } from 'react-router-dom'
 import GamePanel from '../GamePanel'
 import StatsPanel from '../StatsPanel'
-import SkillsPanel from '../SkillsPanel'
 import CooldownTray from '../CooldownTray'
 import CombatLog from '../CombatLog'
-import { colors } from '../../styles/theme'
+import { colors, spacing } from '../../styles/theme'
 import { makePlayer } from '../../test/payloads'
 
 describe('Advanced Coverage Gap Tests', () => {
@@ -32,17 +31,22 @@ describe('Advanced Coverage Gap Tests', () => {
       expect(screen.getByText('Test Panel')).toBeInTheDocument()
     })
 
-    it('renders without title but with onClose', () => {
+    it('renders a working close button with no title, and no title row', () => {
       render(
         <GamePanel onClose={mockOnClose}>
           <p>Content</p>
         </GamePanel>
       )
-      const buttons = screen.getAllByRole('button')
-      expect(buttons.length).toBeGreaterThan(0)
+      // Exactly one control, and it is the close affordance — "at least one
+      // button exists" was true of any panel with any button at all.
+      const button = screen.getByRole('button', { name: '✕' })
+      expect(screen.getAllByRole('button')).toHaveLength(1)
+      fireEvent.click(button)
+      expect(mockOnClose).toHaveBeenCalledTimes(1)
+      expect(screen.getByText('Content')).toBeInTheDocument()
     })
 
-    it('calls onClose when close button clicked (with title)', () => {
+    it('calls onClose exactly once when the titled panel\'s close button is clicked', () => {
       render(
         <GamePanel title="Test" onClose={mockOnClose}>
           <p>Content</p>
@@ -50,7 +54,10 @@ describe('Advanced Coverage Gap Tests', () => {
       )
       const button = screen.getByRole('button')
       fireEvent.click(button)
-      expect(mockOnClose).toHaveBeenCalled()
+      expect(mockOnClose).toHaveBeenCalledTimes(1)
+      // A close handler that also unmounted/cleared the panel would be a
+      // different bug: GamePanel is presentational, the parent owns dismissal.
+      expect(screen.getByText('Test')).toBeInTheDocument()
     })
 
     it('applies the padding token it was given, distinct from the default', () => {
@@ -58,15 +65,21 @@ describe('Advanced Coverage Gap Tests', () => {
       // of any rendered panel and so proved nothing about `padding`.
       const { container: small } = render(<GamePanel padding="small" onClose={mockOnClose}>c</GamePanel>)
       const { container: dflt } = render(<GamePanel onClose={mockOnClose}>c</GamePanel>)
-      expect(small.firstChild.style.padding).toBeTruthy()
-      expect(small.firstChild.style.padding).not.toBe(dflt.firstChild.style.padding)
+      // Pin the token, not merely "some padding": `toBeTruthy()` passed for any
+      // non-empty string, including the wrong size.
+      expect(small.firstChild.style.padding).toBe(spacing.sm)
+      expect(dflt.firstChild.style.padding).toBe(spacing.lg)
     })
 
     it('applies the border variant it was given, distinct from the default', () => {
       const { container: danger } = render(<GamePanel borderVariant="danger" onClose={mockOnClose}>c</GamePanel>)
       const { container: dflt } = render(<GamePanel onClose={mockOnClose}>c</GamePanel>)
-      expect(danger.firstChild.style.border).toBeTruthy()
-      expect(danger.firstChild.style.border).not.toBe(dflt.firstChild.style.border)
+      const { container: bogus } = render(<GamePanel borderVariant="nope" onClose={mockOnClose}>c</GamePanel>)
+      // #ff4444 -> rgb(255, 68, 68) once jsdom normalises it.
+      expect(danger.firstChild.style.border).toBe('2px solid rgb(255, 68, 68)')
+      expect(dflt.firstChild.style.border).toBe('2px solid rgba(255, 170, 0, 0.3)')
+      // An unknown variant must fall back to `main`, not render borderless.
+      expect(bogus.firstChild.style.border).toBe(dflt.firstChild.style.border)
     })
 
     it('applies glow style when glow=true', () => {
@@ -275,23 +288,11 @@ describe('Advanced Coverage Gap Tests', () => {
   describe('List rendering in CooldownTray', () => {
     const move = (id, over = {}) => ({ id, name: `Move ${id}`, category: 'Offensive', cooldown_remaining: 2, ...over })
 
-    it('renders nothing when there are no cooling moves', () => {
-      const { container, rerender } = render(<CooldownTray moves={[]} />)
-      expect(container.firstChild).toBeNull()
-
-      rerender(<CooldownTray moves={null} />)
-      expect(container.firstChild).toBeNull()
-
-      rerender(<CooldownTray />)
-      expect(container.firstChild).toBeNull()
-    })
-
-    it('shows the cooling-move count and one card per move', () => {
-      render(<CooldownTray moves={[move(1), move(2), move(3)]} />)
-      expect(screen.getByText('Cooldown')).toBeInTheDocument()
-      expect(screen.getByText('3')).toBeInTheDocument()
-    })
-
+    // The empty/null/undefined-moves cases and the plain count-and-cards case
+    // that used to live here are byte-for-byte covered by CooldownTray.test.jsx
+    // ("renders nothing for %s" and "labels the section and counts exactly the
+    // moves it was given"), which asserts them against the grid children rather
+    // than a lone getByText. Removed rather than kept as a weaker second copy.
     it('swaps to the expanded layout on hover and back on leave', () => {
       const { container } = render(<CooldownTray moves={[move(1, { name: 'Power Strike' })]} />)
       const tray = container.firstChild
@@ -306,21 +307,52 @@ describe('Advanced Coverage Gap Tests', () => {
       expect(screen.queryByText('Power Strike')).toBeNull()
     })
 
-    it('renders moves of every category without needing a known one', () => {
+    it('gives each category its own icon and falls back to ◈ for an unknown one', () => {
       const moves = [
         move(1, { category: 'Offensive' }),
         move(2, { category: 'Defensive' }),
         move(3, { category: 'Maneuver' }),
         move(4, { category: 'Utterly Unknown' }),
       ]
-      expect(() => render(<CooldownTray moves={moves} />)).not.toThrow()
-      expect(screen.getByText('4')).toBeInTheDocument()
+      const { container } = render(<CooldownTray moves={moves} />)
+      // `not.toThrow()` plus a header count of 4 held even if every card
+      // rendered the same glyph — the point of the category map is that they
+      // differ. Offensive ⚔, Defensive ◈, Maneuver ↯, unknown falls back to ◈.
+      const cards = Array.from(container.firstChild.lastChild.children, c => c.textContent)
+      expect(cards).toEqual(['⚔2', '◈2', '↯2', '◈2'])
     })
   })
 
   describe('Absent and partial player data in StatsPanel', () => {
-    it('does not crash when the player has no stats at all', () => {
-      expect(() => render(<StatsPanel player={{}} onClose={vi.fn()} />)).not.toThrow()
+    it('renders the defended fallbacks — and, today, prints "undefined" for the undefended ones', () => {
+      // This replaces `expect(() => render(...)).not.toThrow()`, which allowed
+      // literally any output. Reading the output back immediately surfaced a
+      // REAL DEFECT (reported, not fixed here — StatsPanel.jsx is outside this
+      // pass's file set):
+      //
+      //   StatsPanel.jsx:39-40 defend with `|| 0` / `|| 1`
+      //   StatsPanel.jsx:37,38,41 do NOT, so a player payload missing hp /
+      //   max_hp / fatigue / max_fatigue / attack_damage_* renders the literal
+      //   strings "undefined/undefined" and "undefined-undefined" at the player.
+      //   StatsPanel.jsx:47,62 render a blank Accuracy/Evasion cell for the
+      //   same reason.
+      //
+      // The assertions below pin BOTH halves. When the undefended fields gain
+      // the same `?? 0` treatment, the second block fails loudly and should be
+      // flipped to the not-toContain form rather than deleted.
+      const { container } = render(<StatsPanel player={{}} onClose={vi.fn()} />)
+      expect(container.querySelector('[role="dialog"]')).toBeInTheDocument()
+      expect(container.textContent).not.toContain('NaN')
+
+      // Defended today:
+      expect(container.textContent).toContain('Protection0')
+      expect(container.textContent).toContain('Level1')
+
+      // Undefended today — this is the bug, recorded so it cannot regress
+      // silently in either direction.
+      expect(container.textContent).toContain('HPundefined/undefined')
+      expect(container.textContent).toContain('Fatigueundefined/undefined')
+      expect(container.textContent).toContain('Attackundefined-undefined')
     })
 
     it('closes via its close handler', () => {

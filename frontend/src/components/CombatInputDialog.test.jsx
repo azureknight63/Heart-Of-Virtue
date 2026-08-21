@@ -185,10 +185,17 @@ describe('CombatInputDialog', () => {
 
     const cancelButton = screen.getByText('CANCEL ACTION');
     fireEvent.click(cancelButton);
-    expect(mockOnCancel).toHaveBeenCalled();
+    // Exactly once, and cancelling must never also submit a selection — the
+    // adapter would consume the beat on a move the player backed out of.
+    expect(mockOnCancel).toHaveBeenCalledTimes(1);
+    expect(mockOnSelect).not.toHaveBeenCalled();
   });
 
-  it('handles hover effects on buttons', () => {
+  it('highlights a direction button on hover and clears it on leave', () => {
+    // The old comment here ("jsdom doesn't support :hover styles") was wrong:
+    // GameButton tracks hover in React state and recomputes backgroundColor, so
+    // it IS observable. Under the old version both handlers could be deleted and
+    // the test still passed.
     render(
       <CombatInputDialog
         inputType="direction_selection"
@@ -199,14 +206,17 @@ describe('CombatInputDialog', () => {
     );
 
     const button = screen.getByText('NORTH');
+    // secondary variant: transparent at rest, text.highlight @ 0x22 alpha on hover.
+    expect(button.style.backgroundColor).toBe('transparent');
 
-    // jsdom doesn't support :hover styles, so just verify the button exists and reacts to events
     fireEvent.mouseEnter(button);
-    fireEvent.mouseLeave(button);
+    expect(button.style.backgroundColor).toBe('rgba(255, 238, 170, 0.133)');
 
-    // Button should still be clickable
+    fireEvent.mouseLeave(button);
+    expect(button.style.backgroundColor).toBe('transparent');
+
     fireEvent.click(button);
-    expect(mockOnSelect).toHaveBeenCalledWith('North');
+    expect(mockOnSelect).toHaveBeenCalledExactlyOnceWith('North');
   });
 
   it('handles hover effects on target selection buttons', () => {
@@ -222,16 +232,16 @@ describe('CombatInputDialog', () => {
 
     const card = screen.getByText('Target').closest('div').parentElement;
 
-    // jsdom doesn't support :hover styles, so just verify button responds to hover events
     fireEvent.mouseEnter(card);
     fireEvent.mouseLeave(card);
 
-    // Button should still be clickable
     fireEvent.click(card);
-    expect(mockOnSelect).toHaveBeenCalledWith('t1');
+    // Selecting a target must send the target's ID, never its display name —
+    // the adapter resolves the combatant by id.
+    expect(mockOnSelect).toHaveBeenCalledExactlyOnceWith('t1');
   });
 
-  it('handles hover effects on number input confirm button', () => {
+  it('highlights the confirm button on hover and submits the value on the face of the dial', () => {
     render(
       <CombatInputDialog
         inputType="number_input"
@@ -242,14 +252,19 @@ describe('CombatInputDialog', () => {
     );
 
     const button = screen.getByText('CONFIRM');
-
-    // jsdom doesn't support :hover styles, so just verify button responds to hover events
+    // primary variant: #00ff88 at rest, #00ffaa on hover.
+    expect(button.style.backgroundColor).toBe('rgb(0, 255, 136)');
     fireEvent.mouseEnter(button);
+    expect(button.style.backgroundColor).toBe('rgb(0, 255, 170)');
     fireEvent.mouseLeave(button);
+    expect(button.style.backgroundColor).toBe('rgb(0, 255, 136)');
 
-    // Button should still be clickable
+    // With no `default`, the dial starts at `min` — and confirming must submit
+    // exactly what the player can see, as a NUMBER. `toHaveBeenCalled()` passed
+    // even when the handler sent undefined, which the adapter reads as 0 beats.
+    fireEvent.click(screen.getByText('+'));
     fireEvent.click(button);
-    expect(mockOnSelect).toHaveBeenCalled();
+    expect(mockOnSelect).toHaveBeenCalledExactlyOnceWith(2);
   });
 
   it('notifies onTargetHover on hover and clears it on select', () => {

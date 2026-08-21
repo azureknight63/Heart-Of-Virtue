@@ -210,10 +210,57 @@ describe('useCombatSocket', () => {
     expect(calls.onResolved).not.toHaveBeenCalled();
   });
 
-  it('disconnects on unmount', () => {
-    const { socket, hook } = setup();
+  it('disconnects exactly once on unmount', () => {
+    const { socket, hook, calls } = setup();
+    act(() => socket.fire('combat:beat', beat(1)));
+    expect(calls.onBeat).toHaveBeenCalledTimes(1);
+
     hook.unmount();
-    expect(socket.disconnect).toHaveBeenCalled();
+
+    // Exactly once: a bare toHaveBeenCalled() was satisfied by a disconnect()
+    // from any path, including the stale-session error handler, and would not
+    // have caught a double teardown.
+    expect(socket.disconnect).toHaveBeenCalledTimes(1);
+  });
+
+  it('resets the sequence-gap detector on teardown, so a new session does not resync on its first beat', () => {
+    // The cleanup nulls lastSeqRef/lastStateSeqRef. Without that, the FIRST
+    // beat of the next fight is compared against the previous fight's sequence
+    // number, classified as a gap, and triggers a spurious full resync — the
+    // teardown side effect nothing asserted.
+    const socketA = makeFakeSocket();
+    const socketB = makeFakeSocket();
+    const fetchStatus = vi.fn().mockResolvedValue({ resynced: true });
+    const onBeat = vi.fn();
+    const sockets = [socketA, socketB];
+
+    const hook = renderHook(
+      ({ sessionId }) =>
+        useCombatSocket({
+          sessionId,
+          enabled: true,
+          createSocket: () => sockets.shift(),
+          onBeat,
+          fetchStatus,
+        }),
+      { initialProps: { sessionId: 'sess-1' } }
+    );
+
+    act(() => socketA.fire('combat:beat', beat(7)));
+    expect(onBeat).toHaveBeenCalledTimes(1);
+    expect(fetchStatus).not.toHaveBeenCalled();
+
+    hook.rerender({ sessionId: 'sess-2' });
+    expect(socketA.disconnect).toHaveBeenCalledTimes(1);
+
+    // seq 9 against a surviving high-water mark of 7 classifies as a GAP
+    // (9 > 7 + 1) and would fire a resync instead of delivering the beat. With
+    // the ref nulled, lastSeq is null, classifySeq returns 'next', and the beat
+    // is delivered with no network round-trip.
+    act(() => socketB.fire('combat:beat', beat(9)));
+    expect(fetchStatus).not.toHaveBeenCalled();
+    expect(onBeat).toHaveBeenCalledTimes(2);
+    expect(onBeat).toHaveBeenLastCalledWith(beat(9));
   });
 
   it('does nothing when disabled', () => {

@@ -56,6 +56,9 @@ function makeCtxStub() {
   }
 }
 
+/** The single 2d context handed to the embers canvas, so tests can read it. */
+let emberCtx
+
 describe('LandingPage', () => {
   let rafCallbacks
 
@@ -63,7 +66,8 @@ describe('LandingPage', () => {
     ioInstances = []
     global.IntersectionObserver = MockIntersectionObserver
 
-    HTMLCanvasElement.prototype.getContext = vi.fn(() => makeCtxStub())
+    emberCtx = makeCtxStub()
+    HTMLCanvasElement.prototype.getContext = vi.fn(() => emberCtx)
 
     rafCallbacks = []
     global.requestAnimationFrame = vi.fn((cb) => {
@@ -105,8 +109,33 @@ describe('LandingPage', () => {
 
   it('starts the ember canvas animation on mount and ticks the particle system', () => {
     render(<LandingPage />)
-    expect(global.requestAnimationFrame).toHaveBeenCalled()
+    // Was: a bare toHaveBeenCalled() on rAF followed by running the callbacks
+    // with NO assertion at all — the whole particle tick could have been an
+    // empty function body.
+    expect(global.requestAnimationFrame).toHaveBeenCalledTimes(2) // embers + lamp
+
+    // The first tick runs synchronously on mount: it clears the frame and draws
+    // all 60 seeded particles.
+    expect(emberCtx.clearRect).toHaveBeenCalledWith(0, 0, window.innerWidth, window.innerHeight)
+    expect(emberCtx.arc).toHaveBeenCalledTimes(60)
+    expect(emberCtx.beginPath).toHaveBeenCalledTimes(60)
+    expect(emberCtx.fill).toHaveBeenCalledTimes(60)
+    // Each particle is drawn with a positive radius and an rgba fill.
+    expect(emberCtx.arc.mock.calls[0][2]).toBeGreaterThan(0)
+    expect(emberCtx.fillStyle).toMatch(/^rgba\(/)
+
+    const firstPositions = emberCtx.arc.mock.calls.map(([x, y]) => `${x},${y}`)
+    emberCtx.arc.mockClear()
+
+    const before = rafCallbacks.length
     rafCallbacks.slice().forEach((cb) => act(() => cb()))
+
+    // The loop re-arms itself and redraws 60 particles at NEW positions —
+    // a tick that never advanced p.x/p.y would repeat the same coordinates.
+    expect(rafCallbacks.length).toBeGreaterThan(before)
+    expect(emberCtx.arc).toHaveBeenCalledTimes(60)
+    const secondPositions = emberCtx.arc.mock.calls.map(([x, y]) => `${x},${y}`)
+    expect(secondPositions).not.toEqual(firstPositions)
   })
 
   it('drives the oil-lamp cursor on pointer move', () => {
@@ -115,7 +144,21 @@ describe('LandingPage', () => {
       fireEvent.pointerMove(window, { clientX: 120, clientY: 80 })
     })
     rafCallbacks.slice().forEach((cb) => act(() => cb()))
-    expect(document.documentElement.style.getPropertyValue('--cx')).not.toBe('')
+
+    // The lamp eases toward the pointer (14% per frame) and the flame sits at a
+    // fixed offset from the lamp, so after one frame --cx/--cy must be finite
+    // px values that have moved TOWARD (120, 80) rather than merely "not empty".
+    const cx = parseFloat(document.documentElement.style.getPropertyValue('--cx'))
+    const cy = parseFloat(document.documentElement.style.getPropertyValue('--cy'))
+    expect(Number.isFinite(cx)).toBe(true)
+    expect(Number.isFinite(cy)).toBe(true)
+    expect(document.documentElement.style.getPropertyValue('--cx')).toMatch(/px$/)
+    expect(cx).toBeGreaterThan(0)
+    expect(cy).toBeGreaterThan(0)
+    // --flick is the lamp's flame flicker, clamped around 0.88 ± 0.1.
+    const flick = parseFloat(document.documentElement.style.getPropertyValue('--flick'))
+    expect(flick).toBeGreaterThan(0.7)
+    expect(flick).toBeLessThan(1.1)
   })
 
   it('reveals sections marked with .reveal / .character-prose on intersection', () => {
@@ -139,18 +182,47 @@ describe('LandingPage', () => {
     expect(litTargets.length).toBeGreaterThan(0)
   })
 
-  it('resizes the embers canvas when the window resizes', () => {
+  it('resizes the embers canvas to the new viewport in device pixels', () => {
     render(<LandingPage />)
+    const canvas = document.getElementById('lp-embers')
+    // Asserting only that the canvas still exists proved nothing: the resize
+    // listener could have been removed entirely. A canvas whose backing store
+    // does not track the viewport renders the embers stretched or clipped.
+    expect(emberCtx.scale).toHaveBeenCalledTimes(1) // the initial resize() call
+
+    window.innerWidth = 800
+    window.innerHeight = 600
+    window.devicePixelRatio = 2
     act(() => {
       fireEvent(window, new Event('resize'))
     })
-    const canvas = document.getElementById('lp-embers')
-    expect(canvas).toBeInTheDocument()
+
+    expect(canvas.width).toBe(1600)
+    expect(canvas.height).toBe(1200)
+    expect(canvas.style.width).toBe('800px')
+    expect(canvas.style.height).toBe('600px')
+    expect(emberCtx.scale).toHaveBeenCalledTimes(2)
+    expect(emberCtx.scale).toHaveBeenLastCalledWith(2, 2)
   })
 
-  it('cleans up observers and animation frames on unmount', () => {
+  it('cleans up observers, resize listeners and animation frames on unmount', () => {
     const { unmount } = render(<LandingPage />)
+    const observers = ioInstances.slice()
+    expect(observers.length).toBeGreaterThan(0)
+
     unmount()
-    expect(global.cancelAnimationFrame).toHaveBeenCalled()
+
+    // The old assertion named observers but only checked rAF, and only that it
+    // was called at all. Both animation loops must be cancelled, every observer
+    // disconnected, and the resize handler detached — otherwise navigating away
+    // from the landing page leaks a running rAF loop for the rest of the session.
+    expect(global.cancelAnimationFrame).toHaveBeenCalledTimes(2)
+    observers.forEach((io) => expect(io.disconnect).toHaveBeenCalledTimes(1))
+
+    emberCtx.scale.mockClear()
+    act(() => {
+      fireEvent(window, new Event('resize'))
+    })
+    expect(emberCtx.scale).not.toHaveBeenCalled()
   })
 })

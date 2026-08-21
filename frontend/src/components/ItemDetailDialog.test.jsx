@@ -2,7 +2,7 @@ import { render, screen, fireEvent, waitFor, within } from '@testing-library/rea
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import ItemDetailDialog from './ItemDetailDialog';
 import apiClient from '../api/client';
-import { makeInventoryItem } from '../test/payloads';
+import { makeInventoryItem, makeConsumableItem } from '../test/payloads';
 
 // Mock apiClient
 vi.mock('../api/client', () => ({
@@ -52,8 +52,89 @@ describe('ItemDetailDialog', () => {
 
     expect(screen.getAllByText('Iron Sword')[0]).toBeDefined();
     expect(screen.getByText('A sturdy iron sword.')).toBeDefined();
-    expect(screen.getByText(/5\.00 lb/i)).toBeDefined();
-    expect(screen.getByText(/100g/i)).toBeDefined();
+    expect(screen.getByText('5.00 lb')).toBeInTheDocument();
+    expect(screen.getByText('100g')).toBeInTheDocument();
+    // `subtype` drives the category cell, `rarity` the tier label, and the
+    // weapon block reads `damage`/`damage_type` — all InventoryItemSerializer
+    // keys. Asserting the values (not just that a node exists) is what makes a
+    // renamed field fail here instead of silently blanking the panel.
+    expect(screen.getByText('Sword')).toBeInTheDocument();
+    expect(screen.getAllByText(/common/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/10.*\(Piercing\)/)).toBeInTheDocument();
+  });
+
+  it('renders an untouched InventoryItemSerializer payload without test-local overrides', () => {
+    // Straight from test/payloads.js, whose shapes were captured from the real
+    // serializer. This is the guard against wire-field-name drift: if the
+    // dialog starts reading `count` instead of `quantity`, or an int `id`, this
+    // fails while every hand-rolled fixture in the file keeps agreeing with it.
+    const wireItem = makeInventoryItem();
+    render(<ItemDetailDialog item={wireItem} player={mockPlayer} onBack={mockOnBack} />);
+    expect(screen.getAllByText('Rusty Dagger').length).toBeGreaterThan(0);
+    expect(screen.getByText('Dagger')).toBeInTheDocument();
+    expect(screen.getByText('1.00 lb')).toBeInTheDocument();
+    expect(screen.getByText('10g')).toBeInTheDocument();
+    expect(screen.getByText(/5.*\(Piercing\)/)).toBeInTheDocument();
+    expect(screen.getByText(/A pitted, rust-flecked blade/)).toBeInTheDocument();
+    // can_equip / can_drop true, can_use / can_read false.
+    expect(screen.getByText(/Equip/)).toBeInTheDocument();
+    expect(screen.getByText(/Drop/)).toBeInTheDocument();
+    expect(screen.queryByText(/💊 Use/)).toBeNull();
+    expect(screen.queryByText(/📖 Read/)).toBeNull();
+  });
+
+  it('renders an untouched consumable payload with its Use affordance and effects', () => {
+    const potion = makeConsumableItem();
+    render(<ItemDetailDialog item={potion} player={mockPlayer} onBack={mockOnBack} />);
+    expect(screen.getAllByText('Restorative').length).toBeGreaterThan(0);
+    expect(screen.getByText('Potion')).toBeInTheDocument();
+    expect(screen.getByText('0.25 lb')).toBeInTheDocument();
+    expect(screen.getByText('100g')).toBeInTheDocument();
+    expect(screen.getByText(/💊 Use/)).toBeInTheDocument();
+    // The stack size is `quantity` (2), never the engine-side `count`: the Qty
+    // cell is gated on `item.quantity > 1`, so reading `count` would hide it.
+    expect(screen.getByText('Qty')).toBeInTheDocument();
+    expect(screen.getByText('×2')).toBeInTheDocument();
+    expect(screen.queryByText(/Equip/)).toBeNull();
+
+    // makeConsumableItem previously emitted `effects: [{type:'heal', amount:60}]`,
+    // a shape InventoryItemSerializer cannot produce — _CONSUMABLE_EFFECTS sends
+    // {type, stat, power, range}, with no `amount` key and `stat` required. That
+    // made this render the literal string "✦ Restores undefined Fatigue": the
+    // exact wire-field drift the payloads module exists to prevent, sitting
+    // inside the module itself. The factory now mirrors the serializer, so the
+    // untouched payload describes its effect correctly.
+    expect(screen.getByText('✦ Restores 48-72 HP')).toBeInTheDocument();
+    expect(screen.queryByText(/undefined/)).toBeNull();
+  });
+
+  it('describes a heal effect in the serializer\'s real {stat, power, range} shape', () => {
+    // The shape _CONSUMABLE_EFFECTS["Restorative"] actually emits.
+    const potion = makeConsumableItem({
+      effects: [{ type: 'heal', stat: 'hp', power: 60, range: [48, 72] }],
+    });
+    render(<ItemDetailDialog item={potion} player={mockPlayer} onBack={mockOnBack} />);
+    expect(screen.getByText('✦ Restores 48-72 HP')).toBeInTheDocument();
+    expect(screen.queryByText(/undefined/)).toBeNull();
+  });
+
+  it('describes a fatigue heal and a point-range heal from their serializer shapes', () => {
+    // Draught heals fatigue; DriedCrystalSap has a point range (min === max),
+    // which takes the singular branch of describeEffect.
+    render(
+      <ItemDetailDialog
+        item={makeConsumableItem({
+          effects: [
+            { type: 'heal', stat: 'fatigue', power: 100, range: [80, 120] },
+            { type: 'heal', stat: 'hp', power: 25, range: [25, 25] },
+          ],
+        })}
+        player={mockPlayer}
+        onBack={mockOnBack}
+      />
+    );
+    expect(screen.getByText('✦ Restores 80-120 Fatigue')).toBeInTheDocument();
+    expect(screen.getByText('✦ Restores 25 HP')).toBeInTheDocument();
   });
 
   it('handles equip action successfully', async () => {
@@ -733,7 +814,10 @@ describe('ItemDetailDialog', () => {
     })
   })
 
-  it('handles mouse events on buttons', () => {
+  it('lights the equip/drop buttons on hover and restores their resting colours', () => {
+    // This test used to fire mouseEnter/mouseLeave and assert NOTHING, so
+    // gutting both handlers left it green. Hover is the only affordance
+    // signalling these buttons are live, so pin the actual colour transitions.
     render(
       <ItemDetailDialog
         item={mockItem}
@@ -743,14 +827,41 @@ describe('ItemDetailDialog', () => {
       />
     );
 
-
     const equipButton = screen.getByText(/Equip/i);
+    expect(equipButton.style.backgroundColor).toBe('rgb(0, 102, 51)');   // #006633
     fireEvent.mouseEnter(equipButton);
+    expect(equipButton.style.backgroundColor).toBe('rgb(0, 153, 68)');   // #009944
+    expect(equipButton.style.boxShadow).toBe('0 0 8px rgba(0, 255, 136, 0.6)');
     fireEvent.mouseLeave(equipButton);
+    expect(equipButton.style.backgroundColor).toBe('rgb(0, 102, 51)');
+    expect(equipButton.style.boxShadow).toBe('none');
 
     const dropButton = screen.getByText(/Drop/i);
     fireEvent.mouseEnter(dropButton);
+    expect(dropButton.style.backgroundColor).toBe('rgb(153, 68, 68)');   // #994444
     fireEvent.mouseLeave(dropButton);
+    expect(dropButton.style.backgroundColor).toBe('rgb(102, 51, 51)');   // #663333
+  });
+
+  it('suppresses the hover highlight while an action is in flight', async () => {
+    // The `if (!isLoading)` guard in every onMouseEnter exists so a button
+    // mid-request does not look clickable. Nothing exercised it.
+    let resolvePost;
+    apiClient.post.mockReturnValue(new Promise((res) => { resolvePost = res; }));
+    render(
+      <ItemDetailDialog item={mockItem} player={mockPlayer} onClose={mockOnClose} onBack={mockOnBack} />
+    );
+    const equipButton = screen.getByText(/Equip/i);
+    fireEvent.click(equipButton);
+    await waitFor(() => expect(equipButton).toBeDisabled());
+    expect(equipButton.style.opacity).toBe('0.6');
+
+    fireEvent.mouseEnter(equipButton);
+    expect(equipButton.style.backgroundColor).toBe('rgb(0, 102, 51)');
+    expect(equipButton.style.boxShadow).toBe('');
+
+    resolvePost({ data: { success: true } });
+    await waitFor(() => expect(screen.getByText('✓ Item equipped!')).toBeInTheDocument());
   });
 
   // ---------------------------------------------------------------------------

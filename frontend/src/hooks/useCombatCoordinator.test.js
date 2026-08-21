@@ -86,12 +86,24 @@ describe('useCombatCoordinator', () => {
                 end_state: { id: 'victory-unmount', status: 'victory', message: 'You won!' },
                 log: []
             }
+            const playSting = vi.fn()
             const { unmount } = renderHook(() =>
-                useCombatCoordinator({ ...defaultParams, combat, inCombat: false })
+                useCombatCoordinator({ ...defaultParams, combat, inCombat: false, playSting })
             )
 
-            // Unmount before the delayed dialog timer fires — should clear it without throwing.
-            expect(() => unmount()).not.toThrow()
+            // A timer IS pending: it has not fired yet.
+            expect(vi.getTimerCount()).toBeGreaterThan(0)
+            expect(playSting).not.toHaveBeenCalled()
+
+            unmount()
+
+            // `not.toThrow()` was satisfied by an empty cleanup — React does not
+            // throw on a setState after unmount, it warns. The real proof is
+            // that the timer is gone, so advancing past the delay neither fires
+            // the victory fanfare nor touches the unmounted component's state.
+            expect(vi.getTimerCount()).toBe(0)
+            act(() => vi.advanceTimersByTime(5000))
+            expect(playSting).not.toHaveBeenCalled()
         })
 
         it('should show defeat dialog when combat ends with defeat', () => {

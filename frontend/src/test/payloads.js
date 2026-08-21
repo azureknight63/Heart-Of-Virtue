@@ -596,7 +596,12 @@ export function makeConsumableItem(overrides = {}) {
       quantity: 2,
       can_equip: false,
       can_use: true,
-      effects: [{ type: 'heal', amount: 60 }],
+      // Mirrors src/api/serializers/inventory.py::_CONSUMABLE_EFFECTS exactly.
+      // There is no `amount` key -- the serializer emits {type, stat, power,
+      // range}. This factory previously invented `amount`, which is the very
+      // wire-field drift this module exists to prevent: ItemDetailDialog read
+      // `stat`/`power` and rendered "Restores undefined Fatigue".
+      effects: [{ type: 'heal', stat: 'hp', power: 60, range: [48, 72] }],
     },
     overrides
   )
