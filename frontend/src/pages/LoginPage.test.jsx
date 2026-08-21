@@ -267,17 +267,37 @@ describe('LoginPage embers canvas effect', () => {
 
     const renderLoginPage = () => render(<MemoryRouter><LoginPage /></MemoryRouter>);
 
-    it('starts the ember particle animation and ticks it forward', () => {
-        renderLoginPage();
-        expect(global.requestAnimationFrame).toHaveBeenCalled();
+    // The ember canvas is a real side effect on a real 2D context: the tests
+    // below drive it through the stubbed context and assert what it DID, rather
+    // than `.not.toThrow()`, which passed for a loop that painted nothing.
+    const ctx = () => HTMLCanvasElement.prototype.getContext.mock.results.at(-1).value;
 
-        const tick = rafCallbacks[0];
-        expect(() => tick()).not.toThrow();
+    it('starts the ember particle animation and paints particles on each tick', () => {
+        renderLoginPage();
+        expect(global.requestAnimationFrame).toHaveBeenCalledTimes(1);
+
+        const before = ctx().arc.mock.calls.length;
+        rafCallbacks[0]();
+        // Each frame clears the canvas and draws every particle as an arc, then
+        // queues the next frame. `.not.toThrow()` proved none of this.
+        expect(ctx().clearRect).toHaveBeenCalledWith(0, 0, window.innerWidth, window.innerHeight);
+        expect(ctx().arc.mock.calls.length).toBeGreaterThan(before);
+        expect(global.requestAnimationFrame).toHaveBeenCalledTimes(2);
     });
 
-    it('resizes the embers canvas on window resize', () => {
+    it('resizes the embers canvas to the viewport on window resize', () => {
         renderLoginPage();
-        expect(() => fireEvent(window, new Event('resize'))).not.toThrow();
+        window.innerWidth = 800;
+        window.innerHeight = 600;
+        fireEvent(window, new Event('resize'));
+
+        const canvas = document.getElementById('login-embers');
+        // Backing store is scaled by DPR; the CSS box stays in CSS pixels.
+        expect(canvas.width).toBe(800 * window.devicePixelRatio);
+        expect(canvas.height).toBe(600 * window.devicePixelRatio);
+        expect(canvas.style.width).toBe('800px');
+        expect(canvas.style.height).toBe('600px');
+        expect(ctx().scale).toHaveBeenCalledWith(window.devicePixelRatio, window.devicePixelRatio);
     });
 
     it('stops the animation and removes the resize listener on unmount', () => {
@@ -287,8 +307,14 @@ describe('LoginPage embers canvas effect', () => {
         expect(global.cancelAnimationFrame).toHaveBeenCalledWith(lastFrame);
     });
 
-    it('does nothing when the canvas has no 2D context available', () => {
+    it('never starts the loop when the canvas has no 2D context available', () => {
+        // The early return matters: without it the effect would schedule frames
+        // that dereference a null context on every paint. `.not.toThrow()` on
+        // the RENDER alone could not see that, because the throw would happen a
+        // frame later.
         HTMLCanvasElement.prototype.getContext = vi.fn(() => null);
-        expect(() => renderLoginPage()).not.toThrow();
+        renderLoginPage();
+        expect(global.requestAnimationFrame).not.toHaveBeenCalled();
+        expect(screen.getByText('Heart of Virtue')).toBeInTheDocument();
     });
 });

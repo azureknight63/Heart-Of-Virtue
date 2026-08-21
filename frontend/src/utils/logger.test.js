@@ -248,7 +248,17 @@ describe('BrowserLogger', () => {
   });
 
   it('does nothing when destroy is called without having initialized', () => {
+    // `.not.toThrow()` alone would also pass for a destroy() that tore down a
+    // LIVE interceptor belonging to someone else. Prove it is a genuine no-op:
+    // the console stays intercepted and the flush timer stays armed.
     logger.isInitialized = false;
-    expect(() => logger.destroy()).not.toThrow();
+    const interceptedLog = console.log;
+    const timerBefore = logger.flushInterval;
+
+    logger.destroy();
+
+    expect(console.log).toBe(interceptedLog);
+    expect(logger.flushInterval).toBe(timerBefore);
+    expect(logger.isInitialized).toBe(false);
   });
 });

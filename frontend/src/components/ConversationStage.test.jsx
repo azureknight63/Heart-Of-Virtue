@@ -263,13 +263,32 @@ describe('ConversationStage rendering', () => {
             />
         )
         act(() => vi.advanceTimersByTime(3000))
-        expect(screen.getByAltText(/Amelia \(happy\)/i)).toBeDefined()
-        expect(screen.getByAltText(/Jean \(neutral\)/i)).toBeDefined()
+        // Assert the resolved portrait SOURCE, not merely that a node exists:
+        // the emotion in the alt text and the emotion baked into the src are
+        // computed separately, so a component that renders the right label over
+        // the wrong image passes a presence-only check.
+        expect(screen.getByAltText(/Amelia \(happy\)/i)).toHaveAttribute(
+            'src',
+            portraitUrl('Amelia', 'happy')
+        )
+        expect(screen.getByAltText(/Jean \(neutral\)/i)).toHaveAttribute(
+            'src',
+            portraitUrl('Jean', 'neutral')
+        )
     })
 
-    it('renders with defaults when no segments or conversation prop is passed', () => {
+    it('renders an empty, un-staged shell when no segments or conversation prop is passed', () => {
         render(<ConversationStage />)
-        expect(screen.getByTestId('conversation-stage')).toBeInTheDocument()
+        const stage = screen.getByTestId('conversation-stage')
+        // No cast column, no prose, no speaker label — an empty payload must
+        // produce a blank stage rather than a crash or a stray placeholder.
+        expect(stage.querySelectorAll('img')).toHaveLength(0)
+        expect(stage.textContent.trim()).toBe('\u25be click to finish')
+        // ...and clicking the empty stage completes rather than hanging.
+        const onComplete = vi.fn()
+        render(<ConversationStage onComplete={onComplete} />)
+        act(() => fireEvent.click(screen.getAllByTestId('conversation-stage')[1]))
+        expect(onComplete).toHaveBeenCalledTimes(1)
     })
 
     it('finishes the typewriter immediately on click instead of advancing', () => {
@@ -492,6 +511,8 @@ describe('ConversationStage rendering', () => {
 
     // The wrapper <div> around the <img> carries the composed portrait opacity.
     const portraitOpacity = (name) => Number(screen.getByAltText(new RegExp(name, 'i')).parentElement.style.opacity)
+    // Portrait.baseOpacity: the speaker renders at full ink, listeners at 0.85.
+    const LISTENER_OPACITY = 0.85
 
     const enterSegments = (transition) => [
         { text: 'Beat one.', speaker: 'Jean', emotion: 'neutral', in_conversation: true },
@@ -519,7 +540,9 @@ describe('ConversationStage rendering', () => {
         // values, so mounting straight at the target would not animate.
         expect(portraitOpacity('Mara')).toBe(0)
         act(() => vi.advanceTimersByTime(100)) // post-paint frame raises it
-        expect(portraitOpacity('Mara')).toBeGreaterThan(0)
+        // The frame must hand the node back to its real target opacity, not to
+        // some arbitrary non-zero value.
+        expect(portraitOpacity('Mara')).toBe(LISTENER_OPACITY)
     })
 
     it('keeps a faded-in portrait at full opacity across re-renders of the same beat', () => {
@@ -550,7 +573,10 @@ describe('ConversationStage rendering', () => {
         )
         act(() => vi.advanceTimersByTime(3000))
         act(() => fireEvent.click(screen.getByTestId('conversation-stage')))
-        expect(portraitOpacity('Mara')).toBeGreaterThan(0)
+        // Exact value, not just >0: Mara is a listener, so the composed opacity
+        // is the full 1 from computeStage times the 0.85 listener dim. A
+        // `>0` check passes even for a portrait stuck mid-fade at 0.01.
+        expect(portraitOpacity('Mara')).toBe(LISTENER_OPACITY)
     })
 
     it('advances beats on click and calls onComplete after the last beat', () => {
@@ -600,7 +626,6 @@ describe('ConversationStage renders every portrait/expression that exists on dis
             act(() => vi.advanceTimersByTime(5000))
 
             const img = screen.getByAltText(new RegExp(`${character} \\(${expression}\\)`, 'i'))
-            expect(img).toBeInTheDocument()
             expect(img.getAttribute('src')).toBe(portraitUrl(character, expression))
             expect(img.dataset.emotion).toBe(expression)
             expect(img.dataset.speakerSlug).toBe(character)

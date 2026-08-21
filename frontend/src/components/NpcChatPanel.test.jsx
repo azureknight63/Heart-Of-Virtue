@@ -392,62 +392,52 @@ describe('NpcChatPanel', () => {
 
   describe('Relationship Badge', () => {
     it('displays the relationship badge from the open response', async () => {
-      render(
-        <NpcChatPanel
-          npcId={mockNpcId}
-          npcName={mockNpcName}
-          onClose={mockOnClose}
-        />
-      )
+      renderPanel()
 
-      await waitFor(() => {
-        const badge = screen.getByTestId('relationship-badge')
-        expect(badge).toBeInTheDocument()
-        expect(badge).toHaveTextContent('neutral')
-        expect(badge).toHaveTextContent('Neutral')
-      })
+      const badge = await screen.findByTestId('relationship-badge')
+      // attitude, trust_level and emoji are three separate serializer fields;
+      // assert all three so a badge wired to the wrong one fails.
+      expect(badge).toHaveTextContent('neutral')
+      expect(badge).toHaveTextContent('Neutral')
+      expect(badge).toHaveTextContent('😐')
     })
 
     it('updates the relationship badge after a response', async () => {
+      // Built from the shared factory, not hand-written: NPCRelationshipSerializer
+      // renaming a field must break this test rather than pass against an
+      // invented shape the server never sends.
       npcChat.respond.mockResolvedValue({
-        data: {
+        data: makeNpcChatRespond({
           npc_response: 'I suppose you are not so bad.',
           jean_options: [],
           loquacity_current: 1,
-          loquacity_max: 5,
-          conversation_ended: false,
-          relationship: {
+          reputation: 30,
+          reputation_delta: 30,
+          relationship: makeRelationship({
             npc_id: 'Mynx the Swift',
             npc_name: 'Mynx the Swift',
             reputation: 30,
             attitude: 'favorable',
             emoji: '🙂',
             trust_level: 'Good Trust',
-          },
-        },
+          }),
+        }),
       })
 
-      render(
-        <NpcChatPanel
-          npcId={mockNpcId}
-          npcName={mockNpcName}
-          onClose={mockOnClose}
-        />
-      )
+      renderPanel()
 
+      // The badge opens on the *neutral* relationship from open()...
+      const badge = await screen.findByTestId('relationship-badge')
+      expect(badge).toHaveTextContent('neutral')
+
+      fireEvent.click(await screen.findByText('Hi there'))
+
+      // ...and is redrawn from the respond payload, emoji included.
       await waitFor(() => {
-        const buttons = screen.getAllByTestId('game-button')
-        expect(buttons.length).toBeGreaterThan(0)
+        expect(screen.getByTestId('relationship-badge')).toHaveTextContent('favorable')
       })
-
-      const buttons = screen.getAllByTestId('game-button')
-      fireEvent.click(buttons[0])
-
-      await waitFor(() => {
-        const badge = screen.getByTestId('relationship-badge')
-        expect(badge).toHaveTextContent('favorable')
-        expect(badge).toHaveTextContent('Good Trust')
-      })
+      expect(screen.getByTestId('relationship-badge')).toHaveTextContent('Good Trust')
+      expect(screen.getByTestId('relationship-badge')).toHaveTextContent('🙂')
     })
 
     it('omits the badge when no relationship data is present', async () => {
@@ -458,18 +448,15 @@ describe('NpcChatPanel', () => {
         },
       })
 
-      render(
-        <NpcChatPanel
-          npcId={mockNpcId}
-          npcName={mockNpcName}
-          onClose={mockOnClose}
-        />
+      renderPanel()
+
+      // Wait for the OPENING LINE, not for base-dialog: base-dialog renders
+      // before open() resolves, so the old wait let the negative assertion run
+      // against a panel that had not received the payload yet — it would have
+      // passed even if the badge appeared a tick later.
+      expect(await screen.findByTestId('typewriter')).toHaveTextContent(
+        'Well, well, what do we have here?'
       )
-
-      await waitFor(() => {
-        expect(screen.getByTestId('base-dialog')).toBeInTheDocument()
-      })
-
       expect(screen.queryByTestId('relationship-badge')).not.toBeInTheDocument()
     })
   })
@@ -676,7 +663,13 @@ describe('NpcChatPanel', () => {
       })
       render(<NpcChatPanel npcId={mockNpcId} npcName="Fallback Name" onClose={mockOnClose} />)
 
-      await waitFor(() => expect(screen.getByText('Fallback Name')).toBeInTheDocument())
+      // The prop must survive the response landing, and must be used to
+      // attribute the NPC's line too — not just appear somewhere on screen.
+      expect(await screen.findByTestId('typewriter')).toHaveTextContent(
+        'Well, well, what do we have here?'
+      )
+      expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent('Fallback Name')
+      expect(screen.getByTestId('typewriter').parentElement).toHaveTextContent('Fallback Name:')
     })
 
     it('defaults loquacity and jean_options when absent from the open response', async () => {
@@ -758,9 +751,8 @@ describe('NpcChatPanel', () => {
           relationship: { ...mockOpenResponse.data.relationship, attitude },
         },
       })
-      render(<NpcChatPanel npcId={mockNpcId} npcName={mockNpcName} onClose={mockOnClose} />)
-      await waitFor(() => expect(screen.getByTestId('relationship-badge')).toBeInTheDocument())
-      return screen.getByTestId('relationship-badge')
+      renderPanel()
+      return await screen.findByTestId('relationship-badge')
     }
 
     it('colors a wary/hostile/enemy attitude with the danger color', async () => {
@@ -769,8 +761,10 @@ describe('NpcChatPanel', () => {
     })
 
     it('colors an unrecognized attitude with the muted text color', async () => {
+      // `.not.toBe('')` passed for ANY colour, including the danger red the
+      // default branch must not use. Pin the real fallback (colors.text.muted).
       const badge = await renderWithAttitude('bemused')
-      expect(badge.style.color).not.toBe('')
+      expect(badge.style.color).toBe('rgb(136, 136, 136)')
     })
 
     it('colors a friendly attitude with the primary color', async () => {

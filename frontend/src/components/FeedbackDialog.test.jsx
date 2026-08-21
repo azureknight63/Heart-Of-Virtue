@@ -2,6 +2,13 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import FeedbackDialog from './FeedbackDialog';
 import { feedback as feedbackApi } from '../api/endpoints';
+import { colors } from '../styles/theme';
+
+/** jsdom serialises inline style colours as rgb(), so compare in that space. */
+const hexToRgb = (hex) => {
+  const n = parseInt(hex.slice(1), 16);
+  return `rgb(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255})`;
+};
 
 // FeedbackDialog uses useToast internally
 const mockToastSuccess = vi.fn();
@@ -23,183 +30,113 @@ describe('FeedbackDialog', () => {
     vi.clearAllMocks();
   });
 
-  it('defaults to the bug tab when no initialType is provided', () => {
-    render(<FeedbackDialog onClose={mockOnClose} />);
-    // The "Bug Report" tab button should exist and the bug form should be active
-    expect(screen.getByText(/Bug Report/i)).toBeDefined();
+  /**
+   * The three tab LABELS are always on screen — they are the tab buttons. So
+   * `getByText(/General Feedback/i)` proves nothing about which tab is open,
+   * which is what ~20 tests in this file used to assert. The observable
+   * signal is the active tab's styling plus the type-specific form it swaps in.
+   */
+  const TABS = [
+    // [initialType, tab label, the placeholder only that tab's form renders]
+    ['bug', 'Bug Report', /Short description of the bug/i],
+    ['general', 'General Feedback', /Summary of your feedback/i],
+    ['feature', 'Feature Request', /What feature would you like/i],
+  ];
+
+  /** The tab button element for a label. */
+  const tab = (label) => screen.getByText(new RegExp(label, 'i'));
+
+  /** Assert exactly one tab reads as active, and its form is the one mounted. */
+  const expectActiveTab = (label) => {
+    TABS.forEach(([, otherLabel]) => {
+      const el = tab(otherLabel);
+      if (otherLabel === label) {
+        expect(el.style.borderBottom).toBe(`2px solid ${hexToRgb(colors.primary)}`);
+        expect(el.style.color).toBe(hexToRgb(colors.primary));
+      } else {
+        expect(el.style.borderBottom).toBe('2px solid transparent');
+        expect(el.style.color).toBe(hexToRgb(colors.text.muted));
+      }
+    });
+    // ...and the title placeholder swaps with the tab, which is the only proof
+    // the FORM changed rather than just the tab chrome.
+    const [, , placeholder] = TABS.find(([, l]) => l === label);
+    expect(screen.getByPlaceholderText(placeholder)).toBeInTheDocument();
+  };
+
+  it.each(TABS)('opens on the %s tab when initialType says so', (type, label) => {
+    render(<FeedbackDialog onClose={mockOnClose} initialType={type} />);
+    expectActiveTab(label);
   });
 
-  it('opens on the general tab when initialType="general"', () => {
-    render(<FeedbackDialog onClose={mockOnClose} initialType="general" />);
-    // General feedback textarea/form should be visible, not the bug form
-    expect(screen.getByText(/General Feedback/i)).toBeDefined();
-    // The general message field should be present
-    expect(screen.getByPlaceholderText(/Share your thoughts/i)).toBeDefined();
-  });
-
-  it('opens on the feature tab when initialType="feature"', () => {
-    render(<FeedbackDialog onClose={mockOnClose} initialType="feature" />);
-    expect(screen.getByText(/Feature Request/i)).toBeDefined();
-  });
+  it.each([[undefined], ['invalid']])(
+    'falls back to the bug tab for an initialType of %s',
+    (initialType) => {
+      render(<FeedbackDialog onClose={mockOnClose} initialType={initialType} />);
+      expectActiveTab('Bug Report');
+    }
+  );
 
   describe('Tab Navigation', () => {
-    it('renders all feedback tabs', () => {
+    it('renders all three tabs as buttons', () => {
       render(<FeedbackDialog onClose={mockOnClose} />);
-      expect(screen.getByText(/Bug Report/i)).toBeDefined();
-      expect(screen.getByText(/General Feedback/i)).toBeDefined();
-      expect(screen.getByText(/Feature Request/i)).toBeDefined();
+      expect(TABS.map(([, label]) => tab(label).tagName)).toEqual(['BUTTON', 'BUTTON', 'BUTTON']);
     });
 
-    it('switches between tabs correctly', () => {
+    it('moves the active state as tabs are clicked', () => {
       render(<FeedbackDialog onClose={mockOnClose} />);
+      expectActiveTab('Bug Report');
 
-      fireEvent.click(screen.getByText(/Feature Request/i));
-      expect(screen.getByText(/Feature Request/i)).toBeDefined();
+      fireEvent.click(tab('Feature Request'));
+      expectActiveTab('Feature Request');
 
-      fireEvent.click(screen.getByText(/General Feedback/i));
-      expect(screen.getByText(/General Feedback/i)).toBeDefined();
+      fireEvent.click(tab('General Feedback'));
+      expectActiveTab('General Feedback');
     });
 
-    it('maintains active tab state', () => {
+    it('keeps the active tab across re-renders that do not change initialType', () => {
+      // initialType seeds state; a parent re-render must not reset the tab the
+      // player has since switched to.
       const { rerender } = render(<FeedbackDialog onClose={mockOnClose} initialType="feature" />);
-      expect(screen.getByText(/Feature Request/i)).toBeDefined();
+      fireEvent.click(tab('General Feedback'));
+      expectActiveTab('General Feedback');
 
       rerender(<FeedbackDialog onClose={mockOnClose} initialType="feature" />);
-      expect(screen.getByText(/Feature Request/i)).toBeDefined();
-    });
-  });
-
-  describe('Form Fields', () => {
-    it('bug report tab contains relevant fields', () => {
-      render(<FeedbackDialog onClose={mockOnClose} initialType="bug" />);
-      // Should have fields for bug description
-      expect(screen.getByText(/Bug Report/i)).toBeDefined();
+      expectActiveTab('General Feedback');
     });
 
-    it('general feedback tab contains message field', () => {
-      render(<FeedbackDialog onClose={mockOnClose} initialType="general" />);
-      expect(screen.getByPlaceholderText(/Share your thoughts/i)).toBeDefined();
-    });
-
-    it('feature request tab contains idea field', () => {
-      render(<FeedbackDialog onClose={mockOnClose} initialType="feature" />);
-      expect(screen.getByText(/Feature Request/i)).toBeDefined();
-    });
-  });
-
-  describe('Initialization Types', () => {
-    it('initializes with "bug" type', () => {
-      render(<FeedbackDialog onClose={mockOnClose} initialType="bug" />);
-      expect(screen.getByText(/Bug Report/i)).toBeDefined();
-    });
-
-    it('initializes with "general" type', () => {
-      render(<FeedbackDialog onClose={mockOnClose} initialType="general" />);
-      expect(screen.getByText(/General Feedback/i)).toBeDefined();
-    });
-
-    it('initializes with "feature" type', () => {
-      render(<FeedbackDialog onClose={mockOnClose} initialType="feature" />);
-      expect(screen.getByText(/Feature Request/i)).toBeDefined();
-    });
-
-    it('handles invalid initialType by defaulting to bug', () => {
-      render(<FeedbackDialog onClose={mockOnClose} initialType="invalid" />);
-      // Should still render without error
-      expect(screen.getByText).toBeDefined();
-    });
-
-    it('handles undefined initialType', () => {
-      render(<FeedbackDialog onClose={mockOnClose} initialType={undefined} />);
-      expect(screen.getByText(/Bug Report/i)).toBeDefined();
+    it('lands on the tab last clicked after rapid switching', () => {
+      render(<FeedbackDialog onClose={mockOnClose} />);
+      for (let i = 0; i < 5; i++) {
+        fireEvent.click(tab('Feature Request'));
+        fireEvent.click(tab('General Feedback'));
+        fireEvent.click(tab('Bug Report'));
+      }
+      expectActiveTab('Bug Report');
     });
   });
 
   describe('Dialog Interactions', () => {
-    it('calls onClose when dialog is closed', () => {
-      const { container } = render(<FeedbackDialog onClose={mockOnClose} />);
-
-      // Try to find and click a close button if it exists
-      const buttons = screen.queryAllByRole('button');
-      const closeButton = buttons.find(btn => btn.textContent.includes('Close') || btn.textContent.includes('X'));
-
-      if (closeButton) {
-        fireEvent.click(closeButton);
-        expect(mockOnClose).toHaveBeenCalled();
-      } else {
-        // Dialog might close on other events
-        expect(container).toBeInTheDocument();
-      }
-    });
-
-    it('handles rapid tab switching', () => {
+    it('calls onClose when the dialog close control is used', () => {
+      // The old version searched for a close button and, when it found none,
+      // asserted `container` was in the document instead — so a dialog with no
+      // way to close it passed.
       render(<FeedbackDialog onClose={mockOnClose} />);
+      fireEvent.click(screen.getByText('\u2715'));
+      expect(mockOnClose).toHaveBeenCalledTimes(1);
+    });
 
-      for (let i = 0; i < 5; i++) {
-        fireEvent.click(screen.getByText(/Feature Request/i));
-        fireEvent.click(screen.getByText(/General Feedback/i));
-        fireEvent.click(screen.getByText(/Bug Report/i));
+    it.each([[undefined], [null]])(
+      'renders and stays interactive when onClose is %s',
+      (onClose) => {
+        // `expect(render).not.toThrow()` said nothing about the dialog still
+        // working. Type a title and switch tabs to prove it is live.
+        render(<FeedbackDialog onClose={onClose} initialType="bug" />);
+        expectActiveTab('Bug Report');
+        fireEvent.click(tab('Feature Request'));
+        expectActiveTab('Feature Request');
       }
-
-      expect(screen.getByText(/Bug Report/i)).toBeDefined();
-    });
-
-    it('renders properly after multiple re-renders', () => {
-      const { rerender } = render(<FeedbackDialog onClose={mockOnClose} />);
-
-      for (let i = 0; i < 3; i++) {
-        rerender(<FeedbackDialog onClose={mockOnClose} />);
-      }
-
-      expect(screen.getByText(/Bug Report/i)).toBeDefined();
-    });
-  });
-
-  describe('Accessibility', () => {
-    it('renders dialog with proper structure', () => {
-      const { container } = render(<FeedbackDialog onClose={mockOnClose} />);
-      expect(container.firstChild).toBeDefined();
-    });
-
-    it('tabs are keyboard accessible', () => {
-      render(<FeedbackDialog onClose={mockOnClose} />);
-      const tabs = screen.queryAllByRole('button');
-      expect(tabs.length).toBeGreaterThan(0);
-    });
-  });
-
-  describe('Rendering States', () => {
-    it('renders with default props', () => {
-      render(<FeedbackDialog onClose={mockOnClose} />);
-      expect(screen.getByText(/Bug Report/i)).toBeDefined();
-    });
-
-    it('renders with partial props', () => {
-      render(<FeedbackDialog onClose={mockOnClose} initialType="feature" />);
-      expect(screen.getByText(/Feature Request/i)).toBeDefined();
-    });
-
-    it('maintains content across re-renders', () => {
-      const { rerender } = render(<FeedbackDialog onClose={mockOnClose} initialType="general" />);
-      expect(screen.getByText(/General Feedback/i)).toBeDefined();
-
-      rerender(<FeedbackDialog onClose={mockOnClose} initialType="general" />);
-      expect(screen.getByText(/General Feedback/i)).toBeDefined();
-    });
-  });
-
-  describe('Error Handling', () => {
-    it('renders without crashing if onClose is undefined', () => {
-      expect(() => {
-        render(<FeedbackDialog onClose={undefined} />);
-      }).not.toThrow();
-    });
-
-    it('renders without crashing if onClose is null', () => {
-      expect(() => {
-        render(<FeedbackDialog onClose={null} />);
-      }).not.toThrow();
-    });
+    );
   });
 
   describe('bug form fields', () => {
@@ -214,11 +151,34 @@ describe('FeedbackDialog', () => {
       expect(screen.getByPlaceholderText(/What actually happened/i).value).toBe('Crashes');
     });
 
-    it('defaults to medium severity and switches to high on click', () => {
+    it('defaults to medium severity, switches to high on click, and submits it', async () => {
+      // The old check (`expect(highButton).toBeInTheDocument()`) passed whether
+      // or not the click changed anything. Severity is visible as the button's
+      // own colour AND is carried in the submitted payload — assert both.
+      feedbackApi.submitIssue.mockResolvedValue({ success: true });
       render(<FeedbackDialog onClose={mockOnClose} initialType="bug" />);
-      const highButton = screen.getByText('high');
-      fireEvent.click(highButton);
-      expect(highButton).toBeInTheDocument();
+
+      const sev = (name) => screen.getByText(name);
+      const SEVERITY_COLOR = { low: colors.gold, medium: colors.secondary, high: colors.danger };
+      const isActive = (name) => sev(name).style.color === hexToRgb(SEVERITY_COLOR[name]);
+
+      expect(['low', 'medium', 'high'].filter(isActive)).toEqual(['medium']);
+
+      fireEvent.click(sev('high'));
+      expect(['low', 'medium', 'high'].filter(isActive)).toEqual(['high']);
+
+      fireEvent.change(screen.getByPlaceholderText(/Short description of the bug/i), {
+        target: { value: 'Crash' },
+      });
+      fireEvent.click(screen.getByText('Submit Feedback'));
+      await waitFor(() => {
+        expect(feedbackApi.submitIssue).toHaveBeenCalledWith(
+          'bug',
+          'Crash',
+          expect.objectContaining({ severity: 'high' }),
+          false
+        );
+      });
     });
   });
 
@@ -257,11 +217,20 @@ describe('FeedbackDialog', () => {
       expect(screen.queryByText('4/5')).not.toBeInTheDocument();
     });
 
-    it('shows hover feedback on stars without throwing', () => {
+    it('previews a rating on hover and reverts it on leave', () => {
       render(<FeedbackDialog onClose={mockOnClose} initialType="general" />);
-      const star = screen.getAllByTitle('1 star')[0];
-      expect(() => fireEvent.mouseEnter(star)).not.toThrow();
-      expect(() => fireEvent.mouseLeave(star)).not.toThrow();
+      // Hovering star 3 must fill 1-3 and leave 4-5 empty; leaving reverts to
+      // the unrated state. `.not.toThrow()` proved none of that.
+      const stars = [1, 2, 3, 4, 5].map(
+        (n) => screen.getAllByTitle(n === 1 ? '1 star' : `${n} stars`)[0]
+      );
+      const glyphs = () => stars.map((s) => s.textContent);
+
+      expect(glyphs()).toEqual(['☆', '☆', '☆', '☆', '☆']);
+      fireEvent.mouseEnter(stars[2]);
+      expect(glyphs()).toEqual(['★', '★', '★', '☆', '☆']);
+      fireEvent.mouseLeave(stars[2]);
+      expect(glyphs()).toEqual(['☆', '☆', '☆', '☆', '☆']);
     });
   });
 
@@ -278,24 +247,43 @@ describe('FeedbackDialog', () => {
   });
 
   describe('tab hover state', () => {
-    it('applies and clears hover color on an inactive tab', () => {
+    it('brightens an inactive tab on hover and restores it on leave', () => {
       render(<FeedbackDialog onClose={mockOnClose} initialType="bug" />);
       const featureTab = screen.getByText(/Feature Request/i);
-      expect(() => fireEvent.mouseEnter(featureTab)).not.toThrow();
-      expect(() => fireEvent.mouseLeave(featureTab)).not.toThrow();
+
+      expect(featureTab.style.color).toBe(hexToRgb(colors.text.muted));
+      fireEvent.mouseEnter(featureTab);
+      expect(featureTab.style.color).toBe(hexToRgb(colors.text.main));
+      fireEvent.mouseLeave(featureTab);
+      expect(featureTab.style.color).toBe(hexToRgb(colors.text.muted));
+    });
+
+    it('leaves the ACTIVE tab colour untouched on hover', () => {
+      // The handler is guarded on `!active`; without this case the guard could
+      // be deleted and every test still passed.
+      render(<FeedbackDialog onClose={mockOnClose} initialType="bug" />);
+      const bugTab = screen.getByText(/Bug Report/i);
+      fireEvent.mouseEnter(bugTab);
+      expect(bugTab.style.color).toBe(hexToRgb(colors.primary));
+      fireEvent.mouseLeave(bugTab);
+      expect(bugTab.style.color).toBe(hexToRgb(colors.primary));
     });
   });
 
   describe('text input/area focus styling', () => {
-    it('changes border color on focus and blur without throwing', () => {
+    it.each([
+        ['single-line input', /Short description of the bug/i],
+        ['textarea', /Go to.../i],
+    ])('highlights the %s border on focus and dims it on blur', (_kind, placeholder) => {
       render(<FeedbackDialog onClose={mockOnClose} initialType="bug" />);
-      const titleInput = screen.getByPlaceholderText(/Short description of the bug/i);
-      expect(() => fireEvent.focus(titleInput)).not.toThrow();
-      expect(() => fireEvent.blur(titleInput)).not.toThrow();
+      const field = screen.getByPlaceholderText(placeholder);
 
-      const stepsArea = screen.getByPlaceholderText(/Go to.../i);
-      expect(() => fireEvent.focus(stepsArea)).not.toThrow();
-      expect(() => fireEvent.blur(stepsArea)).not.toThrow();
+      fireEvent.focus(field);
+      expect(field.style.borderColor).toBe(hexToRgb(colors.primary));
+      fireEvent.blur(field);
+      // Blur restores the 40%-alpha variant (`${colors.primary}66`).
+      expect(field.style.borderColor).not.toBe(hexToRgb(colors.primary));
+      expect(field.style.borderColor).not.toBe('');
     });
   });
 
@@ -325,7 +313,10 @@ describe('FeedbackDialog', () => {
         );
       });
       expect(mockToastSuccess).toHaveBeenCalledWith('Feedback submitted! Thank you.');
-      expect(mockOnClose).toHaveBeenCalled();
+      // Exactly once: a success path that closed the dialog twice would leave a
+      // second dismissal queued behind whatever the player opened next.
+      expect(mockOnClose).toHaveBeenCalledTimes(1);
+      expect(mockToastError).not.toHaveBeenCalled();
     });
 
     it('submits with anonymous=true when the toggle is checked', async () => {

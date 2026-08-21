@@ -82,7 +82,7 @@ describe('MainMenuPage', () => {
         );
 
         await waitFor(() => {
-            expect(screen.getByText(/Continue/i)).toBeDefined();
+            expect(screen.getByText(/Continue/i)).toBeInTheDocument();
         });
     });
 
@@ -155,7 +155,7 @@ describe('MainMenuPage', () => {
         fireEvent.click(screen.getByText(/Load Game/i));
 
         await waitFor(() => {
-            expect(screen.getByText(/Save 1/i)).toBeDefined();
+            expect(screen.getByText(/Save 1/i)).toBeInTheDocument();
         });
     });
 
@@ -175,7 +175,7 @@ describe('MainMenuPage', () => {
             </MemoryRouter>
         );
 
-        await waitFor(() => expect(screen.getByText(/Continue/i)).toBeDefined());
+        expect(await screen.findByText(/Continue/i)).toBeInTheDocument();
 
         fireEvent.click(screen.getAllByText(/Load Game/i)[0]);
 
@@ -203,7 +203,7 @@ describe('MainMenuPage', () => {
         );
 
         fireEvent.click(screen.getByText(/Settings/i));
-        expect(screen.getByText(/Audio Settings/i)).toBeDefined();
+        expect(screen.getByText(/Audio Settings/i)).toBeInTheDocument();
     });
 
     it('opens credits modal on Credits click', async () => {
@@ -215,7 +215,7 @@ describe('MainMenuPage', () => {
         );
 
         fireEvent.click(screen.getByText(/Credits/i));
-        expect(screen.getByText(/The Development Team/i)).toBeDefined();
+        expect(screen.getByText(/The Development Team/i)).toBeInTheDocument();
     });
 
     it('navigates to login on Logout click', async () => {
@@ -649,15 +649,35 @@ describe('MainMenuPage embers canvas effect', () => {
 
     const renderMenu = () => render(<MemoryRouter><MainMenuPage /></MemoryRouter>);
 
-    it('starts and ticks the ember particle animation', () => {
+    // The ember canvas is a real side effect on a real 2D context: assert what
+    // the loop DID, rather than `.not.toThrow()`, which passed equally for a
+    // loop that painted nothing at all.
+    const ctx = () => HTMLCanvasElement.prototype.getContext.mock.results.at(-1).value;
+
+    it('starts the ember particle animation and paints particles on each tick', () => {
         renderMenu();
-        expect(global.requestAnimationFrame).toHaveBeenCalled();
-        expect(() => rafCallbacks[0]()).not.toThrow();
+        expect(global.requestAnimationFrame).toHaveBeenCalledTimes(1);
+
+        const before = ctx().arc.mock.calls.length;
+        rafCallbacks[0]();
+        expect(ctx().clearRect).toHaveBeenCalledWith(0, 0, window.innerWidth, window.innerHeight);
+        expect(ctx().arc.mock.calls.length).toBeGreaterThan(before);
+        // ...and queues the next frame, so the loop actually loops.
+        expect(global.requestAnimationFrame).toHaveBeenCalledTimes(2);
     });
 
-    it('resizes the embers canvas on window resize', () => {
+    it('resizes the embers canvas to the viewport on window resize', () => {
         renderMenu();
-        expect(() => fireEvent(window, new Event('resize'))).not.toThrow();
+        window.innerWidth = 1024;
+        window.innerHeight = 768;
+        fireEvent(window, new Event('resize'));
+
+        const canvas = document.getElementById('menu-embers');
+        expect(canvas.width).toBe(1024 * window.devicePixelRatio);
+        expect(canvas.height).toBe(768 * window.devicePixelRatio);
+        expect(canvas.style.width).toBe('1024px');
+        expect(canvas.style.height).toBe('768px');
+        expect(ctx().scale).toHaveBeenCalledWith(window.devicePixelRatio, window.devicePixelRatio);
     });
 
     it('stops the animation and removes the resize listener on unmount', () => {
@@ -669,8 +689,12 @@ describe('MainMenuPage embers canvas effect', () => {
         expect(global.cancelAnimationFrame).toHaveBeenCalledWith(lastFrame);
     });
 
-    it('does nothing when the canvas has no 2D context available', () => {
+    it('never starts the loop when the canvas has no 2D context available', () => {
+        // Without the early return the effect would schedule frames that
+        // dereference a null context on the NEXT paint — a throw the old
+        // render-only `.not.toThrow()` could never observe.
         HTMLCanvasElement.prototype.getContext = vi.fn(() => null);
-        expect(() => renderMenu()).not.toThrow();
+        renderMenu();
+        expect(global.requestAnimationFrame).not.toHaveBeenCalled();
     });
 });
