@@ -72,6 +72,33 @@ class _JSONTools:
         return str(content) if content else None
 
     @staticmethod
+    def _strip_thinking_tokens(text: str) -> str:
+        """Strip chain-of-thought tokens from models that wrap reasoning in XML-like tags.
+
+        Handles:
+          - ``...`` blocks anywhere in the text
+          - Trailing/leading ``...`` sections around the real answer
+          - Any ``<think>`` opener without a closing tag (drops everything to end)
+        """
+        import re
+
+        # Drop any ``...`` blocks, including multiline
+        text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
+
+        # Drop an unmatched opening `` at the start — models sometimes emit
+        # reasoning first and never close the tag before returning JSON.
+        if text.startswith("<think>"):
+            close = text.find("</think>")
+            if close == -1:
+                # Never closed; drop the entire response to avoid leaking reasoning
+                # into JSON parsing. Return empty so the caller can fallback.
+                return ""
+
+        # Collapse residual blank lines
+        text = re.sub(r"\n{3,}", "\n\n", text)
+        return text.strip()
+
+    @staticmethod
     def sanitize_text(text: str) -> str:
         # Remove surrounding quotes if present and collapse whitespace
         t = text.strip()
@@ -134,7 +161,6 @@ class GenericLLMClient:
         self.enabled = os.getenv("MYNX_LLM_ENABLED", "0") in ("1", "true", "True")
         self.provider = os.getenv("MYNX_LLM_PROVIDER", "").strip().lower() or "ollama"
         self.model = os.getenv("MYNX_LLM_MODEL", "").strip() or "auto"
-        logger.info(f"Initializing GenericLLMClient (Provider: {self.provider}, Model: {self.model}, Enabled: {self.enabled})")
         self.base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434").strip()
 
         # OpenRouter specific configuration
@@ -145,6 +171,11 @@ class GenericLLMClient:
         # Probe availability lazily; we don't want to fail import-time
         self._available: Optional[bool] = None
         self._unavailable_reason: Optional[str] = None
+
+        logger.info(
+            "GenericLLMClient init enabled=%s provider=%s model=%s api_key_set=%s",
+            self.enabled, self.provider, self.model, bool(self._openrouter_api_key),
+        )
 
         # Discover models (singleton: discovery only runs once per process)
         if self.enabled:
@@ -244,14 +275,13 @@ class GenericLLMClient:
         return True
 
     @classmethod
-    def _rank_models(cls, all_models: List[dict], priority_ids: set) -> List[str]:
+    def _rank_models(cls, all_models: List[dict]) -> List[str]:
         """Filter to free text-only models, deduplicate, rank, and return IDs.
 
-        Ranking axes (same priority order as Chester's modelManager.js):
-          1. Priority category (roleplay/gaming) tagged first
-          2. Recency (newer created timestamp = more maintained)
-          3. Context window size (smallest = fastest / lightest)
-          4. Stable alphabetical tiebreaker
+        Ranking axes:
+          1. Recency (newer created timestamp = more maintained / better instruction following)
+          2. Context window size (smallest = fastest / lightest per request)
+          3. Stable alphabetical tiebreaker
         """
         seen: set = set()
         eligible = []
@@ -265,16 +295,15 @@ class GenericLLMClient:
             eligible.append(m)
 
         eligible.sort(key=lambda m: (
-            0 if m["id"] in priority_ids else 1,   # 1. priority category first
-            -(m.get("created") or 0),               # 2. newest first (negate for DESC)
-            m.get("context_length") or float("inf"),# 3. smallest context first
-            m["id"],                                # 4. stable tiebreaker
+            -(m.get("created") or 0),               # 1. newest first
+            m.get("context_length") or float("inf"), # 2. smallest context first
+            m["id"],                                 # 3. stable tiebreaker
         ))
         return [m["id"] for m in eligible]
 
     @classmethod
     def _fetch_and_rank_models(cls, api_key: str) -> List[str]:
-        """Fetch all free OpenRouter models, merge with gaming category, rank, cache."""
+        """Fetch all free OpenRouter models, filter to text-capable, rank, cache."""
         headers = {
             "Authorization": f"Bearer {api_key}",
             "HTTP-Referer": os.getenv("OPENROUTER_SITE", ""),
@@ -286,41 +315,20 @@ class GenericLLMClient:
             r.raise_for_status()
             return r.json().get("data", [])
 
-        # Fetch the gaming/roleplay category and all models in parallel via threads
-        priority_raw: List[dict] = []
+        # Fetch all models. The free-text filter and recency-based ranking below
+        # automatically prefer capable, maintained models regardless of category tag.
         all_raw: List[dict] = []
         errors: List[str] = []
 
-        def fetch_priority():
-            try:
-                # Try 'gaming' first; fall back to 'roleplay'
-                for cat in ("gaming", "roleplay"):
-                    data = fetch(f"https://openrouter.ai/api/v1/models?category={cat}")
-                    if data:
-                        priority_raw.extend(data)
-                        return
-            except Exception as e:
-                errors.append(str(e))
-
-        def fetch_all():
-            try:
-                all_raw.extend(fetch("https://openrouter.ai/api/v1/models"))
-            except Exception as e:
-                errors.append(str(e))
-
-        t1 = threading.Thread(target=fetch_priority, daemon=True)
-        t2 = threading.Thread(target=fetch_all, daemon=True)
-        t1.start(); t2.start()
-        t1.join(timeout=12); t2.join(timeout=12)
+        try:
+            all_raw.extend(fetch("https://openrouter.ai/api/v1/models"))
+        except Exception as e:
+            errors.append(str(e))
 
         if not all_raw:
             raise RuntimeError(f"Failed to fetch OpenRouter models: {'; '.join(errors)}")
 
-        priority_ids = {m.get("id") for m in priority_raw if m.get("id")}
-        # Priority models lead the merged list so deduplication in _rank_models
-        # always retains the priority copy when IDs overlap.
-        merged = priority_raw + all_raw
-        ranked = cls._rank_models(merged, priority_ids)
+        ranked = cls._rank_models(all_raw)
 
         if not ranked:
             raise RuntimeError("No suitable free text-only models found on OpenRouter.")
@@ -424,9 +432,11 @@ class GenericLLMClient:
     def _validate_and_fallback_openrouter(self):
         """Test the current model and fallback through others until one works."""
         if not self.enabled or not self._openrouter_api_key:
+            logger.debug("OpenRouter validation skipped: enabled=%s api_key_set=%s", self.enabled, bool(self._openrouter_api_key))
             return
 
-        logger.info(f"Validating OpenRouter model: {self.model}")
+        logger.info("Validating OpenRouter model: %s", self.model)
+        start_model = self.model
 
         # Tiny test chat to verify connectivity and availability (short timeout)
         def test_one(m_id: str) -> bool:
@@ -439,11 +449,11 @@ class GenericLLMClient:
                 return False
 
         if test_one(self.model):
-            logger.info(f"Primary model {self.model} verified.")
+            logger.info("Primary model %s verified.", self.model)
             self._available = True
             return
 
-        logger.debug(f"Primary model {self.model} failed. Searching for fallback...")
+        logger.debug("Primary model %s failed. Searching for fallback...", self.model)
         self._mark_model_failed(self.model, duration_minutes=30)
 
         # Build candidate list: dynamic free cache first, then static stable list
@@ -456,17 +466,21 @@ class GenericLLMClient:
 
         for cand in candidates[:5]:  # Try at most 5 fallbacks during validation
             if self._is_model_failed(cand):
+                logger.debug("Skipping already-failed OpenRouter fallback candidate: %s", cand)
                 continue
-            logger.info(f"Testing fallback: {cand}")
+            logger.info("Testing fallback: %s", cand)
             if test_one(cand):
-                logger.info(f"Found working fallback: {cand}")
+                logger.info("Found working fallback: %s", cand)
                 self.model = cand
                 self._available = True
                 return
             else:
                 self._mark_model_failed(cand, duration_minutes=15)
 
-        logger.error("All OpenRouter models failed validation. Disabling LLM.")
+        logger.error(
+            "OpenRouter validation failed: all candidates failed. start_model=%s candidates=%s disabled=%s",
+            start_model, candidates[:5], self.enabled,
+        )
         self._available = False
         self.enabled = False
 
@@ -525,49 +539,74 @@ class GenericLLMClient:
         }
 
     def generate_plain(self, system_prompt: str, user_prompt: str) -> Optional[str]:
+        logger.info(
+            "generate_plain start provider=%s model=%s structured=False prompt_chars=%s",
+            self.provider, self.model, len(system_prompt) + len(user_prompt),
+        )
         if not self.available():
+            logger.warning("generate_plain aborted: LLM not available. provider=%s", self.provider)
             return None
-        if self.provider == "ollama":
-            res = self._ollama_chat(system_prompt=system_prompt, user_prompt=user_prompt, structured=False)
-        elif self.provider == "openrouter":
-            res = self._openrouter_chat(system_prompt=system_prompt, user_prompt=user_prompt, structured=False)
-        else:
+        try:
+            if self.provider == "ollama":
+                res = self._ollama_chat(system_prompt=system_prompt, user_prompt=user_prompt, structured=False)
+            elif self.provider == "openrouter":
+                res = self._openrouter_chat(system_prompt=system_prompt, user_prompt=user_prompt, structured=False)
+            else:
+                logger.error("generate_plain unknown provider=%s", self.provider)
+                return None
+
+            if res is None:
+                logger.warning("generate_plain received None from provider=%s model=%s", self.provider, self.model)
+                return None
+
+            # If the model ignored our 'plain-text' request and returned JSON anyway,
+            # try to extract the 'description' field.
+            if isinstance(res, str) and (res.strip().startswith("{") or "```json" in res.lower()):
+                obj = _JSONTools.try_parse_json(res)
+                if isinstance(obj, dict):
+                    desc = obj.get("description") or obj.get("action") or obj.get("text")
+                    if desc:
+                        logger.info("generate_plain extracted plain text from JSON wrapper. model=%s", self.model)
+                        return _JSONTools.sanitize_text(str(desc))
+
+            logger.info("generate_plain succeeded. model=%s result_type=%s result_chars=%s", self.model, type(res).__name__, len(str(res)))
+            return str(res)
+        except Exception as e:
+            logger.error("generate_plain exception provider=%s model=%s error=%s", self.provider, self.model, e, exc_info=True)
             return None
-
-        if not res:
-            return None
-
-        # If the model ignored our 'plain-text' request and returned JSON anyway,
-        # try to extract the 'description' field.
-        if isinstance(res, str) and (res.strip().startswith("{") or "```json" in res.lower()):
-            obj = _JSONTools.try_parse_json(res)
-            if isinstance(obj, dict):
-                desc = obj.get("description") or obj.get("action") or obj.get("text")
-                if desc:
-                    return _JSONTools.sanitize_text(str(desc))
-
-        return str(res)
 
     def generate_structured(self, system_prompt: str, user_prompt: str) -> Optional[Dict[str, Any]]:
+        logger.info(
+            "generate_structured start provider=%s model=%s prompt_chars=%s",
+            self.provider, self.model, len(system_prompt) + len(user_prompt),
+        )
         if not self.available():
-            logger.warning("generate_structured called but LLM is not available.")
+            logger.warning("generate_structured aborted: LLM not available. provider=%s", self.provider)
             return None
+        try:
+            if self.provider == "ollama":
+                res = self._ollama_chat(system_prompt=system_prompt, user_prompt=user_prompt, structured=True)
+            elif self.provider == "openrouter":
+                res = self._openrouter_chat(system_prompt=system_prompt, user_prompt=user_prompt, structured=True)
+            else:
+                logger.error("generate_structured unknown provider=%s", self.provider)
+                return None
 
-        logger.info(f"generate_structured using provider: {self.provider}")
-        if self.provider == "ollama":
-            res = self._ollama_chat(system_prompt=system_prompt, user_prompt=user_prompt, structured=True)
-        elif self.provider == "openrouter":
-            res = self._openrouter_chat(system_prompt=system_prompt, user_prompt=user_prompt, structured=True)
-        else:
-            logger.error(f"generate_structured encountered unknown provider: {self.provider}")
+            if res is None:
+                logger.warning("generate_structured received None from provider=%s model=%s", self.provider, self.model)
+                return None
+            if not isinstance(res, dict):
+                logger.warning("generate_structured received non-dict from provider=%s model=%s type=%s", self.provider, self.model, type(res).__name__)
+                return None
+
+            logger.info(
+                "generate_structured succeeded. provider=%s model=%s keys=%s",
+                self.provider, self.model, sorted(res.keys()),
+            )
+            return res
+        except Exception as e:
+            logger.error("generate_structured exception provider=%s model=%s error=%s", self.provider, self.model, e, exc_info=True)
             return None
-
-        if res is None:
-            logger.warning(f"generate_structured received None from provider {self.provider}")
-        elif not isinstance(res, dict):
-            logger.warning(f"generate_structured received non-dict from provider {self.provider}: {type(res)}")
-
-        return res
 
     # ------------------------------------------------------------------
     # Provider: Ollama (local)
@@ -589,9 +628,11 @@ class GenericLLMClient:
                 "num_ctx": 4096,
             },
         }
+        logger.info("_ollama_chat start model=%s structured=%s url=%s", self.model, structured, url)
         try:
             r = requests.post(url, json=payload, timeout=30)
             if r.status_code != 200:
+                logger.warning("_ollama_chat HTTP %s from %s", r.status_code, url)
                 return None
             content = None
             try:
@@ -633,10 +674,14 @@ class GenericLLMClient:
                 content = raw.strip()
 
             if structured:
-                obj = _JSONTools.try_parse_json(content)
-                return obj
+                parsed = _JSONTools.try_parse_json(content or "")
+                if parsed is None:
+                    logger.warning("_ollama_chat returned non-JSON for structured request. model=%s", self.model)
+                return parsed
+            logger.info("_ollama_chat succeeded. model=%s result_chars=%s", self.model, len(str(content or "")))
             return _JSONTools.sanitize_text(content or "")
-        except Exception:
+        except Exception as e:
+            logger.error("_ollama_chat exception model=%s error=%s", self.model, e, exc_info=True)
             return None
 
     # ------------------------------------------------------------------
@@ -684,26 +729,39 @@ class GenericLLMClient:
         attempts = 0
         max_attempts = 2  # Primary + 1 fallback per request
 
+        logger.info(
+            "_openrouter_chat start model=%s candidates=%s structured=%s",
+            self.model,
+            [m for m in models_to_try if m != self.model][:5],
+            structured,
+        )
         for model_id in models_to_try:
             if self._is_model_failed(model_id):
+                logger.debug("_openrouter_chat skipping failed model=%s", model_id)
                 continue
 
             attempts += 1
             if attempts > max_attempts:
-                logger.debug(f"Reached max attempts ({max_attempts}) for LLM request. Stopping.")
+                logger.debug("Reached max attempts (%s) for LLM request. Stopping.", max_attempts)
                 break
 
             # Use a shorter timeout for fallback attempts to fail fast
             timeout = 10 if attempts == 1 else 5
+            logger.info("_openrouter_chat attempting model_id=%s attempt=%s/%s timeout=%s", model_id, attempts, max_attempts, timeout)
             res = self._openrouter_chat_single(model_id, system_prompt, user_prompt, structured, timeout=timeout)
             if res is not None:
                 if model_id != self.model:
-                    logger.info(f"Successfully used fallback model: {model_id}")
+                    logger.info("Successfully used fallback model: %s (requested=%s)", model_id, self.model)
+                logger.info("_openrouter_chat succeeded model_id=%s result_type=%s", model_id, type(res).__name__)
                 return res
 
-            logger.debug(f"Model {model_id} failed, marking as unusable.")
+            logger.warning("_openrouter_chat model failed model_id=%s attempt=%s/%s", model_id, attempts, max_attempts)
             self._mark_model_failed(model_id)
 
+        logger.error(
+            "_openrouter_chat exhausted models. requested=%s attempts=%s structured=%s",
+            self.model, attempts, structured,
+        )
         return None
 
     def _openrouter_chat_single(
@@ -717,6 +775,8 @@ class GenericLLMClient:
         """Attempt a single chat completion with exactly one model, no fallbacks."""
         sdk_client = self._get_sdk_client()
         extra_headers = self._build_openrouter_headers()
+
+        logger.info("_openrouter_chat_single start model=%s structured=%s timeout=%s sdk=%s", model_id, structured, timeout, sdk_client is not None)
 
         # Try SDK first if available
         if sdk_client is not None:
@@ -736,14 +796,24 @@ class GenericLLMClient:
                 content = getattr(completion.choices[0].message, "content", None)
 
                 if content:
-                    logger.info(f"SDK request for {model_id} SUCCEEDED. Content length: {len(str(content))}")
+                    logger.info("SDK request for %s SUCCEEDED. Content length: %s", model_id, len(str(content)))
                     if structured:
-                        return _JSONTools.try_parse_json(str(content))
+                        parsed = _JSONTools.try_parse_json(str(content))
+                        if parsed is None:
+                            logger.warning("SDK request for %s returned non-JSON content for structured request.", model_id)
+                        return parsed
                     return _JSONTools.sanitize_text(str(content))
                 else:
-                    logger.debug(f"SDK request for {model_id} returned no content.")
+                    logger.debug("SDK request for %s returned no content.", model_id)
             except Exception as e:
-                logger.debug(f"SDK request failed for {model_id}: {str(e)[:200]}")
+                # The OpenAI SDK retries 429s internally; if we still get one here,
+                # it means the model is rate-limited and we should skip it immediately
+                # rather than burning time on retries.
+                status = getattr(getattr(e, "response", None), "status_code", None)
+                if status == 429:
+                    logger.debug("SDK request for %s rate-limited (429). Skipping to next model.", model_id)
+                    return None
+                logger.debug("SDK request failed for %s: %s", model_id, str(e)[:200])
                 # Fall through to the direct HTTP path
 
         # Direct HTTP fallback
@@ -767,6 +837,7 @@ class GenericLLMClient:
                 "max_tokens": 1024 if structured else 256,
             }
 
+            logger.debug("_openrouter_chat_single HTTP fallback model=%s timeout=%s", model_id, timeout)
             resp = requests.post(
                 "https://openrouter.ai/api/v1/chat/completions",
                 json=payload,
@@ -775,47 +846,50 @@ class GenericLLMClient:
             )
 
             if resp.status_code == 429:
-                logger.debug(f"OpenRouter returned 429 Rate Limit for {model_id}")
+                logger.warning("OpenRouter returned 429 Rate Limit for %s", model_id)
                 # Short penalty — don't let the caller overwrite with a longer one
                 self._mark_model_failed(model_id, duration_minutes=2)
                 return None
 
-            if resp.status_code == 200:
-                data = resp.json()
-                logger.debug(f"HTTP 200 response from {model_id}: {data}")
-                content = None
-                if isinstance(data, dict):
-                    # Some providers embed errors inside a 200 payload
-                    if "error" in data:
-                        logger.debug(f"OpenRouter returned error in 200 payload for {model_id}: {data['error']}")
-                        return None
+            if resp.status_code != 200:
+                logger.warning("HTTP request failed for %s with %s: %s", model_id, resp.status_code, resp.text[:300])
+                return None
 
-                    choices = data.get("choices")
-                    if isinstance(choices, list) and choices:
-                        first = choices[0]
-                        if isinstance(first, dict):
-                            msg = first.get("message")
-                            if isinstance(msg, dict):
-                                # extract_text_content strips thinking blocks from thinking-mode models
-                                content = _JSONTools.extract_text_content(msg.get("content")) or msg.get("reasoning")
-                            if not content:
-                                content = _JSONTools.extract_text_content(
-                                    first.get("text") or first.get("content")
-                                ) or first.get("reasoning")
+            data = resp.json()
+            content = None
+            if isinstance(data, dict):
+                # Some providers embed errors inside a 200 payload
+                if "error" in data:
+                    logger.warning("OpenRouter returned error in 200 payload for %s: %s", model_id, data["error"])
+                    return None
 
-                if content:
-                    logger.info(f"HTTP request for {model_id} SUCCEEDED. Content length: {len(str(content))}")
-                    if structured:
-                        return _JSONTools.try_parse_json(str(content))
-                    return _JSONTools.sanitize_text(str(content))
-                else:
-                    logger.debug(f"HTTP request for {model_id} returned no content in choices.")
+                choices = data.get("choices")
+                if isinstance(choices, list) and choices:
+                    first = choices[0]
+                    if isinstance(first, dict):
+                        msg = first.get("message")
+                        if isinstance(msg, dict):
+                            # extract_text_content strips thinking blocks from thinking-mode models
+                            content = _JSONTools.extract_text_content(msg.get("content")) or msg.get("reasoning")
+                        if not content:
+                            content = _JSONTools.extract_text_content(
+                                first.get("text") or first.get("content")
+                            ) or first.get("reasoning")
 
-            logger.debug(f"HTTP request failed for {model_id} with {resp.status_code}: {resp.text[:500]}")
+            if content:
+                logger.info("HTTP request for %s SUCCEEDED. Content length: %s", model_id, len(str(content)))
+                if structured:
+                    parsed = _JSONTools.try_parse_json(str(content))
+                    if parsed is None:
+                        logger.warning("HTTP request for %s returned non-JSON content for structured request.", model_id)
+                    return parsed
+                return _JSONTools.sanitize_text(str(content))
+            else:
+                logger.warning("HTTP request for %s returned no content in choices.", model_id)
+                return None
         except Exception as e:
-            logger.debug(f"HTTP request exception for {model_id}: {e}")
-
-        return None
+            logger.warning("HTTP request exception for %s: %s", model_id, e)
+            return None
 
     # ------------------------------------------------------------------
     # Model failure tracking (thread-safe)
@@ -997,6 +1071,34 @@ class NpcChatLLMAdapter(GenericLLMClient):
                 cls._instances["default"] = cls()
             return cls._instances["default"]
 
+    @classmethod
+    def prewarm(cls) -> None:
+        """Eagerly initialize the singleton adapter if not already initialized.
+
+        Moves OpenRouter discovery and model validation off the first chat
+        request and into gameplay startup, so the first NPC conversation
+        does not pay that latency penalty. Safe to call multiple times;
+        only the first call performs the expensive initialization.
+        """
+        with cls._instances_lock:
+            if "default" in cls._instances:
+                logger.debug("NpcChatLLMAdapter prewarm skipped: already initialized.")
+                return
+            try:
+                logger.info("NpcChatLLMAdapter prewarm: initializing adapter...")
+                cls._instances["default"] = cls()
+                logger.info("NpcChatLLMAdapter prewarm: complete.")
+            except Exception as e:
+                logger.warning("NpcChatLLMAdapter prewarm failed: %s", e)
+                # Mark as attempted so we don't retry on every call
+                cls._instances["_prewarm_failed"] = True
+
+    @classmethod
+    def is_prewarmed(cls) -> bool:
+        """Return True if the adapter has been initialized or prewarm was attempted."""
+        with cls._instances_lock:
+            return "default" in cls._instances or "_prewarm_failed" in cls._instances
+
     def _load_world_facts(self) -> None:
         try:
             with open(_NPC_CHAT_WORLD_FACTS_PATH, "r", encoding="utf-8") as f:
@@ -1109,9 +1211,12 @@ class NpcChatLLMAdapter(GenericLLMClient):
         temp = float(os.getenv("NPC_CHAT_TEMP_NPC", "0.65"))
         raw = self._call_llm(system_prompt, user, max_tokens=300, temperature=temp)
         if not raw:
+            logger.warning("generate_npc_turn LLM returned no raw response. is_opening=%s", is_opening)
             return None
+        logger.debug("generate_npc_turn raw response is_opening=%s chars=%s raw=%r", is_opening, len(raw), raw[:500])
         parsed = _JSONTools.try_parse_json(raw)
         if not isinstance(parsed, dict):
+            logger.warning("generate_npc_turn JSON parse failed. is_opening=%s raw_chars=%s", is_opening, len(raw))
             return None
         if "npc_text" not in parsed or not isinstance(parsed["npc_text"], str):
             return None
@@ -1212,9 +1317,12 @@ class NpcChatLLMAdapter(GenericLLMClient):
         # ever bites on a genuinely stuck call.
         raw = self._call_llm(system_prompt, user, max_tokens=300, temperature=temp)
         if not raw:
+            logger.warning("generate_turn LLM returned no raw response. is_opening=%s", is_opening)
             return None
+        logger.debug("generate_turn raw response is_opening=%s chars=%s raw=%r", is_opening, len(raw), raw[:500])
         parsed = _JSONTools.try_parse_json(raw)
         if not isinstance(parsed, dict):
+            logger.warning("generate_turn JSON parse failed. is_opening=%s raw_chars=%s", is_opening, len(raw))
             return None
         if "npc_text" not in parsed or not isinstance(parsed["npc_text"], str):
             return None
@@ -1305,7 +1413,9 @@ class NpcChatLLMAdapter(GenericLLMClient):
         temp = float(os.getenv("NPC_CHAT_TEMP_OPTIONS", "0.8"))
         raw = self._call_llm(system, user, max_tokens=300, temperature=temp)
         if not raw:
+            logger.warning("generate_jean_options LLM returned no raw response.")
             return None
+        logger.debug("generate_jean_options raw response chars=%s raw=%r", len(raw), raw[:500])
         # Try parsing as list
         raw = raw.strip()
         if raw.startswith("```"):
@@ -1363,13 +1473,37 @@ class NpcChatLLMAdapter(GenericLLMClient):
         temperature: float = 0.7,
     ) -> Optional[str]:
         """Dispatch to the active provider. Returns raw text or None."""
+        logger.info(
+            "NpcChatLLMAdapter._call_llm start provider=%s model=%s max_tokens=%s temperature=%s",
+            self.provider, self.model, max_tokens, temperature,
+        )
         if not self.enabled:
+            logger.warning("NpcChatLLMAdapter._call_llm aborted: adapter disabled.")
             return None
-        if self.provider == "ollama":
-            return self._call_ollama(system_prompt, user_prompt, max_tokens, temperature)
-        elif self.provider == "openrouter":
-            return self._call_openrouter(system_prompt, user_prompt, max_tokens, temperature)
-        return None
+        try:
+            if self.provider == "ollama":
+                res = self._call_ollama(system_prompt, user_prompt, max_tokens, temperature)
+            elif self.provider == "openrouter":
+                res = self._call_openrouter(system_prompt, user_prompt, max_tokens, temperature)
+            else:
+                logger.error("NpcChatLLMAdapter._call_llm unknown provider=%s", self.provider)
+                return None
+            if res is None:
+                logger.warning("NpcChatLLMAdapter._call_llm returned None. provider=%s model=%s", self.provider, self.model)
+            else:
+                # Strip chain-of-thought tokens before the caller parses JSON.
+                stripped = _JSONTools._strip_thinking_tokens(str(res))
+                if stripped != res:
+                    logger.debug("NpcChatLLMAdapter._call_llm stripped thinking tokens. provider=%s model=%s before_chars=%s after_chars=%s", self.provider, self.model, len(res), len(stripped))
+                if not stripped:
+                    logger.warning("NpcChatLLMAdapter._call_llm empty after stripping thinking tokens. provider=%s model=%s", self.provider, self.model)
+                    return None
+                logger.info("NpcChatLLMAdapter._call_llm succeeded. provider=%s model=%s result_chars=%s", self.provider, self.model, len(stripped))
+                return stripped
+            return res
+        except Exception as e:
+            logger.error("NpcChatLLMAdapter._call_llm exception provider=%s model=%s error=%s", self.provider, self.model, e, exc_info=True)
+            return None
 
     def _call_ollama(
         self, system: str, user: str, max_tokens: int, temperature: float
@@ -1416,10 +1550,12 @@ class NpcChatLLMAdapter(GenericLLMClient):
         and tolerate the response shapes OpenRouter actually sends.
         """
         if requests is None or not self._openrouter_api_key:
+            logger.warning("NpcChatLLMAdapter._call_openrouter aborted: requests missing or api key missing.")
             return None
 
         primary = self._get_openrouter_model()
         if not primary:
+            logger.warning("NpcChatLLMAdapter._call_openrouter aborted: no primary model available.")
             return None
 
         models_to_try = [primary]
@@ -1431,6 +1567,8 @@ class NpcChatLLMAdapter(GenericLLMClient):
         for model_id in self.STABLE_FREE_FALLBACKS:
             if model_id not in models_to_try:
                 models_to_try.append(model_id)
+
+        logger.info("NpcChatLLMAdapter._call_openrouter start primary=%s candidates=%s", primary, models_to_try[1:4])
 
         headers = {
             "Authorization": f"Bearer {self._openrouter_api_key}",
@@ -1445,9 +1583,11 @@ class NpcChatLLMAdapter(GenericLLMClient):
         attempts = 0
         for model_id in models_to_try:
             if self._is_model_failed(model_id):
+                logger.debug("NpcChatLLMAdapter._call_openrouter skipping failed model=%s", model_id)
                 continue
             attempts += 1
             if attempts > 3:
+                logger.debug("NpcChatLLMAdapter._call_openrouter reached max attempts.")
                 break
             payload = {
                 "model": model_id,
@@ -1459,6 +1599,7 @@ class NpcChatLLMAdapter(GenericLLMClient):
                 "temperature": temperature,
                 "top_p": 0.9,
             }
+            logger.info("NpcChatLLMAdapter._call_openrouter attempting model_id=%s attempt=%s/3", model_id, attempts)
             try:
                 response = requests.post(
                     "https://openrouter.ai/api/v1/chat/completions",
@@ -1467,6 +1608,7 @@ class NpcChatLLMAdapter(GenericLLMClient):
                     timeout=self._round_timeout(),
                 )
                 if getattr(response, "status_code", None) == 429:
+                    logger.warning("NpcChatLLMAdapter._call_openrouter 429 rate limit model=%s", model_id)
                     self._mark_model_failed(model_id, duration_minutes=2)
                     continue
                 response.raise_for_status()
@@ -1482,16 +1624,14 @@ class NpcChatLLMAdapter(GenericLLMClient):
                 if not content and isinstance(message, dict):
                     content = _JSONTools.extract_text_content(message.get("reasoning"))
                 if content:
+                    logger.info("NpcChatLLMAdapter._call_openrouter succeeded model=%s result_chars=%s", model_id, len(content))
                     return str(content).strip() or None
+                logger.warning("NpcChatLLMAdapter._call_openrouter no content from model=%s", model_id)
             except Exception as e:
-                logger.debug(
-                    "NpcChatLLMAdapter OpenRouter model %s failed: %s",
-                    model_id,
-                    e,
-                )
+                logger.warning("NpcChatLLMAdapter._call_openrouter model %s failed: %s", model_id, e)
             self._mark_model_failed(model_id)
 
-        logger.warning("NpcChatLLMAdapter OpenRouter: no usable model response")
+        logger.error("NpcChatLLMAdapter._call_openrouter exhausted all models. primary=%s attempts=%s", primary, attempts)
         return None
 
     def _get_openrouter_model(self) -> Optional[str]:
