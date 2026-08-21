@@ -64,6 +64,18 @@ def get_current_room():
         if "error" in room:
             return jsonify({"success": False, "error": room["error"]}), 404
 
+        # Eagerly prewarm the NPC chat LLM adapter on the first successful
+        # world load so OpenRouter discovery/validation doesn't run on the
+        # first chat request and add latency there.
+        try:
+            from ai.llm_client import NpcChatLLMAdapter
+
+            if not NpcChatLLMAdapter.is_prewarmed():
+                _log.info("Triggering NPC chat LLM prewarm after map load...")
+                NpcChatLLMAdapter.prewarm()
+        except Exception:
+            pass
+
         return jsonify({"success": True, "room": room}), 200
 
     except Exception:
