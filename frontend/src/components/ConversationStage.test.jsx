@@ -432,35 +432,61 @@ describe('ConversationStage rendering', () => {
     it('resets beatIndex and re-arms onComplete when a new segments array arrives mid-conversation', () => {
         // Simulates a multi-stage event (e.g. Ch02GuideToCitadel) where the same
         // mounted ConversationStage receives a fresh segments/conversation payload
-        // for the next stage without being remounted.
+        // for the next stage without being remounted. EventDialog mounts it with
+        // NO `key`, so React reuses the instance — a test that renders fresh each
+        // time cannot catch this at all.
+        //
+        // Stage one is deliberately THREE beats long so the stale index it would
+        // leave behind (2) is a beat stage two actually has. With a 1-beat stage
+        // one the stale index is 0, which is also the reset value, and the
+        // beatIndex half of this contract goes unproven.
         const stageOneSegments = [
-            { text: 'Stage one line.', speaker: 'Jean', emotion: 'neutral', in_conversation: true },
+            { text: 'Stage one, beat one.', speaker: 'Jean', emotion: 'neutral', in_conversation: true },
+            { text: 'Stage one, beat two.', speaker: 'Jean', emotion: 'neutral', in_conversation: true },
+            { text: 'Stage one, beat three.', speaker: 'Jean', emotion: 'neutral', in_conversation: true },
         ]
         const stageTwoSegments = [
             { text: 'Stage two, beat one.', speaker: 'Jean', emotion: 'neutral', in_conversation: true },
             { text: 'Stage two, beat two.', speaker: 'Jean', emotion: 'neutral', in_conversation: true },
+            { text: 'Stage two, beat three.', speaker: 'Jean', emotion: 'neutral', in_conversation: true },
         ]
         const onComplete = vi.fn()
         const { rerender } = render(
             <ConversationStage segments={stageOneSegments} conversation={{ cast: CAST }} onComplete={onComplete} />
         )
         const stage = screen.getByTestId('conversation-stage')
+        // Let the typewriter finish, then read the beat that is on screen.
+        const settle = () => act(() => vi.advanceTimersByTime(3000))
+        const click = () => act(() => fireEvent.click(stage))
 
-        act(() => vi.advanceTimersByTime(3000))
-        act(() => fireEvent.click(stage)) // finishes stage one's only beat -> onComplete
+        settle()
+        expect(screen.getByText(/Stage one, beat one/i)).toBeInTheDocument()
+        click(); settle()
+        expect(screen.getByText(/Stage one, beat two/i)).toBeInTheDocument()
+        click(); settle()
+        expect(screen.getByText(/Stage one, beat three/i)).toBeInTheDocument()
+        click() // final beat -> onComplete
         expect(onComplete).toHaveBeenCalledTimes(1)
 
         // New stage arrives: a fresh segments array, same component instance.
         rerender(
             <ConversationStage segments={stageTwoSegments} conversation={{ cast: CAST }} onComplete={onComplete} />
         )
-        act(() => vi.advanceTimersByTime(3000))
-        expect(screen.getByText(/Stage two, beat one/i)).toBeDefined()
+        settle()
+        // Without the reset the stage resumes at the stale beatIndex 2 and the
+        // player never sees stage two's opening two lines.
+        expect(screen.getByText(/Stage two, beat one/i)).toBeInTheDocument()
+        expect(screen.queryByText(/Stage two, beat three/i)).toBeNull()
 
-        act(() => fireEvent.click(stage)) // beat one complete -> advance to beat two
+        click(); settle()
+        expect(screen.getByText(/Stage two, beat two/i)).toBeInTheDocument()
         expect(onComplete).toHaveBeenCalledTimes(1)
-        act(() => vi.advanceTimersByTime(3000))
-        act(() => fireEvent.click(stage)) // last beat of stage two complete -> onComplete fires again
+        click(); settle()
+        expect(screen.getByText(/Stage two, beat three/i)).toBeInTheDocument()
+        expect(onComplete).toHaveBeenCalledTimes(1)
+        // completedRef re-armed: without the reset this stays true forever and
+        // the player is soft-locked with no way to leave the dialogue.
+        click() // final beat -> onComplete fires a second time
         expect(onComplete).toHaveBeenCalledTimes(2)
     })
 

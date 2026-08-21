@@ -1,6 +1,7 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import CombatInputDialog from './CombatInputDialog';
+import { makeTargetOption } from '../test/payloads';
 import { useAudio } from '../context/AudioContext';
 
 // Mock useAudio
@@ -19,11 +20,14 @@ describe('CombatInputDialog', () => {
   });
 
   it('renders target selection correctly', () => {
+    // From src/test/payloads.js (ApiCombatAdapter._get_available_targets), so a
+    // rename on the server side breaks this test instead of passing against a
+    // fixture that agrees with whatever the component happens to read.
+    // `hit_chance` is an INTEGER PERCENTAGE in [2, 100], never a 0-1 fraction —
+    // rescaling it client-side collapsed every real value to 0%-1% (drift #5).
     const options = [
-      // hit_chance matches the engine contract: an integer percentage in [2, 100],
-      // not a 0-1 fraction (Move.calculate_hit_chance, passed through the adapter).
-      { id: 'target1', name: 'Goblin', distance: 10, health: { current: 50, max: 100 }, hit_chance: 85 },
-      { id: 'target2', name: 'Orc', distance: 20, health: { current: 120, max: 150 }, hit_chance: 60 }
+      makeTargetOption({ id: 'target1', name: 'Goblin', distance: 10, health: { current: 50, max: 100 }, hit_chance: 85 }),
+      makeTargetOption({ id: 'target2', name: 'Orc', distance: 20, health: { current: 120, max: 150 }, hit_chance: 60 }),
     ];
 
     render(

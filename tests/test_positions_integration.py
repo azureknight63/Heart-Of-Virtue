@@ -77,6 +77,26 @@ def assert_in_any_zone(unit, zones, label):
     )
 
 
+@pytest.fixture(autouse=True)
+def _restore_global_rng():
+    """Undo the global RNG seeding that ``seed=`` performs.
+
+    ``initialize_combat_positions(..., seed=N)`` calls ``random.seed(N)`` on the
+    *process-wide* RNG and never restores it, so every seeded spawn in this file
+    used to leak a fixed RNG state into whatever test ran next on the same
+    xdist worker -- which is enough to make an unseeded probabilistic test in a
+    later file deterministically fail. Snapshot/restore closes that leak here;
+    the leak itself lives in src/positions.py.
+    """
+    import random
+
+    state = random.getstate()
+    try:
+        yield
+    finally:
+        random.setstate(state)
+
+
 def layout(group):
     """A comparable snapshot of a group's spawn, for determinism checks."""
     return [(u.combat_position.x, u.combat_position.y) for u in group]
@@ -292,17 +312,21 @@ class TestMeleeScenario:
         a spawner that quietly fell back to the standard left/right split
         would never produce that.
         """
-        interleaved = False
-        for _ in range(40):
+        # Explicit per-run seeds rather than the ambient RNG: the outcome is
+        # then identical on every run and under any pytest-randomly ordering,
+        # while still sampling 40 distinct layouts.
+        interleaved = 0
+        for seed in range(40):
             allies, enemies = units("Ally", 2), units("Enemy", 2)
-            initialize_combat_positions(allies, enemies, "melee")
+            initialize_combat_positions(allies, enemies, "melee", seed=seed)
             if min(e.combat_position.x for e in enemies) < max(
                 a.combat_position.x for a in allies
             ):
-                interleaved = True
-                break
+                interleaved += 1
 
-        assert interleaved
+        # A spawner that fell back to the standard left/right split would score
+        # exactly 0 here; the real melee scenario interleaves most of the time.
+        assert interleaved >= 20, interleaved
 
     def test_random_formation_still_honours_min_spacing(self):
         allies, enemies = units("Ally", 4), units("Enemy", 1)
@@ -419,13 +443,34 @@ class TestFacingInitialization:
         eastward = {Direction.E, Direction.NE, Direction.SE}
         assert all(a.combat_position.facing in eastward for a in allies)
 
-    def test_facing_is_a_real_direction_enum(self):
+    def test_facing_is_computed_toward_the_opposing_side(self):
+        """Each unit's facing is the bearing to the other team's centre.
+
+        ``isinstance(facing, Direction)`` -- the old assertion -- is true of all
+        eight values, so a spawner that left everyone facing north would have
+        passed it.
+        """
         allies, enemies = units("Ally", 1), units("Enemy", 1)
 
         initialize_combat_positions(allies, enemies, "standard")
 
-        for unit in allies + enemies:
-            assert isinstance(unit.combat_position.facing, Direction)
+        assert allies[0].combat_position.facing == turn_toward(
+            allies[0].combat_position, _calculate_center_position(enemies)
+        )
+        assert enemies[0].combat_position.facing == turn_toward(
+            enemies[0].combat_position, _calculate_center_position(allies)
+        )
+        # Standard puts the enemy strictly east, so the ally must look eastward.
+        assert allies[0].combat_position.facing in {
+            Direction.E,
+            Direction.NE,
+            Direction.SE,
+        }
+        assert enemies[0].combat_position.facing in {
+            Direction.W,
+            Direction.NW,
+            Direction.SW,
+        }
 
 
 class TestSeeding:

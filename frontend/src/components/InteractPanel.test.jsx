@@ -66,11 +66,22 @@ describe('InteractPanel', () => {
     vi.clearAllMocks();
   });
 
-  it('renders targets correctly', () => {
-    render(<InteractPanel location={mockLocation} onClose={mockOnClose} />);
-    expect(screen.getAllByText(/Guard/i)[0]).toBeDefined();
-    expect(screen.getAllByText(/Chest/i)[0]).toBeDefined();
-    expect(screen.getAllByText(/Gold Coin/i)[0]).toBeDefined();
+  it('lists every npc, object and ground item in the room as a target', () => {
+    const { container } = render(<InteractPanel location={mockLocation} onClose={mockOnClose} />);
+
+    // One row per target, each typed by its own icon: npc / item / object.
+    expect(container.textContent).toContain('👤');
+    expect(container.textContent).toContain('🪵');
+    expect(container.textContent).toContain('📦');
+    // Stackable ground items carry their count.
+    expect(screen.getByText(/Gold Coin/i).textContent).toMatch(/x\s*10|10/);
+    // Every listed target carries its own description.
+    expect(container.textContent).toContain('A stern guard.');
+    expect(container.textContent).toContain('A wooden chest.');
+    expect(container.textContent).toContain('A shiny coin.');
+    // Nothing is selected yet, so no action buttons are offered.
+    expect(screen.queryByText(/^Talk$/)).toBeNull();
+    expect(screen.queryByText(/^Open$/)).toBeNull();
   });
 
   it('selects a target when clicked', () => {
@@ -94,7 +105,10 @@ describe('InteractPanel', () => {
       expect(container.textContent).toContain('The guard nods at you.');
     }, { timeout: 3000 });
 
-    expect(mockOnRefetch).toHaveBeenCalled();
+    // The panel must address the NPC by its serialized `id`, send the keyword
+    // it rendered, and pass no quantity for a non-stackable target.
+    expect(apiEndpoints.world.interact).toHaveBeenCalledWith('npc1', 'Talk', null);
+    expect(mockOnRefetch).toHaveBeenCalledTimes(1);
   });
 
   it('handles quantity input for stackable items', async () => {
@@ -127,10 +141,12 @@ describe('InteractPanel', () => {
     }, { timeout: 3000 });
   });
 
-  it('calls onClose when close button is clicked', () => {
+  it('calls onClose exactly once when the close button is clicked', () => {
     render(<InteractPanel location={mockLocation} onClose={mockOnClose} />);
     fireEvent.click(screen.getByText('✕'));
-    expect(mockOnClose).toHaveBeenCalled();
+    expect(mockOnClose).toHaveBeenCalledTimes(1);
+    // Dismissing the panel is not an interaction.
+    expect(apiEndpoints.world.interact).not.toHaveBeenCalled();
   });
 
   it('triggers events after successful interaction', async () => {
@@ -202,11 +218,11 @@ describe('InteractPanel', () => {
     rerender(<InteractPanel location={emptyLocation} onClose={mockOnClose} />);
 
     await waitFor(() => {
-      expect(mockOnClose).toHaveBeenCalled();
+      expect(mockOnClose).toHaveBeenCalledTimes(1);
     }, { timeout: 2000 });
   });
 
-  it('waits for interaction output before auto-closing', async () => {
+  it('waits 3s on the interaction output before auto-closing an emptied room', async () => {
     apiEndpoints.world.interact.mockResolvedValue({
       data: { success: true, message: 'Item taken' }
     });
@@ -222,15 +238,26 @@ describe('InteractPanel', () => {
       expect(container.textContent).toContain('Item taken');
     });
 
-    const emptyLocation = { ...mockLocation, npcs: [], objects: [], items: [] };
-    rerender(<InteractPanel location={emptyLocation} onClose={delayedCloseMock} />);
+    // Switch to fake timers only for the delay itself: the interaction above
+    // needs real promise scheduling, but burning 3s of wall clock here was the
+    // single slowest test in the frontend suite AND only proved "eventually",
+    // not the 3s the component actually promises.
+    vi.useFakeTimers();
+    try {
+      const emptyLocation = { ...mockLocation, npcs: [], objects: [], items: [] };
+      rerender(<InteractPanel location={emptyLocation} onClose={delayedCloseMock} />);
 
-    expect(container.textContent).toContain('Item taken');
-    expect(delayedCloseMock).not.toHaveBeenCalled();
+      // The result message stays readable for the whole delay.
+      expect(container.textContent).toContain('Item taken');
+      act(() => vi.advanceTimersByTime(2999));
+      expect(delayedCloseMock).not.toHaveBeenCalled();
+      expect(container.textContent).toContain('Item taken');
 
-    await waitFor(() => {
-      expect(delayedCloseMock).toHaveBeenCalled();
-    }, { timeout: 5000 });
+      act(() => vi.advanceTimersByTime(1));
+      expect(delayedCloseMock).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('renders TAKE ALL and hides LOOT for open containers with items', () => {
@@ -398,10 +425,13 @@ describe('InteractPanel', () => {
     fireEvent.click(screen.getByText(/Search Area/i));
 
     await waitFor(() => {
-      expect(apiEndpoints.world.search).toHaveBeenCalled();
-      expect(screen.getByText(/You found a hidden key!/i)).toBeDefined();
-      expect(mockOnRefetch).toHaveBeenCalled();
+      expect(screen.getByText(/You found a hidden key!/i)).toBeInTheDocument();
     });
+    // /world/search takes no arguments, and one click must not fan out into
+    // several requests.
+    expect(apiEndpoints.world.search).toHaveBeenCalledTimes(1);
+    expect(apiEndpoints.world.search).toHaveBeenCalledWith();
+    expect(mockOnRefetch).toHaveBeenCalledTimes(1);
   });
 
   it('shows nothing-found message when search returns empty messages', async () => {
@@ -583,7 +613,7 @@ describe('InteractPanel', () => {
 
       fireEvent.click(screen.getByText('Close Chat'));
       expect(screen.queryByTestId('npc-chat-panel')).not.toBeInTheDocument();
-      expect(mockOnRefetch).toHaveBeenCalled();
+      expect(mockOnRefetch).toHaveBeenCalledTimes(1);
     });
 
     it('does not open the chat panel when loquacity is unavailable', () => {
@@ -597,7 +627,8 @@ describe('InteractPanel', () => {
       fireEvent.click(screen.getByText(/^Talk$/i));
 
       expect(screen.queryByTestId('npc-chat-panel')).not.toBeInTheDocument();
-      expect(apiEndpoints.world.interact).toHaveBeenCalled();
+      // Falls through to the ordinary scripted talk instead of the LLM panel.
+      expect(apiEndpoints.world.interact).toHaveBeenCalledWith('npc1', 'Talk', null);
     });
   });
 
@@ -672,28 +703,37 @@ describe('InteractPanel', () => {
 
   it('closes the dialog after a teleport interaction', async () => {
     vi.useFakeTimers();
-    apiEndpoints.world.interact.mockResolvedValue({ data: { success: true, message: 'The floor gives way!', teleported: true } });
-    const mockOnInteractionComplete = vi.fn();
+    // try/finally: a bare `vi.useRealTimers()` at the end leaks fake timers
+    // into every later test in the file if any assertion here throws, which
+    // turns one real failure into a dozen 5s timeouts.
+    try {
+      apiEndpoints.world.interact.mockResolvedValue({ data: { success: true, message: 'The floor gives way!', teleported: true } });
+      const mockOnInteractionComplete = vi.fn();
 
-    render(
-      <InteractPanel
-        location={mockLocation}
-        onClose={mockOnClose}
-        onRefetch={mockOnRefetch}
-        onInteractionComplete={mockOnInteractionComplete}
-      />
-    );
-    fireEvent.click(screen.getAllByText(/Guard/i)[0]);
-    fireEvent.click(screen.getByText(/^Talk$/i));
+      render(
+        <InteractPanel
+          location={mockLocation}
+          onClose={mockOnClose}
+          onRefetch={mockOnRefetch}
+          onInteractionComplete={mockOnInteractionComplete}
+        />
+      );
+      fireEvent.click(screen.getAllByText(/Guard/i)[0]);
+      fireEvent.click(screen.getByText(/^Talk$/i));
 
-    await vi.waitFor(() => {
-      expect(mockOnRefetch).toHaveBeenCalled();
-      expect(mockOnInteractionComplete).toHaveBeenCalled();
-    });
+      await vi.waitFor(() => {
+        expect(mockOnRefetch).toHaveBeenCalledTimes(1);
+        expect(mockOnInteractionComplete).toHaveBeenCalledTimes(1);
+      });
 
-    act(() => vi.advanceTimersByTime(800));
-    expect(mockOnClose).toHaveBeenCalled();
-    vi.useRealTimers();
+      // A teleport short-circuits the rest of the interact flow: the panel
+      // closes and never runs the background events check.
+      act(() => vi.advanceTimersByTime(800));
+      expect(mockOnClose).toHaveBeenCalledTimes(1);
+      expect(apiEndpoints.world.getEvents).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('updates the selected target locally from the response object_state', async () => {
@@ -808,7 +848,9 @@ describe('InteractPanel', () => {
       await waitFor(() => {
         expect(screen.getByText(/Took Gold\./i)).toBeInTheDocument();
       });
-      expect(mockOnRefetch).toHaveBeenCalled();
+      // takeOne targets the CONTENTS row's id, not the container's.
+      expect(apiEndpoints.world.interact).toHaveBeenCalledWith('gold1', 'take');
+      expect(mockOnRefetch).toHaveBeenCalledTimes(1);
     });
 
     it('shows an error when taking a single container item fails', async () => {
@@ -931,7 +973,7 @@ describe('InteractPanel', () => {
       expect(screen.getByText(/Action completed\./i)).toBeInTheDocument();
     });
     expect(mockOnTypingChange).toHaveBeenCalledWith(true);
-    expect(mockOnInteractionComplete).toHaveBeenCalled();
+    expect(mockOnInteractionComplete).toHaveBeenCalledTimes(1);
   });
 
   it('falls back to a generic "Interaction failed" message when the server omits both error and message', async () => {
@@ -1030,7 +1072,7 @@ describe('InteractPanel', () => {
     fireEvent.click(screen.getByText(/Take All Items/i));
 
     await waitFor(() => {
-      expect(mockOnInteractionComplete).toHaveBeenCalled();
+      expect(mockOnInteractionComplete).toHaveBeenCalledTimes(1);
     });
     expect(mockOnTypingChange).toHaveBeenCalledWith(true);
   });

@@ -77,7 +77,9 @@ describe('AccountDialog', () => {
     render(<MemoryRouter><AccountDialog player={mockPlayer} onClose={mockOnClose} /></MemoryRouter>);
     const closeBtn = screen.getByText('Close');
     fireEvent.click(closeBtn);
-    expect(mockOnClose).toHaveBeenCalled();
+    expect(mockOnClose).toHaveBeenCalledTimes(1);
+    // Dismissing the dialog must not sign the player out.
+    expect(mockLogout).not.toHaveBeenCalled();
   });
 
   it('calls logout and onClose when Log Out button is clicked', async () => {
@@ -86,8 +88,8 @@ describe('AccountDialog', () => {
     fireEvent.click(logoutBtn);
 
     await waitFor(() => {
-      expect(mockLogout).toHaveBeenCalled();
-      expect(mockOnClose).toHaveBeenCalled();
+      expect(mockLogout).toHaveBeenCalledTimes(1);
+      expect(mockOnClose).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -95,7 +97,7 @@ describe('AccountDialog', () => {
     const { container } = render(<MemoryRouter><AccountDialog player={mockPlayer} onClose={mockOnClose} /></MemoryRouter>);
     const overlay = container.firstChild;
     fireEvent.click(overlay);
-    expect(mockOnClose).toHaveBeenCalled();
+    expect(mockOnClose).toHaveBeenCalledTimes(1);
   });
 
   it('does not close when clicking the dialog content', () => {
@@ -110,7 +112,9 @@ describe('AccountDialog', () => {
     fireEvent.click(screen.getByText('Main Menu'));
 
     expect(mockNavigate).toHaveBeenCalledWith('/menu');
-    expect(mockOnClose).toHaveBeenCalled();
+    expect(mockOnClose).toHaveBeenCalledTimes(1);
+    // Leaving for the menu is not a logout — the session must survive.
+    expect(mockLogout).not.toHaveBeenCalled();
   });
 
 });

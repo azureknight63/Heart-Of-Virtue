@@ -128,8 +128,9 @@ class TestDistanceCalculations:
         pos1 = CombatPosition(x=0, y=0, facing=Direction.N)
         pos2 = CombatPosition(x=30, y=40, facing=Direction.N)
         distance = distance_from_coords(pos1, pos2)
-        # Should be 50 feet (sqrt(30^2 + 40^2) = 50)
-        assert 49 < distance < 51
+        # sqrt(30^2 + 40^2) = 50 exactly -- the classic 3-4-5 triangle. The old
+        # bound (49 < d < 51) allowed the engine to be a foot out either way.
+        assert distance == 50
 
     def test_distance_symmetry(self):
         """Test distance is symmetric (A to B = B to A)"""
@@ -154,7 +155,13 @@ class TestMovementTowardTarget:
         new_pos = move_toward(current, target, 4)
         new_distance = distance_from_coords(new_pos, target)
 
-        assert new_distance < initial_distance
+        # ``new < initial`` -- the old assertion -- was satisfied by a single
+        # square of progress, or by 40. The step is deterministic, so pin it:
+        # 4 squares along the 45-degree bearing lands on (13, 13).
+        assert (new_pos.x, new_pos.y) == (13, 13)
+        assert initial_distance == 42
+        assert new_distance == 38
+        assert new_pos.facing is current.facing
 
     def test_move_toward_boundary_clamping(self):
         """UAT-ADV-002: Movement clamps to grid boundaries"""
@@ -163,8 +170,10 @@ class TestMovementTowardTarget:
 
         new_pos = move_toward(current, target, 4)
 
-        assert 0 <= new_pos.x <= 50
-        assert 0 <= new_pos.y <= 50
+        # A 4-square step from (49, 49) toward (50, 50) would overshoot to
+        # (52, 52); the clamp pins it at the grid edge. ``0 <= x <= 50`` -- the
+        # old assertion -- was true of the starting square too.
+        assert (new_pos.x, new_pos.y) == (50, 50)
 
     def test_move_toward_same_position(self):
         """Test move toward same position"""
@@ -189,7 +198,13 @@ class TestMovementAwayFromThreat:
         new_pos = move_away_from(current, threat, 3)
         new_distance = distance_from_coords(new_pos, threat)
 
-        assert new_distance >= initial_distance
+        # ``>=`` -- the old assertion -- passed for a Withdraw that did not
+        # move at all. Retreating 3 squares along the 225-degree bearing from
+        # (20, 20) lands on (18, 18), opening the gap from 14 to 17.
+        assert (new_pos.x, new_pos.y) == (18, 18)
+        assert initial_distance == 14
+        assert new_distance == 17
+        assert new_distance > initial_distance
 
     def test_move_away_boundary_clamping(self):
         """UAT-WITH-002: Move away clamps to grid boundaries"""
@@ -198,8 +213,9 @@ class TestMovementAwayFromThreat:
 
         new_pos = move_away_from(current, threat, 5)
 
-        assert 0 <= new_pos.x <= 50
-        assert 0 <= new_pos.y <= 50
+        # Cornered at the origin: the retreat is clamped rather than pushed
+        # negative. The old bounds check held for any in-grid square.
+        assert (new_pos.x, new_pos.y) == (0, 0)
 
     def test_move_away_at_max_boundary(self):
         """Test move away from edge of grid"""
@@ -208,8 +224,8 @@ class TestMovementAwayFromThreat:
 
         new_pos = move_away_from(current, threat, 3)
 
-        assert 0 <= new_pos.x <= 50
-        assert 0 <= new_pos.y <= 50
+        # Cornered at the far edge: clamped to (50, 50), not pushed past it.
+        assert (new_pos.x, new_pos.y) == (50, 50)
 
 
 class TestAngleCalculations:

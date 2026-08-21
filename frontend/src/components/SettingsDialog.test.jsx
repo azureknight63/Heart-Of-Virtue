@@ -101,7 +101,7 @@ describe('SettingsDialog', () => {
     render(<SettingsDialog onClose={mockOnClose} />);
     const closeBtn = screen.getByText('Close');
     fireEvent.click(closeBtn);
-    expect(mockOnClose).toHaveBeenCalled();
+    expect(mockOnClose).toHaveBeenCalledTimes(1);
   });
 
   it('renders the combat speed control with the current step active', () => {
@@ -124,7 +124,7 @@ describe('SettingsDialog', () => {
     const { container } = render(<SettingsDialog onClose={mockOnClose} />);
     const overlay = container.firstChild;
     fireEvent.click(overlay);
-    expect(mockOnClose).toHaveBeenCalled();
+    expect(mockOnClose).toHaveBeenCalledTimes(1);
   });
 
   it('does not close when clicking the dialog content', () => {

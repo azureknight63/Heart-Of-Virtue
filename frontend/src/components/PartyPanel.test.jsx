@@ -50,7 +50,7 @@ describe('PartyPanel', () => {
     render(<PartyPanel player={{ party_members: [] }} onClose={mockOnClose} />);
     const closeButton = screen.getByText('✕');
     fireEvent.click(closeButton);
-    expect(mockOnClose).toHaveBeenCalled();
+    expect(mockOnClose).toHaveBeenCalledTimes(1);
   });
 
   it('handles close button hover in non-empty state', () => {
@@ -79,7 +79,7 @@ describe('PartyPanel', () => {
   it('calls onClose when DISMISS is clicked', () => {
     render(<PartyPanel player={{ party_members: [] }} onClose={mockOnClose} />);
     fireEvent.click(screen.getByText('DISMISS'));
-    expect(mockOnClose).toHaveBeenCalled();
+    expect(mockOnClose).toHaveBeenCalledTimes(1);
   });
 
   it('does not show a USE ITEM button when there are no usable consumables', () => {
@@ -181,7 +181,7 @@ describe('PartyPanel', () => {
       item_id: 'i1',
       target_id: 1,
     });
-    expect(onRefetch).toHaveBeenCalled();
+    expect(onRefetch).toHaveBeenCalledTimes(1);
     expect(screen.getByText(/Gorran feels better\./)).toBeInTheDocument();
   });
 

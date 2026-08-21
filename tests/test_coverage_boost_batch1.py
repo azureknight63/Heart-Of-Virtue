@@ -35,6 +35,7 @@ from src.positions import (
     _find_clustered_position,
 )
 from src.player import Player
+from src.narration import capture_narration
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -250,13 +251,62 @@ class TestSpawnUnitsInZoneFormations:
             assert abs(u.combat_position.y - centre.y) <= 4
             placed.append(u.combat_position)
 
-    def test_random_formation(self):
-        """Random placement still respects the zone boundary."""
+    def test_random_formation_stays_in_zone(self):
         units = [self._make_unit() for _ in range(3)]
         zone = ((5, 5), (20, 20))
+
         _spawn_units_in_zone(units, zone, formation_type="random")
+
         for u in units:
             self._assert_in_zone(u.combat_position, zone)
+
+    def test_random_formation_retries_until_min_spacing_is_satisfied(self):
+        """"random" delegates to the spaced finder: a candidate closer than
+        min_spacing to an already-placed unit is rejected and redrawn."""
+        from src.positions import CombatPosition
+
+        draws = iter([
+            CombatPosition(0, 0),   # unit 1 -- accepted (nothing placed yet)
+            CombatPosition(1, 0),   # unit 2 -- 1 ft away, rejected
+            CombatPosition(2, 0),   # unit 2 -- 2 ft away, still rejected
+            CombatPosition(9, 9),   # unit 2 -- far enough, accepted
+        ])
+        units = [self._make_unit() for _ in range(2)]
+
+        with patch(
+            "src.positions.random_position_in_zone", side_effect=lambda z: next(draws)
+        ):
+            _spawn_units_in_zone(
+                units, ((0, 0), (10, 10)), formation_type="random", min_spacing=3
+            )
+
+        placed = [(u.combat_position.x, u.combat_position.y) for u in units]
+        assert placed == [(0, 0), (9, 9)]
+
+    def test_random_formation_gives_up_on_spacing_after_twenty_attempts(self):
+        """Documented fallback: in a zone too cramped to honour min_spacing,
+        the finder places the unit anyway rather than looping forever."""
+        from src.positions import CombatPosition
+
+        attempts = []
+
+        def always_adjacent(zone):
+            attempts.append(zone)
+            return CombatPosition(0, 0)
+
+        units = [self._make_unit() for _ in range(2)]
+
+        with patch("src.positions.random_position_in_zone", always_adjacent):
+            _spawn_units_in_zone(
+                units, ((0, 0), (1, 1)), formation_type="random", min_spacing=50
+            )
+
+        # 1 draw for the first unit, then 20 rejected attempts + 1 fallback.
+        assert len(attempts) == 22
+        assert [(u.combat_position.x, u.combat_position.y) for u in units] == [
+            (0, 0),
+            (0, 0),
+        ]
 
     def test_spread_formation_is_deterministic_for_a_given_seed(self):
         """The seed argument must actually reproduce the same layout."""
@@ -388,100 +438,12 @@ class TestInitializeCombatPositions:
 # ---------------------------------------------------------------------------
 
 
-class TestTilesSpawnNpc:
-    """Lines 162-163, 182, 193-194, 200-201: spawn_npc hidden/delay branches."""
-
-    def _make_tile(self):
-        from src.tiles import MapTile
-
-        universe = MagicMock()
-        universe.testing_mode = False
-        return MapTile(universe, {}, 0, 0, description="Test tile")
-
-    def test_spawn_npc_with_hidden(self):
-        tile = self._make_tile()
-        npc = tile.spawn_npc("UnknownNPC", hidden=True, hfactor=50)
-        assert npc.hidden is True
-        assert npc.hide_factor == 50
-
-    def test_spawn_npc_with_explicit_delay(self):
-        tile = self._make_tile()
-        npc = tile.spawn_npc("UnknownNPC", delay=3)
-        assert npc.combat_delay == 3
-
-    def test_spawn_npc_sets_current_room(self):
-        tile = self._make_tile()
-        npc = tile.spawn_npc("UnknownNPC")
-        assert npc.current_room == tile
-
-    def test_spawn_npc_stub_name_includes_type(self):
-        tile = self._make_tile()
-        npc = tile.spawn_npc("Goblin")
-        assert "Goblin" in npc.name
-
-
-class TestTilesSpawnItem:
-    """Lines 228, 289-290, 299-301: spawn_item hidden, stackable, Gold."""
-
-    def _make_tile(self):
-        from src.tiles import MapTile
-
-        universe = MagicMock()
-        universe.testing_mode = False
-        return MapTile(universe, {}, 0, 0)
-
-    def test_spawn_gold(self):
-        tile = self._make_tile()
-        item = tile.spawn_item("Gold", amt=50)
-        assert item is not None
-        assert len(tile.items_here) >= 1
-
-    def test_spawn_item_hidden(self):
-        tile = self._make_tile()
-        item = tile.spawn_item("Gold", amt=10, hidden=True, hfactor=30)
-        for it in tile.items_here:
-            if it is item:
-                assert it.hidden is True
-                assert it.hide_factor == 30
-
-    def test_spawn_non_stackable_item(self):
-        tile = self._make_tile()
-        tile.spawn_item("RustedIronMace", amt=1)
-        assert len(tile.items_here) >= 1
-
-    def test_spawn_stackable_item_count(self):
-        tile = self._make_tile()
-        # Antidote is stackable (has count attribute)
-        item = tile.spawn_item("Antidote", amt=3)
-        if hasattr(item, "count"):
-            assert item.count == 3
-
-
-class TestTilesAvailableActionsDebug:
-    """Lines 113-131: available_actions with debug mode via universe.testing_mode."""
-
-    def _make_tile(self):
-        from src.tiles import MapTile
-
-        universe = MagicMock()
-        universe.testing_mode = True  # triggers debug moves
-        return MapTile(universe, {}, 0, 0)
-
-    def test_debug_actions_included_when_testing_mode(self):
-        tile = self._make_tile()
-        import src.actions as act
-
-        acts = tile.available_actions()
-        action_types = [type(a).__name__ for a in acts]
-        assert "Teleport" in action_types
-
-    def test_available_actions_includes_the_default_action_set(self):
-        # Movement is dispatched via GameService.move_player, not Action
-        # classes -- the directional-move Action subclasses no longer exist.
-        tile = self._make_tile()
-        acts = tile.available_actions()
-        action_types = [type(a).__name__ for a in acts]
-        assert {"Search", "Menu", "Save"}.issubset(action_types)
+# MapTile.spawn_npc / spawn_item / available_actions were covered here and,
+# more thoroughly, in tests/test_shop_conditions_tiles_coverage.py::
+# TestMapTileCoverage (which also pins the unknown-type stub name, the
+# merchandise flag and the anti-vacuity case for the debug-action flag). The
+# two cases unique to this copy -- spawn_npc setting current_room, and a
+# non-stackable spawn -- moved there; the rest is gone.
 
 
 # ---------------------------------------------------------------------------
@@ -637,22 +599,36 @@ class TestPlayerCombatMixin:
         assert viable in result
         assert not_viable not in result
 
-    def test_combat_idle_healthy(self):
-        """Lines 16-21: combat_idle when HP is healthy."""
+    @pytest.mark.parametrize(
+        "hp_fraction, roll, expected",
+        [
+            # Healthy (>20% HP) draws from combat_idle_msg above a 995 roll.
+            (1.0, 996, ["Ready to fight!"]),
+            (1.0, 995, []),          # the guard is `> 995`, not `>=`
+            (0.21, 996, ["Ready to fight!"]),
+            # Injured (<=20% HP) draws from combat_hurt_msg above a 950 roll.
+            (0.10, 951, ["Jean is badly hurt!"]),
+            (0.10, 950, []),
+            (0.20, 951, ["Jean is badly hurt!"]),  # exactly 20% is "hurt"
+        ],
+    )
+    def test_combat_idle_picks_the_pool_by_hp_and_gates_on_the_roll(
+        self, hp_fraction, roll, expected
+    ):
         p = _player()
-        p.hp = p.maxhp  # full HP
-        # Ensure msg list has enough entries for any index up to 999
-        p.combat_idle_msg = ["Ready to fight!"] * 1001
-        with patch("random.randint", return_value=996), patch("builtins.print"):
+        p.maxhp = 100
+        p.hp = int(p.maxhp * hp_fraction)
+        p.combat_idle_msg = ["Ready to fight!"]
+        p.combat_hurt_msg = ["Jean is badly hurt!"]
+
+        # First randint is the trigger roll; the second picks the message index.
+        with (
+            patch("random.randint", side_effect=[roll, 0]),
+            capture_narration() as msgs,
+        ):
             p.combat_idle()
 
-    def test_combat_idle_hurt(self):
-        """Lines 22-25: combat_idle when HP is low."""
-        p = _player()
-        p.hp = int(p.maxhp * 0.1)  # 10% HP
-        p.combat_hurt_msg = ["Jean is badly hurt!"] * 1001
-        with patch("random.randint", return_value=951), patch("builtins.print"):
-            p.combat_idle()
+        assert [m["text"] for m in msgs] == expected
 
     def test_change_heat_upper_clamp(self):
         """Line 33: heat clamped at 10."""
@@ -750,8 +726,13 @@ class TestPlayerLevelingMixin:
         p.exp = p.exp_to_level + 10
 
         events = p.gain_exp(0, api_mode=False)
-        # _combat_adapter path also returns events list
-        assert isinstance(events, list)
+
+        # The adapter path takes the API level-up branch, so the caller still
+        # gets the structured level-up events rather than a terminal prompt.
+        assert isinstance(events, list) and len(events) == 1
+        assert events[0]["level_up"] is True
+        assert (events[0]["old_level"], events[0]["new_level"]) == (1, 2)
+        assert p.level == 2
 
     def test_learn_skill_new(self):
         """Lines 109-115: learn_skill adds new skill."""
@@ -821,12 +802,14 @@ class TestPlayerWorldMixinExtended:
         return universe
 
     def test_refresh_merchants_no_universe_attribute(self):
-        """Line 19: universe has no maps attribute."""
+        """A universe with no `maps` is reported, not crashed on."""
         p = _player()
         p.universe = MagicMock(spec=[])  # no 'maps' attribute
-        with patch("src.player._world.cprint") as mock_cp:
+        with capture_narration() as messages:
             p.refresh_merchants()
-        mock_cp.assert_called_once()
+        assert [m["text"] for m in messages] == [
+            "Universe not initialized; cannot refresh merchants."
+        ]
 
     def test_refresh_merchants_finds_merchant_no_filter(self):
         """Lines 50-54: finds merchant without filter."""
@@ -856,10 +839,12 @@ class TestPlayerWorldMixinExtended:
         m = self._make_merchant("Harold")
         p.universe = self._make_universe_with_merchant(m)
 
-        with patch("src.player._world.cprint") as mock_cp, patch("time.sleep"):
+        with capture_narration() as messages, patch("time.sleep"):
             p.refresh_merchants(phrase="zzz")
 
-        mock_cp.assert_called()
+        assert [msg["text"] for msg in messages] == [
+            "No merchants matched filter 'zzz'."
+        ]
         assert m._update_called is False
 
     def test_refresh_merchants_empty_map(self):
@@ -869,22 +854,26 @@ class TestPlayerWorldMixinExtended:
         universe.maps = [{"name": "empty_world"}]
         p.universe = universe
 
-        with patch("src.player._world.cprint") as mock_cp, patch("time.sleep"):
+        with capture_narration() as messages, patch("time.sleep"):
             p.refresh_merchants()
 
-        mock_cp.assert_called()
+        assert [m["text"] for m in messages] == ["No merchants found to refresh."]
 
     def test_refresh_merchants_non_dict_map_skipped(self):
         """Lines 41-42: non-dict entries in maps are skipped."""
         p = _player()
         universe = MagicMock()
-        universe.maps = ["not_a_dict", None, 42]
+        merchant = self._make_merchant("Harold")
+        tile = MagicMock()
+        tile.npcs_here = [merchant]
+        universe.maps = ["not_a_dict", None, 42, {"name": "w", (0, 0): tile}]
         p.universe = universe
 
-        with patch("src.player._world.cprint") as mock_cp, patch("time.sleep"):
+        with capture_narration(), patch("time.sleep"):
             p.refresh_merchants()
 
-        mock_cp.assert_called()
+        # The junk entries are skipped and the real map is still scanned.
+        assert merchant._update_called is True
 
     def test_refresh_merchants_missing_update_goods(self):
         """Lines 89-92: merchant missing update_goods logs failure."""
@@ -901,8 +890,12 @@ class TestPlayerWorldMixinExtended:
         p = _player()
         p.universe = self._make_universe_with_merchant(m)
 
-        with patch("src.player._world.cprint"), patch("time.sleep"):
-            p.refresh_merchants()  # should not raise
+        with capture_narration() as messages, patch("time.sleep"):
+            p.refresh_merchants()
+
+        text = [msg["text"] for msg in messages]
+        assert "Merchant refresh complete: 0 succeeded, 1 failed." in text
+        assert " - Broken: missing update_goods" in text
 
     def test_refresh_merchants_update_goods_raises(self):
         """Lines 86-87: update_goods raises — captured in failures list."""
@@ -922,8 +915,12 @@ class TestPlayerWorldMixinExtended:
         p = _player()
         p.universe = self._make_universe_with_merchant(m)
 
-        with patch("src.player._world.cprint"), patch("time.sleep"):
-            p.refresh_merchants()  # should not raise
+        with capture_narration() as messages, patch("time.sleep"):
+            p.refresh_merchants()
+
+        text = [msg["text"] for msg in messages]
+        assert "Merchant refresh complete: 0 succeeded, 1 failed." in text
+        assert " - Error: DB exploded" in text
 
     def test_refresh_merchants_initialize_shop_called_when_shop_none(self):
         """Lines 75-79: initialize_shop called when shop is None."""

@@ -128,7 +128,7 @@ describe('SketchPortrait', () => {
     const { unmount } = render(<SketchPortrait src="/portrait.png" />)
     const instance = ioInstances[0]
     unmount()
-    expect(instance.disconnect).toHaveBeenCalled()
+    expect(instance.disconnect).toHaveBeenCalledTimes(1)
   })
 
   it('cancels any in-flight animation frame on unmount', () => {
@@ -137,7 +137,12 @@ describe('SketchPortrait', () => {
       ioInstances[0].trigger(true)
     })
     unmount()
-    expect(global.cancelAnimationFrame).toHaveBeenCalled()
+    // The in-flight reveal frame is cancelled, not left to fire into an
+    // unmounted tree.
+    expect(global.cancelAnimationFrame).toHaveBeenCalledTimes(1)
+    expect(global.cancelAnimationFrame).toHaveBeenCalledWith(
+      global.requestAnimationFrame.mock.results.at(-1).value
+    )
   })
 
   it('uses a default empty alt and default speed when not provided', () => {

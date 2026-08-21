@@ -167,7 +167,7 @@ describe('ShopDialog', () => {
       fireEvent.click(screen.getByText(/Buy · 100 💰/))
     })
     expect(buyFn).toHaveBeenCalledWith('item-1', 1)
-    expect(onRefetch).toHaveBeenCalled()
+    expect(onRefetch).toHaveBeenCalledTimes(1)
     expect(screen.queryByText(/Selected:/)).not.toBeInTheDocument()
   })
 
@@ -204,7 +204,7 @@ describe('ShopDialog', () => {
       fireEvent.click(screen.getByText(/Sell · \+5 💰/))
     })
     expect(sellFn).toHaveBeenCalledWith('sell-1', 1)
-    expect(onRefetch).toHaveBeenCalled()
+    expect(onRefetch).toHaveBeenCalledTimes(1)
   })
 
   it('disables Sell and shows a reason when the merchant cannot afford it', () => {

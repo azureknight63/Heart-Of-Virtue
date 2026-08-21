@@ -62,11 +62,21 @@ class TestMerchantPricingAttributes:
         assert merchant.shop_name == expected_name
 
     def test_no_shop_interface_object(self):
-        """The merchant no longer holds a terminal ShopInterface."""
+        """The merchant no longer holds a terminal ShopInterface.
+
+        Asserted as an unconditional statement about the type name; the
+        previous `shop is None or type(...) != "ShopInterface"` disjunction
+        would also have passed for a merchant carrying one, had `shop` been
+        None on that particular merchant.
+        """
         merchant = _base_merchant()
-        # If a .shop attribute lingers it must not be a ShopInterface.
+
         shop = getattr(merchant, "shop", None)
-        assert shop is None or type(shop).__name__ != "ShopInterface"
+        assert type(shop).__name__ != "ShopInterface"
+        # Pricing lives on the merchant itself now, not on a menu object.
+        assert isinstance(merchant.buy_modifier, float)
+        assert isinstance(merchant.sell_modifier, float)
+        assert isinstance(merchant.shop_name, str) and merchant.shop_name
 
 
 class TestShopInterfaceRemoved:

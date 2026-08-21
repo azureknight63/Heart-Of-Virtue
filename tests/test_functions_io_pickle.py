@@ -48,34 +48,44 @@ def _src_dir():
 
 # -------- SafeUnpickler placeholder creation ---------
 
-def test_safe_unpickler_placeholder(tmp_path):
-    # Dynamically create a temporary module 'story.fake_mod' with a class, pickle instance, then remove module
+def test_safe_unpickler_placeholder(tmp_path, monkeypatch):
+    """A save referencing a class that no longer exists loads as a tagged
+    placeholder carrying the original state, instead of blowing up.
+
+    monkeypatch.setitem is used for the synthetic modules so they are removed
+    even if an assertion fails partway — the previous `del sys.modules[...]`
+    only ran on the happy path, leaking a fake `story` package into every
+    later test in the worker.
+    """
     mod_name = 'story.fake_mod'
-    # Ensure synthetic 'story' package exists so pickle can import submodule
     story_pkg = types.ModuleType('story')
-    story_pkg.__path__ = [os.path.join(os.path.dirname(os.path.dirname(functions.__file__)), 'src', 'story')]
-    sys.modules['story'] = story_pkg
+    story_pkg.__path__ = []
+    monkeypatch.setitem(sys.modules, 'story', story_pkg)
     ghost_mod = types.ModuleType(mod_name)
     # Define GhostClass at module scope (not a local closure) so pickle can locate it
     exec('class GhostClass:\n    def __init__(self):\n        self.payload = 42', ghost_mod.__dict__)
-    sys.modules[mod_name] = ghost_mod
-    obj = ghost_mod.GhostClass()
+    monkeypatch.setitem(sys.modules, mod_name, ghost_mod)
     pfile = tmp_path / 'legacy_missing.sav'
     with open(pfile, 'wb') as f:
-        pickle.dump(obj, f, pickle.HIGHEST_PROTOCOL)
-    # Remove modules so they can't be found on load
-    del sys.modules[mod_name]
-    del sys.modules['story']
+        pickle.dump(ghost_mod.GhostClass(), f, pickle.HIGHEST_PROTOCOL)
+
+    # Remove the modules so the class cannot be found on load.
+    monkeypatch.delitem(sys.modules, mod_name)
+    monkeypatch.delitem(sys.modules, 'story')
+
     with open(pfile, 'rb') as f:
         loaded = functions._safe_pickle_load(f)
-    # Expect placeholder class name pattern. The unpickler rewrites the bare
-    # 'story.fake_mod' path to the canonical 'src.story.fake_mod' before
-    # resolution, so the placeholder carries the src-prefixed name.
-    cls_name = loaded.__class__.__name__
-    assert cls_name.startswith('LegacyMissing_src_story_fake_mod_GhostClass') or \
-        'LegacyMissing src.story.fake_mod.GhostClass' in repr(loaded)
-    # Placeholder should be hidden per generated attributes
-    assert getattr(loaded, 'hidden', True) is True
+
+    # The unpickler rewrites the bare 'story.fake_mod' path to the canonical
+    # 'src.story.fake_mod' before resolution, so the placeholder carries the
+    # src-prefixed name.
+    assert type(loaded).__name__ == 'LegacyMissing_src_story_fake_mod_GhostClass'
+    assert repr(loaded) == '<LegacyMissing src.story.fake_mod.GhostClass>'
+    # The pickled state survives onto the placeholder...
+    assert loaded.payload == 42
+    # ...and it is tagged + hidden so the engine never renders it in the world.
+    assert loaded.hidden is True
+    assert getattr(loaded, '_legacy_placeholder', False) is True
 
 
 # -------- _patch_player_integrity non-Player path ---------

@@ -43,7 +43,9 @@ describe('useWorldInteract', () => {
       })
 
       expect(result.current.searchOutput).toBe('You found a key! And a coin.')
-      expect(onRefetch).toHaveBeenCalled()
+      // /world/search takes no arguments; one call, one refetch.
+      expect(apiEndpoints.world.search).toHaveBeenCalledWith()
+      expect(onRefetch).toHaveBeenCalledTimes(1)
       expect(result.current.searchLoading).toBe(false)
     })
 
@@ -139,8 +141,9 @@ describe('useWorldInteract', () => {
       expect(result.current.interactionOutput).toBe('Jean takes: 10× Gold Coin, Silver Ring.')
       expect(result.current.interactionHistory).toEqual(['Jean takes: 10× Gold Coin, Silver Ring.'])
       expect(onTypingChange).toHaveBeenCalledWith(true)
-      expect(onRefetch).toHaveBeenCalled()
-      expect(onInteractionComplete).toHaveBeenCalled()
+      // One refetch and one completion for the whole batch, not per item.
+      expect(onRefetch).toHaveBeenCalledTimes(1)
+      expect(onInteractionComplete).toHaveBeenCalledTimes(1)
       expect(result.current.takingAllItems).toBe(false)
     })
 
@@ -211,7 +214,8 @@ describe('useWorldInteract', () => {
 
       expect(apiEndpoints.world.interact).toHaveBeenCalledWith('gold1', 'take')
       expect(result.current.interactionOutput).toBe('Took Gold.')
-      expect(onRefetch).toHaveBeenCalled()
+      expect(onRefetch).toHaveBeenCalledTimes(1)
+      expect(result.current.error).toBeNull()
     })
 
     it('defaults to "Took <name>" when the response omits a message', async () => {
@@ -275,7 +279,7 @@ describe('useWorldInteract', () => {
       expect(result.current.interactionOutput).toBe('The guard nods.')
       expect(result.current.interactionHistory).toEqual(['The guard nods.'])
       expect(onTypingChange).toHaveBeenCalledWith(true)
-      expect(onInteractionComplete).toHaveBeenCalled()
+      expect(onInteractionComplete).toHaveBeenCalledTimes(1)
     })
 
     it('defaults to "Action completed." when the response omits a message', async () => {
@@ -407,7 +411,9 @@ describe('useWorldInteract', () => {
         await result.current.interact({ id: 'npc1', count: 1 }, 'talk', null)
       })
 
-      expect(apiEndpoints.world.getEvents).toHaveBeenCalled()
+      // The background events check is a single follow-up call with no args.
+      expect(apiEndpoints.world.getEvents).toHaveBeenCalledTimes(1)
+      expect(apiEndpoints.world.getEvents).toHaveBeenCalledWith()
       expect(onEventsTriggered).toHaveBeenCalledWith([{ output_text: 'Something happened!' }])
       // Called once after the main interact, once after the events check
       expect(onRefetch).toHaveBeenCalledTimes(2)

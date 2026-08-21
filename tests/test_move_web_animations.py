@@ -43,6 +43,52 @@ def _castable_move_classes():
         yield name, obj
 
 
+def _move_classes_defined_in_submodules():
+    """Every Move subclass actually defined under src/moves/, keyed by name.
+
+    Walks the submodules directly rather than trusting ``moves.__all__`` — the
+    point of the next test is to catch a class that never made it into that
+    list, which every other check in this file would then skip silently.
+    """
+    import importlib
+
+    found = {}
+    for path in sorted((_ROOT / "src" / "moves").glob("_*.py")):
+        module = importlib.import_module(f"src.moves.{path.stem}")
+        for name, obj in vars(module).items():
+            if (
+                inspect.isclass(obj)
+                and issubclass(obj, Move)
+                and obj.__module__ == module.__name__
+            ):
+                found[name] = obj
+    return found
+
+
+def test_every_move_class_is_reexported_from_the_package():
+    """``src/moves/__init__.py`` must re-export every move class.
+
+    A class missing from ``__all__`` is invisible to both contract tests in this
+    file *and* to any caller doing ``moves.X`` — it would silently ship without
+    a web_animation and without a UI button. The package's whole compatibility
+    promise (CLAUDE.md: "callers use `import moves` unchanged") rests on this.
+    """
+    defined = _move_classes_defined_in_submodules()
+    assert defined, "no move classes found — the submodule walk is broken"
+
+    unexported = sorted(set(defined) - set(moves.__all__))
+    assert not unexported, f"move classes missing from moves.__all__: {unexported}"
+
+    # ...and nothing in __all__ dangles.
+    dangling = [name for name in moves.__all__ if not hasattr(moves, name)]
+    assert not dangling, f"moves.__all__ names nothing resolves to: {dangling}"
+
+    # The re-export is the same object, not a stale duplicate class (which
+    # would break isinstance across the API/engine boundary — CLAUDE.md).
+    for name, cls in defined.items():
+        assert getattr(moves, name) is cls, f"{name} re-exported as a different object"
+
+
 def test_frontend_types_parsed():
     types = _frontend_animation_types()
     # Sanity floor: the taxonomy is at least the core set

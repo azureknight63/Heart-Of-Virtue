@@ -168,11 +168,19 @@ class TestShootBowInit:
         assert move.name == "Shoot Bow"
 
     def test_init_sets_arrow_to_wooden_arrow(self):
+        """The default nocked arrow is a fresh WoodenArrow, not a shared one.
+
+        ``hasattr`` + ``isinstance`` -- the old assertions -- would also hold
+        for a class-level singleton shared by every ShootBow instance, which
+        would let two archers' ammunition counts collide.
+        """
         user, arrow = _make_bow_user()
-        move = ShootBow(user)
-        # self.arrow is items.WoodenArrow() by default
-        assert hasattr(move, "arrow")
-        assert isinstance(move.arrow, items.WoodenArrow)
+        first = ShootBow(user)
+        second = ShootBow(user)
+
+        assert isinstance(first.arrow, items.WoodenArrow)
+        assert first.arrow is not second.arrow
+        assert first.arrow.name == items.WoodenArrow().name
 
     def test_init_accuracy_and_decay_defaults(self):
         user, arrow = _make_bow_user()
@@ -318,17 +326,29 @@ class TestShootBowCalculateHitChance:
         assert buffed_hit == min(100, int(base_hit * 1.4))
 
     def test_hawkeye_state_does_not_push_hit_chance_past_100(self):
-        user, arrow = _make_bow_user(finesse=50, intelligence=20)
+        """The +40% buff is clamped at 100.
+
+        The old version used finesse 50 vs finesse 1, whose *unbuffed* chance is
+        already 138 -> clamped to 100, so Hawkeye's multiplication never touched
+        the clamp at all; combined with ``result <= 100`` the test could not
+        fail. These stats put the unbuffed chance at 81, so 81 * 1.4 = 113 is
+        genuinely what the clamp has to catch.
+        """
+        user, arrow = _make_bow_user(finesse=10, intelligence=5)
         move = ShootBow(user)
         move.mvrange = (6, 50)
         move.decay = 0.05
-        enemy = _make_enemy(finesse=1)
+        enemy = _make_enemy(finesse=25)
         user.eq_weapon.range_base = 20
         user.combat_proximity = {enemy: 15}
+
+        # int(98 - 25 + 0.7*10 + 0.3*5) = 81, inside the bow's range_base so no
+        # accuracy decay applies.
+        assert move.calculate_hit_chance(enemy) == 81
+
         user.states = [states.Hawkeye(user)]
 
-        result = move.calculate_hit_chance(enemy)
-        assert result <= 100
+        assert move.calculate_hit_chance(enemy) == 100
 
 
 # ---------------------------------------------------------------------------

@@ -197,7 +197,8 @@ describe('CombatManager', () => {
       )
       const continueButton = screen.getByText('Continue')
       continueButton.click()
-      expect(mockCallbacks.onContinueToLoot).toHaveBeenCalled()
+      expect(mockCallbacks.onContinueToLoot).toHaveBeenCalledTimes(1)
+      expect(mockCallbacks.onVictoryClose).not.toHaveBeenCalled()
     })
 
     it('displays exp gained from endState', () => {
@@ -277,7 +278,7 @@ describe('CombatManager', () => {
       )
       const retryButton = screen.getByText('Retry')
       retryButton.click()
-      expect(mockCallbacks.onDefeatClose).toHaveBeenCalled()
+      expect(mockCallbacks.onDefeatClose).toHaveBeenCalledTimes(1)
     })
   })
 
@@ -356,7 +357,8 @@ describe('CombatManager', () => {
       )
       const collectButton = screen.getByText('Collect')
       collectButton.click()
-      expect(mockCallbacks.onCollectLoot).toHaveBeenCalled()
+      expect(mockCallbacks.onCollectLoot).toHaveBeenCalledTimes(1)
+      expect(mockCallbacks.onSkipLoot).not.toHaveBeenCalled()
     })
 
     it('displays item count from endState', () => {
@@ -655,7 +657,7 @@ describe('CombatManager', () => {
         />
       )
       screen.getByText('Continue').click()
-      expect(mockCallbacks.onPreVictoryNarrativeClose).toHaveBeenCalled()
+      expect(mockCallbacks.onPreVictoryNarrativeClose).toHaveBeenCalledTimes(1)
     })
   })
 

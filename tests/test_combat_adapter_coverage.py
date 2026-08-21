@@ -209,9 +209,21 @@ class TestCombatOutputCapture:
         cap.write("Animation not found for X")
         assert cap.log_entries == []
 
-    def test_flush_noop(self):
+    def test_flush_keeps_the_buffer(self):
+        """flush() exists only to satisfy the file-like protocol.
+
+        The old body called it and asserted nothing, so a flush() that had
+        started discarding the captured lines (the obvious "flush" semantics,
+        and wrong here — the adapter reads them *after* the redirect ends)
+        would have passed.
+        """
         cap = CombatOutputCapture()
-        cap.flush()  # Must not raise
+        cap.write("Jean struck the Slime for 8 damage!")
+
+        assert cap.flush() is None
+        assert [e["message"] for e in cap.get_log()] == [
+            "Jean struck the Slime for 8 damage!"
+        ]
 
     def test_get_log_returns_entries(self):
         cap = CombatOutputCapture()
@@ -293,12 +305,48 @@ class TestCombatOutputCapture:
 
 class TestAdapterInit:
     def test_init_creates_state_on_player(self):
+        """The persistent state block is seeded with the exact defaults the
+        adapter's properties read back.
+
+        ``hasattr(player, "combat_adapter_state")`` — the old assertion — is
+        satisfied by ``= {}``, which would make every one of those properties
+        silently fall back to its ``.get()`` default instead of the stored one.
+        """
         player = _make_player()
         del player.combat_adapter_state  # Force attribute creation
-        # Make hasattr return False to trigger branch
         with patch("src.api.combat_adapter.CombatStrategist"):
-            ApiCombatAdapter(player)
-        assert hasattr(player, "combat_adapter_state")
+            adapter = ApiCombatAdapter(player)
+
+        assert player.combat_adapter_state == {
+            "awaiting_input": False,
+            "input_type": None,
+            "pending_move_index": None,
+            "available_options": [],
+        }
+        # The properties are views onto that same dict, not copies.
+        assert adapter.awaiting_input is False
+        assert adapter.input_type is None
+        assert adapter.pending_move_index is None
+        assert adapter.available_options == []
+        adapter.awaiting_input = True
+        assert player.combat_adapter_state["awaiting_input"] is True
+
+    def test_init_preserves_an_existing_state_block(self):
+        """A reconstructed adapter must resume the fight, not reset it."""
+        player = _make_player()
+        player.combat_adapter_state = {
+            "awaiting_input": True,
+            "input_type": "target_selection",
+            "pending_move_index": 4,
+            "available_options": ["Slime"],
+            "combat_id": "abc-123",
+        }
+        with patch("src.api.combat_adapter.CombatStrategist"):
+            adapter = ApiCombatAdapter(player)
+
+        assert adapter.pending_move_index == 4
+        assert adapter.input_type == "target_selection"
+        assert adapter.combat_id == "abc-123"
 
     def test_init_with_callback(self):
         player = _make_player()
@@ -397,12 +445,22 @@ class TestAddLogEntry:
         assert "animation" in player.combat_log[0]
 
     def test_creates_combat_log_if_missing(self):
+        """A missing combat_log is created *and* receives the entry.
+
+        ``hasattr`` alone would pass for ``player.combat_log = []`` followed by
+        a dropped entry.
+        """
         player = _make_player()
         if hasattr(player, "combat_log"):
             del player.combat_log
         adapter = _make_adapter(player)
+
         adapter._add_log_entry(1, "msg", "combat")
-        assert hasattr(player, "combat_log")
+
+        assert len(player.combat_log) == 1
+        assert player.combat_log[0]["message"] == "msg"
+        assert player.combat_log[0]["type"] == "combat"
+        assert player.combat_log[0]["round"] == 1
 
     def test_socket_emit_path(self):
         """Entry is still added even when socket emit fails (no app context)."""
@@ -1280,13 +1338,22 @@ class TestMoveDealsDamage:
         move.name = "Power Strike"
         assert adapter._move_deals_damage(move) is True
 
-    def test_no_category_attribute(self):
+    def test_no_category_attribute_falls_through_to_the_name_check(self):
+        """Without a ``category`` the decision rests entirely on the name.
+
+        ``isinstance(result, bool)`` — the old assertion — is true of both
+        answers, so it could not distinguish "fell back to the name check" from
+        "crashed into a blanket False".
+        """
         adapter = _make_adapter()
-        move = MagicMock(spec=[])  # No category
-        move.name = "SomeMove"
-        result = adapter._move_deals_damage(move)
-        # Should not raise; returns based on name check only
-        assert isinstance(result, bool)
+
+        harmless = MagicMock(spec=["name"])
+        harmless.name = "SomeMove"
+        assert adapter._move_deals_damage(harmless) is False
+
+        violent = MagicMock(spec=["name"])
+        violent.name = "Pommel Strike"
+        assert adapter._move_deals_damage(violent) is True
 
 
 # ---------------------------------------------------------------------------

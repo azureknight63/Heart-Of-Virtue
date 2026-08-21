@@ -462,3 +462,142 @@ export function makeMove(overrides = {}) {
     overrides
   )
 }
+
+// ---------------------------------------------------------------------------
+// NPC chat — src/npc/_chat_llm.py chat_open/chat_respond, enriched by
+// GameService._enrich_chat_result_with_relationship. The Flask route returns
+// the result dict verbatim (jsonify(result)), so `response.data` IS this shape.
+// ---------------------------------------------------------------------------
+
+/**
+ * A Jean dialogue option. `tone` is one of exactly three values the engine
+ * emits — `_qc_jean_options` coerces anything else into direct/guarded/open,
+ * so a fixture inventing e.g. 'curious' describes a payload that cannot occur.
+ */
+export function makeJeanOption(overrides = {}) {
+  return merge({ text: 'What else can you tell me?', tone: 'direct' }, overrides)
+}
+
+/** NPCRelationshipSerializer.serialize_relationship — the badge payload. */
+export function makeRelationship(overrides = {}) {
+  return merge(
+    {
+      npc_id: 'Mynx',
+      npc_name: 'Mynx',
+      reputation: 0,
+      attitude: 'neutral',
+      emoji: '😐',
+      trust_level: 'Neutral',
+    },
+    overrides
+  )
+}
+
+/** POST /api/npc/chat/open response body. */
+export function makeNpcChatOpen(overrides = {}) {
+  return merge(
+    {
+      success: true,
+      npc_key: 'Mynx',
+      npc_name: 'Mynx',
+      npc_opening: 'Well, well. What do we have here?',
+      jean_options: [
+        makeJeanOption({ text: 'What is this place?', tone: 'direct' }),
+        makeJeanOption({ text: "I'll keep that in mind.", tone: 'guarded' }),
+      ],
+      loquacity_current: 2,
+      loquacity_max: 5,
+      turn: 0,
+      llm_available: true,
+      conversation_ended: false,
+      reputation: 0,
+      relationship: makeRelationship(),
+    },
+    overrides
+  )
+}
+
+/** POST /api/npc/chat/respond response body. Note `npc_response`, not `npc_opening`. */
+export function makeNpcChatRespond(overrides = {}) {
+  return merge(
+    {
+      success: true,
+      npc_key: 'Mynx',
+      npc_response: 'That depends on who is asking.',
+      jean_options: [makeJeanOption({ text: 'Go on.', tone: 'direct' })],
+      loquacity_current: 1,
+      loquacity_max: 5,
+      turn: 1,
+      llm_available: true,
+      conversation_ended: false,
+      reputation: 0,
+      reputation_delta: 0,
+      relationship: makeRelationship(),
+    },
+    overrides
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Inventory — InventoryItemSerializer.serialize (src/api/serializers/inventory.py)
+// ---------------------------------------------------------------------------
+// Two field names here are routinely mis-guessed:
+//   * `id` is a STRING — `str(id(item))`, the CPython object id — never an int.
+//   * the stack size is `quantity`; `count` is the engine-side attribute the
+//     serializer reads FROM, and no inventory payload carries it.
+// The weapon/armor blocks (`damage`/`str_mod`/`fin_mod`/`damage_type`,
+// `protection`) are conditional on the item's type, and `bonuses`/
+// `resistances`/`status_resistances`/`comparison`/`effects` appear only when
+// non-empty — so a fixture that always includes them describes a payload the
+// serializer cannot produce. Compose them explicitly per test instead.
+export function makeInventoryItem(overrides = {}) {
+  return merge(
+    {
+      id: '140234981726592',
+      index: 0,
+      name: 'Rusty Dagger',
+      type: 'Weapon',
+      maintype: 'Weapon',
+      subtype: 'Dagger',
+      quantity: 1,
+      rarity: 'common',
+      weight: 1.0,
+      value: 10,
+      can_equip: true,
+      can_use: false,
+      can_read: false,
+      can_drop: true,
+      is_equipped: false,
+      is_merchandise: false,
+      description: 'A pitted, rust-flecked blade. It has seen better centuries.',
+      damage: 5,
+      str_mod: 0.1,
+      fin_mod: 1.0,
+      damage_type: 'piercing',
+    },
+    overrides
+  )
+}
+
+/** A consumable inventory row: no weapon block, `effects`, can_use. */
+export function makeConsumableItem(overrides = {}) {
+  const { damage, str_mod, fin_mod, damage_type, ...base } = makeInventoryItem()
+  return merge(
+    {
+      ...base,
+      id: '140234981726593',
+      name: 'Restorative',
+      type: 'Restorative',
+      maintype: 'Consumable',
+      subtype: 'Potion',
+      description: 'A strange pink fluid of questionable chemistry.',
+      value: 100,
+      weight: 0.25,
+      quantity: 2,
+      can_equip: false,
+      can_use: true,
+      effects: [{ type: 'heal', amount: 60 }],
+    },
+    overrides
+  )
+}

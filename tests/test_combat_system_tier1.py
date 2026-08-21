@@ -327,11 +327,38 @@ class TestMovementStates:
         assert parry.beats_max == 7
         assert parry.hidden is True
 
-    def test_parrying_on_application_effect(self, basic_combatant):
-        """Test Parrying can have on_application hook."""
+    def test_parrying_expires_after_exactly_seven_beats(self, basic_combatant):
+        """Parrying is a 7-beat window; the 7th process() drops it.
+
+        The old test called ``on_application`` (an empty hook) and asserted
+        nothing, so it proved only that a no-op is a no-op. Duration is what
+        this state *is*, so that is what gets pinned.
+        """
         parry = states.Parrying(basic_combatant)
-        # Should not crash when on_application is called (it's empty but defined)
-        parry.on_application(basic_combatant)
+        basic_combatant.states = [parry]
+        basic_combatant.in_combat = True
+
+        with patch("src.states.functions.refresh_stat_bonuses"):
+            for beat in range(1, 7):
+                parry.process(basic_combatant)
+                assert parry.beats_left == 7 - beat
+                assert parry in basic_combatant.states
+
+            parry.process(basic_combatant)
+
+        assert parry.beats_left == 0
+        assert basic_combatant.states == []
+
+    def test_parrying_does_not_tick_outside_combat(self, basic_combatant):
+        """combat=True / world=False: a world beat must not burn the window."""
+        parry = states.Parrying(basic_combatant)
+        basic_combatant.states = [parry]
+        basic_combatant.in_combat = False
+
+        parry.process(basic_combatant)
+
+        assert parry.beats_left == 7
+        assert basic_combatant.states == [parry]
 
 
 # ════════════════════════════════════════════════════════════════════════════════
@@ -428,22 +455,44 @@ class TestStatusEffectInteractions:
     """Test interactions between multiple status effects."""
 
     def test_state_effect_execution_hook(self, basic_combatant):
-        """Test that State.effect() hook is called during process()."""
-        state = MagicMock(spec=states.State)
-        state.name = "MockState"
-        state.target = basic_combatant
-        state.combat = True
-        state.world = False
-        state.beats_max = 5
-        state.beats_left = 5
+        """``State.process`` calls ``effect()`` once per beat, right up to and
+        including the beat that removes the state.
 
-        # Wrap process to track effect() calls
-        original_process = states.State.process
+        The old body built a MagicMock, wrote a comment saying it could not
+        test this, and ended without a single assertion.
+        """
+
+        class CountingState(states.State):
+            def __init__(self, target):
+                super().__init__(
+                    name="Counting", target=target, beats_max=3, combat=True
+                )
+                self.effect_calls = 0
+                self.removals = 0
+
+            def effect(self, target):
+                self.effect_calls += 1
+
+            def on_removal(self, target):
+                self.removals += 1
+
+        state = CountingState(basic_combatant)
         basic_combatant.states = [state]
         basic_combatant.in_combat = True
 
-        # Call the actual process on our mocked state
-        # We can't easily mock process, so we test the real thing with a custom subclass
+        with patch("src.states.functions.refresh_stat_bonuses") as mock_refresh:
+            state.process(basic_combatant)
+            assert (state.effect_calls, state.beats_left) == (1, 2)
+            state.process(basic_combatant)
+            assert (state.effect_calls, state.beats_left) == (2, 1)
+            state.process(basic_combatant)
+
+        # Third beat: effect still runs, then the state expires.
+        assert state.effect_calls == 3
+        assert state.beats_left == 0
+        assert basic_combatant.states == []
+        assert state.removals == 1
+        mock_refresh.assert_called_once_with(basic_combatant)
 
     def test_disoriented_state_reduces_finesse(self, basic_combatant):
         """Test Disoriented state reduces finesse."""

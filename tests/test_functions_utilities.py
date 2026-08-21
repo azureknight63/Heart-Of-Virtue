@@ -89,8 +89,9 @@ def test_inflict_immunity():
     victim = DummyVictim()
     victim.status_resistance["generic"] = 1.0  # immune
     result = functions.inflict(st, victim, chance=1.0, force=False)
-    assert result is None or result is False  # function returns False or None on failure
-    assert len(victim.states) == 0
+    assert result is False
+    assert victim.states == []
+    assert st.applied is False  # on_application must not have fired
 
 
 def test_inflict_force_bypasses_resistance():
@@ -164,11 +165,16 @@ def test_add_random_enchantments_prefers_poisonous(monkeypatch):
     monkeypatch.setattr(random, "choice", choose_poisonous)
 
     functions.add_random_enchantments(armor, 2)
-    # Name should have prefixes now
-    assert "Helm" in armor.name
-    assert armor.value >= 50  # value increased or unchanged
-    # Poisonous adds equip state
-    assert any(getattr(s, "__class__", object).__name__ == "Poisoned" for s in armor.equip_states) or len(armor.equip_states) >= 0
+
+    # Both rolls landed on the prefix slot, so only one enchantment survives
+    # (the second overwrites the first in enchantments[0]).
+    assert armor._enchantment_count == 1
+    assert armor.name == "Poisonous Helm"
+    assert armor.value == 65  # Poisonous.modify() raises the value
+    # ...and Poisonous grants exactly the Poisoned equip state. The previous
+    # assertion ended in `or len(armor.equip_states) >= 0`, which is true of
+    # every list, so it passed for an item that got no state at all.
+    assert [type(state).__name__ for state in armor.equip_states] == ["Poisoned"]
 
 
 def test_add_random_enchantments_elemental_weapon(monkeypatch):

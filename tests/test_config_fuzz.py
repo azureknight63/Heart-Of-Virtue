@@ -52,10 +52,14 @@ def test_load_never_raises_on_random_bytes(tmp_path):
 
     rng = random.Random(98765)
     path = tmp_path / "garbage.ini"
+    defaults = GameConfig()
     for _ in range(200):
         path.write_bytes(fuzzer.random_bytes_blob(rng))
         cfg = ConfigManager(str(path)).load()
-        assert isinstance(cfg, GameConfig)
+        # Not just "a GameConfig came back": random bytes carry no settings, so
+        # every field must still hold its documented default. A loader that
+        # half-parsed garbage into real fields would pass the isinstance check.
+        assert cfg == defaults
 
 
 def test_load_never_raises_on_random_ini_text(tmp_path):

@@ -284,7 +284,10 @@ describe('EventDialog', () => {
     const overlay = document.querySelector('.modal-overlay');
     fireEvent.click(overlay);
 
-    expect(mockOnClose).toHaveBeenCalled();
+    // Exactly one close — a duplicated call pops two events off GamePage's
+    // queue and silently skips the next one.
+    expect(mockOnClose).toHaveBeenCalledTimes(1);
+    expect(mockOnSubmitInput).not.toHaveBeenCalled();
   });
 
   it('renders death scene without typewriter — shows text instantly in a pre element', () => {
@@ -340,6 +343,71 @@ describe('EventDialog', () => {
       expect(screen.getByTestId('conversation-stage')).toBeDefined();
       // The plain typewriter path must NOT be used for staged events.
       expect(screen.queryByTestId('event-text-container')).toBeNull();
+    });
+
+    it('re-runs the stage from beat one when the next stage arrives on the same mounted dialog', () => {
+      // The multi-stage soft-lock (Ch02GuideToCitadel / AfterKingSlimeReturn):
+      // one Python event calls begin_conversation() several times, so a single
+      // mounted EventDialog receives a fresh `segments` array per stage. It
+      // mounts ConversationStage with NO `key`, so React reuses the instance —
+      // a test that renders a fresh dialog per stage cannot catch this.
+      //
+      // Both halves must hold: the stage rewinds to beat one, AND onComplete
+      // fires again so `showInput` is re-revealed. Without the second, every
+      // affordance stays hidden and the player cannot advance at all.
+      const stageOne = {
+        event_id: 'guide-1',
+        name: 'The Guide',
+        output_text: 'Stage one, beat one.\nStage one, beat two.',
+        needs_input: true,
+        input_type: 'choice',
+        input_options: [{ label: 'Go on', value: 'go' }],
+        segments: [
+          { text: 'Stage one, beat one.', speaker: 'Jean', in_conversation: true },
+          { text: 'Stage one, beat two.', speaker: 'Jean', in_conversation: true },
+        ],
+        conversation: { cast: [{ id: 'Jean', name: 'Jean', side: 'left' }] },
+      };
+      const stageTwo = {
+        ...stageOne,
+        output_text: 'Stage two, beat one.\nStage two, beat two.',
+        segments: [
+          { text: 'Stage two, beat one.', speaker: 'Jean', in_conversation: true },
+          { text: 'Stage two, beat two.', speaker: 'Jean', in_conversation: true },
+        ],
+      };
+
+      const { rerender } = render(
+        <EventDialog event={stageOne} onClose={mockOnClose} onSubmitInput={mockOnSubmitInput} />
+      );
+      const stage = screen.getByTestId('conversation-stage');
+      const settle = () => act(() => { vi.advanceTimersByTime(3000); });
+      const click = () => act(() => { fireEvent.click(stage); });
+
+      settle();
+      expect(screen.getByText('Stage one, beat one.')).toBeInTheDocument();
+      // Input stays hidden until the stage reaches its last beat.
+      expect(screen.queryByText('Go on')).toBeNull();
+      click(); settle();
+      expect(screen.getByText('Stage one, beat two.')).toBeInTheDocument();
+      click();
+      expect(screen.getByText('Go on')).toBeInTheDocument();
+
+      // The server answers with the next stage of the SAME event; the dialog is
+      // never unmounted in between.
+      rerender(<EventDialog event={stageTwo} onClose={mockOnClose} onSubmitInput={mockOnSubmitInput} />);
+      settle();
+
+      expect(screen.getByTestId('conversation-stage')).toBe(stage);
+      expect(screen.getByText('Stage two, beat one.')).toBeInTheDocument();
+      expect(screen.queryByText('Stage one, beat two.')).toBeNull();
+      expect(screen.queryByText('Go on')).toBeNull();
+
+      click(); settle();
+      expect(screen.getByText('Stage two, beat two.')).toBeInTheDocument();
+      click();
+      // The way out reappears — this is the assertion the soft-lock broke.
+      expect(screen.getByText('Go on')).toBeInTheDocument();
     });
 
     it('falls back to the plain typewriter when there are no segments', () => {
@@ -692,7 +760,12 @@ describe('EventDialog', () => {
       render(<EventDialog event={failingEvent} onClose={mockOnClose} />);
       act(() => { vi.advanceTimersByTime(5000); });
 
-      expect(() => fireEvent.click(screen.getByText('Touch it'))).not.toThrow();
+      const touch = screen.getByText('Touch it').closest('button');
+      fireEvent.click(touch);
+
+      // With no handler there is nothing to await, so the dialog must not park
+      // itself in the submitting state: the button stays live and no error shows.
+      expect(touch.disabled).toBe(false);
       expect(screen.queryByText(/Failed to submit input/i)).toBeNull();
     });
 
@@ -706,7 +779,7 @@ describe('EventDialog', () => {
 
       fireEvent.click(screen.getByTestId('event-text-container'));
       fireEvent.click(screen.getByText('Touch it'));
-      await waitFor(() => expect(onSubmit).toHaveBeenCalled());
+      await waitFor(() => expect(onSubmit).toHaveBeenCalledWith('evt-fail', 'touch'));
 
       unmount();
       const warn = vi.spyOn(console, 'error').mockImplementation(() => {});

@@ -36,6 +36,49 @@ def test_inventory_invariants_hold(seed):
     assert not findings, "\n".join(str(f) for f in findings[:40])
 
 
+@pytest.mark.parametrize(
+    "broken_op, expected_category, iterations, seed",
+    [
+        ("transfer_gold", "not-conserved", 50, 1),
+        ("transfer_item", "dangling-eq-weapon", 150, 1337),
+    ],
+)
+def test_the_fuzzer_can_actually_fail(
+    monkeypatch, broken_op, expected_category, iterations, seed
+):
+    """Anti-vacuity guard for the four seeds above.
+
+    A fuzzer whose invariants cannot fire is the most expensive no-op a suite
+    can carry: it burns a second per seed and green-lights everything. Inject a
+    real defect into the operation under test and assert the corresponding
+    invariant reports it — if this ever goes quiet, the checks above have
+    stopped checking.
+    """
+    original = getattr(fuzzer, broken_op)
+
+    if broken_op == "transfer_gold":
+        def broken(source, dest, amount):
+            original(source, dest, amount)
+            for item in dest:  # mint 5 gold out of nothing
+                if getattr(item, "name", None) == "Gold":
+                    item.amt += 5
+                    item.count = item.amt
+                    break
+    else:
+        def broken(source, dest, item, qty):
+            equipped = getattr(source, "eq_weapon", None)
+            original(source, dest, item, qty)
+            if equipped is item:  # leave eq_weapon pointing at the gone item
+                source.eq_weapon = item
+
+    monkeypatch.setattr(fuzzer, broken_op, broken)
+
+    findings = fuzzer.run_fuzz(iterations=iterations, seed=seed)
+
+    assert findings, f"breaking {broken_op} produced no findings"
+    assert {f.category for f in findings} == {expected_category}
+
+
 def test_transfer_gold_conserves_and_never_negative():
     """Over-transferring gold neither creates nor destroys it (issue #297)."""
     from src.items import Gold

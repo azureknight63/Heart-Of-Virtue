@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import React from 'react';
 import { MemoryRouter } from 'react-router-dom';
 import GamePage from './GamePage'
-import { makeStatusEffect } from '../test/payloads';
+import { makeStatusEffect, makeCombatant, makeEnemy } from '../test/payloads';
 import { capabilitiesDisabled } from '../test/mockHelpers';
 import * as api from '../api/endpoints';
 import { usePlayer, useWorld, useCombat, useExploration, useExits, useAutosave } from '../hooks/useApi';
@@ -244,15 +244,16 @@ describe('Tactical AI Integration Tests', () => {
                 success: true,
                 combat_active: true,
                 battle_state: {
+                    // Built from src/test/payloads.js: CombatantSerializer marks
+                    // sides with `type: 'player' | 'npc'`, NOT the `is_player`
+                    // flag these fixtures used to invent (that field exists only
+                    // on the thinner start_combat combatants list). A fixture
+                    // that names a key the serializer never emits cannot fail.
                     combatants: [
-                        { id: 'player_1', name: 'Jean', hp: 80, max_hp: 100, is_player: true, x: 2, y: 2 },
-                        { id: 'enemy_123', name: 'Rat', hp: 10, max_hp: 10, is_player: false, x: 2, y: 3 },
+                        makeCombatant({ id: 'player_1', name: 'Jean', hp: 80, max_hp: 100, health: { current: 80, max: 100 }, position: { x: 2, y: 2, facing: 'N' } }),
+                        makeEnemy({ id: 'enemy_123', name: 'Rat', hp: 10, max_hp: 10, health: { current: 10, max: 10 }, position: { x: 2, y: 3, facing: 'S' } }),
                     ],
-                    player: {
-                        name: 'Jean',
-                        hp: 80,
-                        max_hp: 100
-                    },
+                    player: makeCombatant({ name: 'Jean', hp: 80, max_hp: 100, health: { current: 80, max: 100 } }),
                     input_type: 'move_selection',
                     awaiting_input: true,
                     suggested_moves: [
@@ -314,10 +315,10 @@ describe('Tactical AI Integration Tests', () => {
                 combat_active: true,
                 battle_state: {
                     combatants: [
-                        { id: 'player_1', name: 'Jean', hp: 100, max_hp: 100, is_player: true },
-                        { id: 'enemy_456', name: 'Enemy', hp: 50, max_hp: 50, is_player: false },
+                        makeCombatant({ id: 'player_1', name: 'Jean' }),
+                        makeEnemy({ id: 'enemy_456', name: 'Enemy', hp: 50, max_hp: 50, health: { current: 50, max: 50 } }),
                     ],
-                    player: { name: 'Jean', hp: 100, max_hp: 100 },
+                    player: makeCombatant({ name: 'Jean' }),
                     input_type: 'move_selection',
                     awaiting_input: true,
                     suggested_moves: [
@@ -346,8 +347,8 @@ describe('Tactical AI Integration Tests', () => {
                 success: true,
                 battle_state: {
                     combatants: [
-                        { name: 'Jean', hp: 100, max_hp: 100, is_player: true },
-                        { name: 'Enemy', hp: 40, max_hp: 50, is_player: false },
+                        makeCombatant({ name: 'Jean' }),
+                        makeEnemy({ name: 'Enemy', hp: 40, max_hp: 50, health: { current: 40, max: 50 } }),
                     ],
                 },
                 log: [{ message: 'Jean attacks Enemy for 10 damage!', type: 'combat' }],
@@ -387,7 +388,7 @@ describe('Tactical AI Integration Tests', () => {
                 combat_active: true,
                 battle_state: {
                     combatants: [
-                        { id: 'player_1', name: 'Jean', hp: 75, max_hp: 100, is_player: true },
+                        makeCombatant({ id: 'player_1', name: 'Jean', hp: 75, max_hp: 100, health: { current: 75, max: 100 } }),
                     ],
                     player: {
                         name: 'Jean',
@@ -446,8 +447,8 @@ describe('Tactical AI Integration Tests', () => {
                 combat_active: true,
                 battle_state: {
                     combatants: [
-                        { id: 'player_1', name: 'Jean', hp: 90, max_hp: 100, is_player: true },
-                        { id: 'enemy_789', name: 'Enemy', hp: 30, max_hp: 50, is_player: false },
+                        makeCombatant({ id: 'player_1', name: 'Jean', hp: 90, max_hp: 100, health: { current: 90, max: 100 } }),
+                        makeEnemy({ id: 'enemy_789', name: 'Enemy', hp: 30, max_hp: 50, health: { current: 30, max: 50 } }),
                     ],
                     player: { name: 'Jean', hp: 90, max_hp: 100 },
                     input_type: 'move_selection',
@@ -502,20 +503,8 @@ describe('Tactical AI Integration Tests', () => {
                         combat_active: true,
                         suggestions_loading: true, // Trigger poll
                         battle_state: {
-                            combatants: [
-                                {
-                                    name: 'Jean',
-                                    hp: 100,
-                                    max_hp: 100,
-                                    is_player: true,
-                                },
-                            ],
-                            player: {
-                                name: 'Jean',
-                                hp: 100,
-                                max_hp: 100,
-                                status_effects: []
-                            },
+                            combatants: [makeCombatant({ name: 'Jean' })],
+                            player: makeCombatant({ name: 'Jean', status_effects: [] }),
                             input_type: 'move_selection',
                             awaiting_input: true,
                         },
@@ -530,18 +519,11 @@ describe('Tactical AI Integration Tests', () => {
                         combat_active: true,
                         suggestions_loading: false, // End poll
                         battle_state: {
-                            combatants: [
-                                {
-                                    name: 'Jean',
-                                    hp: 95,
-                                    max_hp: 100,
-                                    is_player: true,
-                                },
-                            ],
-                            player: {
+                            combatants: [makeCombatant({ name: 'Jean', hp: 95, health: { current: 95, max: 100 } })],
+                            player: makeCombatant({
                                 name: 'Jean',
                                 hp: 95,
-                                max_hp: 100,
+                                health: { current: 95, max: 100 },
                                 status_effects: [
                                     makeStatusEffect({
                                         name: 'Poison',
@@ -550,7 +532,7 @@ describe('Tactical AI Integration Tests', () => {
                                         beats_left: 4,
                                     }),
                                 ],
-                            },
+                            }),
                             input_type: 'move_selection',
                             awaiting_input: true,
                         },

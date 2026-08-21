@@ -394,18 +394,25 @@ describe('useCombatCoordinator', () => {
                 await result.current.handleSuggestedMoveClick(suggestion)
             })
 
-            expect(fetchCombatStatus).toHaveBeenCalled()
+            expect(fetchCombatStatus).toHaveBeenCalledTimes(1)
+            // The refresh returned nothing usable, so the stale id is used as a
+            // last resort rather than the move being silently dropped.
+            expect(performAction).toHaveBeenCalledWith('select_move_and_target', {
+                move_name: 'Attack',
+                target_id: 'enemy_1'
+            })
         })
 
         it('should handle move execution errors', async () => {
             const performAction = vi.fn().mockRejectedValue(new Error('Invalid target'))
             const fetchCombatStatus = vi.fn()
+            const playSFX = vi.fn()
             const combat = {
                 enemies: [{ id: 'enemy_1', name: 'Goblin' }]
             }
 
             const { result } = renderHook(() =>
-                useCombatCoordinator({ ...defaultParams, performAction, fetchCombatStatus, combat })
+                useCombatCoordinator({ ...defaultParams, performAction, fetchCombatStatus, playSFX, combat })
             )
 
             const suggestion = {
@@ -417,7 +424,10 @@ describe('useCombatCoordinator', () => {
                 await result.current.handleSuggestedMoveClick(suggestion)
             })
 
-            expect(fetchCombatStatus).toHaveBeenCalled()
+            // The rejection is swallowed, targets are resynced, and — crucially
+            // — the confirm SFX does NOT play for a move that never landed.
+            expect(fetchCombatStatus).toHaveBeenCalledTimes(1)
+            expect(playSFX).not.toHaveBeenCalled()
         })
 
         it('treats a missing enemies list as stale and refreshes combat status', async () => {
@@ -433,7 +443,11 @@ describe('useCombatCoordinator', () => {
                 await result.current.handleSuggestedMoveClick({ move_name: 'Attack', target_id: 'enemy_1' })
             })
 
-            expect(fetchCombatStatus).toHaveBeenCalled()
+            expect(fetchCombatStatus).toHaveBeenCalledTimes(1)
+            expect(performAction).toHaveBeenCalledWith('select_move_and_target', {
+                move_name: 'Attack',
+                target_id: 'enemy_1'
+            })
         })
 
         it('uses the first enemy from the refreshed combat status when available', async () => {
@@ -467,7 +481,49 @@ describe('useCombatCoordinator', () => {
                 await result.current.handleSuggestedMoveClick({ move_name: 'Attack', target_id: null })
             })
 
-            expect(fetchCombatStatus).toHaveBeenCalled()
+            // A null target skips the pre-flight staleness check entirely, so
+            // this refresh can only have come from the rejection handler.
+            expect(fetchCombatStatus).toHaveBeenCalledTimes(1)
+            expect(performAction).toHaveBeenCalledWith('select_move_and_target', {
+                move_name: 'Attack',
+                target_id: null
+            })
+        })
+
+        it('does not refresh combat status for a rejection unrelated to targeting', async () => {
+            const performAction = vi.fn().mockRejectedValue(new Error('server exploded'))
+            const fetchCombatStatus = vi.fn()
+            const playSFX = vi.fn()
+
+            const { result } = renderHook(() =>
+                useCombatCoordinator({ ...defaultParams, performAction, fetchCombatStatus, playSFX })
+            )
+
+            await act(async () => {
+                await result.current.handleSuggestedMoveClick({ move_name: 'Attack', target_id: null })
+            })
+
+            // Only a 400 or a target-related message triggers a resync; anything
+            // else must not spend a request.
+            expect(fetchCombatStatus).not.toHaveBeenCalled()
+            expect(playSFX).not.toHaveBeenCalled()
+        })
+
+        it('refreshes combat status on a 400 response regardless of the message', async () => {
+            const err = new Error('Bad Request')
+            err.response = { status: 400 }
+            const performAction = vi.fn().mockRejectedValue(err)
+            const fetchCombatStatus = vi.fn()
+
+            const { result } = renderHook(() =>
+                useCombatCoordinator({ ...defaultParams, performAction, fetchCombatStatus })
+            )
+
+            await act(async () => {
+                await result.current.handleSuggestedMoveClick({ move_name: 'Attack', target_id: null })
+            })
+
+            expect(fetchCombatStatus).toHaveBeenCalledTimes(1)
         })
     })
 
@@ -490,7 +546,9 @@ describe('useCombatCoordinator', () => {
 
             expect(performAction).toHaveBeenCalledWith('attack', 'enemy_1')
             expect(onEventsTriggered).toHaveBeenCalledWith([{ event_id: 'evt-1', name: 'Event' }])
-            expect(triggerTick).toHaveBeenCalled()
+            // Exactly one autosave tick per action — a double tick burns through
+            // AUTOSAVE_TICK_THRESHOLD twice as fast as intended.
+            expect(triggerTick).toHaveBeenCalledTimes(1)
         })
 
         it('should not call triggerTick when performAction throws', async () => {
@@ -544,7 +602,7 @@ describe('useCombatCoordinator', () => {
                 result.current.handleInteractionComplete()
             })
 
-            expect(fetchCombatStatus).toHaveBeenCalled()
+            expect(fetchCombatStatus).toHaveBeenCalledTimes(1)
         })
     })
 

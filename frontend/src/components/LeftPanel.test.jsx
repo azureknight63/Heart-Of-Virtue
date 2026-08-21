@@ -471,7 +471,8 @@ describe('LeftPanel', () => {
                 move_name: 'Slash', target_id: 'enemy_1',
             });
         });
-        expect(onMoveSubmitted).toHaveBeenCalled();
+        // Submitting a move flips the mobile view to the battlefield tab.
+        expect(onMoveSubmitted).toHaveBeenCalledTimes(1);
     });
 
     it('does not notify onMoveSubmitted for instant/non-turn-consuming moves', async () => {
@@ -498,8 +499,14 @@ describe('LeftPanel', () => {
         fireEvent.click(screen.getByText('Check'));
 
         await waitFor(() => {
-            expect(onCombatAction).toHaveBeenCalled();
+            // The move is dispatched by name against the sole live enemy —
+            // asserting the payload catches a wrong move_name or target_id,
+            // which a bare toHaveBeenCalled() would wave through.
+            expect(onCombatAction).toHaveBeenCalledWith('select_move_and_target', {
+                move_name: 'Check', target_id: 'enemy_1',
+            });
         });
+        // ...and it does NOT flip the mobile view to the battlefield.
         expect(onMoveSubmitted).not.toHaveBeenCalled();
     });
 
@@ -931,7 +938,8 @@ describe('LeftPanel', () => {
         }, { timeout: 5000 });
         expect(onLogProgress).toHaveBeenCalledWith(3);
         expect(onLogProcessingChange).toHaveBeenCalledWith(true);
-        expect(onDisplayedLogCountChange).toHaveBeenCalled();
+        // Both log entries have been displayed by the time the SFX fires.
+        expect(onDisplayedLogCountChange).toHaveBeenLastCalledWith(2);
     }, 10000);
 
     it('does not duplicate a log entry with the same message and round', async () => {

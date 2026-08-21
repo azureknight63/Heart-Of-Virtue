@@ -172,8 +172,16 @@ class TestEngineIsFreeOfBlockingInput:
             "guard, so its input() is reachable from game code"
         )
 
-    def test_await_input_is_a_no_op(self):
-        """The former 'press Enter' pause is retained only as a no-op."""
+    def test_await_input_never_touches_stdin(self, monkeypatch, capsys):
+        """The former 'press Enter' pause is retained only as a no-op: it must
+        not read stdin (which would hang an API worker) nor print a prompt."""
         from src import functions
 
+        def _explode(*args, **kwargs):  # pragma: no cover - must never run
+            raise AssertionError("await_input() read from stdin")
+
+        monkeypatch.setattr("builtins.input", _explode)
+        monkeypatch.setattr("sys.stdin", None)
+
         assert functions.await_input() is None
+        assert capsys.readouterr().out == ""

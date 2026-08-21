@@ -70,6 +70,7 @@ import pickle
 import sys
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch, call
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -169,38 +170,59 @@ class TestCheckForCombat:
         assert enemy in result
         assert enemy.in_combat is True
 
-    def test_quiet_movement_bonus(self):
-        """Line 273-277: Quiet Movement skill boosts finesse_check."""
-        import src.moves as moves
+    @staticmethod
+    def _room_with(*npcs):
+        room = MagicMock()
+        room.npcs_here = list(npcs)
+        return room
 
-        p = _player()
-        p.finesse = 100  # high finesse
-        qm = MagicMock()
-        qm.name = "Quiet Movement"
-        p.known_moves = [qm]
+    @staticmethod
+    def _enemy(awareness):
         enemy = MagicMock()
         enemy.friend = False
         enemy.aggro = True
-        enemy.awareness = 0  # won't trigger for high finesse
-        p.current_room = MagicMock()
-        p.current_room.npcs_here = [enemy]
-        # Just verify it doesn't crash and returns a list
-        result = functions.check_for_combat(p)
-        assert isinstance(result, list)
-
-    def test_finesse_exception_fallback(self):
-        """Lines 269-270: finesse attribute causes exception → fallback randint."""
-        p = _player()
-        p.finesse = "not_a_number"  # will cause ValueError in int()
-        enemy = MagicMock()
-        enemy.friend = False
-        enemy.aggro = True
-        enemy.awareness = 9999
+        enemy.awareness = awareness
         enemy.in_combat = False
-        p.current_room = MagicMock()
-        p.current_room.npcs_here = [enemy]
-        result = functions.check_for_combat(p)
-        assert isinstance(result, list)
+        return enemy
+
+    def test_quiet_movement_multiplies_the_finesse_roll_by_1_2(self):
+        """The skill turns a roll of 50 into 60, which is what decides whether
+        an enemy with awareness 55 notices Jean. Asserted through that
+        threshold rather than `isinstance(result, list)`."""
+        quiet_movement = MagicMock()
+        quiet_movement.name = "Quiet Movement"
+        sharp_eyed = self._enemy(awareness=55)
+
+        without = _player()
+        without.known_moves = []
+        without.current_room = self._room_with(sharp_eyed)
+        with patch("random.randint", return_value=50):
+            noticed = functions.check_for_combat(without)
+
+        with_skill = _player()
+        with_skill.known_moves = [quiet_movement]
+        with_skill.current_room = self._room_with(self._enemy(awareness=55))
+        with patch("random.randint", return_value=50):
+            sneaked_past = functions.check_for_combat(with_skill)
+
+        assert noticed == [sharp_eyed]      # 50 <= 55 -> spotted
+        assert sneaked_past == []           # int(50 * 1.2) == 60 > 55 -> unseen
+
+    def test_unparseable_finesse_falls_back_to_a_0_to_10_roll(self):
+        """A corrupt finesse must not crash combat initiation; the roll falls
+        back to randint(0, 10) rather than the finesse-derived range."""
+        p = _player()
+        p.finesse = "not_a_number"
+        p.known_moves = []
+        enemy = self._enemy(awareness=9999)
+        p.current_room = self._room_with(enemy)
+
+        with patch("random.randint", return_value=3) as roll:
+            result = functions.check_for_combat(p)
+
+        roll.assert_called_once_with(0, 10)
+        assert result == [enemy]
+        assert enemy.in_combat is True
 
     def test_skip_combat_config_bypasses_entirely(self):
         """Issue #450: GameConfig.skip_combat=True short-circuits before any
@@ -373,93 +395,157 @@ class TestAddEnemiesToCombat:
 
 
 class TestRefreshStatBonuses:
-    """Lines 401-580."""
+    """functions.refresh_stat_bonuses on a real Player.
 
-    def test_resistance_bonus_merged(self):
-        """Lines 477-484: resistance dict merged from equipped item."""
+    Every assertion here used to be shape-only (`isinstance(x, dict)`) or an
+    outright tautology (`assert changed or True`), so the whole class passed
+    against a refresh_stat_bonuses that did nothing at all. The exhaustive
+    formula proofs live in tests/test_refresh_stat_bonuses.py; these pin the
+    paths that need a real Player (Jean-specific weight handling included).
+
+    Note the setup uses SimpleNamespace, not MagicMock: a MagicMock answers
+    hasattr() for *every* bonus attribute, so the engine tries to add a Mock to
+    each stat and silently swallows the TypeError — a test that appears to
+    grant one bonus while actually exercising twenty failed ones.
+    """
+
+    @staticmethod
+    def _player_with(*equipment):
         p = _player()
-        # Give player an equipped item with add_resistance
-        item = MagicMock()
-        item.isequipped = True
-        item.add_resistance = {"fire": 0.1}
-        p.inventory = [item]
-        original_fire = p.resistance.get("fire", 1.0)
+        p.inventory = list(equipment)
+        p.states = []
+        return p
+
+    def test_resistance_bonus_merged_from_equipped_item_only(self):
+        equipped = SimpleNamespace(isequipped=True, add_resistance={"fire": 0.1})
+        p = self._player_with(equipped)
+        assert p.resistance_base["fire"] == 1.0
+
         functions.refresh_stat_bonuses(p)
-        # Fire resistance should have changed (base reset + item bonus)
-        assert p.resistance.get("fire", 1.0) != original_fire or True  # no crash
+
+        assert p.resistance["fire"] == 1.1
+        assert p.resistance["ice"] == 1.0  # untouched keys keep their base
+
+    def test_unequipped_item_grants_nothing(self):
+        carried = SimpleNamespace(isequipped=False, add_resistance={"fire": 0.5})
+        p = self._player_with(carried)
+
+        functions.refresh_stat_bonuses(p)
+
+        assert p.resistance["fire"] == 1.0
+
+    def test_unknown_resistance_keys_are_ignored(self):
+        equipped = SimpleNamespace(
+            isequipped=True, add_resistance={"fire": 0.1, "plasma": 9.9}
+        )
+        p = self._player_with(equipped)
+
+        functions.refresh_stat_bonuses(p)
+
+        assert p.resistance["fire"] == 1.1
+        assert "plasma" not in p.resistance
 
     def test_status_resistance_bonus_merged(self):
-        """Lines 485-493: status_resistance dict merged."""
-        p = _player()
-        item = MagicMock()
-        item.isequipped = True
-        item.add_status_resistance = {"poison": 0.2}
-        p.inventory = [item]
-        functions.refresh_stat_bonuses(p)
-        # Just verify no crash
-        assert isinstance(p.status_resistance, dict)
+        equipped = SimpleNamespace(
+            isequipped=True, add_status_resistance={"poison": 0.2}
+        )
+        p = self._player_with(equipped)
+        assert p.status_resistance_base["poison"] == 0.0
 
-    def test_str_bonus_applied(self):
-        """Lines 512-517: STR above 10 gives maxhp bonus."""
-        p = _player()
-        p.inventory = []
-        p.states = []
-        p.strength = 15  # 5 above base
-        base_maxhp = p.maxhp
         functions.refresh_stat_bonuses(p)
-        assert p.maxhp >= base_maxhp  # should be at least as high after STR bonus
 
-    def test_end_bonus_applied(self):
-        """Lines 519-524: END above 10 gives maxfatigue bonus."""
-        p = _player()
-        p.inventory = []
-        p.states = []
-        p.endurance = 20
-        functions.refresh_stat_bonuses(p)
-        assert isinstance(p.maxfatigue, int)
+        assert p.status_resistance["poison"] == 0.2
 
-    def test_faith_status_resistance_scaling(self):
-        """Lines 527-534: faith increases mental status resistance."""
-        p = _player()
-        p.inventory = []
-        p.states = []
-        p.faith = 10
-        functions.refresh_stat_bonuses(p)
-        # apathy/hollowed/fear should be higher with faith
-        assert isinstance(p.status_resistance.get("apathy", 0), float)
+    def test_negative_status_resistance_is_clamped_to_zero(self):
+        cursed = SimpleNamespace(
+            isequipped=True, add_status_resistance={"poison": -2.0}
+        )
+        p = self._player_with(cursed)
 
-    def test_overweight_penalty(self):
-        """Lines 559-564: overweight reduces maxfatigue."""
-        p = _player()
-        p.inventory = []
-        p.states = []
-        # Force overweight state
-        p.weight_tolerance = 10.0
-        p.weight_current = 20.0  # over by 10
         functions.refresh_stat_bonuses(p)
-        # maxfatigue should be penalized or floored at 0
-        assert p.maxfatigue >= 0
 
-    def test_light_carry_bonus(self):
-        """Lines 554-558: light carry boosts maxfatigue by 25%."""
-        p = _player()
-        p.inventory = []
-        p.states = []
-        p.weight_tolerance = 100.0
-        p.weight_current = 10.0  # well under half
-        before = p.maxfatigue
-        functions.refresh_stat_bonuses(p)
-        # maxfatigue should be boosted
-        assert p.maxfatigue >= before or True  # no crash
+        assert p.status_resistance["poison"] == 0
 
-    def test_fatigue_clamped_to_maxfatigue(self):
-        """Lines 576-580: fatigue clamped to maxfatigue."""
-        p = _player()
-        p.inventory = []
-        p.states = []
-        p.fatigue = 99999  # way above max
+    def test_strength_above_ten_adds_two_maxhp_per_point(self):
+        """The reset pass rebuilds stats from *_base, so the bonus has to be
+        driven through strength_base — setting `p.strength` directly (as this
+        test used to) is overwritten before the bonus is computed."""
+        p = self._player_with()
+        p.strength_base = 15
+
         functions.refresh_stat_bonuses(p)
-        assert p.fatigue <= p.maxfatigue
+
+        assert p.strength == 15
+        assert p.maxhp == p.maxhp_base + (15 - 10) * 2
+
+    def test_strength_at_or_below_ten_adds_no_maxhp(self):
+        p = self._player_with()
+        p.strength_base = 4
+
+        functions.refresh_stat_bonuses(p)
+
+        assert p.maxhp == p.maxhp_base  # max(0, ...) floors the bonus
+
+    def test_endurance_above_ten_adds_two_maxfatigue_per_point(self):
+        light = self._player_with()
+        functions.refresh_stat_bonuses(light)
+        baseline = light.maxfatigue
+
+        p = self._player_with()
+        p.endurance_base = 20
+        functions.refresh_stat_bonuses(p)
+
+        # +2 per point over 10, then Jean's under-half-capacity +25%.
+        assert p.maxfatigue == baseline + int((20 - 10) * 2 * 1.25)
+
+    def test_faith_raises_mental_status_resistance_by_half_a_percent_per_point(
+        self,
+    ):
+        p = self._player_with()
+        p.faith_base = 10
+        assert p.status_resistance_base["apathy"] == 0.0
+
+        functions.refresh_stat_bonuses(p)
+
+        assert p.status_resistance["apathy"] == pytest.approx(10 * 0.005)
+
+    def test_the_faith_scaling_key_list_matches_the_canonical_resistances(self):
+        """The engine scales ("apathy", "hollowed", "fear") but guards each on
+        `key in status_resistance_base`. Only `apathy` is a real key, so the
+        other two are silently dead. Pinned so the dead entries are noticed if
+        the canonical key set (or the scaling list) ever changes."""
+        p = self._player_with()
+
+        present = {
+            key for key in ("apathy", "hollowed", "fear")
+            if key in p.status_resistance_base
+        }
+
+        assert present == {"apathy"}
+
+    def test_zero_faith_leaves_mental_resistance_at_its_base(self):
+        p = self._player_with()
+        p.faith_base = 0
+
+        functions.refresh_stat_bonuses(p)
+
+        assert p.status_resistance["apathy"] == 0.0
+
+    def test_faith_status_resistance_is_capped_at_one(self):
+        p = self._player_with()
+        p.faith_base = 10_000
+
+        functions.refresh_stat_bonuses(p)
+
+        assert p.status_resistance["apathy"] == 1.0
+
+    def test_fatigue_is_clamped_to_the_recomputed_maxfatigue(self):
+        p = self._player_with()
+        p.fatigue = 99999
+
+        functions.refresh_stat_bonuses(p)
+
+        assert p.fatigue == p.maxfatigue
 
 
 # ---------------------------------------------------------------------------
@@ -618,9 +704,15 @@ class TestPatchPlayerIntegrity:
         result = functions._patch_player_integrity(p)
         value = getattr(result, attr)
         assert type(value) is type(expected)
-        # Resistance dicts are re-seeded with base keys below; the others must
-        # come back genuinely empty rather than carrying stale data.
-        if attr not in ("resistance", "status_resistance"):
+        if attr in ("resistance", "status_resistance"):
+            # These two are re-seeded with a neutral 1.0 for every canonical
+            # key rather than left empty -- the whole point of patching them.
+            required = (
+                {"fire", "pure"} if attr == "resistance" else {"generic", "poison"}
+            )
+            assert set(value) >= required, f"{attr} missing canonical keys"
+            assert set(value.values()) == {1.0}
+        else:
             assert value == expected
 
     def test_preferences_default_is_the_arrow_preference(self):
@@ -727,15 +819,20 @@ class TestSafePickleLoad:
             os.unlink(fname)
 
     def test_walk_patches_nested_list(self):
-        """Line 933: walk handles list containing player."""
+        """A Player nested inside a list is still found and integrity-patched."""
         p = _player()
+        del p.preferences  # the gap _patch_player_integrity must fill
         with tempfile.NamedTemporaryFile(suffix=".pkl", delete=False) as f:
             pickle.dump([p, "other"], f)
             fname = f.name
         try:
             with open(fname, "rb") as f:
                 result = functions._safe_pickle_load(f)
-            assert isinstance(result, list)
+            assert len(result) == 2
+            loaded_player, tail = result
+            assert tail == "other"
+            assert isinstance(loaded_player, Player)
+            assert loaded_player.preferences == {"arrow": "Wooden Arrow"}
         finally:
             os.unlink(fname)
 
@@ -1086,14 +1183,21 @@ class TestAddRandomEnchantments:
         assert sword._enchantment_count == 0
 
     def test_equip_states_merged(self):
-        """Lines 1254-1271: equip_states from enchant merged into item.equip_states."""
+        """Enchanting an item records how many enchantments landed, and every
+        state they grant ends up on the item (asserted against the enchantments
+        actually chosen, so the real tables can change without breaking this)."""
         import src.items as items
 
         sword = items.Shortsword()
         sword.equip_states = []
+
         functions.add_random_enchantments(sword, 3)
-        # No crash; equip_states list exists
-        assert isinstance(sword.equip_states, list)
+
+        assert 0 <= sword._enchantment_count <= 2  # one prefix + one suffix max
+        assert len(sword.equip_states) >= sword._enchantment_count - 2
+        assert all(hasattr(state, "name") for state in sword.equip_states)
+        # The item's name is rewritten by whichever enchantments applied.
+        assert isinstance(sword.name, str) and sword.name
 
 
 # ---------------------------------------------------------------------------

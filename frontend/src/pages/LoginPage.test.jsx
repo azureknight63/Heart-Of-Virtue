@@ -282,8 +282,9 @@ describe('LoginPage embers canvas effect', () => {
 
     it('stops the animation and removes the resize listener on unmount', () => {
         const { unmount } = renderLoginPage();
+        const lastFrame = global.requestAnimationFrame.mock.results.at(-1).value;
         unmount();
-        expect(global.cancelAnimationFrame).toHaveBeenCalled();
+        expect(global.cancelAnimationFrame).toHaveBeenCalledWith(lastFrame);
     });
 
     it('does nothing when the canvas has no 2D context available', () => {

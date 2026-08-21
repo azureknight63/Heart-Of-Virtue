@@ -64,10 +64,11 @@ class TestCombatIntegration:
         universe = Universe(player)
         universe.build(player)
 
-        # Configs should be initialized
-        assert universe.coordinate_config is not None
-        # Verify by checking the presence of key methods
-        assert hasattr(universe.coordinate_config, 'get_dynamic_grid_size')
+        # ``is not None`` + ``hasattr`` -- the old assertions -- hold for a
+        # config wired to the wrong player or returning nonsense sizes.
+        assert isinstance(universe.coordinate_config, CoordinateSystemConfig)
+        assert universe.coordinate_config.player is player
+        assert universe.coordinate_config.get_dynamic_grid_size(4) == (15, 15)
 
     def test_npc_player_ref_set_in_combat(self, player):
         """Test that NPC player_ref is accessible for config."""
@@ -83,14 +84,21 @@ class TestCombatIntegration:
         assert player.player_ref == player
 
     def test_all_configs_accessible_from_combat(self, player):
-        """Test all config systems accessible during simulated combat."""
-        # Simulate combat setup
+        """The combat-time config is usable, not merely present.
+
+        ``hasattr`` + ``isinstance`` — the old assertions — hold for a config
+        that answers every grid query with garbage. The grid sizer is what the
+        attachment exists for, so exercise it: 3 cells per combatant plus 3,
+        clamped to [9, 100].
+        """
         player.combat_coordinate_config = CoordinateSystemConfig(player)
+        config = player.combat_coordinate_config
 
-        # Verify all accessible
-        assert hasattr(player, 'combat_coordinate_config')
-
-        assert isinstance(player.combat_coordinate_config, CoordinateSystemConfig)
+        assert config.player is player
+        assert config.get_dynamic_grid_size(2) == (9, 9)      # clamped up
+        assert config.get_dynamic_grid_size(4) == (15, 15)
+        assert config.get_dynamic_grid_size(20) == (63, 63)
+        assert config.get_dynamic_grid_size(500) == (100, 100)  # clamped down
 
 
 class TestNPCAIIntegration:

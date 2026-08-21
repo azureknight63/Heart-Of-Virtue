@@ -205,6 +205,38 @@ class TestCombatIdLifecycle:
 
         assert player.combat_beat == 6
 
+    def test_reinit_does_not_wipe_the_running_combat_log(self, adapter, player, slime):
+        # combat_id, combat_beat and combat_log are reset together in the
+        # `not reinit` branch. Losing the log mid-fight would blank the
+        # client's scrollback on every reinforcement wave.
+        player.combat_log.append(
+            {"round": 6, "message": "Jean struck the Slime!", "type": "combat"}
+        )
+
+        adapter.initialize_combat([slime], reinit=True)
+
+        assert any(
+            entry["message"] == "Jean struck the Slime!"
+            for entry in player.combat_log
+        )
+
+    def test_a_new_fight_clears_the_previous_fights_log_and_beat(
+        self, adapter, player
+    ):
+        player.combat_beat = 9
+        player.combat_log.append(
+            {"round": 9, "message": "stale entry", "type": "combat"}
+        )
+        next_enemy = make_npc(Slime, name="Second Slime", hp=20, maxhp=20)
+        engage(player, [next_enemy])
+
+        adapter.initialize_combat([next_enemy])
+
+        assert player.combat_beat == 1
+        assert not any(
+            entry["message"] == "stale entry" for entry in player.combat_log
+        )
+
     def test_a_genuinely_new_fight_mints_a_new_combat_id(self, adapter, player):
         first = adapter.combat_id
         next_enemy = make_npc(Slime, name="Second Slime", hp=20, maxhp=20)
@@ -228,8 +260,22 @@ class TestCombatIdLifecycle:
 
 class TestPositionsAreEstablished:
     def test_both_sides_receive_grid_positions(self, adapter, player, slime):
-        assert player.combat_position is not None
-        assert slime.combat_position is not None
+        """Real coordinates inside the published grid, not just "not None".
+
+        A spawner that dropped everyone on (0, 0) satisfies the old assertion
+        and breaks every distance, facing and flanking calculation downstream.
+        """
+        width, height = adapter.combat_grid_size
+
+        for unit in (player, slime):
+            pos = unit.combat_position
+            assert 0 <= pos.x <= width, (unit.name, pos.x)
+            assert 0 <= pos.y <= height, (unit.name, pos.y)
+
+        assert (player.combat_position.x, player.combat_position.y) != (
+            slime.combat_position.x,
+            slime.combat_position.y,
+        ), "both combatants spawned on the same square"
 
     def test_proximity_is_symmetric_and_positive(self, adapter, player, slime):
         assert player.combat_proximity[slime] == slime.combat_proximity[player]

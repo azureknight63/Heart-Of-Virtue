@@ -127,8 +127,11 @@ class TestOverheadSmash:
         tgt = _make_target()
         user.combat_proximity = {tgt: 4}
         move = OverheadSmash(user)
-        with patch.object(move, "standard_viability_attack", return_value=True):
-            assert move.viable() is True
+        # Unpatched: OverheadSmash.viable() is only a call to
+        # standard_viability_attack, so stubbing that (as this test used to)
+        # asserted the stub's own return value and nothing else.
+        assert move.mvrange == (0, 6)
+        assert move.viable() is True
 
     def test_evaluate_no_weapon_sets_fallback(self):
         user = _make_user(equip=False)
@@ -137,14 +140,36 @@ class TestOverheadSmash:
         assert move.fatigue_cost == 25
 
     def test_evaluate_with_weapon_sets_power(self):
-        user = _make_user()
+        """The real evaluation, not a stub echoing itself back.
+
+        The old body patched ``standard_evaluate_attack`` to return
+        ``(50, "crushing")`` and then asserted ``power == 50`` -- a mock
+        agreeing with itself, which would have survived an evaluate() that
+        ignored its weapon entirely.
+        """
+        user = _make_user()  # Polearm, damage 40, wielder strength 15
         move = OverheadSmash(user)
-        with patch.object(
-            move, "standard_evaluate_attack", return_value=(50, "crushing")
-        ):
-            move.evaluate()
-        assert move.power == 50
+
+        move.evaluate()
+
+        assert move.power == 70
         assert move.base_damage_type == "crushing"
+        # The announcement is rebuilt from the live weapon name.
+        assert "Halberd" in move.stage_announce[1]
+
+    def test_evaluate_scales_with_the_equipped_weapon(self):
+        """Same move, heavier weapon -> more power. Pins that the weapon is
+        actually read rather than a constant being returned."""
+        weak = _make_user()
+        weak.eq_weapon.damage = 10
+        strong = _make_user()
+        strong.eq_weapon.damage = 80
+
+        weak_move, strong_move = OverheadSmash(weak), OverheadSmash(strong)
+        weak_move.evaluate()
+        strong_move.evaluate()
+
+        assert strong_move.power > weak_move.power
 
     def test_execute_delegates_to_standard(self):
         user = _make_user()
@@ -745,10 +770,18 @@ class TestHalberdSpin:
         assert user.combat_position.facing.name == "S"
 
     def test_execute_random_facing_exception_is_caught(self, monkeypatch):
-        """An exception while randomizing facing should be silently swallowed."""
+        """A failure while randomizing facing is swallowed without aborting the
+        rest of execute().
+
+        The old body asserted nothing, so it could not tell "the except branch
+        caught it and carried on" from "the except branch caught it and skipped
+        the fatigue charge" — the fatigue deduction sits *after* the try/except,
+        so it is the observable proof the method ran to completion.
+        """
         user = _make_user()
         user.combat_position = positions.CombatPosition(x=5, y=5, facing=positions.Direction.N)
         user.combat_proximity = {}
+        user.fatigue = 200
         move = HalberdSpin(user)
         move.mvrange = (1, 20)
 
@@ -758,7 +791,11 @@ class TestHalberdSpin:
         monkeypatch.setattr(random, "randint", lambda a, b: 100)
         monkeypatch.setattr(random, "choice", raise_choice)
         with patch("src.moves._polearm.cprint"):
-            move.execute(user)  # should not raise
+            move.execute(user)
+
+        # Facing is left exactly as it was -- the assignment never completed.
+        assert user.combat_position.facing.name == "N"
+        assert user.fatigue == 200 - move.fatigue_cost
 
     def test_execute_fatigue_floor_at_zero(self, monkeypatch):
         user = _make_user()

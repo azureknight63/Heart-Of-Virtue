@@ -105,6 +105,11 @@ class TestMapTileCoverage:
         assert tile.npcs_here == [npc]
         assert npc.name == "NonExistentType (stub)"
 
+    def test_spawn_npc_sets_the_current_room_to_the_spawning_tile(self, tile):
+        npc = tile.spawn_npc("NonExistentType")
+
+        assert npc.current_room is tile
+
     def test_spawn_item_gold(self, tile):
         """spawn_item with 'Gold' creates a Gold item carrying the amount."""
         from src.items import Gold
@@ -127,6 +132,16 @@ class TestMapTileCoverage:
         assert isinstance(item, Antidote)
         assert item.count == 10
         assert tile.items_here == [item]
+
+    def test_spawn_non_stackable_item_lands_as_a_single_object(self, tile):
+        """A weapon has no `count`, so `amt` must not be read as a stack size."""
+        from src.items import RustedIronMace
+
+        item = tile.spawn_item("RustedIronMace", amt=1)
+
+        assert isinstance(item, RustedIronMace)
+        assert tile.items_here == [item]
+        assert not hasattr(item, "count")
 
     @pytest.mark.parametrize("merchandise", [True, False])
     def test_spawn_item_merchandise_flag(self, tile, merchandise):

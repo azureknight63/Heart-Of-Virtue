@@ -46,14 +46,22 @@ def combat_event():
 
 
 def test_engine_combat_loop_is_gone():
-    # The engine module's terminal combat() loop and its helper must be gone
-    # (src/combat.py is deleted, so ModuleNotFoundError is the expected path).
-    try:
-        module = importlib.import_module("src.combat")
-    except ModuleNotFoundError:
-        return
-    assert not callable(getattr(module, "combat", None))
-    assert not hasattr(module, "_evaluate_combat_events")
+    """src/combat.py (the blocking terminal combat() loop) is deleted.
+
+    Asserted as an import failure rather than `try/except: return`, which
+    passed either way — including if the module came back with the loop in it.
+    """
+    with pytest.raises(ModuleNotFoundError, match=r"src\.combat"):
+        importlib.import_module("src.combat")
+
+
+def test_no_engine_module_still_exposes_a_terminal_combat_loop():
+    """Belt and braces: no surviving engine module re-exports combat()/
+    _evaluate_combat_events, which is how the loop would sneak back."""
+    for name in ("src.combatant", "src.api.combat_adapter", "src.events"):
+        module = importlib.import_module(name)
+        assert not callable(getattr(module, "combat", None)), name
+        assert not hasattr(module, "_evaluate_combat_events"), name
 
 
 def test_player_has_no_terminal_attack():

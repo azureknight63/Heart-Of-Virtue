@@ -662,8 +662,11 @@ describe('MainMenuPage embers canvas effect', () => {
 
     it('stops the animation and removes the resize listener on unmount', () => {
         const { unmount } = renderMenu();
+        const lastFrame = global.requestAnimationFrame.mock.results.at(-1).value;
         unmount();
-        expect(global.cancelAnimationFrame).toHaveBeenCalled();
+        // The pending frame is cancelled by handle, not merely "some" frame —
+        // a leaked loop keeps painting into a detached canvas forever.
+        expect(global.cancelAnimationFrame).toHaveBeenCalledWith(lastFrame);
     });
 
     it('does nothing when the canvas has no 2D context available', () => {

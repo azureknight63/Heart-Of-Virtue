@@ -145,17 +145,31 @@ class TestKeepAway:
         tgt = _make_target()
         user.combat_proximity = {tgt: 5}
         move = KeepAway(user)
-        # standard_viability_attack is a real method we need to see pass
-        # Patch it to return True for simplicity
-        with patch.object(move, "standard_viability_attack", return_value=True):
-            assert move.viable() is True
+        # No patch: `KeepAway.viable()` is *only* a call to
+        # standard_viability_attack(("Spear", "Polearm")), so stubbing that out
+        # (as this test used to) left nothing under test at all -- a viable()
+        # hardcoded to True, or one passing the wrong subtypes tuple, passed.
+        assert move.mvrange == (0, 8)
+        assert move.viable() is True
 
     def test_viable_returns_false_without_polearm(self):
         user = _make_user("Spear")
         user.eq_weapon.subtype = "Sword"
+        tgt = _make_target()
+        user.combat_proximity = {tgt: 5}
         move = KeepAway(user)
-        with patch.object(move, "standard_viability_attack", return_value=False):
-            assert move.viable() is False
+
+        # Same enemy, same distance -- only the weapon subtype differs, so this
+        # pins the subtype half of the decision rather than the stub's answer.
+        assert move.viable() is False
+
+    def test_viable_returns_false_with_no_enemy_in_range(self):
+        user = _make_user("Spear")
+        tgt = _make_target()
+        user.combat_proximity = {tgt: 40}  # beyond mvrange (0, 8)
+        move = KeepAway(user)
+
+        assert move.viable() is False
 
     def test_evaluate_sets_power_with_weapon(self):
         user = _make_user("Spear")
@@ -172,11 +186,17 @@ class TestKeepAway:
     def test_evaluate_real_weapon_deals_nonzero_damage(self):
         """Regression for #397: the old percent-string mod_power ("-45%")
         multiplied power by a negative factor, clamping damage to 0. With a real
-        weapon the move must retain positive power after the 45% reduction."""
+        weapon the move must retain positive power after the 45% reduction.
+
+        ``power > 0`` alone would be satisfied by a power of 1; the exact value
+        pins that the 0.55 factor is applied to the real evaluation (spear
+        damage 30, wielder strength 15 -> 29 before the reduction, 16 after).
+        """
         user = _make_user("Spear")
         move = KeepAway(user)
         move.evaluate()
-        assert move.power > 0
+        assert move.power == 16
+        assert move.base_damage_type == "piercing"
 
     def test_execute_hit_reduces_target_hp(self, monkeypatch):
         user = _make_user("Spear")
@@ -680,8 +700,7 @@ class TestImpale:
         tgt = _make_target()
         user.combat_proximity = {tgt: 5}
         move = Impale(user)
-        with patch.object(move, "standard_viability_attack", return_value=True):
-            assert move.viable() is True
+        assert move.viable() is True
 
     def test_evaluate_no_weapon_sets_defaults(self):
         user = _make_user("Spear", equip=False)
@@ -848,8 +867,7 @@ class TestArmorPierce:
         tgt = _make_target()
         user.combat_proximity = {tgt: 3}
         move = ArmorPierce(user)
-        with patch.object(move, "standard_viability_attack", return_value=True):
-            assert move.viable() is True
+        assert move.viable() is True
 
     def test_execute_ignores_protection_entirely(self, monkeypatch):
         """ArmorPierce bypasses protection completely."""
@@ -1403,8 +1421,7 @@ class TestDeathsHarvest:
         tgt = _make_target()
         user.combat_proximity = {tgt: 3}
         move = DeathsHarvest(user)
-        with patch.object(move, "standard_viability_attack", return_value=True):
-            assert move.viable() is True
+        assert move.viable() is True
 
     def test_execute_heals_user_on_hit(self, monkeypatch):
         user = _make_user("Scythe")
@@ -1671,8 +1688,7 @@ class TestChipAway:
         tgt = _make_target()
         user.combat_proximity = {tgt: 3}
         move = ChipAway(user)
-        with patch.object(move, "standard_viability_attack", return_value=True):
-            assert move.viable() is True
+        assert move.viable() is True
 
     def test_evaluate_no_weapon_sets_fallback(self):
         user = _make_user("Pick", equip=False)
@@ -1903,8 +1919,7 @@ class TestExploitWeakness:
         tgt = _make_target()
         user.combat_proximity = {tgt: 3}
         move = ExploitWeakness(user)
-        with patch.object(move, "standard_viability_attack", return_value=True):
-            assert move.viable() is True
+        assert move.viable() is True
 
     def test_evaluate_no_weapon_sets_defaults(self):
         user = _make_user("Pick", equip=False)
@@ -2136,8 +2151,7 @@ class TestStupefy:
         tgt = _make_target()
         user.combat_proximity = {tgt: 3}
         move = Stupefy(user)
-        with patch.object(move, "standard_viability_attack", return_value=True):
-            assert move.viable() is True
+        assert move.viable() is True
 
     def test_evaluate_no_weapon_sets_defaults(self):
         user = _make_user("Pick", equip=False)

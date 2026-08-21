@@ -60,7 +60,7 @@ describe('DefeatDialog', () => {
 
     await waitFor(() => {
       expect(apiEndpoints.saves.load).toHaveBeenCalledWith('save1');
-      expect(mockOnLoadedSave).toHaveBeenCalled();
+      expect(mockOnLoadedSave).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -92,7 +92,7 @@ describe('DefeatDialog', () => {
     fireEvent.click(startOverBtn);
 
     await waitFor(() => {
-      expect(mockLogout).toHaveBeenCalled();
+      expect(mockLogout).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -200,7 +200,7 @@ describe('DefeatDialog', () => {
 
     expect(screen.getByText('LOADING…')).toBeInTheDocument();
     resolveLoad({ success: true });
-    await waitFor(() => expect(mockOnLoadedSave).toHaveBeenCalled());
+    await waitFor(() => expect(mockOnLoadedSave).toHaveBeenCalledTimes(1));
   });
 
   it('prefers the server-provided error message when loading a save fails', async () => {

@@ -404,13 +404,29 @@ def test_petrified_fatigue_drain_scaling(mock_cprint, mock_refresh, realistic_ta
     state = Petrified(realistic_target)
     state.on_application(realistic_target)
 
-    # Drain fatigue once
+    # The drain fires only on every 6th tick (execute_on = 6), so the first
+    # five beats cost nothing at all. The old test called effect() *once* and
+    # asserted `fatigue <= 100` -- which was true because nothing had happened
+    # yet, making a test named "fatigue drain scaling" pass without a drain.
+    for _ in range(5):
+        state.effect(realistic_target)
+    assert realistic_target.fatigue == 100
+    assert state.tick == 5
+
     state.effect(realistic_target)
 
-    # Verify drain amount is based on maxfatigue
-    expected_drain = int(realistic_target.maxfatigue * 0.05)
-    # We can't easily get exact value, but we know fatigue should be drained
-    assert realistic_target.fatigue <= 100
+    # 5% of maxfatigue: 100 -> 95.
+    assert realistic_target.fatigue == 95
+
+    # ...and it really does scale with maxfatigue rather than being a flat 5.
+    tough = Mock()
+    tough.name = "Gorran"
+    tough.finesse, tough.speed, tough.protection = 40, 30, 35
+    tough.fatigue = tough.maxfatigue = 400
+    tough_state = Petrified(tough)
+    for _ in range(6):
+        tough_state.effect(tough)
+    assert tough.fatigue == 400 - 20
 
 
 @patch('src.states.cprint')

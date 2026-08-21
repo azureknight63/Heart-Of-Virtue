@@ -254,7 +254,16 @@ class TestInitAnimationModeException:
 
         with patch("src.api.combat_adapter.CombatStrategist"):
             adapter = ApiCombatAdapter(player, session_id=None)
-        assert adapter is not None
+
+        # A broken animations module must not abort construction *or* leave the
+        # adapter half-built. ``adapter is not None`` -- the old assertion -- is
+        # true of any object the constructor happens to return.
+        assert adapter.player is player
+        assert adapter.session_id is None
+        assert adapter.output_capture.get_log() == []
+        assert adapter.awaiting_input is False
+        assert adapter.pending_move_index is None
+        assert adapter._terminal_event_emitted is False
 
 
 # ---------------------------------------------------------------------------
@@ -300,13 +309,25 @@ class TestInitializeCombatFallbackAttrGuards:
         with patch(
             "src.api.combat_adapter.positions.initialize_combat_positions",
             side_effect=Exception("pos failure"),
+        ), patch(
+            "src.api.combat_adapter.random.uniform", return_value=1.0
+        ), patch.object(
+            adapter, "_process_initial_turns"
         ):
             result = adapter.initialize_combat([enemy])
 
-        assert result is not None
-        assert hasattr(ally, "combat_proximity")
-        assert hasattr(enemy, "combat_proximity")
-        assert hasattr(enemy, "default_proximity")
+        # ``hasattr`` alone -- the old assertion -- is satisfied by an empty
+        # dict, i.e. by a fallback that created the containers and then failed
+        # to seed a distance, which is exactly the bug the fallback exists to
+        # prevent. Assert the numbers instead.
+        assert "error" not in result
+        assert enemy.default_proximity == 10
+        # distance = int(default_proximity * uniform(0.75, 1.25)), with the
+        # roll pinned to 1.0 and the opening NPC turns suppressed so the seeded
+        # value is still the one on the objects when the call returns.
+        assert ally.combat_proximity[enemy] == 10
+        # The pairing is symmetric: both sides record the same distance.
+        assert enemy.combat_proximity[ally] == 10
 
 
 # ---------------------------------------------------------------------------
@@ -444,7 +465,8 @@ class TestInitializeCombatSocketStarted:
         with app.app_context():
             result = adapter.initialize_combat([enemy])
 
-        assert result is not None
+        assert "error" not in result
+        assert result["combat_active"] is True
         app.socketio.emit.assert_any_call(
             "combat:started",
             {"battle_state": result},
@@ -1290,7 +1312,14 @@ class TestExecuteMoveInnerTailBranches:
         ):
             result = adapter._execute_move_inner(move)
 
-        assert result is not None
+        # The emit failure is swallowed *and* the beat still returns a real
+        # payload. ``result is not None`` -- the old assertion -- would have
+        # accepted an error dict, i.e. a swallowed failure that still broke the
+        # turn.
+        assert "error" not in result
+        assert result["battle_state"]["combat_id"] == adapter.combat_id
+        assert result["battle_state"]["awaiting_input"] is True
+        assert adapter.input_type == "move_selection"
 
 
 # ---------------------------------------------------------------------------
@@ -1728,7 +1757,24 @@ class TestGetAvailableMovesRemainingBranches:
         player.combat_proximity = {enemy: 5}
         adapter = _make_adapter(player)
         moves = adapter._get_available_moves()
-        assert moves[0]["viable_targets"]
+
+        # ``assert moves[0]["viable_targets"]`` -- the old body -- proved only
+        # that the list was non-empty. The client renders each entry directly,
+        # so the entry's shape is the contract.
+        assert moves[0]["targeted"] is True
+        assert moves[0]["viable_targets"] == [
+            {
+                "id": f"enemy_{id(enemy)}",
+                "name": "Goblin",
+                "distance": 5,
+                "is_ally": False,
+                "health": {"current": 50, "max": 50},
+            }
+        ]
+        # A single viable target is auto-resolved, so no selection prompt.
+        assert moves[0]["requires_target_selection"] is False
+        assert moves[0]["available"] is True
+        assert moves[0]["reason"] is None
 
     def test_targeted_not_viable_other_reason_when_enemies_in_range(self):
         move = _make_move("Special", viable=False, targeted=True, mvrange=(0, 20))
