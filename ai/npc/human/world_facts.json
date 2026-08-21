@@ -24,7 +24,9 @@
     "Gorran (a Golemite, Jean's companion)",
     "Mara (scavenger, ferry operator, guide)",
     "Devet (camp cook, Mara's uncle by practice)",
-    "Liss (young nomad, curious)"
+    "Liss (young nomad, curious)",
+    "Kaelen (weaponsmith, co-proprietor of Iron & Oath)",
+    "Vespera (armorer, co-proprietor of Iron & Oath)"
   ],
   "world_rules": [
     "No modern technology. Pre-gunpowder.",
@@ -33,9 +35,10 @@
     "Religion exists but is personal, not institutional in this camp."
   ],
   "allowed_proper_nouns": [
-    "Jean", "Gorran", "Mara", "Devet", "Liss",
+    "Jean", "Gorran", "Mara", "Devet", "Liss", "Kaelen", "Vespera",
     "Aurelion", "Grondia", "Badlands", "Wailing Badlands", "Echoing Caves",
-    "Golemites", "Pillar Readers", "Conclave", "Grondites"
+    "Golemites", "Pillar Readers", "Conclave", "Grondites",
+    "Iron", "Oath"
   ],
   "prohibited_inventions": [
     "Do NOT invent new place names not on the allowed list.",
