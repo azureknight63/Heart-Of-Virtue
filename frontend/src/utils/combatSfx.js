@@ -3,7 +3,7 @@
  *
  * The engine emits ordered, indexed *semantic* SFX emissions per beat
  * (`{index, kind, outcome?, status?}`); this module maps each `kind` to a
- * concrete cue name (a `sfx_<cue>.wav` basename). The engine owns what happened
+ * concrete cue name (an `sfx/<cue>.wav` basename). The engine owns what happened
  * and in what order; the client owns which sound file plays. Playback timing
  * (the 75% partial stack) lives in combatTiming.scheduleSfxChain.
  */

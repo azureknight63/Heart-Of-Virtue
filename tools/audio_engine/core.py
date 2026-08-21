@@ -215,6 +215,7 @@ def save_wav(filename, data, sample_rate=44100):
         os.makedirs(OUTPUT_DIR)
     filepath = os.path.join(OUTPUT_DIR, filename)
     try:
+        os.makedirs(os.path.dirname(filepath), exist_ok=True)
         f = wave.open(filepath, 'w')
         f.setnchannels(1)
         f.setsampwidth(2)

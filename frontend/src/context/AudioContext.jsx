@@ -200,7 +200,7 @@ export const AudioProvider = ({ children }) => {
     // playbackRate scales tempo; preservesPitch keeps it from sounding
     // chipmunked/slowed — browser-native pitch-preserving time-stretch, no DSP.
     const playSFX = useCallback((sfxName, speed = 1) => {
-        const path = getAssetPath(`/assets/sounds/sfx_${sfxName}.wav`);
+        const path = getAssetPath(`/assets/sounds/sfx/${sfxName}.wav`);
         const audio = new Audio(path);
         audio.volume = isSfxMuted ? 0 : sfxVolume;
         // normalizeSpeed guards against a corrupted/garbage combatSpeed (e.g. a

@@ -30,7 +30,7 @@
  *     color         primary CSS color of the overlay
  *     size          ring end-radius / particle size multiplier (default 1)
  *     anchor        'source' (default) | 'target' — which cell a ring sits on
- *   sfx           { [phaseName]: cue } — cue is an sfx_<name>.wav basename, or
+ *   sfx           { [phaseName]: cue } — cue is an sfx/<name>.wav basename, or
  *                 the special value 'outcome' which resolves via the
  *                 animation's outcome (hit/miss/parry) at play time
  */
