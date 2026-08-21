@@ -662,6 +662,7 @@ class MynxLLMMixin:
             context = self._build_llm_context(
                 roster_set, p, jean_pronoun_line, jean_snippet
             )
+            logger.info("Mynx interact start prompt=%s structured=%s adapter=%s model=%s", p, structured, type(adapter).__name__, getattr(adapter, "model", None))
             try:
                 if structured:
                     result = adapter.generate_structured(context=context)
@@ -678,11 +679,14 @@ class MynxLLMMixin:
                         desc = self._sanitize_mynx_llm_text(
                             result["description"], roster_set
                         )
+                        logger.info("Mynx structured raw sanitized. chars=%s", len(desc or ""))
                         desc = self._enforce_pronouns_and_names(desc, roster_set)
+                        logger.info("Mynx structured after pronoun enforcement. chars=%s", len(desc or ""))
                         desc_checked = self._check_and_correct_mynx_text(
                             desc, p, roster
                         )
                         if desc_checked is not None:
+                            logger.info("Mynx structured QA passed. final_chars=%s", len(desc_checked or ""))
                             result["description"] = desc_checked
                             self._llm_last_response = result
                             try:
@@ -690,6 +694,7 @@ class MynxLLMMixin:
                             except Exception:
                                 pass
                             return result
+                        logger.warning("Mynx structured QA rejected result. prompt=%s", p)
                 else:
                     text_resp = adapter.generate_plain(context=context)
                     if isinstance(text_resp, str) and text_resp:
@@ -699,13 +704,16 @@ class MynxLLMMixin:
                             except Exception:
                                 pass
                         sanitized = self._sanitize_mynx_llm_text(text_resp, roster_set)
+                        logger.info("Mynx plain raw sanitized. chars=%s", len(sanitized or ""))
                         sanitized = self._enforce_pronouns_and_names(
                             sanitized, roster_set
                         )
+                        logger.info("Mynx plain after pronoun enforcement. chars=%s", len(sanitized or ""))
                         checked = self._check_and_correct_mynx_text(
                             sanitized, p, roster
                         )
                         if checked is not None:
+                            logger.info("Mynx plain QA passed. final_chars=%s", len(checked or ""))
                             self._llm_last_response = {
                                 "action": "narrate",
                                 "intensity": "low",
@@ -719,11 +727,16 @@ class MynxLLMMixin:
                                 pass
                             narrate(checked)
                             return checked
+                        logger.warning("Mynx plain QA rejected text. prompt=%s", p)
             except Exception as e:
+                logger.error("Mynx interact exception prompt=%s error=%s", p, e, exc_info=True)
                 if _debug:
-                    narrate(
-                        f"[MYNX_LLM_DEBUG] Generation/validation error, falling back: {e}"
-                    )
+                    try:
+                        narrate(
+                            f"[MYNX_LLM_DEBUG] Generation/validation error, falling back: {e}"
+                        )
+                    except Exception:
+                        pass
 
         # ── Deterministic fallback (offline / test mode) ───────────────────────
         if p in ("pet", "stroke", "scritch"):

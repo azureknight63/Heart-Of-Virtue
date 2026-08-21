@@ -634,9 +634,11 @@ class ConversationalNPCMixin:
 
     def _qc_npc_text(self, text: str, history: List[Dict[str, Any]]) -> Optional[str]:
         """Apply QC pipeline. Return cleaned text or None."""
+        original = text
         # Step 1: Strip and garbage check (see _has_real_npc_text/_MIN_NPC_TEXT_LEN)
         text = text.strip()
         if not _has_real_npc_text(text):
+            logger.debug("_qc_npc_text rejected: no real text after strip. original=%r", original)
             return None
 
         # Step 2: Truncate at sentence boundary if too long
@@ -655,6 +657,7 @@ class ConversationalNPCMixin:
 
         # Step 3: Reject if Jean-dialogue pattern found
         if _JEAN_DIALOG_PATTERN.search(text):
+            logger.debug("_qc_npc_text rejected: Jean-dialogue pattern. text=%r", text)
             return None
 
         # Step 4: Invented proper noun scan
@@ -692,6 +695,7 @@ class ConversationalNPCMixin:
         # Step 5: Slang filter
         text = _SLANG_PATTERN.sub("", text).strip()
         if not _has_real_npc_text(text):
+            logger.debug("_qc_npc_text rejected: no real text after slang filter. text=%r", text)
             return None
 
         # Step 6: Prohibited phrases (story chars only, patterns pre-compiled in _init_chat_attrs)
@@ -702,6 +706,7 @@ class ConversationalNPCMixin:
         for prior in history[-8:]:
             prior_npc = prior.get("npc", "")
             if prior_npc and self._jaccard(text, prior_npc) > 0.7:
+                logger.debug("_qc_npc_text rejected: repetition guard. jaccard=%.2f text=%r prior=%r", self._jaccard(text, prior_npc), text, prior_npc)
                 return None
 
         # Step 8: Terminal punctuation
@@ -714,6 +719,7 @@ class ConversationalNPCMixin:
         if text and text[-1] not in ".!?":
             text += "."
 
+        logger.debug("_qc_npc_text passed. cleaned_chars=%s original_chars=%s", len(text), len(original))
         return text
 
     def _qc_jean_options(self, options: Any) -> Optional[List[Dict[str, str]]]:
@@ -774,7 +780,9 @@ class ConversationalNPCMixin:
                     system, self._chat_history, is_opening=False, jean_text=jean_text
                 )
             if not res or not res.get("npc_text"):
+                logger.warning("_generate_turn combined adapter returned no npc_text. is_opening=%s keys=%s", is_opening, sorted((res or {}).keys()))
                 return None
+            logger.info("_generate_turn combined adapter succeeded. is_opening=%s npc_text_chars=%s", is_opening, len(res.get("npc_text") or ""))
             return {
                 "npc_text": res.get("npc_text"),
                 "npc_flavor": res.get("npc_flavor", "") or "",
@@ -785,6 +793,7 @@ class ConversationalNPCMixin:
             }
 
         # Legacy two-call adapter (kept for compatibility with older adapters).
+        logger.info("_generate_turn using legacy two-call adapter. is_opening=%s", is_opening)
         if is_opening:
             res = adapter.generate_npc_turn(system, self._chat_history, is_opening=True)
         else:
@@ -792,7 +801,9 @@ class ConversationalNPCMixin:
                 system, self._chat_history, is_opening=False, jean_text=jean_text
             )
         if not res or not res.get("npc_text"):
+            logger.warning("_generate_turn legacy adapter returned no npc_text. is_opening=%s", is_opening)
             return None
+        logger.info("_generate_turn legacy adapter succeeded. is_opening=%s npc_text_chars=%s", is_opening, len(res.get("npc_text") or ""))
         return {
             "npc_text": res.get("npc_text"),
             "npc_flavor": res.get("npc_flavor", "") or "",
@@ -817,15 +828,22 @@ class ConversationalNPCMixin:
         experience.
         """
         if not llm_available or adapter is None:
+            logger.debug("_run_npc_turn skipped: llm_available=%s adapter=%s", llm_available, adapter is not None)
             return None
         max_attempts = 2
-        for _ in range(max_attempts):
+        for attempt in range(1, max_attempts + 1):
+            logger.info("_run_npc_turn attempt=%s/%s is_opening=%s", attempt, max_attempts, is_opening)
             turn = self._generate_turn(adapter, system, is_opening, jean_text)
             if turn and turn.get("npc_text"):
                 cleaned = self._qc_npc_text(turn["npc_text"], self._chat_history)
                 if cleaned:
+                    logger.info("_run_npc_turn QC passed on attempt=%s/%s", attempt, max_attempts)
                     turn["npc_text"] = cleaned
                     return turn
+                logger.warning("_run_npc_turn QC rejected npc_text on attempt=%s/%s text=%r", attempt, max_attempts, turn.get("npc_text"))
+            else:
+                logger.warning("_run_npc_turn generate_turn returned no npc_text on attempt=%s/%s", attempt, max_attempts)
+        logger.error("_run_npc_turn exhausted attempts=%s; caller should use deterministic fallback.", max_attempts)
         return None
 
     def _resolve_jean_options(
@@ -879,6 +897,7 @@ class ConversationalNPCMixin:
             # Loquacity cutoff
             if self.loquacity_current < self.loquacity_threshold:
                 brush_off = self._get_brush_off_line()
+                logger.info("chat_open loquacity cutoff. npc=%s current=%s threshold=%s", self.name, self.loquacity_current, self.loquacity_threshold)
                 return {
                     "success": True,
                     "npc_key": npc_key,
@@ -897,6 +916,7 @@ class ConversationalNPCMixin:
             system = self._build_system_prompt(player)
             adapter = self._get_adapter()
             llm_available = adapter is not None and adapter.enabled
+            logger.info("chat_open start npc=%s llm_available=%s adapter=%s history_len=%s", self.name, llm_available, adapter is not None, len(self._chat_history))
 
             # Generate the NPC opening (and, on a combined adapter, Jean's options
             # in the same call). Opening lines never drain loquacity.
@@ -905,11 +925,14 @@ class ConversationalNPCMixin:
             )
             if turn is not None:
                 npc_opening = turn["npc_text"]
+                logger.info("chat_open LLM opening succeeded. npc=%s npc_text_chars=%s", self.name, len(npc_opening))
             else:
                 npc_opening = self._get_fallback_npc_line(is_opening=True, player=player)
                 llm_available = False
+                logger.warning("chat_open using deterministic fallback opening. npc=%s", self.name)
 
             jean_options = self._resolve_jean_options(turn, adapter, npc_opening, 0)
+            logger.info("chat_open resolved jean_options count=%s llm_available=%s", len(jean_options), llm_available)
 
             game_tick = getattr(getattr(player, "universe", None), "game_tick", 0) or 0
             chapter = self._get_chapter(player)
@@ -932,7 +955,7 @@ class ConversationalNPCMixin:
                 "reputation": getattr(player, "reputation", {}).get(self.name, 0),
             }
         except Exception as e:
-            logger.error(f"ConversationalNPCMixin.chat_open error: {e}")
+            logger.error("ConversationalNPCMixin.chat_open error: %s", e, exc_info=True)
             return {"success": False, "error": str(e)}
 
     def chat_respond(self, player, jean_text: str, jean_tone: str) -> Dict[str, Any]:
@@ -963,6 +986,7 @@ class ConversationalNPCMixin:
             system = self._build_system_prompt(player)
             adapter = self._get_adapter()
             llm_available = adapter is not None and adapter.enabled
+            logger.info("chat_respond start npc=%s llm_available=%s history_len=%s jean_text_chars=%s", self.name, llm_available, len(self._chat_history), len(jean_text or ""))
 
             # Generate NPC response (combined adapters also return Jean's options)
             turn = self._run_npc_turn(
@@ -980,6 +1004,9 @@ class ConversationalNPCMixin:
                 conversation_quality = turn["conversation_quality"]
                 reputation_delta = turn["reputation_delta"]
                 loquacity_delta = turn["loquacity_delta"]
+                logger.info("chat_respond LLM turn succeeded. npc=%s npc_text_chars=%s quality=%s", self.name, len(npc_response or ""), conversation_quality)
+            else:
+                logger.warning("chat_respond LLM turn failed; will use deterministic fallback. npc=%s", self.name)
 
             # Apply loquacity change. The LLM may signal a signed delta (usually a
             # drain, occasionally a GAIN when Jean raises a topic the NPC finds
@@ -997,6 +1024,7 @@ class ConversationalNPCMixin:
             # decision and the later response payload) so the two can never
             # drift out of sync.
             conversation_ended = self.loquacity_current < self.loquacity_threshold
+            logger.info("chat_respond loquacity resolved. npc=%s delta=%s current=%s threshold=%s ended=%s", self.name, loquacity_delta, self.loquacity_current, self.loquacity_threshold, conversation_ended)
 
             # Fall back only after loquacity is resolved, so a fallback line can
             # tell whether this exchange is actually ending the conversation
@@ -1007,6 +1035,7 @@ class ConversationalNPCMixin:
                     is_opening=False, player=player, exhausted=conversation_ended
                 )
                 llm_available = False
+                logger.warning("chat_respond using deterministic fallback response. npc=%s response_chars=%s", self.name, len(npc_response or ""))
 
                 # Authored fallback pools are small (often 3 lines), so a
                 # conversation that leans on fallback for several turns in a
@@ -1035,6 +1064,7 @@ class ConversationalNPCMixin:
                     npc_response = self._get_fallback_npc_line(
                         is_opening=False, player=player, exhausted=True
                     )
+                    logger.info("chat_respond fallback pool exhausted; forcing conversation_ended. npc=%s", self.name)
 
             # Apply the NPC's in-character reaction to Jean's reputation
             if not hasattr(player, "reputation"):
