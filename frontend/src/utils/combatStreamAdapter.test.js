@@ -7,6 +7,7 @@ const combat = {
     { id: 'enemy_1', position: { x: 8, y: 6 } },
     { id: 'enemy_2', position: { x: 9, y: 7 } },
   ],
+  allies: [{ id: 'ally_1', position: { x: 5, y: 6 } }],
 };
 
 const beat = (over = {}) => ({
@@ -42,6 +43,18 @@ describe('beatToAnimations', () => {
       position: { x: 8, y: 6 },
       suppressSfx: true,
     });
+  });
+
+  it('tags the death burst with the side the dead combatant fought on', () => {
+    // The fading token is drawn from this snapshot after the combatant has
+    // left combat.allies/enemies, so alignment has to be carried here. Getting
+    // it wrong paints a dying ally (or Jean) in hostile red for the fade.
+    const sideOf = (id) =>
+      beatToAnimations(beat({ killed: [id] }), combat).find((a) => a.type === 'death')
+        ?.friendly;
+    expect(sideOf('enemy_1')).toBe(false);
+    expect(sideOf('ally_1')).toBe(true);
+    expect(sideOf('player')).toBe(true);
   });
 
   it('skips a death burst when the entity/position is unknown', () => {

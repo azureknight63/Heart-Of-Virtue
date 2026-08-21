@@ -1,12 +1,16 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { act } from 'react';
 import Battlefield from './Battlefield';
+import { setFlag, resetFlags } from '../utils/featureFlags';
 import React from 'react';
 
-// Mock child components. Battlefield also imports the VIEW_SIZE constant for
-// its off-screen-enemy detection, so expose it on the mock.
+// Mock child components. Battlefield also imports VIEW_SIZE (off-screen-enemy
+// detection) and the view-mode constants, so expose them on the mock.
 vi.mock('./BattlefieldGrid', () => ({
     VIEW_SIZE: 13,
+    VIEW_MODE_FOLLOW: 'follow',
+    VIEW_MODE_FIT: 'fit',
     default: ({ combat, tab, zoom }) => (
         <div data-testid="grid">
             Grid - Tab: {tab} - Zoom: {zoom}
@@ -115,15 +119,43 @@ describe('Battlefield', () => {
         expect(screen.getByTestId('grid')).toBeDefined();
     });
 
-    it('toggles zoom', () => {
+    it('switches between the follow and fit view modes', () => {
         render(<Battlefield combat={mockCombat} />);
 
-        const zoomBtn = screen.getByTitle('Toggle View Mode');
-        expect(zoomBtn).toBeDefined();
-        fireEvent.click(zoomBtn);
+        const followBtn = screen.getByRole('button', { name: 'Follow' });
+        const fitBtn = screen.getByRole('button', { name: 'Fit Fight' });
 
-        fireEvent.click(zoomBtn);
-        expect(screen.getByTestId('grid')).toBeDefined();
+        // Follow is the default and both options are always offered, so the
+        // active mode is legible without clicking anything.
+        expect(followBtn.getAttribute('aria-pressed')).toBe('true');
+        expect(fitBtn.getAttribute('aria-pressed')).toBe('false');
+        expect(screen.getByTestId('grid').textContent).toContain('Zoom: follow');
+
+        fireEvent.click(fitBtn);
+        expect(fitBtn.getAttribute('aria-pressed')).toBe('true');
+        expect(screen.getByTestId('grid').textContent).toContain('Zoom: fit');
+
+        fireEvent.click(followBtn);
+        expect(followBtn.getAttribute('aria-pressed')).toBe('true');
+        expect(screen.getByTestId('grid').textContent).toContain('Zoom: follow');
+    });
+
+    it('reports the beat number and how many enemies are still standing', () => {
+        const combat = {
+            ...mockCombat,
+            beat: 7,
+            beat_states: [{
+                player: { name: 'Jean', position: { x: 1, y: 1 } },
+                enemies: [
+                    { id: 'e1', name: 'Slime', hp: 4, max_hp: 10, position: { x: 2, y: 1 } },
+                    { id: 'e2', name: 'Dead Slime', hp: 0, max_hp: 10, position: { x: 3, y: 1 } },
+                ],
+            }],
+        };
+        render(<Battlefield combat={combat} currentLogIndex={0} />);
+
+        expect(screen.getByText('Beat 7')).toBeDefined();
+        expect(screen.getByText('1 standing')).toBeDefined();
     });
 
     it('updates displayState based on currentLogIndex', () => {
@@ -164,7 +196,7 @@ describe('Battlefield', () => {
         });
     });
 
-    it('does not show off-screen banner in full-map mode', async () => {
+    it('does not show off-screen banner in fit mode', async () => {
         const offScreenCombat = {
             beat_states: [
                 {
@@ -180,13 +212,44 @@ describe('Battlefield', () => {
 
         render(<Battlefield combat={offScreenCombat} currentLogIndex={0} />);
 
-        // Switch to full-map mode
-        const zoomBtn = screen.getByTitle(/toggle view mode|enemies are off-screen/i);
-        fireEvent.click(zoomBtn);
+        // Switch to fit mode — it frames every combatant, so nothing is off-screen
+        fireEvent.click(screen.getByRole('button', { name: 'Fit Fight' }));
 
-        // Banner should NOT appear in full-map mode
+        // Banner should NOT appear in fit mode
         await waitFor(() => {
             expect(screen.queryByRole('status')).toBeNull();
+        });
+    });
+
+    describe('beatTimeline feature flag', () => {
+        afterEach(() => {
+            resetFlags();
+        });
+
+        const combatWithPendingMove = {
+            ...mockCombat,
+            beat: 7,
+            beat_states: [{
+                player: {
+                    id: 'player', name: 'Jean', position: { x: 1, y: 1 },
+                    current_move: { name: 'Attack', display_name: 'Attack', category: 'Offensive', current_stage: 0, beats_until_resolve: 3 },
+                },
+                enemies: [{ id: 'e1', name: 'Slime', hp: 4, max_hp: 10, position: { x: 2, y: 1 } }],
+            }],
+        };
+
+        it('shows the old beat counter, not the timeline, by default', () => {
+            render(<Battlefield combat={combatWithPendingMove} currentLogIndex={0} />);
+            expect(screen.getByText('Beat 7')).toBeInTheDocument();
+            expect(screen.queryByLabelText('Beat timeline')).not.toBeInTheDocument();
+        });
+
+        it('shows the timeline instead of the counter once the flag is on', () => {
+            act(() => setFlag('beatTimeline', true));
+            render(<Battlefield combat={combatWithPendingMove} currentLogIndex={0} />);
+            expect(screen.getByLabelText('Beat timeline')).toBeInTheDocument();
+            expect(screen.queryByText('Beat 7')).not.toBeInTheDocument();
+            expect(screen.getByText('Jean')).toBeInTheDocument();
         });
     });
 });

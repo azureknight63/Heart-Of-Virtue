@@ -85,6 +85,32 @@ describe('BattlefieldGrid streaming mode', () => {
     expect(mockPlaySFX).not.toHaveBeenCalledWith('enemy_death');
   });
 
+  it('fades a dying ally in the friendly colour, not hostile red', () => {
+    // The fading token is drawn from a snapshot taken after the ally has left
+    // combat.allies, so its alignment can only come from the death animation.
+    // Hardcoding "enemy" there painted a dying ally — and Jean himself — in the
+    // enemy border/fill/halo for the whole 0.65s fade.
+    const ally = { id: 'ally_1', name: 'Gorran', battle_symbol: 'Ω', hp: 0, max_hp: 40, position: { x: 5, y: 6 } };
+    const { container } = render(
+      <BattlefieldGrid
+        combat={{ ...combat, allies: [ally] }}
+        tab="overview"
+        streaming
+        streamedAnimations={[
+          { type: 'death', target_id: 'ally_1', position: { x: 5, y: 6 }, entity: ally, friendly: true },
+        ]}
+      />
+    );
+    act(() => vi.advanceTimersByTime(0));
+
+    const markers = [...container.querySelectorAll('div[style*="border-color"]')];
+    // 'Ω' is unique to the ally — 'G' would also match the Goblin's token.
+    const dying = markers.find((el) => el.textContent.includes('Ω'));
+    expect(dying).toBeTruthy();
+    expect(dying.style.borderColor).toBe('rgb(0, 255, 136)'); // colors.primary
+    expect(dying.style.borderColor).not.toBe('rgb(255, 68, 68)'); // colors.danger
+  });
+
   it('re-enqueues a new fight after the buffer is reset to []', () => {
     // First fight: one beat plays.
     const { rerender } = render(

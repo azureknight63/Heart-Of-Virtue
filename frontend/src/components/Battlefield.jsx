@@ -1,10 +1,31 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 
-import BattlefieldGrid, { VIEW_SIZE } from './BattlefieldGrid'
+import BattlefieldGrid, { VIEW_SIZE, VIEW_MODE_FOLLOW, VIEW_MODE_FIT } from './BattlefieldGrid'
+import BeatTimeline from './BeatTimeline'
 import { colors, spacing } from '../styles/theme'
+import { isLiving } from '../utils/combatEntities'
+import { useFeatureFlag } from '../utils/featureFlags'
 
 const HALF_VIEW = Math.floor(VIEW_SIZE / 2);
 const MAX_BEAT_STATES = 200;
+
+// Both view modes are always shown, each labelled with what it does. The old
+// control was a single button captioned with the mode it was *currently in*
+// ("View: Normal"), which reads as a state on a control that acts — so there
+// was no way to tell whether the caption named where you were or where the
+// click would take you.
+const VIEW_MODE_OPTIONS = [
+  {
+    mode: VIEW_MODE_FOLLOW,
+    label: 'Follow',
+    title: `Keep the camera locked on Jean (${VIEW_SIZE}×${VIEW_SIZE} cells)`,
+  },
+  {
+    mode: VIEW_MODE_FIT,
+    label: 'Fit Fight',
+    title: 'Frame every living combatant, however far apart they are',
+  },
+];
 
 // Any living enemy whose position lies outside the zoomed viewport centered on Jean.
 function anyEnemyOffScreen(state) {
@@ -14,8 +35,7 @@ function anyEnemyOffScreen(state) {
   const px = player.position.x;
   const py = player.position.y;
   for (const e of enemies) {
-    const hp = e.hp ?? e.health?.current;
-    if (hp !== undefined && hp <= 0) continue;
+    if (!isLiving(e)) continue;
     const ep = e.position;
     if (!ep) continue;
     if (Math.abs(ep.x - px) > HALF_VIEW || Math.abs(ep.y - py) > HALF_VIEW) return true;
@@ -24,8 +44,9 @@ function anyEnemyOffScreen(state) {
 }
 
 export default function Battlefield({ combat, currentLogIndex, displayedLogCount, hoveredTargetId, onAnimatingChange, streaming = false, streamedAnimations = [], combatSpeed = 1 }) {
+  const beatTimelineEnabled = useFeatureFlag('beatTimeline')
   const [selectedTab, setSelectedTab] = useState('overview')
-  const [zoom, setZoom] = useState(1)
+  const [zoom, setZoom] = useState(VIEW_MODE_FOLLOW)
   // Transient banner shown once per "enemy goes off-screen" transition, auto-
   // dismissed after 2.5s or on zoom toggle so players who already understand
   // the affordance aren't nagged.
@@ -89,10 +110,17 @@ export default function Battlefield({ combat, currentLogIndex, displayedLogCount
   }, [currentLogIndex, combat?.beat_states])
 
   // Hint the player to expand the view when a living enemy is beyond the
-  // zoomed viewport. The glow is suppressed while already in full-map mode.
+  // follow-mode viewport. The glow is suppressed while already in Fit Fight.
   const enemyOffScreen = useMemo(
-    () => zoom !== 'full' && anyEnemyOffScreen(displayState),
+    () => zoom !== VIEW_MODE_FIT && anyEnemyOffScreen(displayState),
     [zoom, displayState]
+  );
+
+  // Living enemy count and beat number: the two numbers that answer "where is
+  // this fight at?" without reading back through the log.
+  const livingEnemyCount = useMemo(
+    () => (displayState?.enemies || []).filter(isLiving).length,
+    [displayState?.enemies]
   );
 
   // Rising edge on enemyOffScreen → flash a one-shot banner explaining the hint.
@@ -146,27 +174,68 @@ export default function Battlefield({ combat, currentLogIndex, displayedLogCount
           </button>
         </div>
 
-        {/* Zoom Controls */}
+        {/* View mode — a segmented control, so the available modes and the
+            active one are both visible at a glance. */}
         {selectedTab === 'overview' && (
-          <div style={{ display: 'flex', gap: '4px' }}>
-            <button
-              onClick={() => setZoom(zoom === 1 ? 'full' : 1)}
-              className={enemyOffScreen ? 'battlefield-zoom-hint' : ''}
-              style={{
-                padding: '4px 12px', fontSize: '12px', fontWeight: 'bold', borderRadius: '4px', border: `1px solid ${colors.secondary}`, transition: 'colors 0.2s',
-                backgroundColor: zoom === 'full' ? colors.secondary : 'rgba(0,0,0,0.5)',
-                color: zoom === 'full' ? '#fff' : colors.secondary,
-                cursor: 'pointer'
-              }}
-              title={enemyOffScreen
-                ? 'Enemies are off-screen — switch to Full Map to see everything'
-                : 'Toggle View Mode'}
-            >
-              {zoom === 'full' ? 'View: Full Map' : 'View: Normal'}
-            </button>
+          <div
+            role="group"
+            aria-label="Battlefield view mode"
+            className={enemyOffScreen ? 'battlefield-zoom-hint' : ''}
+            style={{ display: 'flex', borderRadius: '4px', border: `1px solid ${colors.secondary}`, overflow: 'hidden' }}
+          >
+            {VIEW_MODE_OPTIONS.map(({ mode, label, title }) => {
+              const active = zoom === mode;
+              return (
+                <button
+                  key={mode}
+                  onClick={() => setZoom(mode)}
+                  aria-pressed={active}
+                  style={{
+                    padding: '4px 10px', fontSize: '12px', fontWeight: 'bold', border: 'none', transition: 'background-color 0.2s, color 0.2s',
+                    backgroundColor: active ? colors.secondary : 'rgba(0,0,0,0.5)',
+                    color: active ? '#fff' : colors.secondary,
+                    cursor: 'pointer'
+                  }}
+                  title={enemyOffScreen && mode === VIEW_MODE_FIT
+                    ? 'Enemies are off-screen — Fit Fight frames all of them'
+                    : title}
+                >
+                  {label}
+                </button>
+              );
+            })}
           </div>
         )}
       </div>
+
+      {/* Fight status strip. Behind the `beatTimeline` flag, this is a
+          schedule of who resolves when (BeatTimeline) instead of the raw
+          beat counter — the two are mutually exclusive so they can be
+          compared, never both rendered at once. `displayState`, not `combat`:
+          BeatTimeline needs to agree with the living-enemy count and the grid
+          above it, both of which already read the scrub-consistent per-beat
+          snapshot rather than the live top-level state. */}
+      {selectedTab === 'overview' && beatTimelineEnabled && (
+        <BeatTimeline combat={displayState} />
+      )}
+      {selectedTab === 'overview' && !beatTimelineEnabled && (
+        <div
+          style={{
+            display: 'flex', gap: spacing.md, alignItems: 'center',
+            fontSize: '10px', fontFamily: 'monospace', color: colors.text.muted,
+            letterSpacing: '0.05em', textTransform: 'uppercase',
+          }}
+          // Deliberately not role="status": the beat number changes on every
+          // beat and a live region would make a screen reader narrate the
+          // counter continuously over the combat log it should be reading.
+          aria-label="Fight status"
+        >
+          <span>Beat {combat?.beat ?? combat?.round ?? 0}</span>
+          <span style={{ color: livingEnemyCount > 0 ? colors.danger : colors.primary }}>
+            {livingEnemyCount} standing
+          </span>
+        </div>
+      )}
 
       {/* Battlefield Grid */}
       <div style={{ flex: 1, overflow: 'hidden', borderRadius: '4px', border: `1px solid ${colors.border.main}`, backgroundColor: 'rgba(0,0,0,0.3)', position: 'relative' }}>
@@ -201,7 +270,7 @@ export default function Battlefield({ combat, currentLogIndex, displayedLogCount
             role="status"
           >
             <div style={{ backgroundColor: 'rgba(0,0,0,0.9)', border: `1px solid ${colors.secondary}`, borderRadius: '4px', padding: '4px 12px', fontSize: '11px', fontWeight: 'bold', color: colors.secondary, boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)', backdropFilter: 'blur(4px)', whiteSpace: 'nowrap' }}>
-              ⚠ Enemy off-screen — switch to Full Map
+              ⚠ Enemy off-screen — switch to Fit Fight
             </div>
           </div>
         )}

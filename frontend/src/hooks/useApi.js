@@ -182,7 +182,16 @@ export const useCombat = (streamingEnabled = false) => {
       // forever in its pre-action state. Non-terminal streaming responses are still
       // applied by the socket when it arrives; terminal responses are applied here
       // immediately as a safety net.
-      if (!streamingEnabled || data.combat_active === false || data.end_state) {
+      // `response_streamed` is set by the server's single streaming funnel
+      // (ApiCombatAdapter._stream_combat_result). Without it, nothing went out
+      // on the socket for this response and the HTTP body is the only carrier
+      // of the new state — abort, a cancelled selection, and a target step that
+      // only opens a further prompt all take that path. Keying on the flag
+      // rather than the action name matters because the SAME action goes both
+      // ways: a target selection that completes a move streams beats, one that
+      // just opens a number prompt does not.
+      const streamedOnSocket = data.response_streamed === true
+      if (!streamingEnabled || !streamedOnSocket || data.combat_active === false || data.end_state) {
         applyCombatState(data)
       }
       return data

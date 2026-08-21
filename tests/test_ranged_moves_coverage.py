@@ -167,19 +167,37 @@ class TestShootBowInit:
         move = ShootBow(user)
         assert move.name == "Shoot Bow"
 
-    def test_init_sets_arrow_to_wooden_arrow(self):
+    def test_init_loads_the_arrow_the_shot_will_actually_use(self):
+        """Construction resolves the real arrow, not a placeholder.
+
+        The move used to hold an `items.WoodenArrow()` until the last beat of
+        the aim, so every preview -- hit chance, the battlefield range gradient,
+        power -- described a shot that was not the one about to be taken.
+        """
         user, arrow = _make_bow_user()
         move = ShootBow(user)
-        # self.arrow is items.WoodenArrow() by default
-        assert hasattr(move, "arrow")
+        assert move.arrow is arrow
+
+    def test_init_falls_back_to_a_wooden_arrow_with_an_empty_quiver(self):
+        """`evaluate` runs on every known move every beat, viable or not, so the
+        no-arrows path has to leave the move in a usable state rather than
+        raise. `viable()` is what actually blocks the shot."""
+        user, _ = _make_bow_user()
+        user.inventory = []
+        move = ShootBow(user)
         assert isinstance(move.arrow, items.WoodenArrow)
 
-    def test_init_accuracy_and_decay_defaults(self):
+    def test_init_derives_range_profile_from_the_weapon_and_arrow(self):
+        """Never from a literal. A hardcoded 0.05/20 here silently survived a
+        balance pass that moved the weapon's rate 30x, because the placeholder
+        happened to match the old value and nothing compared the two."""
         user, arrow = _make_bow_user()
+        arrow.range_base_modifier = 0.7
+        arrow.range_decay_modifier = 1.4
         move = ShootBow(user)
         assert move.accuracy == 1.0
-        assert move.decay == 0.05
-        assert move.base_range == 20
+        assert move.base_range == user.eq_weapon.range_base * 0.7
+        assert move.decay == user.eq_weapon.range_decay * 1.4
 
     def test_evaluate_sets_stage_beat(self):
         user, arrow = _make_bow_user()

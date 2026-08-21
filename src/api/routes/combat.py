@@ -139,7 +139,14 @@ def execute_move():
             # requests — return 200 with success=false so callers can distinguish
             # structural errors (4xx) from in-game conditions (200 success=false).
             # Do NOT save session on error paths — avoid persisting partial mutations.
-            return jsonify({"success": False, "error": result["error"]}), 200
+            payload = {"success": False, "error": result["error"]}
+            # Forward the machine-readable flags the adapter sets alongside the
+            # message; rebuilding the payload from `error` alone silently dropped
+            # `requires_abort`, so the client could only have re-derived it by
+            # string-matching the prose.
+            if result.get("requires_abort"):
+                payload["requires_abort"] = True
+            return jsonify(payload), 200
 
         session_manager.save_session(session.session_id)
         return jsonify({"success": True, **result}), 200
@@ -208,6 +215,32 @@ def toggle_suggestions_pause():
 
     except Exception:
         logger.exception("Unhandled error in toggle_suggestions_pause")
+        return jsonify({"success": False, "error": "An internal error occurred"}), 500
+
+
+@combat_bp.route("/abort", methods=["POST"])
+def abort_move():
+    """Break off the move the player is winding up.
+
+    Not an undo: the beats already spent are forfeited and the move's full
+    cooldown is charged. Only a move still in its prep stage, and long enough to
+    have been worth committing to, can be aborted -- see
+    ``ApiCombatAdapter._abortable_move``.
+    """
+    try:
+        session_manager, session, player, error = get_session_and_player()
+        if error:
+            return error
+
+        from flask import current_app
+
+        result = current_app.game_service.abort_move(player)
+        if not result.get("success"):
+            return jsonify(result), 400
+        return jsonify(result), 200
+
+    except Exception:
+        logger.exception("Unhandled error in abort_move")
         return jsonify({"success": False, "error": "An internal error occurred"}), 500
 
 
