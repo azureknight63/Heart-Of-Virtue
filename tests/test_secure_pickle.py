@@ -41,6 +41,33 @@ def test_canonical_passes_through_non_engine_module():
     assert sp.canonical_module_name("src.items") == "src.items"
 
 
+def test_allowlist_stdlib_paths_are_interpreter_independent():
+    """Non-engine entries must name a public module, not a private submodule.
+
+    The allow-list is derived by reading ``obj.__module__`` off every class an
+    engine module imports, and CPython relocates stdlib implementations into
+    private submodules between releases: ``pathlib.Path.__module__`` is
+    ``pathlib`` up to 3.12 and ``pathlib._local`` on 3.13+. Without
+    canonicalisation the generated manifest differs by interpreter, so
+    ``test_allowlist_manifest_matches_code`` passes on whichever version wrote
+    the file and fails on every other -- which is exactly what happened: the
+    committed manifest was generated on CI's 3.11 and failed on a 3.13 dev box.
+
+    Engine modules are exempt: ``src.npc._chat_llm`` is our own private module
+    and its path is stable because we control it.
+    """
+    offenders = sorted(
+        (module, name)
+        for module, name in sp.get_allowlist()
+        if not sp._is_engine_module(module)
+        and any(part.startswith("_") for part in module.split("."))
+    )
+    assert not offenders, (
+        "Allow-list entries name private stdlib submodules, which makes the "
+        "generated manifest interpreter-version-dependent: %s" % offenders
+    )
+
+
 def test_allowlist_contains_known_engine_classes():
     allow = sp.get_allowlist()
     # Player and a well-known item class must be present.

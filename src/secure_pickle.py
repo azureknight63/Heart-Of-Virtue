@@ -147,6 +147,44 @@ _SAFE_STDLIB = frozenset({
 _allowlist_cache = None
 
 
+def _public_module(obj):
+    """Return the public module a class is exported from.
+
+    CPython relocates stdlib implementations into private submodules between
+    releases -- ``pathlib.Path.__module__`` is ``pathlib`` through 3.12 and
+    ``pathlib._local`` on 3.13+. Recording the raw ``__module__`` therefore made
+    the generated manifest interpreter-dependent, so the drift check passed only
+    on whichever version wrote the file (CI's 3.11) and failed everywhere else.
+
+    Only rewrites when the private module's parent genuinely re-exports the same
+    object, so a class that is only ever reachable at a private path keeps it.
+    Engine modules are unaffected: their paths are ours and do not move.
+    """
+    module = obj.__module__
+    if not isinstance(module, str):
+        # Vanishingly rare (some C-extension types), but the caller previously
+        # stored __module__ verbatim and could not fail here. Preserve that
+        # rather than letting a string operation abort allow-list construction,
+        # which would break save loading outright.
+        return module
+    # Engine paths are ours and do not move between interpreters. They must be
+    # left alone: src/moves/__init__.py re-exports every class from its private
+    # submodules, so the parent-re-export check below would happily collapse
+    # ("src.moves._dagger", "Backstab") to ("src.moves", "Backstab") and rewrite
+    # 300+ engine entries.
+    if _is_engine_module(module) or "." not in module:
+        return module
+    parent, _, tail = module.rpartition(".")
+    if not tail.startswith("_"):
+        return module
+    try:
+        if getattr(importlib.import_module(parent), obj.__name__, None) is obj:
+            return parent
+    except Exception:  # pragma: no cover - defensive; parent may not import
+        logger.debug("Allow-list: could not resolve public parent of %s", module)
+    return module
+
+
 def _collect_module(mod_name, allowed):
     """Add every class object reachable from ``mod_name`` (and, for packages,
     its immediate submodules) to ``allowed``."""
@@ -157,7 +195,7 @@ def _collect_module(mod_name, allowed):
         return
     for obj in vars(mod).values():
         if isinstance(obj, type):
-            allowed.add((obj.__module__, obj.__name__))
+            allowed.add((_public_module(obj), obj.__name__))
     for info in pkgutil.iter_modules(getattr(mod, "__path__", [])):
         _collect_module(f"{mod_name}.{info.name}", allowed)
 
