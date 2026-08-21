@@ -19,6 +19,7 @@ Attributes expected on the host class (provided by Mynx.__init__):
 import importlib
 import importlib.util
 import json
+import logging
 import os
 import random
 import re
@@ -26,6 +27,8 @@ import sys
 import time
 from pathlib import Path
 from src.narration import narrate
+
+logger = logging.getLogger(__name__)
 
 
 def _load_llm_client_module(fallback_path=None):

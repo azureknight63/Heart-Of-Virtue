@@ -16,3 +16,6 @@ flake8==7.3.0
 
 # Inquisitor browser harness (requires: python -m playwright install chromium)
 playwright>=1.49.0
+
+# LLM token-budget baseline (tools/measure_llm_tokens.py)
+tiktoken>=0.8.0
