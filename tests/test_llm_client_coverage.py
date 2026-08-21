@@ -2049,6 +2049,30 @@ class TestCallOpenrouter:
             "stale/model:free", "openrouter/free", "working/model:free"
         ]
 
+    def test_logs_model_errors_and_fallback_success(self, monkeypatch, caplog):
+        monkeypatch.setenv("NPC_CHAT_LLM_DEBUG", "1")
+        adapter = NpcChatLLMAdapter()
+        adapter._openrouter_api_key = "key"
+        adapter.model = "stale/model:free"
+        GenericLLMClient._free_models_cache = []
+
+        unavailable = MagicMock(status_code=404, text="model unavailable")
+        working = MagicMock(
+            status_code=200,
+            text="",
+            json=lambda: {"choices": [{"message": {"content": "reply"}}]},
+        )
+        with patch("requests.post", side_effect=[unavailable, working]):
+            result = adapter._call_openrouter("system prompt", "user prompt", 100, 0.5)
+
+        assert result == "reply"
+        logs = caplog.text
+        assert "[NPC_CHAT_LLM_FALLBACK]" in logs
+        assert "model=stale/model:free" in logs
+        assert "status=404" in logs
+        assert "[NPC_CHAT_LLM_DEBUG]" in logs
+        assert "result=success" in logs
+
 
 class TestGetOpenrouterModel:
     def test_explicit_model_returned(self, monkeypatch):
