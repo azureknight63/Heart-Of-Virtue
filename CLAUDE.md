@@ -202,6 +202,21 @@ See `docs/coverage/coverage-dashboard.md` for:
 - **95%+ frontend**: User-facing code must be reliable
 - **Story intentionally low**: Narrative branches are hard to test; we focus on mechanics
 
+## Test-Driven Development (Required)
+
+**All changes to source code (`src/`, `ai/`, `frontend/src/`) follow TDD — test first, then implementation.**
+
+1. **Red** — write a test that expresses the desired behavior (new feature) or reproduces the defect (bug fix). Run it and confirm it fails for the expected reason, not a typo, import error, or unrelated crash.
+2. **Green** — write the smallest change that makes the test pass. Don't fix unrelated things in the same step.
+3. **Refactor** — clean up with the suite green throughout, re-running after each change.
+4. Before considering the task done, run the full relevant suite: `python -m pytest -q` (backend) and/or `cd frontend && npm test` (frontend).
+
+**Bug fixes specifically**: the regression test must fail against the pre-fix code. A fix with no test that fails without it is not verified — it's a guess.
+
+**Exceptions** (test-first doesn't apply, though testable changes still need coverage): pure documentation/comment edits, config-only changes (`.ini` files, static JSON data with no logic), generated/vendored files, and one-off scratch/repro scripts outside `src/`/`frontend/src/`/`ai/`. When in doubt, write the test first.
+
+This is enforced at review time by the Code Review Gate below — a change reported complete without a preceding failing test should be flagged, not waved through.
+
 ## Coding Conventions
 
 ### Python
@@ -809,7 +824,7 @@ Standard closing checklist (use judgment on which apply):
 - **`code-review` / `code-scrubber` skills** — use the size-appropriate skill to review all code changes (mandatory for any non-trivial changes; see "Code Review Gate" above)
 - **`/commit`** — if there are uncommitted changes worth preserving
 - **`/revise-claude-md`** — if the session revealed something about the project that isn't in CLAUDE.md (new patterns, gotchas, decisions made)
-- **Tests** — remind to run `python -m pytest -q` or `cd frontend && npm test` if the changes touch testable code
+- **Tests** — confirm the suite is green (`python -m pytest -q` / `cd frontend && npm test`); per the TDD gate above, these tests should already exist from the red-green cycle, not be added retroactively
 - **Pending improvements** — flag any items from `~/.claude/projects/.../pending-improvements.md` that became newly relevant
 
 Don't suggest all of these robotically after every small change. Use judgment: a two-line fix doesn't need a full debrief. A significant architectural change does.
