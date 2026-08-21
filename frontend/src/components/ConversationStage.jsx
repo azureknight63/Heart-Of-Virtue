@@ -127,7 +127,7 @@ function useEnterFade(nodeRef, entering, targetOpacity) {
     }, [nodeRef, entering, targetOpacity])
 }
 
-function Portrait({ member, isSpeaker }) {
+function Portrait({ member, isSpeaker, wide = false }) {
     // Dim & scale: the speaker is full ink/size; listeners fade, shrink, and
     // desaturate slightly. An exit fade multiplies the base opacity.
     const baseOpacity = isSpeaker ? 1 : 0.85
@@ -171,7 +171,7 @@ function Portrait({ member, isSpeaker }) {
                 alt={`${member.name} (${member.emotion})`}
                 draggable={false}
                 style={{
-                    width: '130px',
+                    width: wide ? 'clamp(130px, 12vw, 185px)' : '130px',
                     height: 'auto',
                     borderRadius: '6px',
                     border: `2px solid ${isSpeaker ? colors.secondary : colors.border.light}`,
@@ -213,6 +213,7 @@ function Portrait({ member, isSpeaker }) {
  * @param {boolean}  [interactive] - whether click/keyboard advances the stage
  * @param {boolean}  [showAdvanceHint] - whether to show the advance affordance
  * @param {boolean}  [followTail] - keep the newest appended beat visible
+ * @param {'default'|'wide'} [layout] - layout density for the conversation stage
  */
 function ConversationStage({
     segments = [],
@@ -222,6 +223,7 @@ function ConversationStage({
     interactive = true,
     showAdvanceHint = true,
     followTail = false,
+    layout = 'default',
 }) {
     const [beatIndex, setBeatIndex] = useState(0)
     const completedRef = useRef(false)
@@ -286,9 +288,13 @@ function ConversationStage({
 
     const leftMembers = members.filter((m) => m.side === 'left')
     const rightMembers = members.filter((m) => m.side === 'right')
+    const isDialogue = Boolean(current.speaker)
+    const isThought = Boolean(current.thought)
+    const isWide = layout === 'wide'
 
-    const renderColumn = (cols) => (
+    const renderColumn = (cols, area) => (
         <div
+            className="conversation-stage__portrait-column"
             style={{
                 display: 'flex',
                 flexDirection: 'column',
@@ -296,17 +302,15 @@ function ConversationStage({
                 alignItems: 'center',
                 gap: spacing.md,
                 minWidth: staged ? '150px' : '0',
+                gridArea: isWide ? area : undefined,
                 transition: 'min-width 0.35s ease',
             }}
         >
             {cols.map((m) => (
-                <Portrait key={m.id} member={m} isSpeaker={m.id === activeSpeaker} />
+                <Portrait key={m.id} member={m} isSpeaker={m.id === activeSpeaker} wide={isWide} />
             ))}
         </div>
     )
-
-    const isDialogue = Boolean(current.speaker)
-    const isThought = Boolean(current.thought)
 
     return (
         <div
@@ -317,20 +321,33 @@ function ConversationStage({
                 e.stopPropagation()
                 if (interactive) advance()
             }}
-            style={{
+            className={`conversation-stage conversation-stage--${layout}`}
+            style={isWide ? {
+                display: 'grid',
+                gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 2fr) minmax(0, 1fr)',
+                gridTemplateAreas: '"left dialogue right"',
+                alignItems: 'stretch',
+                gap: spacing.lg,
+                cursor: interactive ? 'pointer' : 'default',
+                outline: 'none',
+                minHeight: '360px',
+            } : {
                 display: 'flex',
                 alignItems: 'stretch',
                 gap: spacing.lg,
-                cursor: 'pointer',
+                cursor: interactive ? 'pointer' : 'default',
                 outline: 'none',
                 minHeight: '300px',
             }}
         >
-            {staged && renderColumn(leftMembers)}
+            {staged && renderColumn(leftMembers, 'left')}
 
             <div
+                className="conversation-stage__dialogue"
                 style={{
-                    flex: 1,
+                    flex: isWide ? undefined : 1,
+                    minWidth: 0,
+                    gridArea: isWide ? 'dialogue' : undefined,
                     display: 'flex',
                     flexDirection: 'column',
                     justifyContent: 'center',
@@ -403,7 +420,7 @@ function ConversationStage({
                 )}
             </div>
 
-            {staged && renderColumn(rightMembers)}
+            {staged && renderColumn(rightMembers, 'right')}
         </div>
     )
 }

@@ -71,6 +71,45 @@ input, select, textarea {
   background: #666;
 }
 
+/*
+ * ConversationStage desktop layout.
+ *
+ * Authored scenes keep their compact default stage. LLM chat opts into the
+ * wide variant so desktop dialogs have room for portraits on both sides and
+ * readable dialogue in the center. At phone widths the same stage becomes a
+ * two-column portrait row above a full-width dialogue card.
+ */
+.conversation-stage--wide .conversation-stage__portrait-column {
+  min-width: 0 !important;
+  width: 100%;
+}
+
+@media (max-width: 767px) {
+  .conversation-stage--wide {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important;
+    grid-template-areas:
+      "left right"
+      "dialogue dialogue" !important;
+    gap: 12px !important;
+    min-height: 0 !important;
+  }
+
+  .conversation-stage--wide .conversation-stage__portrait-column {
+    min-width: 0 !important;
+    min-height: 150px;
+  }
+
+  .conversation-stage--wide .conversation-stage__portrait-column img {
+    width: min(38vw, 150px) !important;
+  }
+
+  .conversation-stage--wide .conversation-stage__dialogue {
+    min-height: 190px !important;
+    padding: 12px !important;
+  }
+}
+
 /* Utility classes for the retro terminal aesthetic */
 .retro-border {
   border-width: 2px;

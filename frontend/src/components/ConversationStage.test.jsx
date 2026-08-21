@@ -464,6 +464,24 @@ describe('ConversationStage rendering', () => {
         expect(screen.getByTestId('conversation-stage')).not.toHaveAttribute('tabindex')
     })
 
+    it('supports a wide layout with explicit portrait columns and dialogue area', () => {
+        render(
+            <ConversationStage
+                segments={[{ text: 'A wide line.', speaker: 'Mara', in_conversation: true }]}
+                conversation={{ cast: CAST }}
+                layout="wide"
+            />
+        )
+
+        const stage = screen.getByTestId('conversation-stage')
+        expect(stage).toHaveClass('conversation-stage--wide')
+        expect(stage).toHaveStyle({
+            gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 2fr) minmax(0, 1fr)',
+        })
+        expect(screen.getByAltText(/Jean/).parentElement.parentElement).toHaveStyle({ gridArea: 'left' })
+        expect(screen.getByAltText(/Amelia/).parentElement.parentElement).toHaveStyle({ gridArea: 'right' })
+    })
+
     it('resets beatIndex and re-arms onComplete when a new segments array arrives mid-conversation', () => {
         // Simulates a multi-stage event (e.g. Ch02GuideToCitadel) where the same
         // mounted ConversationStage receives a fresh segments/conversation payload

@@ -245,8 +245,8 @@ export default function NpcChatPanel({ npcId, npcName, onClose }) {
       title={displayName}
       onClose={onClose}
       variant="default"
-      maxWidth="450px"
-      width="95%"
+      maxWidth="1100px"
+      width="min(96vw, 1100px)"
       padding={spacing.lg}
       zIndex={2100}
     >
@@ -306,6 +306,7 @@ export default function NpcChatPanel({ npcId, npcName, onClose }) {
             interactive={false}
             showAdvanceHint={false}
             followTail
+            layout="wide"
           />
         ) : loading ? (
           <div

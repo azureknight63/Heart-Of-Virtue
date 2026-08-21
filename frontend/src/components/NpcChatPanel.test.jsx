@@ -14,8 +14,14 @@ vi.mock('../api/npcChat', () => ({
 
 // Mock child components that might have dependencies
 vi.mock('./BaseDialog', () => ({
-  default: ({ children, title, onClose }) => (
-    <div data-testid="base-dialog" onClick={onClose}>
+  default: ({ children, title, onClose, maxWidth, width, className }) => (
+    <div
+      data-testid="base-dialog"
+      data-max-width={maxWidth}
+      data-width={width}
+      className={className}
+      onClick={onClose}
+    >
       <h2>{title}</h2>
       {children}
     </div>
@@ -84,6 +90,15 @@ describe('NpcChatPanel', () => {
   })
 
   describe('Component Initialization', () => {
+    it('uses a wide dialog for the desktop portrait-backed conversation stage', async () => {
+      render(<NpcChatPanel npcId={mockNpcId} npcName={mockNpcName} onClose={mockOnClose} />)
+
+      await waitFor(() => expect(screen.getByTestId('conversation-stage')).toBeInTheDocument())
+      const dialog = screen.getByTestId('base-dialog')
+      expect(dialog).toHaveAttribute('data-max-width', '1100px')
+      expect(dialog).toHaveAttribute('data-width', 'min(96vw, 1100px)')
+      expect(screen.getByTestId('conversation-stage')).toHaveClass('conversation-stage--wide')
+    })
     it('renders and opens conversation on mount', async () => {
       render(
         <NpcChatPanel
