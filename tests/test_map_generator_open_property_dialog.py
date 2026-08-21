@@ -99,6 +99,17 @@ def find_button(text):
     raise AssertionError(f"No widget constructed with text={text!r}")
 
 
+def widget_texts():
+    """Every non-empty ``text=`` the dialog constructed, in creation order.
+
+    This is the dialog's observable output under the fake-widget stub, so it
+    is what "the dialog rendered X" has to be asserted against -- several tests
+    below used to call ``open_property_dialog`` and assert nothing at all.
+    """
+    return [w.init_kwargs.get("text") for w in _FakeWidget.registry
+            if w.init_kwargs.get("text")]
+
+
 @pytest.fixture
 def mg():
     """Imports utils.map_generator with a tkinter stub permissive enough to
@@ -308,7 +319,15 @@ class TestClassChooserField:
     instance tag-list chooser (as opposed to the Type[Base]-picks-a-class
     field tested below)."""
 
-    def test_builds_tag_list_frame_without_crashing(self, mg):
+    def test_builds_an_empty_tag_list_with_a_choose_button(self, mg):
+        """An instance-typed field with no existing value renders its label and
+        a "Choose" button, and no tags.
+
+        This exercises create_element_frame -> TagListFrame -> refresh_tags.
+        Clicking "Choose" is deliberately out of scope here (it would pull in
+        open_chooser/show_hierarchy_chooser), but the widgets it builds are
+        observable, so "did not raise" is not the strongest claim available.
+        """
         class FakeItem:
             pass
 
@@ -324,16 +343,20 @@ class TestClassChooserField:
         mg.open_property_dialog(
             _FakeWidget(), LootHolder, existing=None, callback=fake_callback
         )
-        # No assertion beyond "did not raise" -- this is exactly the
-        # coverage gap the prior code-scrubber pass flagged: the tag-based
-        # chooser setup path (create_element_frame -> TagListFrame ->
-        # refresh_tags -> constructing the "Choose" button) previously ran
-        # with zero verification that it even executes without an
-        # AttributeError. This does NOT click the "Choose" button (that
-        # would additionally exercise open_chooser/show_hierarchy_chooser,
-        # which are out of scope for this file).
+
+        texts = widget_texts()
+        assert texts == ["loot:", "Choose", "Add"]
+        assert "FakeItem" not in texts          # nothing selected yet
+        # The callback only fires when the dialog is committed.
+        assert result == {}
 
     def test_list_variant_reads_existing_collection(self, mg):
+        """Each element of the existing collection must render its own tag.
+
+        The old body called the dialog and asserted nothing, so a builder that
+        rendered an empty tag list (losing the player's existing loot on every
+        edit) passed.
+        """
         from typing import List as TList
 
         class FakeItem:
@@ -348,11 +371,16 @@ class TestClassChooserField:
 
         mg.open_property_dialog(_FakeWidget(), InventoryHolder, existing=existing)
 
+        texts = widget_texts()
+        assert texts.count("FakeItem") == 2      # one tag per existing element
+        assert texts.count("\u00d7") == 2       # a remove button per tag
+        assert "Choose" in texts                 # and the add-another chooser
+
 
 class TestClassTypeField:
     """_build_class_type_field: Type[Base]/list[Type[Base]] class pickers."""
 
-    def test_single_type_base_field_does_not_crash(self, mg):
+    def test_single_type_base_field_offers_a_singular_chooser(self, mg):
         from typing import Type as TType
 
         class FakeBase:
@@ -364,7 +392,17 @@ class TestClassTypeField:
 
         mg.open_property_dialog(_FakeWidget(), SingleTypeHolder, existing=None)
 
-    def test_list_type_base_field_does_not_crash(self, mg):
+        texts = widget_texts()
+        assert "kind:" in texts
+        assert "Choose Type" in texts
+        assert "Choose Types" not in texts
+
+    def test_list_type_base_field_offers_a_plural_chooser(self, mg):
+        """``list[Type[Base]]`` must route to the multi-select chooser.
+
+        Both of these tests previously asserted nothing, so the singular/plural
+        dispatch -- the entire point of having two builders -- was unverified.
+        """
         from typing import List as TList, Type as TType
 
         class FakeBase:
@@ -376,6 +414,11 @@ class TestClassTypeField:
 
         mg.open_property_dialog(_FakeWidget(), ListTypeHolder, existing=None)
 
+        texts = widget_texts()
+        assert "kinds:" in texts
+        assert "Choose Types" in texts
+        assert "Choose Type" not in texts
+
 
 class TestOpenPropertyDialogEndToEnd:
     def test_no_editable_properties_shows_placeholder_label(self, mg):
@@ -383,19 +426,47 @@ class TestOpenPropertyDialogEndToEnd:
             def __init__(self):
                 pass
 
-        # Must not raise even though the field-building loop never runs.
         mg.open_property_dialog(_FakeWidget(), Empty, existing=None)
 
-    def test_bool_and_text_fields_do_not_crash(self, mg):
+        texts = widget_texts()
+        assert "No editable properties." in texts
+        # New object (existing=None): only "Add", never Close/Delete.
+        assert "Add" in texts
+        assert "Delete" not in texts and "Close" not in texts
+
+    def test_bool_and_text_fields_render_grouped_and_marked_as_customized(self, mg):
+        """str and bool fields get grouped headers, and a value that differs
+        from the constructor default is flagged with a trailing ``*``.
+
+        That asterisk is the "customized value" highlight from issue #16; the
+        old test called the dialog and asserted nothing, so losing the grouping
+        *and* the highlight would both have gone unnoticed.
+        """
         class Simple:
             def __init__(self, name: str = "x", locked: bool = False):
                 pass
 
-        existing = Simple()
-        existing.name = "a torch"
-        existing.locked = True
+        customized = Simple()
+        customized.name = "a torch"
+        customized.locked = True
+        mg.open_property_dialog(_FakeWidget(), Simple, existing=customized)
+        texts = widget_texts()
 
-        mg.open_property_dialog(_FakeWidget(), Simple, existing=existing)
+        assert "Appearance" in texts and "State" in texts    # group headers
+        assert "name*:" in texts and "locked*:" in texts     # customized marks
+        assert "False" in texts and "True" in texts          # bool radio pair
+        assert "Close" in texts and "Delete" in texts        # editing an object
+
+        # Same class, values left at their defaults -> no asterisk.
+        _FakeWidget.registry.clear()
+        defaults = Simple()
+        defaults.name = "x"
+        defaults.locked = False
+        mg.open_property_dialog(_FakeWidget(), Simple, existing=defaults)
+        plain = widget_texts()
+
+        assert "name:" in plain and "locked:" in plain
+        assert "name*:" not in plain and "locked*:" not in plain
 
     def test_close_button_saves_existing_object_and_invokes_callback(self, mg):
         """Exercises on_add_save's existing-object branch (auto_save() +
@@ -491,3 +562,129 @@ def ttk_calls_for(mg_module, widget_name):
     call order."""
     widget_mock = getattr(mg_module.ttk, widget_name)
     return list(widget_mock.call_args_list)
+
+
+class TestBulkEdit:
+    """``existing=[a, b, ...]`` -- one dialog editing several instances.
+
+    ``test_map_generator_property_dialog_ux.py`` used to "cover" this by
+    re-implementing open_property_dialog's normalization and auto_save() loops
+    inline in the test body and asserting on that copy. Those tests could not
+    fail for any change to ``utils/mapgen``; these drive the real dialog.
+    """
+
+    class Simple:
+        def __init__(self, name: str = "x", locked: bool = False):
+            pass
+
+    def _pair(self):
+        first, second = self.Simple(), self.Simple()
+        first.name, first.locked = "alpha", False
+        second.name, second.locked = "beta", False
+        return first, second
+
+    def test_a_changed_field_applies_to_every_selected_instance(self, mg):
+        first, second = self._pair()
+
+        mg.open_property_dialog(_FakeWidget(), self.Simple, existing=[first, second])
+        find_button("True").init_kwargs["command"]()      # flip `locked`
+        find_button("Close").init_kwargs["command"]()
+
+        assert first.locked is True
+        assert second.locked is True
+
+    def test_untouched_fields_are_not_flattened_to_the_primary_instance(self, mg):
+        """Regression: auto_save() rebuilds *every* field's kwargs on any
+        change, and each field is seeded from the primary (first) instance.
+        Without initial-value diffing, editing ``locked`` would overwrite the
+        second container's ``name`` with the first's.
+        """
+        first, second = self._pair()
+
+        mg.open_property_dialog(_FakeWidget(), self.Simple, existing=[first, second])
+        find_button("True").init_kwargs["command"]()
+        find_button("Close").init_kwargs["command"]()
+
+        assert first.name == "alpha"
+        assert second.name == "beta"
+
+    def test_callback_receives_the_whole_selection(self, mg):
+        first, second = self._pair()
+        saved = {}
+
+        mg.open_property_dialog(
+            _FakeWidget(), self.Simple, existing=[first, second],
+            callback=lambda inst: saved.setdefault("inst", inst),
+        )
+        find_button("Close").init_kwargs["command"]()
+
+        assert saved["inst"] == [first, second]
+
+    def test_a_field_differing_across_the_selection_is_seeded_from_the_primary(
+            self, mg):
+        """The ``*`` customization mark reflects the primary instance's value."""
+        first, second = self._pair()
+
+        mg.open_property_dialog(_FakeWidget(), self.Simple, existing=[first, second])
+
+        texts = widget_texts()
+        assert "name*:" in texts     # primary's "alpha" differs from default "x"
+        assert "locked:" in texts    # primary's False == the default
+
+
+class TestBulkEditCandidateGathering:
+    """``MapEditor.bulk_edit_selected_tiles`` -- the real method, driven on a
+    bare instance so no tkinter root is needed."""
+
+    def _editor(self, mg, monkeypatch, selected, map_data):
+        import utils.mapgen.editor as editor_mod
+
+        captured = {}
+        monkeypatch.setattr(
+            editor_mod, "_open_bulk_class_chooser",
+            lambda root, candidates, redraw, map_data=None:
+                captured.update(candidates=candidates, map_data=map_data),
+        )
+        editor = editor_mod.MapEditor.__new__(editor_mod.MapEditor)
+        editor.root = None
+        editor.draw_map = lambda: None
+        editor.set_status = lambda message: captured.setdefault("status", message)
+        editor.selected_tiles = selected
+        editor.map_data = map_data
+        editor.bulk_edit_selected_tiles()
+        return captured
+
+    def test_candidates_are_grouped_by_class_across_every_selected_tile(
+            self, mg, monkeypatch):
+        from src.objects import Container
+
+        class FakeNpc:
+            def __init__(self, name):
+                self.name = name
+
+        captured = self._editor(mg, monkeypatch, {(0, 0), (1, 0), (2, 0)}, {
+            (0, 0): {"objects": [Container(name="a")], "npcs": [FakeNpc("m1")]},
+            (1, 0): {"objects": [Container(name="b"), Container(name="c")]},
+            (2, 0): {},                       # empty tile must not raise
+        })
+
+        assert "status" not in captured
+        grouped = {cls.__name__: len(v) for cls, v in captured["candidates"].items()}
+        assert grouped == {"Container": 3, "FakeNpc": 1}
+
+    def test_a_single_selected_tile_is_refused_with_a_status_message(
+            self, mg, monkeypatch):
+        from src.objects import Container
+
+        captured = self._editor(mg, monkeypatch, {(0, 0)},
+                                {(0, 0): {"objects": [Container(name="a")]}})
+
+        assert "candidates" not in captured
+        assert "Select 2+ tiles" in captured["status"]
+
+    def test_a_selection_with_nothing_editable_is_refused(self, mg, monkeypatch):
+        captured = self._editor(mg, monkeypatch, {(0, 0), (1, 0)},
+                                {(0, 0): {}, (1, 0): {}})
+
+        assert "candidates" not in captured
+        assert captured["status"] == "No editable objects found on the selected tiles."

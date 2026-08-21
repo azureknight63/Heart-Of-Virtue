@@ -277,7 +277,8 @@ class TestAfterKingSlimeReturnConditions:
         for _ in range(7):
             evt.process(user_input="a")
         # After completion, MineralFragment removed but decoy should remain
-        assert decoy in self.player.inventory
+        assert evt.completed is True
+        assert self.player.inventory == [decoy]
 
     def test_full_stage_progression_choice_a(self):
         """Walk through all 7 stages end-to-end with choice 'a'."""
@@ -367,11 +368,23 @@ class TestAfterDefeatingKingSlimeProcess:
     @patch("src.story.ch02.time.sleep")
     @patch("src.story.ch02.print_slow")
     def test_process_already_defeated_returns_early(self, mock_print, mock_sleep):
+        """The story flag is the ONLY gate on re-running the aftermath.
+
+        Re-entering the arena must not narrate the cleansing again, hand out a
+        second MineralFragment, re-cleanse the pools, or re-queue the memory
+        flash — so assert on the side effects, not just on the prose.
+        """
         self.player.universe.story["king_slime_defeated"] = "1"
+        self.player.map = {}
+        self.player.universe.maps = [{"name": "grondelith-mineral-pools"}]
         evt = self._make_event()
         evt.process()
-        # print_slow should not be called (already done)
+
         mock_print.assert_not_called()
+        self.player.add_items_to_inventory.assert_not_called()
+        self.tile.spawn_object.assert_not_called()
+        self.tile.remove_event.assert_not_called()
+        assert self.tile.events_here == []
 
     def _make_pools_map(self):
         """Return a minimal pools map dict that _cleanse_pool_tiles won't crash on."""
@@ -523,14 +536,26 @@ class TestCleansPoolTiles:
         pools_map["name"] = "grondelith-mineral-pools"
         self.player.universe.maps = [pools_map]
 
+        # A tile outside the corrupted-channel set must be left alone.
+        untouched = Mock()
+        untouched.spawn_object = Mock()
+        pools_map[(9, 9)] = untouched
+
         evt = self._make_event()
         evt._cleanse_pool_tiles(self.player)
 
-        # All 9 coords should have been updated
-        for t in tiles.values():
+        # All 9 coords should have been updated, each with its OWN prose — a
+        # copy-paste that gave two tiles the same description would make the
+        # cleansed pools read as one repeated room.
+        descriptions = {}
+        for coord, t in tiles.items():
             t.spawn_object.assert_called_once()
             args = t.spawn_object.call_args[0]
             assert args[0] == "TileDescription"
+            descriptions[coord] = t.spawn_object.call_args.kwargs["description"]
+        assert len(set(descriptions.values())) == len(tiles)
+        assert all(isinstance(d, str) and len(d) > 80 for d in descriptions.values())
+        untouched.spawn_object.assert_not_called()
 
     def test_cleanse_pool_tiles_skips_missing_coords(self):
         """Coords not in map are silently skipped."""
@@ -560,13 +585,16 @@ class TestCleansPoolTiles:
         evt._cleanse_pool_tiles(self.player, current_map=fallback)
         t.spawn_object.assert_called_once()
 
-    def test_cleanse_pool_tiles_empty_map_no_crash(self):
-        """Empty map should complete without error."""
+    def test_cleanse_pool_tiles_empty_map_writes_nothing(self):
+        """A pools map with none of the 9 coords present is a silent no-op."""
         from src.story.ch02 import AfterDefeatingKingSlime
 
-        self.player.universe.maps = [{"name": "grondelith-mineral-pools"}]
+        pools_map = {"name": "grondelith-mineral-pools"}
+        self.player.universe.maps = [pools_map]
         evt = self._make_event()
         evt._cleanse_pool_tiles(self.player)
+        # No tiles were invented and the map is untouched.
+        assert pools_map == {"name": "grondelith-mineral-pools"}
 
 
 # ---------------------------------------------------------------------------
@@ -598,12 +626,18 @@ class TestCh02GorranAtPools:
         evt.pass_conditions_to_process.assert_called_once()
 
     def test_check_conditions_with_getattr_universe_none(self):
-        """player.universe with no story attr should be handled gracefully."""
+        """A player with no universe falls back to an empty story dict.
+
+        The gate reads ``gorran_at_pools`` out of that dict, so "no universe"
+        must behave like "flag not set" — the event still arms — rather than
+        raising or silently disarming.
+        """
         self.player.universe = None
         evt = self._make_event()
-        # Should not raise — getattr fallback returns {}
         evt.pass_conditions_to_process = Mock()
         evt.check_conditions()
+        evt.pass_conditions_to_process.assert_called_once()
+        self.tile.remove_event.assert_not_called()
 
     def test_process_sets_story_flag(self):
         """After process(), gorran_at_pools story flag is set."""
@@ -685,3 +719,107 @@ class TestCh02GorranAtPools:
         evt = self._make_event()
         assert evt.description
         assert "Gorran" in evt.description
+
+
+# ---------------------------------------------------------------------------
+# AfterKingSlimeReturn: per-stage API payload contract
+# ---------------------------------------------------------------------------
+# AfterKingSlimeReturn calls begin_conversation() once per stage and hands the
+# client a brand-new `segments` array each round-trip. The client reuses a single
+# ConversationStage instance across those arrays, so a stage that came back empty,
+# repeated the previous stage, or offered no way to advance would strand the
+# player mid-scene (CLAUDE.md: "ConversationStage reset trap"). The stage-by-stage
+# unit tests above poke `evt._stage` directly and therefore cannot see this; these
+# drive the real API entry point end to end.
+
+
+class TestAfterKingSlimeReturnStagedPayloads:
+    def setup_method(self):
+        self.player = _make_player()
+        self.player.skip_dialog = False
+        self.player.inventory = [MineralFragment()]
+        self.tile = _make_tile()
+        self.player.current_room = self.tile
+        self.player.universe.get_tile.return_value = self.tile
+
+    def _play(self, answers):
+        """Drive the event to completion through GameService.process_event_input."""
+        from src.api.services.game_service import GameService
+        from src.story.ch02 import AfterKingSlimeReturn
+
+        game_service = GameService()
+        event = AfterKingSlimeReturn(player=self.player, tile=self.tile)
+        session_data = {"pending_events": {"evt-0": {"event": event, "event_data": {}}}}
+        event_id = "evt-0"
+        results = []
+        with patch(
+            "src.api.services.game_service.check_for_combat", return_value=[]
+        ):
+            for i in range(15):
+                answer = answers[i] if i < len(answers) else answers[-1]
+                result = game_service.process_event_input(
+                    self.player, event_id, answer, session_data
+                )
+                assert result["success"] is True, result.get("error")
+                results.append(result)
+                if not result.get("needs_input"):
+                    break
+                event_id = result["event"]["event_id"]
+            else:  # pragma: no cover - runaway stage machine
+                raise AssertionError("event never completed")
+        return event, results, session_data
+
+    def test_every_stage_returns_a_fresh_complete_advanceable_payload(self):
+        event, results, session_data = self._play([None, "a"] + ["continue"] * 8)
+
+        # Six narrated stages, then a silent stage-7 completion.
+        assert len(results) == 7
+        assert [r.get("needs_input") for r in results] == [True] * 6 + [False]
+        assert event.completed is True
+        assert session_data["pending_events"] == {}
+
+        staged = results[:-1]
+        stage_beats = [[s["text"] for s in r["segments"]] for r in staged]
+        for i, (r, texts) in enumerate(zip(staged, stage_beats)):
+            assert texts, f"stage {i + 1} returned an empty segments array"
+            assert r["conversation"]["cast"], f"stage {i + 1} lost its cast roster"
+            assert r["event"]["input_options"], f"stage {i + 1} offered no way to advance"
+        for i, (prev, cur) in enumerate(zip(stage_beats, stage_beats[1:])):
+            assert cur[0] != prev[0], f"stage {i + 2} re-opened on stage {i + 1}'s beat"
+            assert cur[: len(prev)] != prev, (
+                f"stage {i + 2} appended to stage {i + 1} instead of replacing it"
+            )
+
+        # Stage 1 is the only branching stage; the rest are Continue.
+        assert [o["value"] for o in results[0]["event"]["input_options"]] == [
+            "a",
+            "b",
+            "c",
+        ]
+        for r in results[1:-1]:
+            assert [o["value"] for o in r["event"]["input_options"]] == ["continue"]
+
+        # The scene's state effects land exactly once, on the final stage.
+        assert self.player.universe.story["votha_krr_response_given"] == "1"
+        assert self.player.inventory == []
+
+    def test_each_stage_is_recoverable_from_pending_events(self):
+        """GET /world/events/pending replays event_data — it must be THIS stage."""
+        _event, results, _session = self._play([None, "a"] + ["continue"] * 8)
+        # The recovery payload is written into the pending entry keyed by the
+        # freshly-minted id, which the client echoes back on the next call.
+        ids = [r["event"]["event_id"] for r in results if r.get("needs_input")]
+        assert len(set(ids)) == len(ids)
+
+    def test_stage1_branch_changes_the_stage2_beats(self):
+        """The three hand-over choices are genuinely different scenes."""
+        beats = {}
+        for choice in ("a", "b", "c"):
+            self.setup_method()
+            _event, results, _session = self._play([None, choice] + ["continue"] * 8)
+            beats[choice] = [s["text"] for s in results[1]["segments"]]
+
+        assert len({tuple(v) for v in beats.values()}) == 3
+        assert any("held it out" in t for t in beats["a"])
+        assert any("What is this thing" in t for t in beats["b"])
+        assert any("armrest" in t for t in beats["c"])

@@ -9,6 +9,7 @@ import pytest
 from unittest.mock import MagicMock, patch
 
 
+from src.narration import capture_narration
 import src.states as states
 from src.states import (
     Enflamed, Slimed, Resonant, Petrified, Hollowed, Fervent, PhoenixRevive, Death
@@ -119,11 +120,25 @@ def test_slimed_compound():
 # Resonant.on_removal() — line 392-396
 # ---------------------------------------------------------------------------
 def test_resonant_on_removal():
+    """The wail's departure is announced by name.
+
+    ``mock_cprint.called`` -- the old assertion -- was satisfied by any string
+    at all, including the *application* line (the two are adjacent methods with
+    near-identical bodies, which is exactly where a copy-paste slips through).
+    """
     target = FakeTarget()
     state = Resonant(target)
-    with patch('src.states.cprint') as mock_cprint:
+
+    with capture_narration() as messages:
         state.on_removal(target)
-    assert mock_cprint.called
+
+    assert [(m["text"], m["color"]) for m in messages] == [
+        (
+            f"The wail fades from {target.name}. "
+            "The silence, when it comes, is sudden.",
+            "white",
+        )
+    ]
 
 
 # ---------------------------------------------------------------------------

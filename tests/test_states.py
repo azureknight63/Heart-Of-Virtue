@@ -3,6 +3,7 @@ Unit tests for states module
 """
 import pytest
 from unittest.mock import Mock, patch
+from src.narration import capture_narration
 from src.states import State, Dodging, Parrying, Poisoned, Enflamed, Clean, Hawkeye, PhoenixRevive, Slimed
 
 
@@ -239,17 +240,42 @@ def test_poisoned_effect_damages_target(mock_uniform, mock_cprint, mock_target):
     assert mock_target.hp < initial_hp
 
 
-@patch('src.states.cprint')
-def test_poisoned_compound(mock_cprint, mock_target):
-    """Test Poisoned compound increases severity"""
+def test_poisoned_compound(mock_target):
+    """Reapplying poison stretches duration by 10% and refills a quarter of it.
+
+    The old body captured ``initial_tick``/``initial_beats_max``, never used
+    them, and asserted only that ``cprint`` had been called -- so a compound()
+    that announced worsening poison while changing nothing would have passed.
+    """
     state = Poisoned(mock_target)
-    initial_tick = state.tick
-    initial_beats_max = state.beats_max
+    # Pin the randomized duration so the arithmetic below is exact.
+    state.beats_max, state.beats_left = 100, 40
+    state.steps_max, state.steps_left = 60, 20
+    state.tick = 8
 
-    state.compound(mock_target)
+    with capture_narration() as messages:
+        state.compound(mock_target)
 
-    # Severity should increase
-    assert mock_cprint.called
+    assert [(m["text"], m["color"]) for m in messages] == [
+        ("TestTarget's poisoning has gotten worse!", "magenta")
+    ]
+    assert state.tick == 10               # int(8 * 1.25)
+    assert state.beats_max == 110         # int(100 * 1.1)
+    assert state.steps_max == 66          # int(60 * 1.1)
+    assert state.beats_left == 40 + 27    # += int(beats_max / 4)
+    assert state.steps_left == 20 + 16    # += int(steps_max / 4)
+
+
+def test_poisoned_compound_clamps_remaining_to_the_new_maximum(mock_target):
+    state = Poisoned(mock_target)
+    state.beats_max = state.beats_left = 100
+    state.steps_max = state.steps_left = 60
+
+    with capture_narration():
+        state.compound(mock_target)
+
+    assert state.beats_left == state.beats_max == 110
+    assert state.steps_left == state.steps_max == 66
 
 
 @patch('src.states.cprint')
@@ -317,15 +343,24 @@ def test_clean_on_application(mock_refresh, mock_cprint, mock_target):
     assert "clean" in call_args.lower()
 
 
-@patch('src.states.cprint')
 @patch('src.states.functions.refresh_stat_bonuses')
-def test_clean_on_removal(mock_refresh, mock_cprint, mock_target):
-    """Test Clean announces removal and refreshes stat bonuses"""
-    state = Clean(mock_target)
-    state.on_removal(mock_target)
+def test_clean_on_removal(mock_refresh, mock_target):
+    """Clean's removal refreshes the target's bonuses and says so.
 
-    assert mock_refresh.called
-    assert mock_cprint.called
+    The old body asserted only that two mocks had been *called* -- not with
+    what, and not that the removal line differed from the application line
+    (they are near-identical strings, and a copy-paste swap would have been
+    invisible).
+    """
+    state = Clean(mock_target)
+
+    with capture_narration() as messages:
+        state.on_removal(mock_target)
+
+    mock_refresh.assert_called_once_with(mock_target)
+    assert [(m["text"], m["color"]) for m in messages] == [
+        ("TestTarget is no longer quite so clean!", "white")
+    ]
 
 
 def test_slimed_statustype_is_distinct():
@@ -438,8 +473,11 @@ def test_state_infinite_duration():
     for _ in range(10):
         state.process(target)
 
-    # Should still be in states (beats_max <= 0 means infinite, never ticks down)
+    # beats_max <= 0 means infinite: the counter must not tick down at all.
+    # Membership alone (the old assertion) would still hold for a state that
+    # counted down to -10 and was simply never removed.
     assert state in target.states
+    assert state.beats_left == -1
 
 
 def test_state_zero_beats_max_is_permanent():
@@ -454,21 +492,36 @@ def test_state_zero_beats_max_is_permanent():
         state.process(target)
 
     assert state in target.states
+    assert state.beats_left == 0
+    assert target.states == [state]
 
 
 @patch('src.states.cprint')
-def test_poisoned_duration_range(mock_cprint):
-    """Test Poisoned has variable duration"""
+def test_poisoned_duration_range(mock_cprint, seeded):
+    """Poisoned rolls its duration inside the documented bounds.
+
+    The old test built ten instances off an unseeded RNG and asserted only that
+    *some* variation existed. That pinned neither bound -- a Poisoned rolling
+    beats_max in the millions, or negative, passed -- and it was one unlucky
+    draw away from being flaky in the other direction.
+    """
     target = Mock()
 
-    # Create multiple instances to test randomness
-    states = [Poisoned(target) for _ in range(10)]
+    with seeded(20260821):
+        states = [Poisoned(target) for _ in range(200)]
 
     beats_values = [s.beats_max for s in states]
     steps_values = [s.steps_max for s in states]
 
-    # Should have variation (not all the same)
-    assert len(set(beats_values)) > 1 or len(set(steps_values)) > 1
+    # randint(50, 150) beats / randint(20, 80) steps -- inclusive bounds.
+    assert min(beats_values) >= 50 and max(beats_values) <= 150
+    assert min(steps_values) >= 20 and max(steps_values) <= 80
+    # 200 draws over a 101-wide range: the spread is not in doubt.
+    assert len(set(beats_values)) > 1
+    assert len(set(steps_values)) > 1
+    # beats_left/steps_left start at their maxima, per state.
+    assert all(s.beats_left == s.beats_max for s in states)
+    assert all(s.steps_left == s.steps_max for s in states)
 
 
 @patch('src.states.cprint')

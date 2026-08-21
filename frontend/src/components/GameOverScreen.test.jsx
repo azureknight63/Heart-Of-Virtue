@@ -33,11 +33,17 @@ describe('GameOverScreen', () => {
   }
 
   describe('Rendering', () => {
-    it('renders game over screen container', () => {
-      const { container } = renderWithRouter(
-        <GameOverScreen />
-      )
-      expect(container.firstChild).toBeInTheDocument()
+    it('renders the death screen full-bleed over the game, with no message of its own', () => {
+      // `expect(container.firstChild).toBeInTheDocument()` is true for ANY
+      // rendered node — it could not tell this screen from an empty <div>.
+      const { container } = renderWithRouter(<GameOverScreen />)
+      const root = container.firstChild
+
+      expect(root).toHaveTextContent(/GAME OVER/i)
+      // It must cover the viewport: a death screen the player can click past is
+      // not a death screen.
+      expect(root.style.position).toBe('fixed')
+      expect(root.style.zIndex).not.toBe('')
     })
 
     it('displays game over title', () => {
@@ -126,19 +132,18 @@ describe('GameOverScreen', () => {
   })
 
   describe('Edge Cases', () => {
-    it('renders with null message', () => {
-      renderWithRouter(
-        <GameOverScreen message={null} />
-      )
-      expect(screen.getByText(/GAME OVER/i)).toBeInTheDocument()
-    })
-
-    it('renders with undefined message', () => {
-      renderWithRouter(
-        <GameOverScreen message={undefined} />
-      )
-      expect(screen.getByText(/GAME OVER/i)).toBeInTheDocument()
-    })
+    it.each([[null], [undefined], ['']])(
+      'still shows the GAME OVER heading and the retry control for a %p message',
+      (message) => {
+        renderWithRouter(<GameOverScreen message={message} />)
+        expect(screen.getByText(/GAME OVER/i)).toBeInTheDocument()
+        // The player must never be stranded on a dead screen with no way out,
+        // whatever the server did or did not send as a death message — the
+        // escape hatch appears once the reveal delay elapses.
+        act(() => { vi.advanceTimersByTime(1500) })
+        expect(screen.getByRole('button', { name: /MAIN MENU/i })).toBeInTheDocument()
+      }
+    )
 
     it('cancels the reveal cleanly when unmounted before the delay elapses', () => {
       // No rAF has been scheduled yet, so the cleanup must tolerate both frame
@@ -155,13 +160,22 @@ describe('GameOverScreen', () => {
       // rAF callback, where React discards it, so the second frame was never
       // cancellable and could set state on an unmounted tree.
       const cancelSpy = vi.spyOn(globalThis, 'cancelAnimationFrame')
+      const rafSpy = vi.spyOn(globalThis, 'requestAnimationFrame')
       const { unmount } = renderWithRouter(<GameOverScreen message="Died" />)
       act(() => {
         vi.advanceTimersByTime(1500)
       })
+      const scheduled = rafSpy.mock.results.map((r) => r.value)
+      expect(scheduled.length).toBeGreaterThan(0)
+
       unmount()
-      expect(cancelSpy).toHaveBeenCalled()
+      // Cancelled BY HANDLE, not merely "cancelAnimationFrame ran": a bare
+      // toHaveBeenCalled() passes for a cleanup that cancels the wrong frame
+      // and leaves the real one running against an unmounted tree.
+      const cancelled = cancelSpy.mock.calls.map(([id]) => id)
+      expect(cancelled).toContain(scheduled.at(-1))
       cancelSpy.mockRestore()
+      rafSpy.mockRestore()
     })
 
     it('handles rapid re-renders', () => {

@@ -838,3 +838,133 @@ class TestMapEditorIntegration:
         # the canonical one -- confirming _is_merchant_like, not isinstance,
         # is what's actually in use at the two call sites.
         assert not isinstance(canonical_milo, map_generator_module.Merchant)
+
+
+# ---------------------------------------------------------------------------
+# Shipped map content: tile descriptions are PERMANENT
+# ---------------------------------------------------------------------------
+#
+# CLAUDE.md (Map Design Skill, "Design Principles") states the rule outright:
+# "Tile descriptions are permanent. Descriptions persist after NPCs are killed
+# and items are picked up. Never write present-tense NPC behaviour or item
+# references into a description."
+#
+# That rule was documented but unenforced, so a violation could only be caught
+# by a human replaying the room after clearing it -- exactly the state QA
+# reaches last. These tests read the shipped map JSON directly (no Universe
+# build, no registry mutation) and are cheap enough to run every time.
+
+import json as _json
+import re as _re
+from pathlib import Path as _Path
+
+_MAPS_DIR = _Path(__file__).resolve().parents[1] / "src" / "resources" / "maps"
+
+#: Dev-only map. CLAUDE.md documents combat-testing-arena as an agent-facing
+#: testing arena whose descriptions deliberately address the *tester* ("Use
+#: this arena for testing states.py interactions") and name the roster on
+#: purpose. It is unreachable from the game world, so the permanence rule --
+#: which exists to protect the player's experience -- does not apply.
+_DEV_ONLY_MAPS = {"combat-testing-arena.json"}
+
+
+def _shipped_map_tiles():
+    """Yield ``(map_file, coord, tile_dict)`` for every shipped map tile."""
+    map_files = sorted(_MAPS_DIR.glob("*.json"))
+    assert map_files, "no shipped maps found — the glob is wrong"
+    for path in map_files:
+        if path.name in _DEV_ONLY_MAPS:
+            continue
+        with path.open() as handle:
+            data = _json.load(handle)
+        for coord, tile in data.items():
+            if isinstance(tile, dict) and "description" in tile:
+                yield path.name, coord, tile
+
+
+def _entry_names(tile, key):
+    """Names of the placeholder entries under ``tile[key]`` (npcs / items)."""
+    names = set()
+    for entry in tile.get(key) or []:
+        if not isinstance(entry, dict):
+            continue
+        props = entry.get("props") or {}
+        for candidate in (props.get("name"), entry.get("__class__")):
+            if isinstance(candidate, str) and len(candidate) > 2:
+                names.add(candidate)
+    return names
+
+
+def _mentions(description, name):
+    return bool(_re.search(rf"\b{_re.escape(name)}\b", description or "", _re.I))
+
+
+def test_tile_descriptions_never_name_an_item_lying_on_the_tile():
+    """An item's name in the room text outlives the item itself.
+
+    Once the player takes the Restorative, a description that says "a vial of
+    Restorative sits on the ledge" is a lie the room repeats forever.
+    """
+    offenders = [
+        f"{map_name} {coord}: description names item {name!r}"
+        for map_name, coord, tile in _shipped_map_tiles()
+        for name in _entry_names(tile, "items")
+        if _mentions(tile["description"], name)
+    ]
+    assert not offenders, "\n".join(offenders)
+
+
+def test_tile_descriptions_never_name_a_killable_npc_on_the_tile():
+    """Same rule for NPCs: the description survives the NPC's death.
+
+    Merchants are exempt -- a shop's proprietor is a permanent fixture of the
+    room rather than a clearable encounter, and the room text is written
+    around them ("a battered counter ... where Jambo greets customers").
+    """
+    from src.npc._merchants import Merchant
+    import src.npc as npc_module
+
+    def _is_merchant(class_name):
+        cls = getattr(npc_module, class_name, None)
+        return isinstance(cls, type) and issubclass(cls, Merchant)
+
+    offenders = []
+    for map_name, coord, tile in _shipped_map_tiles():
+        for entry in tile.get("npcs") or []:
+            if not isinstance(entry, dict):
+                continue
+            class_name = entry.get("__class__")
+            if isinstance(class_name, str) and _is_merchant(class_name):
+                continue
+            props = entry.get("props") or {}
+            for name in {props.get("name"), class_name}:
+                if isinstance(name, str) and len(name) > 2 and _mentions(
+                        tile["description"], name):
+                    offenders.append(
+                        f"{map_name} {coord}: description names NPC {name!r}")
+    assert not offenders, "\n".join(offenders)
+
+
+def test_the_permanence_lint_actually_detects_a_violation():
+    """Non-vacuity guard for the two tests above.
+
+    Both pass today by finding nothing, which is indistinguishable from a
+    broken matcher that can never find anything. This feeds the matcher a
+    known-bad tile and asserts it fires.
+    """
+    bad_tile = {
+        "description": "A Restorative sits on the ledge, and a Slime blocks the way.",
+        "items": [{"__class__": "Restorative", "props": {"name": "Restorative"}}],
+        "npcs": [{"__class__": "Slime", "props": {"name": "Slime"}}],
+    }
+
+    assert any(_mentions(bad_tile["description"], n)
+               for n in _entry_names(bad_tile, "items"))
+    assert any(_mentions(bad_tile["description"], n)
+               for n in _entry_names(bad_tile, "npcs"))
+    # And a clean tile must not trip it.
+    clean = {"description": "Wet stone, streaked where something heavy was dragged.",
+             "items": [{"__class__": "Restorative", "props": {"name": "Restorative"}}],
+             "npcs": []}
+    assert not any(_mentions(clean["description"], n)
+                   for n in _entry_names(clean, "items"))

@@ -21,27 +21,28 @@ ROOT = Path(__file__).resolve().parent.parent
 
 import pytest
 from unittest.mock import MagicMock, patch, PropertyMock
-from src.player import Player
 import src.items as items
 import src.states as states
 import src.moves as moves
 
 
+def _in_room(player, **contents):
+    """Stand ``player`` in a stub room whose named containers hold ``contents``.
+
+    ``_in_room(player, items_here=[])``. ``Player().current_room`` is ``None``
+    out of the box, so a test that reads the room at all has to supply one;
+    the stub is a ``MagicMock`` rather than a real ``MapTile`` because these
+    tests only ever read the one container they name.
+    """
+    player.current_room = MagicMock()
+    for key, value in contents.items():
+        setattr(player.current_room, key, value)
+    return player
+
+
+
 class TestPlayerAttributeCalculations:
     """3 tests for attribute calculations with buffs/debuffs."""
-
-    @pytest.fixture
-    def player(self):
-        p = Player()
-        # Set deterministic base stats
-        p.strength_base = 10
-        p.finesse_base = 10
-        p.speed_base = 10
-        p.endurance_base = 10
-        p.charisma_base = 10
-        p.intelligence_base = 10
-        p.faith_base = 10
-        return p
 
     def test_attribute_calculation_with_positive_buff(self, player):
         """Verify attributes increase when positive status effect is applied."""
@@ -107,11 +108,8 @@ class TestPlayerEquipmentSwapping:
     """4 tests for equipment swapping and stat changes."""
 
     @pytest.fixture
-    def player(self):
-        p = Player()
-        p.current_room = MagicMock()
-        p.current_room.items_here = []
-        return p
+    def player(self, player):
+        return _in_room(player, items_here=[])
 
     def test_equip_armor_grants_stat_bonus(self, player):
         """Verify equipping armor grants defense and strength bonuses."""
@@ -196,11 +194,6 @@ class TestPlayerEquipmentSwapping:
 class TestPlayerSkillLearningAndUnlocking:
     """3 tests for skill learning and availability."""
 
-    @pytest.fixture
-    def player(self):
-        p = Player()
-        return p
-
     def test_learn_new_skill(self, player):
         """Verify learning a new skill adds it to known_moves."""
         initial_known_moves = len(player.known_moves)
@@ -265,11 +258,10 @@ class TestPlayerProgressionAndLeveling:
     """3 tests for experience, leveling, and skill unlocks."""
 
     @pytest.fixture
-    def player(self):
-        p = Player()
-        p.game_config = MagicMock()
-        p.game_config.starting_exp = 0
-        return p
+    def player(self, player):
+        player.game_config = MagicMock()
+        player.game_config.starting_exp = 0
+        return player
 
     def test_gain_experience_increases_exp_pool(self, player):
         """Verify gaining experience increments exp counter."""
@@ -357,12 +349,9 @@ class TestPlayerStateAndCombatPersistence:
     """2 tests for state persistence during combat."""
 
     @pytest.fixture
-    def player(self):
-        p = Player()
-        p.current_room = MagicMock()
-        p.current_room.npcs_here = []
-        p.combat_list = []
-        return p
+    def player(self, player):
+        player.combat_list = []
+        return _in_room(player, npcs_here=[])
 
     def test_player_state_applied_during_combat(self, player):
         """Verify status effects persist correctly during combat."""
@@ -399,11 +388,8 @@ class TestEquipmentAndInventoryIntegration:
     """Additional tests for complex equipment scenarios."""
 
     @pytest.fixture
-    def player(self):
-        p = Player()
-        p.current_room = MagicMock()
-        p.current_room.items_here = []
-        return p
+    def player(self, player):
+        return _in_room(player, items_here=[])
 
     def test_equip_full_armor_set_and_verify_bonuses(self, player):
         """Verify equipping a complete armor set applies all bonuses."""
@@ -495,10 +481,6 @@ class TestEquipmentAndInventoryIntegration:
 class TestPlayerHealthAndFatigueRecovery:
     """Tests for health and fatigue management."""
 
-    @pytest.fixture
-    def player(self):
-        return Player()
-
     def test_health_regeneration_outside_combat(self, player):
         """Verify health can regenerate outside of combat."""
         player.hp = 50
@@ -540,10 +522,6 @@ class TestPlayerHealthAndFatigueRecovery:
 class TestPlayerPersistenceAndSerialization:
     """Tests for save/load state persistence."""
 
-    @pytest.fixture
-    def player(self):
-        return Player()
-
     def test_getstate_excludes_non_picklable_attributes(self, player):
         """Verify __getstate__ removes API-layer attributes."""
         # Add a non-picklable attribute
@@ -574,11 +552,10 @@ class TestPlayerAttributePointAllocation:
     """Tests for spending attribute points during leveling."""
 
     @pytest.fixture
-    def player(self):
-        p = Player()
-        p.game_config = MagicMock()
-        p.game_config.starting_exp = 0
-        return p
+    def player(self, player):
+        player.game_config = MagicMock()
+        player.game_config.starting_exp = 0
+        return player
 
     def test_pending_attribute_points_awarded_on_levelup(self, player):
         """Verify pending attribute points are awarded correctly."""
@@ -636,11 +613,8 @@ class TestPlayerWeightAndCapacity:
     """Additional weight management tests."""
 
     @pytest.fixture
-    def player(self):
-        p = Player()
-        p.current_room = MagicMock()
-        p.current_room.items_here = []
-        return p
+    def player(self, player):
+        return _in_room(player, items_here=[])
 
     def test_refresh_weight_calculation(self, player):
         """Verify weight calculation includes all inventory items."""
@@ -671,11 +645,8 @@ class TestPlayerCombatStateTransitions:
     """Tests for combat state management."""
 
     @pytest.fixture
-    def player(self):
-        p = Player()
-        p.current_room = MagicMock()
-        p.current_room.npcs_here = []
-        return p
+    def player(self, player):
+        return _in_room(player, npcs_here=[])
 
     def test_enter_combat_state(self, player):
         """Verify player can enter combat state."""
@@ -701,10 +672,6 @@ class TestPlayerCombatStateTransitions:
 
 class TestPlayerKnownMoves:
     """Tests for move management."""
-
-    @pytest.fixture
-    def player(self):
-        return Player()
 
     def test_initial_known_moves(self, player):
         """Verify player starts with expected base moves."""
@@ -734,10 +701,9 @@ class TestPlayerExpToLevelProgression:
     """Tests for exp-to-level calculation."""
 
     @pytest.fixture
-    def player(self):
-        p = Player()
-        p.intelligence = 10
-        return p
+    def player(self, player):
+        player.intelligence = 10
+        return player
 
     def test_exp_to_level_formula(self, player):
         """Verify exp_to_level is calculated correctly on level up."""
@@ -765,11 +731,8 @@ class TestPlayerCombatMechanics:
     """Tests for combat-related player systems."""
 
     @pytest.fixture
-    def player(self):
-        p = Player()
-        p.current_room = MagicMock()
-        p.current_room.npcs_here = []
-        return p
+    def player(self, player):
+        return _in_room(player, npcs_here=[])
 
     def test_heat_scaling(self, player):
         """Verify heat scales action frequency in combat."""
@@ -803,11 +766,8 @@ class TestPlayerInventoryManagement:
     """Additional inventory and item management tests."""
 
     @pytest.fixture
-    def player(self):
-        p = Player()
-        p.current_room = MagicMock()
-        p.current_room.items_here = []
-        return p
+    def player(self, player):
+        return _in_room(player, items_here=[])
 
     def test_fists_equipped_by_default(self, player):
         """Verify player starts with fists as equipped weapon."""
@@ -838,10 +798,6 @@ class TestPlayerInventoryManagement:
 class TestPlayerUIAndDisplay:
     """Tests for player UI/display methods."""
 
-    @pytest.fixture
-    def player(self):
-        return Player()
-
     def test_player_preferences_initialized(self, player):
         """Verify player preferences dict exists and has defaults."""
         assert isinstance(player.preferences, dict)
@@ -871,10 +827,6 @@ class TestPlayerUIAndDisplay:
 class TestPlayerStaticMessages:
     """Tests for combat and prayer messages."""
 
-    @pytest.fixture
-    def player(self):
-        return Player()
-
     def test_combat_idle_messages_populated(self, player):
         """Verify combat_idle_msg list is populated."""
         assert isinstance(player.combat_idle_msg, list)
@@ -895,11 +847,8 @@ class TestPlayerGoldManagement:
     """Tests for gold stacking and management."""
 
     @pytest.fixture
-    def player(self):
-        p = Player()
-        p.current_room = MagicMock()
-        p.current_room.items_here = []
-        return p
+    def player(self, player):
+        return _in_room(player, items_here=[])
 
     def test_stack_gold_consolidates_multiple_stacks(self, player):
         """Verify stack_gold consolidates multiple gold items into one."""
@@ -936,10 +885,6 @@ class TestPlayerGoldManagement:
 class TestPlayerLocationTracking:
     """Tests for player position tracking."""
 
-    @pytest.fixture
-    def player(self):
-        return Player()
-
     def test_location_coordinates_initialized(self, player):
         """Verify player starts at location (0, 0)."""
         assert player.location_x == 0
@@ -969,14 +914,11 @@ class TestPlayerMerchandiseHandling:
     """Tests for merchandise item handling."""
 
     @pytest.fixture
-    def player(self):
-        p = Player()
-        p.current_room = MagicMock()
-        p.current_room.items_here = []
-        p.map = None  # tile_exists will fail gracefully
-        p.location_x = 0
-        p.location_y = 0
-        return p
+    def player(self, player):
+        player.map = None  # tile_exists will fail gracefully
+        player.location_x = 0
+        player.location_y = 0
+        return _in_room(player, items_here=[])
 
     def test_drop_merchandise_items_no_map(self, player):
         """Verify drop_merchandise_items handles missing map gracefully."""

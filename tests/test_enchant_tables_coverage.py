@@ -14,6 +14,8 @@ non-matching item where it branches on subtype/maintype.
 
 import inspect
 
+import pytest
+
 import src.enchant_tables as enchant_tables
 from src.enchant_tables import Enchantment
 
@@ -158,24 +160,106 @@ def test_add_resistance_object_branch_sets_new_attribute():
     assert item.add_resistance.cold == 0.25
 
 
-def test_requirements_runs_for_every_class_against_every_representative_item_shape():
-    """Generic sweep closing remaining requirements() branches this file's
-    more targeted tests don't specifically assert on (e.g. Hollow, Polished,
-    Encrusted, Dirty, and the elemental-resistance suffixes) — every class's
-    requirements() is called against each representative item shape so every
-    subtype/maintype branch gets exercised at least once, without needing to
-    hand-enumerate which archetype each of ~30 classes cares about."""
-    shapes = [
-        _FakeItem(subtype="Sword", maintype="Weapon"),
-        _FakeItem(subtype="Hammer", maintype="Weapon"),
-        _FakeItem(subtype="Bow", maintype="Weapon"),
-        _FakeItem(subtype="Chestplate", maintype="Armor"),
-        _FakeItem(subtype="Ring", maintype="Accessory"),
+_SHAPES = [
+    ("Sword", "Weapon"),
+    ("Hammer", "Weapon"),
+    ("Bow", "Weapon"),
+    ("Chestplate", "Armor"),
+    ("Ring", "Accessory"),
+]
+
+
+def test_every_requirements_returns_a_real_bool():
+    """``requirements()`` gates enchantment selection with ``if``-style truthiness,
+    so a class returning a truthy string/list would silently always qualify."""
+    wrong = [
+        f"{cls.__name__}({subtype}/{maintype}) -> {result!r}"
+        for cls in _all_enchantment_classes()
+        for subtype, maintype in _SHAPES
+        for result in [cls(_FakeItem(subtype, maintype)).requirements()]
+        if not isinstance(result, bool)
     ]
+    assert wrong == []
+
+
+def test_every_enchantment_is_reachable_by_some_item_shape():
+    """An enchantment whose requirements() can never be satisfied is dead loot.
+
+    The old sweep here called requirements() and asserted nothing at all — it
+    would have passed for a class hard-wired to ``return False``.
+    """
+    unreachable = [
+        cls.__name__ for cls in _all_enchantment_classes()
+        if not any(cls(_FakeItem(subtype, maintype)).requirements()
+                   for subtype, maintype in _SHAPES)
+    ]
+    assert unreachable == []
+
+
+def test_every_modify_actually_changes_a_numeric_stat():
+    """Folding the name in is not enough: an enchantment that renames the item
+    without altering damage/value/protection/resistance is a no-op the player
+    pays gold for."""
+    inert = []
     for cls in _all_enchantment_classes():
-        for item in shapes:
-            cls(item).requirements()  # must not raise; return value already
-            # asserted precisely by the more targeted tests above.
+        item = _FakeItem()
+        before = (item.damage, item.value, item.weight, item.protection,
+                  dict(item.add_resistance))
+        cls(item).modify()
+        after = (item.damage, item.value, item.weight, item.protection,
+                 dict(item.add_resistance))
+        if before == after:
+            inert.append(cls.__name__)
+    assert inert == []
+
+
+@pytest.mark.parametrize("cls_name, subtype", [
+    ("Sharp", "Sword"), ("Weighted", "Hammer"), ("Balanced", "Bow"),
+])
+def test_damage_percent_prefixes_stay_inside_their_declared_bounds(
+        cls_name, subtype, seeded):
+    """Damage and value must move together, within the class's own declared
+    ``_mod_low``/``_mod_high``/``_value_scale`` envelope.
+
+    Bounds come from the class attributes rather than from re-running the same
+    arithmetic the implementation uses, so this fails if the shared modify()
+    body stops honouring a subclass's declared range.
+    """
+    cls = getattr(enchant_tables, cls_name)
+    lo = cls._mod_low - cls._mod_offset
+    hi = cls._mod_high - cls._mod_offset
+
+    with seeded(20240101):
+        for _ in range(50):
+            item = _FakeItem(subtype=subtype, maintype="Weapon")
+            cls(item).modify()
+            gained = item.damage - 10
+            assert gained >= 1                   # the floor in modify()
+            assert gained <= 10 * hi + 1e-9
+            # value multiplier = frac * _value_scale + 1
+            assert item.value >= int(100 * (lo * cls._value_scale + 1)) - 1
+            assert item.value <= int(100 * (hi * cls._value_scale + 1)) + 1
+
+
+@pytest.mark.parametrize("cls_name, low, high", [
+    ("Studded", 1, 3),
+    ("Reinforced", 3, 5),
+])
+def test_protection_prefixes_add_their_declared_range_and_price_it(
+        cls_name, low, high, seeded):
+    """Protection prefixes add a flat 1-3 / 3-5 and charge 21 gold per point."""
+    cls = getattr(enchant_tables, cls_name)
+    seen = set()
+    with seeded(20240101):
+        for _ in range(60):
+            item = _FakeItem(subtype="Chestplate", maintype="Armor")
+            cls(item).modify()
+            gained = item.protection - 2
+            assert low <= gained <= high
+            assert item.value == 100 + gained * 21
+            seen.add(gained)
+    assert seen == set(range(low, high + 1)), (
+        f"{cls_name} never produced every value in {low}..{high}: {sorted(seen)}")
 
 
 def test_damage_boost_enchantments_clamp_small_gains_to_minimum_one():

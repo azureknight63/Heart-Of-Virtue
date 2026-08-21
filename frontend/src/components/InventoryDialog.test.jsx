@@ -3,10 +3,12 @@ import { describe, it, expect, vi } from 'vitest';
 import InventoryDialog from './InventoryDialog';
 import { WEIGHT_UNIT } from '../utils/itemUtils';
 
-// Mock ItemDetailDialog
+// Mock ItemDetailDialog. It ECHOES the item it was handed, so the parent's
+// "which item did you open" and "did the update apply" claims are checkable —
+// a mock that only renders a name cannot distinguish them.
 vi.mock('./ItemDetailDialog', () => ({
   default: ({ item, onBack, onItemRemoved, onItemUpdated }) => (
-    <div data-testid="item-detail">
+    <div data-testid="item-detail" data-item-id={String(item.id)} data-equipped={String(!!item.is_equipped)}>
       <h2>{item.name}</h2>
       <button onClick={onBack}>Back</button>
       <button onClick={() => onItemRemoved(item.id)}>Remove</button>
@@ -41,11 +43,14 @@ describe('InventoryDialog', () => {
   const mockOnClose = vi.fn();
   const mockOnRefetch = vi.fn();
 
-  it('renders inventory header and gold amount', () => {
+  it('renders the inventory header, gold and the weight readout', () => {
     render(<InventoryDialog player={mockPlayer} onClose={mockOnClose} onRefetch={mockOnRefetch} />);
 
-    expect(screen.getByText(/INVENTORY/i)).toBeDefined();
-    expect(screen.getByText(/500 Gold/i)).toBeDefined();
+    expect(screen.getByText(/INVENTORY/i).textContent).toBe('🎒 INVENTORY');
+    expect(screen.getByText(/\d+ Gold/).textContent).toBe('💰 500 Gold');
+    // weight / max_weight, one decimal, with the shared unit.
+    expect(screen.getByText(`18.0 / 100.0 ${WEIGHT_UNIT}`).textContent)
+      .toBe(`18.0 / 100.0 ${WEIGHT_UNIT}`);
   });
 
   it('categorizes items correctly into tabs', () => {
@@ -73,13 +78,17 @@ describe('InventoryDialog', () => {
     const swordItems = screen.getAllByText(/Iron Sword/i);
     fireEvent.click(swordItems[0]);
 
-    expect(screen.getByTestId('item-detail')).toBeDefined();
-    expect(screen.getAllByText(/Iron Sword/i).length).toBeGreaterThan(1);
+    // The detail panel opens on the CLICKED item, and the dialog retitles to it.
+    expect(screen.getByTestId('item-detail').getAttribute('data-item-id')).toBe('1');
+    expect(screen.getByText('🔍 IRON SWORD').textContent).toBe('🔍 IRON SWORD');
+    // The list is replaced while the detail is up, not merely covered.
+    expect(screen.queryByTitle('Armor')).toBeNull();
 
     // Go back
     fireEvent.click(screen.getByText('Back'));
     expect(screen.queryByTestId('item-detail')).toBeNull();
-    expect(screen.getByText(/Iron Sword/i)).toBeDefined();
+    expect(screen.getByText(/INVENTORY/i).textContent).toBe('🎒 INVENTORY');
+    expect(screen.getByText('Iron Sword').textContent).toBe('Iron Sword');
   });
 
   it('sorts items when sort buttons are clicked', () => {
@@ -112,41 +121,23 @@ describe('InventoryDialog', () => {
     expect(items[2].textContent).toContain('Steel Axe'); // 7
   });
 
-  it('handles item hover effects', () => {
+  it('lights the Close button on hover and restores it on leave', () => {
+    // Was "handles item hover effects": twelve mouseEnter/mouseLeave pairs with
+    // no style assertion at all, and a single trailing
+    // `expect(mockOnClose).toHaveBeenCalled()` that duplicated the dedicated
+    // close test. The only hover handler InventoryDialog actually owns is this
+    // one (the item cards' highlight comes from their own rarity styling), so
+    // that is what is asserted.
     render(<InventoryDialog player={mockPlayer} onClose={mockOnClose} onRefetch={mockOnRefetch} />);
-
-    // Find the item container. jsdom doesn't support :hover styles, so just verify events fire
-    const sword = screen.getByText(/Iron Sword/i).closest('div');
-    fireEvent.mouseEnter(sword);
-    fireEvent.mouseLeave(sword);
-
-    const axe = screen.getByText(/Steel Axe/i).closest('div');
-    fireEvent.mouseEnter(axe);
-    fireEvent.mouseLeave(axe);
-
-    // Test merchandise item hover
-    const unsold = screen.getByText(/Unsold Item/i).closest('div');
-    fireEvent.mouseEnter(unsold);
-    fireEvent.mouseLeave(unsold);
-
-    // Test Close button hover
     const closeBtn = screen.getByText('Close');
+    const resting = closeBtn.style.backgroundColor;
+
     fireEvent.mouseEnter(closeBtn);
+    expect(closeBtn.style.backgroundColor).toBe('rgba(255, 255, 255, 0.1)');
+    expect(closeBtn.style.backgroundColor).not.toBe(resting);
+
     fireEvent.mouseLeave(closeBtn);
-
-    // Button should still be clickable
-    fireEvent.click(closeBtn);
-    expect(mockOnClose).toHaveBeenCalled();
-
-    // Test Tab hover
-    const armorTab = screen.getByTitle('Armor');
-    fireEvent.mouseEnter(armorTab);
-    fireEvent.mouseLeave(armorTab);
-
-    // Test Sort button hover
-    const valueSort = screen.getByTitle('Sort by Value');
-    fireEvent.mouseEnter(valueSort);
-    fireEvent.mouseLeave(valueSort);
+    expect(closeBtn.style.backgroundColor).toBe(resting);
   });
 
   it('shows subtype symbols correctly', () => {
@@ -154,19 +145,21 @@ describe('InventoryDialog', () => {
 
     // Subtype symbols are rendered in separate spans near the name or in the info row
     // In our component, we show ⚔️ for weapons with damage
-    expect(screen.getByText(/⚔️10/)).toBeDefined();
-    expect(screen.getByText(/🪓12/)).toBeDefined();
-    expect(screen.getByText(/🏹8/)).toBeDefined();
+    // Each weapon subtype gets its own glyph, followed by that item's own
+    // damage number — a shared glyph or a swapped stat fails here.
+    expect(screen.getByText('⚔️10').textContent).toBe('⚔️10');
+    expect(screen.getByText('🪓12').textContent).toBe('🪓12');
+    expect(screen.getByText('🏹8').textContent).toBe('🏹8');
 
     fireEvent.click(screen.getByTitle('Armor'));
-    expect(screen.getByText(/🛡️8/)).toBeDefined();
+    expect(screen.getByText('🛡️8').textContent).toBe('🛡️8');
   });
 
   it('calls onClose when close button is clicked', () => {
     render(<InventoryDialog player={mockPlayer} onClose={mockOnClose} onRefetch={mockOnRefetch} />);
 
     fireEvent.click(screen.getByText('Close'));
-    expect(mockOnClose).toHaveBeenCalled();
+    expect(mockOnClose).toHaveBeenCalledTimes(1);
   });
 
   it('identifies equipped items', () => {
@@ -179,7 +172,13 @@ describe('InventoryDialog', () => {
     };
     render(<InventoryDialog player={playerWithEquipped} onClose={mockOnClose} onRefetch={mockOnRefetch} />);
 
-    expect(screen.getByText('EQUIPPED')).toBeDefined();
+    // Exactly one badge, on the Iron Sword's card and no other.
+    const badges = screen.getAllByText('EQUIPPED');
+    expect(badges).toHaveLength(1);
+    // The badge belongs to the Iron Sword's card, not to whichever card
+    // happens to render first.
+    const card = screen.getByText('Iron Sword').closest('div[style]').parentElement;
+    expect(card.textContent).toContain('EQUIPPED');
   });
 
   it('uses the items prop directly when provided, syncing on prop changes', () => {
@@ -268,14 +267,23 @@ describe('InventoryDialog', () => {
     render(<InventoryDialog player={mockPlayer} onClose={mockOnClose} onRefetch={mockOnRefetch} />);
     fireEvent.click(screen.getAllByText(/Iron Sword/i)[0]);
     fireEvent.click(screen.getByText('Remove'));
-    expect(screen.queryByTestId('item-detail')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('item-detail')).toBeNull();
+    // Back to the list, with the header restored.
+    expect(screen.getByText(/INVENTORY/i).textContent).toBe('🎒 INVENTORY');
   });
 
   it('applies an update to the selected item when onItemUpdated fires from ItemDetailDialog', () => {
     render(<InventoryDialog player={mockPlayer} onClose={mockOnClose} onRefetch={mockOnRefetch} />);
     fireEvent.click(screen.getAllByText(/Iron Sword/i)[0]);
-    expect(() => fireEvent.click(screen.getByText('Update'))).not.toThrow();
-    expect(screen.getByTestId('item-detail')).toBeInTheDocument();
+    const detail = screen.getByTestId('item-detail');
+    expect(detail.getAttribute('data-equipped')).toBe('false');
+
+    fireEvent.click(screen.getByText('Update'));
+
+    // The patch is MERGED onto the selected item and handed back down — a
+    // `not.toThrow()` here proved only that the callback existed.
+    expect(screen.getByTestId('item-detail').getAttribute('data-equipped')).toBe('true');
+    expect(screen.getByTestId('item-detail').getAttribute('data-item-id')).toBe('1');
   });
 
   it('defaults to an empty inventory when neither items nor player.inventory is provided', () => {
@@ -300,7 +308,7 @@ describe('InventoryDialog', () => {
   it('opens item details when a merchandise (shop) item is clicked', () => {
     render(<InventoryDialog player={mockPlayer} onClose={mockOnClose} onRefetch={mockOnRefetch} />);
     fireEvent.click(screen.getByText('Unsold Item'));
-    expect(screen.getByTestId('item-detail')).toBeInTheDocument();
+    expect(screen.getByTestId('item-detail').getAttribute('data-item-id')).toBe('8');
   });
 
   it('falls back to maintype when subtype is absent on an item card', () => {
@@ -326,11 +334,10 @@ describe('InventoryDialog', () => {
     const consumablesTab = screen.getByTitle('Consumables');
     fireEvent.click(consumablesTab);
 
-    // Check that Test Potion with quantity 3 is displayed with the quantity badge
-    expect(screen.getByText(/Test Potion/)).toBeDefined();
-    // The x3 badge should be in the DOM
-    const badges = container.querySelectorAll('div');
-    const quantityBadges = Array.from(badges).filter(div => div.textContent?.includes('x3'));
-    expect(quantityBadges.length).toBeGreaterThan(0);
+    expect(screen.getByText('Test Potion').textContent).toBe('Test Potion');
+    // The stack badge reads the item's own `quantity`; the Health Potion in the
+    // same tab has 5, so a badge that ignored the item would collide here.
+    expect(screen.getByText('x3').textContent).toBe('x3');
+    expect(screen.getByText('x5').textContent).toBe('x5');
   });
 });

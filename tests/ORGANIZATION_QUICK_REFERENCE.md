@@ -58,7 +58,6 @@ pytest -k "combat" -v
 | **functions** | 4 | Utility functions | test_functions_io_pickle.py, test_functions_utilities.py |
 | **game_mechanics** | 5 | Game loop, events, states | test_game_tick_events.py, test_states.py |
 | **items** | 5 | Items, equipment, loot | test_commodity_items.py, test_loot_tables.py |
-| **manual** | 3 | Manual verification | manual_npc_spawner_check.py |
 | **maps** | 4 | Maps, tiles, world | test_tiles.py, test_event_tile_assignment.py |
 | **misc** | 6 | Miscellaneous features | test_animations.py, test_universe.py |
 | **npc_ai** | 9 | NPCs, merchants, AI | test_merchant.py, test_mynx.py, test_llm_openrouter.py |

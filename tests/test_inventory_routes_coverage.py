@@ -29,13 +29,6 @@ from flask import Flask
 # ---------------------------------------------------------------------------
 
 
-def _make_session(session_id="sess_abc"):
-    s = MagicMock()
-    s.session_id = session_id
-    s.data = {}
-    return s
-
-
 def _make_item(
     name="Iron Sword",
     isequipped=False,
@@ -85,33 +78,37 @@ def _make_player(items=None):
     return p
 
 
-def _make_session_manager(session, player):
-    sm = MagicMock()
-    sm.get_session.return_value = session
-    sm.get_player.return_value = player
-    return sm
+@pytest.fixture
+def make_inventory_app(make_stub_session, make_stub_session_manager):
+    """Minimal Flask app with the inventory blueprint registered.
 
-
-def _make_app(session=None, player=None):
-    """Create a minimal Flask app with the inventory blueprint registered."""
+    Returns ``(app, session, player, session_manager)``. The session is a
+    *real* ``Session`` from the shared ``make_stub_session`` factory, and the
+    manager is ``spec``-constrained against ``SessionManager`` — so a route
+    reading an attribute the real session lacks, or calling a manager method
+    that does not exist, fails here instead of being answered by a bare mock.
+    """
     from src.api.routes.inventory import inventory_bp
 
-    app = Flask(__name__)
-    app.config["TESTING"] = True
+    def _make_inventory_app(session=None, player=None):
+        app = Flask(__name__)
+        app.config["TESTING"] = True
 
-    if session is None:
-        session = _make_session()
-    if player is None:
-        player = _make_player()
+        if session is None:
+            session = make_stub_session(session_id="sess_abc")
+        if player is None:
+            player = _make_player()
 
-    sm = _make_session_manager(session, player)
-    app.session_manager = sm
-    game_service = MagicMock()
-    game_service.get_player_stats.return_value = {"strength": 10}
-    app.game_service = game_service
+        sm = make_stub_session_manager(session, player)
+        app.session_manager = sm
+        game_service = MagicMock()
+        game_service.get_player_stats.return_value = {"strength": 10}
+        app.game_service = game_service
 
-    app.register_blueprint(inventory_bp)
-    return app, session, player, sm
+        app.register_blueprint(inventory_bp)
+        return app, session, player, sm
+
+    return _make_inventory_app
 
 
 AUTH = "Bearer sess_abc"
@@ -123,21 +120,21 @@ AUTH = "Bearer sess_abc"
 
 
 class TestGetSessionAndPlayer:
-    def test_missing_auth_returns_401(self):
-        app, _, _, _ = _make_app()
+    def test_missing_auth_returns_401(self, make_inventory_app):
+        app, _, _, _ = make_inventory_app()
         with app.test_client() as c:
             resp = c.get("/inventory")
         assert resp.status_code == 401
 
-    def test_invalid_session_returns_401(self):
-        app, _, _, sm = _make_app()
+    def test_invalid_session_returns_401(self, make_inventory_app):
+        app, _, _, sm = make_inventory_app()
         sm.get_session.return_value = None
         with app.test_client() as c:
             resp = c.get("/inventory", headers={"Authorization": AUTH})
         assert resp.status_code == 401
 
-    def test_player_not_found_returns_404(self):
-        app, _, _, sm = _make_app()
+    def test_player_not_found_returns_404(self, make_inventory_app):
+        app, _, _, sm = make_inventory_app()
         sm.get_player.return_value = None
         with app.test_client() as c:
             resp = c.get("/inventory", headers={"Authorization": AUTH})
@@ -150,9 +147,9 @@ class TestGetSessionAndPlayer:
 
 
 class TestGetInventory:
-    def test_success(self):
+    def test_success(self, make_inventory_app):
         item = _make_item()
-        app, _, player, _ = _make_app(player=_make_player(items=[item]))
+        app, _, player, _ = make_inventory_app(player=_make_player(items=[item]))
         with patch("src.api.routes.inventory.InventorySerializer") as mock_ser:
             mock_ser.serialize.return_value = {"items": [{"name": "Iron Sword"}]}
             with app.test_client() as c:
@@ -161,8 +158,8 @@ class TestGetInventory:
         data = resp.get_json()
         assert data["success"] is True
 
-    def test_serializer_exception_returns_500(self):
-        app, _, _, _ = _make_app()
+    def test_serializer_exception_returns_500(self, make_inventory_app):
+        app, _, _, _ = make_inventory_app()
         with patch("src.api.routes.inventory.InventorySerializer") as mock_ser:
             mock_ser.serialize.side_effect = RuntimeError("boom")
             with app.test_client() as c:
@@ -176,14 +173,14 @@ class TestGetInventory:
 
 
 class TestExamineItem:
-    def test_missing_index_returns_400(self):
-        app, _, _, _ = _make_app()
+    def test_missing_index_returns_400(self, make_inventory_app):
+        app, _, _, _ = make_inventory_app()
         with app.test_client() as c:
             resp = c.get("/inventory/examine", headers={"Authorization": AUTH})
         assert resp.status_code == 400
 
-    def test_invalid_index_returns_400(self):
-        app, _, player, _ = _make_app(player=_make_player(items=[]))
+    def test_invalid_index_returns_400(self, make_inventory_app):
+        app, _, player, _ = make_inventory_app(player=_make_player(items=[]))
         with patch(
             "src.api.routes.inventory.validate_item_index",
             return_value=(False, "bad index"),
@@ -194,9 +191,9 @@ class TestExamineItem:
                 )
         assert resp.status_code == 400
 
-    def test_success(self):
+    def test_success(self, make_inventory_app):
         item = _make_item()
-        app, _, player, _ = _make_app(player=_make_player(items=[item]))
+        app, _, player, _ = make_inventory_app(player=_make_player(items=[item]))
         with (
             patch(
                 "src.api.routes.inventory.validate_item_index",
@@ -219,8 +216,8 @@ class TestExamineItem:
 
 
 class TestDropItem:
-    def test_missing_item_params_returns_400(self):
-        app, _, _, _ = _make_app()
+    def test_missing_item_params_returns_400(self, make_inventory_app):
+        app, _, _, _ = make_inventory_app()
         with app.test_client() as c:
             resp = c.post(
                 "/inventory/drop",
@@ -229,8 +226,8 @@ class TestDropItem:
             )
         assert resp.status_code == 400
 
-    def test_item_not_found_returns_400(self):
-        app, _, player, _ = _make_app(player=_make_player(items=[]))
+    def test_item_not_found_returns_400(self, make_inventory_app):
+        app, _, player, _ = make_inventory_app(player=_make_player(items=[]))
         with app.test_client() as c:
             resp = c.post(
                 "/inventory/drop",
@@ -239,10 +236,10 @@ class TestDropItem:
             )
         assert resp.status_code == 400
 
-    def test_service_error_returns_400(self):
+    def test_service_error_returns_400(self, make_inventory_app):
         item = _make_item()
         player = _make_player(items=[item])
-        app, _, _, _ = _make_app(player=player)
+        app, _, _, _ = make_inventory_app(player=player)
         app.game_service.drop_item.return_value = {
             "error": "Cannot drop item: invalid current location"
         }
@@ -256,10 +253,10 @@ class TestDropItem:
                 )
         assert resp.status_code == 400
 
-    def test_drop_success_delegates_to_service(self):
+    def test_drop_success_delegates_to_service(self, make_inventory_app):
         item = _make_item(isequipped=False)
         player = _make_player(items=[item])
-        app, _, _, _ = _make_app(player=player)
+        app, _, _, _ = make_inventory_app(player=player)
         app.game_service.drop_item.return_value = {
             "success": True,
             "message": "Dropped Iron Sword",
@@ -276,11 +273,11 @@ class TestDropItem:
         assert resp.get_json()["success"] is True
         app.game_service.drop_item.assert_called_once_with(player, item)
 
-    def test_drop_by_item_id(self):
+    def test_drop_by_item_id(self, make_inventory_app):
         item = _make_item(isequipped=False)
         player = _make_player(items=[item])
         item_id = str(id(item))
-        app, _, _, _ = _make_app(player=player)
+        app, _, _, _ = make_inventory_app(player=player)
         app.game_service.drop_item.return_value = {
             "success": True,
             "message": "Dropped Iron Sword",
@@ -303,8 +300,8 @@ class TestDropItem:
 
 
 class TestGetEquipment:
-    def test_success(self):
-        app, _, _, _ = _make_app()
+    def test_success(self, make_inventory_app):
+        app, _, _, _ = make_inventory_app()
         with patch("src.api.routes.inventory.EquipmentSerializer") as mock_ser:
             mock_ser.serialize.return_value = {"weapon": None}
             with app.test_client() as c:
@@ -312,8 +309,8 @@ class TestGetEquipment:
         assert resp.status_code == 200
         assert resp.get_json()["success"] is True
 
-    def test_serializer_exception_returns_500(self):
-        app, _, _, _ = _make_app()
+    def test_serializer_exception_returns_500(self, make_inventory_app):
+        app, _, _, _ = make_inventory_app()
         with patch("src.api.routes.inventory.EquipmentSerializer") as mock_ser:
             mock_ser.serialize.side_effect = RuntimeError("fail")
             with app.test_client() as c:
@@ -327,8 +324,8 @@ class TestGetEquipment:
 
 
 class TestEquipItem:
-    def test_missing_item_params_returns_400(self):
-        app, _, _, _ = _make_app()
+    def test_missing_item_params_returns_400(self, make_inventory_app):
+        app, _, _, _ = make_inventory_app()
         with app.test_client() as c:
             resp = c.post(
                 "/inventory/equip",
@@ -337,8 +334,8 @@ class TestEquipItem:
             )
         assert resp.status_code == 400
 
-    def test_item_not_found_returns_400(self):
-        app, _, player, _ = _make_app(player=_make_player(items=[]))
+    def test_item_not_found_returns_400(self, make_inventory_app):
+        app, _, player, _ = make_inventory_app(player=_make_player(items=[]))
         with app.test_client() as c:
             resp = c.post(
                 "/inventory/equip",
@@ -347,12 +344,12 @@ class TestEquipItem:
             )
         assert resp.status_code == 400
 
-    def test_service_error_returns_400(self):
+    def test_service_error_returns_400(self, make_inventory_app):
         item = MagicMock(spec=["name", "merchandise"])
         item.name = "Herb"
         item.merchandise = False
         player = _make_player(items=[item])
-        app, _, _, _ = _make_app(player=player)
+        app, _, _, _ = make_inventory_app(player=player)
         app.game_service.equip_item.return_value = {
             "error": "Herb cannot be equipped"
         }
@@ -364,10 +361,10 @@ class TestEquipItem:
             )
         assert resp.status_code == 400
 
-    def test_merchandise_item_returns_400(self):
+    def test_merchandise_item_returns_400(self, make_inventory_app):
         item = _make_item(merchandise=True)
         player = _make_player(items=[item])
-        app, _, _, _ = _make_app(player=player)
+        app, _, _, _ = make_inventory_app(player=player)
         app.game_service.equip_item.return_value = {
             "error": "You must purchase Iron Sword before equipping it"
         }
@@ -379,10 +376,10 @@ class TestEquipItem:
             )
         assert resp.status_code == 400
 
-    def test_equip_success_delegates_to_service(self):
+    def test_equip_success_delegates_to_service(self, make_inventory_app):
         item = _make_item(isequipped=False, maintype="Armor")
         player = _make_player(items=[item])
-        app, _, _, _ = _make_app(player=player)
+        app, _, _, _ = make_inventory_app(player=player)
         app.game_service.equip_item.return_value = {
             "success": True,
             "message": "Iron Sword equipped",
@@ -405,11 +402,11 @@ class TestEquipItem:
         assert body["message"] == "Iron Sword equipped"
         app.game_service.equip_item.assert_called_once_with(player, item)
 
-    def test_equip_toggle_unequip_message(self):
+    def test_equip_toggle_unequip_message(self, make_inventory_app):
         """An already-equipped item returns the service's unequip message."""
         item = _make_item(isequipped=True, maintype="Armor")
         player = _make_player(items=[item])
-        app, _, _, _ = _make_app(player=player)
+        app, _, _, _ = make_inventory_app(player=player)
         app.game_service.equip_item.return_value = {
             "success": True,
             "message": "Iron Sword unequipped",
@@ -442,8 +439,8 @@ class TestUseItem:
     parsing, target resolution, delegation, and response shaping.
     """
 
-    def test_missing_item_params_returns_400(self):
-        app, _, _, _ = _make_app()
+    def test_missing_item_params_returns_400(self, make_inventory_app):
+        app, _, _, _ = make_inventory_app()
         with app.test_client() as c:
             resp = c.post(
                 "/inventory/use",
@@ -452,8 +449,8 @@ class TestUseItem:
             )
         assert resp.status_code == 400
 
-    def test_item_not_found_returns_400(self):
-        app, _, player, _ = _make_app(player=_make_player(items=[]))
+    def test_item_not_found_returns_400(self, make_inventory_app):
+        app, _, player, _ = make_inventory_app(player=_make_player(items=[]))
         with app.test_client() as c:
             resp = c.post(
                 "/inventory/use",
@@ -462,11 +459,11 @@ class TestUseItem:
             )
         assert resp.status_code == 400
 
-    def test_target_not_found_returns_400(self):
+    def test_target_not_found_returns_400(self, make_inventory_app):
         item = _make_item()
         player = _make_player(items=[item])
         player.combat_list_allies = []
-        app, _, _, _ = _make_app(player=player)
+        app, _, _, _ = make_inventory_app(player=player)
         with app.test_client() as c:
             resp = c.post(
                 "/inventory/use",
@@ -475,10 +472,10 @@ class TestUseItem:
             )
         assert resp.status_code == 400
 
-    def test_service_error_returns_400(self):
+    def test_service_error_returns_400(self, make_inventory_app):
         item = _make_item()
         player = _make_player(items=[item])
-        app, _, _, _ = _make_app(player=player)
+        app, _, _, _ = make_inventory_app(player=player)
         app.game_service.use_item.return_value = {
             "error": "You must purchase Iron Sword before using it"
         }
@@ -490,11 +487,11 @@ class TestUseItem:
             )
         assert resp.status_code == 400
 
-    def test_use_success_delegates_to_service(self):
+    def test_use_success_delegates_to_service(self, make_inventory_app):
         item = _make_item()
         player = _make_player(items=[item])
         player.in_combat = False
-        app, _, _, _ = _make_app(player=player)
+        app, _, _, _ = make_inventory_app(player=player)
         app.game_service.use_item.return_value = {
             "success": True,
             "message": "Iron Sword used",
@@ -515,12 +512,12 @@ class TestUseItem:
         assert body["message"] == "Iron Sword used"
         app.game_service.use_item.assert_called_once_with(player, item, target=player)
 
-    def test_use_by_item_id_delegates_to_service(self):
+    def test_use_by_item_id_delegates_to_service(self, make_inventory_app):
         item = _make_item()
         player = _make_player(items=[item])
         player.in_combat = False
         item_id = str(id(item))
-        app, _, _, _ = _make_app(player=player)
+        app, _, _, _ = make_inventory_app(player=player)
         app.game_service.use_item.return_value = {
             "success": True,
             "message": "used",
@@ -538,7 +535,7 @@ class TestUseItem:
         assert resp.status_code == 200
         app.game_service.use_item.assert_called_once_with(player, item, target=player)
 
-    def test_use_on_ally_target_resolves_and_delegates(self):
+    def test_use_on_ally_target_resolves_and_delegates(self, make_inventory_app):
         """The route resolves an ``ally_<id>`` target to the engine object and
         passes it to the service; the service's ``target_name`` is echoed back."""
         item = _make_item()
@@ -548,7 +545,7 @@ class TestUseItem:
         player = _make_player(items=[item])
         player.in_combat = True
         player.combat_list_allies = [player, ally]
-        app, _, _, _ = _make_app(player=player)
+        app, _, _, _ = make_inventory_app(player=player)
         app.game_service.use_item.return_value = {
             "success": True,
             "message": "used",
@@ -580,11 +577,11 @@ class TestUseItem:
         assert body["target_name"] == "Gorran"
         app.game_service.use_item.assert_called_once_with(player, item, target=ally)
 
-    def test_in_combat_response_includes_combat_state(self):
+    def test_in_combat_response_includes_combat_state(self, make_inventory_app):
         item = _make_item()
         player = _make_player(items=[item])
         player.in_combat = True
-        app, _, _, _ = _make_app(player=player)
+        app, _, _, _ = make_inventory_app(player=player)
         app.game_service.use_item.return_value = {
             "success": True,
             "message": "used",
@@ -614,10 +611,10 @@ class TestUseItem:
         assert resp.status_code == 200
         assert "combat_state" in resp.get_json()
 
-    def test_service_exception_returns_500(self):
+    def test_service_exception_returns_500(self, make_inventory_app):
         item = _make_item()
         player = _make_player(items=[item])
-        app, _, _, _ = _make_app(player=player)
+        app, _, _, _ = make_inventory_app(player=player)
         app.game_service.use_item.side_effect = RuntimeError("use blew up")
         with app.test_client() as c:
             resp = c.post(
@@ -634,8 +631,8 @@ class TestUseItem:
 
 
 class TestUnequipItem:
-    def test_missing_item_params_returns_400(self):
-        app, _, _, _ = _make_app()
+    def test_missing_item_params_returns_400(self, make_inventory_app):
+        app, _, _, _ = make_inventory_app()
         with app.test_client() as c:
             resp = c.post(
                 "/inventory/unequip",
@@ -644,8 +641,8 @@ class TestUnequipItem:
             )
         assert resp.status_code == 400
 
-    def test_item_not_found_returns_400(self):
-        app, _, _, _ = _make_app(player=_make_player(items=[]))
+    def test_item_not_found_returns_400(self, make_inventory_app):
+        app, _, _, _ = make_inventory_app(player=_make_player(items=[]))
         with app.test_client() as c:
             resp = c.post(
                 "/inventory/unequip",
@@ -654,10 +651,10 @@ class TestUnequipItem:
             )
         assert resp.status_code == 400
 
-    def test_service_error_returns_400(self):
+    def test_service_error_returns_400(self, make_inventory_app):
         item = _make_item("Helmet", isequipped=False, maintype="Armor")
         player = _make_player(items=[item])
-        app, _, _, _ = _make_app(player=player)
+        app, _, _, _ = make_inventory_app(player=player)
         app.game_service.unequip_item.return_value = {
             "error": "Helmet is not equipped"
         }
@@ -669,10 +666,10 @@ class TestUnequipItem:
             )
         assert resp.status_code == 400
 
-    def test_unequip_success_delegates_to_service(self):
+    def test_unequip_success_delegates_to_service(self, make_inventory_app):
         item = _make_item("Helmet", isequipped=True, maintype="Armor")
         player = _make_player(items=[item])
-        app, _, _, _ = _make_app(player=player)
+        app, _, _, _ = make_inventory_app(player=player)
         app.game_service.unequip_item.return_value = {
             "success": True,
             "message": "Helmet unequipped",
@@ -702,14 +699,14 @@ class TestUnequipItem:
 
 
 class TestCompareItems:
-    def test_missing_candidate_index_returns_400(self):
-        app, _, _, _ = _make_app()
+    def test_missing_candidate_index_returns_400(self, make_inventory_app):
+        app, _, _, _ = make_inventory_app()
         with app.test_client() as c:
             resp = c.get("/inventory/compare", headers={"Authorization": AUTH})
         assert resp.status_code == 400
 
-    def test_invalid_candidate_index_returns_400(self):
-        app, _, player, _ = _make_app(player=_make_player(items=[]))
+    def test_invalid_candidate_index_returns_400(self, make_inventory_app):
+        app, _, player, _ = make_inventory_app(player=_make_player(items=[]))
         with patch(
             "src.api.routes.inventory.validate_item_index",
             return_value=(False, "out of range"),
@@ -721,10 +718,10 @@ class TestCompareItems:
                 )
         assert resp.status_code == 400
 
-    def test_success_no_current(self):
+    def test_success_no_current(self, make_inventory_app):
         item = _make_item()
         player = _make_player(items=[item])
-        app, _, _, _ = _make_app(player=player)
+        app, _, _, _ = make_inventory_app(player=player)
         with (
             patch(
                 "src.api.routes.inventory.validate_item_index",
@@ -741,11 +738,11 @@ class TestCompareItems:
         assert resp.status_code == 200
         assert resp.get_json()["success"] is True
 
-    def test_success_with_current(self):
+    def test_success_with_current(self, make_inventory_app):
         item1 = _make_item("Old")
         item2 = _make_item("New")
         player = _make_player(items=[item1, item2])
-        app, _, _, _ = _make_app(player=player)
+        app, _, _, _ = make_inventory_app(player=player)
         with (
             patch(
                 "src.api.routes.inventory.validate_item_index",
@@ -761,10 +758,10 @@ class TestCompareItems:
                 )
         assert resp.status_code == 200
 
-    def test_invalid_current_index_returns_400(self):
+    def test_invalid_current_index_returns_400(self, make_inventory_app):
         item1 = _make_item()
         player = _make_player(items=[item1])
-        app, _, _, _ = _make_app(player=player)
+        app, _, _, _ = make_inventory_app(player=player)
         call_count = [0]
 
         def _validate_side_effect(idx, length):
@@ -791,8 +788,8 @@ class TestCompareItems:
 
 
 class TestGetStats:
-    def test_success(self):
-        app, _, _, _ = _make_app()
+    def test_success(self, make_inventory_app):
+        app, _, _, _ = make_inventory_app()
         with app.test_client() as c:
             resp = c.get("/inventory/stats", headers={"Authorization": AUTH})
         assert resp.status_code == 200
@@ -800,8 +797,8 @@ class TestGetStats:
         assert data["success"] is True
         assert "strength" in data["stats"]
 
-    def test_game_service_exception_returns_500(self):
-        app, _, _, _ = _make_app()
+    def test_game_service_exception_returns_500(self, make_inventory_app):
+        app, _, _, _ = make_inventory_app()
         app.game_service.get_player_stats.side_effect = RuntimeError("stats error")
         with app.test_client() as c:
             resp = c.get("/inventory/stats", headers={"Authorization": AUTH})
@@ -814,11 +811,11 @@ class TestGetStats:
 
 
 class TestGetCurrency:
-    def test_success(self):
+    def test_success(self, make_inventory_app):
         player = _make_player()
         player.gold = 150
         player.platinum = 3
-        app, _, _, _ = _make_app(player=player)
+        app, _, _, _ = make_inventory_app(player=player)
         with app.test_client() as c:
             resp = c.get("/inventory/currency", headers={"Authorization": AUTH})
         assert resp.status_code == 200
@@ -827,11 +824,11 @@ class TestGetCurrency:
         assert data["currency"]["gold"] == 150
         assert data["currency"]["platinum"] == 3
 
-    def test_default_zero_when_attrs_missing(self):
+    def test_default_zero_when_attrs_missing(self, make_inventory_app):
         player = _make_player()
         del player.gold
         del player.platinum
-        app, _, _, _ = _make_app(player=player)
+        app, _, _, _ = make_inventory_app(player=player)
         with app.test_client() as c:
             resp = c.get("/inventory/currency", headers={"Authorization": AUTH})
         assert resp.status_code == 200
@@ -860,8 +857,46 @@ class TestGetItemAndIndex:
         from src.api.routes.inventory import get_item_and_index
 
         player = _make_player(items=[])
-        found, idx = get_item_and_index(player, item_id="9999999")
-        assert found is None
+        # The index half of the tuple matters: callers do
+        # `item, idx = get_item_and_index(...)` and then index the inventory
+        # with `idx`, so a miss that returned (None, 0) would delete the
+        # wrong item. `found is None` alone never checked it.
+        assert get_item_and_index(player, item_id="9999999") == (None, None)
+
+    def test_item_id_miss_does_not_fall_through_to_index(self):
+        """An `item_id` that matches nothing returns immediately.
+
+        If the id branch fell through to the index branch, a stale item id
+        from a client whose inventory has since changed would silently act on
+        whatever now sits at that position.
+        """
+        from src.api.routes.inventory import get_item_and_index
+
+        item = _make_item()
+        player = _make_player(items=[item])
+        assert get_item_and_index(player, item_id="9999999", item_index=0) == (
+            None,
+            None,
+        )
+
+    def test_finds_an_item_on_a_real_player_via_the_inventory_attribute(self):
+        """The engine ``Player`` has no ``inventory_list`` at all.
+
+        Every other test in this class sets ``inventory_list`` on a mock, so
+        they all exercise the alias branch and none of them exercise the one
+        that actually runs in production. Pinned against a real Player.
+        """
+        from src.api.routes.inventory import get_item_and_index
+        from src.player import Player
+
+        player = Player()
+        assert not hasattr(player, "inventory_list")
+        target = player.inventory[2]
+
+        found, idx = get_item_and_index(player, item_id=str(id(target)))
+        assert found is target
+        assert idx == 2
+        assert get_item_and_index(player, item_index=2) == (target, 2)
 
     def test_find_by_index(self):
         from src.api.routes.inventory import get_item_and_index
@@ -872,19 +907,22 @@ class TestGetItemAndIndex:
         assert found is item
         assert idx == 0
 
-    def test_index_out_of_range(self):
+    @pytest.mark.parametrize("bad_index", [5, -1, 1])
+    def test_index_out_of_range(self, bad_index):
         from src.api.routes.inventory import get_item_and_index
 
-        player = _make_player(items=[])
-        found, idx = get_item_and_index(player, item_index=5)
-        assert found is None
+        player = _make_player(items=[_make_item()])
+        # -1 must be rejected rather than silently wrapping to the last item,
+        # which `0 <= item_index` is what guards against.
+        assert get_item_and_index(player, item_index=bad_index) == (None, None)
 
     def test_no_params_returns_none(self):
         from src.api.routes.inventory import get_item_and_index
 
-        player = _make_player(items=[])
-        found, idx = get_item_and_index(player)
-        assert found is None
+        player = _make_player(items=[_make_item()])
+        # A non-empty inventory: with neither selector supplied the helper
+        # must decline rather than default to index 0.
+        assert get_item_and_index(player) == (None, None)
 
     def test_falls_back_to_inventory_attr(self):
         from src.api.routes.inventory import get_item_and_index
@@ -918,8 +956,22 @@ class TestResolveAllyTarget:
 
         player = _make_player()
         player.combat_list_allies = [player]
-        result = _resolve_ally_target(player, "ally_99999")
-        assert result is None
+        assert _resolve_ally_target(player, "ally_99999") is None
+
+    def test_jean_is_not_resolvable_as_an_ally_target(self):
+        """`combat_list_allies` contains Jean himself.
+
+        Resolving his own id through the ally path would let a "use item on
+        ally" request take the ally branch for the player, bypassing whatever
+        self-targeting handling the caller does.
+        """
+        from src.api.routes.inventory import _resolve_ally_target
+
+        player = _make_player()
+        ally = MagicMock()
+        player.combat_list_allies = [player, ally]
+        assert _resolve_ally_target(player, f"ally_{id(player)}") is None
+        assert _resolve_ally_target(player, f"ally_{id(ally)}") is ally
 
     def test_strips_ally_prefix(self):
         from src.api.routes.inventory import _resolve_ally_target
@@ -958,8 +1010,8 @@ class TestAuthGuardPerRoute:
             ("get", "/inventory/currency", None),
         ],
     )
-    def test_missing_auth_returns_401(self, method, path, body):
-        app, _, _, _ = _make_app()
+    def test_missing_auth_returns_401(self, method, path, body, make_inventory_app):
+        app, _, _, _ = make_inventory_app()
         with app.test_client() as c:
             if method == "post":
                 resp = c.post(path, json=body)
@@ -974,9 +1026,9 @@ class TestAuthGuardPerRoute:
 
 
 class TestRemainingExceptionHandlers:
-    def test_examine_item_exception_returns_500(self):
+    def test_examine_item_exception_returns_500(self, make_inventory_app):
         item = _make_item()
-        app, _, _, _ = _make_app(player=_make_player(items=[item]))
+        app, _, _, _ = make_inventory_app(player=_make_player(items=[item]))
         with (
             patch(
                 "src.api.routes.inventory.validate_item_index",
@@ -991,10 +1043,10 @@ class TestRemainingExceptionHandlers:
                 )
         assert resp.status_code == 500
 
-    def test_drop_item_exception_returns_500(self):
+    def test_drop_item_exception_returns_500(self, make_inventory_app):
         item = _make_item(isequipped=False)
         player = _make_player(items=[item])
-        app, _, _, _ = _make_app(player=player)
+        app, _, _, _ = make_inventory_app(player=player)
         app.game_service.drop_item.return_value = {"success": True, "message": "ok"}
         with patch("src.api.routes.inventory.InventorySerializer") as mock_ser:
             mock_ser.serialize.side_effect = RuntimeError("boom")
@@ -1006,10 +1058,10 @@ class TestRemainingExceptionHandlers:
                 )
         assert resp.status_code == 500
 
-    def test_equip_item_exception_returns_500(self):
+    def test_equip_item_exception_returns_500(self, make_inventory_app):
         item = _make_item(isequipped=False, maintype="Armor")
         player = _make_player(items=[item])
-        app, _, _, _ = _make_app(player=player)
+        app, _, _, _ = make_inventory_app(player=player)
         app.game_service.equip_item.return_value = {"success": True, "message": "ok"}
         with patch("src.api.routes.inventory.EquipmentSerializer") as mock_ser:
             mock_ser.serialize.side_effect = RuntimeError("boom")
@@ -1021,10 +1073,10 @@ class TestRemainingExceptionHandlers:
                 )
         assert resp.status_code == 500
 
-    def test_unequip_item_exception_returns_500(self):
+    def test_unequip_item_exception_returns_500(self, make_inventory_app):
         item = _make_item("Helmet", isequipped=True, maintype="Armor")
         player = _make_player(items=[item])
-        app, _, _, _ = _make_app(player=player)
+        app, _, _, _ = make_inventory_app(player=player)
         app.game_service.unequip_item.return_value = {
             "success": True,
             "message": "ok",
@@ -1039,10 +1091,10 @@ class TestRemainingExceptionHandlers:
                 )
         assert resp.status_code == 500
 
-    def test_compare_items_exception_returns_500(self):
+    def test_compare_items_exception_returns_500(self, make_inventory_app):
         item = _make_item()
         player = _make_player(items=[item])
-        app, _, _, _ = _make_app(player=player)
+        app, _, _, _ = make_inventory_app(player=player)
         with (
             patch(
                 "src.api.routes.inventory.validate_item_index",
@@ -1058,7 +1110,7 @@ class TestRemainingExceptionHandlers:
                 )
         assert resp.status_code == 500
 
-    def test_get_currency_exception_returns_500(self):
+    def test_get_currency_exception_returns_500(self, make_inventory_app):
         from flask import jsonify as real_jsonify
 
         def _jsonify_side_effect(*args, **kwargs):
@@ -1068,7 +1120,7 @@ class TestRemainingExceptionHandlers:
                 raise RuntimeError("boom")
             return real_jsonify(*args, **kwargs)
 
-        app, _, _, _ = _make_app()
+        app, _, _, _ = make_inventory_app()
         with patch(
             "src.api.routes.inventory.jsonify", side_effect=_jsonify_side_effect
         ):
@@ -1099,26 +1151,44 @@ class TestDatabaseClass:
         original_url = os.environ.get("TURSO_DATABASE_URL")
         try:
             os.environ.pop("TURSO_DATABASE_URL", None)
-            with pytest.raises((ValueError, Exception)):
+            # `pytest.raises((ValueError, Exception))` is just
+            # `pytest.raises(Exception)` -- it would have been satisfied by an
+            # AttributeError from a typo elsewhere in get_client, i.e. by the
+            # method being broken rather than by it validating configuration.
+            with pytest.raises(ValueError, match="TURSO_DATABASE_URL is not set"):
                 db.get_client()
         finally:
             if original_url:
                 os.environ["TURSO_DATABASE_URL"] = original_url
 
-    def test_get_client_creates_client_with_url(self):
+    def test_get_client_creates_client_with_url(self, monkeypatch):
+        """monkeypatch, not os.environ: `src.api.db.Database` is a process-wide
+        singleton that reads TURSO_DATABASE_URL lazily, so a leaked value makes
+        a *later* test build a real libsql client and attempt real DNS against
+        test.example.com. That failed only in certain orderings, which
+        --dist loadfile happened to hide by putting the two files on different
+        workers. monkeypatch restores the environment at teardown.
+        """
         from src.api.db import Database
-        import os
 
         db = Database()
         db._client = None
-        os.environ["TURSO_DATABASE_URL"] = "libsql://test.example.com"
-        os.environ.setdefault("TURSO_AUTH_TOKEN", "test-token")
+        monkeypatch.setenv("TURSO_DATABASE_URL", "libsql://test.example.com")
+        monkeypatch.setenv("TURSO_AUTH_TOKEN", "test-token")
         try:
             with patch("src.api.db.libsql_client.create_client") as mock_create:
                 mock_client = MagicMock()
                 mock_create.return_value = mock_client
                 client = db.get_client()
             assert client is mock_client
+            # The credentials must actually be forwarded: a client built
+            # without auth_token would authenticate as nobody and every query
+            # would fail at runtime, not here.
+            mock_create.assert_called_once_with(
+                "libsql://test.example.com", auth_token="test-token"
+            )
+            # ...and it is cached on the singleton for reuse.
+            assert db._client is mock_client
         finally:
             db._client = None
 
@@ -1135,9 +1205,8 @@ class TestDatabaseClass:
         finally:
             db._client = None
 
-    def test_get_client_recreates_when_session_closed(self):
+    def test_get_client_recreates_when_session_closed(self, monkeypatch):
         from src.api.db import Database
-        import os
 
         db = Database()
         mock_client = MagicMock()
@@ -1145,13 +1214,17 @@ class TestDatabaseClass:
         mock_session.closed = True
         mock_client._session = mock_session
         db._client = mock_client
-        os.environ["TURSO_DATABASE_URL"] = "libsql://test.example.com"
+        monkeypatch.setenv("TURSO_DATABASE_URL", "libsql://test.example.com")
         try:
             with patch("src.api.db.libsql_client.create_client") as mock_create:
                 new_client = MagicMock()
                 mock_create.return_value = new_client
                 result = db.get_client()
             assert result is new_client
+            # The stale client must be replaced, not merely bypassed --
+            # keeping it cached would leak its aiohttp session (issue #406).
+            assert db._client is new_client
+            assert db._client is not mock_client
         finally:
             db._client = None
 
@@ -1163,8 +1236,21 @@ class TestDatabaseClass:
         mock_client = AsyncMock()
         mock_client.execute = AsyncMock(return_value="rows")
         with patch.object(db, "get_client", return_value=mock_client):
-            result = await db.execute("SELECT 1")
+            result = await db.execute("SELECT ?", ["jean"])
         assert result == "rows"
+        # Params must be forwarded, or every parameterized query in the app
+        # silently becomes an unbound one.
+        mock_client.execute.assert_awaited_once_with("SELECT ?", ["jean"])
+
+    @pytest.mark.asyncio
+    async def test_execute_defaults_params_to_none(self):
+        from src.api.db import Database
+
+        db = Database()
+        mock_client = AsyncMock()
+        with patch.object(db, "get_client", return_value=mock_client):
+            await db.execute("SELECT 1")
+        mock_client.execute.assert_awaited_once_with("SELECT 1", None)
 
     @pytest.mark.asyncio
     async def test_batch_delegates_to_client(self):
@@ -1176,6 +1262,7 @@ class TestDatabaseClass:
         with patch.object(db, "get_client", return_value=mock_client):
             result = await db.batch(["stmt1", "stmt2"])
         assert result == ["r1", "r2"]
+        mock_client.batch.assert_awaited_once_with(["stmt1", "stmt2"])
 
     @pytest.mark.asyncio
     async def test_close_clears_client(self):
@@ -1186,12 +1273,26 @@ class TestDatabaseClass:
         mock_client.close = AsyncMock()
         db._client = mock_client
         await db.close()
+        # Both halves matter: dropping the reference without awaiting close()
+        # leaks the aiohttp session, and awaiting close() without dropping the
+        # reference hands the next caller a closed client.
+        mock_client.close.assert_awaited_once_with()
         assert db._client is None
 
     @pytest.mark.asyncio
     async def test_close_when_no_client_noop(self):
+        """Idempotent close: the second call must not construct a client.
+
+        This test previously had no assertion at all -- it passed as long as
+        `close()` did not raise, which would also be true of an
+        implementation that called `get_client()` first (opening a *new*
+        connection in order to close it).
+        """
         from src.api.db import Database
 
         db = Database()
         db._client = None
-        await db.close()  # Should not raise
+        with patch.object(Database, "get_client") as mock_get:
+            await db.close()
+        mock_get.assert_not_called()
+        assert db._client is None

@@ -326,8 +326,13 @@ describe('MovementStar', () => {
       render(<MovementStar exits={exits} onMove={mockOnMoveWithError} />)
 
       const northButton = screen.getByLabelText('Move North')
-      // Should not crash on error
+      // A throwing handler must not take the star down with it: the click is
+      // still delivered, and the control stays live for a retry. Asserting only
+      // `.not.toThrow()` would pass for a component that swallowed the click
+      // entirely and never called onMove at all.
       expect(() => fireEvent.click(northButton)).not.toThrow()
+      expect(mockOnMoveWithError).toHaveBeenCalledWith('north')
+      expect(screen.getByLabelText('Move North')).toBeEnabled()
     })
 
     it('continues to work after failed move', () => {

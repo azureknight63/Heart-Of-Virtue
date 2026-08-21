@@ -2,7 +2,8 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import React from 'react';
 import { MemoryRouter } from 'react-router-dom';
-import GamePage from './GamePage';
+import GamePage from './GamePage'
+import { makeStatusEffect, makeCombatant, makeEnemy } from '../test/payloads';
 import { capabilitiesDisabled } from '../test/mockHelpers';
 import * as api from '../api/endpoints';
 import { usePlayer, useWorld, useCombat, useExploration, useExits, useAutosave } from '../hooks/useApi';
@@ -243,15 +244,16 @@ describe('Tactical AI Integration Tests', () => {
                 success: true,
                 combat_active: true,
                 battle_state: {
+                    // Built from src/test/payloads.js: CombatantSerializer marks
+                    // sides with `type: 'player' | 'npc'`, NOT the `is_player`
+                    // flag these fixtures used to invent (that field exists only
+                    // on the thinner start_combat combatants list). A fixture
+                    // that names a key the serializer never emits cannot fail.
                     combatants: [
-                        { id: 'player_1', name: 'Jean', hp: 80, max_hp: 100, is_player: true, x: 2, y: 2 },
-                        { id: 'enemy_123', name: 'Rat', hp: 10, max_hp: 10, is_player: false, x: 2, y: 3 },
+                        makeCombatant({ id: 'player_1', name: 'Jean', hp: 80, max_hp: 100, health: { current: 80, max: 100 }, position: { x: 2, y: 2, facing: 'N' } }),
+                        makeEnemy({ id: 'enemy_123', name: 'Rat', hp: 10, max_hp: 10, health: { current: 10, max: 10 }, position: { x: 2, y: 3, facing: 'S' } }),
                     ],
-                    player: {
-                        name: 'Jean',
-                        hp: 80,
-                        max_hp: 100
-                    },
+                    player: makeCombatant({ name: 'Jean', hp: 80, max_hp: 100, health: { current: 80, max: 100 } }),
                     input_type: 'move_selection',
                     awaiting_input: true,
                     suggested_moves: [
@@ -293,16 +295,21 @@ describe('Tactical AI Integration Tests', () => {
 
         // Wait for combat state to load (via polling or initial effects)
         // We might need to wait for the 2s poll if it doesn't fetch on mount
+        // `getStatus` takes no arguments, so there is nothing to assert about
+        // the call itself — it is used purely as a "combat has loaded" gate,
+        // and the real assertions follow.
         await waitFor(() => {
-            expect(api.combat.getStatus).toHaveBeenCalled();
+            expect(api.combat.getStatus).toHaveBeenCalledWith();
         }, { timeout: 10000 });
 
-        // Verify suggested moves panel appears (waits for log processing + visibility timer)
-        await waitFor(() => {
-            const advisorText = screen.queryByText(/TACTICAL ADVISOR/i) || screen.queryByText(/Suggested Moves/i);
-            expect(advisorText).toBeTruthy();
-        }, { timeout: 10000 });
-    }, 10000);
+        // The panel HEADER was the only thing asserted here, so the panel
+        // could have rendered empty — or dropped every suggestion the API
+        // returned — and the test still passed. Assert the suggestions.
+        expect(await screen.findByText(/TACTICAL ADVISOR/i, {}, { timeout: 10000 })).toBeInTheDocument();
+        expect(screen.getByText('Slash')).toBeInTheDocument();
+        expect(screen.getByText('Dodge')).toBeInTheDocument();
+        expect(screen.getByText(/High damage potential against low HP enemy\./)).toBeInTheDocument();
+    }, 15000);
 
     it('executes combined move and target from AI suggestion click', async () => {
         api.combat.getStatus.mockResolvedValue({
@@ -311,10 +318,10 @@ describe('Tactical AI Integration Tests', () => {
                 combat_active: true,
                 battle_state: {
                     combatants: [
-                        { id: 'player_1', name: 'Jean', hp: 100, max_hp: 100, is_player: true },
-                        { id: 'enemy_456', name: 'Enemy', hp: 50, max_hp: 50, is_player: false },
+                        makeCombatant({ id: 'player_1', name: 'Jean' }),
+                        makeEnemy({ id: 'enemy_456', name: 'Enemy', hp: 50, max_hp: 50, health: { current: 50, max: 50 } }),
                     ],
-                    player: { name: 'Jean', hp: 100, max_hp: 100 },
+                    player: makeCombatant({ name: 'Jean' }),
                     input_type: 'move_selection',
                     awaiting_input: true,
                     suggested_moves: [
@@ -343,8 +350,8 @@ describe('Tactical AI Integration Tests', () => {
                 success: true,
                 battle_state: {
                     combatants: [
-                        { name: 'Jean', hp: 100, max_hp: 100, is_player: true },
-                        { name: 'Enemy', hp: 40, max_hp: 50, is_player: false },
+                        makeCombatant({ name: 'Jean' }),
+                        makeEnemy({ name: 'Enemy', hp: 40, max_hp: 50, health: { current: 40, max: 50 } }),
                     ],
                 },
                 log: [{ message: 'Jean attacks Enemy for 10 damage!', type: 'combat' }],
@@ -353,29 +360,27 @@ describe('Tactical AI Integration Tests', () => {
 
         renderGamePage();
 
+        // The entire body of this test used to sit inside
+        // `if (attackSuggestion) { ... }` within a waitFor callback. When the
+        // suggestion never rendered — the exact regression the test exists to
+        // catch — the callback returned undefined, waitFor resolved, and the
+        // test passed having asserted nothing at all. findByText makes the
+        // missing suggestion a failure instead.
+        const attackSuggestion = await screen.findByText('Attack', {}, { timeout: 8000 });
+        fireEvent.click(attackSuggestion.closest('div'));
+
         await waitFor(() => {
-            expect(api.combat.getStatus).toHaveBeenCalled();
-        }, { timeout: 10000 });
-
-        // Wait for suggestions to appear and click one
-        await waitFor(async () => {
-            const attackSuggestion = screen.queryByText('Attack');
-            if (attackSuggestion) {
-                fireEvent.click(attackSuggestion.closest('div'));
-
-                // Verify combined action was called
-                await waitFor(() => {
-                    expect(api.combat.performAction).toHaveBeenCalledWith(
-                        'select_move_and_target',
-                        expect.objectContaining({
-                            move_name: 'Attack',
-                            target_id: 'enemy_456',
-                        })
-                    );
-                });
-            }
+            expect(api.combat.performAction).toHaveBeenCalledWith(
+                'select_move_and_target',
+                expect.objectContaining({
+                    move_name: 'Attack',
+                    target_id: 'enemy_456',
+                })
+            );
         }, { timeout: 8000 });
-    }, 10000);
+        // One click, one action: a double dispatch burns two combat beats.
+        expect(api.combat.performAction).toHaveBeenCalledTimes(1);
+    }, 20000);
 
     it('displays status effects with icons', async () => {
         api.combat.getStatus.mockResolvedValue({
@@ -384,25 +389,31 @@ describe('Tactical AI Integration Tests', () => {
                 combat_active: true,
                 battle_state: {
                     combatants: [
-                        { id: 'player_1', name: 'Jean', hp: 75, max_hp: 100, is_player: true },
+                        makeCombatant({ id: 'player_1', name: 'Jean', hp: 75, max_hp: 100, health: { current: 75, max: 100 } }),
                     ],
                     player: {
                         name: 'Jean',
                         hp: 75,
                         max_hp: 100,
+                        // `beats_left`, not `duration_remaining`:
+                        // StateEffectSerializer.serialize_state (the live path
+                        // that actually feeds this component) emits the former;
+                        // the latter comes from serialize_state_with_duration,
+                        // which has no callers. Encoding the dead name here was
+                        // wire-drift bug #4 reproduced inside the fixture.
                         status_effects: [
-                            {
+                            makeStatusEffect({
                                 name: 'Burn',
                                 type: 'ailment',
                                 description: 'Taking fire damage',
-                                duration_remaining: 3,
-                            },
-                            {
+                                beats_left: 3,
+                            }),
+                            makeStatusEffect({
                                 name: 'Shield',
                                 type: 'buff',
                                 description: 'Increased protection',
-                                duration_remaining: 5,
-                            },
+                                beats_left: 5,
+                            }),
                         ]
                     },
                     input_type: 'move_selection',
@@ -414,21 +425,20 @@ describe('Tactical AI Integration Tests', () => {
 
         renderGamePage();
 
+        // Both effects must reach the panel. The previous assertion was
+        // `burnIcons.length + shieldIcons.length > 0`, which passes when one of
+        // the two is dropped — and would still pass if the list were truncated
+        // to a single entry.
         await waitFor(() => {
-            expect(api.combat.getStatus).toHaveBeenCalled();
+            expect(screen.queryAllByText('🔥').length).toBeGreaterThan(0);
         }, { timeout: 8000 });
+        expect(screen.queryAllByText('🛡️').length).toBeGreaterThan(0);
 
-        // Check for status effect icons (rendered in HeroPanel, always visible)
-        await waitFor(() => {
-            // Look for emoji icons (🔥 for burn, 🛡️ for shield)
-            // Use queryAllByText because emojis may appear in both HeroPanel and BattlefieldGrid
-            const burnIcons = screen.queryAllByText('🔥');
-            const shieldIcons = screen.queryAllByText('🛡️');
-
-            // At least one should be present if effects are rendering
-            expect(burnIcons.length + shieldIcons.length).toBeGreaterThan(0);
-        }, { timeout: 8000 });
-    }, 10000);
+        // And the tooltip reads the effect's own beats_left, so a fixture using
+        // the dead `duration_remaining` name would show nothing here.
+        fireEvent.mouseEnter(screen.queryAllByText('🔥')[0]);
+        expect(screen.getByText('3 beats remaining').textContent).toBe('3 beats remaining');
+    }, 15000);
 
     it('shows previous move analysis in suggestions panel', async () => {
         api.combat.getStatus.mockResolvedValue({
@@ -437,8 +447,8 @@ describe('Tactical AI Integration Tests', () => {
                 combat_active: true,
                 battle_state: {
                     combatants: [
-                        { id: 'player_1', name: 'Jean', hp: 90, max_hp: 100, is_player: true },
-                        { id: 'enemy_789', name: 'Enemy', hp: 30, max_hp: 50, is_player: false },
+                        makeCombatant({ id: 'player_1', name: 'Jean', hp: 90, max_hp: 100, health: { current: 90, max: 100 } }),
+                        makeEnemy({ id: 'enemy_789', name: 'Enemy', hp: 30, max_hp: 50, health: { current: 30, max: 50 } }),
                     ],
                     player: { name: 'Jean', hp: 90, max_hp: 100 },
                     input_type: 'move_selection',
@@ -467,21 +477,19 @@ describe('Tactical AI Integration Tests', () => {
 
         renderGamePage();
 
+        // Zero-argument poll; a load gate, not an assertion (see above).
         await waitFor(() => {
-            expect(api.combat.getStatus).toHaveBeenCalled();
+            expect(api.combat.getStatus).toHaveBeenCalledWith();
         }, { timeout: 10000 });
 
-        // Look for previous cycle analysis
-        await waitFor(() => {
-            const advisorText = screen.queryByText(/TACTICAL ADVISOR/i);
-            const analysisText = screen.queryByText(/ANALYSIS OF PREVIOUS CYCLE/i);
-            const outcomeText = screen.queryByText(/previous attack dealt 20 damage/i);
-
-            // Header and either analysis label or outcome should be visible
-            expect(advisorText).toBeTruthy();
-            expect(analysisText || outcomeText).toBeTruthy();
-        }, { timeout: 10000 });
-    }, 10000);
+        // `expect(analysisText || outcomeText).toBeTruthy()` let the test pass
+        // on the analysis LABEL alone — i.e. with last_move_outcome dropped
+        // entirely, which is the one field this test is named for. Assert the
+        // outcome copy itself.
+        expect(await screen.findByText(/TACTICAL ADVISOR/i, {}, { timeout: 10000 })).toBeInTheDocument();
+        expect(screen.getByText(/ANALYSIS OF PREVIOUS CYCLE/i)).toBeInTheDocument();
+        expect(screen.getByText(/previous attack dealt 20 damage/i)).toBeInTheDocument();
+    }, 15000);
 
     it('updates status effects when combat state changes', async () => {
         let callCount = 0;
@@ -496,20 +504,8 @@ describe('Tactical AI Integration Tests', () => {
                         combat_active: true,
                         suggestions_loading: true, // Trigger poll
                         battle_state: {
-                            combatants: [
-                                {
-                                    name: 'Jean',
-                                    hp: 100,
-                                    max_hp: 100,
-                                    is_player: true,
-                                },
-                            ],
-                            player: {
-                                name: 'Jean',
-                                hp: 100,
-                                max_hp: 100,
-                                status_effects: []
-                            },
+                            combatants: [makeCombatant({ name: 'Jean' })],
+                            player: makeCombatant({ name: 'Jean', status_effects: [] }),
                             input_type: 'move_selection',
                             awaiting_input: true,
                         },
@@ -524,27 +520,20 @@ describe('Tactical AI Integration Tests', () => {
                         combat_active: true,
                         suggestions_loading: false, // End poll
                         battle_state: {
-                            combatants: [
-                                {
-                                    name: 'Jean',
-                                    hp: 95,
-                                    max_hp: 100,
-                                    is_player: true,
-                                },
-                            ],
-                            player: {
+                            combatants: [makeCombatant({ name: 'Jean', hp: 95, health: { current: 95, max: 100 } })],
+                            player: makeCombatant({
                                 name: 'Jean',
                                 hp: 95,
-                                max_hp: 100,
+                                health: { current: 95, max: 100 },
                                 status_effects: [
-                                    {
+                                    makeStatusEffect({
                                         name: 'Poison',
                                         type: 'ailment',
                                         description: 'Losing HP over time',
-                                        duration_remaining: 4,
-                                    },
+                                        beats_left: 4,
+                                    }),
                                 ],
-                            },
+                            }),
                             input_type: 'move_selection',
                             awaiting_input: true,
                         },
@@ -556,26 +545,36 @@ describe('Tactical AI Integration Tests', () => {
 
         renderGamePage();
 
+        // Zero-argument poll; a load gate, not an assertion (see above).
         await waitFor(() => {
-            expect(api.combat.getStatus).toHaveBeenCalled();
+            expect(api.combat.getStatus).toHaveBeenCalledWith();
         }, { timeout: 10000 });
 
         // Initially no poison icon
         expect(screen.queryAllByText('🧪')).toHaveLength(0);
 
-        // After the poll delivers the second state, the poison effect shows.
+        // After the poll delivers the second state, the poison effect shows —
+        // picked up without a remount.
         //
-        // queryAllByText, not queryByText: the effect legitimately renders on
-        // more than one surface at once (the battlefield token's
-        // StatusEffectsIconPanel and the panels beside it), and queryByText
-        // THROWS on multiple matches rather than returning the first. That
-        // turned a passing render into a retry loop that ran out the waitFor
-        // budget, so the failure surfaced as a ~10s "timeout" and read as load
-        // flakiness — it was an over-specific query all along. What this test
-        // means to assert is that the effect became visible, not that exactly
-        // one element carries it.
+        // queryAllByText, not findByText/queryByText: the effect legitimately
+        // renders on more than one surface at once (the battlefield token's
+        // StatusEffectsIconPanel and the panels beside it), and the
+        // single-match queries THROW on multiple matches rather than returning
+        // the first. That turned a passing render into a retry loop that ran out
+        // the waitFor budget, so the failure surfaced as a ~10s "timeout" and
+        // read as load flakiness — it was an over-specific query all along.
         await waitFor(() => {
             expect(screen.queryAllByText('🧪').length).toBeGreaterThan(0);
         }, { timeout: 10000 });
+
+        // Visibility is only half of it: the effect must also carry its name and
+        // remaining duration, which is what the player actually reads.
+        fireEvent.mouseEnter(screen.queryAllByText('🧪')[0]);
+        expect(screen.getAllByText('POISON').length).toBeGreaterThan(0);
+        expect(screen.getAllByText('4 beats remaining').length).toBeGreaterThan(0);
+        // The test budget must exceed the sum of the waitFor budgets above.
+        // At 10000 it equalled a single wait, so under parallel full-suite load
+        // the test timed out before its own waits could resolve — a flake that
+        // only ever reproduced in a full run, never in isolation.
     }, 25000);
 });

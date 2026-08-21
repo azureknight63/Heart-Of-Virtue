@@ -236,3 +236,492 @@ def app_with_session(flask_app):
         session_mgr = SessionManager()
         flask_app.session_manager = session_mgr
     return flask_app
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Shared factory fixtures
+# ─────────────────────────────────────────────────────────────────────────────
+# tests/_gs_fixtures.py and tests/_combat_fixtures.py hold the canonical
+# real-object factories for the world/GameService slice and the combat slice
+# respectively. Both modules asked, in their own docstrings, to be promoted here
+# so that test files stop wrapping each one in a hand-written single-line local
+# fixture; this section is that promotion.
+#
+# Everything below is a *factory* fixture: it yields a callable, not a built
+# object. That is deliberate. A test that writes
+#
+#     player = make_player(strength=20, weapon="Sword")
+#
+# keeps its inputs visible in the test body, where the assertion can be read
+# against them. A fixed `strong_player` singleton hides them one file away and
+# quietly couples every test that touches it.
+#
+# The plain functions remain importable directly (`from tests._gs_fixtures
+# import live_world`) — ~30 files already do that and nothing here changes it.
+# The fixture form exists so a new test file gets the factory without an import
+# line and without re-deriving its own copy.
+#
+# Naming rule for this section: every fixture added here uses a name that no
+# test file in tests/ currently defines, so promoting them cannot shadow a
+# file-local fixture and cannot change the resolution of any existing test.
+# `game_service` is the single deliberate exception — see its docstring.
+
+
+# --- Real engine objects: combatants -----------------------------------------
+
+@pytest.fixture
+def make_player():
+    """Factory for a real ``src.player.Player``.
+
+    ``make_player(weapon="Sword", moves=[...], **stats)``. Every keyword in
+    ``stats`` is validated against the real ``Player`` before it is set, so a
+    typo like ``health=100`` (the attribute is ``hp``) raises instead of
+    silently creating a field the engine never reads. That check is the whole
+    point of preferring this over ``MagicMock()``.
+    """
+    from tests._combat_fixtures import make_player as _make_player
+    return _make_player
+
+
+@pytest.fixture
+def make_npc():
+    """Factory for a real ``src.npc.NPC`` (or a concrete subclass).
+
+    ``make_npc(cls=Slime, weapon="Dagger", hp=40)``. Defaults to the plain
+    ``NPC`` base so "a combatant that is not Jean" does not accidentally drag
+    in a concrete enemy's move list and resistances.
+    """
+    from tests._combat_fixtures import make_npc as _make_npc
+    return _make_npc
+
+
+@pytest.fixture
+def make_weapon():
+    """Factory for a real weapon item, keyed by the engine's ``subtype`` string.
+
+    ``make_weapon("Sword")`` / ``make_weapon("Crossbow", damage=0)``. Asking by
+    subtype rather than by class name keeps a test that branches on weapon
+    class from encoding whichever concrete sword happened to be handy.
+    """
+    from tests._combat_fixtures import make_weapon as _make_weapon
+    return _make_weapon
+
+
+# --- Real engine objects: world ----------------------------------------------
+
+@pytest.fixture
+def make_world():
+    """Factory for a real ``Player``/``Universe``/``MapTile`` graph.
+
+    ``player, game_map = make_world(GRID_3X3)`` — see ``grid_3x3`` below for the
+    8-exit default. Builds the map by hand rather than via ``Universe.build()``
+    so no module-level item/merchant registry is mutated (CLAUDE.md, "Running
+    Tests"); it costs well under a millisecond, versus ~45 ms for a real
+    ``Universe.build()``.
+    """
+    from tests._gs_fixtures import live_world
+    return live_world
+
+
+@pytest.fixture
+def make_map_tile():
+    """Factory for one real ``MapTile`` registered into a map dict.
+
+    ``make_map_tile(universe, game_map, x, y, description=...)``.
+    """
+    from tests._gs_fixtures import make_tile
+    return make_tile
+
+
+@pytest.fixture
+def grid_3x3():
+    """Coordinates of a 3x3 map centred on the origin.
+
+    ``MapTile._calculate_exits`` derives exits by probing adjacent tiles, so a
+    player at ``(0, 0)`` on this grid has all eight compass exits — enough to
+    drive every direction branch of movement code.
+    """
+    from tests._gs_fixtures import GRID_3X3
+    return GRID_3X3
+
+
+@pytest.fixture
+def set_player_gold():
+    """Set a player's purse to an exact amount: ``set_player_gold(player, 500)``.
+
+    Tops up the existing ``Gold`` stack rather than appending a second one —
+    ``transfer_gold`` only ever draws from the first ``Gold`` item it finds, so
+    a split purse silently clamps a transfer to the smaller stack.
+    """
+    from tests._gs_fixtures import set_player_gold as _set
+    return _set
+
+
+@pytest.fixture
+def get_player_gold():
+    """Total gold in ``player.inventory``: ``get_player_gold(player)``."""
+    from tests._gs_fixtures import get_player_gold as _get
+    return _get
+
+
+# --- Combat wiring -----------------------------------------------------------
+
+@pytest.fixture
+def engage():
+    """Wire a real encounter: ``engage(player, enemies=[...], allies=[...])``.
+
+    Sets both sides' ``combat_list``/``combat_list_allies``, marks everyone
+    ``in_combat``, and runs the real ``initialize_combat_positions`` so
+    ``combat_position``/``combat_proximity`` hold engine-computed values rather
+    than coordinates a test invented. Returns ``(player_side, enemy_side)``.
+    """
+    from tests._combat_fixtures import engage as _engage
+    return _engage
+
+
+@pytest.fixture
+def place():
+    """Pin a combatant at exact grid coordinates: ``place(npc, 25, 27)``.
+
+    ``initialize_combat_positions`` deliberately randomises spawn points, so a
+    test asserting on distance or facing must place its combatants explicitly.
+    """
+    from tests._combat_fixtures import place as _place
+    return _place
+
+
+@pytest.fixture
+def repair_proximity():
+    """Recompute every combatant's ``combat_proximity`` from live coordinates."""
+    from tests._combat_fixtures import repair_proximity as _repair
+    return _repair
+
+
+@pytest.fixture
+def make_adapter():
+    """Factory for a real ``ApiCombatAdapter`` over real combatants.
+
+    ``make_adapter(player, enemies=[slime])``. Imported lazily so move/state
+    tests that never touch the API layer do not pay for the Flask import chain.
+    """
+    from tests._combat_fixtures import make_adapter as _make_adapter
+    return _make_adapter
+
+
+@pytest.fixture
+def seeded():
+    """Context manager pinning the global RNG: ``with seeded(1234): ...``.
+
+    Restores the previous RNG state on exit so the seed does not leak into
+    whatever test ``pytest-randomly`` runs next.
+    """
+    from tests._combat_fixtures import seeded as _seeded
+    return _seeded
+
+
+@pytest.fixture
+def forced_roll():
+    """Force ``random.randint`` inside a move module to a known value.
+
+    ``with forced_roll(100): ...`` (always 100) or ``with forced_roll([1, 100]):
+    ...`` (consumed in order, last entry repeats). Patches only the ``random``
+    object the target module imported, so unrelated rolls are untouched.
+    """
+    from tests._combat_fixtures import forced_roll as _forced_roll
+    return _forced_roll
+
+
+# --- GameService -------------------------------------------------------------
+
+@pytest.fixture
+def game_service():
+    """A fresh ``GameService``.
+
+    This is the one fixture in this section whose name is already defined
+    elsewhere (36 file-local copies plus one in ``tests/conftest_game_service``).
+    Promoting it is safe because every one of those copies has the identical
+    body — ``return GameService()`` — and ``GameService.__init__`` is literally
+    ``pass``: the class holds no instance state at all, so two instances are
+    indistinguishable. File-local definitions still take precedence under normal
+    pytest resolution; this exists so a new test file does not need a 37th copy.
+
+    Kept function-scoped rather than session-scoped on purpose. Construction is
+    free (``__init__`` is ``pass``), so caching buys nothing, while a shared
+    instance would let a test that assigns ``game_service.some_method = Mock()``
+    without restoring it corrupt every later test. The six ``_cached_game_service``
+    session fixtures in the suite are that same non-optimisation and should be
+    dropped rather than copied.
+
+    Reminder: ``GameService`` has no ``self.universe``. The universe lives on
+    ``player.universe``; reach it via ``GameService._story(player)`` /
+    ``._game_tick(player)``.
+    """
+    from src.api.services.game_service import GameService
+    return GameService()
+
+
+# --- Mocks, for states a real object cannot reach ----------------------------
+# Reach for these only to force something real objects cannot do (a method that
+# raises, an attribute that is absent). CLAUDE.md names mock-on-mock assertions
+# as this codebase's dominant bug class: five wire-field drift bugs shipped
+# because the fixture and the component agreed on a field name the serializer
+# never emitted. A mock cannot catch a mock agreeing with itself.
+
+@pytest.fixture
+def make_spec_player():
+    """A ``MagicMock`` constrained to the real ``Player`` attribute surface.
+
+    ``make_spec_player(hp=40, strength=20)``. Specced against a real ``Player``
+    *instance* (not the class — ``Player`` sets its fields in ``__init__``, so
+    ``spec=Player`` would reject ``hp``), which means the mock raises
+    ``AttributeError`` for ``health``, ``stamina``, ``defense``, ``accuracy``,
+    ``evasion`` and ``reputation``, none of which exist on the engine object.
+    That is the entire reason to prefer it over a bare ``MagicMock()``.
+
+    Overrides are applied with ``setattr``, which the spec also validates, so a
+    misspelled keyword fails at setup rather than passing silently.
+    """
+    from unittest.mock import MagicMock
+    from src.player import Player
+
+    def _make_spec_player(**overrides):
+        mock = MagicMock(spec=Player())
+        for key, value in overrides.items():
+            setattr(mock, key, value)
+        return mock
+
+    return _make_spec_player
+
+
+@pytest.fixture
+def make_mock_player():
+    """Unconstrained ``MagicMock`` player with a pre-wired universe/tile graph.
+
+    ``make_mock_player(hp=1, in_combat=True)``. Mirrors the real ``Player``
+    attribute names (``hp`` not ``health``, ``fatigue`` not ``stamina``, no
+    ``reputation``), but being unspecced it will still answer anything asked of
+    it. Prefer :func:`make_spec_player`, or a real player from
+    :func:`make_player`, unless the test needs the ready-made mock universe
+    (``universe.get_tile``, ``universe.story``, ``universe.game_tick_events``).
+    """
+    from tests._gs_fixtures import mock_player as _mock_player
+    return _mock_player
+
+
+# --- API route harness -------------------------------------------------------
+# Six route-coverage files (test_{api_routes_and_serializers,auth_routes,
+# inventory_routes,misc_routes,routes,world_routes}_coverage.py) each grew their
+# own `_make_session`/`_make_session_manager`/`_make_app` trio. The copies had
+# already drifted apart in which attributes they set. These are the canonical
+# versions.
+
+@pytest.fixture
+def make_stub_session():
+    """A **real** ``Session``, not a mock: ``make_stub_session(db_user_id="db_1")``.
+
+    ``Session.__init__`` takes only ``(session_id, player_id, username,
+    created_at)`` and is free to construct, so there is no reason to mock it —
+    and a real one keeps ``session.data``, ``expires_at``, ``is_expired()`` and
+    ``to_dict()`` honest instead of letting a mock invent them.
+
+    ``db_user_id`` is attached afterwards because that is exactly what
+    production does: it is *not* set in ``Session.__init__``; the login route
+    grafts it on at ``src/api/routes/auth.py:106``. Passing ``db_user_id=None``
+    reproduces the unauthenticated/test-session state that the saves routes
+    403 on.
+    """
+    from datetime import datetime
+    from src.api.services.session_manager import Session
+
+    def _make_stub_session(
+        session_id="test_session",
+        player_id="player_1",
+        username="jean_claire",
+        db_user_id="db_user_1",
+        **data,
+    ):
+        session = Session(session_id, player_id, username, datetime.now())
+        session.db_user_id = db_user_id
+        session.data.update(data)
+        return session
+
+    return _make_stub_session
+
+
+@pytest.fixture
+def make_stub_session_manager():
+    """A ``spec``-constrained ``SessionManager`` mock wired to a session/player.
+
+    ``make_stub_session_manager(session, player)``. The ``spec`` matters: it
+    fails the test if a route (or the test) calls a manager method that does not
+    exist, which an unspecced ``MagicMock()`` would answer happily forever.
+    """
+    from unittest.mock import MagicMock
+    from src.api.services.session_manager import SessionManager
+
+    def _make_stub_session_manager(session=None, player=None):
+        manager = MagicMock(spec=SessionManager)
+        manager.get_session.return_value = session
+        manager.get_player.return_value = player
+        manager.save_session.return_value = None
+        manager.set_player.return_value = None
+        manager.start_new_game.return_value = True
+        manager.create_session.return_value = (
+            getattr(session, "session_id", "test_session"),
+            getattr(session, "player_id", "player_1"),
+        )
+        manager.expire_session.return_value = True
+        return manager
+
+    return _make_stub_session_manager
+
+
+@pytest.fixture
+def make_route_app():
+    """A minimal Flask app carrying one blueprint plus stubbed services.
+
+    ``app = make_route_app(world_bp, session=..., player=..., game_service=...)``
+
+    Deliberately *not* ``create_app(TestingConfig)``: the real factory costs
+    ~66 ms per call and pulls up a SessionManager, which a route-level unit test
+    neither needs nor wants. Use :func:`make_api_app` when the test is about the
+    app factory or the full blueprint wiring instead of one route.
+
+    The built app exposes ``app.stub_session``, ``app.stub_session_manager`` and
+    ``app.game_service`` so a test can assert on what the route did to them.
+    """
+    from unittest.mock import MagicMock
+    from flask import Flask
+
+    def _make_route_app(
+        blueprint, session=None, player=None, game_service=None, session_manager=None
+    ):
+        from datetime import datetime
+        from src.api.services.session_manager import Session, SessionManager
+
+        if session is None:
+            session = Session("test_session", "player_1", "jean_claire", datetime.now())
+            session.db_user_id = "db_user_1"
+        if session_manager is None:
+            session_manager = MagicMock(spec=SessionManager)
+            session_manager.get_session.return_value = session
+            session_manager.get_player.return_value = player
+            session_manager.save_session.return_value = None
+            session_manager.set_player.return_value = None
+            session_manager.start_new_game.return_value = True
+
+        app = Flask(__name__)
+        app.config["TESTING"] = True
+        app.register_blueprint(blueprint)
+        app.session_manager = session_manager
+        app.game_service = game_service if game_service is not None else MagicMock()
+        app.stub_session = session
+        app.stub_session_manager = session_manager
+        return app
+
+    return _make_route_app
+
+
+@pytest.fixture
+def make_api_app():
+    """The **real** application factory: ``app = make_api_app()``.
+
+    Returns just the app; ``create_app`` actually returns ``(app, socketio)``
+    and forgetting the second element is a recurring papercut. Pass
+    ``with_socketio=True`` to get the pair.
+
+    Function-scoped by design even though it costs ~66 ms: the app owns a live
+    ``SessionManager`` whose sessions are mutable, so sharing one across a
+    module would leak player state between tests.
+    """
+    def _make_api_app(config=None, with_socketio=False):
+        from src.api.app import create_app
+        from src.api.config import TestingConfig
+
+        app, socketio = create_app(config or TestingConfig)
+        return (app, socketio) if with_socketio else app
+
+    return _make_api_app
+
+
+@pytest.fixture(autouse=True)
+def _restore_os_environ():
+    """Undo any ``os.environ`` mutation a test leaves behind.
+
+    Why this is autouse rather than a fixture tests opt into: several engine
+    singletons read configuration from the environment *lazily*, so a leaked
+    variable does not fail the test that leaked it -- it fails, or silently
+    changes the behaviour of, some later test in the same process.
+
+    The concrete case this was added for: two tests set
+    ``TURSO_DATABASE_URL="libsql://test.example.com"`` and restored only
+    ``Database._client``. ``src.api.db.Database`` is a process-wide singleton
+    that reads the variable lazily, so a later login test built a real libsql
+    client and attempted **real DNS and a real TLS connection** to
+    test.example.com, failing with ``ClientConnectorDNSError`` and leaking an
+    unclosed aiohttp session. It stayed invisible because ``--dist loadfile``
+    happened to schedule the two files onto different workers.
+
+    Prefer ``monkeypatch.setenv`` in new tests; this is the backstop for the
+    ones that do not.
+    """
+    import os
+
+    snapshot = os.environ.copy()
+    yield
+    if os.environ != snapshot:
+        os.environ.clear()
+        os.environ.update(snapshot)
+
+
+# ---------------------------------------------------------------------------
+# Narration sink helpers
+#
+# The terminal-mode teardown moved engine output onto the narration sink
+# (src/narration.py): `narrate`/`cprint` push structured
+# ``{text, color, type}`` messages into a context-local buffer, and fall back to
+# stdout only when no capture is active.
+#
+# This matters for tests. `patch("builtins.print")` still *appears* to work --
+# with no capture installed, narrate() does reach print -- but it hands you
+# `call('hello')` and nothing else: the ``color`` and ``type`` fields are
+# discarded on the way out. Those are precisely the fields the web client
+# consumes, and the ones contracts like ``mtype="memory_chrome"`` depend on. So
+# a print-patching test can suppress output but cannot assert what matters, and
+# it silently records nothing at all if a capture happens to be active.
+#
+# Prefer these helpers over patching print.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def narrated():
+    """Run ``fn`` with the narration sink captured; return the messages.
+
+    Usage::
+
+        def test_x(narrated):
+            messages = narrated(lambda: obj.use(player))
+            assert ("Some text", "green") in narration_pairs(messages)
+    """
+    from src.narration import capture_narration
+
+    def _run(fn, *args, **kwargs):
+        with capture_narration() as messages:
+            fn(*args, **kwargs)
+        return list(messages)
+
+    return _run
+
+
+@pytest.fixture
+def narration_pairs():
+    """Reduce captured messages to ``[(text, color), ...]`` for readable asserts.
+
+    Keeps the colour, which is the half `patch("builtins.print")` throws away.
+    """
+
+    def _pairs(messages):
+        return [(m.get("text"), m.get("color")) for m in messages]
+
+    return _pairs

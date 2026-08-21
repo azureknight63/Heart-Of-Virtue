@@ -1,370 +1,76 @@
-"""Coverage tests for src/shop_conditions.py and src/tiles.py.
+"""Coverage tests for src/tiles.py MapTile spawning and action dispatch.
 
-shop_conditions.py uncovered lines:
-    65, 70, 80, 102, 147-150, 170-171, 207-210, 223, 228-229,
-    289-290, 292-294, 297, 300, 304, 306-307
-
-tiles.py uncovered lines:
-    96, 112, 148, 162-163, 182, 193-194, 200-201, 228, 275-290, 297-301
+The shop_conditions half of this file moved to tests/test_shop_conditions.py,
+which is now the single home for ShopCondition behaviour; several of the tests
+that lived here wrapped their assertions in ``if result:`` and so proved
+nothing when the call returned empty.
 """
 
-import sys
-import os
-from pathlib import Path
-from unittest.mock import MagicMock, patch
-
-ROOT = Path(__file__).resolve().parent.parent
-
+from unittest.mock import MagicMock
 
 import pytest
-from src.shop_conditions import (
-    ShopCondition,
-    ValueModifierCondition,
-    RestockWeightBoostCondition,
-    UniqueItemInjectionCondition,
-)
-from src.items import Item, Weapon, Consumable
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
-class ConcreteCondition(ShopCondition):
-    """Minimal concrete subclass to exercise base-class hook defaults."""
-
-    name: str = "test_condition"
-    description: str = "test"
-
-
-# ---------------------------------------------------------------------------
-# ShopCondition base-class hook defaults  (lines 65, 70, 80)
-# ---------------------------------------------------------------------------
-
-
-class TestShopConditionBaseHooks:
-    def test_apply_to_price_passthrough(self):
-        """Base apply_to_price returns base_price unchanged."""
-        cond = ConcreteCondition(name="c", description="d")
-        item = MagicMock()
-        assert cond.apply_to_price(item, 42.0) == 42.0
-
-    def test_adjust_restock_weights_noop(self):
-        """Base adjust_restock_weights returns None and mutates nothing."""
-        cond = ConcreteCondition(name="c", description="d")
-        weights = {Item: 1.0}
-        result = cond.adjust_restock_weights(weights)
-        assert result is None
-        assert weights == {Item: 1.0}
-
-    def test_inject_unique_items_empty_list(self):
-        """Base inject_unique_items returns []."""
-        cond = ConcreteCondition(name="c", description="d")
-        merchant = MagicMock()
-        result = cond.inject_unique_items(merchant)
-        assert result == []
-
-    def test_random_item_base_class_with_candidates(self):
-        """random_item_base_class with explicit candidates returns one of them."""
-        import random
-
-        candidates = [Item, Weapon, Consumable]
-        # It should always return something from candidates
-        for _ in range(10):
-            result = ShopCondition.random_item_base_class(candidates=candidates)
-            assert result in candidates
-
-    def test_random_item_base_class_empty_candidates(self):
-        """random_item_base_class with empty candidates returns None."""
-        result = ShopCondition.random_item_base_class(candidates=[])
-        assert result is None
-
-
-# ---------------------------------------------------------------------------
-# ValueModifierCondition
-# ---------------------------------------------------------------------------
-
-
-class TestValueModifierCondition:
-    def test_auto_name_from_class(self):
-        """Name is auto-generated from target_class when not provided."""
-        cond = ValueModifierCondition(multiplier=1.1, target_class=Item)
-        assert "Item" in cond.name
-
-    def test_auto_description_sign_plus(self):
-        """Description uses + sign for multiplier >= 1."""
-        cond = ValueModifierCondition(multiplier=1.25, target_class=Item)
-        assert "+" in cond.description
-
-    def test_auto_description_sign_minus(self):
-        """Description uses - sign for multiplier < 1."""
-        cond = ValueModifierCondition(multiplier=0.8, target_class=Item)
-        assert "-" in cond.description
-
-    def test_fallback_name_when_no_target_class(self):
-        """When random_item_base_class returns None, fallback names are used."""
-        with patch.object(ShopCondition, "random_item_base_class", return_value=None):
-            cond = ValueModifierCondition(multiplier=1.5)
-        assert cond.name == "Value Modifier"
-
-    def test_fallback_description_when_no_target_class(self):
-        with patch.object(ShopCondition, "random_item_base_class", return_value=None):
-            cond = ValueModifierCondition(multiplier=2.0)
-        assert "2.0" in cond.description
-
-    def test_applies_true_for_matching_class(self):
-        class SubItem(Item):
-            def __init__(self):
-                super().__init__(
-                    name="Sub",
-                    description="x",
-                    value=1,
-                    maintype="T",
-                    subtype="T",
-                    discovery_message="x",
-                )
-
-        cond = ValueModifierCondition(multiplier=1.5, target_class=Item)
-        item = SubItem()
-        assert cond.applies(item) is True
-
-    def test_applies_false_for_non_matching_class(self):
-        cond = ValueModifierCondition(multiplier=1.5, target_class=Weapon)
-        item = MagicMock(spec=Consumable)
-        assert cond.applies(item) is False
-
-    def test_price_clamped_to_zero(self):
-        """apply_to_price result is clamped to >= 0."""
-        cond = ValueModifierCondition(multiplier=-5.0, target_class=Item)
-
-        class TinyItem(Item):
-            def __init__(self):
-                super().__init__(
-                    name="T",
-                    description="d",
-                    value=10,
-                    maintype="T",
-                    subtype="T",
-                    discovery_message="d",
-                )
-
-        item = TinyItem()
-        result = cond.apply_to_price(item, 10.0)
-        assert result >= 0.0
-
-    def test_unique_items_not_price_modified(self):
-        """Items with 'unique' attribute are not price-modified."""
-        cond = ValueModifierCondition(multiplier=10.0, target_class=Item)
-
-        class UniqueItem(Item):
-            def __init__(self):
-                super().__init__(
-                    name="U",
-                    description="d",
-                    value=100,
-                    maintype="T",
-                    subtype="T",
-                    discovery_message="d",
-                )
-                self.unique = True
-
-        item = UniqueItem()
-        result = cond.apply_to_price(item, 100.0)
-        assert result == 100.0  # unchanged because unique
-
-    def test_metadata_stores_target_class_name(self):
-        cond = ValueModifierCondition(multiplier=1.0, target_class=Item)
-        assert cond.metadata.get("target_class_name") == "Item"
-
-
-# ---------------------------------------------------------------------------
-# RestockWeightBoostCondition
-# ---------------------------------------------------------------------------
-
-
-class TestRestockWeightBoostCondition:
-    def test_auto_name_from_target_class(self):
-        cond = RestockWeightBoostCondition(weight_multiplier=2.0, target_class=Item)
-        assert "Item" in cond.name
-
-    def test_auto_description_includes_percentage(self):
-        cond = RestockWeightBoostCondition(weight_multiplier=3.0, target_class=Item)
-        assert "200" in cond.description  # (3-1)*100=200
-
-    def test_fallback_name_when_no_target_class(self):
-        with patch.object(ShopCondition, "random_item_base_class", return_value=None):
-            cond = RestockWeightBoostCondition(weight_multiplier=2.0)
-        assert cond.name == "Restock Boost"
-
-    def test_fallback_description_when_no_target_class(self):
-        with patch.object(ShopCondition, "random_item_base_class", return_value=None):
-            cond = RestockWeightBoostCondition(weight_multiplier=2.0)
-        assert "2.0" in cond.description
-
-    def test_adjust_no_target_class_is_noop(self):
-        with patch.object(ShopCondition, "random_item_base_class", return_value=None):
-            cond = RestockWeightBoostCondition(weight_multiplier=2.0)
-        weight_map = {Item: 1.0}
-        cond.adjust_restock_weights(weight_map)
-        assert weight_map == {Item: 1.0}
-
-    def test_adjust_boosts_subclasses(self):
-        cond = RestockWeightBoostCondition(weight_multiplier=2.0, target_class=Item)
-        weight_map = {Item: 1.0, Weapon: 2.0}
-        cond.adjust_restock_weights(weight_map)
-        assert weight_map[Item] == 2.0
-        assert weight_map[Weapon] == 4.0
-
-    def test_adjust_clamps_to_zero(self):
-        """Resulting weight should be >= 0."""
-        cond = RestockWeightBoostCondition(weight_multiplier=-1.0, target_class=Item)
-        weight_map = {Item: 1.0}
-        cond.adjust_restock_weights(weight_map)
-        assert weight_map[Item] >= 0.0
-
-    def test_metadata_stores_target_class_name(self):
-        cond = RestockWeightBoostCondition(weight_multiplier=2.0, target_class=Weapon)
-        assert cond.metadata.get("target_class_name") == "Weapon"
-
-
-# ---------------------------------------------------------------------------
-# UniqueItemInjectionCondition
-# ---------------------------------------------------------------------------
-
-
-class TestUniqueItemInjectionCoverage:
-    def setup_method(self):
-        """Clear spawned set before each test."""
-        from src.items import unique_items_spawned
-
-        unique_items_spawned.clear()
-
-    def test_default_name_and_description(self):
-        cond = UniqueItemInjectionCondition()
-        assert cond.name == "Unique Item Injection"
-        assert "unique" in cond.description.lower()
-
-    def test_inject_sets_unique_flag(self):
-        merchant = MagicMock()
-        merchant.inventory = []
-        merchant.current_room = None
-        cond = UniqueItemInjectionCondition()
-        result = cond.inject_unique_items(merchant)
-        if result:
-            assert getattr(result[0], "unique", False) is True
-
-    def test_inject_returns_empty_when_all_spawned(self):
-        from src.items import unique_items_spawned, unique_item_factories
-
-        # Exhaust all factories
-        for f in unique_item_factories:
-            unique_items_spawned.add(f.__name__)
-
-        merchant = MagicMock()
-        merchant.inventory = []
-        merchant.current_room = None
-        cond = UniqueItemInjectionCondition()
-        result = cond.inject_unique_items(merchant)
-        assert result == []
-
-    def test_inject_adds_to_merchant_inventory_when_no_container(self):
-        """Falls back to merchant.inventory when no container is found."""
-        merchant = MagicMock()
-        merchant.inventory = []
-        merchant.current_room = None
-        cond = UniqueItemInjectionCondition()
-        result = cond.inject_unique_items(merchant)
-        if result:
-            assert result[0] in merchant.inventory
-
-    def test_inject_creates_inventory_attr_if_missing(self):
-        """merchant.inventory is created if it doesn't exist."""
-
-        class BareMerchant:
-            current_room = None
-
-        merchant = BareMerchant()
-        cond = UniqueItemInjectionCondition()
-        result = cond.inject_unique_items(merchant)
-        if result:
-            assert hasattr(merchant, "inventory")
-            assert result[0] in merchant.inventory
-
-    def test_inject_updates_description_with_item_name(self):
-        merchant = MagicMock()
-        merchant.inventory = []
-        merchant.current_room = None
-        cond = UniqueItemInjectionCondition()
-        cond.description = ""  # Clear so the update is visible
-        result = cond.inject_unique_items(merchant)
-        if result:
-            assert result[0].name in cond.description
-
 
 # ---------------------------------------------------------------------------
 # tiles.py — MapTile coverage
 # ---------------------------------------------------------------------------
 
 
-def _make_universe():
+def _make_tile(x=0, y=0):
+    """A standalone MapTile wired into a one-tile map."""
+    from src.tiles import MapTile
     from src.universe import Universe
 
-    u = Universe()
-    u.testing_mode = False
-    return u
+    universe = Universe()
+    universe.testing_mode = False
+    game_map = {"name": "test_map"}
+    tile = MapTile(universe, game_map, x, y)
+    game_map[(x, y)] = tile
+    return tile, universe, game_map
 
 
-def _make_map():
-    return {"name": "test_map"}
-
-
-def _make_tile(universe=None, game_map=None, x=0, y=0):
-    from src.tiles import MapTile
-
-    u = universe or _make_universe()
-    m = game_map or _make_map()
-    m[(x, y)] = None  # placeholder
-    tile = MapTile(u, m, x, y)
-    m[(x, y)] = tile
-    return tile, u, m
+@pytest.fixture
+def tile():
+    return _make_tile()[0]
 
 
 class TestMapTileCoverage:
-    def test_available_actions_returns_the_default_action_set(self):
+    def test_available_actions_returns_the_default_action_set(self, tile):
         """Movement is dispatched via GameService.move_player, not Action
         classes -- available_actions always returns the fixed default set."""
-        tile, u, m = _make_tile()
-        actions_list = tile.available_actions(player=None)
-        action_names = [a.__class__.__name__ for a in actions_list]
-        assert action_names == ["Search", "Menu", "Save"]
+        names = [a.__class__.__name__ for a in tile.available_actions(player=None)]
+        assert names == ["Search", "Menu", "Save"]
 
-    def test_available_actions_debug_via_game_config(self):
+    def test_available_actions_debug_via_game_config(self, tile):
         """Debug actions appear when player.game_config.debug_mode is True."""
-        tile, u, m = _make_tile()
         player = MagicMock()
-        player.game_config = MagicMock()
         player.game_config.debug_mode = True
 
-        actions_list = tile.available_actions(player=player)
-        action_names = [a.__class__.__name__ for a in actions_list]
-        assert "Teleport" in action_names
+        names = [a.__class__.__name__ for a in tile.available_actions(player=player)]
+        assert names[:3] == ["Search", "Menu", "Save"]
+        assert "Teleport" in names[3:]
 
     def test_available_actions_debug_via_universe_testing_mode(self):
         """Debug actions appear when universe.testing_mode is True."""
-        tile, u, m = _make_tile()
-        u.testing_mode = True
-        # player has no game_config to avoid the first branch
-        player = MagicMock(spec=[])  # no game_config
+        tile, universe, _ = _make_tile()
+        universe.testing_mode = True
+        player = MagicMock(spec=[])  # no game_config, so only this branch can fire
 
-        actions_list = tile.available_actions(player=player)
-        action_names = [a.__class__.__name__ for a in actions_list]
-        assert "Teleport" in action_names
+        names = [a.__class__.__name__ for a in tile.available_actions(player=player)]
+        assert "Teleport" in names
 
-    def test_evaluate_events_calls_spawners_first(self):
+    def test_debug_actions_are_absent_without_debug_or_testing_mode(self):
+        """Anti-vacuity for the two tests above: the flag is what adds them."""
+        tile, universe, _ = _make_tile()
+        universe.testing_mode = False
+        player = MagicMock()
+        player.game_config.debug_mode = False
+
+        names = [a.__class__.__name__ for a in tile.available_actions(player=player)]
+        assert "Teleport" not in names
+
+    def test_evaluate_events_calls_spawners_first(self, tile):
         """NPCSpawnerEvents are processed before other events."""
         from src.story.effects import NPCSpawnerEvent
-
-        tile, u, m = _make_tile()
 
         spawner = MagicMock(spec=NPCSpawnerEvent)
         other_event = MagicMock()
@@ -378,127 +84,134 @@ class TestMapTileCoverage:
 
         assert call_order.index("spawner") < call_order.index("other")
 
-    def test_spawn_npc_with_hidden_flag(self):
+    def test_spawn_npc_with_hidden_flag(self, tile):
         """spawn_npc sets hidden and hide_factor when hidden=True."""
-        tile, u, m = _make_tile()
         npc = tile.spawn_npc("NonExistentType", hidden=True, hfactor=5)
         assert npc.hidden is True
         assert npc.hide_factor == 5
 
-    def test_spawn_npc_with_explicit_delay(self):
-        """spawn_npc uses exact delay when delay != -1."""
-        tile, u, m = _make_tile()
-        npc = tile.spawn_npc("NonExistentType", delay=3)
-        assert npc.combat_delay == 3
-
-    def test_spawn_npc_returns_npc_and_appends_to_list(self):
-        """spawn_npc appends NPC to npcs_here."""
-        tile, u, m = _make_tile()
+    def test_spawn_npc_defaults_to_visible(self, tile):
         npc = tile.spawn_npc("NonExistentType")
-        assert npc in tile.npcs_here
+        assert npc.hidden is False
 
-    def test_spawn_item_gold(self):
-        """spawn_item with 'Gold' creates a Gold item."""
-        tile, u, m = _make_tile()
+    @pytest.mark.parametrize("delay", [0, 3, 12])
+    def test_spawn_npc_with_explicit_delay(self, tile, delay):
+        """spawn_npc uses the exact delay when delay != -1."""
+        assert tile.spawn_npc("NonExistentType", delay=delay).combat_delay == delay
+
+    def test_spawn_npc_of_an_unknown_type_yields_a_named_stub(self, tile):
+        """An unknown class name must not crash a map load; it stubs instead."""
+        npc = tile.spawn_npc("NonExistentType")
+        assert tile.npcs_here == [npc]
+        assert npc.name == "NonExistentType (stub)"
+
+    def test_spawn_npc_sets_the_current_room_to_the_spawning_tile(self, tile):
+        npc = tile.spawn_npc("NonExistentType")
+
+        assert npc.current_room is tile
+
+    def test_spawn_item_gold(self, tile):
+        """spawn_item with 'Gold' creates a Gold item carrying the amount."""
+        from src.items import Gold
+
         item = tile.spawn_item("Gold", amt=50)
-        assert item.__class__.__name__ == "Gold"
-        assert item in tile.items_here
+        assert isinstance(item, Gold)
+        assert item.amt == 50
+        assert tile.items_here == [item]
 
-    def test_spawn_item_hidden(self):
+    def test_spawn_item_hidden(self, tile):
         """spawn_item with hidden=True marks items hidden."""
-        tile, u, m = _make_tile()
         item = tile.spawn_item("Gold", amt=5, hidden=True, hfactor=3)
-        assert item.hidden is True
-        assert item.hide_factor == 3
+        assert (item.hidden, item.hide_factor) == (True, 3)
 
-    def test_spawn_item_stackable(self):
-        """spawn_item on a stackable item creates one item with the right count."""
-        tile, u, m = _make_tile()
+    def test_spawn_item_stackable(self, tile):
+        """A stackable spawn is one item with the right count, not N items."""
+        from src.items import Antidote
+
         item = tile.spawn_item("Antidote", amt=10)
-        assert item.__class__.__name__ == "Antidote"
+        assert isinstance(item, Antidote)
         assert item.count == 10
+        assert tile.items_here == [item]
 
-    def test_spawn_item_merchandise_flag(self):
-        """spawn_item passes merchandise flag through to stackable items."""
-        tile, u, m = _make_tile()
-        item = tile.spawn_item("Antidote", amt=1, merchandise=True)
-        assert getattr(item, "merchandise", False) is True
+    def test_spawn_non_stackable_item_lands_as_a_single_object(self, tile):
+        """A weapon has no `count`, so `amt` must not be read as a stack size."""
+        from src.items import RustedIronMace
 
-    def test_spawn_object_with_kwargs(self):
-        """spawn_object uses kwargs for modern construction."""
-        tile, u, m = _make_tile()
-        player = MagicMock()
-        obj = tile.spawn_object(
-            "Passageway",
-            player,
-            tile,
-            params="t.test_map 1 2",
-        )
-        assert obj is not None
-        assert obj in tile.objects_here
+        item = tile.spawn_item("RustedIronMace", amt=1)
 
-    def test_spawn_object_hidden(self):
+        assert isinstance(item, RustedIronMace)
+        assert tile.items_here == [item]
+        assert not hasattr(item, "count")
+
+    @pytest.mark.parametrize("merchandise", [True, False])
+    def test_spawn_item_merchandise_flag(self, tile, merchandise):
+        """spawn_item passes the merchandise flag through to stackable items."""
+        item = tile.spawn_item("Antidote", amt=1, merchandise=merchandise)
+        assert item.merchandise is merchandise
+
+    @pytest.mark.parametrize(
+        "params,expected_tile",
+        [
+            ("t.test_map 1 2", (1, 2)),   # canonical 't.' map prefix
+            ("test_map 3 4", (3, 4)),     # bare map name, same result
+        ],
+    )
+    def test_spawn_object_parses_passageway_destination(
+        self, tile, params, expected_tile
+    ):
+        from src.objects import Passageway
+
+        obj = tile.spawn_object("Passageway", MagicMock(), tile, params=params)
+
+        assert isinstance(obj, Passageway)
+        assert tile.objects_here == [obj]
+        assert obj.teleport_map == "test_map"
+        assert obj.teleport_tile == expected_tile
+
+    def test_spawn_object_hidden(self, tile):
         """spawn_object sets hidden attributes when hidden=True."""
-        tile, u, m = _make_tile()
-        player = MagicMock()
         obj = tile.spawn_object(
             "Passageway",
-            player,
+            MagicMock(),
             tile,
             params="t.test_map 0 0",
             hidden=True,
             hfactor=7,
         )
-        assert obj.hidden is True
-        assert obj.hide_factor == 7
+        assert (obj.hidden, obj.hide_factor) == (True, 7)
 
-    def test_spawn_event_valid_event(self):
-        """spawn_event creates and appends a valid event."""
-        tile, u, m = _make_tile()
-        player = MagicMock()
-        event = tile.spawn_event("Ch01GorranFirstWord", player, tile)
-        if event:
-            assert event in tile.events_here
+    def test_spawn_event_appends_the_real_event_class(self, tile):
+        """spawn_event resolves a story class by name and arms it on the tile."""
+        from src.story.ch01 import Ch01GorranFirstWord
 
-    def test_intro_text_returns_colored_description(self):
-        """intro_text returns colored description string."""
-        tile, u, m = _make_tile()
+        event = tile.spawn_event("Ch01GorranFirstWord", MagicMock(), tile)
+
+        assert isinstance(event, Ch01GorranFirstWord)
+        assert tile.events_here == [event]
+
+    def test_intro_text_returns_the_tile_description(self, tile):
         tile.description = "A dark room"
-        text = tile.intro_text()
-        assert "A dark room" in text
+        assert "A dark room" in tile.intro_text()
 
-    def test_stack_duplicate_items_stacks_matching_items(self):
-        """stack_duplicate_items merges matching items with count attribute."""
-        from src.tiles import MapTile
+    def test_stack_duplicate_items_collapses_matching_items(self, tile):
+        """The merge must reduce the list, not just preserve the total count."""
+        from src.items import Antidote
 
-        tile, u, m = _make_tile()
+        first, second = Antidote(), Antidote()
+        first.count, second.count = 5, 3
+        tile.items_here = [first, second]
 
-        item1 = MagicMock()
-        item1.name = "Arrow"
-        item1.count = 5
-
-        item2 = MagicMock()
-        item2.name = "Arrow"
-        item2.count = 3
-
-        tile.items_here = [item1, item2]
         tile.stack_duplicate_items()
-        # After stacking, counts should be merged
-        total = sum(
-            getattr(i, "count", 1)
-            for i in tile.items_here
-            if getattr(i, "name", "") == "Arrow"
-        )
-        assert total == 8
 
-    def test_spawn_object_passageway_without_t_prefix(self):
-        """spawn_object handles Passageway params without 't.' prefix."""
-        tile, u, m = _make_tile()
-        player = MagicMock()
-        obj = tile.spawn_object(
-            "Passageway",
-            player,
-            tile,
-            params="test_map 3 4",
-        )
-        assert obj is not None
+        assert len(tile.items_here) == 1
+        assert tile.items_here[0].count == 8
+
+    def test_stack_duplicate_items_keeps_distinct_items_apart(self, tile):
+        from src.items import Antidote, Restorative
+
+        antidote, restorative = Antidote(), Restorative()
+        tile.items_here = [antidote, restorative]
+
+        tile.stack_duplicate_items()
+
+        assert {type(i) for i in tile.items_here} == {Antidote, Restorative}

@@ -491,6 +491,7 @@ def test_inflict_append_new_on_application_typeerror_fallback():
 
 class _BadInitEnch:
     tier = 1
+    group = "Prefix"
 
     def __init__(self, item):
         raise RuntimeError("cannot init")
@@ -498,6 +499,7 @@ class _BadInitEnch:
 
 class _GoodEnch:
     tier = 1
+    group = "Prefix"
 
     def __init__(self, item):
         self.item = item
@@ -511,6 +513,7 @@ class _GoodEnch:
 
 class _ModifyRaisesEnch:
     tier = 1
+    group = "Prefix"
 
     def __init__(self, item):
         self.item = item
@@ -522,10 +525,23 @@ class _ModifyRaisesEnch:
 
 
 def _install_fake_enchant_tables(monkeypatch, **classes):
-    mod = types.ModuleType("enchant_tables")
+    """Swap the real enchantment table for a fake one.
+
+    ``add_random_enchantments`` does ``import src.enchant_tables``, so the fake
+    has to be installed under the *canonical* name -- and, because that import
+    form resolves through ``getattr(src, "enchant_tables")``, on the ``src``
+    package object as well (CLAUDE.md, "Coding Conventions"). This helper
+    previously patched the bare name ``enchant_tables``, which the engine never
+    looks at: every test below silently ran against the *real* enchantment
+    tables and none of them exercised the branch named in its docstring.
+    """
+    import src
+
+    mod = types.ModuleType("src.enchant_tables")
     for name, cls in classes.items():
         setattr(mod, name, cls)
-    monkeypatch.setitem(sys.modules, "enchant_tables", mod)
+    monkeypatch.setitem(sys.modules, "src.enchant_tables", mod)
+    monkeypatch.setattr(src, "enchant_tables", mod, raising=False)
     # Force a single deterministic roll: group 0 (prefix).
     import random
 
@@ -540,20 +556,41 @@ class _NoEquipStatesItem:
 
 
 def test_add_random_enchantments_skips_failing_candidate(monkeypatch):
-    """Lines 1017-1019: a candidate that raises on instantiation is skipped,
-    while a working candidate in the same tier is still picked."""
+    """A candidate that raises on instantiation is skipped, while a working
+    candidate in the same tier is still picked -- and its states are merged."""
     _install_fake_enchant_tables(monkeypatch, BadInit=_BadInitEnch, GoodEnch=_GoodEnch)
     item = types.SimpleNamespace(name="Item", equip_states=[])
+
     functions.add_random_enchantments(item, 1)
+
     assert item._enchantment_count == 1
+    assert item.equip_states == ["state_marker"]  # only _GoodEnch could apply
+
+
+def test_add_random_enchantments_with_no_usable_candidate_enchants_nothing(
+    monkeypatch,
+):
+    """Guards the test above: with only the failing class installed, the count
+    is 0 -- so `== 1` there really is the working candidate being chosen."""
+    _install_fake_enchant_tables(monkeypatch, BadInit=_BadInitEnch)
+    item = types.SimpleNamespace(name="Item", equip_states=[])
+
+    functions.add_random_enchantments(item, 1)
+
+    assert item._enchantment_count == 0
+    assert item.equip_states == []
 
 
 def test_add_random_enchantments_modify_exception_is_swallowed(monkeypatch):
-    """Lines 1035-1036: ench.modify() raising is caught."""
+    """ench.modify() raising is caught: the enchantment still counts, and the
+    loop carries on to the equip_states merge instead of aborting."""
     _install_fake_enchant_tables(monkeypatch, Bad=_ModifyRaisesEnch)
     item = types.SimpleNamespace(name="Item", equip_states=[])
-    # Should not raise
+
     functions.add_random_enchantments(item, 1)
+
+    assert item._enchantment_count == 1
+    assert item.equip_states == []  # _ModifyRaisesEnch grants none
 
 
 def test_add_random_enchantments_equip_states_assignment_failure(monkeypatch):
@@ -561,8 +598,12 @@ def test_add_random_enchantments_equip_states_assignment_failure(monkeypatch):
     skipped gracefully (no crash)."""
     _install_fake_enchant_tables(monkeypatch, Good=_GoodEnch)
     item = _NoEquipStatesItem()
-    # Should not raise even though `item.equip_states = []` is impossible.
+
     functions.add_random_enchantments(item, 1)
+
+    # The enchantment was still selected and counted; only the state merge was
+    # skipped, because __slots__ makes `item.equip_states = []` impossible.
+    assert item._enchantment_count == 1
     assert not hasattr(item, "equip_states")
 
 
@@ -571,9 +612,11 @@ def test_add_random_enchantments_equip_states_iadd_and_extend_both_fail(monkeypa
     fails and is swallowed."""
     _install_fake_enchant_tables(monkeypatch, Good=_GoodEnch)
     item = types.SimpleNamespace(name="Item", equip_states=5)  # int: no += list, no extend
-    # Should not raise
+
     functions.add_random_enchantments(item, 1)
-    assert item.equip_states == 5
+
+    assert item._enchantment_count == 1
+    assert item.equip_states == 5  # left exactly as it was
 
 
 # ---------------------------------------------------------------------------

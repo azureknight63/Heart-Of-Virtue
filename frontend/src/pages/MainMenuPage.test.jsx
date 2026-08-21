@@ -82,7 +82,7 @@ describe('MainMenuPage', () => {
         );
 
         await waitFor(() => {
-            expect(screen.getByText(/Continue/i)).toBeDefined();
+            expect(screen.getByText(/Continue/i)).toBeInTheDocument();
         });
     });
 
@@ -155,7 +155,7 @@ describe('MainMenuPage', () => {
         fireEvent.click(screen.getByText(/Load Game/i));
 
         await waitFor(() => {
-            expect(screen.getByText(/Save 1/i)).toBeDefined();
+            expect(screen.getByText(/Save 1/i)).toBeInTheDocument();
         });
     });
 
@@ -175,7 +175,7 @@ describe('MainMenuPage', () => {
             </MemoryRouter>
         );
 
-        await waitFor(() => expect(screen.getByText(/Continue/i)).toBeDefined());
+        expect(await screen.findByText(/Continue/i)).toBeInTheDocument();
 
         fireEvent.click(screen.getAllByText(/Load Game/i)[0]);
 
@@ -203,7 +203,7 @@ describe('MainMenuPage', () => {
         );
 
         fireEvent.click(screen.getByText(/Settings/i));
-        expect(screen.getByText(/Audio Settings/i)).toBeDefined();
+        expect(screen.getByText(/Audio Settings/i)).toBeInTheDocument();
     });
 
     it('opens credits modal on Credits click', async () => {
@@ -215,7 +215,7 @@ describe('MainMenuPage', () => {
         );
 
         fireEvent.click(screen.getByText(/Credits/i));
-        expect(screen.getByText(/The Development Team/i)).toBeDefined();
+        expect(screen.getByText(/The Development Team/i)).toBeInTheDocument();
     });
 
     it('navigates to login on Logout click', async () => {
@@ -350,6 +350,50 @@ describe('MainMenuPage', () => {
         await waitFor(() => {
             expect(screen.getByText(/No saves found\./i)).toBeInTheDocument();
         });
+    });
+
+    it.each([['CET'], ['CEST'], ['JST'], ['IST'], ['AEST'], ['PKT']])(
+        'points Continue at the newest save when the display timestamps carry a %s abbreviation',
+        async (tz) => {
+            // The regression this guards: rows render a server-formatted
+            // "%Y-%m-%d %H:%M:%S %Z" string, and Date.parse returns Invalid Date
+            // for most non-US abbreviations. Sorting on it made EVERY row NaN,
+            // so "Continue" could load whichever save happened to come first
+            // out of the DB. compareSavesByRecency keys on timestamp_ms
+            // instead. The existing Continue tests both use ISO-8601 stamps,
+            // which Date.parse handles — i.e. they cannot see this bug.
+            expect(Number.isNaN(Date.parse(`2026-08-09 12:00:00 ${tz}`))).toBe(true);
+
+            // Deliberately listed OLDEST-LAST so a comparator that collapses to
+            // NaN (which sorts as "equal", preserving input order) picks 'old'.
+            const mockSaves = [
+                { id: 'old', name: 'Old Save', timestamp: `2026-08-08 12:00:00 ${tz}`, timestamp_ms: 1_754_654_400_000, level: 1, map_name: 'M', room_title: 'R' },
+                { id: 'new', name: 'New Save', timestamp: `2026-08-09 12:00:00 ${tz}`, timestamp_ms: 1_754_740_800_000, level: 2, map_name: 'M', room_title: 'R' },
+            ];
+            saves.list.mockResolvedValue({ data: { saves: mockSaves } });
+            saves.load.mockResolvedValue({ success: true });
+
+            render(<MemoryRouter><MainMenuPage /></MemoryRouter>);
+            fireEvent.click(await screen.findByText(/Continue/i));
+
+            expect(saves.load).toHaveBeenCalledWith('new');
+        }
+    );
+
+    it('renders the server timestamp verbatim rather than routing it through Date', async () => {
+        // The display half of the same bug: rows used
+        // `new Date(save.timestamp).toLocaleString()`, so every row in the Load
+        // Game list read the literal text "Invalid Date" for those accounts.
+        const mockSaves = [
+            { id: 'a', name: 'Cloud Save', timestamp: '2026-08-09 12:00:00 JST', level: 1, map_name: 'M', room_title: 'R' },
+        ];
+        saves.list.mockResolvedValue({ data: { saves: mockSaves } });
+
+        render(<MemoryRouter><MainMenuPage /></MemoryRouter>);
+        fireEvent.click(await screen.findByText(/Load Game/i));
+
+        expect(await screen.findByText('2026-08-09 12:00:00 JST')).toBeInTheDocument();
+        expect(screen.queryByText(/Invalid Date/)).toBeNull();
     });
 
     it('loads the newest cloud save on Continue', async () => {
@@ -512,32 +556,45 @@ describe('MainMenuPage', () => {
         expect(mockNavigate).toHaveBeenCalledWith('/landing');
     });
 
-    it('handles hover on the back-to-home button and the Nexus Fidei link', async () => {
+    // These two tests previously had NO assertions — they fired mouseEnter and
+    // mouseLeave and ended. Every hover handler on the page could have been
+    // deleted and both would have passed. They now assert the handler actually
+    // changed the element and restored it.
+    it('highlights the back-to-home button and the Nexus Fidei link on hover, and restores on leave', async () => {
         saves.list.mockResolvedValue({ data: { saves: [] } });
         render(<MemoryRouter><MainMenuPage /></MemoryRouter>);
 
-        const backBtn = screen.getByText(/Back to home/i);
-        fireEvent.mouseEnter(backBtn);
-        fireEvent.mouseLeave(backBtn);
+        for (const label of [/Back to home/i, /Nexus Fidei/i]) {
+            const el = await screen.findByText(label);
+            const resting = el.style.color;
+            expect(resting).toBeTruthy();
 
-        await waitFor(() => screen.getByText(/Nexus Fidei/i));
-        const nexusLink = screen.getByText(/Nexus Fidei/i);
-        fireEvent.mouseEnter(nexusLink);
-        fireEvent.mouseLeave(nexusLink);
+            fireEvent.mouseEnter(el);
+            expect(el.style.color).not.toBe(resting);
+
+            fireEvent.mouseLeave(el);
+            expect(el.style.color).toBe(resting);
+        }
     });
 
-    it('handles hover on a save-list row', async () => {
+    it('highlights a save-list row on hover, and restores it on leave', async () => {
         const mockSaves = [{ id: 'cloud-1', name: 'Cloud Save', timestamp: '2023-01-01', level: 1, map_name: 'M', room_title: 'R' }];
         saves.list.mockResolvedValue({ data: { saves: mockSaves } });
 
         render(<MemoryRouter><MainMenuPage /></MemoryRouter>);
-        await waitFor(() => screen.getByText(/Load Game/i));
-        fireEvent.click(screen.getByText(/Load Game/i));
-        await waitFor(() => screen.getByText(/Cloud Save/i));
+        fireEvent.click(await screen.findByText(/Load Game/i));
 
-        const row = screen.getByText(/Cloud Save/i).closest('[style*="cursor: pointer"]');
+        const row = (await screen.findByText(/Cloud Save/i)).closest('[style*="cursor: pointer"]');
+        const restingBg = row.style.background;
+        const restingBorder = row.style.borderColor;
+
         fireEvent.mouseEnter(row);
+        expect(row.style.background).not.toBe(restingBg);
+        expect(row.style.borderColor).not.toBe(restingBorder);
+
         fireEvent.mouseLeave(row);
+        expect(row.style.background).toBe(restingBg);
+        expect(row.style.borderColor).toBe(restingBorder);
     });
 
     it('marks a save with the Autosave badge when is_autosave is set', async () => {
@@ -592,25 +649,52 @@ describe('MainMenuPage embers canvas effect', () => {
 
     const renderMenu = () => render(<MemoryRouter><MainMenuPage /></MemoryRouter>);
 
-    it('starts and ticks the ember particle animation', () => {
+    // The ember canvas is a real side effect on a real 2D context: assert what
+    // the loop DID, rather than `.not.toThrow()`, which passed equally for a
+    // loop that painted nothing at all.
+    const ctx = () => HTMLCanvasElement.prototype.getContext.mock.results.at(-1).value;
+
+    it('starts the ember particle animation and paints particles on each tick', () => {
         renderMenu();
-        expect(global.requestAnimationFrame).toHaveBeenCalled();
-        expect(() => rafCallbacks[0]()).not.toThrow();
+        expect(global.requestAnimationFrame).toHaveBeenCalledTimes(1);
+
+        const before = ctx().arc.mock.calls.length;
+        rafCallbacks[0]();
+        expect(ctx().clearRect).toHaveBeenCalledWith(0, 0, window.innerWidth, window.innerHeight);
+        expect(ctx().arc.mock.calls.length).toBeGreaterThan(before);
+        // ...and queues the next frame, so the loop actually loops.
+        expect(global.requestAnimationFrame).toHaveBeenCalledTimes(2);
     });
 
-    it('resizes the embers canvas on window resize', () => {
+    it('resizes the embers canvas to the viewport on window resize', () => {
         renderMenu();
-        expect(() => fireEvent(window, new Event('resize'))).not.toThrow();
+        window.innerWidth = 1024;
+        window.innerHeight = 768;
+        fireEvent(window, new Event('resize'));
+
+        const canvas = document.getElementById('menu-embers');
+        expect(canvas.width).toBe(1024 * window.devicePixelRatio);
+        expect(canvas.height).toBe(768 * window.devicePixelRatio);
+        expect(canvas.style.width).toBe('1024px');
+        expect(canvas.style.height).toBe('768px');
+        expect(ctx().scale).toHaveBeenCalledWith(window.devicePixelRatio, window.devicePixelRatio);
     });
 
     it('stops the animation and removes the resize listener on unmount', () => {
         const { unmount } = renderMenu();
+        const lastFrame = global.requestAnimationFrame.mock.results.at(-1).value;
         unmount();
-        expect(global.cancelAnimationFrame).toHaveBeenCalled();
+        // The pending frame is cancelled by handle, not merely "some" frame —
+        // a leaked loop keeps painting into a detached canvas forever.
+        expect(global.cancelAnimationFrame).toHaveBeenCalledWith(lastFrame);
     });
 
-    it('does nothing when the canvas has no 2D context available', () => {
+    it('never starts the loop when the canvas has no 2D context available', () => {
+        // Without the early return the effect would schedule frames that
+        // dereference a null context on the NEXT paint — a throw the old
+        // render-only `.not.toThrow()` could never observe.
         HTMLCanvasElement.prototype.getContext = vi.fn(() => null);
-        expect(() => renderMenu()).not.toThrow();
+        renderMenu();
+        expect(global.requestAnimationFrame).not.toHaveBeenCalled();
     });
 });

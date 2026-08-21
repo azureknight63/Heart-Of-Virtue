@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import DOMPurify from 'dompurify'
 import { colors, spacing, fonts, shadows } from '../styles/theme'
 import GameText from './GameText'
@@ -14,6 +14,19 @@ const LOG_ENTRY_COLORS = {
 }
 
 export default function CombatLog({ log, className = '', allowResize = true, isMyTurn = false }) {
+  // Animation entries are bookkeeping for the battlefield, never lines of text,
+  // so they are excluded from the rendered log. Deriving the visible list once
+  // keeps the empty-state check and the render in agreement: gating the
+  // placeholder on the raw `log.length` instead meant a log holding only
+  // animation entries -- reachable at combat start, since the reveal loop adds
+  // entries one at a time -- rendered an empty panel with no placeholder at
+  // all. `log?.length === 0` also missed an absent log entirely, because
+  // `undefined === 0` is false.
+  const visibleEntries = useMemo(
+    () => (log || []).filter(entry => entry.type !== 'animation'),
+    [log]
+  )
+
   const [isCollapsed, setIsCollapsed] = useState(false)
   const [height, setHeight] = useState(150)
   const [isResizing, setIsResizing] = useState(false)
@@ -116,12 +129,12 @@ export default function CombatLog({ log, className = '', allowResize = true, isM
                 touchAction: 'pan-y',
               }}
             >
-              {log?.length === 0 && (
+              {visibleEntries.length === 0 && (
                 <GameText variant="muted" size="sm" align="center" style={{ fontStyle: 'italic', padding: spacing.sm }}>
                   Combat started...
                 </GameText>
               )}
-              {log?.filter(entry => entry.type !== 'animation').map((entry, idx) => {
+              {visibleEntries.map((entry, idx) => {
                 const textColor = LOG_ENTRY_COLORS[entry.type] || colors.text.main
 
                 return (

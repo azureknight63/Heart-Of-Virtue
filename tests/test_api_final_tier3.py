@@ -6,8 +6,6 @@ from pathlib import Path
 from unittest.mock import Mock
 import pytest
 
-pytestmark = pytest.mark.skip(reason="Flask app fixture isolation issues when run in full suite - tests pass individually but fail with other tests")
-
 # Setup paths
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -22,38 +20,41 @@ os.environ["MYNX_FALLBACK_DELAY"] = "0"
 class TestAuthServiceMethods:
     """Test auth service methods comprehensively."""
 
-    def test_auth_service_verify_token_valid(self):
-        """Test verify_token with valid session."""
-        from src.api.services.auth_service import auth_service
+    def test_get_session_returns_the_live_session_for_a_valid_token(self):
+        """A real ``SessionManager`` round-trips the token it minted."""
+        from src.api.services.session_manager import SessionManager, Session
+
+        manager = SessionManager()
+        session_id, player_id = manager.create_session("test_user")
+
+        session = manager.get_session(session_id)
+
+        assert isinstance(session, Session)
+        assert session.session_id == session_id
+        assert session.player_id == player_id
+        assert session.username == "test_user"
+
+    def test_get_session_returns_none_for_an_unknown_token(self):
+        """An unminted token resolves to ``None`` rather than raising."""
         from src.api.services.session_manager import SessionManager
 
-        # Create a mock session manager
-        mock_session_manager = Mock(spec=SessionManager)
-        mock_session = Mock()
-        mock_session.user_id = "test_user"
-        mock_session_manager.get_session.return_value = mock_session
+        manager = SessionManager()
+        manager.create_session("test_user")  # a real session exists...
 
-        # Test that get_session is called
-        result = mock_session_manager.get_session("valid_token")
-        assert result is not None
-        assert result.user_id == "test_user"
+        assert manager.get_session("invalid_token") is None  # ...but not this one
 
-    def test_auth_service_verify_token_invalid(self):
-        """Test verify_token with invalid session."""
+    def test_created_tokens_are_unique_per_session(self):
+        """Session ids and player ids must never collide across sessions."""
         from src.api.services.session_manager import SessionManager
 
-        mock_session_manager = Mock(spec=SessionManager)
-        mock_session_manager.get_session.return_value = None
+        manager = SessionManager()
+        pairs = [manager.create_session("jean") for _ in range(5)]
 
-        result = mock_session_manager.get_session("invalid_token")
-        assert result is None
-
-    def test_auth_service_token_generation(self):
-        """Test token generation creates unique tokens."""
-        from src.api.services.auth_service import auth_service
-
-        # Auth service should have session-based token generation
-        assert auth_service is not None
+        session_ids = [sid for sid, _ in pairs]
+        player_ids = [pid for _, pid in pairs]
+        assert len(set(session_ids)) == 5
+        assert len(set(player_ids)) == 5
+        assert set(session_ids).isdisjoint(player_ids)
 
 
 class TestGameServiceBasics:
@@ -143,36 +144,131 @@ class TestAuthRouteRequireAuth:
     """Test authentication decorator on routes."""
 
     @pytest.fixture
-    def flask_app(self):
-        """Create a Flask test app."""
-        from src.api.app import create_app
-        result = create_app()
-        app = result[0] if isinstance(result, tuple) else result
-        app.config['TESTING'] = True
-        return app
+    def manager(self):
+        """A real ``SessionManager`` — the decorator's actual collaborator."""
+        from src.api.services.session_manager import SessionManager
+        return SessionManager()
 
     @pytest.fixture
-    def client(self, flask_app):
-        """Get Flask test client."""
-        return flask_app.test_client()
+    def client(self, manager):
+        """A minimal app carrying one ``@require_auth`` probe route.
 
-    def test_require_auth_missing_header(self, client):
-        """Test require_auth rejects missing Authorization header."""
+        A purpose-built probe rather than a real endpoint: it lets the test
+        assert on what the decorator *stashes* (``request.session_obj`` /
+        ``request.session_manager``), which no production route exposes.
+        """
+        from flask import Flask, jsonify, request
         from src.api.routes.auth import require_auth
 
-        # The decorator checks for Bearer token
-        # Test through a real endpoint if available
-        pass
+        app = Flask(__name__)
+        app.config["TESTING"] = True
+        app.session_manager = manager
 
-    def test_require_auth_invalid_bearer_format(self, client):
-        """Test require_auth rejects non-Bearer token."""
-        # Authorization header without "Bearer " prefix should fail
-        pass
+        @app.route("/probe")
+        @require_auth
+        def probe():
+            return jsonify(
+                {
+                    "username": request.session_obj.username,
+                    "session_id": request.session_obj.session_id,
+                    "manager_is_app_manager": (
+                        request.session_manager is app.session_manager
+                    ),
+                }
+            )
 
-    def test_require_auth_valid_session(self, client):
-        """Test require_auth accepts valid session token."""
-        # Valid session should pass through
-        pass
+        return app.test_client()
+
+    def test_require_auth_missing_header(self, client):
+        """No Authorization header at all -> 401, and the view never runs."""
+        response = client.get("/probe")
+
+        assert response.status_code == 401
+        assert response.get_json() == {
+            "success": False,
+            "error": "Missing or invalid Authorization header",
+        }
+
+    @pytest.mark.parametrize(
+        "header",
+        ["some_token", "Basic abc123", "bearer lowercase", "Bearer", ""],
+    )
+    def test_require_auth_invalid_bearer_format(self, client, header):
+        """Anything that is not a well-formed ``Bearer <token>`` is a 401."""
+        response = client.get("/probe", headers={"Authorization": header})
+
+        assert response.status_code == 401
+        assert (
+            response.get_json()["error"]
+            == "Missing or invalid Authorization header"
+        )
+
+    def test_require_auth_rejects_a_well_formed_but_unknown_token(self, client):
+        """Correct shape, unknown session -> a *different* 401 message."""
+        response = client.get(
+            "/probe", headers={"Authorization": "Bearer not-a-real-session"}
+        )
+
+        assert response.status_code == 401
+        assert (
+            response.get_json()["error"]
+            == "Session not found or already expired"
+        )
+
+    def test_require_auth_valid_session(self, client, manager):
+        """A live session passes through and is stashed on the request."""
+        session_id, _ = manager.create_session("jean_claire")
+
+        response = client.get(
+            "/probe", headers={"Authorization": f"Bearer {session_id}"}
+        )
+
+        assert response.status_code == 200
+        assert response.get_json() == {
+            "username": "jean_claire",
+            "session_id": session_id,
+            "manager_is_app_manager": True,
+        }
+
+    def test_require_auth_rejects_an_expired_session(self, client, manager):
+        """An expired session is refused even though the id was once valid."""
+        from datetime import datetime, timedelta
+
+        session_id, _ = manager.create_session("jean_claire")
+        manager.sessions[session_id].expires_at = datetime.now() - timedelta(
+            seconds=1
+        )
+
+        response = client.get(
+            "/probe", headers={"Authorization": f"Bearer {session_id}"}
+        )
+
+        assert response.status_code == 401
+        assert (
+            response.get_json()["error"]
+            == "Session not found or already expired"
+        )
+
+    def test_require_auth_500s_when_no_session_manager_is_wired(self):
+        """A misconfigured app must not 401 — that would hide the real fault."""
+        from flask import Flask, jsonify
+        from src.api.routes.auth import require_auth
+
+        app = Flask(__name__)
+        app.config["TESTING"] = True
+        app.session_manager = None
+
+        @app.route("/probe")
+        @require_auth
+        def probe():  # pragma: no cover - must never be reached
+            return jsonify({"ok": True})
+
+        response = app.test_client().get(
+            "/probe", headers={"Authorization": "Bearer anything"}
+        )
+
+        assert response.status_code == 500
+        assert response.get_json()["error"] == "Session manager not initialized"
 
 
 class TestValidatorsMethods:
@@ -188,73 +284,91 @@ class TestValidatorsMethods:
         from src.api.services.validators import validate_required_fields
 
         data = {"name": "test", "hp": 100}
-        required = ["name", "hp"]
 
-        # Should not raise - may return True, None, or the data
-        try:
-            result = validate_required_fields(data, required)
-            # Should pass with all required fields
-            assert result is not False
-        except (ValueError, KeyError, AssertionError):
-            pytest.fail("Should not raise with complete required fields")
+        assert validate_required_fields(data, ["name", "hp"]) == (True, None)
 
     def test_validate_required_fields_missing(self):
         """Test validate_required_fields with missing field."""
         from src.api.services.validators import validate_required_fields
 
-        data = {"name": "test"}
-        required = ["name", "hp"]
+        is_valid, error = validate_required_fields({"name": "test"}, ["name", "hp"])
 
-        # Should fail or raise
-        try:
-            result = validate_required_fields(data, required)
-            # If it returns, should indicate failure
-            assert result is False or result is not True
-        except (ValueError, KeyError, AssertionError):
-            # Expected to raise
-            pass
+        assert is_valid is False
+        assert error == "Missing required fields: hp"
+
+    @pytest.mark.parametrize(
+        "data, required, expected_error",
+        [
+            ({"name": None}, ["name"], "Missing required fields: name"),
+            ({}, ["name", "hp"], "Missing required fields: name, hp"),
+            ({"name": "x", "hp": None}, ["name", "hp"], "Missing required fields: hp"),
+            ("not a dict", ["name"], "Request body must be a JSON object"),
+            (None, ["name"], "Request body must be a JSON object"),
+            ([], ["name"], "Request body must be a JSON object"),
+        ],
+    )
+    def test_validate_required_fields_rejections(self, data, required, expected_error):
+        """An explicitly-null field counts as missing; a non-dict body is refused.
+
+        The null case matters: ``{"name": None}`` is present-but-empty, and the
+        route contract treats it as missing rather than as a valid value.
+        """
+        from src.api.services.validators import validate_required_fields
+
+        assert validate_required_fields(data, required) == (False, expected_error)
 
     def test_validate_inventory_item_valid(self):
         """Test validate_required_fields with item data."""
         from src.api.services.validators import validate_required_fields
 
         item = {"name": "Sword", "count": 1}
-        required = ["name"]
 
-        is_valid, error = validate_required_fields(item, required)
-        # Should be valid with required field
-        assert is_valid
+        assert validate_required_fields(item, ["name"]) == (True, None)
+        # Extra keys are allowed; a missing one is named in the error.
+        assert validate_required_fields(item, ["name", "value"]) == (
+            False,
+            "Missing required fields: value",
+        )
 
     def test_validate_move_name_valid(self):
         """Test validate_move_name with valid direction."""
         from src.api.services.validators import validate_direction
 
-        is_valid, error = validate_direction("north")
-        # Should be valid direction
-        assert is_valid
+        assert validate_direction("north") == (True, None)
 
     def test_validate_direction_valid(self):
         """Test validate_direction with valid directions."""
         from src.api.services.validators import validate_direction
 
-        valid_directions = ["north", "south", "east", "west"]
-        for direction in valid_directions:
-            try:
-                result = validate_direction(direction)
-                assert result is True or result is None
-            except (ValueError, AssertionError):
-                pass
+        # All eight the engine's move_player supports — cardinal AND diagonal.
+        for direction in (
+            "north",
+            "south",
+            "east",
+            "west",
+            "northeast",
+            "northwest",
+            "southeast",
+            "southwest",
+        ):
+            assert validate_direction(direction) == (True, None), direction
+            # Validation is case-insensitive.
+            assert validate_direction(direction.upper()) == (True, None), direction
 
-    def test_validate_direction_invalid(self):
-        """Test validate_direction rejects invalid direction."""
+    @pytest.mark.parametrize("direction", ["up", "down", "nrth", "", "north-east"])
+    def test_validate_direction_invalid(self, direction):
+        """Unknown directions are rejected and named in the error message.
+
+        Note ``northwest`` is *valid* — the old version of this test asserted
+        nothing precisely so it could straddle that question.
+        """
         from src.api.services.validators import validate_direction
 
-        try:
-            result = validate_direction("northwest")
-            # May or may not validate "northwest"
-        except (ValueError, AssertionError):
-            # Expected for invalid direction
-            pass
+        is_valid, error = validate_direction(direction)
+
+        assert is_valid is False
+        assert f"Invalid direction '{direction}'" in error
+        assert "northwest" in error  # the message lists the legal set
 
 
 class TestSessionManagerMethods:
@@ -266,36 +380,36 @@ class TestSessionManagerMethods:
         assert SessionManager is not None
 
     def test_session_manager_create_session(self):
-        """Test creating a new session."""
+        """``create_session(username)`` -> ``(session_id, player_id)`` + a real Player."""
         from src.api.services.session_manager import SessionManager
+        from src.player import Player
 
         manager = SessionManager()
-        mock_player = Mock()
-        mock_player.name = "Test"
 
-        result = manager.create_session(mock_player)
-        # May return a session object or a tuple (session_id, session)
-        assert result is not None
+        session_id, player_id = manager.create_session("Test")
+
+        assert isinstance(session_id, str) and isinstance(player_id, str)
+        assert manager.sessions[session_id].username == "Test"
+        assert manager.session_to_player[session_id] == player_id
+        assert isinstance(manager.players[player_id], Player)
+        assert manager.get_player(session_id) is manager.players[player_id]
 
     def test_session_manager_get_session_exists(self):
-        """Test getting existing session."""
+        """``get_session`` returns the stored object and refreshes its access time."""
         from src.api.services.session_manager import SessionManager
 
         manager = SessionManager()
-        mock_player = Mock()
-        mock_player.name = "Test"
-
-        result = manager.create_session(mock_player)
-        # Handle different return types
-        if isinstance(result, tuple):
-            session_id, session = result
-        else:
-            session = result
-            session_id = session.session_id if hasattr(session, 'session_id') else "test_id"
+        session_id, player_id = manager.create_session("Test")
+        stored = manager.sessions[session_id]
+        stored.last_accessed = stored.created_at.replace(year=2000)
 
         retrieved = manager.get_session(session_id)
-        # May be None or a session object
-        pass
+
+        assert retrieved is stored
+        assert retrieved.player_id == player_id
+        # get_session keeps a live session alive rather than just reading it.
+        assert retrieved.last_accessed.year != 2000
+        assert retrieved.is_expired() is False
 
     def test_session_manager_get_session_not_exists(self):
         """Test getting non-existent session returns None."""
@@ -305,42 +419,48 @@ class TestSessionManagerMethods:
         result = manager.get_session("nonexistent_id")
         assert result is None
 
-    def test_session_manager_delete_session(self):
-        """Test deleting a session."""
+    def test_session_manager_expire_session_drops_session_and_player(self):
+        """There is no ``delete_session``; ``expire_session`` is the teardown path.
+
+        The old version of this test guarded on ``hasattr(manager,
+        'delete_session')`` — which is False — so its body never executed.
+        """
         from src.api.services.session_manager import SessionManager
 
         manager = SessionManager()
-        mock_player = Mock()
-        mock_player.name = "Test"
+        assert not hasattr(manager, "delete_session")
 
-        result = manager.create_session(mock_player)
+        session_id, player_id = manager.create_session("Test")
 
-        # Handle different return types
-        if isinstance(result, tuple):
-            session_id, session = result
-        else:
-            session = result
-            session_id = session.session_id if hasattr(session, 'session_id') else "test_id"
+        assert manager.expire_session(session_id) is True
 
-        # Try to delete if the method exists
-        if hasattr(manager, 'delete_session'):
-            manager.delete_session(session_id)
-        # If no delete method, skip this assertion
+        assert manager.get_session(session_id) is None
+        assert session_id not in manager.sessions
+        assert session_id not in manager.session_to_player
+        assert player_id not in manager.players
+        # Expiring an already-expired session is a no-op, not an error.
+        assert manager.expire_session(session_id) is False
 
-    def test_session_manager_update_session(self):
-        """Test updating session state."""
+    def test_session_manager_set_player_swaps_the_stored_player(self):
+        """``set_player`` rebinds the session's player; ``get_player`` sees it."""
         from src.api.services.session_manager import SessionManager
+        from tests._combat_fixtures import make_player
 
         manager = SessionManager()
-        mock_player = Mock()
-        mock_player.name = "Test"
+        session_id, player_id = manager.create_session("Test")
+        original = manager.get_player(session_id)
 
-        session = manager.create_session(mock_player)
-        # Update player state
-        mock_player.hp = 50
+        replacement = make_player(hp=50, maxhp=120)
+        assert manager.set_player(session_id, replacement) is True
 
-        # Session should reflect updated player
-        assert mock_player.hp == 50
+        assert manager.get_player(session_id) is replacement
+        assert manager.get_player(session_id) is not original
+        assert manager.get_player(session_id).hp == 50
+        assert manager.players[player_id] is replacement
+
+        # An unknown session cannot be written to.
+        assert manager.set_player("no-such-session", replacement) is False
+        assert manager.get_player("no-such-session") is None
 
 
 class TestAuthRoutes:
@@ -376,13 +496,31 @@ class TestAuthRoutes:
         assert response.status_code in [400, 422, 401]
 
     def test_login_endpoint_invalid_credentials(self, client, app_with_session):
-        """Test login with invalid credentials."""
-        response = client.post('/api/auth/login', json={
-            "username": "baduser",
-            "password": "badpass"
-        })
-        # Should reject invalid credentials or return error status
-        assert response.status_code in [401, 400, 404, 422, 503]
+        """Bad credentials must be rejected with 401, specifically.
+
+        This accepted any of [401, 400, 404, 422, 503]. In practice it passed on
+        the 503 the route returns when TURSO_DATABASE_URL is unset -- i.e. it
+        was green because the database was *unconfigured*, never because the
+        credentials were rejected. Stubbing the authenticator makes the auth
+        decision the only thing under test.
+        """
+        from unittest.mock import AsyncMock, patch as _patch
+
+        with _patch(
+            "src.api.routes.auth.auth_service.authenticate_user",
+            new=AsyncMock(return_value=None),
+        ) as mock_auth:
+            response = client.post('/api/auth/login', json={
+                "username": "baduser",
+                "password": "badpass"
+            })
+
+        assert response.status_code == 401
+        mock_auth.assert_awaited_once_with("baduser", "badpass")
+        body = response.get_json()
+        assert body["success"] is False
+        # The reply must not disclose which half was wrong, nor echo the secret.
+        assert "badpass" not in response.get_data(as_text=True)
 
     def test_logout_endpoint_unauthorized(self, client):
         """Test logout without auth token."""
@@ -563,19 +701,6 @@ class TestNPCRoutes:
         assert response.status_code in [401, 403, 404]
 
 
-class TestQuestRoutes:
-    """Test quest-related routes."""
-
-    def test_quest_chains_route_exists(self):
-        """Test quest chains blueprint exists."""
-        from src.api.routes.quest_chains import quest_chains_bp
-        assert quest_chains_bp is not None
-
-    def test_quest_rewards_route_exists(self):
-        """Test quest rewards blueprint exists."""
-        from src.api.routes.quest_rewards import quest_rewards_bp
-        assert quest_rewards_bp is not None
-
 
 class TestShopRoutes:
     """Test shop routes."""
@@ -637,33 +762,6 @@ class TestLogsRoutes:
         assert response.status_code in [401, 403, 404]
 
 
-class TestDialogueContextRoutes:
-    """Test dialogue context routes."""
-
-    def test_dialogue_context_route_exists(self):
-        """Test dialogue context blueprint exists."""
-        from src.api.routes.dialogue_context import dialogue_context_bp
-        assert dialogue_context_bp is not None
-
-    def test_get_dialogue_unauthorized(self):
-        """Test get dialogue requires auth."""
-        from src.api.app import create_app
-        result = create_app()
-        app = result[0] if isinstance(result, tuple) else result
-        app.config['TESTING'] = True
-        client = app.test_client()
-
-        response = client.get('/api/dialogue')
-        assert response.status_code in [401, 403, 404]
-
-
-class TestNPCAvailabilityRoutes:
-    """Test NPC availability routes."""
-
-    def test_npc_availability_route_exists(self):
-        """Test NPC availability blueprint exists."""
-        from src.api.routes.npc_availability import npc_availability_bp
-        assert npc_availability_bp is not None
 
 
 class TestFeedbackRoutes:
@@ -759,21 +857,26 @@ class TestServiceIntegration:
         assert manager is not None
         assert service is not None
 
-    def test_validators_work_with_services(self):
-        """Test validators can be used with service layer."""
-        from src.api.services.validators import validate_required_fields
+    def test_validators_gate_a_service_call_the_way_routes_use_them(self):
+        """The route pattern: validate first, only then touch the service."""
+        from src.api.services.validators import (
+            validate_direction,
+            validate_required_fields,
+        )
         from src.api.services.game_service import GameService
 
         service = GameService()
+        # GameService.__init__ is `pass` — no self.universe to lean on.
+        assert not hasattr(service, "universe")
 
-        data = {"name": "test"}
-        required = ["name"]
+        bad_body = {"heading": "north"}
+        is_valid, error = validate_required_fields(bad_body, ["direction"])
+        assert (is_valid, error) == (False, "Missing required fields: direction")
 
-        try:
-            validate_required_fields(data, required)
-            # Should pass with required fields present
-        except (ValueError, KeyError, AssertionError):
-            pass
+        good_body = {"direction": "northeast"}
+        assert validate_required_fields(good_body, ["direction"]) == (True, None)
+        assert validate_direction(good_body["direction"]) == (True, None)
+        assert callable(service.move_player)
 
 
 class TestAppConfiguration:
@@ -815,77 +918,84 @@ class TestBlueprintRegistration:
 
     def test_all_blueprints_importable(self):
         """Test all blueprint modules can be imported."""
-        blueprint_modules = [
-            'src.api.routes.auth',
-            'src.api.routes.combat',
-            'src.api.routes.inventory',
-            'src.api.routes.player',
-            'src.api.routes.quest_chains',
-            'src.api.routes.quest_rewards',
-            'src.api.routes.saves',
-            'src.api.routes.shop',
-            'src.api.routes.world',
-            'src.api.routes.logs',
-            'src.api.routes.dialogue_context',
-            'src.api.routes.npc_availability',
-            'src.api.routes.feedback',
-            'src.api.routes.npc_chat',
-        ]
+        import importlib
+        import pkgutil
 
-        for module_name in blueprint_modules:
-            try:
-                __import__(module_name)
-            except ImportError as e:
-                # Some routes may have import issues, note but don't fail
-                pass
+        import src.api.routes as routes_pkg
+
+        # Derive the module list from the package instead of hardcoding it.
+        # The previous version listed four modules that do not exist and
+        # swallowed every ImportError with `pass`, so it could never fail --
+        # it passed just as happily with the whole package deleted.
+        discovered = [
+            name for _, name, _ in pkgutil.iter_modules(routes_pkg.__path__)
+        ]
+        assert discovered, "no route modules discovered"
+
+        for module_name in discovered:
+            importlib.import_module(f"src.api.routes.{module_name}")
 
     def test_routes_init_exports_blueprints(self):
-        """Test routes/__init__ exports all blueprints."""
-        from src.api.routes import (
-            auth_bp,
-            combat_bp,
-            inventory_bp,
-            player_bp,
-            quest_chains_bp,
-            quest_rewards_bp,
-            saves_bp,
-            shop_bp,
-            world_bp,
-            logs_bp,
-            dialogue_context_bp,
-            npc_availability_bp,
-            feedback_bp,
-        )
+        """Every name in routes.__all__ is exported and is a real Blueprint."""
+        from flask import Blueprint
 
-        assert auth_bp is not None
-        assert combat_bp is not None
+        import src.api.routes as routes_pkg
+
+        exported = getattr(routes_pkg, "__all__", [])
+        assert exported, "routes.__all__ is empty"
+
+        for name in exported:
+            assert hasattr(routes_pkg, name), f"{name} missing from src.api.routes"
+            bp = getattr(routes_pkg, name)
+            assert isinstance(bp, Blueprint), f"{name} is not a Blueprint: {type(bp)}"
+
+        # The core gameplay blueprints must be among them -- a shrinking
+        # __all__ would otherwise satisfy the loop above vacuously.
+        for required in ("auth_bp", "combat_bp", "inventory_bp", "player_bp",
+                         "saves_bp", "shop_bp", "world_bp"):
+            assert required in exported, f"{required} no longer exported"
 
 
 class TestServiceAuthenticationEdgeCases:
     """Test authentication edge cases."""
 
-    def test_auth_service_session_expiration(self):
-        """Test session expiration handling."""
+    def test_expired_session_is_reaped_on_the_next_lookup(self):
+        """A past ``expires_at`` makes ``get_session`` evict, not just return None."""
+        from datetime import datetime, timedelta
         from src.api.services.session_manager import SessionManager
 
         manager = SessionManager()
-        mock_player = Mock()
+        session_id, player_id = manager.create_session("jean")
 
-        result = manager.create_session(mock_player)
+        # Fresh sessions get a 24h window.
+        session = manager.sessions[session_id]
+        assert session.is_expired() is False
+        assert session.expires_at - session.created_at == timedelta(hours=24)
 
-        # Handle different return types
-        if isinstance(result, tuple):
-            session_id, session = result
-        else:
-            session = result
-            session_id = session.session_id if hasattr(session, 'session_id') else "test"
+        session.expires_at = datetime.now() - timedelta(seconds=1)
+        assert session.is_expired() is True
 
-        # Try to delete if method exists
-        if hasattr(manager, 'delete_session'):
-            manager.delete_session(session_id)
-            retrieved = manager.get_session(session_id)
-            # After delete, should be None or not found
-        # Otherwise skip this test path
+        assert manager.get_session(session_id) is None
+        assert session_id not in manager.sessions
+        assert player_id not in manager.players
+
+    def test_cleanup_expired_reports_how_many_it_removed(self):
+        """``cleanup_expired`` sweeps only the expired sessions."""
+        from datetime import datetime, timedelta
+        from src.api.services.session_manager import SessionManager
+
+        manager = SessionManager()
+        stale_a, _ = manager.create_session("a")
+        stale_b, _ = manager.create_session("b")
+        live, _ = manager.create_session("c")
+        for sid in (stale_a, stale_b):
+            manager.sessions[sid].expires_at = datetime.now() - timedelta(seconds=1)
+
+        assert manager.cleanup_expired() == 2
+
+        assert set(manager.sessions) == {live}
+        assert manager.get_active_session_count() == 1
+        assert manager.cleanup_expired() == 0
 
     def test_multiple_concurrent_sessions(self):
         """Test handling multiple player sessions."""
@@ -908,12 +1018,6 @@ class TestServiceAuthenticationEdgeCases:
 
 class TestGameServicePlayerOperations:
     """Test GameService player-related operations."""
-
-    @pytest.fixture
-    def game_service(self):
-        """Get GameService instance."""
-        from src.api.services.game_service import GameService
-        return GameService()
 
     @pytest.fixture
     def mock_player(self):
@@ -983,22 +1087,29 @@ class TestValidatorIntegration:
                 assert callable(getattr(validators, func_name))
 
     def test_validator_defensive_programming(self):
-        """Test validators handle edge cases gracefully."""
+        """Edge cases return a verdict instead of raising."""
         from src.api.services.validators import validate_required_fields
 
-        # Empty data
-        try:
-            result = validate_required_fields({}, [])
-            # Should handle empty data
-        except (ValueError, KeyError, AssertionError):
-            pass
+        # No requirements at all -> vacuously valid.
+        assert validate_required_fields({}, []) == (True, None)
+        assert validate_required_fields({"anything": 1}, []) == (True, None)
 
-        # None values
-        try:
-            result = validate_required_fields(None, [])
-        except (ValueError, KeyError, TypeError, AssertionError):
-            # Expected to fail gracefully
-            pass
+        # A non-dict body is rejected even when nothing is required, so a route
+        # never proceeds to index into a list or a string.
+        assert validate_required_fields(None, []) == (
+            False,
+            "Request body must be a JSON object",
+        )
+        assert validate_required_fields([1, 2], []) == (
+            False,
+            "Request body must be a JSON object",
+        )
+
+        # Falsy-but-present values are NOT treated as missing.
+        assert validate_required_fields({"count": 0, "note": ""}, ["count", "note"]) == (
+            True,
+            None,
+        )
 
 
 class TestRouteErrorResponses:
@@ -1012,15 +1123,17 @@ class TestRouteErrorResponses:
         app.config['TESTING'] = True
         client = app.test_client()
 
-        # Invalid route should return JSON 404
+        # An unknown route returns the app's JSON 404 envelope, never HTML —
+        # the SPA parses every error body as JSON.
         response = client.get('/api/invalid')
+
         assert response.status_code == 404
-        # Should be JSON
-        try:
-            data = response.get_json()
-            # Is valid JSON
-        except Exception:
-            pass
+        assert response.content_type.startswith("application/json")
+        assert response.get_json() == {
+            "success": False,
+            "error": "Not found",
+            "message": "The requested resource was not found",
+        }
 
     def test_unauthorized_response_format(self):
         """Test unauthorized responses have proper format."""
@@ -1030,9 +1143,16 @@ class TestRouteErrorResponses:
         app.config['TESTING'] = True
         client = app.test_client()
 
-        # Try auth-required route without token
-        response = client.get('/api/player/status')
-        assert response.status_code in [401, 403, 404]
+        # A route that really is auth-gated. (This previously probed
+        # /api/player/status, which does not exist, so the assertion was
+        # satisfied by the 404 branch and proved nothing about auth.)
+        response = client.get('/api/status')
+
+        assert response.status_code == 401
+        assert response.get_json() == {
+            "success": False,
+            "error": "Missing or invalid Authorization header",
+        }
 
 
 class TestAppInitialization:

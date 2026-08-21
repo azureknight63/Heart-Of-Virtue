@@ -572,25 +572,68 @@ def test_create_items_from_config_import_error_is_caught(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
+# Every _apply_player_stats_from_config test below uses a REAL Player rather
+# than a MagicMock. That is load-bearing, not tidiness: the production loop
+# reads
+#
+#     for attr in attr_tuple:
+#         if hasattr(player, attr):
+#             setattr(player, attr, value)
+#
+# and `hasattr(MagicMock(), anything)` is always True. Against a mock the
+# hasattr gate is never exercised, every mapped attribute "applies", and an
+# assertion like `player.maxhp_base == 120` proves only that setattr works --
+# it would pass identically if the engine's attribute were named something
+# else entirely. Against a real Player the gate is real and the assertions
+# pin the actual engine attribute names. (Player() costs ~0.7 ms.)
+
+
+def _real_player():
+    from src.player import Player
+
+    return Player()
+
+
+def _stat_snapshot(player):
+    return {
+        attr: getattr(player, attr)
+        for attr in (
+            "hp", "maxhp", "maxhp_base", "strength", "strength_base",
+            "finesse", "finesse_base", "speed", "speed_base",
+            "endurance", "endurance_base", "charisma", "charisma_base",
+            "intelligence", "intelligence_base", "faith", "faith_base",
+            "heat", "level", "exp",
+        )
+    }
+
+
 def test_apply_player_stats_no_config_file(monkeypatch):
     mgr = _bare_manager(monkeypatch)
-    player = MagicMock()
-    mgr._apply_player_stats_from_config(player)  # early return, should not raise
+    player = _real_player()
+    before = _stat_snapshot(player)
+    mgr._apply_player_stats_from_config(player)
+    # "Did not raise" is not the contract -- the contract is that the player
+    # is returned untouched, which is what the caller relies on.
+    assert _stat_snapshot(player) == before
 
 
 def test_apply_player_stats_missing_file(monkeypatch, tmp_path):
     monkeypatch.setenv("CONFIG_FILE", str(tmp_path / "nope.ini"))
     mgr = SessionManager()
-    player = MagicMock()
-    mgr._apply_player_stats_from_config(player)  # should not raise
+    player = _real_player()
+    before = _stat_snapshot(player)
+    mgr._apply_player_stats_from_config(player)
+    assert _stat_snapshot(player) == before
 
 
 def test_apply_player_stats_no_player_section(monkeypatch, tmp_path):
     ini = _write_ini(tmp_path / "cfg.ini", "[game]\nfoo = 1\n")
     monkeypatch.setenv("CONFIG_FILE", str(ini))
     mgr = SessionManager()
-    player = MagicMock()
-    mgr._apply_player_stats_from_config(player)  # should not raise
+    player = _real_player()
+    before = _stat_snapshot(player)
+    mgr._apply_player_stats_from_config(player)
+    assert _stat_snapshot(player) == before
 
 
 def test_apply_player_stats_applies_valid_values_and_skips_invalid(
@@ -602,23 +645,91 @@ def test_apply_player_stats_applies_valid_values_and_skips_invalid(
     )
     monkeypatch.setenv("CONFIG_FILE", str(ini))
     mgr = SessionManager()
-    player = MagicMock()
+    player = _real_player()
+    finesse_before = player.finesse
+    finesse_base_before = player.finesse_base
+    strength_before = player.strength
+
     mgr._apply_player_stats_from_config(player)
+
     assert player.hp == 80
+    # maxhp maps to a two-attribute tuple; both must land or the derived
+    # display max drifts from the real one on the very first level-up.
     assert player.maxhp == 120
     assert player.maxhp_base == 120
     assert player.heat == 1.5
-    # finesse could not be parsed as int -> left untouched (still a MagicMock attr,
-    # not the string "notanumber")
-    assert player.finesse != "notanumber"
+    # Unparseable value: BOTH finesse attributes stay at their engine
+    # defaults. The old assertion (`player.finesse != "notanumber"`) was
+    # satisfied by any value at all, including a partially-applied one.
+    assert player.finesse == finesse_before
+    assert player.finesse_base == finesse_base_before
+    # A key absent from the config is not touched either.
+    assert player.strength == strength_before
+
+
+def test_apply_player_stats_applies_every_mapped_stat(monkeypatch, tmp_path):
+    """Walks the whole stat_mapping table against a real Player.
+
+    Its value is the ``_base`` half: each of these config keys writes two
+    engine attributes, and a mock cannot tell you whether the second name is
+    the one Player actually defines.
+    """
+    ini = _write_ini(
+        tmp_path / "cfg.ini",
+        "[player]\n"
+        "hp = 77\nmaxhp = 210\nstrength = 21\nfinesse = 22\nspeed = 23\n"
+        "endurance = 24\ncharisma = 25\nintelligence = 26\nfaith = 27\n"
+        "heat = 2.5\nlevel = 9\nexp = 4242\n",
+    )
+    monkeypatch.setenv("CONFIG_FILE", str(ini))
+    mgr = SessionManager()
+    player = _real_player()
+
+    mgr._apply_player_stats_from_config(player)
+
+    assert _stat_snapshot(player) == {
+        "hp": 77,
+        "maxhp": 210, "maxhp_base": 210,
+        "strength": 21, "strength_base": 21,
+        "finesse": 22, "finesse_base": 22,
+        "speed": 23, "speed_base": 23,
+        "endurance": 24, "endurance_base": 24,
+        "charisma": 25, "charisma_base": 25,
+        "intelligence": 26, "intelligence_base": 26,
+        "faith": 27, "faith_base": 27,
+        "heat": 2.5,
+        "level": 9,
+        "exp": 4242,
+    }
+
+
+def test_apply_player_stats_coerces_int_stats_to_int(monkeypatch, tmp_path):
+    """`level` goes through int(), `heat` through float().
+
+    Leaving a stat as the config's raw string would blow up on the first
+    arithmetic the engine does with it, several turns later and far from here.
+    """
+    ini = _write_ini(tmp_path / "cfg.ini", "[player]\nlevel = 7\nheat = 3\n")
+    monkeypatch.setenv("CONFIG_FILE", str(ini))
+    mgr = SessionManager()
+    player = _real_player()
+
+    mgr._apply_player_stats_from_config(player)
+
+    assert player.level == 7 and isinstance(player.level, int)
+    assert player.heat == 3.0 and isinstance(player.heat, float)
 
 
 def test_apply_player_stats_exception_is_caught(monkeypatch, tmp_path):
     ini = _write_ini(tmp_path / "cfg.ini", "[player]\nhp = 50% off\n")
     monkeypatch.setenv("CONFIG_FILE", str(ini))
     mgr = SessionManager()
-    player = MagicMock()
-    mgr._apply_player_stats_from_config(player)  # should not raise
+    player = _real_player()
+    before = _stat_snapshot(player)
+    # configparser raises on the stray '%' interpolation token; the swallow
+    # must leave the player at its defaults rather than half-applied.
+    mgr._apply_player_stats_from_config(player)
+    assert _stat_snapshot(player) == before
 
 
 def test_apply_player_stats_relative_path(repo_root_ini):
@@ -626,7 +737,7 @@ def test_apply_player_stats_relative_path(repo_root_ini):
     # exercises the relative-path branch (project_root computation).
     repo_root_ini("[player]\nhp = 350\nlevel = 5\n")
     mgr = SessionManager()
-    player = MagicMock()
+    player = _real_player()
     mgr._apply_player_stats_from_config(player)
     assert player.hp == 350
     assert player.level == 5
@@ -640,8 +751,21 @@ def test_apply_player_stats_relative_path(repo_root_ini):
 def test_apply_starting_equipment_empty(monkeypatch):
     mgr = _bare_manager(monkeypatch)
     mgr.starting_equipment = []
-    player = MagicMock()
-    mgr._apply_starting_equipment(player)  # no-op, returns immediately
+    player = _real_player()
+    inventory_before = list(player.inventory)
+    weapon_before = player.eq_weapon
+
+    fake_functions = types.ModuleType("functions")
+    fake_functions.refresh_stat_bonuses = MagicMock()
+    with _fake_engine_modules(items=_fake_items_module(), functions=fake_functions):
+        mgr._apply_starting_equipment(player)
+
+    # The early return must happen before the refresh, not after: recomputing
+    # stat bonuses is not free and, more importantly, the guard is what keeps
+    # a no-equipment config from touching a loaded save's player at all.
+    assert player.inventory == inventory_before
+    assert player.eq_weapon is weapon_before
+    fake_functions.refresh_stat_bonuses.assert_not_called()
 
 
 def test_apply_starting_equipment_class_not_found(monkeypatch):
@@ -762,6 +886,14 @@ def test_apply_starting_equipment_on_equip_error_is_caught(monkeypatch):
 
 
 def test_apply_starting_equipment_refresh_stat_bonuses_error_is_caught(monkeypatch):
+    """A failing refresh_stat_bonuses must not roll back the equipment.
+
+    The refresh runs *after* the loop, so everything it was meant to
+    recalculate is already in place; swallowing the error has to leave the
+    item equipped rather than half-applied. "Did not raise" was the only
+    thing asserted here before, which is also true of an implementation that
+    never applied the equipment in the first place.
+    """
     mgr = _bare_manager(monkeypatch)
     mgr.starting_equipment = ["Sword"]
     player = MagicMock()
@@ -770,7 +902,12 @@ def test_apply_starting_equipment_refresh_stat_bonuses_error_is_caught(monkeypat
     fake_functions = types.ModuleType("functions")
     fake_functions.refresh_stat_bonuses = MagicMock(side_effect=RuntimeError("boom"))
     with _fake_engine_modules(items=fake_mod, functions=fake_functions):
-        mgr._apply_starting_equipment(player)  # should not raise
+        mgr._apply_starting_equipment(player)
+
+    fake_functions.refresh_stat_bonuses.assert_called_once_with(player)
+    assert len(player.inventory) == 1
+    assert player.inventory[0].isequipped is True
+    assert player.eq_weapon is player.inventory[0]
 
 
 def test_apply_starting_equipment_refreshes_stat_bonuses(monkeypatch):
@@ -801,29 +938,76 @@ def test_apply_starting_equipment_outer_exception_is_caught(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.parametrize("members", [None, []])
+def test_apply_starting_party_members_no_members(monkeypatch, members):
+    """No configured members => the starting tile is never consulted.
+
+    Asserted through the tile rather than through "did not raise": reaching
+    tile.spawn_npc at all would mean the guard moved below the lookup, and a
+    spawn on a tile the player has not entered yet would place an NPC into a
+    room the player then walks into with the ally already fighting.
+    """
+    mgr = _bare_manager(monkeypatch)
+    mgr.game_config = _make_game_config(starting_party_members=members)
+    player = MagicMock()
+    player.combat_list_allies = []
+    player.location_x = player.location_y = 0
+    tile = MagicMock()
+    player.map = {(0, 0): tile}
+
+    mgr._apply_starting_party_members(player)
+
+    assert player.combat_list_allies == []
+    tile.spawn_npc.assert_not_called()
+
+
 def test_apply_starting_party_members_no_game_config(monkeypatch):
     mgr = _bare_manager(monkeypatch)
     mgr.game_config = None
     player = MagicMock()
-    mgr._apply_starting_party_members(player)  # returns immediately
+    player.combat_list_allies = []
+    player.location_x = player.location_y = 0
+    tile = MagicMock()
+    player.map = {(0, 0): tile}
 
-
-def test_apply_starting_party_members_no_members(monkeypatch):
-    mgr = _bare_manager(monkeypatch)
-    mgr.game_config = _make_game_config(starting_party_members=[])
-    player = MagicMock()
     mgr._apply_starting_party_members(player)
+
+    assert player.combat_list_allies == []
+    tile.spawn_npc.assert_not_called()
 
 
 def test_apply_starting_party_members_player_lacks_combat_list(monkeypatch):
+    """The hasattr guard exists for MinimalPlayer, the import-failure fallback.
+
+    Previously this only checked that nothing raised -- but an AttributeError
+    here is precisely what the guard prevents, so assert it explicitly and
+    assert the player was left with no allies attribute grafted on.
+    """
     mgr = _bare_manager(monkeypatch)
     mgr.game_config = _make_game_config(starting_party_members=["Gorran"])
 
     class _NoAllies:
-        pass
+        def __init__(self):
+            self.location_x = self.location_y = 0
+            self.map = {(0, 0): MagicMock()}
 
     player = _NoAllies()
-    mgr._apply_starting_party_members(player)  # hasattr check fails -> return
+    mgr._apply_starting_party_members(player)
+
+    assert not hasattr(player, "combat_list_allies")
+    player.map[(0, 0)].spawn_npc.assert_not_called()
+
+
+def test_minimal_player_fallback_is_the_reason_for_the_hasattr_guard(monkeypatch):
+    """Ties the guard above to the real object it protects."""
+    mgr = _bare_manager(monkeypatch)
+    mgr.game_config = _make_game_config(starting_party_members=["Gorran"])
+    with patch.dict(sys.modules, {"src.player": None}):
+        player = mgr._create_player_for_session("bob")
+
+    assert isinstance(player, MinimalPlayer)
+    assert not hasattr(player, "combat_list_allies")
+    mgr._apply_starting_party_members(player)  # must not AttributeError
 
 
 def test_apply_starting_party_members_no_tile(monkeypatch):
@@ -1187,13 +1371,45 @@ def test_get_session_expired_is_removed(monkeypatch):
 
 
 def test_get_session_valid_updates_access_time(monkeypatch):
+    """The name promises an access-time update; assert it.
+
+    Before, this asserted only that a session with the right id came back --
+    true of a `get_session` that never called `update_access_time` at all, in
+    which case every active player's session would still hard-expire 24 hours
+    after login instead of 24 hours after their last request.
+    """
     mgr = _bare_manager(monkeypatch)
     with patch.object(mgr, "_create_player_for_session", return_value="p"):
         session_id, _ = mgr.create_session("liam")
 
+    stored = mgr.sessions[session_id]
+    # Backdate so the refresh is observable regardless of clock resolution.
+    stored.last_accessed = datetime.now() - timedelta(hours=6)
+    stored.expires_at = datetime.now() + timedelta(hours=18)
+    before_access, before_expiry = stored.last_accessed, stored.expires_at
+
     session = mgr.get_session(session_id)
-    assert session is not None
+
+    assert session is stored
     assert session.session_id == session_id
+    assert session.last_accessed > before_access
+    # ...and the 24h window slides forward with it.
+    assert session.expires_at > before_expiry
+
+
+def test_get_session_does_not_extend_an_already_expired_session(monkeypatch):
+    """`update_access_time` only pushes expires_at forward `if not
+    is_expired()`, and `get_session` reaps expired sessions before that. A
+    resurrected session would be an authentication bypass: an expired session
+    id would keep working forever."""
+    mgr = _bare_manager(monkeypatch)
+    old = datetime.now() - timedelta(hours=48)
+    session = Session("sid", "pid", "kate", old)
+    mgr.sessions["sid"] = session
+    mgr.session_to_player["sid"] = "pid"
+
+    assert mgr.get_session("sid") is None
+    assert session.expires_at < datetime.now()
 
 
 def test_get_player_no_session(monkeypatch):
@@ -1235,8 +1451,19 @@ def test_save_session_no_session(monkeypatch):
 def test_save_session_success(monkeypatch):
     mgr = _bare_manager(monkeypatch)
     with patch.object(mgr, "_create_player_for_session", return_value="p"):
-        session_id, _ = mgr.create_session("olga")
+        session_id, player_id = mgr.create_session("olga")
+    mgr.sessions[session_id].data["progress"] = "chapter-2"
+    mgr.sessions[session_id].last_accessed = datetime.now() - timedelta(hours=3)
+
     assert mgr.save_session(session_id) is True
+
+    # save_session goes through get_session, so it keeps the session alive and
+    # leaves the stored data intact (it is a placeholder that must not clear
+    # anything -- start_new_game is the only path that resets `data`).
+    session = mgr.sessions[session_id]
+    assert session.data == {"progress": "chapter-2"}
+    assert session.last_accessed > datetime.now() - timedelta(minutes=1)
+    assert mgr.players[player_id] == "p"
 
 
 def test_expire_session_not_found(monkeypatch):

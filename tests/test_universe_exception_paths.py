@@ -1,8 +1,7 @@
 """Coverage for remaining gaps in src/universe.py.
 
 Targets (line numbers as of this writing):
-    218-219  _load_single_json_map: both seek_class AND `import tiles` fail
-             -> falls back to `from tiles import MapTile`
+    218-219  _load_single_json_map: seek_class raises -> falls back to MapTile
     251-252  _load_single_json_map: symbol assignment exception is swallowed
     281-290  _load_single_json_map: event re-instantiation fails entirely ->
              fallback attribute synthesis (also failing) is swallowed
@@ -17,17 +16,10 @@ Targets (line numbers as of this writing):
 """
 
 import json
-import sys
-import types
-from pathlib import Path
 from unittest.mock import MagicMock
 
-import pytest
-
+from src.narration import capture_narration
 from src.universe import Universe
-
-ROOT = Path(__file__).resolve().parent.parent
-SRC_DIR = ROOT / "src"
 
 
 def _player():
@@ -44,24 +36,19 @@ def _player():
 # ---------------------------------------------------------------------------
 
 
-def test_seek_class_and_import_tiles_both_fail_uses_from_import_fallback(
+def test_unresolvable_tile_class_falls_back_to_maptile_with_json_data(
     monkeypatch, tmp_path
 ):
+    """A tile whose declared ``class`` cannot be resolved must still load.
+
+    The fallback must not merely produce *a* tile -- it has to carry the JSON
+    title/description through, or the room silently renders blank.
+    """
+    import src.tiles as tiles_mod
     import src.universe as universe_mod
 
-    orig_import_module = universe_mod.importlib.import_module
-
-    def fake_import_module(name, *a, **k):
-        if name == "tiles":
-            raise ImportError("boom")
-        return orig_import_module(name, *a, **k)
-
-    monkeypatch.setattr(universe_mod.importlib, "import_module", fake_import_module)
-    monkeypatch.setattr(
-        universe_mod.functions,
-        "seek_class",
-        MagicMock(side_effect=ValueError("no such class")),
-    )
+    seek = MagicMock(side_effect=ValueError("no such class"))
+    monkeypatch.setattr(universe_mod.functions, "seek_class", seek)
 
     u = Universe()
     player = _player()
@@ -69,12 +56,18 @@ def test_seek_class_and_import_tiles_both_fail_uses_from_import_fallback(
 
     mapfile = tmp_path / "fallback.json"
     mapfile.write_text(
-        json.dumps({"(0, 0)": {"title": "UnknownTileXYZ", "description": "desc"}})
+        json.dumps({"(0, 0)": {"title": "UnknownTileXYZ", "class": "NoSuchTile",
+                               "description": "desc"}})
     )
-    u._load_single_json_map(player, mapfile)
+    with capture_narration() as messages:
+        u._load_single_json_map(player, mapfile)
 
+    seek.assert_called_once()
     tile = u.maps[-1][(0, 0)]
-    assert tile.__class__.__name__ == "MapTile"
+    assert type(tile) is tiles_mod.MapTile
+    assert tile.name == "UnknownTileXYZ"
+    assert tile.description == "desc"
+    assert any("falling back to MapTile" in m.get("text", "") for m in messages)
 
 
 # ---------------------------------------------------------------------------
@@ -174,6 +167,13 @@ def test_event_reinit_and_attr_synthesis_both_fail_gracefully(monkeypatch, tmp_p
     u._load_single_json_map(player, mapfile)
     tile = u.maps[-1][(0, 0)]
     assert len(tile.events_here) == 1
+    event = tile.events_here[0]
+    assert isinstance(event, _BrokenEvent)
+    # Documented degraded state: every construction path failed, so the event
+    # lands with neither a tile nor a player reference rather than the loader
+    # aborting the whole map.
+    assert not hasattr(event, "tile")
+    assert not hasattr(event, "player")
 
 
 # ---------------------------------------------------------------------------

@@ -20,6 +20,7 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 import src.states as states
+from src.narration import capture_narration
 from src.moves._utility import (
     Check,
     Wait,
@@ -211,11 +212,13 @@ class TestCheck:
         player.combat_proximity = {enemy: 8}
         player.combat_list_allies = []
         move = Check(player)
-        with patch("src.moves._utility.cprint") as mock_cprint, \
+        with capture_narration() as messages, \
              patch("src.moves._utility.functions.await_input"):
             move.prep(player)
-        # Should have printed enemy distance info
-        assert mock_cprint.called
+        # With no combat_position, prep must fall through to the legacy
+        # distance line. ``mock_cprint.called`` -- the old assertion -- was
+        # equally true of the coordinate branch, i.e. of the opposite outcome.
+        assert [m["text"] for m in messages] == ["Enemy is 8 ft from Jean"]
 
     def test_generate_api_check_data_sorts_by_distance(self):
         player = _make_player()
@@ -560,10 +563,13 @@ class TestCheckCoordinateMode:
         player.combat_proximity = {enemy: 5}
         player.combat_list_allies = []
         move = Check(player)
-        with patch("src.moves._utility.cprint") as mock_cprint, \
+        with capture_narration() as messages, \
              patch("src.moves._utility.functions.await_input"):
             move.prep(player)
-        assert mock_cprint.called
+        # Coordinates present -> the coordinate report, not the legacy one.
+        assert [m["text"] for m in messages] == [
+            "Enemy at (3, 3) facing S is 5 ft away (rear, S-facing)"
+        ]
 
     def test_display_coordinate_info_enemy_without_position_falls_back(self):
         player = _make_player()
@@ -573,9 +579,13 @@ class TestCheckCoordinateMode:
         player.combat_proximity = {enemy: 9}
         player.combat_list_allies = []
         move = Check(player)
-        with patch("src.moves._utility.cprint") as mock_cprint:
+        with capture_narration() as messages:
             move._display_coordinate_info(player)
-        assert mock_cprint.called
+        # An enemy with no coordinates gets the plain distance line, and no
+        # invented "(0, 0) facing N" position.
+        assert [(m["text"], m["color"]) for m in messages] == [
+            ("Enemy is 9 ft from Jean", "green")
+        ]
 
     def test_display_coordinate_info_shows_ally_positioning_with_enemy_position(self):
         import src.positions as positions
@@ -593,9 +603,13 @@ class TestCheckCoordinateMode:
         player.combat_list_allies = [ally]
 
         move = Check(player)
-        with patch("src.moves._utility.cprint") as mock_cprint:
+        with capture_narration() as messages:
             move._display_coordinate_info(player)
-        assert mock_cprint.called
+        # Two lines: the enemy report, then the ally's angle on that enemy.
+        assert [(m["text"], m["color"]) for m in messages] == [
+            ("Enemy at (5, 5) facing S is 7 ft away (rear, S-facing)", "green"),
+            ("  \u2192 Gorran at (2, 2) is 4 ft away (rear-facing)", "cyan"),
+        ]
 
     def test_display_coordinate_info_ally_without_enemy_position(self):
         player = _make_player()
@@ -611,9 +625,13 @@ class TestCheckCoordinateMode:
         player.combat_list_allies = [ally]
 
         move = Check(player)
-        with patch("src.moves._utility.cprint") as mock_cprint:
+        with capture_narration() as messages:
             move._display_coordinate_info(player)
-        assert mock_cprint.called
+        # Neither line can quote an angle, because the enemy has no position.
+        assert [(m["text"], m["color"]) for m in messages] == [
+            ("Enemy is 7 ft from Jean", "green"),
+            ("  \u2192 Gorran is 4 ft away", "cyan"),
+        ]
 
 
 class TestCheckApiDataEdgeCases:
@@ -726,9 +744,15 @@ class TestCheckLegacyAllies:
         ally.combat_proximity = {enemy: 3}
         player.combat_list_allies = [ally]
         move = Check(player)
-        with patch("src.moves._utility.cprint") as mock_cprint:
+        with capture_narration() as messages:
             move._display_legacy_info(player)
-        assert mock_cprint.called
+        # Both the player's own distance and each ally's distance to the same
+        # enemy are reported, colour-coded. ``mock_cprint.called`` held even if
+        # the ally loop never ran at all.
+        assert [(m["text"], m["color"]) for m in messages] == [
+            ("Enemy is 6 ft from Jean", "green"),
+            ("Enemy is 3 ft from Gorran", "cyan"),
+        ]
 
 
 # ---------------------------------------------------------------------------
@@ -880,7 +904,11 @@ class TestUtilityAttack:
              patch("src.moves._utility.functions.check_parry", return_value=False), \
              patch("src.moves._utility.animate"):
             move.execute(player)
-        assert player.combat_position.facing is not None
+        # Attacking turns the user to face the target: from (0, 0) the enemy at
+        # (5, 5) bears 45 degrees, i.e. north-east. The old assertion
+        # (``facing is not None``) held for the untouched starting facing too.
+        assert player.combat_position.facing is positions.Direction.NE
+        assert player.combat_position.facing is not positions.Direction.N
 
     def test_execute_not_viable_forces_auto_miss(self):
         player, enemy, move = self._viable_setup()
@@ -950,14 +978,17 @@ class TestCheckCoordinateAngleBrackets:
     the primary enemy-facing calc and the ally-relative-to-enemy calc)."""
 
     @pytest.mark.parametrize(
-        "enemy_facing, expected_called",
+        "enemy_facing, expected_bracket, expected_color",
         [
-            ("E", True),   # attack from East, enemy faces East -> diff=0 -> front
-            ("NE", True),  # diff=45 -> flank
-            ("W", True),   # diff=180 -> rear
+            # Attacking from due east of the enemy:
+            ("E", "front", "red"),      # enemy faces East -> diff 0
+            ("NE", "flank", "yellow"),  # diff 45
+            ("W", "rear", "green"),     # diff 180
         ],
     )
-    def test_display_coordinate_info_angle_brackets(self, enemy_facing, expected_called):
+    def test_display_coordinate_info_angle_brackets(
+        self, enemy_facing, expected_bracket, expected_color
+    ):
         import src.positions as positions
 
         player = _make_player()
@@ -969,15 +1000,26 @@ class TestCheckCoordinateAngleBrackets:
         player.combat_proximity = {enemy: 5}
         player.combat_list_allies = []
         move = Check(player)
-        with patch("src.moves._utility.cprint") as mock_cprint:
+        with capture_narration() as messages:
             move._display_coordinate_info(player)
-        assert mock_cprint.called == expected_called
+        # The old parametrization passed ``expected_called=True`` for all three
+        # rows and asserted ``mock_cprint.called == True`` -- identical in every
+        # case, so the three front/flank/rear branches were never distinguished.
+        assert [(m["text"], m["color"]) for m in messages] == [
+            (
+                f"Enemy at (5, 0) facing {enemy_facing} is 5 ft away "
+                f"({expected_bracket}, {enemy_facing}-facing)",
+                expected_color,
+            )
+        ]
 
     @pytest.mark.parametrize(
-        "enemy_facing",
-        ["E", "NE", "W"],
+        "enemy_facing, expected_bracket",
+        [("E", "front"), ("NE", "flank"), ("W", "rear")],
     )
-    def test_display_coordinate_info_ally_angle_brackets(self, enemy_facing):
+    def test_display_coordinate_info_ally_angle_brackets(
+        self, enemy_facing, expected_bracket
+    ):
         import src.positions as positions
 
         player = _make_player()
@@ -995,6 +1037,11 @@ class TestCheckCoordinateAngleBrackets:
         player.combat_list_allies = [ally]
 
         move = Check(player)
-        with patch("src.moves._utility.cprint") as mock_cprint:
+        with capture_narration() as messages:
             move._display_coordinate_info(player)
-        assert mock_cprint.called
+        # The ally line carries its own front/flank/rear bracket, computed from
+        # the ally's bearing rather than the player's. ``mock_cprint.called``
+        # could not tell the three branches apart.
+        assert [m["text"] for m in messages][1] == (
+            f"  \u2192 Gorran at (0, 0) is 5 ft away ({expected_bracket}-facing)"
+        )

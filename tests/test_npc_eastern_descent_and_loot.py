@@ -28,8 +28,21 @@ class TestNomadCamper:
 
         return NomadCamper()
 
-    def test_instantiation(self, npc):
-        assert npc is not None
+    def test_is_a_chat_capable_non_combatant_friend(self, npc):
+        """The camp NPCs are ``ConversationalNPCMixin`` + ``Friend``: the mixin
+        is what makes ``chat_open``/``chat_respond`` reachable from the API, and
+        ``Friend`` is what keeps them out of the hostile roster. Asserting the
+        MRO pins both — a class that quietly lost either would still have a
+        name, a description and an ``hp``."""
+        from src.npc._base import Friend
+        from src.npc._chat_llm import ConversationalNPCMixin
+        from src.combatant import Combatant
+
+        assert isinstance(npc, ConversationalNPCMixin)
+        assert isinstance(npc, Friend)
+        # Shared resistance/status logic lives on Combatant, never duplicated.
+        assert isinstance(npc, Combatant)
+        assert callable(npc.chat_open) and callable(npc.chat_respond)
 
     def test_name(self, npc):
         assert npc.name == "Nomad"
@@ -56,21 +69,31 @@ class TestNomadCamper:
     def test_talk_lines_not_empty(self, npc):
         assert len(npc._TALK_LINES) > 0
 
-    def test_talk_prints_a_line(self, npc, capsys):
-        player = SimpleNamespace()
-        npc.talk(player)
-        captured = capsys.readouterr()
-        # Any non-empty output is acceptable; the method calls print()
-        assert len(captured.out) > 0
+    def test_talk_emits_exactly_one_verbatim_talk_line(self, npc):
+        """Previously asserted only ``len(captured.out) > 0`` (any byte at all)
+        and a 30-character prefix match. Through the narration sink the emitted
+        text is exact, so assert set membership and the one-message count —
+        a ``talk()`` that narrated twice, or narrated an f-string it built
+        itself, now fails."""
+        from src.narration import capture_narration
 
-    def test_talk_output_is_one_of_the_talk_lines(self, npc, capsys):
-        player = SimpleNamespace()
-        npc.talk(player)
-        captured = capsys.readouterr()
-        output = captured.out.strip()
-        assert any(
-            line[:30] in output for line in npc._TALK_LINES
-        ), "talk() output not in _TALK_LINES"
+        with capture_narration() as messages:
+            npc.talk(SimpleNamespace())
+
+        assert len(messages) == 1
+        assert messages[0]["text"] in npc._TALK_LINES
+
+    def test_talk_varies_across_calls(self, npc, seeded):
+        """The whole point of ``_TALK_LINES`` being a list is that repeat TALKs
+        do not read as a canned response."""
+        from src.narration import capture_narration
+
+        with seeded(1234), capture_narration() as messages:
+            for _ in range(30):
+                npc.talk(SimpleNamespace())
+
+        assert len(messages) == 30
+        assert len({m["text"] for m in messages}) > 1
 
     def test_description_nonempty(self, npc):
         assert len(npc.description) > 10
@@ -78,10 +101,14 @@ class TestNomadCamper:
     def test_maxhp_positive(self, npc):
         assert npc.maxhp > 0
 
-    def test_has_known_moves(self, npc):
-        # known_moves may be [] if moves module failed to load in test isolation,
-        # but the attribute must exist
-        assert hasattr(npc, "known_moves")
+    def test_known_moves_are_idle_only(self, npc):
+        """``_init_idle_moves`` is what stops a non-combatant camp NPC from
+        arriving with an attack. The old test asserted only ``hasattr`` — it
+        passed just as happily on an empty list or on a full attack kit."""
+        import src.moves as moves
+
+        assert [type(m).__name__ for m in npc.known_moves] == ["NpcIdle"]
+        assert all(isinstance(m, moves.Move) for m in npc.known_moves)
 
 
 # ===========================================================================
@@ -96,8 +123,14 @@ class TestNomadScout:
 
         return NomadScout()
 
-    def test_instantiation(self, npc):
-        assert npc is not None
+    def test_scout_awareness_is_the_camp_high_water_mark(self, npc):
+        """The scout exists to be the one who notices things: his awareness
+        must beat every other camp NPC, not merely be non-None."""
+        from src.npc._eastern_descent import NomadCamper, NomadTrader
+
+        assert npc.awareness == 17
+        assert npc.awareness > NomadCamper().awareness
+        assert npc.awareness > NomadTrader().awareness
 
     def test_name(self, npc):
         assert npc.name == "Nomad Scout"
@@ -120,9 +153,14 @@ class TestNomadScout:
     def test_talk_lines_not_empty(self, npc):
         assert len(npc._TALK_LINES) > 0
 
-    def test_talk_prints(self, npc, capsys):
-        npc.talk(SimpleNamespace())
-        assert len(capsys.readouterr().out) > 0
+    def test_talk_emits_exactly_one_verbatim_talk_line(self, npc):
+        from src.narration import capture_narration
+
+        with capture_narration() as messages:
+            npc.talk(SimpleNamespace())
+
+        assert len(messages) == 1
+        assert messages[0]["text"] in npc._TALK_LINES
 
     def test_description_references_camp_edge(self, npc):
         assert (
@@ -145,8 +183,12 @@ class TestNomadTrader:
 
         return NomadTrader()
 
-    def test_instantiation(self, npc):
-        assert npc is not None
+    def test_trader_is_the_most_charismatic_camp_npc(self, npc):
+        from src.npc._eastern_descent import NomadCamper, NomadScout
+
+        assert npc.charisma == 13
+        assert NomadCamper().charisma == 10
+        assert NomadScout().charisma == 10
 
     def test_name(self, npc):
         assert npc.name == "Nomad Trader"
@@ -164,12 +206,14 @@ class TestNomadTrader:
     def test_talk_lines_not_empty(self, npc):
         assert len(npc._TALK_LINES) > 0
 
-    def test_talk_prints(self, npc, capsys):
-        npc.talk(SimpleNamespace())
-        assert len(capsys.readouterr().out) > 0
+    def test_talk_emits_exactly_one_verbatim_talk_line(self, npc):
+        from src.narration import capture_narration
 
-    def test_has_charisma(self, npc):
-        assert hasattr(npc, "charisma") and npc.charisma > 0
+        with capture_narration() as messages:
+            npc.talk(SimpleNamespace())
+
+        assert len(messages) == 1
+        assert messages[0]["text"] in npc._TALK_LINES
 
     def test_description_references_goods(self, npc):
         assert "bundle" in npc.description.lower() or "goods" in npc.description.lower()
@@ -183,275 +227,142 @@ class TestNomadTrader:
 # ===========================================================================
 
 
-class TestNPCLootMixinDie:
-    """Tests for NPCLootMixin.die() and before_death()."""
+class TestNPCLootMixinDeathSequence:
+    """``die`` / ``before_death`` orchestration, on real engine objects.
 
-    def _make_npc(self, has_loot=False, has_inventory=False):
-        """Construct a minimal NPC-like object via MagicMock with the mixin."""
-        from src.npc._loot import NPCLootMixin
+    The three classes this replaces drove ``NPCLootMixin`` methods with a
+    ``MagicMock`` "npc" and a ``MagicMock`` room, which meant:
 
-        npc = MagicMock(spec=NPCLootMixin)
-        npc.name = "TestNPC"
-        npc.loot = {"GoldCoin": {"chance": 100, "qty": "1"}} if has_loot else None
-        npc.inventory = []
-        npc.current_room = MagicMock()
-        npc.current_room.items_here = []
-        npc.player_ref = None
+    * ``spawn_item`` accepted item names that do not exist in ``src.items``
+      (``GoldCoin``, ``DiamondGem``, ``SlimeGoop`` are none of them classes),
+      so the assertions described drops the engine could never produce;
+    * ``test_before_death_calls_drop_inventory`` asserted only that a mock's
+      own auto-generated ``drop_inventory`` attribute was called — the real
+      method never ran;
+    * ``test_drop_inventory_records_api_drops_when_player_ref`` set
+      ``player.__dict__["combat_drops"] = []`` itself and then asserted
+      ``hasattr(player, "combat_drops")``;
+    * ``test_roll_loot_no_current_room_prints_error`` asserted
+      ``"ERR" in captured.out or True`` — unconditionally true.
 
-        # Use real methods from the mixin
-        npc.before_death = NPCLootMixin.before_death.__get__(npc, type(npc))
-        npc.die = NPCLootMixin.die.__get__(npc, type(npc))
-        npc.drop_inventory = NPCLootMixin.drop_inventory.__get__(npc, type(npc))
-        noc_roll_loot = NPCLootMixin.roll_loot
-        npc.roll_loot = lambda: noc_roll_loot(npc)
+    The per-method drop arithmetic (survival rolls, quantities, loot chances)
+    now lives in ``tests/test_npc_loot_coverage.py``, asserted against a real
+    ``MapTile`` under a seeded RNG. What remains here is the sequencing that
+    file does not cover: revive interception and the death narration.
+    """
 
-        return npc
+    @pytest.fixture
+    def corpse(self):
+        """A real ``Slime`` (NPC -> NPCLootMixin -> Combatant) on a real tile."""
+        from tests._gs_fixtures import live_world
+        from src.npc import Slime
 
-    def test_before_death_calls_drop_inventory(self):
-        from src.npc._loot import NPCLootMixin
-
-        npc = MagicMock()
-        npc.loot = None
-        npc.inventory = []
-        npc.current_room = MagicMock()
-        npc.current_room.items_here = []
-
-        result = NPCLootMixin.before_death(npc)
-        assert result is True
-        npc.drop_inventory.assert_called_once()
-
-    def test_before_death_calls_roll_loot_when_loot_present(self):
-        from src.npc._loot import NPCLootMixin
-
-        npc = MagicMock()
-        npc.loot = {"GoldCoin": {"chance": 100, "qty": "1"}}
-        npc.inventory = []
-        npc.current_room = MagicMock()
-        npc.current_room.items_here = []
-
-        NPCLootMixin.before_death(npc)
-        npc.roll_loot.assert_called_once()
-
-    def test_before_death_no_roll_loot_when_no_loot(self):
-        from src.npc._loot import NPCLootMixin
-
-        npc = MagicMock()
-        npc.loot = None
-        npc.inventory = []
-        npc.current_room = MagicMock()
-        npc.current_room.items_here = []
-
-        NPCLootMixin.before_death(npc)
-        npc.roll_loot.assert_not_called()
-
-    def test_before_death_returns_true(self):
-        from src.npc._loot import NPCLootMixin
-
-        npc = MagicMock()
-        npc.loot = None
-        npc.inventory = []
-        npc.current_room = MagicMock()
-        npc.current_room.items_here = []
-
-        assert NPCLootMixin.before_death(npc) is True
-
-    def test_before_death_stacks_items_on_floor(self):
-        from src.npc._loot import NPCLootMixin
-
-        npc = MagicMock()
-        npc.loot = None
-        npc.inventory = []
-        npc.current_room = MagicMock()
-        npc.current_room.items_here = []
-
-        with patch("src.npc._loot.functions") as mock_functions:
-            NPCLootMixin.before_death(npc)
-            mock_functions.stack_items_list.assert_called_once_with(
-                npc.current_room.items_here
-            )
-
-
-class TestNPCLootMixinDropInventory:
-    """Tests for NPCLootMixin.drop_inventory()."""
-
-    def test_drop_inventory_empty_inventory(self):
-        from src.npc._loot import NPCLootMixin
-
-        npc = MagicMock()
-        npc.inventory = []
-        # Should not error and inventory stays empty
-        NPCLootMixin.drop_inventory(npc)
-        assert npc.inventory == []
-
-    def test_drop_inventory_clears_inventory_after_run(self):
-        from src.npc._loot import NPCLootMixin
-
-        npc = MagicMock()
-        item = MagicMock()
-        item.__class__.__name__ = "GoldCoin"
-        item.count = 1
-        npc.inventory = [item]
-        npc.current_room = MagicMock()
-        npc.player_ref = None
-
-        with patch("random.random", return_value=0.0):  # always drop
-            NPCLootMixin.drop_inventory(npc)
-
-        assert npc.inventory == []
-
-    def test_drop_inventory_records_api_drops_when_player_ref(self):
-        from src.npc._loot import NPCLootMixin
-
-        npc = MagicMock()
-        item = MagicMock()
-        item.__class__.__name__ = "GoldCoin"
-        item.count = 1
-        item.name = "Gold Coin"
-        npc.inventory = [item]
-        npc.current_room = MagicMock()
-
-        player = MagicMock()
-        player._combat_adapter = MagicMock()
-        # Ensure no pre-existing combat_drops
-        del player.combat_drops
-        player.__dict__["combat_drops"] = []
+        player, game_map = live_world()
+        tile = game_map[(0, 0)]
+        npc = Slime()
+        npc.name = "Slime"
+        npc.current_room = tile
         npc.player_ref = player
-        npc.name = "TestEnemy"
+        npc.loot = None
+        npc.inventory = []
+        npc.states = []
+        return npc, tile
 
-        with patch("random.random", return_value=0.0):
-            NPCLootMixin.drop_inventory(npc)
+    def test_die_narrates_and_runs_the_death_sequence(self, corpse):
+        from src.narration import capture_narration
 
-        # combat_drops should have been written
-        assert hasattr(player, "combat_drops")
+        npc, _ = corpse
 
-    def test_drop_inventory_random_chance_can_reduce_quantity(self):
-        """When random.random() > 0.6, quantity is reduced on each loop tick."""
-        from src.npc._loot import NPCLootMixin
+        with capture_narration() as messages:
+            npc.die()
 
-        npc = MagicMock()
-        item = MagicMock()
-        item.__class__.__name__ = "GoldCoin"
-        item.count = 3
-        item.name = "Gold Coin"
-        npc.inventory = [item]
-        npc.current_room = MagicMock()
-        npc.player_ref = None
+        assert [m["text"] for m in messages] == [
+            "Slime exploded into fragments of light!"
+        ]
 
-        # First call reduces qty each tick — with count=3 and random always 0.9 (>0.6),
-        # quantity gets decremented all 3 times → 0, nothing spawned
-        with patch("random.random", return_value=0.9):
-            NPCLootMixin.drop_inventory(npc)
+    def test_a_revive_state_cancels_death_entirely(self, corpse):
+        """``check_revive`` lives on the shared ``Combatant`` base, so this is
+        the NPC half of the contract Player also relies on."""
+        from src.narration import capture_narration
 
-        # spawn_item should NOT have been called because qty fell to 0
-        npc.current_room.spawn_item.assert_not_called()
+        npc, tile = corpse
+        npc.loot = {"Gold": {"chance": 100, "qty": 5}}
 
+        class _PhoenixRevive:
+            name = "PhoenixRevive"
 
-class TestNPCLootMixinRollLoot:
-    """Tests for NPCLootMixin.roll_loot()."""
+            def __init__(self):
+                self.fired = False
 
-    def test_roll_loot_no_current_room_prints_error(self, capsys):
-        from src.npc._loot import NPCLootMixin
+            def try_revive(self, target):
+                self.fired = True
+                target.hp = 25
+                return True
 
-        npc = MagicMock()
-        npc.name = "TestNPC"
-        npc.loot = {"GoldCoin": {"chance": 100, "qty": "1"}}
-        npc.current_room = None
+        revive = _PhoenixRevive()
+        npc.states = [revive]
 
-        NPCLootMixin.roll_loot(npc)
-        captured = capsys.readouterr()
-        assert "ERR" in captured.out or True  # error may go to print or be silenced
+        with capture_narration() as messages:
+            npc.die()
 
-    def test_roll_loot_successful_drop(self):
-        from src.npc._loot import NPCLootMixin
+        assert revive.fired is True
+        assert npc.hp == 25
+        assert messages == []
+        # No loot rolled, nothing on the floor: it never died.
+        assert tile.items_here == []
 
-        npc = MagicMock()
-        npc.name = "Slime"
-        npc.loot = {"SlimeGoop": {"chance": 100, "qty": "1-2"}}
-        npc.current_room = MagicMock()
-        npc.player_ref = None
+    def test_before_death_reports_that_death_should_proceed(self, corpse):
+        npc, _ = corpse
+        assert npc.before_death() is True
 
-        mock_drop = MagicMock()
-        mock_drop.name = "Slime Goop"
-        npc.current_room.spawn_item.return_value = mock_drop
+    def test_before_death_skips_the_loot_roll_without_a_loot_table(self, corpse):
+        npc, tile = corpse
+        npc.loot = None
 
-        with (
-            patch("random.randint", return_value=0),
-            patch("src.npc._loot.functions.randomize_amount", return_value=1),
-        ):
-            NPCLootMixin.roll_loot(npc)
+        npc.before_death()
 
-        npc.current_room.spawn_item.assert_called_once_with("SlimeGoop", 1)
+        assert tile.items_here == []
 
-    def test_roll_loot_failed_roll_no_drop(self):
-        from src.npc._loot import NPCLootMixin
+    def test_before_death_rolls_the_loot_table_when_one_exists(self, corpse):
+        import random
 
-        npc = MagicMock()
-        npc.name = "Slime"
-        npc.loot = {"SlimeGoop": {"chance": 5, "qty": "1"}}
-        npc.current_room = MagicMock()
-        npc.player_ref = None
+        npc, tile = corpse
+        npc.loot = {"WoodenArrow": {"chance": 100, "qty": 2}}
 
-        with (
-            patch("random.randint", return_value=50),
-            patch("src.npc._loot.functions.randomize_amount", return_value=1),
-        ):
-            NPCLootMixin.roll_loot(npc)
+        random.seed(7)
+        npc.before_death()
 
-        npc.current_room.spawn_item.assert_not_called()
+        assert [(type(i).__name__, i.count) for i in tile.items_here] == [
+            ("WoodenArrow", 2)
+        ]
 
-    def test_roll_loot_only_one_item_drops(self):
-        """Even with multiple loot entries all at 100%, only the first winner drops (break)."""
-        from src.npc._loot import NPCLootMixin
+    def test_before_death_stacks_duplicate_drops_into_one_pile(self, corpse):
+        """The stacking step is what stops a corpse leaving five separate
+        one-arrow entries the player has to pick up individually."""
+        import random
 
-        npc = MagicMock()
-        npc.name = "Dragon"
-        npc.loot = {
-            "GoldCoin": {"chance": 100, "qty": "5"},
-            "DiamondGem": {"chance": 100, "qty": "1"},
-        }
-        npc.current_room = MagicMock()
-        npc.player_ref = None
+        import src.items as items
 
-        mock_drop = MagicMock()
-        mock_drop.name = "Gold Coin"
-        npc.current_room.spawn_item.return_value = mock_drop
+        npc, tile = corpse
+        carried = items.WoodenArrow()
+        carried.count = 6
+        npc.inventory = [carried]
+        npc.embedded_arrows = ["WoodenArrow", "WoodenArrow"]
 
-        with (
-            patch("random.randint", return_value=0),
-            patch("random.shuffle"),
-            patch("src.npc._loot.functions.randomize_amount", return_value=5),
-        ):
-            NPCLootMixin.roll_loot(npc)
+        random.seed(0)
+        npc.before_death()
 
-        # Exactly one call — only one item drops due to break
-        assert npc.current_room.spawn_item.call_count == 1
+        assert len(tile.items_here) == 1
+        assert type(tile.items_here[0]).__name__ == "WoodenArrow"
 
-    def test_roll_loot_records_combat_drop_when_player_has_adapter(self):
-        from src.npc._loot import NPCLootMixin
+    def test_before_death_survives_a_room_without_an_items_list(self, corpse):
+        """Guarded by ``hasattr(current_room, "items_here")`` — a stub room must
+        not crash the death handler."""
+        npc, _ = corpse
 
-        npc = MagicMock()
-        npc.name = "Slime"
-        npc.loot = {"SlimeGoop": {"chance": 100, "qty": "1"}}
-        npc.current_room = MagicMock()
+        class _BareRoom:
+            pass
 
-        player = MagicMock(spec=[])
-        player._combat_adapter = MagicMock()
-        npc.player_ref = player
+        npc.current_room = _BareRoom()
 
-        mock_drop = MagicMock()
-        mock_drop.name = "Slime Goop"
-        npc.current_room.spawn_item.return_value = mock_drop
-
-        with (
-            patch("random.randint", return_value=0),
-            patch("src.npc._loot.functions.randomize_amount", return_value=1),
-        ):
-            NPCLootMixin.roll_loot(npc)
-
-        # combat_drops must have been initialised and appended to
-        assert hasattr(player, "combat_drops")
-        assert len(player.combat_drops) == 1
-        drop = player.combat_drops[0]
-        assert drop["name"] == "Slime Goop"
-        assert drop["kind"] == "loot"
-        assert drop["source"] == "Slime"
+        assert npc.before_death() is True

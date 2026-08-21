@@ -12,19 +12,8 @@ Target: 50-70 error scenario tests covering all exception paths.
 
 import pytest
 from unittest.mock import MagicMock, Mock, patch
-from src.api.services.game_service import GameService
 
-
-@pytest.fixture(scope="session")
-def _cached_game_service():
-    """Cache GameService instance across the session (stateless singleton)."""
-    return GameService()
-
-
-@pytest.fixture
-def game_service(_cached_game_service):
-    """Return the cached GameService."""
-    return _cached_game_service
+from src.items import Consumable
 
 
 @pytest.fixture
@@ -212,68 +201,97 @@ class TestExecuteMoveErrors:
 class TestStartCombatErrors:
     """Test error handling in start_combat method."""
 
-    def test_start_combat_no_npc(self, game_service, mock_player, mock_tile):
-        """Test start_combat with no NPC available - requires enemy_id argument."""
+    def test_start_combat_with_an_enemy_that_is_not_here(
+        self, game_service, mock_player, mock_tile
+    ):
+        """An enemy id that matches nothing on the tile starts no fight."""
+        mock_player.universe.get_tile = MagicMock(return_value=mock_tile)
+        mock_tile.npcs_here = []
+        elsewhere = MagicMock(name="Enemy")
+
+        result = game_service.start_combat(mock_player, str(id(elsewhere)))
+
+        assert result == {"error": "Enemy not found"}
+        assert mock_player.in_combat is False
+
+    def test_start_combat_does_not_resurrect_a_stale_enemy_id(
+        self, game_service, mock_player, mock_tile
+    ):
+        """Being mid-fight does not make an off-tile id resolvable, and the
+        rejection must not clear the flag on the fight already running."""
+        mock_player.in_combat = True
         mock_player.universe.get_tile = MagicMock(return_value=mock_tile)
         mock_tile.npcs_here = []
 
-        # start_combat requires enemy_id argument
-        npc = MagicMock()
-        npc.name = "Enemy"
-        result = game_service.start_combat(mock_player, str(id(npc)))
-        assert result is not None
+        result = game_service.start_combat(mock_player, str(id(MagicMock())))
 
-    def test_start_combat_already_in_combat(self, game_service, mock_player, mock_tile):
-        """Test start_combat when already in combat."""
-        mock_player.in_combat = True
-        mock_player.universe.get_tile = MagicMock(return_value=mock_tile)
-
-        # start_combat requires enemy_id argument
-        npc = MagicMock()
-        npc.name = "Enemy"
-        result = game_service.start_combat(mock_player, str(id(npc)))
-        assert result is not None
+        assert result == {"error": "Enemy not found"}
+        assert mock_player.in_combat is True
 
 
 class TestGetInventoryErrors:
     """Test error handling in get_inventory method."""
 
-    def test_get_inventory_missing_inventory(self, game_service, mock_player):
-        """Test get_inventory when player has no inventory attribute."""
-        delattr(mock_player, 'inventory')
-        result = game_service.get_inventory(mock_player)
-        # Should handle gracefully
-        assert result is not None
+    def test_get_inventory_missing_inventory(self, game_service, player):
+        """A player with no ``inventory`` attribute reports an empty pack, but
+        still reports the real carry limit so the UI bar renders."""
+        del player.inventory
 
-    def test_get_inventory_none_inventory(self, game_service, mock_player):
-        """Test get_inventory when inventory is None."""
-        mock_player.inventory = None
-        result = game_service.get_inventory(mock_player)
-        # Should handle gracefully
-        assert result is not None or "error" in result
+        result = game_service.get_inventory(player)
 
-    def test_get_inventory_corrupted_items(self, game_service, mock_player):
-        """Test get_inventory with corrupted items."""
-        item = MagicMock()
-        item.name = None  # Missing name
-        mock_player.inventory = [item]
+        assert result["items"] == []
+        assert result["item_count"] == 0
+        assert result["total_weight"] == 0.0
+        assert result["weight_limit"] == player.weight_tolerance
 
-        result = game_service.get_inventory(mock_player)
-        # Should serialize without crashing
-        assert result is not None
+    def test_get_inventory_none_inventory(self, game_service, player):
+        """``None`` is not iterable, so ``InventorySerializer.serialize`` raises
+        and the ``@safe_serializer`` wrapper degrades it to ``{}`` rather than
+        letting a TypeError escape into the request."""
+        player.inventory = None
+
+        assert game_service.get_inventory(player) == {}
+
+    def test_get_inventory_corrupted_items(self, game_service, player):
+        """A nameless item is still counted and still weighed — it must not be
+        silently dropped, or the pack would look lighter than it is."""
+        broken = Consumable(
+            name=None,
+            description="?",
+            value=1,
+            weight=0.25,
+            maintype="consumable",
+            subtype="misc",
+            count=1,
+        )
+        player.inventory = [broken]
+
+        result = game_service.get_inventory(player)
+
+        assert result["item_count"] == 1
+        assert [i["name"] for i in result["items"]] == [None]
+        assert result["total_weight"] == 0.25
 
 
 class TestGetEquipmentErrors:
     """Test error handling in get_equipment method."""
 
-    def test_get_equipment_missing_equipment(self, game_service, mock_player):
-        """Test get_equipment when equipment slots don't exist."""
-        for slot in ['eq_weapon', 'shield', 'body', 'head', 'hands', 'feet']:
-            delattr(mock_player, slot)
+    def test_get_equipment_missing_equipment(self, game_service, player):
+        """Deleting the weapon slot drops the weapon entry and nothing else —
+        the remaining worn gear and its stat bonuses still serialize."""
+        del player.eq_weapon
 
-        result = game_service.get_equipment(mock_player)
-        # Should handle gracefully with defaults
-        assert result is not None
+        result = game_service.get_equipment(player)
+
+        assert "weapon" not in result["equipped"]
+        assert set(result["equipped"]) == {"body", "head", "accessory_1"}
+        assert result["total_stat_bonuses"] == {
+            "finesse": 1,
+            "endurance": 1,
+            "charisma": -1,
+            "faith": 1,
+        }
+        assert result["equipment_value"] == 900  # the Wedding Band
 
 
 class TestShopBuyErrors:
@@ -413,23 +431,32 @@ class TestGetCurrentRoomErrors:
         assert "universe" in result["error"].lower()
 
     def test_get_current_room_tile_not_found(self, game_service, mock_player):
-        """Test get_current_room when get_tile returns None."""
+        """Off-map coordinates are reported as a bad position, not as an empty
+        room — an empty room would render as a real (blank) location."""
         mock_player.universe.get_tile = MagicMock(return_value=None)
-        result = game_service.get_current_room(mock_player)
-        # Should handle gracefully
-        assert result is not None
+
+        assert game_service.get_current_room(mock_player) == {
+            "error": "Invalid player position"
+        }
 
 
 class TestMovePlayerErrors:
     """Test error handling in move_player method."""
 
-    def test_move_player_invalid_direction(self, game_service, mock_player, mock_tile):
-        """Test move_player with invalid direction."""
+    @pytest.mark.parametrize(
+        "direction", ["invalid_direction", "up", "", "nort", "NORTHEASTERLY"]
+    )
+    def test_move_player_invalid_direction(
+        self, game_service, mock_player, mock_tile, direction
+    ):
+        """A direction outside the eight compass points is rejected by name,
+        before any tile lookup or world tick happens."""
         mock_player.universe.get_tile = MagicMock(return_value=mock_tile)
-        mock_tile.east = MagicMock()  # Provide a valid exit
-        result = game_service.move_player(mock_player, "invalid_direction")
-        # Should handle invalid direction
-        assert result is not None
+
+        result = game_service.move_player(mock_player, direction)
+
+        assert result == {"error": f"Invalid direction: {direction}"}
+        mock_player.universe.game_tick_events.assert_not_called()
 
     def test_move_player_no_universe(self, game_service, mock_player):
         """Test move_player when universe is None - now returns error gracefully."""
@@ -440,13 +467,18 @@ class TestMovePlayerErrors:
         assert "universe" in result["error"].lower()
 
     def test_move_player_blocked_exit(self, game_service, mock_player, mock_tile):
-        """Test move_player when exit doesn't exist - allows free movement."""
-        mock_tile.north = None  # No exit
+        """Exits are derived by probing adjacent tiles, not by reading a
+        ``tile.north`` attribute — a mock universe that answers ``get_tile`` for
+        every coordinate therefore has all eight exits open, and the move goes
+        through. Pinned so a future exit-resolution change is visible here."""
+        mock_tile.north = None
         mock_player.universe.get_tile = MagicMock(return_value=mock_tile)
 
         result = game_service.move_player(mock_player, "north")
-        # Game allows movement even with None exit
-        assert result is not None
+
+        assert result["success"] is True
+        assert result["new_position"] == {"x": 5, "y": 4}
+        assert (mock_player.location_x, mock_player.location_y) == (5, 4)
 
 
 class TestInteractWithTargetErrors:
@@ -487,33 +519,42 @@ class TestNPCChatErrors:
         result = game_service.npc_chat_open(mock_player, "invalid_npc")
         assert result["success"] is False or "error" in result
 
-    def test_npc_chat_respond_invalid_choice(self, game_service, mock_player):
-        """Test npc_chat_respond with invalid choice index - requires jean_text argument."""
-        # npc_chat_respond requires both choice_index and jean_text arguments
-        result = game_service.npc_chat_respond(mock_player, 99, "hello")
-        # Should handle invalid choice gracefully
-        assert result is not None
+    def test_npc_chat_respond_with_no_such_npc(self, game_service, mock_player, mock_tile):
+        """Replying into a conversation whose NPC is not on the tile fails with
+        a named error rather than a stack trace."""
+        mock_tile.npcs_here = []
+        mock_player.universe.get_tile = MagicMock(return_value=mock_tile)
+
+        result = game_service.npc_chat_respond(mock_player, "Nobody", "hello")
+
+        assert result == {"success": False, "error": "Active chat NPC not found"}
 
 
 class TestSearchErrors:
     """Test error handling in search method."""
 
     def test_search_no_tile(self, game_service, mock_player):
-        """Test search when no tile is found."""
+        """Searching from an invalid position reports failure, and must not
+        report a successful search that found nothing."""
         mock_player.universe.get_tile = MagicMock(return_value=None)
-        result = game_service.search(mock_player)
-        # Should handle gracefully
-        assert result is not None
+
+        assert game_service.search(mock_player) == {
+            "success": False,
+            "message": "Invalid location",
+        }
 
 
 class TestCollectCombatLootErrors:
     """Test error handling in collect_combat_loot method."""
 
     def test_collect_loot_empty_items(self, game_service, mock_player):
-        """Test collect_combat_loot with empty item list."""
-        result = game_service.collect_combat_loot(mock_player, [])
-        # Should handle empty list gracefully
-        assert result is not None
+        """An empty selection succeeds with nothing collected and nothing
+        skipped — the client renders both lists, so neither may be omitted."""
+        assert game_service.collect_combat_loot(mock_player, []) == {
+            "success": True,
+            "collected": [],
+            "skipped": [],
+        }
 
     def test_collect_loot_none_items(self, game_service, mock_player):
         """Test collect_combat_loot with None items - now returns error gracefully."""
@@ -549,38 +590,50 @@ class TestStateRecovery:
 class TestBoundaryConditions:
     """Test boundary conditions and edge cases."""
 
-    def test_shop_buy_quantity_one(self, game_service, mock_player, mock_tile):
+    def test_shop_buy_quantity_one(
+        self, game_service, player, mock_tile, set_player_gold, get_player_gold
+    ):
         """Test shop_buy with quantity = 1 (minimum)."""
-        item = MagicMock()
-        item.name = "Item"
+        # A real item, not a MagicMock: transfer_item clones the purchased stack
+        # via `item.__class__.__new__(item.__class__)`, which on a MagicMock
+        # yields an uninitialised mock that raises AttributeError('_mock_methods')
+        # on the first setattr. A mock cannot survive this code path at all.
+        from src.items import Restorative
+
+        item = Restorative(count=10)
         item.value = 10
-        item.count = 10
         item.weight = 1.0
 
         merchant = MagicMock()
-        merchant.shop = MagicMock()
-        merchant.shop.buy_modifier = 1.0
+        # Pricing lives on the Merchant itself since ShopInterface was removed;
+        # `merchant.shop.buy_modifier` is the old, dead location.
+        merchant.buy_modifier = 1.0
         merchant.inventory = [item]
 
-        mock_player.inventory = []
-        mock_player.weight_current = 0
-        mock_player.weight_tolerance = 50
+        # A real Player, not a MagicMock: the buyer pays from its own purse (a
+        # "Gold" item in the inventory), and the gold transfer touches enough of
+        # the real inventory machinery that a mock cannot stand in for it.
+        # Without funding, the purchase is correctly refused for insufficient
+        # funds and never reaches the arithmetic under test.
+        set_player_gold(player, 100)
+        player.weight_current = 0
+        player.weight_tolerance = 50
         mock_tile.npcs_here = [merchant]
-        mock_player.universe.get_tile = MagicMock(return_value=mock_tile)
+        player.universe = MagicMock()
+        player.universe.get_tile = MagicMock(return_value=mock_tile)
 
-        with patch('src.interface.get_gold', return_value=100):
-            with patch('src.interface.transfer_gold'):
-                with patch('src.interface.transfer_item'):
-                    with patch('src.api.serializers.shop_serializer.ShopSerializer') as mock_serializer:
-                        mock_serializer.flush_stale_buyback = MagicMock()
-                        mock_serializer.serialize_state = MagicMock(return_value={"sell_modifier": 0.8})
-                        mock_serializer.serialize_player_sellable = MagicMock(return_value=[])
-                        with patch.object(mock_player, 'refresh_weight'):
-                            result = game_service.shop_buy(
-                                mock_player, str(id(merchant)), str(id(item)), 1
-                            )
+        result = game_service.shop_buy(
+            player, str(id(merchant)), str(id(item)), 1
+        )
 
-        assert result is not None
+        assert result["success"] is True
+        assert result["gold_spent"] == 10  # value 10 x the 1.0 buy modifier
+        # The gold is really debited, not merely reported.
+        assert get_player_gold(player) == 90
+        # Exactly one unit moved: the buyer holds 1, the merchant's stack is 9.
+        bought = [i for i in player.inventory if i.name == item.name]
+        assert len(bought) == 1 and bought[0].count == 1
+        assert item.count == 9
 
     def test_drop_item_last_in_inventory(self, game_service, mock_player, mock_tile):
         """Test drop_item when dropping last item from inventory."""
@@ -599,23 +652,31 @@ class TestBoundaryConditions:
 class TestTypeValidation:
     """Test type validation across methods."""
 
-    def test_shop_buy_invalid_quantity_type(self, game_service, mock_player, mock_tile):
-        """Test shop_buy with invalid quantity type."""
+    @pytest.mark.parametrize("quantity", ["invalid", None, 1.5, [1]])
+    def test_shop_buy_invalid_quantity_type(
+        self, game_service, mock_player, mock_tile, quantity
+    ):
+        """``_validate_shop_transaction`` demands a real ``int``; a string or a
+        float is refused rather than coerced (``int("invalid")`` would raise,
+        and ``int(1.5)`` would silently change the order)."""
         merchant = MagicMock()
-        merchant.shop = MagicMock()
+        merchant.inventory = []
         mock_tile.npcs_here = [merchant]
         mock_player.universe.get_tile = MagicMock(return_value=mock_tile)
 
-        # Should either convert or error gracefully
-        result = game_service.shop_buy(mock_player, str(id(merchant)), "id", "invalid")
-        # Result depends on implementation
+        result = game_service.shop_buy(
+            mock_player, str(id(merchant)), "id", quantity
+        )
+
+        assert result == {"success": False, "error": "Invalid quantity"}
 
 
 class TestNullableAttributes:
     """Test handling of None/missing attributes."""
 
     def test_drop_item_null_name(self, game_service, mock_player, mock_tile):
-        """Test drop_item with None item name."""
+        """A nameless item still leaves the pack and lands on the floor; only
+        the message reads awkwardly."""
         item = MagicMock()
         item.name = None
         item.isequipped = False
@@ -624,5 +685,8 @@ class TestNullableAttributes:
         mock_player.universe.get_tile = MagicMock(return_value=mock_tile)
 
         result = game_service.drop_item(mock_player, item)
-        # Should handle None name
-        assert result is not None
+
+        assert result["success"] is True
+        assert result["item_name"] is None
+        assert item not in mock_player.inventory
+        assert item in mock_tile.items_here

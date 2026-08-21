@@ -1,585 +1,402 @@
-"""End-to-end lifecycle tests for PhoenixRevive enchantment and state.
+"""End-to-end lifecycle tests for the PhoenixRevive enchantment and state.
 
-Covers: equip applies state, lethal hit triggers revive at 50% HP with state
-removed, second lethal hit doesn't re-trigger (state gone), victory recharges
-the state, unequip removes it, no stacking when victory-recharge runs while
-state is still present.
+Every test here drives the **real** engine objects: a real ``src.player.Player``,
+the real ``OfThePhoenix`` enchantment, and the real
+``Player.equip_item``/``unequip_item`` → ``Item.on_equip``/``on_unequip`` →
+``apply_equip_states``/``remove_equip_states``/``recharge_equip_states`` chain,
+plus ``Combatant.check_revive``.
+
+This file previously defined its own copies of ``apply_equip_states`` and
+``recharge_equip_states`` inside its fixtures and asserted against those copies,
+so the engine could have deleted the real methods outright without a single test
+turning red (CLAUDE.md: "a mock cannot catch a mock agreeing with itself").
+Do not reintroduce a hand-written stand-in for the unit under test — patch a
+single method on a real object instead if a state is otherwise unreachable.
+
+Covers: equip applies the state, a lethal hit revives at 50% HP and consumes it,
+a second lethal hit in the same fight does not re-trigger, victory recharges it,
+unequip removes it (unless another equipped item still grants it), and neither
+equip nor recharge ever stacks a duplicate.
 """
 
 import pytest
-from unittest.mock import MagicMock, patch
-import random
+from unittest.mock import patch
 
-from src.states import PhoenixRevive
+import src.items as items
 from src.enchant_tables import OfThePhoenix
-from src.items import Weapon
-from src.player import Player
-from src.universe import Universe
+from src.states import PhoenixRevive
+
+PHOENIX = "Phoenix Revive"
+
+
+def enchant_phoenix(item_cls):
+    """Return a real item of ``item_cls`` carrying a real ``OfThePhoenix``.
+
+    Mirrors what ``functions.add_random_enchantments`` does at spawn time:
+    construct the enchantment, run ``modify()`` (which renames/reprices the
+    item), and hand its ``equip_states`` to the item.
+    """
+    item = item_cls()
+    enchantment = OfThePhoenix(item)
+    enchantment.modify()
+    item.equip_states = enchantment.equip_states
+    return item
+
+
+def phoenix_states(player):
+    return [s for s in player.states if s.name == PHOENIX]
+
+
+@pytest.fixture
+def player(make_player):
+    """A real ``Player`` at full health with no states applied yet."""
+    return make_player(hp=100, maxhp=100)
+
+
+@pytest.fixture
+def boots(player):
+    """Phoenix-enchanted boots sitting in the real player's inventory.
+
+    Boots are used rather than a weapon because ``OfThePhoenix.requirements()``
+    only admits Armor/Helm/Gloves/Boots/Accessory, and because the default
+    loadout leaves the Boots slot free (Armor, Helm and Ring are taken).
+    """
+    item = enchant_phoenix(items.LeatherBoots)
+    player.inventory.append(item)
+    return item
+
+
+@pytest.fixture
+def gloves(player):
+    """A second, independent Phoenix source for the multi-item cases."""
+    item = enchant_phoenix(items.LeatherGloves)
+    player.inventory.append(item)
+    return item
 
 
 class TestPhoenixReviveState:
-    """Test PhoenixRevive state mechanics."""
-
-    @pytest.fixture
-    def player(self):
-        """Create a test player with initialized states."""
-        p = MagicMock(spec=Player)
-        p.name = "TestPlayer"
-        p.hp = 100
-        p.maxhp = 100
-        p.states = []
-        return p
+    """The state object's own contract and ``try_revive`` mechanics."""
 
     def test_revive_state_initialization(self, player):
-        """Test PhoenixRevive initializes with correct properties."""
         state = PhoenixRevive(player)
 
-        assert state.name == "Phoenix Revive"
+        assert state.name == PHOENIX
         assert state.target is player
         assert state.chance == 0.25
         assert state.persistent is True
         assert state.combat is True
+        assert state.world is False
         assert state.beats_max == 0
         assert state.statustype == "revive"
 
     def test_revive_on_lethal_damage_success(self, player):
-        """Test revive triggers on lethal damage with 25% chance."""
-        state = PhoenixRevive(player)
-        player.states = [state]
-        player.hp = 0  # Lethal damage
-
-        with patch("random.random", return_value=0.2):  # 0.2 < 0.25, should trigger
-            with patch("src.functions.refresh_stat_bonuses"):
-                result = state.try_revive(player)
-
-        assert result is True
-        assert player.hp == 50  # Revived to 50% of maxhp
-        assert state not in player.states  # State removed after use
-
-    def test_revive_on_lethal_damage_miss(self, player):
-        """Test revive does not trigger if random roll fails."""
+        """A winning roll heals to 50% maxhp and consumes the state."""
         state = PhoenixRevive(player)
         player.states = [state]
         player.hp = 0
 
-        with patch("random.random", return_value=0.3):  # 0.3 > 0.25, should not trigger
+        with patch("random.random", return_value=0.2):  # < 0.25 → triggers
+            result = state.try_revive(player)
+
+        assert result is True
+        assert player.hp == 50
+        assert state not in player.states
+
+    def test_revive_roll_boundary_is_exclusive(self, player):
+        """A roll exactly at ``chance`` must NOT revive (``random() < chance``)."""
+        state = PhoenixRevive(player)
+        player.states = [state]
+        player.hp = 0
+
+        with patch("random.random", return_value=0.25):
+            assert state.try_revive(player) is False
+
+        assert player.hp == 0
+        assert state in player.states
+
+    def test_revive_on_lethal_damage_miss(self, player):
+        state = PhoenixRevive(player)
+        player.states = [state]
+        player.hp = 0
+
+        with patch("random.random", return_value=0.3):  # > 0.25 → no trigger
             result = state.try_revive(player)
 
         assert result is False
-        assert player.hp == 0  # HP unchanged
-        assert state in player.states  # State still present
+        assert player.hp == 0
+        assert state in player.states
 
     def test_revive_does_not_trigger_without_lethal_damage(self, player):
-        """Test revive does not trigger if player is not dead."""
+        """A guaranteed roll is still wasted-proof while the player is alive."""
         state = PhoenixRevive(player)
         player.states = [state]
-        player.hp = 1  # Still alive
+        player.hp = 1
 
-        with patch("random.random", return_value=0.0):  # 0.0 < 0.25, but no lethal damage
+        with patch("random.random", return_value=0.0):
             result = state.try_revive(player)
 
         assert result is False
         assert player.hp == 1
         assert state in player.states
 
-    def test_revive_heals_to_50_percent(self, player):
-        """Test revive heals to exactly 50% of maxhp."""
+    @pytest.mark.parametrize("maxhp, expected_hp", [(200, 100), (100, 50), (75, 37)])
+    def test_revive_heals_to_half_maxhp(self, player, maxhp, expected_hp):
+        """``int(maxhp * 0.5)`` — including the truncation on an odd maxhp."""
         state = PhoenixRevive(player)
         player.states = [state]
-        player.maxhp = 200
+        player.maxhp = maxhp
         player.hp = 0
 
         with patch("random.random", return_value=0.0):
-            with patch("src.functions.refresh_stat_bonuses"):
-                state.try_revive(player)
+            state.try_revive(player)
 
-        assert player.hp == 100  # 50% of 200
+        assert player.hp == expected_hp
+
+
+class TestPhoenixEnchantment:
+    """What ``OfThePhoenix`` puts on the item before anyone equips it."""
+
+    def test_enchantment_supplies_one_untargeted_revive_state(self):
+        item = items.LeatherBoots()
+        enchantment = OfThePhoenix(item)
+
+        assert len(enchantment.equip_states) == 1
+        state = enchantment.equip_states[0]
+        assert isinstance(state, PhoenixRevive)
+        # Not bound to anyone yet — apply_equip_states is what re-targets it.
+        assert state.target is None
+
+    def test_modify_renames_and_reprices_the_item(self):
+        item = items.LeatherBoots()
+        base_value = item.value
+        base_name = item.name
+
+        OfThePhoenix(item).modify()
+
+        assert item.name == base_name + " of the Phoenix"
+        assert item.value == base_value * 2
+        assert "radiating warmth" in item.announce
+
+    @pytest.mark.parametrize(
+        "item_cls, allowed",
+        [
+            (items.LeatherBoots, True),
+            (items.LeatherGloves, True),
+            (items.TatteredCloth, True),
+            (items.ClothHood, True),
+            (items.GoldRing, True),
+            (items.Longsword, False),  # Weapons are not a legal Phoenix host
+        ],
+    )
+    def test_requirements_admit_only_worn_gear(self, item_cls, allowed):
+        assert OfThePhoenix(item_cls()).requirements() is allowed
 
 
 class TestPhoenixReviveEquip:
-    """Test PhoenixRevive state application via equip."""
+    """The real equip path: ``equip_item`` → ``on_equip`` → ``apply_equip_states``."""
 
-    @pytest.fixture
-    def mock_player(self):
-        """Create a mock player for equip testing."""
-        p = MagicMock(spec=Player)
-        p.name = "TestPlayer"
-        p.hp = 100
-        p.maxhp = 100
-        p.states = []
-        p.equipped = {}
+    def test_equipping_phoenix_gear_applies_and_retargets_the_state(
+        self, player, boots
+    ):
+        assert phoenix_states(player) == []
 
-        def mock_get_equipped_items():
-            return list(p.equipped.values())
+        player.equip_item(item_object=boots)
 
-        p.get_equipped_items = mock_get_equipped_items
-        return p
+        applied = phoenix_states(player)
+        assert len(applied) == 1
+        # The very object the item carries, now bound to this player.
+        assert applied[0] is boots.equip_states[0]
+        assert applied[0].target is player
+        assert boots.isequipped is True
 
-    def test_equip_phoenix_item_applies_revive_state(self, mock_player):
-        """Test equipping a Phoenix item applies PhoenixRevive to player."""
-        # Create item with Phoenix enchantment
-        weapon = Weapon(
-            name="Test Sword",
-            description="Test",
-            value=50,
-            damage=10,
-            isequipped=False,
-            str_req=0,
-            fin_req=0,
-            str_mod=0,
-            fin_mod=0,
-            weight=3.0,
-            maintype="Weapon",
-            subtype="Sword",
-        )
-        enchantment = OfThePhoenix(weapon)
-        enchantment.modify()
-        weapon.equip_states = enchantment.equip_states
+    def test_equipping_plain_gear_applies_nothing(self, player):
+        plain = items.LeatherBoots()
+        player.inventory.append(plain)
 
-        # Simulate equip by calling apply_equip_states
-        initial_state_count = len(mock_player.states)
-        mock_player.apply_equip_states = MagicMock()
+        player.equip_item(item_object=plain)
 
-        weapon.on_equip(mock_player)
+        assert plain.isequipped is True
+        assert player.states == []
 
-        mock_player.apply_equip_states.assert_called_once_with(weapon)
+    def test_two_phoenix_items_do_not_stack_the_state(self, player, boots, gloves):
+        player.equip_item(item_object=boots)
+        player.equip_item(item_object=gloves)
 
-    def test_equip_states_includes_phoenix_revive(self):
-        """Test that OfThePhoenix enchantment creates PhoenixRevive equip_states."""
-        weapon = Weapon(
-            name="Phoenix Blade",
-            description="A blade that can revive",
-            value=50,
-            damage=10,
-            isequipped=False,
-            str_req=0,
-            fin_req=0,
-            str_mod=0,
-            fin_mod=0,
-            weight=3.0,
-            maintype="Weapon",
-            subtype="Sword",
-        )
-        enchantment = OfThePhoenix(weapon)
+        assert len(phoenix_states(player)) == 1
 
-        assert len(enchantment.equip_states) == 1
-        assert isinstance(enchantment.equip_states[0], PhoenixRevive)
+    def test_reapplying_the_same_item_does_not_stack(self, player, boots):
+        player.apply_equip_states(boots)
+        player.apply_equip_states(boots)
 
+        assert len(phoenix_states(player)) == 1
 
-class TestPhoenixReviveApplyMerge:
-    """Test apply_equip_states stacking guard."""
+    def test_apply_skips_a_same_named_state_from_another_source(self, player, boots):
+        """The stacking guard is by *name*, not by object identity."""
+        pre_existing = PhoenixRevive(player)
+        player.states = [pre_existing]
 
-    @pytest.fixture
-    def player_with_methods(self):
-        """Create a player with apply_equip_states method."""
-        from src.player import Player
+        player.apply_equip_states(boots)
 
-        p = MagicMock(spec=Player)
-        p.name = "TestPlayer"
-        p.hp = 100
-        p.maxhp = 100
-        p.states = []
-
-        # Use real apply_equip_states logic
-        def apply_equip_states(item):
-            equip_states = getattr(item, "equip_states", None) or []
-            existing_names = {s.name for s in p.states}
-            for state in equip_states:
-                if state.name in existing_names:
-                    continue
-                if hasattr(state, "target"):
-                    state.target = p
-                p.states.append(state)
-                existing_names.add(state.name)
-
-        p.apply_equip_states = apply_equip_states
-        return p
-
-    def test_no_stacking_when_state_already_present(self, player_with_methods):
-        """Test that apply_equip_states skips duplicate states by name."""
-        # Create first Phoenix state and add to player
-        state1 = PhoenixRevive(player_with_methods)
-        player_with_methods.states = [state1]
-
-        # Create item with Phoenix enchantment (creates a new PhoenixRevive state)
-        weapon = Weapon(
-            name="Phoenix Sword",
-            description="Test",
-            value=50,
-            damage=10,
-            isequipped=False,
-            str_req=0,
-            fin_req=0,
-            str_mod=0,
-            fin_mod=0,
-            weight=3.0,
-            maintype="Weapon",
-            subtype="Sword",
-        )
-        enchantment = OfThePhoenix(weapon)
-        enchantment.modify()
-        weapon.equip_states = enchantment.equip_states
-
-        # Apply equip states — should skip the new state since one with that name exists
-        player_with_methods.apply_equip_states(weapon)
-
-        # Should still be only 1 Phoenix Revive state (no duplicate)
-        phoenix_states = [s for s in player_with_methods.states if s.name == "Phoenix Revive"]
-        assert len(phoenix_states) == 1
+        assert phoenix_states(player) == [pre_existing]
+        assert boots.equip_states[0] not in player.states
 
 
 class TestPhoenixReviveUnequip:
-    """Test PhoenixRevive removal on unequip."""
+    """The real unequip path: ``unequip_item`` → ``on_unequip`` → ``remove_equip_states``."""
 
-    @pytest.fixture
-    def player_with_methods(self):
-        """Create a player with full equip/unequip methods."""
-        p = MagicMock(spec=Player)
-        p.name = "TestPlayer"
-        p.hp = 100
-        p.maxhp = 100
-        p.states = []
-        p.equipped = {}
+    def test_unequip_removes_the_state(self, player, boots):
+        player.equip_item(item_object=boots)
+        assert phoenix_states(player)
 
-        def get_equipped_items():
-            return list(p.equipped.values())
+        player.unequip_item(boots)
 
-        def apply_equip_states(item):
-            equip_states = getattr(item, "equip_states", None) or []
-            existing_names = {s.name for s in p.states}
-            for state in equip_states:
-                if state.name in existing_names:
-                    continue
-                if hasattr(state, "target"):
-                    state.target = p
-                p.states.append(state)
-                existing_names.add(state.name)
+        assert phoenix_states(player) == []
+        assert boots.isequipped is False
 
-        def remove_equip_states(item):
-            names_to_remove = {s.name for s in getattr(item, "equip_states", None) or []}
-            if not names_to_remove:
-                return
-            p.states = [s for s in p.states if s.name not in names_to_remove]
-            for other in get_equipped_items():
-                if other is not item:
-                    apply_equip_states(other)
+    def test_unequip_keeps_the_state_when_another_item_still_grants_it(
+        self, player, boots, gloves
+    ):
+        """``remove_equip_states`` strips then reapplies from the remaining gear."""
+        player.equip_item(item_object=boots)
+        player.equip_item(item_object=gloves)
 
-        p.get_equipped_items = get_equipped_items
-        p.apply_equip_states = apply_equip_states
-        p.remove_equip_states = remove_equip_states
-        return p
+        player.unequip_item(boots)
 
-    def test_unequip_removes_phoenix_state(self, player_with_methods):
-        """Test that unequipping a Phoenix item removes PhoenixRevive."""
-        weapon = Weapon(
-            name="Phoenix Sword",
-            description="Test",
-            value=50,
-            damage=10,
-            isequipped=False,
-            str_req=0,
-            fin_req=0,
-            str_mod=0,
-            fin_mod=0,
-            weight=3.0,
-            maintype="Weapon",
-            subtype="Sword",
-        )
-        enchantment = OfThePhoenix(weapon)
-        enchantment.modify()
-        weapon.equip_states = enchantment.equip_states
+        surviving = phoenix_states(player)
+        assert len(surviving) == 1
+        # Re-sourced from the gloves, since the boots' own state was stripped.
+        assert surviving[0] is gloves.equip_states[0]
+        assert surviving[0].target is player
 
-        # Equip the weapon
-        player_with_methods.apply_equip_states(weapon)
-        assert any(s.name == "Phoenix Revive" for s in player_with_methods.states)
+        player.unequip_item(gloves)
+        assert phoenix_states(player) == []
 
-        # Unequip the weapon
-        player_with_methods.remove_equip_states(weapon)
+    def test_unequip_leaves_unrelated_states_alone(self, player, boots):
+        from src.states import Poisoned
 
-        # PhoenixRevive should be gone
-        assert not any(s.name == "Phoenix Revive" for s in player_with_methods.states)
+        player.equip_item(item_object=boots)
+        unrelated = Poisoned(player)
+        player.states.append(unrelated)
+
+        player.unequip_item(boots)
+
+        assert phoenix_states(player) == []
+        assert unrelated in player.states
 
 
 class TestPhoenixReviveVictoryRecharge:
-    """Test PhoenixRevive recharge on combat victory."""
+    """``recharge_equip_states`` — the post-victory / session-load restore."""
 
-    @pytest.fixture
-    def player_with_methods(self):
-        """Create a player with recharge_equip_states method."""
-        p = MagicMock(spec=Player)
-        p.name = "TestPlayer"
-        p.hp = 100
-        p.maxhp = 100
-        p.states = []
-        p.equipped = {}
+    def test_recharge_restores_a_consumed_revive(self, player, boots):
+        player.equip_item(item_object=boots)
+        player.states = [s for s in player.states if s.name != PHOENIX]
+        assert phoenix_states(player) == []
 
-        def get_equipped_items():
-            return list(p.equipped.values())
+        player.recharge_equip_states()
 
-        def apply_equip_states(item):
-            equip_states = getattr(item, "equip_states", None) or []
-            existing_names = {s.name for s in p.states}
-            for state in equip_states:
-                if state.name in existing_names:
-                    continue
-                if hasattr(state, "target"):
-                    state.target = p
-                p.states.append(state)
-                existing_names.add(state.name)
+        assert len(phoenix_states(player)) == 1
 
-        def recharge_equip_states():
-            for item in get_equipped_items():
-                apply_equip_states(item)
+    def test_recharge_does_not_stack_a_still_charged_revive(self, player, boots):
+        player.equip_item(item_object=boots)
+        assert len(phoenix_states(player)) == 1
 
-        p.get_equipped_items = get_equipped_items
-        p.apply_equip_states = apply_equip_states
-        p.recharge_equip_states = recharge_equip_states
-        return p
+        player.recharge_equip_states()
 
-    def test_victory_recharge_restores_consumed_revive(self, player_with_methods):
-        """Test that victory recharge restores a consumed PhoenixRevive state."""
-        # Create Phoenix weapon and equip it
-        weapon = Weapon(
-            name="Phoenix Sword",
-            description="Test",
-            value=50,
-            damage=10,
-            isequipped=False,
-            str_req=0,
-            fin_req=0,
-            str_mod=0,
-            fin_mod=0,
-            weight=3.0,
-            maintype="Weapon",
-            subtype="Sword",
-        )
-        enchantment = OfThePhoenix(weapon)
-        enchantment.modify()
-        weapon.equip_states = enchantment.equip_states
+        assert len(phoenix_states(player)) == 1
 
-        # Add weapon to equipped items
-        player_with_methods.equipped["weapon"] = weapon
+    def test_recharge_ignores_unequipped_phoenix_gear(self, player, boots):
+        """Carrying the boots in the bag must not grant the revive."""
+        assert boots.isequipped is False
 
-        # Apply initial equip_states
-        player_with_methods.apply_equip_states(weapon)
-        assert any(s.name == "Phoenix Revive" for s in player_with_methods.states)
+        player.recharge_equip_states()
 
-        # Simulate using PhoenixRevive (remove it)
-        player_with_methods.states = [s for s in player_with_methods.states if s.name != "Phoenix Revive"]
-        assert not any(s.name == "Phoenix Revive" for s in player_with_methods.states)
-
-        # Victory recharge should restore it
-        player_with_methods.recharge_equip_states()
-        assert any(s.name == "Phoenix Revive" for s in player_with_methods.states)
-
-    def test_no_stacking_on_victory_recharge(self, player_with_methods):
-        """Test that victory recharge does not stack a state that's already present."""
-        weapon = Weapon(
-            name="Phoenix Sword",
-            description="Test",
-            value=50,
-            damage=10,
-            isequipped=False,
-            str_req=0,
-            fin_req=0,
-            str_mod=0,
-            fin_mod=0,
-            weight=3.0,
-            maintype="Weapon",
-            subtype="Sword",
-        )
-        enchantment = OfThePhoenix(weapon)
-        enchantment.modify()
-        weapon.equip_states = enchantment.equip_states
-
-        # Add weapon to equipped items
-        player_with_methods.equipped["weapon"] = weapon
-
-        # Manually apply equip_states (as on initial equip)
-        player_with_methods.apply_equip_states(weapon)
-        initial_count = len([s for s in player_with_methods.states if s.name == "Phoenix Revive"])
-        assert initial_count == 1
-
-        # Victory recharge while state still present (did not trigger)
-        player_with_methods.recharge_equip_states()
-
-        # Still only 1 Phoenix Revive state (no stacking)
-        final_count = len([s for s in player_with_methods.states if s.name == "Phoenix Revive"])
-        assert final_count == 1
+        assert phoenix_states(player) == []
 
 
-class TestPhoenixReviveSecondLethalHit:
-    """Test that second lethal hit in same battle does not retrigger revive."""
+class TestPhoenixReviveInCombatantDeathCheck:
+    """``Combatant.check_revive`` — what the combat adapter actually calls."""
 
-    @pytest.fixture
-    def player(self):
-        p = MagicMock(spec=Player)
-        p.name = "TestPlayer"
-        p.hp = 100
-        p.maxhp = 100
-        p.states = []
-        return p
-
-    def test_revive_not_available_after_first_trigger(self, player):
-        """Test that second lethal hit does not revive if state was consumed."""
-        state = PhoenixRevive(player)
-        player.states = [state]
+    def test_check_revive_consumes_the_state_and_reports_true(self, player, boots):
+        player.equip_item(item_object=boots)
         player.hp = 0
 
-        # First lethal hit — revive triggers
         with patch("random.random", return_value=0.0):
-            with patch("src.functions.refresh_stat_bonuses"):
-                result1 = state.try_revive(player)
+            assert player.check_revive() is True
 
-        assert result1 is True
-        assert state not in player.states
         assert player.hp == 50
+        assert player.is_alive() is True
+        assert phoenix_states(player) == []
 
-        # Simulate another lethal hit
+    def test_second_lethal_hit_in_the_same_fight_does_not_revive(self, player, boots):
+        player.equip_item(item_object=boots)
         player.hp = 0
-        player.states = []  # State was removed
 
-        # Second lethal hit — no revive available (state removed)
-        # There's no state to call try_revive on
-        for s in player.states:
-            if hasattr(s, "try_revive"):
-                s.try_revive(player)
+        with patch("random.random", return_value=0.0):
+            assert player.check_revive() is True
 
-        assert player.hp == 0  # Still dead
+        player.hp = 0
+        # No patch needed: the state is gone, so no roll can happen at all.
+        assert player.check_revive() is False
+        assert player.hp == 0
+        assert player.is_alive() is False
+
+    def test_check_revive_is_false_with_no_revive_states(self, player):
+        player.hp = 0
+
+        with patch("random.random", return_value=0.0):
+            assert player.check_revive() is False
+
+        assert player.hp == 0
+
+    def test_check_revive_tolerates_states_without_try_revive(self, player, boots):
+        """A mixed state list must not break the revive scan."""
+        from src.states import Poisoned
+
+        player.equip_item(item_object=boots)
+        player.states.insert(0, Poisoned(player))
+        player.hp = 0
+
+        with patch("random.random", return_value=0.0):
+            assert player.check_revive() is True
+
+        assert player.hp == 50
 
 
 class TestPhoenixReviveIntegration:
-    """Integration tests for full PhoenixRevive lifecycle."""
+    """The whole arc on one real player: equip → die → revive → win → unequip."""
 
-    @pytest.fixture
-    def realistic_player(self):
-        """Create a more realistic player object for integration testing."""
-        p = MagicMock(spec=Player)
-        p.name = "Jean Claire"
-        p.hp = 100
-        p.maxhp = 100
-        p.states = []
-        p.equipped = {}
+    def test_full_lifecycle(self, player, boots):
+        # 1. Equip — the state is granted and bound to Jean.
+        player.equip_item(item_object=boots)
+        assert len(phoenix_states(player)) == 1
+        assert phoenix_states(player)[0].target is player
 
-        def get_equipped_items():
-            return list(p.equipped.values())
-
-        def apply_equip_states(item):
-            equip_states = getattr(item, "equip_states", None) or []
-            existing_names = {s.name for s in p.states}
-            for state in equip_states:
-                if state.name in existing_names:
-                    continue
-                if hasattr(state, "target"):
-                    state.target = p
-                p.states.append(state)
-                existing_names.add(state.name)
-
-        def remove_equip_states(item):
-            names_to_remove = {s.name for s in getattr(item, "equip_states", None) or []}
-            if not names_to_remove:
-                return
-            p.states = [s for s in p.states if s.name not in names_to_remove]
-            for other in get_equipped_items():
-                if other is not item:
-                    apply_equip_states(other)
-
-        def recharge_equip_states():
-            for item in get_equipped_items():
-                apply_equip_states(item)
-
-        def check_revive():
-            """Consult revive-capable states before death is finalized."""
-            for state in p.states[:]:
-                try_revive = getattr(state, "try_revive", None)
-                if try_revive and try_revive(p):
-                    return True
-            return False
-
-        p.get_equipped_items = get_equipped_items
-        p.apply_equip_states = apply_equip_states
-        p.remove_equip_states = remove_equip_states
-        p.recharge_equip_states = recharge_equip_states
-        p.check_revive = check_revive
-        return p
-
-    def test_full_lifecycle(self, realistic_player):
-        """Test complete PhoenixRevive lifecycle: equip, trigger, discharge, recharge."""
-        weapon = Weapon(
-            name="Phoenix Blade",
-            description="A blade blessed by phoenix fire",
-            value=50,
-            damage=10,
-            isequipped=False,
-            str_req=0,
-            fin_req=0,
-            str_mod=0,
-            fin_mod=0,
-            weight=3.0,
-            maintype="Weapon",
-            subtype="Sword",
-        )
-        enchantment = OfThePhoenix(weapon)
-        enchantment.modify()
-        weapon.equip_states = enchantment.equip_states
-
-        # Step 1: Equip weapon — applies PhoenixRevive state
-        realistic_player.equipped["weapon"] = weapon
-        realistic_player.apply_equip_states(weapon)
-        assert any(s.name == "Phoenix Revive" for s in realistic_player.states)
-
-        # Step 2: Take lethal damage — revive triggers
-        realistic_player.hp = 0
+        # 2. Lethal damage — the revive fires and is consumed.
+        player.hp = 0
         with patch("random.random", return_value=0.0):
-            with patch("src.functions.refresh_stat_bonuses"):
-                revived = realistic_player.check_revive()
+            assert player.check_revive() is True
+        assert player.hp == 50
+        assert phoenix_states(player) == []
 
-        assert revived is True
-        assert realistic_player.hp == 50
-        assert not any(s.name == "Phoenix Revive" for s in realistic_player.states)
+        # 3. A second lethal hit in the same fight finds nothing left.
+        player.hp = 0
+        assert player.check_revive() is False
 
-        # Step 3: Take another lethal hit in same battle — no revive (state consumed)
-        realistic_player.hp = 0
-        revived_again = realistic_player.check_revive()
-        assert revived_again is False
+        # 4. Victory — recharge restores it for the next fight.
+        player.hp = 50
+        player.recharge_equip_states()
+        assert len(phoenix_states(player)) == 1
 
-        # Step 4: Victory recharge — restores PhoenixRevive for next battle
-        realistic_player.hp = 50  # Assume we won after the revive
-        realistic_player.recharge_equip_states()
-        assert any(s.name == "Phoenix Revive" for s in realistic_player.states)
+        # 5. Unequip — the state goes away with the gear.
+        player.unequip_item(boots)
+        assert phoenix_states(player) == []
 
-        # Step 5: Unequip weapon — removes PhoenixRevive
-        realistic_player.remove_equip_states(weapon)
-        assert not any(s.name == "Phoenix Revive" for s in realistic_player.states)
+    def test_recharge_after_unequip_does_not_resurrect_the_state(self, player, boots):
+        """The bug this guards: recharge reading the bag instead of worn gear."""
+        player.equip_item(item_object=boots)
+        player.unequip_item(boots)
 
-    def test_no_revive_stacking_across_equips(self, realistic_player):
-        """Test that equipping same item twice doesn't stack revive states."""
-        weapon = Weapon(
-            name="Phoenix Blade",
-            description="A blade blessed by phoenix fire",
-            value=50,
-            damage=10,
-            isequipped=False,
-            str_req=0,
-            fin_req=0,
-            str_mod=0,
-            fin_mod=0,
-            weight=3.0,
-            maintype="Weapon",
-            subtype="Sword",
-        )
-        enchantment = OfThePhoenix(weapon)
-        enchantment.modify()
-        weapon.equip_states = enchantment.equip_states
+        player.recharge_equip_states()
 
-        # Equip weapon
-        realistic_player.apply_equip_states(weapon)
-        count_after_first = len([s for s in realistic_player.states if s.name == "Phoenix Revive"])
-        assert count_after_first == 1
-
-        # Simulate another equip attempt (or victory recharge while still equipped)
-        realistic_player.apply_equip_states(weapon)
-        count_after_second = len([s for s in realistic_player.states if s.name == "Phoenix Revive"])
-
-        # Should still be 1 (no stacking)
-        assert count_after_second == 1
+        assert phoenix_states(player) == []
+        assert boots in player.inventory

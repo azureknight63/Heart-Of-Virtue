@@ -25,17 +25,6 @@ coverage of Ch02KingSlimeMemoryFlash itself.
 import pytest
 from unittest.mock import MagicMock
 
-from src.api.services.game_service import GameService
-
-
-@pytest.fixture(scope="session")
-def _cached_game_service():
-    return GameService()
-
-
-@pytest.fixture
-def game_service(_cached_game_service):
-    return _cached_game_service
 
 
 @pytest.fixture

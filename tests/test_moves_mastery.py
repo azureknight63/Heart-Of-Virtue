@@ -16,6 +16,7 @@ from src.moves import (
     BloodOfMartyrs,
 )
 import src.states as states
+from src.narration import capture_narration
 
 
 # ---------------------------------------------------------------------------
@@ -217,7 +218,14 @@ class TestIronhideExecute:
         assert bad_state not in player.states
 
     def test_on_removal_exception_is_swallowed(self):
-        player = _make_player(hp=50, maxhp=100, fatigue=100)
+        """A state whose on_removal raises must still be purged, and the rest of
+        Ironhide's effect must still land.
+
+        The old version of this test called execute() and asserted nothing at
+        all, so it passed equally well if the except-branch had swallowed the
+        whole heal.
+        """
+        player = _make_player(hp=50, maxhp=100, fatigue=100, maxfatigue=150)
         bad_state = MagicMock()
         bad_state.statustype = "poison"
         bad_state.on_removal = MagicMock(side_effect=RuntimeError("boom"))
@@ -225,7 +233,17 @@ class TestIronhideExecute:
         player.combat_exp = {"Basic": 0}
         move = Ironhide(player)
         with patch("src.moves._mastery.functions.refresh_stat_bonuses"):
-            move.execute(player)  # should not raise despite on_removal raising
+            move.execute(player)
+
+        # The removal was attempted (so the except-branch really was reached)...
+        bad_state.on_removal.assert_called_once_with(player)
+        # ...the state is gone regardless...
+        assert player.states == []
+        # ...and everything after the purge still ran: +30% maxhp heal,
+        # +60 fatigue capped at maxfatigue then -25 fatigue_cost, +5 Basic exp.
+        assert player.hp == 80
+        assert player.fatigue == 150 - 25
+        assert player.combat_exp["Basic"] == 5
 
     def test_does_not_purge_generic_states(self):
         player = _make_player(hp=50, maxhp=100, fatigue=100)
@@ -360,11 +378,20 @@ class TestNewStates:
         s.on_removal(target)
         assert s._absorbing is False
 
-    def test_blood_of_martyrs_state_on_application_prints(self):
+    def test_blood_of_martyrs_state_on_application_announces_the_oath(self):
         target = _make_player()
         s = states.BloodOfMartyrsState(target)
-        with patch("builtins.print"):
-            s.on_application(target)  # should not raise
+
+        with capture_narration() as messages:
+            s.on_application(target)
+
+        assert [m["text"] for m in messages] == [
+            "Jean opens himself to the storm. Every blow will be answered."
+        ]
+        assert messages[0]["color"] == "yellow"
+        # on_application must not disturb the absorption bookkeeping.
+        assert s._absorbing is True
+        assert s.absorbed == 0
 
 
 # ---------------------------------------------------------------------------
@@ -519,17 +546,31 @@ class TestLightningAssaultExecute:
         assert target.hp == 100  # all parried — no damage applied
 
     def test_target_dies_mid_loop_breaks(self):
+        """The flurry stops the moment the target drops.
+
+        The old version asserted nothing; its only real signal was that a third
+        ``is_alive()`` call would have raised ``StopIteration``. Now the number
+        of swings, the damage dealt and the (absent) Disoriented are all pinned.
+        """
         player, target, move = self._setup()
-        # Target dies after first hit
+        # Alive after the first landed hit, dead after the second.
         target.is_alive.side_effect = [True, False]
+        parry_checks = []
         with patch("src.moves._mastery.random.randint", return_value=0), \
              patch("src.moves._mastery.random.uniform", return_value=1.0), \
-             patch("src.moves._mastery.functions.check_parry", return_value=False), \
-             patch("src.moves._mastery.functions.inflict"), \
-             patch("src.moves._base.colored", side_effect=lambda t, *a, **kw: str(t)), \
-             patch("builtins.print"):
+             patch("src.moves._mastery.functions.check_parry",
+                   side_effect=lambda t: parry_checks.append(t) or False), \
+             patch("src.moves._mastery.functions.inflict") as mock_inflict, \
+             patch("src.moves._base.colored", side_effect=lambda t, *a, **kw: str(t)):
             move.execute(player)
-        # Only 1 hit landed (broke early) — assert no Disoriented inflict was attempted
+
+        # Two swings resolved, not three: the loop broke on the death check.
+        assert len(parry_checks) == 2
+        assert target.is_alive.call_count == 2
+        # power = int(20*0.55 + 10*0.75) = 18; damage = 18*1.0 - 10 = 8 per hit.
+        assert target.hp == 100 - 8 * 2
+        # hits_landed is 2, not 3, so the reeling debuff is withheld.
+        assert mock_inflict.call_count == 0
 
 
 # ---------------------------------------------------------------------------
@@ -619,15 +660,30 @@ class TestWarCryExecute:
         assert len(inflicted) == 1
         assert inflicted[0] is enemies[1]
 
-    def test_no_enemies_no_output(self):
-        player = _make_player()
+    def test_no_enemies_means_no_recoil_line_but_still_costs_fatigue(self):
+        """With an empty combat_list the "N enemies recoil" line is suppressed,
+        yet the move still charges its fatigue and grants its exp.
+
+        The old test asserted nothing, so it would have passed if execute() had
+        returned before either of those.
+        """
+        player = _make_player(fatigue=150, maxfatigue=150)
         player.combat_exp = {"Basic": 0}
         player.combat_list = []
         move = WarCry(player)
         move.user = player
-        with patch("src.moves._mastery.functions.inflict"), \
-             patch("builtins.print"):
-            move.execute(player)  # should not raise
+
+        with patch("src.moves._mastery.functions.inflict") as mock_inflict, \
+             capture_narration() as messages:
+            move.execute(player)
+
+        assert mock_inflict.call_count == 0
+        texts = [m["text"] for m in messages]
+        assert not any("recoil" in t for t in texts)
+        # The stage-1 announcement still fires — silence would be the bug.
+        assert texts == ["Jean unleashes a war cry that shakes the field!"]
+        assert player.fatigue == 150 - move.fatigue_cost
+        assert player.combat_exp["Basic"] == 5
 
 
 # ---------------------------------------------------------------------------
@@ -655,12 +711,29 @@ class TestBloodOfMartyrsExecute:
         import src.states as st
         assert any(isinstance(s, st.BloodOfMartyrsState) for s in applied)
 
-    def test_execute_zero_absorbed_prints_no_damage_message(self):
+    def test_execute_with_nothing_absorbed_announces_a_spent_oath(self):
+        """Detonating an oath that absorbed nothing must say so and deal no
+        damage — but still pay its costs.
+
+        The old test asserted nothing at all.
+        """
         player, move = self._setup()
         player.states = []
-        with patch("builtins.print"):
+        player.fatigue = 150
+        player.maxfatigue = 150
+        enemy = _make_enemy()
+        player.combat_list = [enemy]
+
+        with capture_narration() as messages:
             move.execute(player)
-        # No enemies, no absorbed — should not raise
+
+        texts = [m["text"] for m in messages]
+        assert "Jean releases the oath, but no damage was absorbed." in texts
+        assert not any("holy damage across the battlefield" in t for t in texts)
+        assert enemy.hp == 100  # detonation <= 0: the enemy loop is skipped
+        assert move._absorb_state is None
+        assert player.fatigue == 150 - move.fatigue_cost
+        assert player.combat_exp["Basic"] == 5
 
     def test_execute_detonates_absorbed_damage(self):
         player, move = self._setup()

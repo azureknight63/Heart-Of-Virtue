@@ -263,13 +263,32 @@ describe('ConversationStage rendering', () => {
             />
         )
         act(() => vi.advanceTimersByTime(3000))
-        expect(screen.getByAltText(/Amelia \(happy\)/i)).toBeDefined()
-        expect(screen.getByAltText(/Jean \(neutral\)/i)).toBeDefined()
+        // Assert the resolved portrait SOURCE, not merely that a node exists:
+        // the emotion in the alt text and the emotion baked into the src are
+        // computed separately, so a component that renders the right label over
+        // the wrong image passes a presence-only check.
+        expect(screen.getByAltText(/Amelia \(happy\)/i)).toHaveAttribute(
+            'src',
+            portraitUrl('Amelia', 'happy')
+        )
+        expect(screen.getByAltText(/Jean \(neutral\)/i)).toHaveAttribute(
+            'src',
+            portraitUrl('Jean', 'neutral')
+        )
     })
 
-    it('renders with defaults when no segments or conversation prop is passed', () => {
+    it('renders an empty, un-staged shell when no segments or conversation prop is passed', () => {
         render(<ConversationStage />)
-        expect(screen.getByTestId('conversation-stage')).toBeInTheDocument()
+        const stage = screen.getByTestId('conversation-stage')
+        // No cast column, no prose, no speaker label — an empty payload must
+        // produce a blank stage rather than a crash or a stray placeholder.
+        expect(stage.querySelectorAll('img')).toHaveLength(0)
+        expect(stage.textContent.trim()).toBe('\u25be click to finish')
+        // ...and clicking the empty stage completes rather than hanging.
+        const onComplete = vi.fn()
+        render(<ConversationStage onComplete={onComplete} />)
+        act(() => fireEvent.click(screen.getAllByTestId('conversation-stage')[1]))
+        expect(onComplete).toHaveBeenCalledTimes(1)
     })
 
     it('finishes the typewriter immediately on click instead of advancing', () => {
@@ -432,40 +451,68 @@ describe('ConversationStage rendering', () => {
     it('resets beatIndex and re-arms onComplete when a new segments array arrives mid-conversation', () => {
         // Simulates a multi-stage event (e.g. Ch02GuideToCitadel) where the same
         // mounted ConversationStage receives a fresh segments/conversation payload
-        // for the next stage without being remounted.
+        // for the next stage without being remounted. EventDialog mounts it with
+        // NO `key`, so React reuses the instance — a test that renders fresh each
+        // time cannot catch this at all.
+        //
+        // Stage one is deliberately THREE beats long so the stale index it would
+        // leave behind (2) is a beat stage two actually has. With a 1-beat stage
+        // one the stale index is 0, which is also the reset value, and the
+        // beatIndex half of this contract goes unproven.
         const stageOneSegments = [
-            { text: 'Stage one line.', speaker: 'Jean', emotion: 'neutral', in_conversation: true },
+            { text: 'Stage one, beat one.', speaker: 'Jean', emotion: 'neutral', in_conversation: true },
+            { text: 'Stage one, beat two.', speaker: 'Jean', emotion: 'neutral', in_conversation: true },
+            { text: 'Stage one, beat three.', speaker: 'Jean', emotion: 'neutral', in_conversation: true },
         ]
         const stageTwoSegments = [
             { text: 'Stage two, beat one.', speaker: 'Jean', emotion: 'neutral', in_conversation: true },
             { text: 'Stage two, beat two.', speaker: 'Jean', emotion: 'neutral', in_conversation: true },
+            { text: 'Stage two, beat three.', speaker: 'Jean', emotion: 'neutral', in_conversation: true },
         ]
         const onComplete = vi.fn()
         const { rerender } = render(
             <ConversationStage segments={stageOneSegments} conversation={{ cast: CAST }} onComplete={onComplete} />
         )
         const stage = screen.getByTestId('conversation-stage')
+        // Let the typewriter finish, then read the beat that is on screen.
+        const settle = () => act(() => vi.advanceTimersByTime(3000))
+        const click = () => act(() => fireEvent.click(stage))
 
-        act(() => vi.advanceTimersByTime(3000))
-        act(() => fireEvent.click(stage)) // finishes stage one's only beat -> onComplete
+        settle()
+        expect(screen.getByText(/Stage one, beat one/i)).toBeInTheDocument()
+        click(); settle()
+        expect(screen.getByText(/Stage one, beat two/i)).toBeInTheDocument()
+        click(); settle()
+        expect(screen.getByText(/Stage one, beat three/i)).toBeInTheDocument()
+        click() // final beat -> onComplete
         expect(onComplete).toHaveBeenCalledTimes(1)
 
         // New stage arrives: a fresh segments array, same component instance.
         rerender(
             <ConversationStage segments={stageTwoSegments} conversation={{ cast: CAST }} onComplete={onComplete} />
         )
-        act(() => vi.advanceTimersByTime(3000))
-        expect(screen.getByText(/Stage two, beat one/i)).toBeDefined()
+        settle()
+        // Without the reset the stage resumes at the stale beatIndex 2 and the
+        // player never sees stage two's opening two lines.
+        expect(screen.getByText(/Stage two, beat one/i)).toBeInTheDocument()
+        expect(screen.queryByText(/Stage two, beat three/i)).toBeNull()
 
-        act(() => fireEvent.click(stage)) // beat one complete -> advance to beat two
+        click(); settle()
+        expect(screen.getByText(/Stage two, beat two/i)).toBeInTheDocument()
         expect(onComplete).toHaveBeenCalledTimes(1)
-        act(() => vi.advanceTimersByTime(3000))
-        act(() => fireEvent.click(stage)) // last beat of stage two complete -> onComplete fires again
+        click(); settle()
+        expect(screen.getByText(/Stage two, beat three/i)).toBeInTheDocument()
+        expect(onComplete).toHaveBeenCalledTimes(1)
+        // completedRef re-armed: without the reset this stays true forever and
+        // the player is soft-locked with no way to leave the dialogue.
+        click() // final beat -> onComplete fires a second time
         expect(onComplete).toHaveBeenCalledTimes(2)
     })
 
     // The wrapper <div> around the <img> carries the composed portrait opacity.
     const portraitOpacity = (name) => Number(screen.getByAltText(new RegExp(name, 'i')).parentElement.style.opacity)
+    // Portrait.baseOpacity: the speaker renders at full ink, listeners at 0.85.
+    const LISTENER_OPACITY = 0.85
 
     const enterSegments = (transition) => [
         { text: 'Beat one.', speaker: 'Jean', emotion: 'neutral', in_conversation: true },
@@ -493,7 +540,9 @@ describe('ConversationStage rendering', () => {
         // values, so mounting straight at the target would not animate.
         expect(portraitOpacity('Mara')).toBe(0)
         act(() => vi.advanceTimersByTime(100)) // post-paint frame raises it
-        expect(portraitOpacity('Mara')).toBeGreaterThan(0)
+        // The frame must hand the node back to its real target opacity, not to
+        // some arbitrary non-zero value.
+        expect(portraitOpacity('Mara')).toBe(LISTENER_OPACITY)
     })
 
     it('keeps a faded-in portrait at full opacity across re-renders of the same beat', () => {
@@ -524,7 +573,10 @@ describe('ConversationStage rendering', () => {
         )
         act(() => vi.advanceTimersByTime(3000))
         act(() => fireEvent.click(screen.getByTestId('conversation-stage')))
-        expect(portraitOpacity('Mara')).toBeGreaterThan(0)
+        // Exact value, not just >0: Mara is a listener, so the composed opacity
+        // is the full 1 from computeStage times the 0.85 listener dim. A
+        // `>0` check passes even for a portrait stuck mid-fade at 0.01.
+        expect(portraitOpacity('Mara')).toBe(LISTENER_OPACITY)
     })
 
     it('advances beats on click and calls onComplete after the last beat', () => {
@@ -574,7 +626,6 @@ describe('ConversationStage renders every portrait/expression that exists on dis
             act(() => vi.advanceTimersByTime(5000))
 
             const img = screen.getByAltText(new RegExp(`${character} \\(${expression}\\)`, 'i'))
-            expect(img).toBeInTheDocument()
             expect(img.getAttribute('src')).toBe(portraitUrl(character, expression))
             expect(img.dataset.emotion).toBe(expression)
             expect(img.dataset.speakerSlug).toBe(character)

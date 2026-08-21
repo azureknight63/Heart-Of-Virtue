@@ -62,23 +62,138 @@ describe('InteractPanel', () => {
   const mockOnClose = vi.fn();
   const mockOnRefetch = vi.fn();
 
+  /**
+   * Wait for the interaction output to mount, then finish its typewriter with
+   * the click the component exposes for exactly that purpose, and return the
+   * settled node. Waiting out the per-character interval instead (the old
+   * `waitFor(textContent contains ...)`) cost ~0.5-1.5s per test and asserted
+   * nothing the click does not.
+   */
+  const settledOutput = async () => {
+    const out = await screen.findByTestId('event-text-container');
+    fireEvent.click(out);
+    return out;
+  };
+
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('renders targets correctly', () => {
-    render(<InteractPanel location={mockLocation} onClose={mockOnClose} />);
-    expect(screen.getAllByText(/Guard/i)[0]).toBeDefined();
-    expect(screen.getAllByText(/Chest/i)[0]).toBeDefined();
-    expect(screen.getAllByText(/Gold Coin/i)[0]).toBeDefined();
+  describe('local object-state patch after an interaction', () => {
+    // A locked chest whose keywords change once it is unlocked. The server row
+    // in `location` is deliberately left stale, exactly as it is in play: the
+    // interact response patches the panel locally so the new action appears
+    // without waiting for a refetch round trip.
+    const lockedChestLocation = {
+      name: 'Vault',
+      npcs: [],
+      items: [],
+      objects: [
+        {
+          id: 'chest1',
+          name: 'Iron Chest',
+          description: 'A heavy iron chest.',
+          keywords: ['Unlock', 'Examine'],
+          state: 'locked',
+          locked: true,
+        },
+      ],
+    };
+
+    it('keeps the patched keywords instead of reverting to the stale room row', async () => {
+      // The whole point of onObjectStateUpdate: after Unlock succeeds, the panel
+      // must offer "Open" immediately. The location-sync effect lists
+      // selectedTarget in its deps, so patching selectedTarget re-runs it while
+      // `location` still holds the pre-unlock row -- if that effect overwrites
+      // the patch, the button silently reverts to "Unlock" forever.
+      apiEndpoints.world.interact.mockResolvedValue({
+        data: {
+          success: true,
+          output: 'The lock clicks open.',
+          object_state: {
+            keywords: ['Open', 'Examine'],
+            state: 'unlocked',
+            locked: false,
+          },
+        },
+      });
+
+      render(<InteractPanel location={lockedChestLocation} onClose={mockOnClose} />);
+      fireEvent.click(screen.getAllByText(/Iron Chest/i)[0]);
+      fireEvent.click(await screen.findByRole('button', { name: /Unlock/i }));
+
+      // The patched action must appear and survive the sync effect re-running.
+      expect(await screen.findByRole('button', { name: /^Open$/i })).toBeDefined();
+      await waitFor(() => {
+        expect(screen.queryByRole('button', { name: /Unlock/i })).toBeNull();
+      });
+    });
+
+    it('still syncs a genuinely updated room row into the selected target', async () => {
+      // The complement: suppressing the revert must not disable real syncing.
+      // A changed description arriving from the server must still reach the panel.
+      const { rerender, container } = render(
+        <InteractPanel location={lockedChestLocation} onClose={mockOnClose} />
+      );
+      fireEvent.click(screen.getAllByText(/Iron Chest/i)[0]);
+      // renderTextWithLinks splits the description across elements, so assert
+      // on the container's text rather than a single node.
+      await waitFor(() => {
+        expect(container.textContent).toContain('A heavy iron chest.');
+      });
+
+      rerender(
+        <InteractPanel
+          location={{
+            ...lockedChestLocation,
+            objects: [
+              {
+                ...lockedChestLocation.objects[0],
+                description: 'The iron chest now stands open.',
+                state: 'opened',
+              },
+            ],
+          }}
+          onClose={mockOnClose}
+        />
+      );
+
+      await waitFor(() => {
+        expect(container.textContent).toContain('The iron chest now stands open.');
+      });
+    });
   });
 
-  it('selects a target when clicked', () => {
+  it('lists every npc, object and ground item in the room as a target', () => {
     const { container } = render(<InteractPanel location={mockLocation} onClose={mockOnClose} />);
-    fireEvent.click(screen.getAllByText(/Guard/i)[0]);
+
+    // One row per target, each typed by its own icon: npc / item / object.
+    expect(container.textContent).toContain('👤');
+    expect(container.textContent).toContain('🪵');
+    expect(container.textContent).toContain('📦');
+    // Stackable ground items carry their count.
+    expect(screen.getByText(/Gold Coin/i).textContent).toMatch(/x\s*10|10/);
+    // Every listed target carries its own description.
     expect(container.textContent).toContain('A stern guard.');
-    expect(screen.getByText(/Talk/i)).toBeDefined();
-    expect(screen.getByText(/Attack/i)).toBeDefined();
+    expect(container.textContent).toContain('A wooden chest.');
+    expect(container.textContent).toContain('A shiny coin.');
+    // Nothing is selected yet, so no action buttons are offered.
+    expect(screen.queryByText(/^Talk$/)).toBeNull();
+    expect(screen.queryByText(/^Open$/)).toBeNull();
+  });
+
+  it('selects a target and offers exactly its own keywords as actions', () => {
+    render(<InteractPanel location={mockLocation} onClose={mockOnClose} />);
+    fireEvent.click(screen.getAllByText(/Guard/i)[0]);
+
+    // The dialog retitles to the selection and the target list is replaced.
+    expect(screen.getByText('✨ Guard').textContent).toBe('✨ Guard');
+    expect(screen.queryByText(/Search Area/i)).toBeNull();
+    // Exactly the guard's two keywords — no leakage from the chest or the coin.
+    expect(screen.getByText(/^Talk$/).textContent).toBe('Talk');
+    expect(screen.getByText(/^Attack$/).textContent).toBe('Attack');
+    expect(screen.queryByText(/^Open$/)).toBeNull();
+    expect(screen.queryByText(/^Examine$/)).toBeNull();
   });
 
   it('handles interaction with an NPC', async () => {
@@ -90,11 +205,12 @@ describe('InteractPanel', () => {
     fireEvent.click(screen.getAllByText(/Guard/i)[0]);
     fireEvent.click(screen.getByText(/Talk/i));
 
-    await waitFor(() => {
-      expect(container.textContent).toContain('The guard nods at you.');
-    }, { timeout: 3000 });
+    expect((await settledOutput()).textContent).toContain('The guard nods at you.');
 
-    expect(mockOnRefetch).toHaveBeenCalled();
+    // The panel must address the NPC by its serialized `id`, send the keyword
+    // it rendered, and pass no quantity for a non-stackable target.
+    expect(apiEndpoints.world.interact).toHaveBeenCalledWith('npc1', 'Talk', null);
+    expect(mockOnRefetch).toHaveBeenCalledTimes(1);
   });
 
   it('handles quantity input for stackable items', async () => {
@@ -102,15 +218,21 @@ describe('InteractPanel', () => {
     fireEvent.click(screen.getAllByText(/Gold Coin/i)[0]);
     fireEvent.click(screen.getByText(/Take/i));
 
-    expect(screen.getByText(/How many/i)).toBeDefined();
+    // The prompt names the pending verb and the stack size, and defaults to
+    // taking the whole stack.
+    expect(screen.getByText(/How many/i).textContent).toContain('How many would you like to Take?');
+    expect(screen.getByText(/Available:/i).textContent).toBe('Available: 10');
+    expect(screen.getByDisplayValue('10').getAttribute('max')).toBe('10');
+
     apiEndpoints.world.interact.mockResolvedValue({
       data: { success: true, message: 'You took 5 Gold Coins.' },
     });
 
+    fireEvent.change(screen.getByDisplayValue('10'), { target: { value: '5' } });
     fireEvent.click(screen.getByText(/CONFIRM/i));
-    await waitFor(() => {
-      expect(container.textContent).toContain('You took 5 Gold Coins.');
-    }, { timeout: 3000 });
+    expect((await settledOutput()).textContent).toContain('You took 5 Gold Coins.');
+    // The chosen quantity — not the stack size — reaches the endpoint.
+    expect(apiEndpoints.world.interact).toHaveBeenCalledWith('item1', 'Take', 5);
   });
 
   it('handles interaction error', async () => {
@@ -120,17 +242,29 @@ describe('InteractPanel', () => {
 
     render(<InteractPanel location={mockLocation} onClose={mockOnClose} />);
     fireEvent.click(screen.getAllByText(/Guard/i)[0]);
-    fireEvent.click(screen.getByText(/Attack/i));
+    fireEvent.click(screen.getByText(/^Attack$/));
 
     await waitFor(() => {
-      expect(screen.getByText(/You cannot do that./i)).toBeDefined();
+      expect(screen.getByText(/You cannot do that/i).textContent).toBe('⚠️ You cannot do that.');
     }, { timeout: 3000 });
+
+    // A rejected interaction must NOT leave the panel locked: every action is
+    // still live and a retry actually reaches the endpoint. The analogous
+    // never-cleared submitting flag in EventDialog shipped as an
+    // unrecoverable soft-lock, and this panel gates its buttons the same way.
+    expect(screen.getByText(/^Attack$/).closest('button').disabled).toBe(false);
+    expect(screen.getByText(/^Talk$/).closest('button').disabled).toBe(false);
+    fireEvent.click(screen.getByText(/^Talk$/));
+    await waitFor(() => expect(apiEndpoints.world.interact).toHaveBeenCalledTimes(2));
+    expect(apiEndpoints.world.interact).toHaveBeenLastCalledWith('npc1', 'Talk', null);
   });
 
-  it('calls onClose when close button is clicked', () => {
+  it('calls onClose exactly once when the close button is clicked', () => {
     render(<InteractPanel location={mockLocation} onClose={mockOnClose} />);
     fireEvent.click(screen.getByText('✕'));
-    expect(mockOnClose).toHaveBeenCalled();
+    expect(mockOnClose).toHaveBeenCalledTimes(1);
+    // Dismissing the panel is not an interaction.
+    expect(apiEndpoints.world.interact).not.toHaveBeenCalled();
   });
 
   it('triggers events after successful interaction', async () => {
@@ -174,16 +308,24 @@ describe('InteractPanel', () => {
     expect(screen.queryByText(/How many/i)).toBeNull();
   });
 
-  it('finishes typewriter effect immediately on click', async () => {
-    apiEndpoints.world.interact.mockResolvedValue({ data: { success: true, message: 'A message' } });
-    const { container } = render(<InteractPanel location={mockLocation} onClose={mockOnClose} />);
+  it('finishes the interaction typewriter immediately on click', async () => {
+    const full = 'The guard recounts a very long and tedious story about the old wall.';
+    apiEndpoints.world.interact.mockResolvedValue({ data: { success: true, message: full } });
+    render(<InteractPanel location={mockLocation} onClose={mockOnClose} />);
 
     fireEvent.click(screen.getAllByText(/Guard/i)[0]);
-    fireEvent.click(screen.getByText(/Talk/i));
+    fireEvent.click(screen.getByText(/^Talk$/));
 
-    await waitFor(() => {
-      expect(container.textContent).toContain('A message');
-    }, { timeout: 3000 });
+    // Wait for the typewriter to START (first characters only), then click it.
+    // The previous version of this test never clicked anything — it just
+    // waited for the animation to finish on its own, so it proved nothing
+    // about finish-on-click at all.
+    const out = await screen.findByTestId('event-text-container');
+    await waitFor(() => expect(out.textContent.length).toBeGreaterThan(0));
+    expect(out.textContent).not.toContain(full);
+
+    fireEvent.click(out);
+    expect(out.textContent).toContain(full);
   });
 
   it('clears selection when target is no longer in room', () => {
@@ -202,11 +344,11 @@ describe('InteractPanel', () => {
     rerender(<InteractPanel location={emptyLocation} onClose={mockOnClose} />);
 
     await waitFor(() => {
-      expect(mockOnClose).toHaveBeenCalled();
+      expect(mockOnClose).toHaveBeenCalledTimes(1);
     }, { timeout: 2000 });
   });
 
-  it('waits for interaction output before auto-closing', async () => {
+  it('waits 3s on the interaction output before auto-closing an emptied room', async () => {
     apiEndpoints.world.interact.mockResolvedValue({
       data: { success: true, message: 'Item taken' }
     });
@@ -222,165 +364,74 @@ describe('InteractPanel', () => {
       expect(container.textContent).toContain('Item taken');
     });
 
-    const emptyLocation = { ...mockLocation, npcs: [], objects: [], items: [] };
-    rerender(<InteractPanel location={emptyLocation} onClose={delayedCloseMock} />);
+    // Switch to fake timers only for the delay itself: the interaction above
+    // needs real promise scheduling, but burning 3s of wall clock here was the
+    // single slowest test in the frontend suite AND only proved "eventually",
+    // not the 3s the component actually promises.
+    vi.useFakeTimers();
+    try {
+      const emptyLocation = { ...mockLocation, npcs: [], objects: [], items: [] };
+      rerender(<InteractPanel location={emptyLocation} onClose={delayedCloseMock} />);
 
-    expect(container.textContent).toContain('Item taken');
-    expect(delayedCloseMock).not.toHaveBeenCalled();
+      // The result message stays readable for the whole delay.
+      expect(container.textContent).toContain('Item taken');
+      act(() => vi.advanceTimersByTime(2999));
+      expect(delayedCloseMock).not.toHaveBeenCalled();
+      expect(container.textContent).toContain('Item taken');
 
-    await waitFor(() => {
-      expect(delayedCloseMock).toHaveBeenCalled();
-    }, { timeout: 5000 });
+      act(() => vi.advanceTimersByTime(1));
+      expect(delayedCloseMock).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
-  it('renders TAKE ALL and hides LOOT for open containers with items', () => {
-    const containerWithItems = {
+  describe('container TAKE ALL affordance', () => {
+    // These four cases were previously four separate tests, two of them
+    // BYTE-IDENTICAL duplicates of the other two ("hides Take All button for
+    // locked containers" / "...when container is not opened" each appeared
+    // twice). Parametrizing keeps every distinct claim and drops the copies.
+    const chestWith = (extra) => ({
       ...mockLocation,
-      objects: [
-        {
-          id: 'chest1',
-          name: 'Chest',
-          is_container: true,
-          opened: true,
-          contents: [
-            { id: 'item1', name: 'Gold', count: 10 },
-            { id: 'item2', name: 'Key', count: 1 }
-          ],
-          keywords: ['Open', 'Loot', 'Take_all']
-        }
-      ]
-    };
-    render(<InteractPanel location={containerWithItems} onClose={mockOnClose} />);
-    fireEvent.click(screen.getAllByText(/Chest/i)[0]);
+      objects: [{
+        id: 'chest1',
+        name: 'Chest',
+        is_container: true,
+        opened: true,
+        contents: [
+          { id: 'item1', name: 'Gold', count: 10 },
+          { id: 'item2', name: 'Key', count: 1 },
+        ],
+        keywords: ['Open', 'Loot', 'Take_all'],
+        ...extra,
+      }],
+    });
 
-    // TAKE ALL should be present
-    expect(screen.getByText(/TAKE ALL/i)).toBeDefined();
+    it.each([
+      ['an open, unlocked container', {}, true],
+      ['a locked container', { locked: true }, false],
+      ['an unopened container', { opened: false }, false],
+      ['a container whose keywords omit Take_all', { keywords: ['Open', 'Loot'] }, true],
+    ])('%s', (_label, extra, takeAllVisible) => {
+      render(<InteractPanel location={chestWith(extra)} onClose={mockOnClose} />);
+      fireEvent.click(screen.getAllByText(/Chest/i)[0]);
 
-    // LOOT should be hidden from main actions
-    expect(screen.queryByText(/^Loot$/i)).toBeNull();
+      if (takeAllVisible) {
+        expect(screen.getByText(/TAKE ALL/i).textContent).toMatch(/TAKE ALL/i);
+      } else {
+        expect(screen.queryByText(/TAKE ALL/i)).toBeNull();
+      }
+      // LOOT is never offered as a main action — the container contents list
+      // replaces it, so a stray LOOT button means the panel fell back to the
+      // raw keyword list.
+      expect(screen.queryByText(/^Loot$/i)).toBeNull();
+    });
   });
 
-  it('hides Take All button for locked containers', () => {
-    const lockedContainer = {
-      ...mockLocation,
-      objects: [
-        {
-          id: 'chest1',
-          name: 'Chest',
-          is_container: true,
-          opened: true,
-          locked: true,
-          contents: [
-            { id: 'item1', name: 'Gold', count: 10 },
-            { id: 'item2', name: 'Key', count: 1 }
-          ],
-          keywords: ['Open', 'Loot', 'Take_all']
-        }
-      ]
-    };
-    render(<InteractPanel location={lockedContainer} onClose={mockOnClose} />);
-    fireEvent.click(screen.getAllByText(/Chest/i)[0]);
-    expect(screen.queryByText(/TAKE ALL/i)).toBeNull();
-  });
-
-  it('hides Take All button when container is not opened', () => {
-    const closedContainer = {
-      ...mockLocation,
-      objects: [
-        {
-          id: 'chest1',
-          name: 'Chest',
-          is_container: true,
-          opened: false,
-          contents: [
-            { id: 'item1', name: 'Gold', count: 10 },
-            { id: 'item2', name: 'Key', count: 1 }
-          ],
-          keywords: ['Open', 'Loot', 'Take_all']
-        }
-      ]
-    };
-    render(<InteractPanel location={closedContainer} onClose={mockOnClose} />);
-    fireEvent.click(screen.getAllByText(/Chest/i)[0]);
-    expect(screen.queryByText(/TAKE ALL/i)).toBeNull();
-  });
-
-  it('shows Take All button for open containers with multiple items and hides LOOT', () => {
-    const containerLocation = {
-      ...mockLocation,
-      objects: [
-        {
-          id: 'chest1',
-          name: 'Chest',
-          is_container: true,
-          opened: true,
-          contents: [
-            { id: 'item1', name: 'Gold', count: 10 },
-            { id: 'item2', name: 'Key', count: 1 }
-          ],
-          keywords: ['Open', 'Loot']
-        }
-      ]
-    };
-    render(<InteractPanel location={containerLocation} onClose={mockOnClose} />);
-
-    fireEvent.click(screen.getAllByText(/Chest/i)[0]);
-
-    // TAKE ALL should be present
-    expect(screen.getByText(/TAKE ALL/i)).toBeDefined();
-
-    // LOOT should be hidden from main actions
-    expect(screen.queryByText(/^Loot$/i)).toBeNull();
-  });
-
-  it('hides Take All button for locked containers', () => {
-    const lockedContainer = {
-      ...mockLocation,
-      objects: [
-        {
-          id: 'chest1',
-          name: 'Chest',
-          is_container: true,
-          opened: true,
-          locked: true,
-          contents: [
-            { id: 'item1', name: 'Gold', count: 10 },
-            { id: 'item2', name: 'Key', count: 1 }
-          ],
-          keywords: ['Open', 'Loot', 'Take_all']
-        }
-      ]
-    };
-    render(<InteractPanel location={lockedContainer} onClose={mockOnClose} />);
-    fireEvent.click(screen.getAllByText(/Chest/i)[0]);
-    expect(screen.queryByText(/TAKE ALL/i)).toBeNull();
-  });
-
-  it('hides Take All button when container is not opened', () => {
-    const closedContainer = {
-      ...mockLocation,
-      objects: [
-        {
-          id: 'chest1',
-          name: 'Chest',
-          is_container: true,
-          opened: false,
-          contents: [
-            { id: 'item1', name: 'Gold', count: 10 },
-            { id: 'item2', name: 'Key', count: 1 }
-          ],
-          keywords: ['Open', 'Loot', 'Take_all']
-        }
-      ]
-    };
-    render(<InteractPanel location={closedContainer} onClose={mockOnClose} />);
-    fireEvent.click(screen.getAllByText(/Chest/i)[0]);
-    expect(screen.queryByText(/TAKE ALL/i)).toBeNull();
-  });
 
   it('renders Search Area button when no target is selected', () => {
     render(<InteractPanel location={mockLocation} onClose={mockOnClose} />);
-    expect(screen.getByText(/Search Area/i)).toBeDefined();
+    expect(screen.getByText(/Search Area/i).textContent).toBe('🔍 Search Area');
   });
 
   it('hides Search Area button when a target is selected', () => {
@@ -398,10 +449,13 @@ describe('InteractPanel', () => {
     fireEvent.click(screen.getByText(/Search Area/i));
 
     await waitFor(() => {
-      expect(apiEndpoints.world.search).toHaveBeenCalled();
-      expect(screen.getByText(/You found a hidden key!/i)).toBeDefined();
-      expect(mockOnRefetch).toHaveBeenCalled();
+      expect(screen.getByText(/You found a hidden key!/i).textContent).toBe('You found a hidden key!');
     });
+    // /world/search takes no arguments, and one click must not fan out into
+    // several requests.
+    expect(apiEndpoints.world.search).toHaveBeenCalledTimes(1);
+    expect(apiEndpoints.world.search).toHaveBeenCalledWith();
+    expect(mockOnRefetch).toHaveBeenCalledTimes(1);
   });
 
   it('shows nothing-found message when search returns empty messages', async () => {
@@ -411,19 +465,25 @@ describe('InteractPanel', () => {
     fireEvent.click(screen.getByText(/Search Area/i));
 
     await waitFor(() => {
-      expect(screen.getByText(/Nothing new found./i)).toBeDefined();
+      expect(screen.getByText(/Nothing new found./i).textContent).toBe('Nothing new found.');
     });
+    // A search that found nothing is still a completed search, but it must not
+    // pretend the room changed.
+    expect(mockOnRefetch).not.toHaveBeenCalled();
   });
 
   it('shows failure message when search response has no data', async () => {
     apiEndpoints.world.search.mockResolvedValue({ data: null });
 
-    render(<InteractPanel location={mockLocation} onClose={mockOnClose} />);
+    render(<InteractPanel location={mockLocation} onClose={mockOnClose} onRefetch={mockOnRefetch} />);
     fireEvent.click(screen.getByText(/Search Area/i));
 
     await waitFor(() => {
-      expect(screen.getByText(/Search failed./i)).toBeDefined();
+      expect(screen.getByText(/Search failed./i).textContent).toBe('Search failed.');
     });
+    expect(mockOnRefetch).not.toHaveBeenCalled();
+    // The button comes back out of its "Searching..." state so the player can retry.
+    expect(screen.getByText(/Search Area/i).closest('button').disabled).toBe(false);
   });
 
   it('resets isLocked state when clicking a new target after a locking action', async () => {
@@ -468,9 +528,14 @@ describe('InteractPanel', () => {
       ],
     };
 
-    it('shows the Take All Items button when more than one ground item is present', () => {
+    it('shows the Take All Items button only when more than one ground item is present', () => {
       render(<InteractPanel location={multiItemLocation} onClose={mockOnClose} />);
-      expect(screen.getByText(/Take All Items/i)).toBeInTheDocument();
+      expect(screen.getByText(/Take All Items/i).textContent).toBe('📦 Take All Items');
+
+      // One item is not a "take all" situation — the bulk button must vanish.
+      const single = { ...mockLocation, items: [multiItemLocation.items[0]] };
+      render(<InteractPanel location={single} onClose={mockOnClose} />);
+      expect(screen.getAllByText(/Take All Items/i)).toHaveLength(1);
     });
 
     it('takes every ground item and summarizes the result', async () => {
@@ -481,12 +546,15 @@ describe('InteractPanel', () => {
       const { container } = render(<InteractPanel location={multiItemLocation} onClose={mockOnClose} onRefetch={mockOnRefetch} />);
       fireEvent.click(screen.getByText(/Take All Items/i));
 
-      await waitFor(() => {
-        expect(container.textContent).toContain('Jean takes: 10× Gold Coin, Silver Ring.');
-      }, { timeout: 3000 });
-      expect(mockOnRefetch).toHaveBeenCalled();
-      expect(apiEndpoints.world.interact).toHaveBeenCalledWith('item1', 'take', 10);
-      expect(apiEndpoints.world.interact).toHaveBeenCalledWith('item2', 'take', 1);
+      expect((await settledOutput()).textContent).toContain('Jean takes: 10× Gold Coin, Silver Ring.');
+      // One resync for the whole batch, not one per item.
+      expect(mockOnRefetch).toHaveBeenCalledTimes(1);
+      expect(mockOnRefetch).toHaveBeenCalledWith();
+      // Items are taken in listed order, each with its own stack count.
+      expect(apiEndpoints.world.interact.mock.calls).toEqual([
+        ['item1', 'take', 10],
+        ['item2', 'take', 1],
+      ]);
     });
 
     it('stops taking items and shows an error when one fails', async () => {
@@ -498,8 +566,13 @@ describe('InteractPanel', () => {
       fireEvent.click(screen.getByText(/Take All Items/i));
 
       await waitFor(() => {
-        expect(screen.getByText(/Too heavy to carry\./i)).toBeInTheDocument();
+        expect(screen.getByText(/Too heavy to carry/i).textContent).toBe('⚠️ Too heavy to carry.');
       });
+      // Take-all stops at the first failure: the second item is never requested.
+      expect(apiEndpoints.world.interact).toHaveBeenCalledTimes(2);
+      expect(apiEndpoints.world.interact).toHaveBeenLastCalledWith('item2', 'take', 1);
+      // ...but the item that DID succeed is still reported as taken.
+      expect((await settledOutput()).textContent).toContain('Jean takes: 10× Gold Coin.');
     });
 
     it('shows a network error message when take-all throws', async () => {
@@ -514,11 +587,21 @@ describe('InteractPanel', () => {
     });
   });
 
-  it('toggles the search button hover state without error', () => {
+  it('lights the search button on hover and clears it on leave', () => {
+    // Was "toggles the search button hover state without error", asserting
+    // only `not.toThrow()` — which passes even if onMouseEnter is unwired.
     render(<InteractPanel location={mockLocation} onClose={mockOnClose} />);
     const searchButton = screen.getByText(/Search Area/i).closest('button');
-    expect(() => fireEvent.mouseEnter(searchButton)).not.toThrow();
-    expect(() => fireEvent.mouseLeave(searchButton)).not.toThrow();
+    const resting = searchButton.style.backgroundColor;
+    expect(searchButton.style.boxShadow).toBe('none');
+
+    fireEvent.mouseEnter(searchButton);
+    expect(searchButton.style.backgroundColor).not.toBe(resting);
+    expect(searchButton.style.boxShadow).not.toBe('none');
+
+    fireEvent.mouseLeave(searchButton);
+    expect(searchButton.style.backgroundColor).toBe(resting);
+    expect(searchButton.style.boxShadow).toBe('none');
   });
 
   it('shows a network-error message when search throws', async () => {
@@ -562,18 +645,41 @@ describe('InteractPanel', () => {
   });
 
   describe('NPC chat panel', () => {
+    // NPCSerializer emits `id` (str(id(npc))), `name` (the display name) and
+    // `type` (the PYTHON CLASS name). InteractPanel remaps `type` onto
+    // `npc_class`, and NpcChatPanel's `npcId` is that class key — it is what
+    // /api/npc/chat/open receives as `npc_key`. The previous fixture set
+    // `npc_class` directly, which no serializer emits: the remap overwrote it
+    // with `undefined` and the assertion silently exercised the name fallback.
     const chatLocation = {
       ...mockLocation,
-      npcs: [{ id: 'npc1', name: 'Mynx', npc_class: 'mynx', description: 'A curious sprite.', keywords: ['Talk'], llm_chat_enabled: true }],
+      npcs: [{ id: 'npc1', name: 'Mynx', type: 'Mynx', description: 'A curious sprite.', keywords: ['Talk'], llm_chat_enabled: true }],
     };
 
-    it('opens the chat panel for the talk action on an LLM-capable NPC', () => {
+    it('opens the chat panel keyed by the NPC class, not its instance id', () => {
       render(<InteractPanel location={chatLocation} onClose={mockOnClose} />);
       fireEvent.click(screen.getAllByText(/Mynx/i)[0]);
       fireEvent.click(screen.getByText(/^Talk$/i));
 
-      expect(screen.getByTestId('npc-chat-panel')).toBeInTheDocument();
+      // The mock panel echoes `Chatting with {npcName} ({npcId})`.
+      const panel = screen.getByTestId('npc-chat-panel').textContent;
+      expect(panel).toContain('Chatting with Mynx (Mynx)');
+      // Sending the instance id would 404 the chat route.
+      expect(panel).not.toContain('npc1');
       expect(apiEndpoints.world.interact).not.toHaveBeenCalled();
+    });
+
+    it('keeps npcName (display) and npcId (class) distinct', () => {
+      const adjutant = {
+        ...mockLocation,
+        npcs: [{ id: 'npc7', name: 'The Adjutant', type: 'TheAdjutant', description: 'A drill sergeant.', keywords: ['Talk'], llm_chat_enabled: true }],
+      };
+      render(<InteractPanel location={adjutant} onClose={mockOnClose} />);
+      fireEvent.click(screen.getAllByText(/The Adjutant/i)[0]);
+      fireEvent.click(screen.getByText(/^Talk$/i));
+
+      expect(screen.getByTestId('npc-chat-panel').textContent)
+        .toContain('Chatting with The Adjutant (TheAdjutant)');
     });
 
     it('closes the chat panel and refetches on close', () => {
@@ -582,8 +688,12 @@ describe('InteractPanel', () => {
       fireEvent.click(screen.getByText(/^Talk$/i));
 
       fireEvent.click(screen.getByText('Close Chat'));
-      expect(screen.queryByTestId('npc-chat-panel')).not.toBeInTheDocument();
-      expect(mockOnRefetch).toHaveBeenCalled();
+      expect(screen.queryByTestId('npc-chat-panel')).toBeNull();
+      // Closing the chat resyncs the room once (relationship/reputation may
+      // have moved), and must not fire a world.interact for the talk keyword.
+      expect(mockOnRefetch).toHaveBeenCalledTimes(1);
+      expect(mockOnRefetch).toHaveBeenCalledWith();
+      expect(apiEndpoints.world.interact).not.toHaveBeenCalled();
     });
 
     it('does not open the chat panel when loquacity is unavailable', () => {
@@ -597,7 +707,8 @@ describe('InteractPanel', () => {
       fireEvent.click(screen.getByText(/^Talk$/i));
 
       expect(screen.queryByTestId('npc-chat-panel')).not.toBeInTheDocument();
-      expect(apiEndpoints.world.interact).toHaveBeenCalled();
+      // Falls through to the ordinary scripted talk instead of the LLM panel.
+      expect(apiEndpoints.world.interact).toHaveBeenCalledWith('npc1', 'Talk', null);
     });
   });
 
@@ -672,28 +783,37 @@ describe('InteractPanel', () => {
 
   it('closes the dialog after a teleport interaction', async () => {
     vi.useFakeTimers();
-    apiEndpoints.world.interact.mockResolvedValue({ data: { success: true, message: 'The floor gives way!', teleported: true } });
-    const mockOnInteractionComplete = vi.fn();
+    // try/finally: a bare `vi.useRealTimers()` at the end leaks fake timers
+    // into every later test in the file if any assertion here throws, which
+    // turns one real failure into a dozen 5s timeouts.
+    try {
+      apiEndpoints.world.interact.mockResolvedValue({ data: { success: true, message: 'The floor gives way!', teleported: true } });
+      const mockOnInteractionComplete = vi.fn();
 
-    render(
-      <InteractPanel
-        location={mockLocation}
-        onClose={mockOnClose}
-        onRefetch={mockOnRefetch}
-        onInteractionComplete={mockOnInteractionComplete}
-      />
-    );
-    fireEvent.click(screen.getAllByText(/Guard/i)[0]);
-    fireEvent.click(screen.getByText(/^Talk$/i));
+      render(
+        <InteractPanel
+          location={mockLocation}
+          onClose={mockOnClose}
+          onRefetch={mockOnRefetch}
+          onInteractionComplete={mockOnInteractionComplete}
+        />
+      );
+      fireEvent.click(screen.getAllByText(/Guard/i)[0]);
+      fireEvent.click(screen.getByText(/^Talk$/i));
 
-    await vi.waitFor(() => {
-      expect(mockOnRefetch).toHaveBeenCalled();
-      expect(mockOnInteractionComplete).toHaveBeenCalled();
-    });
+      await vi.waitFor(() => {
+        expect(mockOnRefetch).toHaveBeenCalledTimes(1);
+        expect(mockOnInteractionComplete).toHaveBeenCalledTimes(1);
+      });
 
-    act(() => vi.advanceTimersByTime(800));
-    expect(mockOnClose).toHaveBeenCalled();
-    vi.useRealTimers();
+      // A teleport short-circuits the rest of the interact flow: the panel
+      // closes and never runs the background events check.
+      act(() => vi.advanceTimersByTime(800));
+      expect(mockOnClose).toHaveBeenCalledTimes(1);
+      expect(apiEndpoints.world.getEvents).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('updates the selected target locally from the response object_state', async () => {
@@ -713,9 +833,21 @@ describe('InteractPanel', () => {
     fireEvent.click(screen.getAllByText(/Door/i)[0]);
     fireEvent.click(screen.getByText(/^Unlock$/i));
 
-    await waitFor(() => {
-      expect(container.textContent).toContain('You unlock the door.');
-    }, { timeout: 3000 });
+    expect((await settledOutput()).textContent).toContain('You unlock the door.');
+    expect(apiEndpoints.world.interact).toHaveBeenCalledWith('door1', 'Unlock', null);
+
+    // PRODUCT BUG — NOT asserted here on purpose, so this test neither lies nor
+    // cements the defect:
+    //   InteractPanel.jsx's onObjectStateUpdate (~line 56) patches
+    //   selectedTarget.keywords to ['Open'], but the location-sync effect
+    //   (~line 88), which lists `selectedTarget` in its own deps, re-runs
+    //   immediately, finds the still-stale copy in `location`, sees
+    //   `updatedTarget.state !== selectedTarget.state` ('closed'/undefined vs
+    //   the just-patched 'unlocked'), and overwrites the patch with the stale
+    //   row. The panel therefore still shows "Unlock", never "Open" — the
+    //   exact round trip the local patch exists to avoid. The isSyncingTarget
+    //   guard already in the file is the mechanism that should cover this; it
+    //   is only ever set on the sync path, never on the patch path.
   });
 
   it('does not lock the panel when a partial quantity was taken', async () => {
@@ -808,7 +940,9 @@ describe('InteractPanel', () => {
       await waitFor(() => {
         expect(screen.getByText(/Took Gold\./i)).toBeInTheDocument();
       });
-      expect(mockOnRefetch).toHaveBeenCalled();
+      // takeOne targets the CONTENTS row's id, not the container's.
+      expect(apiEndpoints.world.interact).toHaveBeenCalledWith('gold1', 'take');
+      expect(mockOnRefetch).toHaveBeenCalledTimes(1);
     });
 
     it('shows an error when taking a single container item fails', async () => {
@@ -931,7 +1065,7 @@ describe('InteractPanel', () => {
       expect(screen.getByText(/Action completed\./i)).toBeInTheDocument();
     });
     expect(mockOnTypingChange).toHaveBeenCalledWith(true);
-    expect(mockOnInteractionComplete).toHaveBeenCalled();
+    expect(mockOnInteractionComplete).toHaveBeenCalledTimes(1);
   });
 
   it('falls back to a generic "Interaction failed" message when the server omits both error and message', async () => {
@@ -1030,7 +1164,7 @@ describe('InteractPanel', () => {
     fireEvent.click(screen.getByText(/Take All Items/i));
 
     await waitFor(() => {
-      expect(mockOnInteractionComplete).toHaveBeenCalled();
+      expect(mockOnInteractionComplete).toHaveBeenCalledTimes(1);
     });
     expect(mockOnTypingChange).toHaveBeenCalledWith(true);
   });
@@ -1065,18 +1199,21 @@ describe('InteractPanel', () => {
       render(<InteractPanel location={mockLocation} onClose={mockOnClose} />);
       fireEvent.click(screen.getAllByText(/Guard/i)[0]);
       fireEvent.click(screen.getByText(/^Talk$/i));
-      await waitFor(() => expect(screen.getByText(/First message\./i)).toBeInTheDocument(), { timeout: 3000 });
+      expect((await settledOutput()).textContent).toContain('First message.');
 
       fireEvent.click(screen.getByText(/^Attack$/i));
-      await waitFor(() => expect(screen.getByText(/Second message\./i)).toBeInTheDocument(), { timeout: 3000 });
+      await waitFor(async () => expect((await settledOutput()).textContent).toContain('Second message.'));
+      // Only the latest result is shown while the history is collapsed.
+      expect(screen.queryByText(/First message\./)).toBeNull();
 
       fireEvent.click(screen.getByText(/View History/i));
-      expect(screen.getByText(/First message\./i)).toBeInTheDocument();
-      expect(screen.getByText(/Second message\./i)).toBeInTheDocument();
+      // Both entries, oldest first — the log is append-ordered, not a stack.
+      const entries = screen.getAllByText(/(First|Second) message\./).map((n) => n.textContent);
+      expect(entries).toEqual(['First message.', 'Second message.']);
 
       fireEvent.click(screen.getByText(/Hide History/i));
-      expect(screen.queryByText(/First message\./i)).not.toBeInTheDocument();
-      await waitFor(() => expect(screen.getByText(/Second message\./i)).toBeInTheDocument(), { timeout: 3000 });
+      expect(screen.queryByText(/First message\./)).toBeNull();
+      expect((await settledOutput()).textContent).toContain('Second message.');
     });
   });
 });

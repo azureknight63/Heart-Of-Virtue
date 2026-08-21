@@ -30,18 +30,6 @@ from conftest import wire_real_allocate_level_up_points
 # ---------------------------------------------------------------------------
 
 
-def _make_session(
-    session_id="test_session_123", username="jean_claire", db_user_id="db_user_1"
-):
-    """Return a minimal session mock."""
-    s = MagicMock()
-    s.session_id = session_id
-    s.username = username
-    s.db_user_id = db_user_id
-    s.data = {"timezone": "America/New_York"}
-    return s
-
-
 def _make_player():
     """Return a minimal player mock."""
     p = MagicMock()
@@ -65,17 +53,6 @@ def _make_player():
     p.charisma_base = 6
     p.intelligence_base = 5
     return p
-
-
-def _make_session_manager(session, player):
-    """Return a mock session manager wired to session/player."""
-    sm = MagicMock()
-    sm.get_session.return_value = session
-    sm.get_player.return_value = player
-    sm.save_session.return_value = None
-    sm.set_player.return_value = None
-    sm.start_new_game.return_value = True
-    return sm
 
 
 def _make_game_service():
@@ -108,37 +85,54 @@ def _make_game_service():
     return gs
 
 
-def _make_minimal_app(blueprints_to_register):
+@pytest.fixture
+def minimal_app(make_stub_session, make_stub_session_manager):
     """Create a minimal Flask test app with mocked game objects.
 
-    blueprints_to_register: list of (blueprint, url_prefix) tuples.
-    Pass url_prefix=None to use the blueprint's own built-in url_prefix.
+    ``minimal_app(blueprints_to_register)`` where the argument is a list of
+    ``(blueprint, url_prefix)`` tuples; pass ``url_prefix=None`` to use the
+    blueprint's own built-in prefix.
+
+    The session comes from the shared ``make_stub_session`` factory — a *real*
+    ``Session``, so ``session.data`` and friends behave as production's do and
+    an attribute the routes read but ``Session`` never defines raises instead
+    of being invented — and the manager from ``make_stub_session_manager``,
+    which is ``spec``-constrained against ``SessionManager``.
     """
-    session = _make_session()
-    player = _make_player()
-    sm = _make_session_manager(session, player)
-    gs = _make_game_service()
 
-    app = Flask(__name__)
-    app.config["TESTING"] = True
-    app.config["DEBUG"] = True
+    def _make_minimal_app(blueprints_to_register):
+        session = make_stub_session(
+            session_id="test_session_123",
+            username="jean_claire",
+            db_user_id="db_user_1",
+            timezone="America/New_York",
+        )
+        player = _make_player()
+        sm = make_stub_session_manager(session, player)
+        gs = _make_game_service()
 
-    for bp, prefix in blueprints_to_register:
-        if prefix is None:
-            app.register_blueprint(bp)
-        else:
-            app.register_blueprint(bp, url_prefix=prefix)
+        app = Flask(__name__)
+        app.config["TESTING"] = True
+        app.config["DEBUG"] = True
 
-    app.session_manager = sm
-    app.game_service = gs
+        for bp, prefix in blueprints_to_register:
+            if prefix is None:
+                app.register_blueprint(bp)
+            else:
+                app.register_blueprint(bp, url_prefix=prefix)
 
-    # Store for test access
-    app._test_session = session
-    app._test_player = player
-    app._test_sm = sm
-    app._test_gs = gs
+        app.session_manager = sm
+        app.game_service = gs
 
-    return app
+        # Store for test access
+        app._test_session = session
+        app._test_player = player
+        app._test_sm = sm
+        app._test_gs = gs
+
+        return app
+
+    return _make_minimal_app
 
 
 AUTH_HEADER = {"Authorization": "Bearer test_session_123"}
@@ -206,13 +200,40 @@ class TestErrorHandler:
         assert data["success"] is False
         assert "Internal server error" in data["error"]
 
-    def test_register_error_handlers_returns_none(self):
-        """register_error_handlers should not raise."""
+    def test_register_error_handlers_installs_handlers_on_the_app(self):
+        """The function's job is the side effect, not the return value.
+
+        Asserting ``result is None`` passed for a body of ``pass``. What
+        callers depend on is that a bare Flask app comes back answering 404
+        and 500 with the JSON envelope the frontend parses, instead of
+        Werkzeug's HTML error page (which would make every client-side
+        ``response.json()`` throw).
+        """
         from src.api.handlers.error_handler import register_error_handlers
 
         a = Flask(__name__)
-        result = register_error_handlers(a)
-        assert result is None
+        a.config["TESTING"] = False
+
+        @a.route("/boom")
+        def boom():
+            raise RuntimeError("kaboom")
+
+        assert not a.error_handler_spec.get(None)
+        register_error_handlers(a)
+        assert a.error_handler_spec.get(None)
+
+        client = a.test_client()
+        missing = client.get("/no-such-route")
+        assert missing.status_code == 404
+        assert missing.get_json()["success"] is False
+
+        crashed = client.get("/boom")
+        assert crashed.status_code == 500
+        body = crashed.get_json()
+        assert body["success"] is False
+        assert "Internal server error" in body["error"]
+        # The raised text must not reach the client.
+        assert "kaboom" not in crashed.data.decode()
 
 
 # ===========================================================================
@@ -501,18 +522,38 @@ class TestFeedbackHelpers:
         sid = "session_rate_test_999"
         # Clear any previous state
         self._feedback_limiter.clear(sid)
-        for _ in range(10):
-            self._is_rate_limited(sid)
+        for i in range(10):
+            # Assert the transition, not just the end state: an off-by-one
+            # that blocked at the 9th submission would still satisfy a lone
+            # "the 11th is limited" assertion.
+            assert self._is_rate_limited(sid) is False, f"blocked early at call {i}"
         assert self._is_rate_limited(sid) is True
+
+    def test_rate_limit_is_scoped_to_one_session(self):
+        """The key is the session id; one player's quota must not throttle
+        another's."""
+        noisy, quiet = "rate_noisy_session", "rate_quiet_session"
+        self._feedback_limiter.clear(noisy)
+        self._feedback_limiter.clear(quiet)
+        for _ in range(11):
+            self._is_rate_limited(noisy)
+        assert self._is_rate_limited(noisy) is True
+        assert self._is_rate_limited(quiet) is False
 
     def test_create_github_issue_no_token(self):
         import os
 
         with patch.dict(os.environ, {}, clear=True):
             os.environ.pop("GITHUB_TOKEN", None)
-            url, err = self._create_github_issue("Title", "Body", ["bug"])
+            with patch("src.api.routes.feedback.requests.post") as mock_post:
+                url, err = self._create_github_issue("Title", "Body", ["bug"])
+
         assert url is None
-        assert err is not None
+        assert err == "Feedback service is not configured on this server."
+        # The unconfigured branch must short-circuit before any outbound
+        # request -- `err is not None` alone would also pass for a version
+        # that POSTed with an empty Bearer token first.
+        mock_post.assert_not_called()
 
     def test_create_github_issue_request_exception(self):
         import os
@@ -527,17 +568,54 @@ class TestFeedbackHelpers:
         assert url is None
         assert "Could not reach GitHub" in err
 
-    def test_create_github_issue_api_error(self):
+    @pytest.mark.parametrize("status", [400, 401, 403, 422, 500])
+    def test_create_github_issue_api_error(self, status):
         import os
 
         mock_resp = MagicMock()
-        mock_resp.status_code = 422
+        mock_resp.status_code = status
 
-        with patch.dict(os.environ, {"GITHUB_TOKEN": "fake_token"}):
+        with patch.dict(os.environ, {"GITHUB_TOKEN": "s3cret-token"}):
             with patch("src.api.routes.feedback.requests.post", return_value=mock_resp):
                 url, err = self._create_github_issue("Title", "Body", ["bug"])
+
         assert url is None
-        assert err is not None
+        assert err == "GitHub rejected the submission. Please try again later."
+        # A 401/403 from GitHub means *our* token is bad; the message the
+        # player sees must not carry it, nor the upstream status.
+        assert "s3cret-token" not in err
+        assert str(status) not in err
+        # The body is not read on a non-201, so a GitHub error payload
+        # cannot be relayed to the player either.
+        mock_resp.json.assert_not_called()
+
+    def test_create_github_issue_sends_the_token_and_payload(self):
+        """The happy path's request itself, which nothing asserted before.
+
+        A wrong header name or a payload missing `labels` would leave the
+        issue untriaged, and both are invisible if the test only checks the
+        returned URL.
+        """
+        import os
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 201
+        mock_resp.json.return_value = {"html_url": "https://github.com/issues/7"}
+
+        with patch.dict(os.environ, {"GITHUB_TOKEN": "s3cret-token"}):
+            with patch(
+                "src.api.routes.feedback.requests.post", return_value=mock_resp
+            ) as mock_post:
+                url, err = self._create_github_issue("T", "B", ["bug", "player"])
+
+        assert (url, err) == ("https://github.com/issues/7", None)
+        _, kwargs = mock_post.call_args
+        assert kwargs["json"] == {"title": "T", "body": "B", "labels": ["bug", "player"]}
+        assert kwargs["headers"]["Authorization"] == "Bearer s3cret-token"
+        assert kwargs["headers"]["Accept"] == "application/vnd.github+json"
+        # A missing timeout would hang a player's feedback submission on a
+        # stalled GitHub connection until the worker itself timed out.
+        assert kwargs["timeout"] == 5
 
     def test_create_github_issue_success(self):
         import os
@@ -557,13 +635,13 @@ class TestFeedbackRoute:
     """Test the /feedback/issue endpoint."""
 
     @pytest.fixture
-    def client(self):
+    def client(self, minimal_app):
         from src.api.routes.feedback import feedback_bp, _feedback_limiter
 
         # Clear rate limit store to avoid cross-test contamination
         _feedback_limiter.clear_all()
 
-        app = _make_minimal_app([(feedback_bp, "/api/feedback")])
+        app = minimal_app([(feedback_bp, "/api/feedback")])
         with app.test_client() as c:
             yield c, app
 
@@ -977,10 +1055,10 @@ class TestCombatRoutes:
     """Test combat API route endpoints."""
 
     @pytest.fixture
-    def client(self):
+    def client(self, minimal_app):
         from src.api.routes.combat import combat_bp
 
-        app = _make_minimal_app([(combat_bp, "/api/combat")])
+        app = minimal_app([(combat_bp, "/api/combat")])
         with app.test_client() as c:
             yield c, app
 
@@ -1110,10 +1188,10 @@ class TestPlayerRoutes:
     """Test player status/stats/skills API endpoints."""
 
     @pytest.fixture
-    def client(self):
+    def client(self, minimal_app):
         from src.api.routes.player import player_bp
 
-        app = _make_minimal_app([(player_bp, "/api/player")])
+        app = minimal_app([(player_bp, "/api/player")])
         with app.test_client() as c:
             yield c, app
 
@@ -1276,10 +1354,10 @@ class TestShopRoutes:
     """Test shop API endpoints."""
 
     @pytest.fixture
-    def client(self):
+    def client(self, minimal_app):
         from src.api.routes.shop import shop_bp
 
-        app = _make_minimal_app([(shop_bp, "/api/shop")])
+        app = minimal_app([(shop_bp, "/api/shop")])
         with app.test_client() as c:
             yield c, app
 
@@ -1411,10 +1489,10 @@ class TestSavesRoutesAuthGuards:
     """Test auth guards on saves routes without exercising async game service."""
 
     @pytest.fixture
-    def client(self):
+    def client(self, minimal_app):
         from src.api.routes.saves import saves_bp
 
-        app = _make_minimal_app([(saves_bp, "/api")])
+        app = minimal_app([(saves_bp, "/api")])
         with app.test_client() as c:
             yield c, app
 
@@ -1438,20 +1516,36 @@ class TestSavesRoutesAuthGuards:
         assert rv.get_json()["success"] is False
 
     def test_list_saves_no_db_user(self, client):
-        """Saves list for guests (no db_user_id) returns empty list."""
+        """Saves list for a test/guest session (no db_user_id) is empty, 200.
+
+        The old ``in (200, 401, 500)`` accepted the 401 an auth failure gives
+        and the 500 an unhandled exception gives, so it could not distinguish
+        "took the guest branch" from "never got there at all". Assert the
+        exact envelope, and that the DB was never consulted.
+        """
         c, app = client
         # Simulate guest session without db_user_id
         del app._test_session.db_user_id
         rv = c.get("/api/saves", headers=AUTH_HEADER)
-        # should return 200 with empty saves (guest path)
-        assert rv.status_code in (200, 401, 500)
+
+        assert rv.status_code == 200
+        assert rv.get_json() == {"success": True, "saves": []}
+        app._test_gs.list_saves.assert_not_called()
 
     def test_create_save_no_db_user(self, client):
-        """Cloud saves require a registered account."""
+        """Cloud saves require a registered account — exactly 403, no write."""
         c, app = client
         del app._test_session.db_user_id
         rv = c.post("/api/saves", json={"name": "Save 1"}, headers=AUTH_HEADER)
-        assert rv.status_code in (403, 401, 500)
+
+        assert rv.status_code == 403
+        assert rv.get_json() == {
+            "success": False,
+            "error": "Cloud saves require a registered account.",
+        }
+        # The gate must run before save_game, or a guest could still write a
+        # row (with a null owner) and have it counted against the save limit.
+        app._test_gs.save_game.assert_not_called()
 
 
 # ===========================================================================

@@ -110,8 +110,61 @@ describe('CombatLog', () => {
   });
 
   it('auto-scrolls to bottom when it becomes player turn', () => {
-    const { rerender } = render(<CombatLog log={mockLog} isMyTurn={false} />);
+    // The previous version rerendered and asserted nothing ("// Effect runs"),
+    // so it passed against a component with no scroll effect at all. The
+    // observable outcome is that the scroll container is driven to its bottom.
+    const { rerender, container } = render(<CombatLog log={mockLog} isMyTurn={false} />);
+    const scroller = container.querySelector('[style*="overflow-y"]')
+      || container.querySelector('div > div');
+    Object.defineProperty(scroller, 'scrollHeight', { value: 500, configurable: true });
+    Object.defineProperty(scroller, 'clientHeight', { value: 100, configurable: true });
+    scroller.scrollTop = 0;
+
     rerender(<CombatLog log={mockLog} isMyTurn={true} />);
-    // Effect runs
+
+    expect(scroller.scrollTop).toBe(scroller.scrollHeight);
+  });
+
+  describe('empty-state placeholder', () => {
+    // Two ways the panel could render completely blank -- no entries AND no
+    // placeholder -- both of which the old `log?.length === 0` gate missed.
+    it('shows the placeholder when the log prop is absent', () => {
+      // `undefined === 0` is false, so the old gate suppressed the placeholder
+      // and rendered an empty panel.
+      render(<CombatLog />);
+      expect(screen.getByText('Combat started...')).toBeDefined();
+    });
+
+    it('shows the placeholder when the log holds only animation entries', () => {
+      // Animation entries are filtered out of the rendered list but still count
+      // toward `log.length`, so the old gate saw a non-empty log and hid the
+      // placeholder while the list rendered nothing. Reachable at combat start:
+      // the reveal loop adds entries one at a time, so the first revealed entry
+      // can be an animation.
+      const animationOnly = [
+        { type: 'animation', message: 'Slash animation', timestamp: '12:00:00' },
+        { type: 'animation', message: 'Thrust animation', timestamp: '12:00:01' },
+      ];
+      render(<CombatLog log={animationOnly} />);
+
+      expect(screen.getByText('Combat started...')).toBeDefined();
+      expect(screen.queryByText('Slash animation')).toBeNull();
+      expect(screen.queryByText('Thrust animation')).toBeNull();
+    });
+
+    it('hides the placeholder as soon as one renderable entry arrives', () => {
+      // The complement: a log mixing animation with a real line must show the
+      // line and drop the placeholder, so the fix cannot degrade into "always
+      // show the placeholder".
+      const mixed = [
+        { type: 'animation', message: 'Slash animation', timestamp: '12:00:00' },
+        { type: 'info', message: 'Jean strikes the slime', timestamp: '12:00:01' },
+      ];
+      render(<CombatLog log={mixed} />);
+
+      expect(screen.queryByText('Combat started...')).toBeNull();
+      expect(screen.getByText('Jean strikes the slime')).toBeDefined();
+      expect(screen.queryByText('Slash animation')).toBeNull();
+    });
   });
 });

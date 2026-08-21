@@ -20,6 +20,8 @@ import sys
 import pathlib
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 _ROOT = pathlib.Path(__file__).resolve().parent.parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
@@ -27,8 +29,13 @@ if str(_ROOT) not in sys.path:
 from src.positions import CombatPosition, Direction
 
 from src.moves._base import (
+    HIT_CHANCE_BASE,
+    HIT_CHANCE_FINESSE_WEIGHT,
+    HIT_CHANCE_INTELLIGENCE_WEIGHT,
     Move,
     PassiveMove,
+    attacker_accuracy,
+    to_hit_chance,
     _apply_blade_mastery_discount,
     _apply_carry_fatigue,
     _apply_facing_accuracy,
@@ -172,25 +179,39 @@ class TestApplyWorkTheGap:
 
 
 class TestEnsureWeaponExp:
-    def test_silently_swallows_exception(self):
+    def test_silently_swallows_exception_and_leaves_state_untouched(self):
         user = _make_combatant()
-        # combat_exp is None -> "in" check raises TypeError, caught silently
+        # combat_exp is None -> the "in" membership check raises TypeError.
         user.combat_exp = None
-        # Should not raise
         _ensure_weapon_exp(user)
+        # Swallowed, and the helper must not have invented a replacement dict:
+        # combat crediting downstream relies on combat_exp staying as it was.
+        assert user.combat_exp is None
 
     def test_noop_without_weapon(self):
         user = _make_combatant()
         user.eq_weapon = None
-        _ensure_weapon_exp(user)  # should not raise
+        user.combat_exp = {"Basic": 7}
+        user.skill_exp = {"Basic": 3}
+        _ensure_weapon_exp(user)
+        assert user.combat_exp == {"Basic": 7}
+        assert user.skill_exp == {"Basic": 3}
 
     def test_adds_missing_subtype_entries(self):
         user = _make_combatant()
         user.combat_exp = {}
         user.skill_exp = {}
         _ensure_weapon_exp(user)
-        assert user.combat_exp[user.eq_weapon.subtype] == 0
-        assert user.skill_exp[user.eq_weapon.subtype] == 0
+        assert user.combat_exp == {"Sword": 0}
+        assert user.skill_exp == {"Sword": 0}
+
+    def test_does_not_reset_an_existing_subtype_pool(self):
+        user = _make_combatant()
+        user.combat_exp = {"Sword": 250}
+        user.skill_exp = {"Sword": 40}
+        _ensure_weapon_exp(user)
+        assert user.combat_exp == {"Sword": 250}
+        assert user.skill_exp == {"Sword": 40}
 
 
 # ---------------------------------------------------------------------------
@@ -550,45 +571,102 @@ class TestStandardExecuteAttack:
         move.fatigue_cost = 5
         return user, target, move
 
-    def test_hit_chance_floors_at_five(self):
+    @pytest.mark.parametrize(
+        "roll, expected_hp",
+        [
+            (5, 50),   # roll == the floor -> hit_chance >= roll, so it lands
+            (6, 100),  # one point above the floor -> miss
+        ],
+    )
+    def test_hit_chance_floors_at_exactly_five(self, roll, expected_hp):
+        """A target with 500 finesse drives the raw chance to -393; the floor=5
+        clamp is the only thing keeping the attack landable at all.
+
+        The pair of rolls straddles the floor, so this fails if the clamp moves
+        to 1, to 10, or disappears -- unlike an `hp < 100` assertion, which any
+        floor at or above 1 would satisfy.
+        """
         user, target, move = self._setup(target_finesse=500)
         with patch("src.moves._base.narrate"), \
-             patch("src.moves._base.random.randint", return_value=0), \
+             patch("src.moves._base.random.randint", return_value=roll), \
              patch("src.moves._base.random.uniform", return_value=1.0), \
              patch("src.moves._base.functions.check_parry", return_value=False):
             move.standard_execute_attack(user, power=100, base_damage_type="crushing")
-        # hit_chance would be deeply negative -> clamped to 5, roll=0 -> still a hit
-        assert target.hp < 100
+        # power 100 x resistance 1.0 - protection 0, halved by the glancing-blow
+        # rule (hit_chance 5 - roll 5 < 10) -> 50 damage.
+        assert target.hp == expected_hp
 
     def test_damage_floors_at_zero_when_protection_high(self):
+        """Protection well above the incoming power must floor at 0, never heal.
+
+        `hp == 100` alone would also pass if the attack simply missed, so this
+        additionally pins that the attack *landed* with a damage value of 0.
+        """
         user, target, move = self._setup(protection=100000)
         with patch("src.moves._base.narrate"), \
              patch("src.moves._base.random.randint", return_value=0), \
              patch("src.moves._base.random.uniform", return_value=1.0), \
-             patch("src.moves._base.functions.check_parry", return_value=False):
+             patch("src.moves._base.functions.check_parry", return_value=False), \
+             patch.object(move, "hit", wraps=move.hit) as spy_hit, \
+             patch.object(move, "miss") as spy_miss:
             move.standard_execute_attack(user, power=10, base_damage_type="crushing")
-        assert target.hp == 100  # no damage dealt
+        assert target.hp == 100
+        spy_miss.assert_not_called()
+        assert spy_hit.call_args.args[0] == 0
 
-    def test_glancing_blow_branch(self):
-        # hit_chance computed deterministically; force roll to land within 10 of hit_chance
+    @pytest.mark.parametrize(
+        "roll, expected_damage, glancing",
+        [
+            (100, 20, True),   # 106 - 100 = 6  -> within 10, halved
+            (97, 20, True),    # 106 - 97  = 9  -> still the last glancing roll
+            (96, 40, False),   # 106 - 96  = 10 -> full damage, boundary is exclusive
+            (50, 40, False),   # comfortably clean hit
+        ],
+    )
+    def test_glancing_blow_halves_damage_within_ten_of_the_hit_chance(
+        self, roll, expected_damage, glancing
+    ):
+        """hit_chance = int(98 - 0 + 10*0.7 + 5*0.3) = 106 (no clamp applies).
+
+        The old version of this test asserted only `hp < 100`, which held for a
+        glancing blow, a full-power blow, and any damage number in between --
+        i.e. it proved a hit happened and nothing about glancing at all.
+        """
         user, target, move = self._setup(user_finesse=10, target_finesse=0)
-        # hit_chance = int(98 - 0 + 10*0.7 + 5*0.3) = int(98+7+1.5)=106 -> not clamped
         with patch("src.moves._base.narrate"), \
-             patch("src.moves._base.random.randint", return_value=100), \
+             patch("src.moves._base.random.randint", return_value=roll), \
              patch("src.moves._base.random.uniform", return_value=1.0), \
-             patch("src.moves._base.functions.check_parry", return_value=False):
+             patch("src.moves._base.functions.check_parry", return_value=False), \
+             patch.object(move, "hit", wraps=move.hit) as spy_hit:
             move.standard_execute_attack(user, power=40, base_damage_type="crushing")
-        assert target.hp < 100
+        assert target.hp == 100 - expected_damage
+        assert spy_hit.call_args.args == (expected_damage, glancing)
 
     def test_parry_dispatched_when_check_parry_true(self):
         user, target, move = self._setup()
         with patch("src.moves._base.narrate"), \
              patch("src.moves._base.random.randint", return_value=0), \
              patch("src.moves._base.random.uniform", return_value=1.0), \
-             patch("src.moves._base.functions.check_parry", return_value=True), \
-             patch.object(move, "parry") as mock_parry:
+             patch("src.moves._base.functions.check_parry", return_value=True) as chk, \
+             patch.object(move, "parry") as mock_parry, \
+             patch.object(move, "hit") as mock_hit:
             move.standard_execute_attack(user, power=40, base_damage_type="crushing")
-        mock_parry.assert_called_once()
+        mock_parry.assert_called_once_with()
+        # A parry replaces the hit entirely -- no damage may reach the target.
+        mock_hit.assert_not_called()
+        assert target.hp == 100
+        assert chk.call_args.args == (target,)
+
+    def test_fatigue_is_deducted_by_the_move_cost(self):
+        user, target, move = self._setup()
+        user.fatigue = 90
+        move.fatigue_cost = 25
+        with patch("src.moves._base.narrate"), \
+             patch("src.moves._base.random.randint", return_value=0), \
+             patch("src.moves._base.random.uniform", return_value=1.0), \
+             patch("src.moves._base.functions.check_parry", return_value=False):
+            move.standard_execute_attack(user, power=40, base_damage_type="crushing")
+        assert user.fatigue == 65
 
     def test_fatigue_floors_at_zero(self):
         user, target, move = self._setup()
@@ -658,8 +736,11 @@ class TestEnsureWeaponExpNoCombatExpAttr:
     def test_returns_early_without_combat_exp_attribute(self):
         user = MagicMock(spec=["eq_weapon"])
         user.eq_weapon = _make_weapon()
-        # hasattr(user, "combat_exp") is False since spec restricts attributes
-        _ensure_weapon_exp(user)  # should not raise
+        # hasattr(user, "combat_exp") is False since spec restricts attributes.
+        _ensure_weapon_exp(user)
+        # The early return must not graft a combat_exp pool onto a combatant
+        # that never had one -- the spec makes any such write blow up here.
+        assert not hasattr(user, "combat_exp")
 
 
 # ---------------------------------------------------------------------------
@@ -833,21 +914,55 @@ class TestStandardExecuteAttackAdditional:
         # hit_chance forced to -1 -> always a miss (roll=0 >= -1 is False since hit_chance<roll)
         assert target.hp == 100
 
-    def test_haunting_presence_reduces_hit_chance(self):
+    @pytest.mark.parametrize(
+        "defender_knows_haunting, expected_hp",
+        [
+            (False, 60),   # hit_chance 106 >= roll 95 -> 40 damage lands
+            (True, 100),   # int(106 * 0.85) = 90 < roll 95 -> the attack misses
+        ],
+    )
+    def test_haunting_presence_reduces_hit_chance(
+        self, defender_knows_haunting, expected_hp
+    ):
+        """HauntingPresence shaves 15% off the attacker's chance at close range.
+
+        The roll of 95 sits between the unmodified chance (106) and the reduced
+        one (90), so the passive flips the outcome from hit to miss. The old
+        assertion (`isinstance(target.hp, int)`) held whether the passive did
+        anything at all.
+        """
         user = _make_combatant(name="Jean", finesse=10)
-        haunting = MagicMock()
-        haunting.name = "Haunting Presence"
-        target = _make_combatant(name="Goblin", finesse=0, known_moves=[haunting])
+        known = []
+        if defender_knows_haunting:
+            haunting = MagicMock()
+            haunting.name = "Haunting Presence"
+            known = [haunting]
+        target = _make_combatant(name="Goblin", finesse=0, known_moves=known)
         target.combat_proximity = {user: 2}
         move = _make_move(user, target)
         move.fatigue_cost = 5
         with patch("src.moves._base.narrate"), \
-             patch("src.moves._base.random.randint", return_value=50), \
+             patch("src.moves._base.random.randint", return_value=95), \
              patch("src.moves._base.random.uniform", return_value=1.0), \
              patch("src.moves._base.functions.check_parry", return_value=False):
             move.standard_execute_attack(user, power=40, base_damage_type="crushing")
-        # No crash; branch executed regardless of hit/miss outcome
-        assert isinstance(target.hp, int)
+        assert target.hp == expected_hp
+
+    def test_haunting_presence_does_not_reach_past_three_proximity(self):
+        """The passive is close-range only -- at proximity 4 the attack lands."""
+        user = _make_combatant(name="Jean", finesse=10)
+        haunting = MagicMock()
+        haunting.name = "Haunting Presence"
+        target = _make_combatant(name="Goblin", finesse=0, known_moves=[haunting])
+        target.combat_proximity = {user: 4}
+        move = _make_move(user, target)
+        move.fatigue_cost = 5
+        with patch("src.moves._base.narrate"), \
+             patch("src.moves._base.random.randint", return_value=95), \
+             patch("src.moves._base.random.uniform", return_value=1.0), \
+             patch("src.moves._base.functions.check_parry", return_value=False):
+            move.standard_execute_attack(user, power=40, base_damage_type="crushing")
+        assert target.hp == 60
 
     def test_miss_dispatched_when_roll_exceeds_hit_chance(self):
         user = _make_combatant(name="Jean", finesse=0, intelligence=0)
@@ -1090,3 +1205,119 @@ class TestApplyToHitModifiers:
         defender.combat_proximity = {attacker: 2}
 
         assert _apply_to_hit_modifiers(attacker, defender, -1) == -1
+
+
+# ---------------------------------------------------------------------------
+# to_hit_chance / attacker_accuracy
+#
+# The engine's real to-hit arithmetic had no direct test anywhere in the suite
+# before this class, despite CLAUDE.md documenting it as the single most
+# regression-prone expression in the moves package. Everything here pins exact
+# integers: a range assertion (`0 <= chance <= 100`) would survive every
+# mistake the docstring warns about.
+# ---------------------------------------------------------------------------
+
+
+class _Stats:
+    """Carries only the two attributes the to-hit expression reads."""
+
+    def __init__(self, finesse, intelligence=0):
+        self.finesse = finesse
+        self.intelligence = intelligence
+
+
+class TestToHitChance:
+    def test_weights_are_the_published_constants(self):
+        # The API layer once kept its own copy of this expression and drifted to
+        # `98 + finesse`; these constants are the single source of truth now.
+        assert HIT_CHANCE_BASE == 98
+        assert HIT_CHANCE_FINESSE_WEIGHT == 0.7
+        assert HIT_CHANCE_INTELLIGENCE_WEIGHT == 0.3
+
+    @pytest.mark.parametrize(
+        "user_fin, user_int, target_fin, expected",
+        [
+            (0, 0, 0, 98),        # nothing but the base term
+            (1, 1, 0, 99),        # int(98 + 0.7 + 0.3)
+            (10, 5, 10, 96),      # int(98 - 10 + 7.0 + 1.5)
+            (20, 20, 10, 108),    # int(98 - 10 + 14.0 + 6.0) -- above 100, uncapped
+            (50, 50, 0, 148),     # to_hit_chance itself never caps
+            (10, 5, 200, -93),    # int() truncates toward zero: -93.5 -> -93, not -94
+        ],
+    )
+    def test_exact_chance_with_default_base_and_no_floor(
+        self, user_fin, user_int, target_fin, expected
+    ):
+        assert (
+            to_hit_chance(_Stats(user_fin, user_int), _Stats(target_fin)) == expected
+        )
+
+    @pytest.mark.parametrize(
+        "base, expected",
+        [(85, 83), (90, 88), (95, 93), (98, 96), (105, 103)],
+    )
+    def test_every_base_in_use_shifts_the_result_one_for_one(self, base, expected):
+        # All five bases are live in src/moves/ (grep to_hit_chance). A move that
+        # silently picked up the wrong base would move the result by 7-20 points.
+        assert (
+            to_hit_chance(_Stats(10, 5), _Stats(10), base=base) == expected
+        )
+
+    @pytest.mark.parametrize(
+        "floor, expected",
+        [(None, -393), (1, 1), (5, 5)],
+    )
+    def test_floor_clamps_only_from_below(self, floor, expected):
+        # Same inputs each time; only the floor changes. Both live floors (1 and
+        # 5) are exercised, plus the floorless call form.
+        assert (
+            to_hit_chance(_Stats(10, 5), _Stats(500), floor=floor) == expected
+        )
+
+    def test_floor_never_lowers_a_healthy_chance(self):
+        assert to_hit_chance(_Stats(10, 5), _Stats(0), floor=5) == 106
+
+    def test_intelligence_is_weighted_less_than_finesse(self):
+        # 10 points of finesse must be worth more than 10 points of intelligence.
+        finesse_heavy = to_hit_chance(_Stats(20, 0), _Stats(0))
+        intelligence_heavy = to_hit_chance(_Stats(0, 20), _Stats(0))
+        assert finesse_heavy == 112
+        assert intelligence_heavy == 104
+
+    def test_term_order_is_load_bearing(self):
+        """The exact regression CLAUDE.md forbids: folding the attacker terms
+        first and subtracting the defender last.
+
+        With finesse=23 / intelligence=3 / defender finesse=51 the truncation
+        lands on a different intermediate value, so the "simplified" form is one
+        point more generous than the real roll. A test that only asserted a
+        range would never have noticed.
+        """
+        user, target = _Stats(23, 3), _Stats(51)
+        real = to_hit_chance(user, target)
+        folded = attacker_accuracy(user.finesse, user.intelligence) - target.finesse
+
+        assert real == 63
+        assert folded == 64
+        assert real != folded
+
+
+class TestAttackerAccuracy:
+    @pytest.mark.parametrize(
+        "finesse, intelligence, expected",
+        [
+            (0, 0, 98),
+            (10, 5, 106),
+            (20, 20, 118),
+            (30, 10, 122),
+        ],
+    )
+    def test_exact_rating_with_default_base(self, finesse, intelligence, expected):
+        assert attacker_accuracy(finesse, intelligence) == expected
+
+    def test_honours_a_non_default_base(self):
+        assert attacker_accuracy(10, 5, base=85) == 93
+
+    def test_carries_no_defender_term(self):
+        # It is the attacker half only -- the defender's finesse must not leak in.
+        assert attacker_accuracy(10, 5) == to_hit_chance(_Stats(10, 5), _Stats(0))

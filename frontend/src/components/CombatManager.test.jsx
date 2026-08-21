@@ -1,46 +1,110 @@
 import React from 'react'
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, fireEvent } from '@testing-library/react'
 import CombatManager from './CombatManager'
 
-// Mock child components
+/**
+ * CombatManager is a pure router: given four booleans and one `endState` it
+ * decides which of four dialogs mount and which props each receives. So the
+ * only two things worth proving here are (a) the visibility matrix and (b) that
+ * every prop arrives intact at the right child.
+ *
+ * The child mocks below therefore ECHO the props they were handed into
+ * `data-*` attributes. The previous version rendered mocks that read
+ * `endState.dropped_items` and `endState.exp_gained` as a number, and the
+ * fixture was written to match — but the real payload
+ * (ApiCombatAdapter._build_victory_summary, src/api/combat_adapter.py:~2145)
+ * emits `items_dropped`, and `exp_gained` is a DICT of {category: amount}.
+ * VictoryDialog.jsx:19-25 and LootDialog.jsx:136 both read the real names.
+ * The old test could never have noticed: the mock agreed with the fixture.
+ * `playerWeight`/`weightLimit` were not echoed at all, so three tests claiming
+ * to "pass weight info" asserted nothing about weight.
+ */
+const echo = (testid, props) => (
+  <div
+    data-testid={testid}
+    data-endstate={JSON.stringify(props.endState ?? null)}
+    data-player-weight={String(props.playerWeight)}
+    data-weight-limit={String(props.weightLimit)}
+    data-text={props.text ?? ''}
+    data-handlers={Object.keys(props).filter((k) => typeof props[k] === 'function').sort().join(',')}
+  />
+)
+
 vi.mock('./VictoryDialog', () => ({
-  default: ({ endState, onAllocatePoints, onClose, onContinueToLoot }) => (
+  default: (props) => (
     <div data-testid="victory-dialog">
-      <p>Victory: +{endState?.exp_gained || 0} EXP</p>
-      <button onClick={() => onContinueToLoot()}>Continue</button>
-      <button onClick={() => onClose()}>Close</button>
+      {echo('victory-props', props)}
+      <button onClick={() => props.onContinueToLoot()}>Continue to loot</button>
+      <button onClick={() => props.onClose()}>Close victory</button>
+      <button onClick={() => props.onAllocatePoints('strength')}>Allocate</button>
     </div>
   ),
 }))
 
 vi.mock('./DefeatDialog', () => ({
-  default: ({ endState, onLoadedSave }) => (
+  default: (props) => (
     <div data-testid="defeat-dialog">
-      <p>Defeat: {endState?.status}</p>
-      <button onClick={() => onLoadedSave()}>Retry</button>
+      {echo('defeat-props', props)}
+      <button onClick={() => props.onLoadedSave()}>Retry</button>
     </div>
   ),
 }))
 
 vi.mock('./LootDialog', () => ({
-  default: ({ endState, playerWeight, weightLimit, onCollect, onSkip }) => (
+  default: (props) => (
     <div data-testid="loot-dialog">
-      <p>Loot: {endState?.dropped_items?.length || 0} items</p>
-      <button onClick={() => onCollect()}>Collect</button>
-      <button onClick={() => onSkip()}>Skip</button>
+      {echo('loot-props', props)}
+      <button onClick={() => props.onCollect()}>Collect</button>
+      <button onClick={() => props.onSkip()}>Skip</button>
     </div>
   ),
 }))
 
 vi.mock('./PreVictoryNarrativeDialog', () => ({
-  default: ({ text, onClose }) => (
+  default: (props) => (
     <div data-testid="pre-victory-narrative-dialog">
-      <p>{text}</p>
-      <button onClick={() => onClose()}>Continue</button>
+      {echo('narrative-props', props)}
+      <button onClick={() => props.onClose()}>Dismiss narrative</button>
     </div>
   ),
 }))
+
+/**
+ * A victory `end_state` in the shape the engine actually produces.
+ * Provenance: ApiCombatAdapter victory summary, src/api/combat_adapter.py —
+ * `exp_gained` keyed by weapon subtype, `items_dropped` rows carrying
+ * name/quantity plus the tile-enriched detail block.
+ */
+function makeVictoryEndState(overrides = {}) {
+  return {
+    id: 'end-0001',
+    status: 'victory',
+    message: 'Victory!',
+    pre_victory_narrative: '',
+    exp_gained: { Dagger: 60, general: 40 },
+    items_dropped: [
+      { name: 'Gold', quantity: 50, type: 'Consumable', subtype: 'Currency', weight: 0.0, value: 1 },
+      { name: 'Rusty Dagger', quantity: 1, type: 'Weapon', subtype: 'Dagger', weight: 1.0, value: 10 },
+    ],
+    level_ups: [],
+    ally_progression: [],
+    attribute_points_available: 0,
+    exp_to_next_level: 50,
+    attributes: {
+      strength_base: 10, finesse_base: 10, speed_base: 10,
+      endurance_base: 10, charisma_base: 10, intelligence_base: 10,
+    },
+    ...overrides,
+  }
+}
+
+const makeDefeatEndState = (overrides = {}) => ({
+  id: 'end-0002',
+  status: 'defeat',
+  message: 'Jean has fallen.',
+  ...overrides,
+})
 
 describe('CombatManager', () => {
   const mockCallbacks = {
@@ -53,643 +117,227 @@ describe('CombatManager', () => {
     onPreVictoryNarrativeClose: vi.fn(),
   }
 
-  const mockVictoryEndState = {
-    status: 'victory',
-    exp_gained: 100,
-    dropped_items: [
-      { name: 'Gold', quantity: 50 },
-      { name: 'Sword', quantity: 1 },
-    ],
-  }
+  const victory = makeVictoryEndState()
+  const defeat = makeDefeatEndState()
 
-  const mockDefeatEndState = {
-    status: 'defeat',
+  /** All four flags default to false so each case states only what it turns on. */
+  const renderManager = (props = {}) =>
+    render(
+      <CombatManager
+        showVictoryDialog={false}
+        showDefeatDialog={false}
+        showLootDialog={false}
+        showPreVictoryNarrative={false}
+        endState={null}
+        playerWeight={0}
+        weightLimit={100}
+        {...mockCallbacks}
+        {...props}
+      />
+    )
+
+  /** The exact set of dialogs currently mounted, in DOM order. */
+  const mounted = () =>
+    Array.from(document.querySelectorAll('[data-testid$="-dialog"]'))
+      .map((n) => n.getAttribute('data-testid'))
+
+  const propsOf = (testid) => {
+    const n = screen.getByTestId(testid)
+    return {
+      endState: JSON.parse(n.getAttribute('data-endstate')),
+      playerWeight: n.getAttribute('data-player-weight'),
+      weightLimit: n.getAttribute('data-weight-limit'),
+      text: n.getAttribute('data-text'),
+      handlers: n.getAttribute('data-handlers'),
+    }
   }
 
   beforeEach(() => {
     vi.clearAllMocks()
   })
 
-  describe('Rendering', () => {
-    it('renders without crashing when no dialogs shown', () => {
-      const { container } = render(
-        <CombatManager
-          showVictoryDialog={false}
-          showDefeatDialog={false}
-          showLootDialog={false}
-          endState={null}
-          playerWeight={0}
-          weightLimit={100}
-          {...mockCallbacks}
-        />
-      )
-      // Fragment renders with no elements when no dialogs are shown
-      expect(container.querySelector('[data-testid="victory-dialog"]')).not.toBeInTheDocument()
-      expect(container.querySelector('[data-testid="defeat-dialog"]')).not.toBeInTheDocument()
-      expect(container.querySelector('[data-testid="loot-dialog"]')).not.toBeInTheDocument()
+  describe('visibility matrix', () => {
+    // Each row is (label, props, expected mounted dialogs). This replaces ~20
+    // one-assertion tests that each rendered the same component with one flag
+    // flipped; every distinct claim survives, and a dialog that leaks in
+    // wrongly now fails the case that did not name it.
+    it.each([
+      ['nothing shown, no endState', {}, []],
+      ['nothing shown even with a victory endState', { endState: victory }, []],
+      ['victory only', { showVictoryDialog: true, endState: victory }, ['victory-dialog']],
+      ['victory suppressed without an endState', { showVictoryDialog: true, endState: null }, []],
+      ['loot only', { showLootDialog: true, endState: victory }, ['loot-dialog']],
+      ['loot suppressed without an endState', { showLootDialog: true, endState: null }, []],
+      ['defeat only', { showDefeatDialog: true, endState: defeat }, ['defeat-dialog']],
+      ['defeat suppressed without an endState', { showDefeatDialog: true, endState: null }, []],
+      [
+        'defeat suppressed when the endState says victory',
+        { showDefeatDialog: true, endState: victory },
+        [],
+      ],
+      [
+        'victory and loot can overlap during the hand-off',
+        { showVictoryDialog: true, showLootDialog: true, endState: victory },
+        ['victory-dialog', 'loot-dialog'],
+      ],
+      [
+        'victory wins over defeat when the endState is a victory',
+        { showVictoryDialog: true, showDefeatDialog: true, endState: victory },
+        ['victory-dialog'],
+      ],
+      [
+        'narrative only, and it precedes the victory dialog',
+        {
+          showPreVictoryNarrative: true,
+          endState: makeVictoryEndState({ pre_victory_narrative: 'The camp erupts in cheers.' }),
+        },
+        ['pre-victory-narrative-dialog'],
+      ],
+      [
+        'narrative suppressed when the endState carries no narrative text',
+        { showPreVictoryNarrative: true, endState: victory },
+        [],
+      ],
+      [
+        'narrative suppressed when the flag is off, victory takes over',
+        {
+          showPreVictoryNarrative: false,
+          showVictoryDialog: true,
+          endState: makeVictoryEndState({ pre_victory_narrative: 'The camp erupts in cheers.' }),
+        },
+        ['victory-dialog'],
+      ],
+    ])('%s', (_label, props, expected) => {
+      renderManager(props)
+      expect(mounted()).toEqual(expected)
     })
 
-    it('renders nothing when all dialogs are false', () => {
-      const { container } = render(
-        <CombatManager
-          showVictoryDialog={false}
-          showDefeatDialog={false}
-          showLootDialog={false}
-          endState={mockVictoryEndState}
-          playerWeight={0}
-          weightLimit={100}
-          {...mockCallbacks}
-        />
-      )
-      // Should render empty fragment with no children
-      expect(container.children.length).toBe(0)
-    })
-
-    it('renders empty fragment as root', () => {
-      render(
-        <CombatManager
-          showVictoryDialog={false}
-          showDefeatDialog={false}
-          showLootDialog={false}
-          endState={null}
-          playerWeight={0}
-          weightLimit={100}
-          {...mockCallbacks}
-        />
-      )
-      // Empty fragment renders successfully without error
-      expect(true).toBe(true)
-    })
-  })
-
-  describe('Victory Dialog', () => {
-    it('renders victory dialog when showVictoryDialog is true', () => {
-      render(
-        <CombatManager
-          showVictoryDialog={true}
-          showDefeatDialog={false}
-          showLootDialog={false}
-          endState={mockVictoryEndState}
-          playerWeight={0}
-          weightLimit={100}
-          {...mockCallbacks}
-        />
-      )
-      expect(screen.getByTestId('victory-dialog')).toBeInTheDocument()
-    })
-
-    it('does not render victory dialog when showVictoryDialog is false', () => {
-      render(
-        <CombatManager
-          showVictoryDialog={false}
-          showDefeatDialog={false}
-          showLootDialog={false}
-          endState={mockVictoryEndState}
-          playerWeight={0}
-          weightLimit={100}
-          {...mockCallbacks}
-        />
-      )
-      expect(screen.queryByTestId('victory-dialog')).not.toBeInTheDocument()
-    })
-
-    it('does not render victory dialog when endState is null', () => {
-      render(
-        <CombatManager
-          showVictoryDialog={true}
-          showDefeatDialog={false}
-          showLootDialog={false}
-          endState={null}
-          playerWeight={0}
-          weightLimit={100}
-          {...mockCallbacks}
-        />
-      )
-      expect(screen.queryByTestId('victory-dialog')).not.toBeInTheDocument()
-    })
-
-    it('passes endState to victory dialog', () => {
-      render(
-        <CombatManager
-          showVictoryDialog={true}
-          showDefeatDialog={false}
-          showLootDialog={false}
-          endState={mockVictoryEndState}
-          playerWeight={0}
-          weightLimit={100}
-          {...mockCallbacks}
-        />
-      )
-      expect(screen.getByText(/100 EXP/)).toBeInTheDocument()
-    })
-
-    it('passes callbacks to victory dialog', () => {
-      render(
-        <CombatManager
-          showVictoryDialog={true}
-          showDefeatDialog={false}
-          showLootDialog={false}
-          endState={mockVictoryEndState}
-          playerWeight={0}
-          weightLimit={100}
-          {...mockCallbacks}
-        />
-      )
-      const continueButton = screen.getByText('Continue')
-      continueButton.click()
-      expect(mockCallbacks.onContinueToLoot).toHaveBeenCalled()
-    })
-
-    it('displays exp gained from endState', () => {
-      const endState = { ...mockVictoryEndState, exp_gained: 250 }
-      render(
-        <CombatManager
-          showVictoryDialog={true}
-          showDefeatDialog={false}
-          showLootDialog={false}
-          endState={endState}
-          playerWeight={0}
-          weightLimit={100}
-          {...mockCallbacks}
-        />
-      )
-      expect(screen.getByText(/250 EXP/)).toBeInTheDocument()
+    it('renders no DOM at all when every dialog is off', () => {
+      // Replaces a test whose only assertion was `expect(true).toBe(true)`.
+      const { container } = renderManager({ endState: victory })
+      expect(container.innerHTML).toBe('')
     })
   })
 
-  describe('Defeat Dialog', () => {
-    it('renders defeat dialog when showDefeatDialog is true', () => {
-      render(
-        <CombatManager
-          showVictoryDialog={false}
-          showDefeatDialog={true}
-          showLootDialog={false}
-          endState={mockDefeatEndState}
-          playerWeight={0}
-          weightLimit={100}
-          {...mockCallbacks}
-        />
-      )
-      expect(screen.getByTestId('defeat-dialog')).toBeInTheDocument()
+  describe('prop forwarding', () => {
+    it('hands VictoryDialog the whole endState untouched', () => {
+      renderManager({ showVictoryDialog: true, endState: victory })
+      // Deep equality, not a single field: a manager that reshapes or drops
+      // part of the summary (exp_gained, level_ups, attributes) breaks the
+      // dialog silently, because every read there sits behind `|| {}`.
+      expect(propsOf('victory-props').endState).toEqual(victory)
     })
 
-    it('does not render defeat dialog when showDefeatDialog is false', () => {
-      render(
-        <CombatManager
-          showVictoryDialog={false}
-          showDefeatDialog={false}
-          showLootDialog={false}
-          endState={mockDefeatEndState}
-          playerWeight={0}
-          weightLimit={100}
-          {...mockCallbacks}
-        />
-      )
-      expect(screen.queryByTestId('defeat-dialog')).not.toBeInTheDocument()
+    it('hands LootDialog the endState AND both weight numbers', () => {
+      renderManager({ showLootDialog: true, endState: victory, playerWeight: 45.5, weightLimit: 50 })
+      const p = propsOf('loot-props')
+      expect(p.endState.items_dropped).toEqual(victory.items_dropped)
+      // LootDialog computes its encumbrance bar from these two; dropping
+      // either silently defaults them (0 / 100) and the bar lies.
+      expect(p.playerWeight).toBe('45.5')
+      expect(p.weightLimit).toBe('50')
     })
 
-    it('does not render defeat dialog when endState status is not defeat', () => {
-      render(
-        <CombatManager
-          showVictoryDialog={false}
-          showDefeatDialog={true}
-          showLootDialog={false}
-          endState={mockVictoryEndState}
-          playerWeight={0}
-          weightLimit={100}
-          {...mockCallbacks}
-        />
-      )
-      expect(screen.queryByTestId('defeat-dialog')).not.toBeInTheDocument()
+    it.each([
+      ['zero limits', 0, 0],
+      ['large values', 9999, 10000],
+    ])('forwards %s verbatim rather than substituting a default', (_label, w, limit) => {
+      renderManager({ showLootDialog: true, endState: victory, playerWeight: w, weightLimit: limit })
+      const p = propsOf('loot-props')
+      expect(p.playerWeight).toBe(String(w))
+      expect(p.weightLimit).toBe(String(limit))
     })
 
-    it('passes onLoadedSave callback to defeat dialog', () => {
-      render(
-        <CombatManager
-          showVictoryDialog={false}
-          showDefeatDialog={true}
-          showLootDialog={false}
-          endState={mockDefeatEndState}
-          playerWeight={0}
-          weightLimit={100}
-          {...mockCallbacks}
-        />
-      )
-      const retryButton = screen.getByText('Retry')
-      retryButton.click()
-      expect(mockCallbacks.onDefeatClose).toHaveBeenCalled()
-    })
-  })
-
-  describe('Loot Dialog', () => {
-    it('renders loot dialog when showLootDialog is true', () => {
-      render(
-        <CombatManager
-          showVictoryDialog={false}
-          showDefeatDialog={false}
-          showLootDialog={true}
-          endState={mockVictoryEndState}
-          playerWeight={0}
-          weightLimit={100}
-          {...mockCallbacks}
-        />
-      )
-      expect(screen.getByTestId('loot-dialog')).toBeInTheDocument()
+    it('hands DefeatDialog the defeat endState', () => {
+      renderManager({ showDefeatDialog: true, endState: defeat })
+      expect(propsOf('defeat-props').endState).toEqual(defeat)
     })
 
-    it('does not render loot dialog when showLootDialog is false', () => {
-      render(
-        <CombatManager
-          showVictoryDialog={false}
-          showDefeatDialog={false}
-          showLootDialog={false}
-          endState={mockVictoryEndState}
-          playerWeight={0}
-          weightLimit={100}
-          {...mockCallbacks}
-        />
-      )
-      expect(screen.queryByTestId('loot-dialog')).not.toBeInTheDocument()
+    it('hands PreVictoryNarrativeDialog the narrative TEXT, not the endState', () => {
+      const endState = makeVictoryEndState({ pre_victory_narrative: 'The camp erupts in cheers.' })
+      renderManager({ showPreVictoryNarrative: true, endState })
+      expect(propsOf('narrative-props').text).toBe('The camp erupts in cheers.')
+      expect(propsOf('narrative-props').endState).toBeNull()
     })
 
-    it('does not render loot dialog when endState is null', () => {
-      render(
-        <CombatManager
-          showVictoryDialog={false}
-          showDefeatDialog={false}
-          showLootDialog={true}
-          endState={null}
-          playerWeight={0}
-          weightLimit={100}
-          {...mockCallbacks}
-        />
-      )
-      expect(screen.queryByTestId('loot-dialog')).not.toBeInTheDocument()
-    })
-
-    it('passes player weight info to loot dialog', () => {
-      render(
-        <CombatManager
-          showVictoryDialog={false}
-          showDefeatDialog={false}
-          showLootDialog={true}
-          endState={mockVictoryEndState}
-          playerWeight={45}
-          weightLimit={50}
-          {...mockCallbacks}
-        />
-      )
-      expect(screen.getByTestId('loot-dialog')).toBeInTheDocument()
-    })
-
-    it('passes loot callbacks to loot dialog', () => {
-      render(
-        <CombatManager
-          showVictoryDialog={false}
-          showDefeatDialog={false}
-          showLootDialog={true}
-          endState={mockVictoryEndState}
-          playerWeight={0}
-          weightLimit={100}
-          {...mockCallbacks}
-        />
-      )
-      const collectButton = screen.getByText('Collect')
-      collectButton.click()
-      expect(mockCallbacks.onCollectLoot).toHaveBeenCalled()
-    })
-
-    it('displays item count from endState', () => {
-      const endState = {
-        status: 'victory',
-        dropped_items: Array.from({ length: 5 }, (_, i) => ({ name: `Item ${i}` })),
-      }
-      render(
-        <CombatManager
-          showVictoryDialog={false}
-          showDefeatDialog={false}
-          showLootDialog={true}
-          endState={endState}
-          playerWeight={0}
-          weightLimit={100}
-          {...mockCallbacks}
-        />
-      )
-      expect(screen.getByText(/5 items/)).toBeInTheDocument()
-    })
-  })
-
-  describe('Multiple Dialogs', () => {
-    it('renders victory and loot dialogs together', () => {
-      render(
-        <CombatManager
-          showVictoryDialog={true}
-          showDefeatDialog={false}
-          showLootDialog={true}
-          endState={mockVictoryEndState}
-          playerWeight={0}
-          weightLimit={100}
-          {...mockCallbacks}
-        />
-      )
-      expect(screen.getByTestId('victory-dialog')).toBeInTheDocument()
-      expect(screen.getByTestId('loot-dialog')).toBeInTheDocument()
-    })
-
-    it('does not render victory and defeat together', () => {
-      render(
-        <CombatManager
-          showVictoryDialog={true}
-          showDefeatDialog={true}
-          showLootDialog={false}
-          endState={mockVictoryEndState}
-          playerWeight={0}
-          weightLimit={100}
-          {...mockCallbacks}
-        />
-      )
-      expect(screen.getByTestId('victory-dialog')).toBeInTheDocument()
-      expect(screen.queryByTestId('defeat-dialog')).not.toBeInTheDocument()
-    })
-
-    it('renders all three dialogs when appropriate', () => {
-      const mixedEndState = {
-        status: 'victory',
-        exp_gained: 100,
-        dropped_items: [{ name: 'Loot' }],
-      }
-      render(
-        <CombatManager
-          showVictoryDialog={true}
-          showDefeatDialog={false}
-          showLootDialog={true}
-          endState={mixedEndState}
-          playerWeight={0}
-          weightLimit={100}
-          {...mockCallbacks}
-        />
-      )
-      expect(screen.getByTestId('victory-dialog')).toBeInTheDocument()
-      expect(screen.getByTestId('loot-dialog')).toBeInTheDocument()
-      expect(screen.queryByTestId('defeat-dialog')).not.toBeInTheDocument()
-    })
-  })
-
-  describe('Props Combinations', () => {
-    it('handles undefined callbacks gracefully', () => {
-      render(
-        <CombatManager
-          showVictoryDialog={true}
-          showDefeatDialog={false}
-          showLootDialog={false}
-          endState={mockVictoryEndState}
-          playerWeight={0}
-          weightLimit={100}
-          onAllocatePoints={undefined}
-          onVictoryClose={undefined}
-          onDefeatClose={undefined}
-          onContinueToLoot={undefined}
-          onCollectLoot={undefined}
-          onSkipLoot={undefined}
-        />
-      )
-      expect(screen.getByTestId('victory-dialog')).toBeInTheDocument()
-    })
-
-    it('handles zero weight values', () => {
-      render(
-        <CombatManager
-          showVictoryDialog={false}
-          showDefeatDialog={false}
-          showLootDialog={true}
-          endState={mockVictoryEndState}
-          playerWeight={0}
-          weightLimit={0}
-          {...mockCallbacks}
-        />
-      )
-      expect(screen.getByTestId('loot-dialog')).toBeInTheDocument()
-    })
-
-    it('handles large weight values', () => {
-      render(
-        <CombatManager
-          showVictoryDialog={false}
-          showDefeatDialog={false}
-          showLootDialog={true}
-          endState={mockVictoryEndState}
-          playerWeight={9999}
-          weightLimit={10000}
-          {...mockCallbacks}
-        />
-      )
-      expect(screen.getByTestId('loot-dialog')).toBeInTheDocument()
-    })
-  })
-
-  describe('Edge Cases', () => {
-    it('handles endState with minimal data', () => {
-      const minimalEndState = { status: 'victory' }
-      render(
-        <CombatManager
-          showVictoryDialog={true}
-          showDefeatDialog={false}
-          showLootDialog={true}
-          endState={minimalEndState}
-          playerWeight={0}
-          weightLimit={100}
-          {...mockCallbacks}
-        />
-      )
-      expect(screen.getByTestId('victory-dialog')).toBeInTheDocument()
-    })
-
-    it('handles endState with null values', () => {
-      const nullEndState = {
-        status: 'victory',
-        exp_gained: null,
-        dropped_items: null,
-      }
-      render(
-        <CombatManager
-          showVictoryDialog={true}
-          showDefeatDialog={false}
-          showLootDialog={false}
-          endState={nullEndState}
-          playerWeight={0}
-          weightLimit={100}
-          {...mockCallbacks}
-        />
-      )
-      expect(screen.getByTestId('victory-dialog')).toBeInTheDocument()
-    })
-
-    it('toggles dialogs independently', () => {
+    it('re-forwards a replaced endState while the dialog stays mounted', () => {
+      const first = makeVictoryEndState({ exp_gained: { Dagger: 100 } })
       const { rerender } = render(
         <CombatManager
-          showVictoryDialog={true}
-          showDefeatDialog={false}
-          showLootDialog={false}
-          endState={mockVictoryEndState}
-          playerWeight={0}
-          weightLimit={100}
-          {...mockCallbacks}
+          showVictoryDialog={true} showDefeatDialog={false} showLootDialog={false}
+          endState={first} playerWeight={0} weightLimit={100} {...mockCallbacks}
         />
       )
-      expect(screen.getByTestId('victory-dialog')).toBeInTheDocument()
+      expect(propsOf('victory-props').endState.exp_gained).toEqual({ Dagger: 100 })
 
+      const second = makeVictoryEndState({ exp_gained: { Dagger: 250, general: 5 } })
       rerender(
         <CombatManager
-          showVictoryDialog={false}
-          showDefeatDialog={false}
-          showLootDialog={true}
-          endState={mockVictoryEndState}
-          playerWeight={0}
-          weightLimit={100}
-          {...mockCallbacks}
+          showVictoryDialog={true} showDefeatDialog={false} showLootDialog={false}
+          endState={second} playerWeight={0} weightLimit={100} {...mockCallbacks}
         />
       )
-      expect(screen.queryByTestId('victory-dialog')).not.toBeInTheDocument()
-      expect(screen.getByTestId('loot-dialog')).toBeInTheDocument()
+      expect(propsOf('victory-props').endState.exp_gained).toEqual({ Dagger: 250, general: 5 })
     })
 
-    it('updates endState while dialogs are shown', () => {
-      const endState1 = { ...mockVictoryEndState, exp_gained: 100 }
-      const { rerender } = render(
-        <CombatManager
-          showVictoryDialog={true}
-          showDefeatDialog={false}
-          showLootDialog={false}
-          endState={endState1}
-          playerWeight={0}
-          weightLimit={100}
-          {...mockCallbacks}
-        />
-      )
-      expect(screen.getByText(/100 EXP/)).toBeInTheDocument()
-
-      const endState2 = { ...mockVictoryEndState, exp_gained: 250 }
-      rerender(
-        <CombatManager
-          showVictoryDialog={true}
-          showDefeatDialog={false}
-          showLootDialog={false}
-          endState={endState2}
-          playerWeight={0}
-          weightLimit={100}
-          {...mockCallbacks}
-        />
-      )
-      expect(screen.getByText(/250 EXP/)).toBeInTheDocument()
+    it('survives an endState whose optional fields are null', () => {
+      const sparse = { status: 'victory', exp_gained: null, items_dropped: null }
+      renderManager({ showVictoryDialog: true, showLootDialog: true, endState: sparse })
+      expect(mounted()).toEqual(['victory-dialog', 'loot-dialog'])
+      expect(propsOf('victory-props').endState).toEqual(sparse)
     })
   })
 
-  describe('Pre-Victory Narrative Dialog', () => {
-    const endStateWithNarrative = {
-      ...mockVictoryEndState,
-      pre_victory_narrative: 'The camp erupts in cheers.',
-    }
+  describe('callback wiring', () => {
+    // These handlers all take no arguments in production, so there is nothing
+    // to assert about their payload; what matters is that each button reaches
+    // its OWN handler and no other — the failure mode is a copy-paste swap.
+    it.each([
+      ['Continue to loot', { showVictoryDialog: true, endState: victory }, 'onContinueToLoot'],
+      ['Close victory', { showVictoryDialog: true, endState: victory }, 'onVictoryClose'],
+      ['Retry', { showDefeatDialog: true, endState: defeat }, 'onDefeatClose'],
+      ['Collect', { showLootDialog: true, endState: victory }, 'onCollectLoot'],
+      ['Skip', { showLootDialog: true, endState: victory }, 'onSkipLoot'],
+      [
+        'Dismiss narrative',
+        {
+          showPreVictoryNarrative: true,
+          endState: makeVictoryEndState({ pre_victory_narrative: 'Cheers.' }),
+        },
+        'onPreVictoryNarrativeClose',
+      ],
+    ])('"%s" fires only %s', (label, props, expectedKey) => {
+      renderManager(props)
+      fireEvent.click(screen.getByText(label))
 
-    it('renders the narrative dialog when showPreVictoryNarrative is true and text is present', () => {
-      render(
-        <CombatManager
-          showVictoryDialog={false}
-          showDefeatDialog={false}
-          showLootDialog={false}
-          showPreVictoryNarrative={true}
-          endState={endStateWithNarrative}
-          playerWeight={0}
-          weightLimit={100}
-          {...mockCallbacks}
-        />
-      )
-      expect(screen.getByTestId('pre-victory-narrative-dialog')).toBeInTheDocument()
-      expect(screen.getByText('The camp erupts in cheers.')).toBeInTheDocument()
-      expect(screen.queryByTestId('victory-dialog')).not.toBeInTheDocument()
+      expect(mockCallbacks[expectedKey]).toHaveBeenCalledTimes(1)
+      Object.entries(mockCallbacks)
+        .filter(([key]) => key !== expectedKey)
+        .forEach(([, fn]) => expect(fn).not.toHaveBeenCalled())
     })
 
-    it('does not render when showPreVictoryNarrative is false', () => {
-      render(
-        <CombatManager
-          showVictoryDialog={true}
-          showDefeatDialog={false}
-          showLootDialog={false}
-          showPreVictoryNarrative={false}
-          endState={endStateWithNarrative}
-          playerWeight={0}
-          weightLimit={100}
-          {...mockCallbacks}
-        />
-      )
-      expect(screen.queryByTestId('pre-victory-narrative-dialog')).not.toBeInTheDocument()
-      expect(screen.getByTestId('victory-dialog')).toBeInTheDocument()
+    it('forwards the allocation argument to onAllocatePoints', () => {
+      renderManager({ showVictoryDialog: true, endState: victory })
+      fireEvent.click(screen.getByText('Allocate'))
+      // The one callback here that carries a payload: the attribute chosen.
+      expect(mockCallbacks.onAllocatePoints).toHaveBeenCalledWith('strength')
     })
 
-    it('does not render when endState has no pre_victory_narrative', () => {
-      render(
-        <CombatManager
-          showVictoryDialog={false}
-          showDefeatDialog={false}
-          showLootDialog={false}
-          showPreVictoryNarrative={true}
-          endState={mockVictoryEndState}
-          playerWeight={0}
-          weightLimit={100}
-          {...mockCallbacks}
-        />
-      )
-      expect(screen.queryByTestId('pre-victory-narrative-dialog')).not.toBeInTheDocument()
-    })
+    it('passes handler props straight through instead of substituting no-ops', () => {
+      renderManager({ showVictoryDialog: true, endState: victory })
+      expect(propsOf('victory-props').handlers)
+        .toBe('onAllocatePoints,onClose,onContinueToLoot')
 
-    it('calls onPreVictoryNarrativeClose when dismissed', () => {
       render(
         <CombatManager
-          showVictoryDialog={false}
-          showDefeatDialog={false}
-          showLootDialog={false}
-          showPreVictoryNarrative={true}
-          endState={endStateWithNarrative}
-          playerWeight={0}
-          weightLimit={100}
-          {...mockCallbacks}
+          showVictoryDialog={true} showDefeatDialog={false} showLootDialog={false}
+          endState={victory} playerWeight={0} weightLimit={100}
         />
       )
-      screen.getByText('Continue').click()
-      expect(mockCallbacks.onPreVictoryNarrativeClose).toHaveBeenCalled()
-    })
-  })
-
-  describe('Phase Sequencing', () => {
-    it('victory dialog shows before loot dialog', () => {
-      render(
-        <CombatManager
-          showVictoryDialog={true}
-          showDefeatDialog={false}
-          showLootDialog={true}
-          endState={mockVictoryEndState}
-          playerWeight={0}
-          weightLimit={100}
-          {...mockCallbacks}
-        />
-      )
-      expect(screen.getByTestId('victory-dialog')).toBeInTheDocument()
-      expect(screen.getByTestId('loot-dialog')).toBeInTheDocument()
-    })
-
-    it('defeat dialog shows independent of victory', () => {
-      render(
-        <CombatManager
-          showVictoryDialog={false}
-          showDefeatDialog={true}
-          showLootDialog={false}
-          endState={mockDefeatEndState}
-          playerWeight={0}
-          weightLimit={100}
-          {...mockCallbacks}
-        />
-      )
-      expect(screen.queryByTestId('victory-dialog')).not.toBeInTheDocument()
-      expect(screen.getByTestId('defeat-dialog')).toBeInTheDocument()
+      // With nothing wired, the child sees no handlers at all — CombatManager
+      // does not paper over a missing callback with a silent no-op, which
+      // would hide a mis-wired GamePage.
+      expect(screen.getAllByTestId('victory-props')[1].getAttribute('data-handlers')).toBe('')
     })
   })
 })

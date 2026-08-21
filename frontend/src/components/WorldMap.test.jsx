@@ -2,470 +2,175 @@ import React from 'react'
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import WorldMap from './WorldMap'
+import { makeLocation } from '../test/payloads'
 
-// Mock MapGrid component
+/**
+ * WorldMap's entire job is (a) gating on a missing location and (b) forwarding
+ * props to MapGrid. So the MapGrid mock is a PROP RECORDER, not a stub.
+ *
+ * The previous version of this file mocked MapGrid with a stub that ignored
+ * `exits`, `exploredTiles` and `loading` outright, then asserted
+ * `getByTestId('map-grid')).toBeInTheDocument()` — under tests named "passes
+ * exits from location to MapGrid", "passes exploredTiles to MapGrid" and
+ * "passes loading prop as false to MapGrid". Deleting every prop from
+ * WorldMap.jsx's <MapGrid> call would have left all of them green, which is
+ * the entire behaviour of the component.
+ */
+const receivedProps = []
+
 vi.mock('./MapGrid', () => ({
-  default: ({ location, onMove, exits, exploredTiles }) => (
-    <div data-testid="map-grid">
-      <p>{location?.map_name}</p>
-      <button onClick={() => onMove('north')}>Move North</button>
-    </div>
-  ),
+  default: (props) => {
+    receivedProps.push(props)
+    return (
+      <div data-testid="map-grid">
+        <p>{props.location?.map_name}</p>
+        <button onClick={() => props.onMove('north')}>Move North</button>
+      </div>
+    )
+  },
 }))
 
-describe('WorldMap', () => {
-  const mockOnMoveToLocation = vi.fn()
+/** The props MapGrid was handed on its most recent render. */
+const lastProps = () => receivedProps[receivedProps.length - 1]
 
-  const mockLocation = {
-    map_name: 'Starting Village',
-    x: 10,
-    y: 10,
-    exits: ['north', 'south'],
-    items: [],
-    npcs: [],
-    objects: [],
-  }
+describe('WorldMap', () => {
+  const onMoveToLocation = vi.fn()
+  // Realistic post-transformLocationData shape: useApi.js normalises the
+  // server's `exits` dict into an array of direction names before any
+  // component sees it (see src/test/payloads.js).
+  const location = makeLocation({ map_name: 'Starting Village', x: 10, y: 10 })
 
   beforeEach(() => {
     vi.clearAllMocks()
+    receivedProps.length = 0
   })
 
-  describe('Rendering', () => {
-    it('renders loading message when location is null', () => {
-      render(
-        <WorldMap
-          location={null}
-          onMoveToLocation={mockOnMoveToLocation}
-          exploredTiles={new Map()}
-        />
-      )
-      expect(screen.getByText('Loading location...')).toBeInTheDocument()
-    })
+  describe('loading gate', () => {
+    it.each([[null], [undefined]])(
+      'renders the loading message and no grid when location is %p',
+      (missing) => {
+        render(<WorldMap location={missing} onMoveToLocation={onMoveToLocation} exploredTiles={new Map()} />)
+        expect(screen.getByText('Loading location...')).toBeInTheDocument()
+        expect(screen.queryByTestId('map-grid')).not.toBeInTheDocument()
+        expect(receivedProps).toHaveLength(0)
+      }
+    )
 
-    it('renders loading message when location is undefined', () => {
-      render(
-        <WorldMap
-          location={undefined}
-          onMoveToLocation={mockOnMoveToLocation}
-          exploredTiles={new Map()}
-        />
-      )
-      expect(screen.getByText('Loading location...')).toBeInTheDocument()
-    })
-
-    it('renders MapGrid when location is provided', () => {
-      render(
-        <WorldMap
-          location={mockLocation}
-          onMoveToLocation={mockOnMoveToLocation}
-          exploredTiles={new Map()}
-        />
-      )
-      expect(screen.getByTestId('map-grid')).toBeInTheDocument()
-    })
-
-    it('passes location to MapGrid component', () => {
-      render(
-        <WorldMap
-          location={mockLocation}
-          onMoveToLocation={mockOnMoveToLocation}
-          exploredTiles={new Map()}
-        />
-      )
-      expect(screen.getByText('Starting Village')).toBeInTheDocument()
-    })
-
-    it('passes onMoveToLocation callback to MapGrid', () => {
-      render(
-        <WorldMap
-          location={mockLocation}
-          onMoveToLocation={mockOnMoveToLocation}
-          exploredTiles={new Map()}
-        />
-      )
-      const moveButton = screen.getByText('Move North')
-      fireEvent.click(moveButton)
-      expect(mockOnMoveToLocation).toHaveBeenCalled()
-    })
-
-    it('passes exits from location to MapGrid', () => {
-      const location = { ...mockLocation, exits: ['north', 'east', 'south', 'west'] }
-      render(
-        <WorldMap
-          location={location}
-          onMoveToLocation={mockOnMoveToLocation}
-          exploredTiles={new Map()}
-        />
-      )
-      expect(screen.getByTestId('map-grid')).toBeInTheDocument()
-    })
-
-    it('handles location with no exits', () => {
-      const location = { ...mockLocation, exits: [] }
-      render(
-        <WorldMap
-          location={location}
-          onMoveToLocation={mockOnMoveToLocation}
-          exploredTiles={new Map()}
-        />
-      )
-      expect(screen.getByTestId('map-grid')).toBeInTheDocument()
-    })
-
-    it('handles location with undefined exits', () => {
-      const location = { ...mockLocation, exits: undefined }
-      render(
-        <WorldMap
-          location={location}
-          onMoveToLocation={mockOnMoveToLocation}
-          exploredTiles={new Map()}
-        />
-      )
-      expect(screen.getByTestId('map-grid')).toBeInTheDocument()
-    })
-  })
-
-  describe('Props Passing', () => {
-    it('passes empty Map when exploredTiles not provided', () => {
-      render(
-        <WorldMap
-          location={mockLocation}
-          onMoveToLocation={mockOnMoveToLocation}
-        />
-      )
-      expect(screen.getByTestId('map-grid')).toBeInTheDocument()
-    })
-
-    it('passes exploredTiles to MapGrid', () => {
-      const exploredTiles = new Map()
-      exploredTiles.set('map:0,0', { items: [], npcs: [], objects: [] })
-
-      render(
-        <WorldMap
-          location={mockLocation}
-          onMoveToLocation={mockOnMoveToLocation}
-          exploredTiles={exploredTiles}
-        />
-      )
-      expect(screen.getByTestId('map-grid')).toBeInTheDocument()
-    })
-
-    it('passes loading prop as false to MapGrid', () => {
-      render(
-        <WorldMap
-          location={mockLocation}
-          onMoveToLocation={mockOnMoveToLocation}
-          exploredTiles={new Map()}
-        />
-      )
-      expect(screen.getByTestId('map-grid')).toBeInTheDocument()
-    })
-  })
-
-  describe('Loading States', () => {
-    it('shows loading message instead of map when location is missing', () => {
-      const { container } = render(
-        <WorldMap
-          location={null}
-          onMoveToLocation={mockOnMoveToLocation}
-          exploredTiles={new Map()}
-        />
-      )
-      expect(container.textContent).toContain('Loading location...')
-    })
-
-    it('transitions from loading to loaded', () => {
+    it('swaps the loading message for the grid once a location arrives', () => {
       const { rerender } = render(
-        <WorldMap
-          location={null}
-          onMoveToLocation={mockOnMoveToLocation}
-          exploredTiles={new Map()}
-        />
+        <WorldMap location={null} onMoveToLocation={onMoveToLocation} exploredTiles={new Map()} />
       )
       expect(screen.getByText('Loading location...')).toBeInTheDocument()
 
-      rerender(
-        <WorldMap
-          location={mockLocation}
-          onMoveToLocation={mockOnMoveToLocation}
-          exploredTiles={new Map()}
-        />
-      )
+      rerender(<WorldMap location={location} onMoveToLocation={onMoveToLocation} exploredTiles={new Map()} />)
+
       expect(screen.queryByText('Loading location...')).not.toBeInTheDocument()
-      expect(screen.getByTestId('map-grid')).toBeInTheDocument()
+      expect(lastProps().location).toBe(location)
+    })
+
+    it('renders the loading message in the cyan info color', () => {
+      const { container } = render(
+        <WorldMap location={null} onMoveToLocation={onMoveToLocation} exploredTiles={new Map()} />
+      )
+      // The loading branch has its own wrapper; its color is the only visual
+      // state distinguishing it from an error/empty panel.
+      expect(container.firstChild).toHaveStyle({ color: '#00ccff' })
     })
   })
 
-  describe('Styling', () => {
-    it('applies flex layout to container', () => {
-      const { container } = render(
-        <WorldMap
-          location={mockLocation}
-          onMoveToLocation={mockOnMoveToLocation}
-          exploredTiles={new Map()}
-        />
-      )
-      const wrapper = container.firstChild
-      expect(wrapper).toHaveStyle({ display: 'flex', flexDirection: 'column' })
+  describe('prop forwarding to MapGrid', () => {
+    it('forwards location, onMove, exits and exploredTiles by identity', () => {
+      const exploredTiles = new Map([['Dark Grotto:0,0', { items: [], npcs: [], objects: [] }]])
+      render(<WorldMap location={location} onMoveToLocation={onMoveToLocation} exploredTiles={exploredTiles} />)
+
+      const props = lastProps()
+      expect(props.location).toBe(location)
+      expect(props.onMove).toBe(onMoveToLocation)
+      expect(props.exits).toEqual(['north', 'east'])
+      expect(props.exploredTiles).toBe(exploredTiles)
     })
 
-    it('applies full height styling', () => {
-      const { container } = render(
-        <WorldMap
-          location={mockLocation}
-          onMoveToLocation={mockOnMoveToLocation}
-          exploredTiles={new Map()}
-        />
-      )
-      const wrapper = container.firstChild
-      expect(wrapper).toHaveStyle({ height: '100%' })
+    it('always reports loading as false — WorldMap has already gated on it', () => {
+      render(<WorldMap location={location} onMoveToLocation={onMoveToLocation} exploredTiles={new Map()} />)
+      expect(lastProps().loading).toBe(false)
     })
 
-    it('applies padding to container', () => {
-      const { container } = render(
-        <WorldMap
-          location={mockLocation}
-          onMoveToLocation={mockOnMoveToLocation}
-          exploredTiles={new Map()}
-        />
-      )
-      const wrapper = container.firstChild
-      expect(wrapper).toHaveStyle({ padding: '16px' })
-    })
-
-    it('loading message uses cyan color styling', () => {
+    it.each([
+      ['a populated exits array', ['north', 'east', 'south', 'west'], ['north', 'east', 'south', 'west']],
+      ['an empty exits array', [], []],
+      // `location.exits || []` is the only defaulting WorldMap does; a room
+      // with no exits at all must not hand MapGrid `undefined`, which would
+      // throw on the `exits.includes(...)` reads inside it.
+      ['an absent exits field', undefined, []],
+    ])('normalises %s before forwarding', (_label, exits, expected) => {
       render(
         <WorldMap
-          location={null}
-          onMoveToLocation={mockOnMoveToLocation}
+          location={makeLocation({ exits })}
+          onMoveToLocation={onMoveToLocation}
           exploredTiles={new Map()}
         />
       )
-      const loading = screen.getByText('Loading location...')
-      expect(loading).toBeInTheDocument()
+      expect(lastProps().exits).toEqual(expected)
+    })
+
+    it('forwards an undefined exploredTiles rather than substituting a value', () => {
+      // MapGrid owns the empty-map default; WorldMap inventing one here would
+      // mask a genuinely missing exploration payload.
+      render(<WorldMap location={location} onMoveToLocation={onMoveToLocation} />)
+      expect(lastProps().exploredTiles).toBeUndefined()
     })
   })
 
-  describe('Interaction Flow', () => {
-    it('calls onMoveToLocation when move button clicked', () => {
-      render(
-        <WorldMap
-          location={mockLocation}
-          onMoveToLocation={mockOnMoveToLocation}
-          exploredTiles={new Map()}
-        />
+  describe('layout', () => {
+    it('fills its parent as a vertical flex column with padding', () => {
+      const { container } = render(
+        <WorldMap location={location} onMoveToLocation={onMoveToLocation} exploredTiles={new Map()} />
       )
-      const moveButton = screen.getByText('Move North')
-      fireEvent.click(moveButton)
-      expect(mockOnMoveToLocation).toHaveBeenCalledWith('north')
+      expect(container.firstChild).toHaveStyle({
+        display: 'flex',
+        flexDirection: 'column',
+        height: '100%',
+        padding: '16px',
+      })
+    })
+  })
+
+  describe('interaction and updates', () => {
+    it('routes a MapGrid move up through onMoveToLocation with the direction', () => {
+      render(<WorldMap location={location} onMoveToLocation={onMoveToLocation} exploredTiles={new Map()} />)
+      fireEvent.click(screen.getByText('Move North'))
+      expect(onMoveToLocation).toHaveBeenCalledWith('north')
     })
 
-    it('updates when location prop changes', () => {
+    it('forwards the current callback after it is replaced, not a stale capture', () => {
+      const first = vi.fn()
       const { rerender } = render(
-        <WorldMap
-          location={mockLocation}
-          onMoveToLocation={mockOnMoveToLocation}
-          exploredTiles={new Map()}
-        />
+        <WorldMap location={location} onMoveToLocation={first} exploredTiles={new Map()} />
+      )
+      const second = vi.fn()
+      rerender(<WorldMap location={location} onMoveToLocation={second} exploredTiles={new Map()} />)
+
+      fireEvent.click(screen.getByText('Move North'))
+      expect(second).toHaveBeenCalledWith('north')
+      expect(first).not.toHaveBeenCalled()
+    })
+
+    it('re-forwards a changed location and exploredTiles on rerender', () => {
+      const { rerender } = render(
+        <WorldMap location={location} onMoveToLocation={onMoveToLocation} exploredTiles={new Map()} />
       )
       expect(screen.getByText('Starting Village')).toBeInTheDocument()
 
-      const newLocation = { ...mockLocation, map_name: 'Dark Forest' }
+      const nextLocation = makeLocation({ map_name: 'Dark Forest', exits: ['south'] })
+      const nextTiles = new Map([['Dark Forest:0,0', {}]])
       rerender(
-        <WorldMap
-          location={newLocation}
-          onMoveToLocation={mockOnMoveToLocation}
-          exploredTiles={new Map()}
-        />
+        <WorldMap location={nextLocation} onMoveToLocation={onMoveToLocation} exploredTiles={nextTiles} />
       )
+
       expect(screen.getByText('Dark Forest')).toBeInTheDocument()
-    })
-
-    it('updates exploredTiles when they change', () => {
-      const exploredTiles1 = new Map()
-      const { rerender } = render(
-        <WorldMap
-          location={mockLocation}
-          onMoveToLocation={mockOnMoveToLocation}
-          exploredTiles={exploredTiles1}
-        />
-      )
-      expect(screen.getByTestId('map-grid')).toBeInTheDocument()
-
-      const exploredTiles2 = new Map()
-      exploredTiles2.set('map:0,0', { items: [], npcs: [], objects: [] })
-      rerender(
-        <WorldMap
-          location={mockLocation}
-          onMoveToLocation={mockOnMoveToLocation}
-          exploredTiles={exploredTiles2}
-        />
-      )
-      expect(screen.getByTestId('map-grid')).toBeInTheDocument()
-    })
-  })
-
-  describe('Edge Cases', () => {
-    it('handles location with empty map_name', () => {
-      const location = { ...mockLocation, map_name: '' }
-      render(
-        <WorldMap
-          location={location}
-          onMoveToLocation={mockOnMoveToLocation}
-          exploredTiles={new Map()}
-        />
-      )
-      expect(screen.getByTestId('map-grid')).toBeInTheDocument()
-    })
-
-    it('handles location with special characters in map_name', () => {
-      const location = { ...mockLocation, map_name: 'Dark Grotto (1)' }
-      render(
-        <WorldMap
-          location={location}
-          onMoveToLocation={mockOnMoveToLocation}
-          exploredTiles={new Map()}
-        />
-      )
-      expect(screen.getByText('Dark Grotto (1)')).toBeInTheDocument()
-    })
-
-    it('handles location with many items', () => {
-      const location = {
-        ...mockLocation,
-        items: Array.from({ length: 20 }, (_, i) => ({ name: `Item ${i}` })),
-      }
-      render(
-        <WorldMap
-          location={location}
-          onMoveToLocation={mockOnMoveToLocation}
-          exploredTiles={new Map()}
-        />
-      )
-      expect(screen.getByTestId('map-grid')).toBeInTheDocument()
-    })
-
-    it('handles location with many NPCs', () => {
-      const location = {
-        ...mockLocation,
-        npcs: Array.from({ length: 15 }, (_, i) => ({ name: `NPC ${i}` })),
-      }
-      render(
-        <WorldMap
-          location={location}
-          onMoveToLocation={mockOnMoveToLocation}
-          exploredTiles={new Map()}
-        />
-      )
-      expect(screen.getByTestId('map-grid')).toBeInTheDocument()
-    })
-
-    it('handles location with many objects', () => {
-      const location = {
-        ...mockLocation,
-        objects: Array.from({ length: 10 }, (_, i) => ({ name: `Object ${i}` })),
-      }
-      render(
-        <WorldMap
-          location={location}
-          onMoveToLocation={mockOnMoveToLocation}
-          exploredTiles={new Map()}
-        />
-      )
-      expect(screen.getByTestId('map-grid')).toBeInTheDocument()
-    })
-
-    it('handles large explored tiles map', () => {
-      const exploredTiles = new Map()
-      for (let i = 0; i < 100; i++) {
-        exploredTiles.set(`map:${i},${i}`, {
-          items: [],
-          npcs: [],
-          objects: [],
-        })
-      }
-      render(
-        <WorldMap
-          location={mockLocation}
-          onMoveToLocation={mockOnMoveToLocation}
-          exploredTiles={exploredTiles}
-        />
-      )
-      expect(screen.getByTestId('map-grid')).toBeInTheDocument()
-    })
-  })
-
-  describe('Accessibility', () => {
-    it('loading message is accessible', () => {
-      render(
-        <WorldMap
-          location={null}
-          onMoveToLocation={mockOnMoveToLocation}
-          exploredTiles={new Map()}
-        />
-      )
-      const loading = screen.getByText('Loading location...')
-      expect(loading).toBeInTheDocument()
-    })
-
-    it('map grid is passed to accessible component', () => {
-      render(
-        <WorldMap
-          location={mockLocation}
-          onMoveToLocation={mockOnMoveToLocation}
-          exploredTiles={new Map()}
-        />
-      )
-      expect(screen.getByTestId('map-grid')).toBeInTheDocument()
-    })
-  })
-
-  describe('Multiple Renders', () => {
-    it('handles rapid location changes', () => {
-      const { rerender } = render(
-        <WorldMap
-          location={mockLocation}
-          onMoveToLocation={mockOnMoveToLocation}
-          exploredTiles={new Map()}
-        />
-      )
-
-      for (let i = 0; i < 5; i++) {
-        const newLocation = { ...mockLocation, map_name: `Location ${i}` }
-        rerender(
-          <WorldMap
-            location={newLocation}
-            onMoveToLocation={mockOnMoveToLocation}
-            exploredTiles={new Map()}
-          />
-        )
-      }
-
-      expect(screen.getByText('Location 4')).toBeInTheDocument()
-    })
-
-    it('maintains callback reference across rerenders', () => {
-      const callback1 = vi.fn()
-      const { rerender } = render(
-        <WorldMap
-          location={mockLocation}
-          onMoveToLocation={callback1}
-          exploredTiles={new Map()}
-        />
-      )
-
-      const callback2 = vi.fn()
-      rerender(
-        <WorldMap
-          location={mockLocation}
-          onMoveToLocation={callback2}
-          exploredTiles={new Map()}
-        />
-      )
-
-      const moveButton = screen.getByText('Move North')
-      fireEvent.click(moveButton)
-      expect(callback2).toHaveBeenCalled()
+      expect(lastProps().location).toBe(nextLocation)
+      expect(lastProps().exits).toEqual(['south'])
+      expect(lastProps().exploredTiles).toBe(nextTiles)
     })
   })
 })

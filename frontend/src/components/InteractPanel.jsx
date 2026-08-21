@@ -36,6 +36,11 @@ function InteractPanel({
     const [bookReaderData, setBookReaderData] = useState(null)
     const [searchHovered, setSearchHovered] = useState(false)
 
+    // Guards the location-sync effect against clobbering a local update.
+    // Declared above useWorldInteract because onObjectStateUpdate (defined in
+    // that call) sets it.
+    const isSyncingTarget = useRef(false)
+
     const {
         loading,
         isLocked,
@@ -57,17 +62,28 @@ function InteractPanel({
         onTypingChange,
         onClose,
         onObjectStateUpdate: (objectState) => {
+            // Patching selectedTarget changes its identity, and the location-sync
+            // effect lists selectedTarget in its deps — so it re-runs immediately,
+            // while `location` still holds the PRE-interaction row (the refetch
+            // has not landed yet). Its `hasChanged` check then sees
+            // stale.state !== patched.state and overwrites the patch with the
+            // stale row, so an unlocked chest silently reverted to offering
+            // "Unlock" forever — the exact round trip this patch exists to avoid.
+            // Raising the same guard the sync path uses makes that re-run a no-op;
+            // the next genuine `location` change syncs normally.
+            isSyncingTarget.current = true
             setSelectedTarget(prev => prev ? {
                 ...prev,
                 keywords: objectState.keywords ?? prev.keywords,
                 locked: objectState.locked ?? prev.locked,
                 state: objectState.state ?? prev.state,
             } : prev)
+            setTimeout(() => {
+                isSyncingTarget.current = false
+            }, 0)
         },
     })
 
-    // Ref to track if we're currently syncing to prevent infinite loops
-    const isSyncingTarget = useRef(false)
     // Tracks whether the panel was ever opened with targets present.
     // Distinguishes "opened on an already-empty tile" (no auto-close) from
     // "opened with targets that later all disappeared" (auto-close allowed).

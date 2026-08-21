@@ -1,374 +1,447 @@
-"""Expanded coverage tests for GameService - targeting untested branches and error paths.
+"""Save, load, list and delete — the persistence surface of GameService.
 
-Focus areas:
-- Event processing edge cases and error handling
-- Save/load game mechanics and edge cases
-- Complex state transitions and error recovery
-- NPC interaction and dialogue edge cases
-- Quest chain progression and edge cases
-- Search method and item interaction
-- Combat event triggering and NPC turn processing
-- Tile modification and exploration tracking
-"""
-
-import pytest
-from unittest.mock import MagicMock, Mock, patch, PropertyMock, AsyncMock
-from src.api.services.game_service import GameService
-from pathlib import Path
-import json
-
-
-@pytest.fixture
-def game_service():
-    """Create GameService instance."""
-    return GameService()
-
-
-@pytest.fixture
-def realistic_mock_universe():
-    """Create a realistic mock universe with game_tick and story."""
-    universe = MagicMock()
-    universe.story = {"ch01_test": True}
-    universe.game_tick = 100
-    universe.maps = []
-
-    test_tile = MagicMock()
-    test_tile.name = "TestArea"
-    test_tile.description = "Test area description"
-    test_tile.events_here = []
-    test_tile.items_here = []
-    test_tile.npcs_here = []
-    test_tile.objects_here = []
-    test_tile.location_x = 5
-    test_tile.location_y = 5
-    test_tile.is_passable = True
-    test_tile.block_exit = []
-
-    universe.get_tile = MagicMock(return_value=test_tile)
-    return universe
-
-
-@pytest.fixture
-def expanded_mock_player(realistic_mock_universe):
-    """Create a realistic mock player for expanded tests."""
-    player = MagicMock()
-    player.name = "Jean"
-    player.location_x = 5
-    player.location_y = 5
-    player.level = 5
-    player.exp = 100
-    player.exp_to_level = 500
-    player.hp = 80
-    player.maxhp = 100
-    player.fatigue = 70
-    player.maxfatigue = 100
-    player.strength = 12
-    player.finesse = 11
-    player.speed = 10
-    player.wisdom = 10
-    player.constitution = 12
-    player.heat = 0
-    player.max_heat = 100
-
-    player.universe = realistic_mock_universe
-    player.current_room = realistic_mock_universe.get_tile(5, 5)
-    player.map = {(5, 5): realistic_mock_universe.get_tile(5, 5)}
-    player.explored_tiles = {}
-    player.discovered_tiles = set()
-
-    player.inventory = []
-    player.eq_weapon = None
-    player.eq_armor = None
-    player.eq_helmet = None
-    player.eq_gauntlets = None
-    player.eq_leggings = None
-    player.eq_boots = None
-    player.eq_offhand = None
-    player.weight_current = 0
-    player.weight_tolerance = 100
-    player.refresh_weight = MagicMock()
-
-    player.in_combat = False
-    player.enemies = []
-    player.combat_drops = []
-    player.current_beat = 0
-    player.pending_move_index = None
-    player.awaiting_input = False
-    player.cooldowns = {}
-
-    player.skill_exp = {"Basic": 100, "Dagger": 50}
-    player.known_moves = []
-    player.skilltree = MagicMock()
-    player.skilltree.subtypes = {"Basic": {}, "Dagger": {}}
-
-    player.golden_seeds = 0
-    player.can_move_to = MagicMock(return_value=True)
-
-    return player
-
-
-# ========================= Search Tests =========================
-class TestSearch:
-    """Tests for search() method - looking for items and objects."""
-
-    def test_search_returns_dict(self, game_service, expanded_mock_player):
-        """Test that search returns a dictionary."""
-        result = game_service.search(expanded_mock_player)
-        assert isinstance(result, dict)
-
-    def test_search_includes_found_key(self, game_service, expanded_mock_player):
-        """Test that search response includes 'found' key."""
-        result = game_service.search(expanded_mock_player)
-        assert "found" in result or isinstance(result, dict)
-
-    def test_search_empty_tile(self, game_service, expanded_mock_player):
-        """Test search on tile with no items or objects."""
-        expanded_mock_player.current_room.items_here = []
-        expanded_mock_player.current_room.objects_here = []
-        result = game_service.search(expanded_mock_player)
-        assert isinstance(result, dict)
-
-    def test_search_with_multiple_tiles(self, game_service, expanded_mock_player):
-        """Test search returns consistent structure."""
-        result = game_service.search(expanded_mock_player)
-        assert isinstance(result, dict)
-        assert "found" in result or "success" in result or len(result) >= 0
-
-
-# ========================= Tile Modification Tests =========================
-class TestTileModification:
-    """Tests for store_tile_modification() and apply_tile_modifications()."""
-
-    def test_apply_tile_modifications_no_mods(self, game_service):
-        """Test apply with no modifications."""
-        mock_tile = MagicMock()
-        game_service.apply_tile_modifications(mock_tile, {})
-        # Should not crash
-        assert mock_tile is not None
-
-    def test_apply_tile_modifications_missing_key(self, game_service):
-        """Test apply_tile_modifications with missing tile_modifications key."""
-        mock_tile = MagicMock()
-        session_data = {}
-        game_service.apply_tile_modifications(mock_tile, session_data)
-        # Should handle gracefully
-        assert isinstance(session_data, dict)
-
-    def test_apply_tile_modifications_no_mods(self, game_service):
-        """Test apply with no modifications."""
-        mock_tile = MagicMock()
-        game_service.apply_tile_modifications(mock_tile, {})
-        # Should not crash
-
-    def test_apply_tile_modifications_missing_key(self, game_service):
-        """Test apply_tile_modifications with missing tile_modifications key."""
-        mock_tile = MagicMock()
-        session_data = {}
-        game_service.apply_tile_modifications(mock_tile, session_data)
-        # Should handle gracefully
-
-
-# ========================= Exploration Tracking Tests =========================
-class TestExplorationTracking:
-    """Tests for _record_exploration() and get_explored_tiles()."""
-
-    def test_record_exploration_initializes_dict(self, game_service, expanded_mock_player):
-        """Test that record_exploration initializes explored_tiles dict."""
-        expanded_mock_player.explored_tiles = {}
-        expanded_mock_player.current_room = MagicMock()
-        expanded_mock_player.current_room.name = "TestTile"
-        expanded_mock_player.current_room.description = "Test description"
-        expanded_mock_player.location_x = 1
-        expanded_mock_player.location_y = 2
-
-        game_service._record_exploration(expanded_mock_player, expanded_mock_player.current_room)
-
-        assert isinstance(expanded_mock_player.explored_tiles, dict)
-
-    def test_get_explored_tiles_returns_dict(self, game_service, expanded_mock_player):
-        """Test that get_explored_tiles returns a dictionary."""
-        expanded_mock_player.explored_tiles = {}
-        result = game_service.get_explored_tiles(expanded_mock_player)
-        assert isinstance(result, dict)
-
-    def test_get_explored_tiles_with_data(self, game_service, expanded_mock_player):
-        """Test get_explored_tiles when player has explored tiles."""
-        expanded_mock_player.explored_tiles = {
-            "(0,0)": {"name": "Start", "visited_at": 100}
-        }
-        result = game_service.get_explored_tiles(expanded_mock_player)
-        assert isinstance(result, dict)
-
-
-# ========================= Get Tile Tests =========================
-class TestGetTile:
-    """Tests for get_tile() method."""
-
-    def test_get_tile_returns_dict(self, game_service, expanded_mock_player):
-        """Test that get_tile returns a dictionary."""
-        result = game_service.get_tile(
-            expanded_mock_player,
-            expanded_mock_player.location_x,
-            expanded_mock_player.location_y
-        )
-        assert isinstance(result, dict)
-
-    def test_get_tile_includes_description(self, game_service, expanded_mock_player):
-        """Test that get_tile includes tile description."""
-        expanded_mock_player.current_room.description = "Test description"
-        result = game_service.get_tile(
-            expanded_mock_player,
-            expanded_mock_player.location_x,
-            expanded_mock_player.location_y
-        )
-        # Should include tile info
-        assert isinstance(result, dict)
-
-    def test_get_tile_coordinates(self, game_service, expanded_mock_player):
-        """Test get_tile with various coordinates."""
-        expanded_mock_player.location_x = 10
-        expanded_mock_player.location_y = 20
-        result = game_service.get_tile(expanded_mock_player, 10, 20)
-        assert isinstance(result, dict)
-
-
-# ========================= Interact With Target Tests =========================
-class TestInteractWithTarget:
-    """Tests for interact_with_target() method - simplified signature tests."""
-
-    def test_interact_with_target_basic_call(self, game_service, expanded_mock_player):
-        """Test interact_with_target basic functionality."""
-        # Interact_with_target requires target_id parameter - test error handling
-        try:
-            result = game_service.interact_with_target(expanded_mock_player, "target_123")
-            assert isinstance(result, dict)
-        except (TypeError, AttributeError):
-            # Method might have different signature - that's ok
-            pass
-
-
-# ========================= Trigger Combat Events Tests =========================
-class TestTriggerCombatEvents:
-    """Tests for trigger_combat_events() method."""
-
-    def test_trigger_combat_events_not_in_combat(self, game_service, expanded_mock_player):
-        """Test trigger_combat_events when player not in combat."""
-        expanded_mock_player.in_combat = False
-        result = game_service.trigger_combat_events(expanded_mock_player)
-        assert isinstance(result, list)
-
-    def test_trigger_combat_events_returns_list(self, game_service, expanded_mock_player):
-        """Test that trigger_combat_events returns a list."""
-        result = game_service.trigger_combat_events(expanded_mock_player)
-        assert isinstance(result, list)
-
-    def test_trigger_combat_events_empty_events(self, game_service, expanded_mock_player):
-        """Test trigger_combat_events with no events on current tile."""
-        expanded_mock_player.in_combat = True
-        expanded_mock_player.current_room.events_here = []
-        result = game_service.trigger_combat_events(expanded_mock_player)
-        assert isinstance(result, list)
-
-
-# ========================= Get Current Room Tests =========================
-class TestGetCurrentRoom:
-    """Tests for get_current_room() method."""
-
-    def test_get_current_room_returns_dict(self, game_service, expanded_mock_player):
-        """Test that get_current_room returns a dictionary."""
-        result = game_service.get_current_room(expanded_mock_player)
-        assert isinstance(result, dict)
-
-    def test_get_current_room_with_session_data(self, game_service, expanded_mock_player):
-        """Test get_current_room with session_data."""
-        session_data = {}
-        result = game_service.get_current_room(expanded_mock_player, session_data)
-        assert isinstance(result, dict)
-
-    def test_get_current_room_includes_position(self, game_service, expanded_mock_player):
-        """Test get_current_room includes position info."""
-        result = game_service.get_current_room(expanded_mock_player)
-        assert isinstance(result, dict)
-
-
-# ========================= Process Event Input Tests =========================
-class TestProcessEventInput:
-    """Tests for process_event_input() method."""
-
-    def test_process_event_input_returns_dict(self, game_service, expanded_mock_player):
-        """Test that process_event_input returns a dictionary."""
-        session_data = {"pending_events": {}}
-        result = game_service.process_event_input(
-            expanded_mock_player,
-            "nonexistent_event",
-            "test_input",
-            session_data
-        )
-        assert isinstance(result, dict)
-
-    def test_process_event_input_no_pending_events(self, game_service, expanded_mock_player):
-        """Test process_event_input with no pending events."""
-        session_data = {}
-        result = game_service.process_event_input(
-            expanded_mock_player,
-            "event_id",
-            "input",
-            session_data
-        )
-        assert isinstance(result, dict)
-        assert result.get("success") is False
-
-    def test_process_event_input_invalid_event_id(self, game_service, expanded_mock_player):
-        """Test process_event_input with invalid event ID."""
-        session_data = {"pending_events": {"valid_event": MagicMock()}}
-        result = game_service.process_event_input(
-            expanded_mock_player,
-            "invalid_event_id",
-            "input",
-            session_data
-        )
-        assert isinstance(result, dict)
-
-
-# ========================= Save/Load Tests =========================
-class TestSaveGame:
-    """Tests for save_game() method - async tests."""
+History
+-------
+21 of this file's 28 tests asserted only ``isinstance(result, dict/list)``, and
+the four "save/load" classes it advertised tested nothing but ``hasattr``::
 
     def test_save_game_gets_saves_dir(self, game_service):
-        """Test that save_game uses _get_saves_dir."""
         with patch.object(game_service, "_get_saves_dir", return_value="/tmp") as mock_dir:
-            # Verify method exists
             assert hasattr(game_service, "_get_saves_dir")
             mock_dir()
-            mock_dir.assert_called()
+            mock_dir.assert_called()      # asserts the test called its own mock
+
+It also defined ``test_apply_tile_modifications_no_mods`` and
+``test_apply_tile_modifications_missing_key`` **twice each in the same class**,
+so half of them never ran at all, and ``test_interact_with_target_basic_call``
+swallowed its assertion in ``except (TypeError, AttributeError): pass``.
+
+Those subjects (search, tile modifications, exploration, get_tile,
+get_current_room, trigger_combat_events) are covered properly in
+``test_game_service_methods.py``, ``test_game_service_world.py`` and
+``test_game_service_combat.py``. What nothing covered was the thing the file
+*claimed* to cover: persistence. That is now this file's job, driven with a real
+``Player`` so the pickle payload and its ``HOVS`` integrity header are the real
+ones — the pre-existing save tests in ``test_game_service_tier5_coverage.py``
+patch ``pickle.dumps`` away, so nothing verified the header until now.
+
+The Turso client is the only thing stubbed; every assertion is on the bytes and
+the SQL parameters that actually reach it.
+"""
+
+import hashlib
+import struct
+
+import pytest
+from unittest.mock import AsyncMock, MagicMock, patch
+
+from src.secure_pickle import HEADER_MAGIC, HEADER_SIZE, HEADER_VERSION
+from tests._gs_fixtures import GRID_3X3, live_world
 
 
+@pytest.fixture
+def world():
+    return live_world(GRID_3X3)
+
+
+@pytest.fixture
+def player(world):
+    return world[0]
+
+
+@pytest.fixture
+def db():
+    """A stubbed Turso client whose ``execute`` results the test scripts."""
+    stub = AsyncMock()
+    stub.execute.return_value = MagicMock(rows=[], rows_affected=0)
+    with patch("src.api.db.db", stub):
+        yield stub
+
+
+class TransientState:
+    """A combat-scoped status effect: cleared at combat end, so not on load."""
+
+    persistent = False
+    name = "Rattled"
+
+
+class LastingState:
+    """A world-persistent status effect (Poisoned, Slimed, ...): survives a load."""
+
+    persistent = True
+    name = "Poisoned"
+
+
+def _result(rows=(), rows_affected=0):
+    return MagicMock(rows=list(rows), rows_affected=rows_affected)
+
+
+def _saved_blob(db_stub):
+    """The ``data`` column value from the INSERT/UPDATE the save issued."""
+    sql, params = db_stub.execute.call_args_list[-1].args
+    return params[3] if "INSERT" in sql else params[0]
+
+
+@pytest.mark.asyncio
+class TestSaveGameIntegrity:
+    """A new save is a ``HOVS`` header + pickle, and it must verify."""
+
+    async def test_payload_carries_the_hovs_magic_and_version(
+        self, game_service, player, db
+    ):
+        db.execute.side_effect = [_result(rows=[[0]]), _result()]
+
+        await game_service.save_game(player, "MySave", "user123")
+
+        blob = _saved_blob(db)
+        assert blob[:4] == HEADER_MAGIC == b"HOVS"
+        assert blob[4] == HEADER_VERSION
+
+    async def test_header_digest_matches_the_payload(self, game_service, player, db):
+        """The sha256 is what ``load_game`` checks; a wrong one bricks the save."""
+        db.execute.side_effect = [_result(rows=[[0]]), _result()]
+
+        await game_service.save_game(player, "MySave", "user123")
+
+        blob = _saved_blob(db)
+        _magic, _version, digest = struct.Struct(">4sB32s").unpack(blob[:HEADER_SIZE])
+        assert digest == hashlib.sha256(blob[HEADER_SIZE:]).digest()
+
+    async def test_the_saved_bytes_load_back_into_an_equivalent_player(
+        self, game_service, player, db
+    ):
+        import io
+
+        from src.functions import _safe_pickle_load
+
+        player.hp = 42
+        player.location_x, player.location_y = 1, 0
+        db.execute.side_effect = [_result(rows=[[0]]), _result()]
+
+        await game_service.save_game(player, "MySave", "user123")
+
+        restored = _safe_pickle_load(io.BytesIO(_saved_blob(db)))
+        assert restored.name == player.name
+        assert restored.hp == 42
+        assert (restored.location_x, restored.location_y) == (1, 0)
+
+    async def test_a_tampered_payload_is_rejected_on_load(
+        self, game_service, player, db
+    ):
+        """The digest is what makes the header worth writing.
+
+        ``_safe_pickle_load`` converts the ``SaveIntegrityError`` into ``None``
+        (the loader must not crash the request), and ``load_game`` turns that
+        into ``None`` too — so a tampered save reads as "no save", never as a
+        half-restored player.
+        """
+        db.execute.side_effect = [_result(rows=[[0]]), _result()]
+        await game_service.save_game(player, "MySave", "user123")
+
+        blob = bytearray(_saved_blob(db))
+        blob[-1] ^= 0xFF  # flip a bit in the pickle body
+
+        db.execute.side_effect = None
+        db.execute.return_value = _result(rows=[[bytes(blob)]])
+
+        assert await game_service.load_game("save-id", "user123") is None
+
+    async def test_the_combat_adapter_is_stripped_then_restored(
+        self, game_service, player, db
+    ):
+        """It holds a closure and a ``threading.Lock`` — neither is picklable."""
+        adapter = object()
+        player._combat_adapter = adapter
+        db.execute.side_effect = [_result(rows=[[0]]), _result()]
+
+        await game_service.save_game(player, "MySave", "user123")
+
+        assert player._combat_adapter is adapter
+        assert b"combat_adapter" not in _saved_blob(db)
+
+
+@pytest.mark.asyncio
+class TestSaveGameMetadata:
+    """The row's denormalised columns drive the Load Game list."""
+
+    async def test_manual_save_writes_location_and_level(
+        self, game_service, player, db
+    ):
+        player.level = 5
+        player.time_elapsed = 120
+        db.execute.side_effect = [_result(rows=[[1]]), _result()]
+
+        save_id = await game_service.save_game(player, "MySave", "user123")
+
+        sql, params = db.execute.call_args_list[-1].args
+        assert "INSERT INTO saves" in sql
+        assert params[0] == save_id
+        assert params[1] == "user123"
+        assert params[2] == "MySave"
+        assert params[4] is False  # is_autosave
+        assert params[5] == 5
+        assert params[6] == "gs-test-map"
+        assert params[8] == 120
+
+    async def test_room_title_humanises_the_tile_class_name(
+        self, game_service, player, db
+    ):
+        db.execute.side_effect = [_result(rows=[[0]]), _result()]
+        await game_service.save_game(player, "MySave", "user123")
+        _sql, params = db.execute.call_args_list[-1].args
+        assert params[7] == "Map Tile"
+
+    async def test_manual_save_limit_is_enforced(self, game_service, player, db):
+        db.execute.return_value = _result(rows=[[20]])
+        with pytest.raises(ValueError, match="Maximum number of manual saves reached"):
+            await game_service.save_game(player, "MySave", "user123")
+        # Nothing was written.
+        assert db.execute.call_count == 1
+
+    async def test_the_limit_applies_only_to_manual_saves(
+        self, game_service, player, db
+    ):
+        """The autosave path never counts manual rows."""
+        db.execute.side_effect = [_result(rows=[]), _result()]
+        assert await game_service.save_game(player, "Auto", "user123", is_autosave=True)
+        counted_sql = db.execute.call_args_list[0].args[0]
+        assert "COUNT(*)" not in counted_sql
+
+
+@pytest.mark.asyncio
+class TestAutosave:
+    """One autosave row per user, UPSERTed."""
+
+    async def test_creates_a_row_when_none_exists(self, game_service, player, db):
+        db.execute.side_effect = [_result(rows=[]), _result()]
+
+        save_id = await game_service.save_game(player, "Auto", "user123", is_autosave=True)
+
+        sql, params = db.execute.call_args_list[-1].args
+        assert "INSERT INTO saves" in sql
+        assert params[0] == save_id
+        assert params[4] is True
+
+    async def test_updates_the_existing_row_in_place(self, game_service, player, db):
+        db.execute.side_effect = [_result(rows=[["existing-save-id"]]), _result()]
+
+        save_id = await game_service.save_game(player, "Auto", "user123", is_autosave=True)
+
+        assert save_id == "existing-save-id"
+        sql, params = db.execute.call_args_list[-1].args
+        assert "UPDATE saves" in sql
+        assert params[-1] == "existing-save-id"
+
+    async def test_disabled_autosave_touches_nothing(self, game_service, player, db):
+        """Issue #450: ``GameConfig.autosave_enabled=False`` is a hard skip."""
+        from src.config_manager import GameConfig
+
+        player.game_config = GameConfig(autosave_enabled=False)
+
+        assert (
+            await game_service.save_game(player, "Auto", "user123", is_autosave=True)
+            is None
+        )
+        db.execute.assert_not_called()
+
+    async def test_disabled_autosave_does_not_block_manual_saves(
+        self, game_service, player, db
+    ):
+        from src.config_manager import GameConfig
+
+        player.game_config = GameConfig(autosave_enabled=False)
+        db.execute.side_effect = [_result(rows=[[0]]), _result()]
+
+        assert await game_service.save_game(player, "Manual", "user123") is not None
+
+
+@pytest.mark.asyncio
 class TestLoadGame:
-    """Tests for load_game() method."""
+    """``load_game`` restores a player and scrubs transient combat state."""
 
-    def test_load_game_method_exists(self, game_service):
-        """Test that load_game method exists."""
-        assert hasattr(game_service, "load_game")
-        assert callable(getattr(game_service, "load_game"))
+    @staticmethod
+    async def _round_trip(game_service, player, db):
+        db.execute.side_effect = [_result(rows=[[0]]), _result()]
+        await game_service.save_game(player, "S", "user123")
+        blob = _saved_blob(db)
+        db.execute.side_effect = None
+        db.execute.return_value = _result(rows=[[blob]])
+        return await game_service.load_game("save-id", "user123")
+
+    async def test_restores_the_player_state(self, game_service, player, db):
+        player.hp = 33
+        loaded = await self._round_trip(game_service, player, db)
+        assert loaded.name == player.name
+        assert loaded.hp == 33
+
+    async def test_scopes_the_query_to_the_owning_user(self, game_service, db):
+        db.execute.return_value = _result(rows=[])
+        await game_service.load_game("save-id", "user123")
+        sql, params = db.execute.call_args.args
+        assert "WHERE id = ? AND user_id = ?" in sql
+        assert params == ["save-id", "user123"]
+
+    async def test_a_missing_save_returns_none(self, game_service, db):
+        db.execute.return_value = _result(rows=[])
+        assert await game_service.load_game("nope", "user123") is None
+
+    async def test_a_corrupt_payload_returns_none_instead_of_raising(
+        self, game_service, db
+    ):
+        db.execute.return_value = _result(rows=[[b"not a pickle at all"]])
+        assert await game_service.load_game("save-id", "user123") is None
+
+    async def test_never_resumes_mid_fight(self, game_service, player, db):
+        """A save taken during combat must load out of combat, not into a phantom one."""
+        player.in_combat = True
+
+        loaded = await self._round_trip(game_service, player, db)
+
+        assert loaded.in_combat is False
+        assert loaded.combat_list == []
+        assert loaded.current_move is None
+
+    async def test_non_persistent_states_are_stripped(self, game_service, player, db):
+        player.states = [TransientState(), LastingState()]
+
+        loaded = await self._round_trip(game_service, player, db)
+
+        assert [s.name for s in loaded.states] == ["Poisoned"]
+
+    async def test_the_party_list_always_starts_with_the_player(
+        self, game_service, player, db
+    ):
+        loaded = await self._round_trip(game_service, player, db)
+        assert loaded.combat_list_allies[0] is loaded
+
+    async def test_current_room_is_rebound_to_the_live_tile(
+        self, game_service, player, db
+    ):
+        player.location_x, player.location_y = 1, 0
+        loaded = await self._round_trip(game_service, player, db)
+        assert loaded.current_room is loaded.universe.get_tile(1, 0)
 
 
+@pytest.mark.asyncio
 class TestListSaves:
-    """Tests for list_saves() method."""
+    """``list_saves`` denormalises rows for the Load Game screen."""
 
-    def test_list_saves_method_exists(self, game_service):
-        """Test that list_saves method exists."""
-        assert hasattr(game_service, "list_saves")
+    ROW = (
+        "abc-123",
+        "MySave",
+        "2026-04-23 22:15:00",
+        0,
+        7,
+        "Dark Grotto",
+        "Entry Hall",
+        3600,
+    )
+
+    async def test_maps_columns_onto_the_wire_fields(self, game_service, db):
+        db.execute.return_value = _result(rows=[self.ROW])
+
+        saves = await game_service.list_saves("user123", timezone="UTC")
+
+        assert saves[0]["id"] == "abc-123"
+        assert saves[0]["name"] == "MySave"
+        assert saves[0]["is_autosave"] is False
+        assert saves[0]["level"] == 7
+        assert saves[0]["map_name"] == "Dark Grotto"
+        assert saves[0]["room_title"] == "Entry Hall"
+        assert saves[0]["playtime"] == 3600
+
+    async def test_timestamp_ms_is_display_timezone_independent(self, game_service, db):
+        """The epoch key is derived before the display conversion (see localSave.js).
+
+        ``Date.parse`` cannot read most non-US timezone abbreviations, which is
+        why the frontend sorts on ``timestamp_ms`` rather than the display string.
+        """
+        db.execute.return_value = _result(rows=[self.ROW])
+
+        utc = await game_service.list_saves("user123", timezone="UTC")
+        tokyo = await game_service.list_saves("user123", timezone="Asia/Tokyo")
+
+        # 2026-04-23 22:15:00 UTC as epoch milliseconds.
+        assert utc[0]["timestamp_ms"] == tokyo[0]["timestamp_ms"] == 1776982500000
+        assert utc[0]["timestamp"] != tokyo[0]["timestamp"]
+
+    async def test_display_timestamp_is_localised(self, game_service, db):
+        db.execute.return_value = _result(rows=[self.ROW])
+        saves = await game_service.list_saves("user123", timezone="UTC")
+        assert saves[0]["timestamp"] == "2026-04-23 22:15:00 UTC"
+
+    async def test_an_unparseable_timestamp_falls_back_without_a_sort_key(
+        self, game_service, db
+    ):
+        row = list(self.ROW)
+        row[2] = "sometime last tuesday"
+        db.execute.return_value = _result(rows=[row])
+
+        saves = await game_service.list_saves("user123")
+
+        assert saves[0]["timestamp"] == "sometime last tuesday"
+        assert saves[0]["timestamp_ms"] is None
+
+    async def test_an_unknown_timezone_falls_back_to_the_default(self, game_service, db):
+        db.execute.return_value = _result(rows=[self.ROW])
+        saves = await game_service.list_saves("user123", timezone="Mars/Olympus_Mons")
+        assert saves[0]["timestamp"].endswith("EDT")
+
+    async def test_missing_columns_get_placeholders(self, game_service, db):
+        row = list(self.ROW)
+        row[4] = row[5] = row[6] = row[7] = None
+        db.execute.return_value = _result(rows=[row])
+
+        saves = await game_service.list_saves("user123")
+
+        assert saves[0]["level"] == "?"
+        assert saves[0]["map_name"] == "Unknown"
+        assert saves[0]["room_title"] == "Unknown"
+        assert saves[0]["playtime"] == 0
+
+    async def test_no_saves_yields_an_empty_list(self, game_service, db):
+        db.execute.return_value = _result(rows=[])
+        assert await game_service.list_saves("user123") == []
+
+    async def test_query_is_ordered_newest_first(self, game_service, db):
+        db.execute.return_value = _result(rows=[])
+        await game_service.list_saves("user123")
+        sql, params = db.execute.call_args.args
+        assert "ORDER BY timestamp DESC" in sql
+        assert params == ["user123"]
 
 
+@pytest.mark.asyncio
 class TestDeleteSave:
-    """Tests for delete_save() method."""
+    """``delete_save`` reports whether a row actually went away."""
 
-    def test_delete_save_method_exists(self, game_service):
-        """Test that delete_save method exists."""
-        assert hasattr(game_service, "delete_save")
+    async def test_reports_true_when_a_row_was_removed(self, game_service, db):
+        db.execute.return_value = _result(rows_affected=1)
+        assert await game_service.delete_save("abc", "user123") is True
+
+    async def test_reports_false_when_nothing_matched(self, game_service, db):
+        db.execute.return_value = _result(rows_affected=0)
+        assert await game_service.delete_save("abc", "user123") is False
+
+    async def test_deletion_is_scoped_to_the_owning_user(self, game_service, db):
+        """Without the user_id predicate one player could delete another's saves."""
+        db.execute.return_value = _result(rows_affected=1)
+        await game_service.delete_save("abc", "user123")
+        sql, params = db.execute.call_args.args
+        assert "DELETE FROM saves WHERE id = ? AND user_id = ?" in sql
+        assert params == ["abc", "user123"]
 
 
-# ========================= NPC Methods Tests =========================
+class TestSavesDirectory:
+    """``_get_saves_dir`` is the on-disk fallback location."""
+
+    def test_returns_an_existing_saves_directory(self, game_service):
+        import os
+
+        path = game_service._get_saves_dir()
+        assert os.path.basename(path) == "saves"
+        assert os.path.isdir(path)
 
 
-# ========================= Advanced NPC Tests =========================
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])

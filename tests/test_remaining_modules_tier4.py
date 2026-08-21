@@ -1,7 +1,5 @@
 """
 
-import pytest
-pytestmark = pytest.mark.skip(reason="Tier 4 advanced tests - coverage requirements already met")
 Comprehensive test coverage for remaining high-value modules (Tier 4).
 
 Target modules:
@@ -35,6 +33,7 @@ from src.npc import NPC
 from src.items import Item, Gold
 from src.states import State
 import src.functions as functions
+import src.states as states
 
 
 class TestCombatantResistances:
@@ -106,11 +105,32 @@ class TestCombatantMethods:
         player.hp = 1
         assert player.is_alive() is True
 
+    def test_cycle_states_ticks_a_real_state_down_and_removes_it_when_spent(self):
+        """Out of combat a world state burns `steps_left`, then unregisters."""
+        player = Player()
+        player.in_combat = False
+        player.states = []
+        poison = states.Poisoned(player)
+        player.states.append(poison)
+        poison.steps_max = 2
+        poison.steps_left = 2
+
+        player.cycle_states()
+        assert poison.steps_left == 1
+        assert player.states == [poison]
+
+        player.cycle_states()
+        assert poison.steps_left == 0
+        assert player.states == []
+
     def test_cycle_states_empty(self):
-        """Test cycle_states() with no active states."""
+        """No states means no work and no crash — the list stays empty."""
         player = Player()
         player.states = []
-        player.cycle_states()  # Should not crash
+
+        player.cycle_states()
+
+        assert player.states == []
 
     def test_cycle_states_processes_all(self):
         """Test cycle_states() processes each state."""
@@ -243,361 +263,15 @@ class TestCombatantMethods:
         assert pcnt == 1.5
 
 
-class TestUniverseInit:
-    """Test Universe initialization and basic methods."""
-
-    def test_universe_init_defaults(self):
-        """Verify Universe.__init__ sets all expected defaults."""
-        u = Universe()
-
-        assert u.player is None
-        assert u.game_tick == 0
-        assert u.maps == []
-        assert u.starting_map_default is None
-        assert isinstance(u.story, dict)
-        assert u.locked_chests == []
-        assert u.testing_mode is False
-        assert u.game_config is None
-        assert u.coordinate_config is None
-
-    def test_universe_init_with_player(self):
-        """Test Universe initialization with a player."""
-        player = Mock()
-        u = Universe(player=player)
-
-        assert u.player is player
-
-    def test_story_init_keys(self):
-        """Verify story dict has expected initial keys."""
-        u = Universe()
-
-        assert 'gorran_first' in u.story
-        assert 'gorran_language_stage' in u.story
-        assert u.story['gorran_first'] == '0'
-        assert u.story['gorran_language_stage'] == '0'
-
-
-class TestUniverseTileExists:
-    """Test tile_exists helper function."""
-
-    def test_tile_exists_found(self):
-        """Test tile_exists returns tile when coordinates exist."""
-        tile = Mock()
-        map_dict = {(0, 0): tile}
-
-        result = tile_exists(map_dict, 0, 0)
-        assert result is tile
-
-    def test_tile_exists_not_found(self):
-        """Test tile_exists returns None when coordinates don't exist."""
-        map_dict = {}
-
-        result = tile_exists(map_dict, 0, 0)
-        assert result is None
-
-    def test_tile_exists_multiple_tiles(self):
-        """Test tile_exists with multiple tiles."""
-        tile1 = Mock()
-        tile2 = Mock()
-        tile3 = Mock()
-
-        map_dict = {(0, 0): tile1, (1, 1): tile2, (2, 3): tile3}
-
-        assert tile_exists(map_dict, 0, 0) is tile1
-        assert tile_exists(map_dict, 1, 1) is tile2
-        assert tile_exists(map_dict, 2, 3) is tile3
-        assert tile_exists(map_dict, 5, 5) is None
-
-
-class TestUniverseGetTile:
-    """Test Universe.get_tile method."""
-
-    def test_get_tile_no_player(self):
-        """Test get_tile returns None when no player."""
-        u = Universe()
-
-        result = u.get_tile(0, 0)
-        assert result is None
-
-    def test_get_tile_no_map(self):
-        """Test get_tile returns None when player has no map."""
-        u = Universe()
-        u.player = Mock()
-        u.player.map = None
-
-        result = u.get_tile(0, 0)
-        assert result is None
-
-    def test_get_tile_found(self):
-        """Test get_tile returns tile when found."""
-        u = Universe()
-        tile = Mock()
-        map_dict = {(1, 2): tile}
-
-        u.player = Mock()
-        u.player.map = map_dict
-
-        result = u.get_tile(1, 2)
-        assert result is tile
-
-    def test_get_tile_not_found(self):
-        """Test get_tile returns None when coordinates don't exist."""
-        u = Universe()
-        u.player = Mock()
-        u.player.map = {}
-
-        result = u.get_tile(1, 2)
-        assert result is None
-
-
-class TestUniverseDeserializeSavedInstance:
-    """Test Universe._deserialize_saved_instance method."""
-
-    def test_deserialize_class_type_marker(self):
-        """Test deserialization with __class_type__ marker."""
-        u = Universe()
-        u.player = Mock()
-
-        payload = {
-            '__class_type__': 'items:Gold'
-        }
-
-        result = u._deserialize_saved_instance(payload)
-        # Should return Gold class or handle gracefully
-        assert result is not None or result is None  # Depends on imports
-
-    def test_deserialize_invalid_payload(self):
-        """Test deserialization with invalid payload."""
-        u = Universe()
-        u.player = Mock()
-
-        # Non-dict payload
-        result = u._deserialize_saved_instance("string")
-        assert result is None
-
-        # Empty dict
-        result = u._deserialize_saved_instance({})
-        assert result is None
-
-    def test_deserialize_with_module_prefix_error(self):
-        """Test deserialization raises on 'src.' module prefix."""
-        u = Universe()
-        u.player = Mock()
-
-        payload = {
-            '__class__': 'Item',
-            '__module__': 'src.items',
-            'props': {}
-        }
-
-        with pytest.raises(ValueError, match="Invalid module name format"):
-            u._deserialize_saved_instance(payload)
-
-    def test_deserialize_recursive_dict(self):
-        """Test deserialization with nested dicts in props."""
-        u = Universe()
-        u.player = Mock()
-
-        # This tests the recursive_deserialize inner function
-        # Should handle nested structures gracefully
-        payload = {
-            '__class__': 'Item',
-            '__module__': 'items',
-            'props': {
-                'nested': {'key': 'value'},
-                'list': [1, 2, 3]
-            }
-        }
-
-        result = u._deserialize_saved_instance(payload)
-        # May fail due to actual Item initialization, but shouldn't crash on structure
-
-
-
-
-class TestUniverseGameTickEvents:
-    """Test Universe.game_tick_events method."""
-
-    def test_game_tick_increments(self):
-        """Test game_tick increments on each call."""
-        u = Universe()
-        player = Mock()
-        player.refresh_merchants = Mock()
-        player.map = {}
-        u.player = player
-
-        assert u.game_tick == 0
-        u.game_tick_events()
-        assert u.game_tick == 1
-        u.game_tick_events()
-        assert u.game_tick == 2
-
-    def test_game_tick_merchant_refresh_at_1000(self):
-        """Test merchant refresh triggered at tick 1000."""
-        u = Universe()
-        player = Mock()
-        player.refresh_merchants = Mock()
-        player.map = {}
-        u.player = player
-        u.game_tick = 999
-
-        u.game_tick_events()
-        player.refresh_merchants.assert_not_called()
-
-        u.game_tick_events()
-        player.refresh_merchants.assert_called_once()
-
-    def test_game_tick_first_tick_evaluation(self):
-        """Test map entry spawners evaluated on first tick."""
-        u = Universe()
-        player = Mock()
-        player.refresh_merchants = Mock()
-        player.map = {}
-        u.player = player
-
-        u.game_tick_events()
-        assert u.game_tick == 1
-        # Should have called _evaluate_map_entry_spawners
-
-    def test_game_tick_no_player(self):
-        """Test game_tick_events handles missing player gracefully."""
-        u = Universe()
-        u.player = None
-
-        # Should not crash
-        u.game_tick_events()
-        assert u.game_tick == 1
-
-
-class TestUniverseEvaluateMapEntrySpawners:
-    """Test Universe._evaluate_map_entry_spawners method."""
-
-    def test_evaluate_map_entry_no_player(self):
-        """Test _evaluate_map_entry_spawners with no player."""
-        u = Universe()
-        u.player = None
-
-        # Should not crash
-        u._evaluate_map_entry_spawners()
-
-    def test_evaluate_map_entry_no_map(self):
-        """Test _evaluate_map_entry_spawners with invalid map."""
-        u = Universe()
-        u.player = Mock()
-        u.player.map = None
-
-        u._evaluate_map_entry_spawners()
-
-    def test_evaluate_map_entry_empty_map(self):
-        """Test _evaluate_map_entry_spawners with empty map."""
-        u = Universe()
-        u.player = Mock()
-        u.player.map = {'name': 'test'}  # Only metadata, no tiles
-
-        u._evaluate_map_entry_spawners()
-
-    def test_evaluate_map_entry_skips_none_tiles(self):
-        """Test _evaluate_map_entry_spawners skips None tiles."""
-        u = Universe()
-        u.player = Mock()
-        u.player.map = {
-            'name': 'test',
-            (0, 0): None,
-            (1, 0): Mock()
-        }
-
-        u._evaluate_map_entry_spawners()
-
-    def test_evaluate_map_entry_calls_evaluate_for_map_entry(self):
-        """Test _evaluate_map_entry_spawners calls event methods."""
-        u = Universe()
-        u.player = Mock()
-
-        event1 = Mock()
-        event1.evaluate_for_map_entry = Mock()
-        event1.has_run = False
-        event1.repeat = False
-
-        tile = Mock()
-        tile.events_here = [event1]
-
-        u.player.map = {
-            'name': 'test',
-            (0, 0): tile
-        }
-
-        u._evaluate_map_entry_spawners()
-        event1.evaluate_for_map_entry.assert_called_once()
-
-    def test_evaluate_map_entry_respects_has_run(self):
-        """Test _evaluate_map_entry_spawners respects has_run flag."""
-        u = Universe()
-        u.player = Mock()
-
-        event = Mock()
-        event.evaluate_for_map_entry = Mock()
-        event.has_run = True
-        event.repeat = False
-
-        tile = Mock()
-        tile.events_here = [event]
-
-        u.player.map = {
-            'name': 'test',
-            (0, 0): tile
-        }
-
-        u._evaluate_map_entry_spawners()
-        event.evaluate_for_map_entry.assert_not_called()
-
-    def test_evaluate_map_entry_respects_repeat(self):
-        """Test _evaluate_map_entry_spawners respects repeat flag."""
-        u = Universe()
-        u.player = Mock()
-
-        event = Mock()
-        event.evaluate_for_map_entry = Mock()
-        event.has_run = True
-        event.repeat = True
-
-        tile = Mock()
-        tile.events_here = [event]
-
-        u.player.map = {
-            'name': 'test',
-            (0, 0): tile
-        }
-
-        u._evaluate_map_entry_spawners(process_repeats=True)
-        event.evaluate_for_map_entry.assert_called_once()
-
-    def test_evaluate_map_entry_exception_handling(self):
-        """Test _evaluate_map_entry_spawners continues on exception."""
-        u = Universe()
-        u.player = Mock()
-
-        event1 = Mock()
-        event1.evaluate_for_map_entry = Mock(side_effect=RuntimeError("test"))
-        event1.has_run = False
-        event1.repeat = False
-
-        event2 = Mock()
-        event2.evaluate_for_map_entry = Mock()
-        event2.has_run = False
-        event2.repeat = False
-
-        tile = Mock()
-        tile.events_here = [event1, event2]
-
-        u.player.map = {
-            'name': 'test',
-            (0, 0): tile
-        }
-
-        # Should not raise
-        u._evaluate_map_entry_spawners()
-        # event2 should still be called
-        event2.evaluate_for_map_entry.assert_called_once()
+# ---------------------------------------------------------------------------
+# Universe.__init__, tile_exists, get_tile, _deserialize_saved_instance,
+# game_tick_events and _evaluate_map_entry_spawners used to be re-tested here,
+# weaker than (and duplicating) tests/test_world_systems_tier2.py. Two of those
+# copies could not fail at all: test_deserialize_class_type_marker asserted
+# `result is not None or result is None`, and four spawner tests asserted
+# nothing whatsoever. They now live once, with real assertions, in
+# test_world_systems_tier2.py. What is left below is unique to this file.
+# ---------------------------------------------------------------------------
 
 
 class TestUniverseBuild:
@@ -619,7 +293,7 @@ class TestUniverseBuild:
 
     @patch('src.universe.Universe._load_all_json_maps')
     def test_build_without_save_data(self, mock_load):
-        """Test build loads JSON maps for new game."""
+        """A new game loads the JSON maps for this player, not saved ones."""
         u = Universe()
         player = Mock()
         player.saveuniv = None
@@ -630,7 +304,7 @@ class TestUniverseBuild:
 
         u.build(player)
 
-        mock_load.assert_called_once()
+        mock_load.assert_called_once_with(player)
 
     @patch('src.universe.Universe._load_all_json_maps')
     def test_build_sets_player(self, mock_load):
@@ -646,30 +320,37 @@ class TestUniverseBuild:
         assert u.player is player
 
     @patch('src.universe.Universe._load_all_json_maps')
-    def test_build_initializes_configs(self, mock_load):
-        """Test build initializes coordinate config."""
+    @pytest.mark.parametrize("game_config", [None, False])
+    def test_build_leaves_coordinate_config_unset_without_a_game_config(
+        self, mock_load, game_config
+    ):
+        u = Universe()
+        player = Mock()
+        player.saveuniv = None
+        player.savestat = None
+        player.game_config = game_config
+
+        u.build(player)
+
+        assert u.coordinate_config is None
+
+    @patch('src.universe.Universe._load_all_json_maps')
+    def test_build_derives_a_coordinate_config_from_the_players_game_config(
+        self, mock_load
+    ):
+        """A fresh Universe has coordinate_config None; build() populates it."""
+        from src.coordinate_config import CoordinateSystemConfig
+
         u = Universe()
         player = Mock()
         player.saveuniv = None
         player.savestat = None
         player.game_config = Mock()
+        assert u.coordinate_config is None
 
         u.build(player)
 
-        assert u.coordinate_config is not None
-
-
-class TestUniverseJsonMapsRootCandidates:
-    """Test Universe._json_maps_root_candidates method."""
-
-    def test_json_maps_root_candidates_returns_list(self):
-        """Test _json_maps_root_candidates returns list of paths."""
-        u = Universe()
-        result = u._json_maps_root_candidates()
-
-        assert isinstance(result, list)
-        # Should contain at least resources/maps
-        assert any('maps' in str(p) for p in result)
+        assert isinstance(u.coordinate_config, CoordinateSystemConfig)
 
 
 class TestUniverseLoadAllJsonMaps:

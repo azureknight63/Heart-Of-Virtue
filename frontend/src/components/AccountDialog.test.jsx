@@ -51,51 +51,69 @@ describe('AccountDialog', () => {
     });
   });
 
-  it('renders account details correctly for premium user', () => {
+  it('labels the two fields and shows the stored username under USERNAME', () => {
     window.localStorage.setItem('username', 'TestHero');
     render(<MemoryRouter><AccountDialog player={mockPlayer} onClose={mockOnClose} /></MemoryRouter>);
 
-    expect(screen.getByText('⚔️ Account Details')).toBeDefined();
-    expect(screen.getByText('TestHero')).toBeDefined();
-    expect(screen.getByText('👑 Premium')).toBeDefined();
+    expect(screen.getByText('⚔️ Account Details').textContent).toBe('⚔️ Account Details');
+    // The value must sit under its own label, not merely exist somewhere.
+    expect(screen.getByText('USERNAME').parentElement.textContent).toBe('USERNAMETestHero');
+    expect(screen.getByText('ACCOUNT STATUS').parentElement.textContent)
+      .toBe('ACCOUNT STATUS👑 Premium');
   });
 
-  it('renders account details correctly for standard user', () => {
+  it.each([
+    ['a premium player', { premium: true }, '👑 Premium'],
+    ['a standard player', { premium: false }, '⭐ Standard'],
+    ['a player with no premium field', {}, '⭐ Standard'],
+    ['no player object at all', null, '⭐ Standard'],
+    ['an undefined player', undefined, '⭐ Standard'],
+  ])('shows %s as %s', (_label, player, expected) => {
+    // `player?.premium` must degrade to Standard rather than crashing — the
+    // dialog can open before the player payload has loaded.
     window.localStorage.setItem('username', 'StandardJoe');
-    render(<MemoryRouter><AccountDialog player={{ premium: false }} onClose={mockOnClose} /></MemoryRouter>);
-
-    expect(screen.getByText('StandardJoe')).toBeDefined();
-    expect(screen.getByText('⭐ Standard')).toBeDefined();
+    render(<MemoryRouter><AccountDialog player={player} onClose={mockOnClose} /></MemoryRouter>);
+    expect(screen.getByText(expected).textContent).toBe(expected);
+    expect(screen.getByText('StandardJoe').textContent).toBe('StandardJoe');
   });
 
   it('renders "Unknown" if username is not in localStorage', () => {
     render(<MemoryRouter><AccountDialog player={mockPlayer} onClose={mockOnClose} /></MemoryRouter>);
-    expect(screen.getByText('Unknown')).toBeDefined();
+    expect(screen.getByText('USERNAME').parentElement.textContent).toBe('USERNAMEUnknown');
   });
 
   it('calls onClose when Close button is clicked', () => {
     render(<MemoryRouter><AccountDialog player={mockPlayer} onClose={mockOnClose} /></MemoryRouter>);
     const closeBtn = screen.getByText('Close');
     fireEvent.click(closeBtn);
-    expect(mockOnClose).toHaveBeenCalled();
+    expect(mockOnClose).toHaveBeenCalledTimes(1);
+    // Dismissing the dialog must not sign the player out.
+    expect(mockLogout).not.toHaveBeenCalled();
   });
 
-  it('calls logout and onClose when Log Out button is clicked', async () => {
+  it('awaits logout before closing, so the dialog cannot outlive the session teardown', async () => {
+    let finishLogout;
+    mockLogout.mockImplementation(() => new Promise((resolve) => { finishLogout = resolve }));
     render(<MemoryRouter><AccountDialog player={mockPlayer} onClose={mockOnClose} /></MemoryRouter>);
-    const logoutBtn = screen.getByText('Log Out');
-    fireEvent.click(logoutBtn);
 
-    await waitFor(() => {
-      expect(mockLogout).toHaveBeenCalled();
-      expect(mockOnClose).toHaveBeenCalled();
-    });
+    fireEvent.click(screen.getByText('Log Out'));
+    await waitFor(() => expect(mockLogout).toHaveBeenCalledTimes(1));
+    expect(mockLogout).toHaveBeenCalledWith();
+    // Ordering is the whole point of the `await` in handleLogout.
+    expect(mockOnClose).not.toHaveBeenCalled();
+
+    finishLogout();
+    await waitFor(() => expect(mockOnClose).toHaveBeenCalledTimes(1));
+    // Logging out is not a navigation — routing is AuthContext's job.
+    expect(mockNavigate).not.toHaveBeenCalled();
   });
 
   it('closes when clicking the overlay', () => {
     const { container } = render(<MemoryRouter><AccountDialog player={mockPlayer} onClose={mockOnClose} /></MemoryRouter>);
     const overlay = container.firstChild;
     fireEvent.click(overlay);
-    expect(mockOnClose).toHaveBeenCalled();
+    expect(mockOnClose).toHaveBeenCalledTimes(1);
+    expect(mockLogout).not.toHaveBeenCalled();
   });
 
   it('does not close when clicking the dialog content', () => {
@@ -110,7 +128,9 @@ describe('AccountDialog', () => {
     fireEvent.click(screen.getByText('Main Menu'));
 
     expect(mockNavigate).toHaveBeenCalledWith('/menu');
-    expect(mockOnClose).toHaveBeenCalled();
+    expect(mockOnClose).toHaveBeenCalledTimes(1);
+    // Leaving for the menu is not a logout — the session must survive.
+    expect(mockLogout).not.toHaveBeenCalled();
   });
 
 });

@@ -242,7 +242,14 @@ class TestPowerStrike:
         mock_inflict.assert_called_once()
         assert isinstance(mock_inflict.call_args[0][0], states.Staggered)
 
-    def test_execute_heavy_handed_inflict_exception_swallowed(self, monkeypatch):
+    def test_a_failed_heavy_handed_stagger_still_leaves_the_blow_landed(
+        self, monkeypatch
+    ):
+        """Heavy Handed's stagger rider is best-effort; the strike is not.
+
+        The old version asserted nothing at all, so an ``except: pass`` that
+        also swallowed the damage would have passed just as happily.
+        """
         user = _make_user()
         tgt = _make_target(finesse=0, protection=0)
         tgt.states = []
@@ -254,12 +261,16 @@ class TestPowerStrike:
         move.target = tgt
         move.power = 60
         user.fatigue = 200
+        hp_before = tgt.hp
 
         monkeypatch.setattr(random, "randint", lambda a, b: 0)
         with patch("src.moves._unarmed.functions.check_parry", return_value=False), \
              patch("src.moves._unarmed.functions.inflict", side_effect=Exception("boom")):
-            # Should not raise
             move.execute(user)
+
+        assert tgt.hp < hp_before, "the blow must land even though the stagger failed"
+        assert tgt.states == [], "no state may be left half-applied"
+        assert user.fatigue == 200 - move.fatigue_cost
 
     def test_execute_hit_chance_floor_at_one(self, monkeypatch):
         user = _make_user()
@@ -303,7 +314,9 @@ class TestPowerStrike:
             move.execute(user)
         assert tgt.hp == 100
 
-    def test_execute_parry_blocks(self, monkeypatch):
+    def test_execute_parry_deals_no_damage_and_staggers_the_user(
+        self, monkeypatch
+    ):
         user = _make_user()
         tgt = _make_target(finesse=0)
         user.combat_proximity = {tgt: 2}
@@ -311,26 +324,36 @@ class TestPowerStrike:
         move.target = tgt
         move.power = 60
         user.fatigue = 200
+        hp_before = tgt.hp
+        recovery_before = move.stage_beat[2]
 
         monkeypatch.setattr(random, "randint", lambda a, b: 0)
-        with patch("src.moves._unarmed.functions.check_parry", return_value=True), \
-             patch.object(move, "parry") as mock_parry:
+        with patch("src.moves._unarmed.functions.check_parry", return_value=True):
             move.execute(user)
-        mock_parry.assert_called_once()
 
-    def test_execute_miss(self, monkeypatch):
+        # A parry converts a landed hit into zero damage and adds 10
+        # beats of stagger to the attacker's recovery stage. The old
+        # version stubbed out parry() and asserted only that it was
+        # called, so neither effect was ever checked.
+        assert tgt.hp == hp_before
+        assert move.stage_beat[2] == recovery_before + 10
+
+    def test_execute_miss_leaves_the_target_untouched(self, monkeypatch):
         user = _make_user()
         tgt = _make_target()
         move = PowerStrike(user)
         move.target = tgt
         move.power = 5
         user.fatigue = 200
+        hp_before = tgt.hp
 
         monkeypatch.setattr(random, "randint", lambda a, b: 100)
-        with patch("src.moves._unarmed.functions.check_parry", return_value=False), \
-             patch.object(move, "miss") as mock_miss:
+        with patch("src.moves._unarmed.functions.check_parry", return_value=False):
             move.execute(user)
-        mock_miss.assert_called_once()
+
+        # A miss must withhold damage entirely. The old version
+        # stubbed miss() out and asserted only that it was called.
+        assert tgt.hp == hp_before
 
     def test_execute_fatigue_floored_at_zero(self, monkeypatch):
         user = _make_user()
@@ -483,7 +506,9 @@ class TestJab:
             move.execute(user)
         assert tgt.hp == 100
 
-    def test_execute_parry_blocks(self, monkeypatch):
+    def test_execute_parry_deals_no_damage_and_staggers_the_user(
+        self, monkeypatch
+    ):
         user = _make_user(subtype="Unarmed")
         tgt = _make_target(finesse=0)
         user.combat_proximity = {tgt: 2}
@@ -491,26 +516,36 @@ class TestJab:
         move.target = tgt
         move.power = 60
         user.fatigue = 200
+        hp_before = tgt.hp
+        recovery_before = move.stage_beat[2]
 
         monkeypatch.setattr(random, "randint", lambda a, b: 0)
-        with patch("src.moves._unarmed.functions.check_parry", return_value=True), \
-             patch.object(move, "parry") as mock_parry:
+        with patch("src.moves._unarmed.functions.check_parry", return_value=True):
             move.execute(user)
-        mock_parry.assert_called_once()
 
-    def test_execute_miss(self, monkeypatch):
+        # A parry converts a landed hit into zero damage and adds 10
+        # beats of stagger to the attacker's recovery stage. The old
+        # version stubbed out parry() and asserted only that it was
+        # called, so neither effect was ever checked.
+        assert tgt.hp == hp_before
+        assert move.stage_beat[2] == recovery_before + 10
+
+    def test_execute_miss_leaves_the_target_untouched(self, monkeypatch):
         user = _make_user(subtype="Unarmed")
         tgt = _make_target()
         move = Jab(user)
         move.target = tgt
         move.power = 5
         user.fatigue = 200
+        hp_before = tgt.hp
 
         monkeypatch.setattr(random, "randint", lambda a, b: 100)
-        with patch("src.moves._unarmed.functions.check_parry", return_value=False), \
-             patch.object(move, "miss") as mock_miss:
+        with patch("src.moves._unarmed.functions.check_parry", return_value=False):
             move.execute(user)
-        mock_miss.assert_called_once()
+
+        # A miss must withhold damage entirely. The old version
+        # stubbed miss() out and asserted only that it was called.
+        assert tgt.hp == hp_before
 
     def test_execute_fatigue_floored_at_zero(self, monkeypatch):
         user = _make_user(subtype="Unarmed")

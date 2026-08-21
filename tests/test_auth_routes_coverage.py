@@ -16,46 +16,39 @@ from flask import Flask
 # ---------------------------------------------------------------------------
 
 
-def _make_session(session_id="sid_a1", db_user_id="db_1"):
-    s = MagicMock()
-    s.session_id = session_id
-    s.db_user_id = db_user_id
-    s.player_id = "player_1"
-    s.data = {"timezone": "America/New_York"}
-    return s
-
-
-def _make_session_manager(session=None):
-    sm = MagicMock()
-    sm.get_session.return_value = session
-    sm.get_player.return_value = MagicMock()
-    sm.create_session.return_value = ("sid_a1", "player_1")
-    sm.expire_session.return_value = True
-    sm.save_session.return_value = None
-    return sm
-
-
 AUTH = {"Authorization": "Bearer sid_a1"}
 NO_AUTH = {}
 BAD_AUTH = {"Authorization": "NotBearer sid_a1"}
 
 
-def _make_app(session=None, sm=None):
-    from src.api.routes.auth import auth_bp
+@pytest.fixture
+def auth_app(make_route_app, make_stub_session, make_stub_session_manager):
+    """A one-blueprint app for ``auth_bp`` on the shared route harness.
 
-    if session is None:
-        session = _make_session()
-    if sm is None:
-        sm = _make_session_manager(session)
+    The session is a *real* ``Session`` (``make_stub_session``) rather than a
+    MagicMock, so ``session.data``/``expires_at``/``to_dict()`` behave as
+    production's do and an attribute the routes read but ``Session`` never
+    defines raises instead of being invented. The manager is
+    ``spec``-constrained against ``SessionManager``.
 
-    app = Flask(__name__)
-    app.config["TESTING"] = True
-    app.register_blueprint(auth_bp)
-    app.session_manager = sm
-    app.game_service = MagicMock()
-    app._test_session = session
-    app._test_sm = sm
-    return app
+    Exposes ``app.stub_session`` and ``app.stub_session_manager``.
+    """
+
+    def _auth_app(session=None, sm=None):
+        from src.api.routes.auth import auth_bp
+
+        if session is None:
+            session = make_stub_session(
+                session_id="sid_a1",
+                player_id="player_1",
+                db_user_id="db_1",
+                timezone="America/New_York",
+            )
+        if sm is None:
+            sm = make_stub_session_manager(session, MagicMock())
+        return make_route_app(auth_bp, session=session, session_manager=sm)
+
+    return _auth_app
 
 
 # ===========================================================================
@@ -65,8 +58,8 @@ def _make_app(session=None, sm=None):
 
 class TestRegister:
     @pytest.fixture
-    def app(self):
-        return _make_app()
+    def app(self, auth_app):
+        return auth_app()
 
     def test_register_success(self, app):
         mock_user = {
@@ -197,8 +190,8 @@ class TestRegister:
 
 class TestLogin:
     @pytest.fixture
-    def app(self):
-        return _make_app()
+    def app(self, auth_app):
+        return auth_app()
 
     def test_login_success(self, app):
         mock_user = {"id": "user_001", "username": "Jean", "timezone": "UTC"}
@@ -292,8 +285,8 @@ class TestLoginRateLimitBoundedGrowth:
         _ip_limiter.clear_all()
 
     @pytest.fixture
-    def app(self):
-        return _make_app()
+    def app(self, auth_app):
+        return auth_app()
 
     def test_many_distinct_failed_logins_stay_bounded(self):
         from src.api.routes.auth import _login_limiter, _record_failed_login
@@ -358,8 +351,8 @@ class TestLoginPerIpThrottle:
         _ip_limiter.clear_all()
 
     @pytest.fixture
-    def app(self):
-        return _make_app()
+    def app(self, auth_app):
+        return auth_app()
 
     # Pin the source IP so the throttle key is deterministic regardless of the
     # test client's default REMOTE_ADDR.
@@ -470,10 +463,8 @@ class TestLoginPerIpThrottle:
 
 class TestLogout:
     @pytest.fixture
-    def app(self):
-        session = _make_session()
-        sm = _make_session_manager(session)
-        return _make_app(session=session, sm=sm)
+    def app(self, auth_app):
+        return auth_app()
 
     def test_logout_success(self, app):
         with app.test_client() as c:
@@ -483,7 +474,7 @@ class TestLogout:
         assert data["success"] is True
 
     def test_logout_session_not_found(self, app):
-        app._test_sm.expire_session.return_value = False
+        app.stub_session_manager.expire_session.return_value = False
         with app.test_client() as c:
             rv = c.post("/auth/logout", headers=AUTH)
         assert rv.status_code == 404
@@ -499,7 +490,7 @@ class TestLogout:
         assert rv.status_code == 401
 
     def test_logout_invalid_session_in_require_auth(self, app):
-        app._test_sm.get_session.return_value = None
+        app.stub_session_manager.get_session.return_value = None
         with app.test_client() as c:
             rv = c.post("/auth/logout", headers=AUTH)
         assert rv.status_code == 401
@@ -523,10 +514,8 @@ class TestLogout:
 
 class TestValidateSession:
     @pytest.fixture
-    def app(self):
-        session = _make_session()
-        sm = _make_session_manager(session)
-        return _make_app(session=session, sm=sm)
+    def app(self, auth_app):
+        return auth_app()
 
     def test_valid_session(self, app):
         with app.test_client() as c:
@@ -537,7 +526,7 @@ class TestValidateSession:
         assert data["player_id"] == "player_1"
 
     def test_invalid_session(self, app):
-        app._test_sm.get_session.return_value = None
+        app.stub_session_manager.get_session.return_value = None
         with app.test_client() as c:
             rv = c.get("/auth/validate", headers=AUTH)
         assert rv.status_code == 401
@@ -557,7 +546,7 @@ class TestValidateSession:
         assert rv.status_code == 401
 
     def test_exception_returns_500(self, app):
-        app._test_sm.get_session.side_effect = RuntimeError("db crashed")
+        app.stub_session_manager.get_session.side_effect = RuntimeError("db crashed")
         with app.test_client() as c:
             rv = c.get("/auth/validate", headers=AUTH)
         assert rv.status_code == 500
@@ -572,10 +561,8 @@ class TestValidateSession:
 
 class TestSettings:
     @pytest.fixture
-    def app(self):
-        session = _make_session()
-        sm = _make_session_manager(session)
-        return _make_app(session=session, sm=sm)
+    def app(self, auth_app):
+        return auth_app()
 
     def test_get_settings_success(self, app):
         with app.test_client() as c:
@@ -586,7 +573,7 @@ class TestSettings:
         assert "timezone" in data["data"]
 
     def test_get_settings_no_db_user_id(self, app):
-        app._test_session.db_user_id = None
+        app.stub_session.db_user_id = None
         with app.test_client() as c:
             rv = c.get("/auth/settings", headers=AUTH)
         assert rv.status_code == 401

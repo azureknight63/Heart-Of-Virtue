@@ -33,7 +33,7 @@ from src.objects import Container
 from conftest import restore_mapgen_modules, snapshot_and_clear_mapgen_modules
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def map_generator_module():
     """Import utils.map_generator with tkinter stubbed out.
 

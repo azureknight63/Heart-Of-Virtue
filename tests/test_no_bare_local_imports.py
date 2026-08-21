@@ -13,6 +13,8 @@ AST-based so docstrings and comments can't false-positive.
 """
 
 import ast
+import functools
+import re
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parents[1]
@@ -31,6 +33,130 @@ _LOCAL_MODULES = frozenset(
 )
 
 
+# A file can only contain a bare local import if its raw text mentions the
+# module name in the module position of an `import`/`from` statement, or
+# performs a dynamic import. Anything else cannot produce an offending AST
+# node, so it is skipped without paying for ast.parse — which dominates this
+# test's runtime (~3.3s of parsing across src/ + tests/ collapses to ~0.25s).
+# The filter is deliberately over-inclusive (it also matches inside strings and
+# comments); the AST pass below is still the sole arbiter of what counts as an
+# offense.
+#
+# It must never be *under*-inclusive, or an offense is skipped and the guard
+# silently stops guarding. The previous pattern, `(?:import|from)\s+(\w+)`,
+# captured only the FIRST name after the keyword, so a comma-separated
+# `import os, items` was filtered out and never reached the AST pass — a real
+# bare import the guard would have passed clean. `names` therefore captures the
+# whole comma-separated tail, and each entry is reduced to its first
+# dotted component (so `import src.items as items` still reads as `src`).
+_IMPORT_RE = re.compile(
+    r"(?<![\w.])(?:from[ \t]+(?P<mod>[\w.]+)|import[ \t]+(?P<names>[\w.,\t ]+))"
+)
+_DYNAMIC_IMPORT_TOKENS = ("import_module", "__import__")
+
+_SRC_LITERAL_RE = re.compile(r"""(?<![\w.])['"]src['"]""")
+
+
+def _names_tainted_by_a_src_literal(tree):
+    """Names bound to an expression that mentions the string literal 'src'.
+
+    e.g. ``_SRC_DIR = os.path.join(_PROJECT_ROOT, 'src')`` taints ``_SRC_DIR``.
+    Loop variables inherit the taint from the iterable they walk, which is how
+    ``for p in (_ROOT, _SRC_DIR): sys.path.insert(0, p)`` is caught.
+    """
+    tainted = set()
+    # Two passes so a taint introduced later in the file still propagates to an
+    # earlier loop (import preambles are short; correctness beats one pass).
+    for _ in range(2):
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Assign):
+                if _SRC_LITERAL_RE.search(ast.unparse(node.value)) or any(
+                    isinstance(n, ast.Name) and n.id in tainted
+                    for n in ast.walk(node.value)
+                ):
+                    for target in node.targets:
+                        for name in ast.walk(target):
+                            if isinstance(name, ast.Name):
+                                tainted.add(name.id)
+            elif isinstance(node, ast.For):
+                if _SRC_LITERAL_RE.search(ast.unparse(node.iter)) or any(
+                    isinstance(n, ast.Name) and n.id in tainted
+                    for n in ast.walk(node.iter)
+                ):
+                    for name in ast.walk(node.target):
+                        if isinstance(name, ast.Name):
+                            tainted.add(name.id)
+    return tainted
+
+
+# A file can only push the src directory if it mutates sys.path at all; the
+# textual pre-check keeps the AST pass off the ~85% of test files that don't.
+_SYS_PATH_MUTATION_RE = re.compile(r"sys\.path\.(?:insert|append)\s*\(")
+
+
+@functools.lru_cache(maxsize=None)
+def _sys_path_src_offenses(text):
+    """Line numbers of ``sys.path.insert/append`` calls pushing the src dir."""
+    # Both offense forms ultimately originate from a literal 'src' somewhere in
+    # the file (directly in the call, or in the expression a pushed variable was
+    # built from), so a file with neither marker cannot offend.
+    if not _SYS_PATH_MUTATION_RE.search(text) or not _SRC_LITERAL_RE.search(text):
+        return ()
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:  # pragma: no cover - defensive
+        return ()
+    tainted = _names_tainted_by_a_src_literal(tree)
+    offenses = []
+    for node in ast.walk(tree):
+        if not (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr in ("insert", "append")
+            and ast.unparse(node.func.value).endswith("sys.path")
+        ):
+            continue
+        args_src = " ".join(ast.unparse(a) for a in node.args)
+        referenced = {
+            n.id for a in node.args for n in ast.walk(a) if isinstance(n, ast.Name)
+        }
+        if _SRC_LITERAL_RE.search(args_src) or (referenced & tainted):
+            offenses.append(node.lineno)
+    return tuple(offenses)
+
+
+@functools.lru_cache(maxsize=None)
+def _source_files(root):
+    """(path, text) for every .py under `root`, read once per session."""
+    out = []
+    for py in sorted(root.rglob("*.py")):
+        try:
+            out.append((py, py.read_text(encoding="utf-8")))
+        except UnicodeDecodeError:  # pragma: no cover - defensive
+            continue
+    return tuple(out)
+
+
+def _imported_roots(text):
+    """Every top-level module name appearing in an import statement's module
+    position — over-inclusive by design (strings and comments included)."""
+    for match in _IMPORT_RE.finditer(text):
+        module = match.group("mod")
+        if module:
+            yield module.split(".", 1)[0]
+            continue
+        for part in match.group("names").split(","):
+            part = part.strip()
+            if part:
+                yield part.split()[0].split(".", 1)[0]
+
+
+def _might_import(text, modules):
+    if any(token in text for token in _DYNAMIC_IMPORT_TOKENS):
+        return True
+    return any(root in modules for root in _imported_roots(text))
+
+
 def _is_dynamic_import_call(node):
     """Match importlib.import_module(...) / import_module(...) / __import__(...)."""
     func = node.func
@@ -43,9 +169,11 @@ def _is_dynamic_import_call(node):
 
 def _bare_import_offenders(root, modules):
     offenders = []
-    for py in sorted(root.rglob("*.py")):
+    for py, text in _source_files(root):
+        if not _might_import(text, modules):
+            continue
         try:
-            tree = ast.parse(py.read_text(encoding="utf-8"), filename=str(py))
+            tree = ast.parse(text, filename=str(py))
         except SyntaxError:
             continue  # scratch/broken scripts are not import-graph citizens
         rel = py.relative_to(_ROOT)
@@ -104,17 +232,22 @@ def test_no_src_dir_on_sys_path_in_tests():
     the pytest run, silently masking bare-import regressions in every test
     that runs afterwards. Only the project root belongs on sys.path (the
     conftests handle that).
-    """
-    import re
 
-    pattern = re.compile(r"sys\.path\.(insert|append)\(.*['\"]src['\"]")
+    Checked over the AST rather than line-by-line: the previous single-line
+    regex only fired when the literal "src" appeared in the same statement as
+    the sys.path call, so tests/test_refresh_stat_bonuses.py's
+    ``_SRC_DIR = os.path.join(_PROJECT_ROOT, 'src')`` /
+    ``for _p in (_PROJECT_ROOT, _SRC_DIR): sys.path.insert(0, _p)`` preamble
+    sat unnoticed. Taint now follows the variable.
+    """
     offenders = []
-    for py in sorted(_TESTS.rglob("*.py")):
+    for py, text in _source_files(_TESTS):
         if py.name == "test_no_bare_local_imports.py":
             continue
-        for i, line in enumerate(py.read_text(encoding="utf-8").splitlines(), 1):
-            if pattern.search(line):
-                offenders.append(f"{py.relative_to(_ROOT)}:{i}")
+        if "sys.path" not in text:
+            continue
+        for lineno in _sys_path_src_offenses(text):
+            offenders.append(f"{py.relative_to(_ROOT)}:{lineno}")
     assert not offenders, (
         "Test files putting src/ on sys.path (masks bare-import regressions "
         "for the whole pytest run): " + "; ".join(offenders)

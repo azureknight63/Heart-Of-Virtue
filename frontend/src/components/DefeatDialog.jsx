@@ -79,7 +79,12 @@ export default function DefeatDialog({ endState, onLoadedSave }) {
     return saves.map((s) => {
       const parts = [s.name]
       if (typeof s.level === 'number') parts.push(`Lv ${s.level}`)
-      if (s.location) parts.push(s.location)
+      // `location` is a field no serializer emits: GameService.list_saves sends
+      // `map_name` and `room_title` (MainMenuPage reads exactly those). The old
+      // read sat behind a truthiness guard, so it failed closed and silently
+      // dropped the place from every label instead of erroring.
+      if (s.map_name) parts.push(s.map_name)
+      if (s.room_title) parts.push(s.room_title)
       return { id: s.id, label: parts.join(' • ') }
     })
   }, [saves])

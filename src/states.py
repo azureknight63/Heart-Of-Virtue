@@ -79,7 +79,6 @@ class State:  # master class for all states
                 self.beats_left -= 1
                 if self.beats_left <= 0:
                     target.states.remove(self)
-                    # print("###DEBUG### state removed: " + str(self))
                     functions.refresh_stat_bonuses(target)
                     self.on_removal(target)
         elif self.world and not target.in_combat:

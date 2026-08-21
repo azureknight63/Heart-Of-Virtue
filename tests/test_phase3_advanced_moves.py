@@ -335,17 +335,29 @@ class TestFeintAndPivotMove:
         assert player.fatigue == initial_fatigue - 70
 
     def test_feint_execute_repositions_player(self, player, target_enemy, feint_move):
-        """Test FeintAndPivot.execute() moves player to flank position"""
-        initial_pos = (player.combat_position.x, player.combat_position.y)
+        """A front-on feint pivots the player onto the target's flank.
+
+        The old assertion was ``isinstance(final_pos, tuple)`` — true of the
+        starting position, of any position, and of a move that never ran. The
+        repositioning geometry is deterministic (no RNG in
+        ``_calculate_new_position``), so the destination is exact.
+        """
+        assert (player.combat_position.x, player.combat_position.y) == (10, 10)
+        # Target at (15, 10) faces W, i.e. straight at the player.
+        assert feint_move._get_relative_position(
+            player.combat_position,
+            target_enemy.combat_position,
+            target_enemy.combat_position.facing,
+        ) == "front"
 
         feint_move.execute(player)
 
-        # Player position should change (flanking move_to_flank)
-        # Note: move_to_flank behavior depends on implementation
-        # We just verify position was updated
-        final_pos = (player.combat_position.x, player.combat_position.y)
-        # Position may or may not change depending on available space
-        assert isinstance(final_pos, tuple)
+        # front -> flank: 3 squares along (target_facing + 90 deg) from the
+        # target, which for a west-facing target is due east of it.
+        assert (player.combat_position.x, player.combat_position.y) == (18, 10)
+        # ...then the player turns to keep the target in view: from (18, 10)
+        # the target at (15, 10) lies due west.
+        assert player.combat_position.facing is Direction.W
 
     def test_feint_evaluates_power(self, player, feint_move):
         """Test FeintAndPivot power calculation"""
@@ -573,19 +585,37 @@ class TestPhase3MovesIntegration:
         assert callable(spin.viable)
 
     def test_all_moves_have_evaluate_method(self, combat_scenario):
-        """Test all Phase 3 moves implement evaluate() method"""
+        """evaluate() must actually recompute ``power`` from live stats.
+
+        The old body called evaluate() on four moves and asserted nothing, so an
+        evaluate() that had become ``pass`` — leaving every move stuck on
+        whatever power it was constructed with — would still have passed.
+
+        This scenario's ``eq_weapon`` is a Mock with no usable ``damage``, so
+        each attack falls to its documented strength-only fallback
+        (strength * multiplier, strength = 10).
+        """
         player, enemies = combat_scenario
 
-        turn = Turn(player)
         whirl = WhirlAttack(player)
         feint = FeintAndPivot(player)
         spin = VertigoSpin(player)
 
-        # All should have evaluate
-        turn.evaluate()
+        for move in (whirl, feint, spin):
+            move.power = -999  # poison the value so a no-op evaluate() shows
+
         whirl.evaluate()
         feint.evaluate()
         spin.evaluate()
+
+        assert whirl.power == 5.0   # strength * 0.5
+        assert feint.power == 4.0   # strength * 0.4
+        assert spin.power == 6.0    # strength * 0.6
+
+        # Turn is a pure repositioning move: it carries no power at all.
+        turn = Turn(player)
+        turn.evaluate()
+        assert getattr(turn, "power", None) is None
 
     def test_fatigue_costs_reasonable(self, combat_scenario):
         """Test all Phase 3 moves have reasonable fatigue costs"""

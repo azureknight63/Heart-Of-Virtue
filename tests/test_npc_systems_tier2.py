@@ -316,8 +316,15 @@ class TestFriendSubclasses:
             aggro=True,
             exp_award=0,
         )
-        # talk() should print; just verify it doesn't crash
-        friend.talk(None)  # No assertion needed; verify no exception
+        from src.narration import capture_narration
+
+        with capture_narration() as messages:
+            friend.talk(None)
+
+        # The base Friend.talk is the "this NPC has no dialogue yet" stub; it
+        # must still address the player by the NPC's name. The old body had no
+        # assertion at all, so a talk() that emitted nothing passed.
+        assert [m["text"] for m in messages] == ["TestAlly has nothing to say."]
 
     def test_mynx_initialization(self):
         """Test Mynx friendly NPC initialization."""
@@ -457,7 +464,9 @@ class TestNPCCombatMechanics:
         assert npc in ally.combat_proximity
 
     def test_select_move_basic(self):
-        """Test select_move picks a viable move."""
+        """A Slime with fatigue to spend picks an affordable move it can
+        actually use. ``is not None`` was also satisfied by the ``NpcRest``
+        hard fallback, i.e. by the Slime doing nothing."""
         npc = Slime()
         npc.in_combat = True
         npc.fatigue = 100
@@ -465,6 +474,8 @@ class TestNPCCombatMechanics:
         npc.select_move()
 
         assert npc.current_move is not None
+        assert npc.current_move.fatigue_cost <= npc.fatigue
+        assert npc.current_move.name in {m.name for m in npc.known_moves} | {"Rest"}
 
     def test_select_move_insufficient_fatigue_rests(self):
         """Test select_move rests when fatigue is low."""
@@ -992,9 +1003,15 @@ class TestEdgeCases:
             aggro=True,
             exp_award=50,
         )
-        # npc.known_moves has NpcRest by default
+        # A bare NPC knows exactly one move: NpcRest. Selection must land on
+        # it rather than leaving current_move unset (which would stall the
+        # combat beat). The old body asserted nothing at all.
+        assert [m.name for m in npc.known_moves] == ["Rest"]
+
         npc.select_move()
-        # Should not crash
+
+        assert npc.current_move is not None
+        assert npc.current_move.name == "Rest"
 
 
 class TestTalusHoundPackMechanics:
@@ -1031,8 +1048,11 @@ class TestAIConfigInitialization:
 
         npc.select_move()
 
-        # Should select a move even without player_ref
+        # No player_ref means the lazy NPCAIConfig init is skipped entirely —
+        # assert that, not merely that *something* was selected.
+        assert getattr(npc, "ai_config", None) is None
         assert npc.current_move is not None
+        assert npc.current_move.fatigue_cost <= npc.fatigue
 
     def test_select_move_with_player_ref_no_ai_config(self):
         """Test select_move works with player_ref but no ai_config."""
@@ -1044,7 +1064,13 @@ class TestAIConfigInitialization:
 
         npc.select_move()
 
-        # Should select a move
+        # With a real player_ref present the lazy init constructs a real
+        # NPCAIConfig bound to that player — the branch this test is named for
+        # and which ``current_move is not None`` never touched.
+        from src.npc_ai_config import NPCAIConfig
+
+        assert isinstance(npc.ai_config, NPCAIConfig)
+        assert npc.ai_config.player is player
         assert npc.current_move is not None
 
 

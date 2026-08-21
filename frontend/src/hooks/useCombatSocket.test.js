@@ -67,8 +67,10 @@ describe('useCombatSocket', () => {
   it('stops reconnect churn when the server rejects a stale session', () => {
     const { socket, calls } = setup();
     act(() => socket.fire('error', { message: 'Invalid session' }));
-    expect(socket.disconnect).toHaveBeenCalled();
+    expect(socket.disconnect).toHaveBeenCalledTimes(1);
     expect(calls.onSessionInvalid).toHaveBeenCalledWith({ message: 'Invalid session' });
+    // No rejoin attempt: the whole point is to stop the churn.
+    expect(socket.emit).not.toHaveBeenCalled();
   });
 
   it('forwards beats in order', () => {
@@ -103,8 +105,11 @@ describe('useCombatSocket', () => {
       socket.fire('combat:beat', beat(5));
       await Promise.resolve();
     });
-    expect(calls.fetchStatus).toHaveBeenCalled();
+    // One resync for the gap, not one per missing seq.
+    expect(calls.fetchStatus).toHaveBeenCalledTimes(1);
     expect(calls.onResolved).toHaveBeenCalledWith({ resynced: true });
+    // The gapped beat itself is dropped — the snapshot supersedes it.
+    expect(calls.onBeat.mock.calls.map((c) => c[0].seq)).toEqual([1]);
   });
 
   it('routes ended, legacy updates, and suggestions', () => {
@@ -139,7 +144,10 @@ describe('useCombatSocket', () => {
     expect(socket.emit).toHaveBeenCalledWith('join_combat', {
       session_id: 'sess-1',
     });
-    expect(calls.fetchStatus).toHaveBeenCalled();
+    // Rejoining alone is not enough — beats missed while disconnected mean the
+    // client must also re-seed from the authoritative snapshot.
+    expect(calls.fetchStatus).toHaveBeenCalledTimes(2);
+    expect(calls.onResolved).toHaveBeenLastCalledWith({ resynced: true });
   });
 
   it('resyncs on the initial connect, not only on reconnect', async () => {
@@ -150,7 +158,8 @@ describe('useCombatSocket', () => {
     await act(async () => {
       socket.fire('connect');
     });
-    expect(calls.fetchStatus).toHaveBeenCalled();
+    expect(calls.fetchStatus).toHaveBeenCalledTimes(1);
+    expect(calls.onResolved).toHaveBeenCalledWith({ resynced: true });
     expect(calls.onResolved).toHaveBeenCalledWith({ resynced: true });
   });
 
@@ -167,7 +176,7 @@ describe('useCombatSocket', () => {
     act(() => socket.fire('combat:beat', beat(1)));
     // seq 5 is a gap (2-4 missing) and kicks off the resync.
     act(() => socket.fire('combat:beat', beat(5)));
-    expect(fetchStatus).toHaveBeenCalled();
+    expect(fetchStatus).toHaveBeenCalledTimes(1);
 
     // A newer beat arrives and is applied before the resync resolves.
     act(() => socket.fire('combat:beat', beat(6)));
@@ -197,14 +206,61 @@ describe('useCombatSocket', () => {
     await act(async () => {
       socket.fire('combat:beat', beat(4));
     });
-    expect(fetchStatus).toHaveBeenCalled();
+    expect(fetchStatus).toHaveBeenCalledTimes(1);
     expect(calls.onResolved).not.toHaveBeenCalled();
   });
 
-  it('disconnects on unmount', () => {
-    const { socket, hook } = setup();
+  it('disconnects exactly once on unmount', () => {
+    const { socket, hook, calls } = setup();
+    act(() => socket.fire('combat:beat', beat(1)));
+    expect(calls.onBeat).toHaveBeenCalledTimes(1);
+
     hook.unmount();
-    expect(socket.disconnect).toHaveBeenCalled();
+
+    // Exactly once: a bare toHaveBeenCalled() was satisfied by a disconnect()
+    // from any path, including the stale-session error handler, and would not
+    // have caught a double teardown.
+    expect(socket.disconnect).toHaveBeenCalledTimes(1);
+  });
+
+  it('resets the sequence-gap detector on teardown, so a new session does not resync on its first beat', () => {
+    // The cleanup nulls lastSeqRef/lastStateSeqRef. Without that, the FIRST
+    // beat of the next fight is compared against the previous fight's sequence
+    // number, classified as a gap, and triggers a spurious full resync — the
+    // teardown side effect nothing asserted.
+    const socketA = makeFakeSocket();
+    const socketB = makeFakeSocket();
+    const fetchStatus = vi.fn().mockResolvedValue({ resynced: true });
+    const onBeat = vi.fn();
+    const sockets = [socketA, socketB];
+
+    const hook = renderHook(
+      ({ sessionId }) =>
+        useCombatSocket({
+          sessionId,
+          enabled: true,
+          createSocket: () => sockets.shift(),
+          onBeat,
+          fetchStatus,
+        }),
+      { initialProps: { sessionId: 'sess-1' } }
+    );
+
+    act(() => socketA.fire('combat:beat', beat(7)));
+    expect(onBeat).toHaveBeenCalledTimes(1);
+    expect(fetchStatus).not.toHaveBeenCalled();
+
+    hook.rerender({ sessionId: 'sess-2' });
+    expect(socketA.disconnect).toHaveBeenCalledTimes(1);
+
+    // seq 9 against a surviving high-water mark of 7 classifies as a GAP
+    // (9 > 7 + 1) and would fire a resync instead of delivering the beat. With
+    // the ref nulled, lastSeq is null, classifySeq returns 'next', and the beat
+    // is delivered with no network round-trip.
+    act(() => socketB.fire('combat:beat', beat(9)));
+    expect(fetchStatus).not.toHaveBeenCalled();
+    expect(onBeat).toHaveBeenCalledTimes(2);
+    expect(onBeat).toHaveBeenLastCalledWith(beat(9));
   });
 
   it('does nothing when disabled', () => {

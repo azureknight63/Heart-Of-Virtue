@@ -34,8 +34,12 @@ class TestLogCleanupManagerInit:
         assert mgr.max_size_bytes == 50 * 1024 * 1024
 
     def test_logs_dir_stored_as_path(self):
+        """The string is converted to a Path pointing at exactly that dir —
+        every later `logs_dir.glob(...)` depends on both halves."""
         mgr = LogCleanupManager("/tmp/logs")
+
         assert isinstance(mgr.logs_dir, Path)
+        assert mgr.logs_dir == Path("/tmp/logs")
 
     # -----------------------------------------------------------------------
     # Regression tests for #451: a negative retention_days pushes the cutoff
@@ -249,12 +253,15 @@ class TestGetStats:
         assert stats["newest_file"] is not None
 
     def test_total_size_mb_calculated(self):
+        """total_size_mb is total_size / 1024**2, rounded — not just present."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            (Path(tmpdir) / "c.log").write_bytes(b"x" * 1024)
+            (Path(tmpdir) / "c.log").write_bytes(b"x" * 3 * 1024 * 1024)
+            (Path(tmpdir) / "d.log").write_bytes(b"x" * 512 * 1024)
             mgr = LogCleanupManager(tmpdir)
             stats = mgr.get_stats()
-        assert "total_size_mb" in stats
-        assert stats["total_size_mb"] >= 0
+
+        assert stats["total_size"] == (3 * 1024 * 1024) + (512 * 1024)
+        assert stats["total_size_mb"] == 3.5
 
     def test_oldest_and_newest_names_present(self):
         with tempfile.TemporaryDirectory() as tmpdir:

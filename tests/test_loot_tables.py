@@ -1,252 +1,206 @@
+"""Unit tests for src.loot_tables.
+
+These exercise the real ``src.items`` registry rather than a mocked
+``inspect.getmembers``: ``Loot.random_equipment``'s whole job is to pick a name
+out of that registry whose ``level`` matches the request, so mocking the
+registry away leaves nothing worth asserting.
 """
-Unit tests for loot_tables module
-"""
+import inspect
+import random
+from unittest.mock import Mock, patch
+
 import pytest
-from unittest.mock import Mock, patch, MagicMock
+
+import src.items as items
 from src.loot_tables import Loot
+from src.narration import capture_narration
 
 
-@pytest.fixture
+# ---------------------------------------------------------------------------
+# Helpers / fixtures
+# ---------------------------------------------------------------------------
+
+# The loot tables are constant data; one instance is safe to share module-wide.
+@pytest.fixture(scope="module")
 def loot_instance():
-    """Create a Loot instance for testing"""
     return Loot()
 
 
-def test_loot_initialization(loot_instance):
-    """Test that Loot object initializes with correct loot tables"""
-    assert loot_instance.lev0 is not None
-    assert loot_instance.lev1 is not None
+def _real_item_names_at_level(level):
+    """Names in the live ``src.items`` registry whose class ``level`` matches."""
+    return {
+        name for name, obj in inspect.getmembers(items)
+        if inspect.isclass(obj) and getattr(obj, "level", None) == level
+    }
 
 
-def test_lev0_structure(loot_instance):
-    """Test that lev0 loot table has expected structure"""
-    assert "Gold" in loot_instance.lev0
-    assert "Restorative" in loot_instance.lev0
-    assert "Draught" in loot_instance.lev0
-    assert "Equipment_0_1" in loot_instance.lev0
+class _RecordingTile:
+    """Minimal stand-in for a Tile that records spawn_item calls."""
+
+    def __init__(self):
+        self.calls = []
+
+    def spawn_item(self, name, amt=1, hidden=False, hfactor=0):
+        self.calls.append(
+            {"name": name, "amt": amt, "hidden": hidden, "hfactor": hfactor}
+        )
+        # Return a real engine item so downstream enchanting has a real target.
+        return getattr(items, name)()
 
 
-def test_lev0_gold_properties(loot_instance):
-    """Test lev0 gold drop properties"""
-    gold = loot_instance.lev0["Gold"]
-    assert "chance" in gold
-    assert "qty" in gold
-    assert gold["chance"] == 50
-    assert gold["qty"] == "r25-50"
+# ---------------------------------------------------------------------------
+# Loot table data
+# ---------------------------------------------------------------------------
+
+def test_loot_tables_are_per_instance_not_shared():
+    """Each Loot() must own its tables; a shared dict would let one NPC's
+    loot mutation bleed into every other NPC's drop table."""
+    a, b = Loot(), Loot()
+    assert a.lev0 is not b.lev0
+    a.lev0["Gold"]["chance"] = 999
+    assert b.lev0["Gold"]["chance"] == 50
 
 
-def test_lev0_restorative_properties(loot_instance):
-    """Test lev0 restorative properties"""
-    restorative = loot_instance.lev0["Restorative"]
-    assert restorative["chance"] == 25
-    assert restorative["qty"] == 1
+@pytest.mark.parametrize("table,key,chance,qty", [
+    ("lev0", "Gold", 50, "r25-50"),
+    ("lev0", "Restorative", 25, 1),
+    ("lev0", "Draught", 25, 1),
+    ("lev0", "Equipment_0_1", 10, 1),
+    ("lev1", "Gold", 50, "r50-100"),
+    ("lev1", "Restorative", 25, "r1-3"),
+    ("lev1", "Draught", 25, "r1-3"),
+    ("lev1", "Equipment_0_0", 40, 1),
+    ("lev1", "Equipment_1_0", 10, 1),
+])
+def test_loot_entry_values(loot_instance, table, key, chance, qty):
+    entry = getattr(loot_instance, table)[key]
+    assert entry == {"chance": chance, "qty": qty}
 
 
-def test_lev0_draught_properties(loot_instance):
-    """Test lev0 draught properties"""
-    draught = loot_instance.lev0["Draught"]
-    assert draught["chance"] == 25
-    assert draught["qty"] == 1
+def test_lev0_and_lev1_have_exactly_the_expected_keys(loot_instance):
+    assert set(loot_instance.lev0) == {
+        "Gold", "Restorative", "Draught", "Equipment_0_1"}
+    assert set(loot_instance.lev1) == {
+        "Gold", "Restorative", "Draught", "Equipment_0_0", "Equipment_1_0"}
 
 
-def test_lev0_equipment_properties(loot_instance):
-    """Test lev0 equipment properties"""
-    equipment = loot_instance.lev0["Equipment_0_1"]
-    assert equipment["chance"] == 10
-    assert equipment["qty"] == 1
+def test_lev1_is_strictly_richer_than_lev0(loot_instance):
+    """lev1 is the higher-tier table: same drop chance for gold but a bigger
+    roll range, and stackable restoratives instead of a single one."""
+    lev0_lo, lev0_hi = (int(x) for x in
+                        loot_instance.lev0["Gold"]["qty"][1:].split("-"))
+    lev1_lo, lev1_hi = (int(x) for x in
+                        loot_instance.lev1["Gold"]["qty"][1:].split("-"))
+    assert lev1_lo >= lev0_hi
+    assert lev1_hi > lev0_hi
+    assert loot_instance.lev0["Restorative"]["qty"] == 1
+    assert loot_instance.lev1["Restorative"]["qty"] == "r1-3"
 
 
-def test_lev1_structure(loot_instance):
-    """Test that lev1 loot table has expected structure"""
-    assert "Gold" in loot_instance.lev1
-    assert "Restorative" in loot_instance.lev1
-    assert "Draught" in loot_instance.lev1
-    assert "Equipment_0_0" in loot_instance.lev1
-    assert "Equipment_1_0" in loot_instance.lev1
+@pytest.mark.parametrize("table", ["lev0", "lev1"])
+def test_every_entry_is_a_well_formed_drop_spec(loot_instance, table):
+    """chance is a 1-100 int; qty is either a positive int or an 'rLO-HI'
+    range whose bounds are ordered and positive."""
+    for name, spec in getattr(loot_instance, table).items():
+        assert set(spec) == {"chance", "qty"}, name
+        assert isinstance(spec["chance"], int) and not isinstance(
+            spec["chance"], bool), name
+        assert 0 < spec["chance"] <= 100, name
+        qty = spec["qty"]
+        if isinstance(qty, str):
+            assert qty.startswith("r"), name
+            lo, hi = (int(x) for x in qty[1:].split("-"))
+            assert 0 < lo <= hi, name
+        else:
+            assert isinstance(qty, int) and qty > 0, name
 
 
-def test_lev1_gold_properties(loot_instance):
-    """Test lev1 gold drop has higher value range than lev0"""
-    gold = loot_instance.lev1["Gold"]
-    assert gold["chance"] == 50
-    assert gold["qty"] == "r50-100"
+# ---------------------------------------------------------------------------
+# random_equipment -- against the real items registry
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("level", [0, 1, 2, 3, 4])
+def test_random_equipment_only_ever_spawns_an_item_of_the_requested_level(level):
+    """The whole point of the level filter: no off-level item may be spawned."""
+    expected = _real_item_names_at_level(level)
+    assert expected, f"registry has no level-{level} items to test against"
+
+    tile = _RecordingTile()
+    rng = random.Random(1234)
+    seen = set()
+    with patch("src.loot_tables.random.randint",
+               side_effect=lambda a, b: rng.randint(a, b)):
+        for _ in range(40):
+            drop = Loot.random_equipment(tile, level, 0)
+            assert drop.__class__.level == level
+            seen.add(tile.calls[-1]["name"])
+    assert seen <= expected
+    # Selection must actually vary rather than latching onto one candidate.
+    assert len(seen) > 1
 
 
-def test_lev1_restorative_range(loot_instance):
-    """Test lev1 restorative can drop multiple items"""
-    restorative = loot_instance.lev1["Restorative"]
-    assert restorative["chance"] == 25
-    assert restorative["qty"] == "r1-3"
+def test_random_equipment_accepts_a_string_level():
+    """``level`` is int()-cast, so a serialized '1' from map JSON still works."""
+    tile = _RecordingTile()
+    drop = Loot.random_equipment(tile, "1", 0)
+    assert drop.__class__.level == 1
+    assert tile.calls[-1]["name"] in _real_item_names_at_level(1)
 
 
-def test_lev1_equipment_tiers(loot_instance):
-    """Test lev1 has multiple equipment tiers"""
-    eq0 = loot_instance.lev1["Equipment_0_0"]
-    eq1 = loot_instance.lev1["Equipment_1_0"]
-
-    assert eq0["chance"] == 40
-    assert eq1["chance"] == 10
-    assert eq0["qty"] == 1
-    assert eq1["qty"] == 1
-
-
-@patch('src.loot_tables.items', create=True)
-@patch('src.loot_tables.functions.add_random_enchantments', create=True)
-@patch('src.loot_tables.inspect.getmembers', create=True)
-@patch('src.loot_tables.inspect.isclass', create=True, side_effect=lambda x: True)
-def test_random_equipment_basic(mock_isclass, mock_getmembers, mock_enchant, mock_items):
-    """Test random_equipment generates equipment"""
-    # Mock a class with level attribute
-    class MockEquipment:
-        level = 1
-
-    mock_getmembers.return_value = [("MockEquipment", MockEquipment)]
-
-    mock_tile = Mock()
-    mock_drop = Mock()
-    mock_tile.spawn_item.return_value = mock_drop
-
-    result = Loot.random_equipment(mock_tile, 1, 0)
-
-    assert mock_tile.spawn_item.called
-    assert result == mock_drop
+def test_random_equipment_spawn_parameters_are_fixed():
+    tile = _RecordingTile()
+    Loot.random_equipment(tile, 1, 0)
+    assert len(tile.calls) == 1
+    call = tile.calls[0]
+    assert call["amt"] == 1
+    assert call["hidden"] is False
+    assert call["hfactor"] == 0
 
 
-@patch('src.loot_tables.items', create=True)
-@patch('src.loot_tables.functions.add_random_enchantments', create=True)
-@patch('src.loot_tables.inspect.getmembers', create=True)
-@patch('src.loot_tables.inspect.isclass', create=True, side_effect=lambda x: True)
-@patch('src.loot_tables.random.randint')
-def test_random_equipment_with_enchantment(mock_randint, mock_isclass, mock_getmembers,
-                                           mock_enchant, mock_items):
-    """Test random_equipment applies enchantments"""
-    class MockEquipment:
-        level = 2
-
-    mock_getmembers.return_value = [("MockEquipment", MockEquipment)]
-    mock_randint.return_value = 0
-
-    mock_tile = Mock()
-    mock_drop = Mock()
-    mock_tile.spawn_item.return_value = mock_drop
-
-    result = Loot.random_equipment(mock_tile, 2, 5)
-
-    # Verify enchantments were added
-    mock_enchant.assert_called_once_with(mock_drop, 5)
+def test_random_equipment_selection_covers_the_whole_candidate_range():
+    """``randint`` must be called with the inclusive 0..len-1 bounds; an
+    off-by-one here would make the last candidate unreachable (or IndexError)."""
+    tile = _RecordingTile()
+    with patch("src.loot_tables.random.randint", return_value=0) as randint:
+        Loot.random_equipment(tile, 1, 0)
+    lo, hi = randint.call_args[0]
+    assert lo == 0
+    assert hi == len(_real_item_names_at_level(1)) - 1
 
 
-@patch('src.loot_tables.items', create=True)
-@patch('src.loot_tables.functions.add_random_enchantments', create=True)
-@patch('src.loot_tables.inspect.getmembers', create=True)
-@patch('src.loot_tables.inspect.isclass', create=True, side_effect=lambda x: True)
-@patch('builtins.print')
-def test_random_equipment_invalid_enchantment(mock_print, mock_isclass, mock_getmembers,
-                                               mock_enchant, mock_items):
-    """Test random_equipment handles invalid enchantment values"""
-    class MockEquipment:
-        level = 1
-
-    mock_getmembers.return_value = [("MockEquipment", MockEquipment)]
-
-    mock_tile = Mock()
-    mock_drop = Mock()
-    mock_tile.spawn_item.return_value = mock_drop
-
-    # Pass invalid enchantment value
-    result = Loot.random_equipment(mock_tile, 1, "invalid")
-
-    # Should print error and use 0 for enchantment
-    assert mock_print.called
-    mock_enchant.assert_called_once_with(mock_drop, 0)
+def test_random_equipment_passes_enchantment_pool_through():
+    tile = _RecordingTile()
+    with patch("src.loot_tables.functions.add_random_enchantments") as ench:
+        drop = Loot.random_equipment(tile, 1, 5)
+    ench.assert_called_once_with(drop, 5)
 
 
-@patch('src.loot_tables.items', create=True)
-@patch('src.loot_tables.functions.add_random_enchantments', create=True)
-@patch('src.loot_tables.inspect.getmembers', create=True)
-@patch('src.loot_tables.inspect.isclass', create=True, side_effect=lambda x: True)
-@patch('src.loot_tables.random.randint')
-def test_random_equipment_multiple_candidates(mock_randint, mock_isclass, mock_getmembers,
-                                              mock_enchant, mock_items):
-    """Test random_equipment selects from multiple items of same level"""
-    class MockEquipment1:
-        level = 3
-
-    class MockEquipment2:
-        level = 3
-
-    class MockEquipment3:
-        level = 5  # Different level, should be filtered out
-
-    mock_getmembers.return_value = [
-        ("MockEquipment1", MockEquipment1),
-        ("MockEquipment2", MockEquipment2),
-        ("MockEquipment3", MockEquipment3)
-    ]
-    mock_randint.return_value = 1  # Select second item
-
-    mock_tile = Mock()
-    mock_drop = Mock()
-    mock_tile.spawn_item.return_value = mock_drop
-
-    result = Loot.random_equipment(mock_tile, 3, 0)
-
-    # Should have spawned one of the level 3 items
-    assert mock_tile.spawn_item.called
-    call_args = mock_tile.spawn_item.call_args[0]
-    # First argument should be one of the level 3 equipment names
-    assert call_args[0] in ["MockEquipment1", "MockEquipment2"]
+def test_random_equipment_falls_back_to_zero_enchantment_on_bad_input():
+    """A non-numeric enchantment must narrate the error and degrade to 0
+    rather than propagating a ValueError out of the drop path."""
+    tile = _RecordingTile()
+    with capture_narration() as messages:
+        with patch("src.loot_tables.functions.add_random_enchantments") as ench:
+            drop = Loot.random_equipment(tile, 1, "invalid")
+    ench.assert_called_once_with(drop, 0)
+    assert any("###ERR" in m["text"] and "invalid" in m["text"]
+               for m in messages), messages
 
 
-@patch('src.loot_tables.items', create=True)
-@patch('src.loot_tables.functions.add_random_enchantments', create=True)
-@patch('src.loot_tables.inspect.getmembers', create=True)
-@patch('src.loot_tables.inspect.isclass', create=True, side_effect=lambda x: True)
-def test_random_equipment_spawn_parameters(mock_isclass, mock_getmembers, mock_enchant, mock_items):
-    """Test random_equipment uses correct spawn parameters"""
-    class MockEquipment:
-        level = 1
-
-    mock_getmembers.return_value = [("MockEquipment", MockEquipment)]
-
-    mock_tile = Mock()
-    mock_drop = Mock()
-    mock_tile.spawn_item.return_value = mock_drop
-
-    Loot.random_equipment(mock_tile, 1, 0)
-
-    # Verify spawn_item called with correct parameters
-    mock_tile.spawn_item.assert_called_once()
-    call_args, call_kwargs = mock_tile.spawn_item.call_args
-    assert call_kwargs['amt'] == 1
-    assert call_kwargs['hidden'] is False
-    assert call_kwargs['hfactor'] == 0
+def test_random_equipment_accepts_numeric_string_enchantment():
+    tile = _RecordingTile()
+    with capture_narration() as messages:
+        with patch("src.loot_tables.functions.add_random_enchantments") as ench:
+            drop = Loot.random_equipment(tile, 1, "3")
+    ench.assert_called_once_with(drop, 3)
+    assert not [m for m in messages if "###ERR" in m["text"]]
 
 
-def test_loot_table_all_items_have_chance(loot_instance):
-    """Test that all items in loot tables have a chance value"""
-    for item_name, item_data in loot_instance.lev0.items():
-        assert "chance" in item_data, f"{item_name} missing chance"
-        assert isinstance(item_data["chance"], int)
-
-    for item_name, item_data in loot_instance.lev1.items():
-        assert "chance" in item_data, f"{item_name} missing chance"
-        assert isinstance(item_data["chance"], int)
-
-
-def test_loot_table_all_items_have_qty(loot_instance):
-    """Test that all items in loot tables have a qty value"""
-    for item_name, item_data in loot_instance.lev0.items():
-        assert "qty" in item_data, f"{item_name} missing qty"
-
-    for item_name, item_data in loot_instance.lev1.items():
-        assert "qty" in item_data, f"{item_name} missing qty"
-
-
-def test_loot_table_chance_values_positive(loot_instance):
-    """Test that all chance values are positive"""
-    for item_data in loot_instance.lev0.values():
-        assert item_data["chance"] > 0
-
-    for item_data in loot_instance.lev1.values():
-        assert item_data["chance"] > 0
+def test_random_equipment_returns_the_spawned_item():
+    """The return value must be the object the tile actually spawned, not a
+    freshly constructed one -- callers enchant and place the returned drop."""
+    tile = Mock()
+    sentinel = items.Dagger()
+    tile.spawn_item.return_value = sentinel
+    with patch("src.loot_tables.functions.add_random_enchantments"):
+        assert Loot.random_equipment(tile, 1, 0) is sentinel

@@ -149,7 +149,11 @@ describe('AuthContext', () => {
       fireEvent.click(screen.getByText('logout'))
     })
 
-    expect(apiEndpoints.auth.logout).toHaveBeenCalled()
+    // Exactly one server-side logout, and it takes no arguments — the token
+    // travels on the axios auth header, not in the body.
+    expect(apiEndpoints.auth.logout).toHaveBeenCalledTimes(1)
+    expect(apiEndpoints.auth.logout).toHaveBeenCalledWith()
+    expect(screen.getByTestId('authed').textContent).toBe('false')
     expect(localStorage.getItem('authToken')).toBeNull()
     expect(localStorage.getItem('username')).toBeNull()
     expect(window.location.href).toContain('login')

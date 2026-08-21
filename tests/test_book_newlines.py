@@ -1,4 +1,6 @@
 """Test that book pagination preserves newlines in text."""
+import re
+
 import pytest
 from src.items import Book
 
@@ -95,26 +97,50 @@ This is the third paragraph."""
     assert '\n\n' in pages[0], "Pagination should preserve double newlines from file"
 
 
-def test_book_long_text_with_newlines_pagination(monkeypatch, capsys):
-    """Test that a long book with newlines paginates correctly and preserves formatting."""
-    # Create text long enough to span multiple pages with paragraph breaks
-    paragraphs = []
-    for i in range(10):
-        paragraphs.append(f"This is paragraph number {i}. It has some content to make it reasonably long so we can test pagination properly. Let's add more text here.")
+def test_book_long_text_paginates_without_losing_or_duplicating_text():
+    """Pagination must be lossless: every page respects the size limit and the
+    pages, concatenated, hold exactly the original characters.
 
+    The old assertion here was ``if '\n' in page: assert page.count('\n') > 0``
+    -- literally ``if X: assert X``. It could not fail, which meant a paginator
+    that silently dropped a page (or repeated one) passed.
+    """
+    paragraphs = [
+        f"This is paragraph number {i}. It has some content to make it "
+        f"reasonably long so we can test pagination properly. Let's add "
+        f"more text here."
+        for i in range(10)
+    ]
     text = "\n\n".join(paragraphs)
 
     book = Book(text=text, chars_per_page=300)
     pages = book._paginate_text(text)
 
-    # Should create multiple pages
     assert len(pages) > 1, "Long text should create multiple pages"
+    assert all(len(page) <= 300 for page in pages), [len(p) for p in pages]
+    # rstrip()/page-boundary whitespace is the only thing pagination may alter.
+    squash = lambda s: re.sub(r"\s+", "", s)          # noqa: E731
+    assert squash("".join(pages)) == squash(text)
+    # Every paragraph must still be findable somewhere in the paginated output.
+    for i in range(10):
+        assert f"paragraph number {i}" in "".join(pages)
 
-    # Each page should preserve newlines where they exist
-    for i, page in enumerate(pages):
-        if '\n' in page:  # If there are any newlines in this page
-            # Verify we're not stripping all of them
-            assert page.count('\n') > 0, f"Page {i} should preserve newlines"
+
+def test_book_paginates_a_sentence_longer_than_a_whole_page():
+    """A single over-long sentence is force-split rather than dropped."""
+    sentence = "word " * 200                      # ~1000 chars, no '. '
+    book = Book(text=sentence, chars_per_page=100)
+    pages = book._paginate_text(sentence)
+
+    assert len(pages) > 1
+    assert all(len(page) <= 100 for page in pages)
+    squash = lambda s: re.sub(r"\s+", "", s)          # noqa: E731
+    assert squash("".join(pages)) == squash(sentence)
+
+
+def test_short_text_is_a_single_page_and_empty_text_is_no_pages():
+    assert Book(text="Short.", chars_per_page=100)._paginate_text("Short.") == ["Short."]
+    assert Book(text="", chars_per_page=100)._paginate_text("") == []
 
 
 def test_book_edge_case_only_newlines():

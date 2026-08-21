@@ -17,6 +17,7 @@ from datetime import datetime, timedelta
 from unittest.mock import MagicMock, patch
 
 import pytest
+import requests
 
 import ai.llm_client as llm_client
 from ai.llm_client import (
@@ -276,10 +277,27 @@ class TestDiskCache:
             f.write("not valid json {{{")
         assert GenericLLMClient._read_disk_cache() is None
 
-    def test_write_failure_logged_not_raised(self, monkeypatch):
-        with patch("builtins.open", side_effect=OSError("disk full")):
-            # Should not raise.
-            GenericLLMClient._write_disk_cache(["x"])
+    def test_write_failure_is_swallowed_and_leaves_no_partial_cache(
+        self, tmp_path, monkeypatch, caplog
+    ):
+        """An unwritable cache path must degrade silently, not crash startup.
+
+        _write_disk_cache runs during model discovery on client construction;
+        a raised OSError there would take down the whole game process on a
+        read-only or full disk. It writes via a .tmp sidecar + os.replace, so
+        a failed write must also leave neither file behind.
+        """
+        unwritable = tmp_path / "no-such-dir" / ".model_cache.json"
+        monkeypatch.setattr(llm_client, "_MODEL_CACHE_FILE", str(unwritable))
+
+        with caplog.at_level("WARNING", logger=llm_client.logger.name):
+            GenericLLMClient._write_disk_cache(["x"])  # must not raise
+
+        assert not unwritable.exists()
+        assert not (tmp_path / "no-such-dir").exists()
+        assert any("Failed to write model cache" in r.message for r in caplog.records)
+        # And the next read finds nothing rather than a truncated payload.
+        assert GenericLLMClient._read_disk_cache() is None
 
 
 # ---------------------------------------------------------------------------
@@ -400,8 +418,6 @@ class TestFetchAndRankModels:
                 GenericLLMClient._fetch_and_rank_models("fake-key")
 
     def test_priority_fetch_failure_still_succeeds_via_all(self):
-        call_count = {"n": 0}
-
         def fake_get(url, headers=None, timeout=None):
             if "category=" in url:
                 raise Exception("category endpoint down")
@@ -579,11 +595,19 @@ class TestNightlyRefresh:
             if call_count["n"] > 1:
                 raise KeyboardInterrupt("stop loop")
 
+        GenericLLMClient._free_models_cache = ["preexisting/model"]
         monkeypatch.setattr(time, "sleep", fake_sleep)
-        GenericLLMClient._start_nightly_refresh()
-        target = captured["target"]
-        with pytest.raises(KeyboardInterrupt):
-            target()
+        with patch.object(GenericLLMClient, "_fetch_and_rank_models") as mock_fetch:
+            GenericLLMClient._start_nightly_refresh()
+            target = captured["target"]
+            with pytest.raises(KeyboardInterrupt):
+                target()
+
+        # With no API key the loop `continue`s: no request is attempted and the
+        # existing cache is left intact rather than being blanked.
+        mock_fetch.assert_not_called()
+        assert GenericLLMClient._free_models_cache == ["preexisting/model"]
+        assert call_count["n"] == 2  # slept, skipped, looped, slept again
 
     def test_refresh_loop_fetch_failure_logged(self, monkeypatch):
         captured = {}
@@ -605,12 +629,23 @@ class TestNightlyRefresh:
             if call_count["n"] > 1:
                 raise KeyboardInterrupt("stop loop")
 
+        GenericLLMClient._free_models_cache = ["preexisting/model"]
         monkeypatch.setattr(time, "sleep", fake_sleep)
-        with patch.object(GenericLLMClient, "_fetch_and_rank_models", side_effect=RuntimeError("fail")):
+        with patch.object(
+            GenericLLMClient, "_fetch_and_rank_models", side_effect=RuntimeError("fail")
+        ) as mock_fetch:
             GenericLLMClient._start_nightly_refresh()
             target = captured["target"]
+            # The RuntimeError must be swallowed — only the sleep's
+            # KeyboardInterrupt (from outside the try block) escapes.
             with pytest.raises(KeyboardInterrupt):
                 target()
+
+        mock_fetch.assert_called_once_with("key123")
+        # A failed refresh must leave the last-known-good cache in place, and
+        # the loop must survive to try again on the next tick.
+        assert GenericLLMClient._free_models_cache == ["preexisting/model"]
+        assert call_count["n"] == 2
 
 
 # ---------------------------------------------------------------------------
@@ -1072,11 +1107,52 @@ class TestOllamaChat:
             result = client._ollama_chat("sys", "user", structured=False)
         assert result is None
 
-    def test_request_exception_returns_none(self, monkeypatch):
+    @pytest.mark.parametrize(
+        "exc",
+        [
+            requests.exceptions.Timeout("read timed out"),
+            requests.exceptions.ConnectionError("refused"),
+            ValueError("something else entirely"),
+        ],
+        ids=["timeout", "connection_refused", "unexpected"],
+    )
+    def test_transport_failure_returns_none_instead_of_raising(
+        self, monkeypatch, exc
+    ):
+        """A dead/slow Ollama must degrade to None, never take the caller down.
+
+        Mynx ambient behaviour runs inside the game loop; an escaping exception
+        here would surface as a 500 on an ordinary movement request.
+        """
         client = self._client(monkeypatch)
-        with patch("requests.post", side_effect=Exception("timeout")):
-            result = client._ollama_chat("sys", "user", structured=False)
-        assert result is None
+        with patch("requests.post", side_effect=exc):
+            assert client._ollama_chat("sys", "user", structured=False) is None
+
+    def test_request_payload_carries_the_assembled_prompt(self, monkeypatch):
+        """The system/user prompts must actually reach the provider.
+
+        Everything upstream (persona, world facts, schema hints) is assembled
+        into these two strings; if the payload dropped or reordered them the
+        model would answer a different question and no response-parsing test
+        would notice.
+        """
+        client = self._client(monkeypatch)
+        resp = MagicMock(status_code=200)
+        resp.json.return_value = {"message": {"content": "ok"}}
+        with patch("requests.post", return_value=resp) as mock_post:
+            client._ollama_chat("SYSTEM RULES", "USER CONTEXT", structured=False)
+
+        url = mock_post.call_args[0][0]
+        payload = mock_post.call_args.kwargs["json"]
+        assert url == client.base_url + "/api/chat"
+        assert payload["model"] == "m"
+        assert payload["messages"] == [
+            {"role": "system", "content": "SYSTEM RULES"},
+            {"role": "user", "content": "USER CONTEXT"},
+        ]
+        assert payload["stream"] is False
+        # A finite timeout is what keeps a hung provider from stalling the loop.
+        assert mock_post.call_args.kwargs["timeout"] == 30
 
     def test_non_dict_data_falls_back_to_raw_text(self, monkeypatch):
         client = self._client(monkeypatch)
@@ -1101,8 +1177,6 @@ class TestGetSdkClient:
         client = GenericLLMClient()
         client._openrouter_api_key = "key"
 
-        fake_instance = MagicMock()
-
         class FakeOpenAI:
             def __init__(self, base_url, api_key):
                 self.base_url = base_url
@@ -1112,6 +1186,11 @@ class TestGetSdkClient:
         with patch.object(openai, "OpenAI", FakeOpenAI):
             result = client._get_sdk_client()
         assert isinstance(result, FakeOpenAI)
+        # The SDK must be pointed at OpenRouter, not OpenAI's own endpoint,
+        # and carry the configured key — otherwise every SDK-path request
+        # silently goes to the wrong provider.
+        assert result.base_url == "https://openrouter.ai/api/v1"
+        assert result.api_key == "key"
 
     def test_construction_error_returns_none(self, monkeypatch):
         monkeypatch.setenv("MYNX_LLM_ENABLED", "0")
@@ -1454,7 +1533,9 @@ class TestMynxLLMAdapter:
         }
         with patch.object(GenericLLMClient, "generate_structured", return_value=valid):
             result = adapter.generate_structured("context")
-        assert result["action"] == "groom"
+        # A response that is already valid must survive the repair pass intact —
+        # no field renamed, defaulted, or dropped on the way through.
+        assert result == valid
 
     def test_generate_structured_repairs_invalid_response(self, monkeypatch):
         monkeypatch.setenv("MYNX_LLM_ENABLED", "0")
@@ -1462,7 +1543,9 @@ class TestMynxLLMAdapter:
         invalid = {"action": "not_allowed_action", "text": "  'quoted text'  "}
         with patch.object(GenericLLMClient, "generate_structured", return_value=invalid):
             result = adapter.generate_structured("context")
-        assert result is not None
+        # An out-of-vocabulary action is replaced with an allowed one and the
+        # stray quoting/whitespace is stripped, rather than the whole ambient
+        # beat being thrown away.
         assert result["action"] in adapter._allowed_actions
         assert result["description"] == "quoted text"
 
@@ -1593,9 +1676,28 @@ class TestNpcChatLLMAdapterInit:
         assert adapter.model == "custom-npc-model"
 
     def test_world_facts_loaded_from_real_file(self, monkeypatch):
+        """The shipped world-facts file must supply every field the prompt uses.
+
+        _world_facts_block() renders these keys into the system prompt; a
+        missing one silently drops that guard-rail from every NPC conversation
+        (which is how an LLM starts inventing factions and place names).
+        """
         monkeypatch.setenv("NPC_CHAT_LLM_ENABLED", "0")
         adapter = NpcChatLLMAdapter()
-        assert adapter._world_facts is not None
+
+        assert adapter._world_facts["world_name"] == "Aurelion"
+        assert {
+            "brief_description",
+            "geography",
+            "factions_and_peoples",
+            "world_rules",
+            "tone_notes",
+        } <= set(adapter._world_facts)
+
+        block = adapter._world_facts_block()
+        assert "Aurelion" in block
+        for entry in adapter._world_facts["factions_and_peoples"]:
+            assert str(entry) in block
 
     def test_world_facts_fallback_on_load_failure(self, monkeypatch):
         monkeypatch.setenv("NPC_CHAT_LLM_ENABLED", "0")

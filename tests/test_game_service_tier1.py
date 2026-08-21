@@ -12,19 +12,6 @@ Tests: 26 tests covering core combat and game state methods
 
 import pytest
 from unittest.mock import MagicMock, Mock, patch
-from src.api.services.game_service import GameService
-
-
-@pytest.fixture(scope="session")
-def _cached_game_service():
-    """Cache GameService instance across the session (stateless singleton)."""
-    return GameService()
-
-
-@pytest.fixture
-def game_service(_cached_game_service):
-    """Return the cached GameService."""
-    return _cached_game_service
 
 
 @pytest.fixture

@@ -71,21 +71,100 @@ def test_defaults_to_the_baseline_attributes_for_a_bare_player():
 
 
 def test_get_player_stats_publishes_the_derived_value():
-    """The route payload must carry the derived number, not a second formula."""
+    """The route payload must carry the derived number, not a second formula.
+
+    Asserted against a *real* ``Player`` rather than a source-code grep: the
+    regression this guards was a second copy of the formula living in
+    ``get_player_stats``, and only a real call can prove the published key
+    tracks the shared helper.
+    """
+    from src.player import Player
+    from src.api.services.game_service import GameService
+
+    player = Player()
+    player.finesse = 20
+    player.intelligence = 10
+
+    stats = GameService().get_player_stats(player)
+
+    assert stats["hit_accuracy"] == 115
+    assert stats["hit_accuracy"] == derive_hit_accuracy(player)
+    # The old naive formula would have published 118 here.
+    assert stats["hit_accuracy"] != 98 + player.finesse
+
+
+def test_get_player_stats_tracks_a_changed_intelligence():
+    """Mutating intelligence alone must move the published accuracy."""
+    from src.player import Player
     from src.api.services.game_service import GameService
 
     service = GameService()
-    stats = {}
-    player = _StubPlayer(finesse=20, intelligence=10)
+    player = Player()
+    player.finesse = 20
+    player.intelligence = 10
+    before = service.get_player_stats(player)["hit_accuracy"]
 
-    # get_player_stats needs a far richer player than this, so assert the
-    # published key is wired to the shared helper rather than re-deriving it.
-    import inspect
+    player.intelligence = 30
+    after = service.get_player_stats(player)["hit_accuracy"]
 
-    source = inspect.getsource(GameService.get_player_stats)
-    assert 'stats["hit_accuracy"] = derive_hit_accuracy(player)' in source
-    assert "98 + getattr(player" not in source
+    # +20 intelligence at weight 0.3 == +6 accuracy.
+    assert (before, after) == (115, 121)
 
-    stats["hit_accuracy"] = derive_hit_accuracy(player)
-    assert stats["hit_accuracy"] == 115
-    assert service is not None
+
+@pytest.mark.parametrize(
+    "finesse, expected",
+    [
+        (12, 12),
+        (12.4, 12),
+        # Python rounds half to even: 12.5 -> 12, not 13. The sheet and the
+        # battlefield card must agree on that, which is why both sides call
+        # int(round(...)) rather than one of them truncating.
+        (12.5, 12),
+        (12.6, 13),
+        (13.5, 14),
+        (0, 0),
+    ],
+)
+def test_evasion_agrees_between_the_sheet_and_the_combat_card(finesse, expected):
+    """``evasion_chance`` (sheet) and ``evasion`` (combat payload) are one stat."""
+    from src.player import Player
+    from src.api.services.game_service import GameService
+    from src.api.serializers.combat import CombatantSerializer
+
+    player = Player()
+    player.finesse = finesse
+
+    sheet = GameService().get_player_stats(player)["evasion_chance"]
+    card = CombatantSerializer._serialize_combat_stats(player)["evasion"]
+
+    assert sheet == card == expected
+    assert isinstance(sheet, int) and isinstance(card, int)
+
+
+def test_accuracy_agrees_between_the_sheet_and_the_combat_card():
+    """The attacker half of the roll must match across the same two surfaces."""
+    from src.player import Player
+    from src.api.services.game_service import GameService
+    from src.api.serializers.combat import CombatantSerializer
+
+    player = Player()
+    player.finesse = 30
+    player.intelligence = 5
+
+    sheet = GameService().get_player_stats(player)["hit_accuracy"]
+    card = CombatantSerializer._serialize_combat_stats(player)["accuracy"]
+
+    assert sheet == card == int(98 + 30 * 0.7 + 5 * 0.3)
+
+
+def test_evasion_chance_survives_a_none_finesse():
+    """A partially built player must not 500 the character sheet."""
+    from src.api.services.game_service import GameService
+
+    class _Partial:
+        finesse = None
+        intelligence = None
+
+    stats = GameService().get_player_stats(_Partial())
+    assert stats["evasion_chance"] == 10
+    assert stats["hit_accuracy"] == 108

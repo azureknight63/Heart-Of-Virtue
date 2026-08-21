@@ -9,12 +9,7 @@ BUG-005: current_stage/pending_move deadlock when combat event fires mid-beat
 BUG-006: game_service.move_player never called universe.game_tick_events()
 """
 
-import sys
-from pathlib import Path
-from unittest.mock import MagicMock, patch, call
-
-ROOT = Path(__file__).resolve().parent.parent
-
+from unittest.mock import MagicMock, patch
 
 import pytest
 from src.player import Player
@@ -73,19 +68,35 @@ class TestAwaitingInputAfterVictory:
 # ---------------------------------------------------------------------------
 
 class TestAwaitingInputAfterDefeat:
-    def test_defeat_path_sets_awaiting_input_false(self, adapter, player):
-        """The combat_adapter_state flag must be False after player is defeated.
+    def test_defeat_path_sets_awaiting_input_false(
+        self, make_player, make_npc, make_adapter
+    ):
+        """Executing a beat while Jean is down must clear awaiting_input.
 
-        The defeat branch inside _execute_move() explicitly sets
-        self.awaiting_input = False. This verifies the adapter state bag
-        is consistent with the property contract (regression: was missing).
+        Previously this test hand-assigned ``adapter.awaiting_input = False``
+        and asserted the assignment stuck, which proved only that a property
+        setter works. Now it drives the real defeat branch inside
+        ``_execute_move_inner``: deleting that ``self.awaiting_input = False``
+        line fails this test, because the "battle continues" branch below it
+        would otherwise set the flag back to True.
         """
-        # Simulate what the defeat branch does
-        player.in_combat = False
-        adapter.awaiting_input = False  # the line that was added in the fix
-        assert adapter.awaiting_input is False
-        # The stored state must persist (not be reset by a subsequent read)
-        assert player.combat_adapter_state.get("awaiting_input") is False
+        from src.npc import Slime
+        import src.moves as moves
+
+        jean = make_player(weapon="Sword")
+        live_adapter = make_adapter(jean, enemies=[make_npc(cls=Slime, hp=40)])
+        live_adapter.awaiting_input = True
+
+        jean.hp = 0
+        assert jean.is_alive() is False
+
+        live_adapter._execute_move(moves.Wait(jean))
+
+        assert live_adapter.awaiting_input is False
+        assert jean.in_combat is False
+        # The flag lives in the player-side state bag, so a status poll on a
+        # fresh adapter instance still reports "no input expected".
+        assert jean.combat_adapter_state["awaiting_input"] is False
 
     def test_awaiting_input_property_persists_in_state_bag(self, adapter, player):
         """Setting awaiting_input=False is reflected in player.combat_adapter_state."""
@@ -177,40 +188,82 @@ class TestNPCSpawnerEventTileFallback:
 class TestGameServiceCallsGameTickEvents:
     """move_player must call player.universe.game_tick_events() so NPCSpawnerEvents fire."""
 
-    def test_move_player_calls_game_tick_events(self):
-        """game_tick_events() is called once per move_player invocation."""
-        from src.api.services.game_service import GameService
+    @staticmethod
+    def _spawner_on(tile):
+        """Attach a minimal map-entry spawner to ``tile`` and return its call log.
 
-        svc = GameService()
+        ``Universe._evaluate_map_entry_spawners`` only looks for the
+        ``evaluate_for_map_entry`` attribute and the ``has_run``/``repeat``
+        flags, so this is a faithful stand-in for ``NPCSpawnerEvent`` without
+        dragging in a real NPC roster.
+        """
+        fired = []
 
-        mock_universe = MagicMock()
-        mock_player = MagicMock()
-        mock_player.universe = mock_universe
-        mock_player.location_x = 0
-        mock_player.location_y = 0
-        mock_player.combat_list_allies = []
-        mock_player.in_combat = False
+        class _Spawner:
+            has_run = False
+            repeat = False
 
-        mock_current_tile = MagicMock()
-        mock_new_tile = MagicMock()
-        mock_new_tile.is_passable = True
-        mock_new_tile.block_exit = []
-        mock_new_tile.x = 1
-        mock_new_tile.y = 0
-        # get_tile is called for current tile, new tile, and current_room lookup — return
-        # mock_new_tile for all calls so the side_effect list doesn't run out.
-        mock_universe.get_tile.return_value = mock_new_tile
+            def evaluate_for_map_entry(self, player):
+                fired.append((player.location_x, player.location_y))
 
-        exits = {"east": {"x": 1, "y": 0}}
+        tile.events_here = [_Spawner()]
+        return fired
 
-        with (
-            patch.object(svc, "_calculate_exits", return_value=exits),
-            patch.object(svc, "_record_exploration"),
-            patch.object(svc, "trigger_tile_events", return_value=[]),
-            patch.object(svc, "store_tile_modification"),
-            patch.object(svc, "get_current_room", return_value={}),
-            patch("src.functions.check_for_combat", return_value=[]),
-        ):
-            svc.move_player(mock_player, "east")
+    def test_move_player_ticks_the_universe_clock(self, make_world, grid_3x3, game_service):
+        """A successful move advances universe.game_tick by exactly one."""
+        player, _ = make_world(grid_3x3)
+        assert player.universe.game_tick == 0
 
-        mock_universe.game_tick_events.assert_called_once()
+        assert game_service.move_player(player, "east")["success"] is True
+
+        assert player.universe.game_tick == 1
+
+    def test_every_move_ticks_not_just_the_first(self, make_world, grid_3x3, game_service):
+        """The tick is per-move, not once per session (BUG-006 regression)."""
+        player, _ = make_world(grid_3x3)
+
+        for direction in ("east", "north", "west", "south"):
+            assert game_service.move_player(player, direction)["success"] is True
+
+        assert player.universe.game_tick == 4
+        assert (player.location_x, player.location_y) == (0, 0)
+
+    def test_move_player_fires_map_entry_spawners(self, make_world, grid_3x3, game_service):
+        """The tick actually reaches evaluate_for_map_entry — the point of BUG-006.
+
+        The spawner sits on a *different* tile than the one Jean walks onto, so
+        this proves the whole-map sweep runs, not just the destination tile's
+        own entry events.
+        """
+        player, game_map = make_world(grid_3x3)
+        fired = self._spawner_on(game_map[(-1, -1)])
+
+        game_service.move_player(player, "east")
+
+        assert fired == [(1, 0)], "spawner never evaluated after the move"
+
+    def test_blocked_move_does_not_tick(self, make_world, game_service):
+        """A rejected move is not a game action: no tick, no spawner evaluation."""
+        player, game_map = make_world([(0, 0), (1, 0)])
+        fired = self._spawner_on(game_map[(1, 0)])
+
+        result = game_service.move_player(player, "north")
+
+        assert "error" in result
+        assert player.universe.game_tick == 0
+        assert fired == []
+
+    def test_tick_failure_does_not_abort_the_move(self, make_world, grid_3x3, game_service):
+        """game_tick_events() raising is logged and swallowed — Jean still moves.
+
+        Movement must never be held hostage by a broken story event; the engine
+        wraps the tick in try/except for exactly this reason.
+        """
+        player, _ = make_world(grid_3x3)
+        player.universe.game_tick_events = MagicMock(side_effect=RuntimeError("boom"))
+
+        result = game_service.move_player(player, "east")
+
+        assert result["success"] is True
+        assert (player.location_x, player.location_y) == (1, 0)
+        player.universe.game_tick_events.assert_called_once_with()

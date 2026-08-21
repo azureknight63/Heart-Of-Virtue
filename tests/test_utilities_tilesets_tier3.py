@@ -7,15 +7,10 @@ Tests for:
 - npc_ai_config.py (NPCAIConfig)
 
 Target: 100% coverage on all utility and tileset modules.
-
-NOTE: Skipped in CI due to test suite size. Runs locally for full validation.
 """
 
 import pytest
 
-pytestmark = pytest.mark.skip(
-    reason="Tier 3 advanced tests - skipped in CI for timeout. Run locally for full validation."
-)
 from unittest.mock import Mock, MagicMock, patch
 from dataclasses import dataclass
 
@@ -147,39 +142,55 @@ class TestMapTileAvailableActions:
 class TestMapTileEvaluateEvents:
     """Test MapTile evaluate_events method."""
 
-    def test_evaluate_events_no_events(self):
-        """Test evaluate_events with no events."""
+    def test_evaluate_events_no_events_is_a_pure_noop(self):
+        """With an empty event list, evaluate_events must touch nothing.
+
+        Not merely "does not raise": a tile with no events must not reach into
+        the universe or the map, and must not invent entries in its own lists.
+        """
         universe = Mock()
         current_map = Mock()
         tile = __import__("src.tiles", fromlist=["MapTile"]).MapTile(
             universe, current_map, 0, 0
         )
-        tile.evaluate_events()  # Should not raise
+        assert tile.events_here == []
 
-    def test_evaluate_events_processes_all_events(self):
-        """Test evaluate_events processes all events."""
-        universe = Mock()
-        current_map = Mock()
-        tile = __import__("src.tiles", fromlist=["MapTile"]).MapTile(
-            universe, current_map, 0, 0
-        )
+        assert tile.evaluate_events() is None
 
-        # Mock regular event and spawner event
-        regular_event = Mock()
-        regular_event.check_conditions = Mock()
+        assert tile.events_here == []
+        assert tile.npcs_here == []
+        assert tile.items_here == []
+        assert universe.mock_calls == []
+        assert current_map.mock_calls == []
 
-        spawner_event = Mock()
-        spawner_event.check_conditions = Mock()
+    def test_evaluate_events_runs_spawners_before_other_events(self):
+        """Every event is checked, and NPCSpawnerEvents go first.
 
-        tile.events_here = [regular_event, spawner_event]
-
-        # Mock the isinstance check in evaluate_events
+        The ordering is the whole point of the two-pass loop: a combat event
+        that ran before its spawner would evaluate against an empty tile. The
+        spawner is listed *last* here so passing cannot be an artefact of the
+        list order.
+        """
         from src.story.effects import NPCSpawnerEvent
 
+        universe = Mock()
+        current_map = Mock()
+        tile = __import__("src.tiles", fromlist=["MapTile"]).MapTile(
+            universe, current_map, 0, 0
+        )
+
+        order = []
+        regular_event = Mock()
+        regular_event.check_conditions.side_effect = lambda: order.append("regular")
+        spawner_event = Mock(spec=NPCSpawnerEvent)
+        spawner_event.check_conditions.side_effect = lambda: order.append("spawner")
+
+        tile.events_here = [regular_event, spawner_event]
         tile.evaluate_events()
-        # Both should be checked
-        assert regular_event.check_conditions.called
-        assert spawner_event.check_conditions.called
+
+        assert order == ["spawner", "regular"]
+        assert regular_event.check_conditions.call_count == 1
+        assert spawner_event.check_conditions.call_count == 1
 
 
 class TestMapTileSpawnNPC:
@@ -369,79 +380,93 @@ class TestMapTileSpawnEvent:
 
 
 class TestMapTileSpawnObject:
-    """Test MapTile spawn_object method."""
+    """Test MapTile spawn_object method.
+
+    These exercise the real ``src.objects`` classes rather than patching
+    ``builtins.__import__``: spawn_object resolves the class through
+    ``importlib.import_module("src.objects")``, which __import__ patching does
+    not intercept, so the old mock-based versions silently proved nothing.
+    """
+
+    @staticmethod
+    def _tile():
+        from src.tiles import MapTile
+
+        return MapTile(Mock(), Mock(), 0, 0)
 
     def test_spawn_object_basic(self):
-        """Test spawn_object with basic params."""
-        universe = Mock()
-        current_map = Mock()
-        tile = __import__("src.tiles", fromlist=["MapTile"]).MapTile(
-            universe, current_map, 0, 0
-        )
-        player = Mock()
+        """A named object class is instantiated and appended to objects_here."""
+        from src.objects import WallSwitch
 
-        obj_cls = Mock()
-        obj_instance = Mock()
-        obj_cls.return_value = obj_instance
+        tile = self._tile()
+        obj = tile.spawn_object("WallSwitch", Mock(), tile)
 
-        with patch("builtins.__import__", return_value=Mock(ObjectType=obj_cls)):
-            obj = tile.spawn_object("ObjectType", player, tile)
-            assert obj is obj_instance
-            assert obj in tile.objects_here
+        assert isinstance(obj, WallSwitch)
+        assert tile.objects_here == [obj]
+        assert obj.position is False
 
     def test_spawn_object_with_kwargs(self):
-        """Test spawn_object with kwargs."""
-        universe = Mock()
-        current_map = Mock()
-        tile = __import__("src.tiles", fromlist=["MapTile"]).MapTile(
-            universe, current_map, 0, 0
-        )
-        player = Mock()
+        """Modern kwargs are forwarded to the object constructor."""
+        from src.objects import WallSwitch
 
-        obj_cls = Mock()
-        obj_instance = Mock()
-        obj_cls.return_value = obj_instance
+        tile = self._tile()
+        obj = tile.spawn_object("WallSwitch", Mock(), tile, position=True)
 
-        with patch("builtins.__import__", return_value=Mock(ObjectType=obj_cls)):
-            obj = tile.spawn_object("ObjectType", player, tile, param1="value1")
-            assert obj is obj_instance
+        assert isinstance(obj, WallSwitch)
+        assert obj.position is True
+
+    def test_spawn_object_unknown_type_returns_none(self):
+        """An unknown class name is reported and skipped, not raised."""
+        tile = self._tile()
+        obj = tile.spawn_object("NoSuchObjectType", Mock(), tile)
+
+        assert obj is None
+        assert tile.objects_here == []
 
     def test_spawn_object_passageway_old_format(self):
-        """Test spawn_object with old-style Passageway params."""
-        universe = Mock()
-        current_map = Mock()
-        tile = __import__("src.tiles", fromlist=["MapTile"]).MapTile(
-            universe, current_map, 0, 0
+        """Legacy 't.map x y' param strings are parsed into teleport kwargs."""
+        from src.objects import Passageway
+
+        tile = self._tile()
+        obj = tile.spawn_object(
+            "Passageway", Mock(), tile, params="t.destination 10 20"
         )
-        player = Mock()
 
-        obj_cls = Mock()
-        obj_instance = Mock()
-        obj_cls.return_value = obj_instance
+        assert isinstance(obj, Passageway)
+        assert obj.teleport_map == "destination"
+        assert obj.teleport_tile == (10, 20)
 
-        with patch("builtins.__import__", return_value=Mock(Passageway=obj_cls)):
-            obj = tile.spawn_object(
-                "Passageway", player, tile, params="t.destination 10 20"
-            )
-            assert obj is obj_instance
+    def test_spawn_object_passageway_old_format_without_prefix(self):
+        """The 't.' prefix is optional in the legacy param string."""
+        tile = self._tile()
+        obj = tile.spawn_object("Passageway", Mock(), tile, params="destination 3 4")
+
+        assert obj.teleport_map == "destination"
+        assert obj.teleport_tile == (3, 4)
+
+    def test_spawn_object_passageway_unparseable_params_fall_through(self):
+        """Non-numeric coordinates fall back to the legacy positional path."""
+        tile = self._tile()
+        obj = tile.spawn_object("Passageway", Mock(), tile, params="t.dest x y")
+
+        # No teleport kwargs were derived, so the constructor defaults stand.
+        assert obj.teleport_map == ""
+        assert obj.teleport_tile == ""
 
     def test_spawn_object_hidden(self):
-        """Test spawn_object with hidden flag."""
-        universe = Mock()
-        current_map = Mock()
-        tile = __import__("src.tiles", fromlist=["MapTile"]).MapTile(
-            universe, current_map, 0, 0
-        )
-        player = Mock()
+        """The hidden flag and hide factor are applied after construction."""
+        tile = self._tile()
+        obj = tile.spawn_object("WallSwitch", Mock(), tile, hidden=True, hfactor=40)
 
-        obj_cls = Mock()
-        obj_instance = Mock()
-        obj_cls.return_value = obj_instance
+        assert obj.hidden is True
+        assert obj.hide_factor == 40
 
-        with patch("builtins.__import__", return_value=Mock(ObjectType=obj_cls)):
-            obj = tile.spawn_object("ObjectType", player, tile, hidden=True, hfactor=40)
-            assert obj.hidden is True
-            assert obj.hide_factor == 40
+    def test_spawn_object_visible_by_default(self):
+        """Without the hidden flag the object stays discoverable/visible."""
+        tile = self._tile()
+        obj = tile.spawn_object("WallSwitch", Mock(), tile)
+
+        assert obj.hidden is False
 
 
 class TestMapTileStackDuplicateItems:

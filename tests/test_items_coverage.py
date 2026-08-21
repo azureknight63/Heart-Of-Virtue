@@ -33,13 +33,14 @@ adding `self.power = 25` (see src/items.py).
 
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 ROOT = Path(__file__).resolve().parent.parent
 
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+import pytest  # noqa: E402
 import src.items as items  # noqa: E402
 from src.player import Player  # noqa: E402
 
@@ -52,6 +53,20 @@ def _fresh_player():
     p.current_room = tile
     p.tile = tile
     return p
+
+
+def _narrated(callable_, *args, **kwargs):
+    """Run ``callable_`` under a narration sink and return the emitted texts.
+
+    Item verbs (``read``, ``examine``, ``use``) communicate purely through
+    ``src.narration``; without capturing it, a test can only assert that no
+    exception was raised, which several tests here previously did.
+    """
+    from src.narration import capture_narration
+
+    with capture_narration() as messages:
+        callable_(*args, **kwargs)
+    return [m["text"] for m in messages]
 
 
 # ---------------------------------------------------------------------------
@@ -98,8 +113,19 @@ class TestItemOnEquipMerchandiseGuard:
             discovery_message="a trinket!",
         )
         item.merchandise = True
-        # Should not raise despite no isequipped attribute ever being set
-        item.on_equip(player)
+        assert not hasattr(item, "isequipped")
+
+        texts = _narrated(item.on_equip, player)
+
+        # The guard still runs to completion: the purchase warning is emitted
+        # and the equip/unequip interaction list is repaired, even though the
+        # ``hasattr(self, "isequipped")`` branch is skipped. "Does not raise"
+        # alone would also have passed if the whole body were skipped.
+        assert texts == [f"{player.name} must purchase Trinket before using "
+                         f"or equipping it."]
+        assert "equip" in item.interactions
+        assert "unequip" not in item.interactions
+        assert not hasattr(item, "isequipped")
 
     def test_on_equip_exception_is_swallowed(self):
         player = _fresh_player()
@@ -108,9 +134,15 @@ class TestItemOnEquipMerchandiseGuard:
 
         with patch.object(
             items.functions, "refresh_stat_bonuses", side_effect=RuntimeError("boom")
-        ):
-            # Should not propagate — caught by the broad except in on_equip
+        ) as mock_refresh:
+            # Must not propagate — caught by the broad except in on_equip
             weapon.on_equip(player)
+
+        # The failure really was reached (otherwise the except is untested)...
+        mock_refresh.assert_called_once_with(player)
+        # ...and the un-equipping done *before* it still stuck.
+        assert weapon.isequipped is False
+        assert player.eq_weapon is player.fists
 
     def test_non_merchandise_equip_states_applied(self):
         player = _fresh_player()
@@ -143,7 +175,14 @@ class TestItemDropStackable:
 
         assert item.count == 0
         assert player.current_room.spawn_item.call_count == 3
-        player.current_room.stack_duplicate_items.assert_called()
+        # Each spawn is one unit of the same item type, carrying the dropped
+        # stack as `template` so enchantments survive the split -- assert the
+        # arguments, not merely that spawn_item "was called".
+        assert player.current_room.spawn_item.call_args_list == [
+            call(item_type="Restorative", template=item)] * 3
+        # The ground pile must be restacked afterwards, or the three units show
+        # up as three separate entries in the room.
+        player.current_room.stack_duplicate_items.assert_called_once_with()
 
     def test_drop_partial_quantity(self):
         player = _fresh_player()
@@ -857,19 +896,46 @@ class TestBookPagination:
         assert len(pages) > 1
         assert pages[0] == "Hi there."
 
-    def test_read_blank_text_uses_description_fallback(self):
-        book = items.Book(name="Blank Book", description="An empty tome.")
-        book.text = ""  # force falsy text via setter
-        book.read()  # should not raise; hits the else: narrate(self.description) branch
+    def test_read_blank_text_emits_the_canned_blank_message(self):
+        """A blank book narrates "mysteriously blank", NOT its description.
 
-    def test_read_short_text_uses_print_slow(self):
+        The old test claimed to hit ``read``'s ``else: narrate(self.description)``
+        branch and asserted nothing, so nothing contradicted it. That branch is
+        in fact unreachable: the ``text`` property getter returns
+        ``"This book is mysteriously blank."`` whenever ``_text`` is falsy, so
+        ``if self.text:`` is always true. (src/items.py — the ``else`` at the
+        end of ``Book.read`` is dead code; reported, not silently changed.)
+        """
+        book = items.Book(name="Blank Book", description="An empty tome.")
+        book.text = ""  # force falsy _text via setter
+
+        texts = _narrated(book.read)
+
+        assert texts == ["Jean begins reading...",
+                         "This book is mysteriously blank."]
+        assert "An empty tome." not in texts
+
+    def test_read_short_text_emits_it_in_one_pass(self):
         book = items.Book(name="Short Book", text="Just a short note.")
-        book.read()
+
+        texts = _narrated(book.read)
+
+        assert texts == ["Jean begins reading...", "Just a short note."]
 
     def test_read_long_text_paginates(self):
-        long_text = "Sentence number {}. ".format("x") * 100
+        """Over 600 characters, read() switches to page-marked output."""
+        long_text = "Sentence number x. " * 100
         book = items.Book(name="Epic Tome", text=long_text, chars_per_page=200)
-        book.read()
+
+        texts = _narrated(book.read)
+
+        assert texts[0] == "Jean begins reading..."
+        page_headers = [t for t in texts if t.startswith("--- Epic Tome (Page ")]
+        assert len(page_headers) == 10
+        assert page_headers[0] == "--- Epic Tome (Page 1 of 10) ---"
+        assert page_headers[-1] == "--- Epic Tome (Page 10 of 10) ---"
+        # Nothing is lost in pagination: every word survives.
+        assert " ".join(texts).count("Sentence number x.") == 100
 
     def test_read_processes_event_and_clears_if_not_repeat(self):
         book = items.Book(name="Quest Book", text="Some lore.")
@@ -888,14 +954,24 @@ class TestBookPagination:
         book.read()
         assert book.event is event
 
-    def test_use_with_text(self):
+    def test_use_wraps_the_text_in_title_rules(self):
         book = items.Book(name="API Book", text="Readable via API.")
-        book.use(player=None)
 
-    def test_use_without_text_falls_back_to_description(self):
+        texts = _narrated(book.use, player=None)
+
+        assert texts == ["--- API Book ---", "Readable via API.",
+                         "--- API Book ---"]
+
+    def test_use_without_text_emits_the_blank_message(self):
+        """Same dead-``else`` story as ``read``: the description never appears."""
         book = items.Book(name="API Book", description="Fallback description.")
         book.text = ""
-        book.use(player=None)
+
+        texts = _narrated(book.use, player=None)
+
+        assert texts == ["--- API Book ---",
+                         "This book is mysteriously blank.",
+                         "--- API Book ---"]
 
 
 # ---------------------------------------------------------------------------
@@ -954,17 +1030,26 @@ class TestDriedCrystalSap:
 
 
 class TestLoreExamineItems:
-    def test_fabricarium_rejection_shard_examine(self):
-        shard = items.FabricariumRejectionShard()
-        shard.examine()  # should not raise
+    """``examine()`` on a lore item is *only* narration -- so calling it and
+    asserting nothing (the previous body) tested nothing at all. These pin
+    that each item narrates its own lore, and that the closer beat which
+    carries the actual story information is present."""
 
-    def test_conclave_signal_stone_examine(self):
-        stone = items.ConclaveSignalStone()
-        stone.examine()
+    @pytest.mark.parametrize("cls_name,must_contain", [
+        ("FabricariumRejectionShard", "tolerance"),
+        ("ConclaveSignalStone", "Conclave"),
+        ("FabricariumCompactSeal", "maker"),
+    ])
+    def test_lore_item_examine_narrates_its_own_lore(self, cls_name, must_contain):
+        item = getattr(items, cls_name)()
 
-    def test_fabricarium_compact_seal_examine(self):
-        seal = items.FabricariumCompactSeal()
-        seal.examine()
+        texts = _narrated(item.examine)
+
+        assert texts, f"{cls_name}.examine() narrated nothing"
+        joined = " ".join(texts)
+        assert must_contain in joined
+        # examine() must say more than the one-line inventory description.
+        assert len(joined) > len(item.description) / 2
 
 
 # ---------------------------------------------------------------------------

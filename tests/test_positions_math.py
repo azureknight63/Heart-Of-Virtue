@@ -40,6 +40,24 @@ from src.positions import (
 )
 
 
+@pytest.fixture
+def restore_global_rng():
+    """Snapshot/restore the process-wide RNG around a ``seed=`` call.
+
+    ``random_position_in_zone(..., seed=N)`` reseeds the *global* RNG and never
+    puts it back, leaking a fixed state into whatever test runs next on the same
+    xdist worker.
+    """
+    import random
+
+    state = random.getstate()
+    try:
+        yield
+    finally:
+        random.setstate(state)
+
+
+
 class TestDirection:
     """Test the Direction enum for 8 compass directions."""
 
@@ -199,18 +217,33 @@ class TestAngleCalculations:
         angle = angle_to_target(from_pos, to_pos)
         assert abs(angle - 270) < 5
 
-    def test_angle_range(self):
-        """Angle is always 0-360."""
+    def test_angle_is_normalised_into_0_360_not_left_negative(self):
+        """A south-east bearing must come back as 135, not atan2's -45.
+
+        ``0 <= angle < 360`` -- the old assertion -- is the one thing that holds
+        no matter which quadrant the normalisation gets wrong, as long as it
+        wraps at all.
+        """
         from_pos = CombatPosition(x=15, y=30)
-        to_pos = CombatPosition(x=40, y=5)
-        angle = angle_to_target(from_pos, to_pos)
-        assert 0 <= angle < 360
+        to_pos = CombatPosition(x=40, y=5)  # +25 east, -25 "north" => south-east
+
+        assert angle_to_target(from_pos, to_pos) == 135.0
+
+        # The mirrored bearing is the one atan2 returns negative before wrapping.
+        assert angle_to_target(
+            CombatPosition(x=40, y=5), CombatPosition(x=15, y=30)
+        ) == 315.0
 
     def test_attack_angle_difference_frontal(self):
-        """Test attack from front (0-45°)."""
-        # Target facing North (0°), attack from North direction (0°)
-        diff = attack_angle_difference(0, Direction.N)
-        assert 0 <= diff <= 45
+        """A dead-on frontal attack is 0 degrees off the target's facing.
+
+        ``0 <= diff <= 45`` -- the old assertion -- covers the entire frontal
+        arc, so it could not distinguish head-on from a 44-degree glance.
+        """
+        assert attack_angle_difference(0, Direction.N) == 0
+        # ...and the arc really is symmetric about the facing.
+        assert attack_angle_difference(30, Direction.N) == 30
+        assert attack_angle_difference(330, Direction.N) == 30
 
     def test_attack_angle_difference_flank(self):
         """Test attack from flank (45-90°)."""
@@ -644,13 +677,27 @@ class TestPositionClamping:
 class TestTurningToward:
     """Test turn_toward function for facing direction."""
 
-    def test_turn_toward_north(self):
-        """Test turning toward north target (lower Y values)."""
+    def test_turn_toward_a_lower_y_target_faces_south(self):
+        """The grid's Y axis increases *northward* (``angle_to_target`` treats
+        +Y as 0 degrees = North), so a target at a lower Y is due south.
+
+        The old test was named ``test_turn_toward_north``, documented
+        "north target (lower Y values)", and then asserted only
+        ``isinstance(facing, Direction)`` — which is true of all eight
+        directions, so it hid the fact that its own premise was inverted.
+        """
         from_pos = CombatPosition(x=25, y=25)
-        to_pos = CombatPosition(x=25, y=0)  # North (lower Y)
-        facing = turn_toward(from_pos, to_pos)
-        # Should face toward target - exact direction depends on angle calculation
-        assert isinstance(facing, Direction)
+        to_pos = CombatPosition(x=25, y=0)
+
+        assert angle_to_target(from_pos, to_pos) == 180.0
+        assert turn_toward(from_pos, to_pos) is Direction.S
+
+    def test_turn_toward_a_higher_y_target_faces_north(self):
+        from_pos = CombatPosition(x=25, y=25)
+        to_pos = CombatPosition(x=25, y=50)
+
+        assert angle_to_target(from_pos, to_pos) == 0.0
+        assert turn_toward(from_pos, to_pos) is Direction.N
 
     def test_turn_toward_east(self):
         """Test turning toward east target."""
@@ -660,12 +707,18 @@ class TestTurningToward:
         # Should be East or nearby direction
         assert facing in [Direction.E, Direction.NE, Direction.SE]
 
-    def test_turn_toward_returns_direction(self):
-        """Turn toward always returns a Direction enum value."""
+    def test_turn_toward_snaps_an_off_axis_bearing_to_the_nearest_octant(self):
+        """An arbitrary bearing rounds to one of the eight compass points.
+
+        The old assertion was ``isinstance(facing, Direction)``, which every
+        possible answer satisfies — including the wrong one.
+        """
         from_pos = CombatPosition(x=10, y=10)
         to_pos = CombatPosition(x=40, y=30)
-        facing = turn_toward(from_pos, to_pos)
-        assert isinstance(facing, Direction)
+
+        # atan2(30, 20) -> 56.3 degrees, which is nearer NE (45) than E (90).
+        assert round(angle_to_target(from_pos, to_pos), 2) == 56.31
+        assert turn_toward(from_pos, to_pos) is Direction.NE
 
 
 class TestCombatScenarios:
@@ -679,12 +732,20 @@ class TestCombatScenarios:
         assert "boss_arena" in COMBAT_SCENARIOS
 
     def test_scenario_structure(self):
-        """Verify scenario has required fields."""
+        """The standard scenario's fields hold the real zone geometry.
+
+        Four ``hasattr`` calls — the old body — are satisfied by fields set to
+        ``None``, which is exactly what a broken scenario table looks like.
+        """
         scenario = COMBAT_SCENARIOS["standard"]
-        assert hasattr(scenario, "scenario_type")
-        assert hasattr(scenario, "ally_spawn_zone")
-        assert hasattr(scenario, "enemy_spawn_zones")
-        assert hasattr(scenario, "formation_type")
+
+        assert scenario.scenario_type == "standard"
+        assert scenario.ally_spawn_zone == ((0, 10), (10, 40))
+        assert scenario.enemy_spawn_zones == [((20, 10), (30, 40))]
+        assert scenario.formation_type == "spread"
+        assert scenario.min_spacing == 2
+        # Allies use the single-zone field; the multi-zone override is ambush-only.
+        assert scenario.ally_spawn_zones is None
 
     def test_standard_scenario(self):
         """Test standard scenario has opposite spawning."""
@@ -716,16 +777,31 @@ class TestRandomPositionGeneration:
         assert 10 <= pos.x <= 30
         assert 10 <= pos.y <= 30
 
-    def test_random_position_bounds(self):
-        """Test position is within specified bounds."""
+    def test_random_position_bounds(self, seeded):
+        """Positions stay inside the zone *and* actually range across it.
+
+        The old body drew 10 unseeded samples and only checked the bounds --
+        a generator hardcoded to return the zone's minimum corner passed it.
+        Seeded so the sample is identical on every run and under any ordering.
+        """
         zone = ((0, 0), (50, 50))
 
-        for _ in range(10):
-            pos = random_position_in_zone(zone)
+        with seeded(20260821):
+            positions = [random_position_in_zone(zone) for _ in range(300)]
+
+        for pos in positions:
             assert 0 <= pos.x <= 50
             assert 0 <= pos.y <= 50
 
-    def test_random_position_seed_reproducibility(self):
+        xs = [p.x for p in positions]
+        ys = [p.y for p in positions]
+        # 300 draws over a 51-wide range: both extremes of the zone are used
+        # and the output is not pinned to a corner or a single axis.
+        assert min(xs) <= 2 and max(xs) >= 48
+        assert min(ys) <= 2 and max(ys) >= 48
+        assert len(set(zip(xs, ys))) > 100
+
+    def test_random_position_seed_reproducibility(self, restore_global_rng):
         """Test same seed produces same position."""
         zone = ((20, 20), (40, 40))
 

@@ -45,7 +45,17 @@ describe('BrowserLogger', () => {
     for (let i = 0; i < 10; i++) {
       console.log(`log ${i}`);
     }
-    expect(global.fetch).toHaveBeenCalled();
+    // One POST carrying all ten queued entries, keyed by the session id —
+    // a bare toHaveBeenCalled() would pass even if the body were empty.
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    const [url, init] = global.fetch.mock.calls[0];
+    expect(url).toContain('api/logs/browser');
+    expect(init.method).toBe('POST');
+    const body = JSON.parse(init.body);
+    expect(body.logs.map((l) => l.message)).toEqual(
+      Array.from({ length: 10 }, (_, i) => `log ${i}`)
+    );
+    expect(body.session_id).toBe(logger.getSessionId());
     expect(logger.logQueue.length).toBe(0);
   });
 
@@ -55,7 +65,9 @@ describe('BrowserLogger', () => {
     expect(global.fetch).not.toHaveBeenCalled();
 
     vi.advanceTimersByTime(5000);
-    expect(global.fetch).toHaveBeenCalled();
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(global.fetch.mock.calls[0][1].body).logs.map((l) => l.message))
+      .toEqual(['test log']);
   });
 
   it('does not re-initialize if already initialized', () => {
@@ -198,8 +210,12 @@ describe('BrowserLogger', () => {
     logger.log('log', 'beacon log');
     await logger.flush(true);
 
+    // The entry is put back so the next flush can retry it, and the failure is
+    // reported through the ORIGINAL console (routing it through the patched one
+    // would recurse straight back into the logger).
     expect(logger.logQueue).toHaveLength(1);
-    expect(errorSpy).toHaveBeenCalled();
+    expect(logger.logQueue[0].message).toBe('beacon log');
+    expect(errorSpy).toHaveBeenCalledTimes(1);
   });
 
   it('creates a session id once and reuses it thereafter', () => {
@@ -232,7 +248,17 @@ describe('BrowserLogger', () => {
   });
 
   it('does nothing when destroy is called without having initialized', () => {
+    // `.not.toThrow()` alone would also pass for a destroy() that tore down a
+    // LIVE interceptor belonging to someone else. Prove it is a genuine no-op:
+    // the console stays intercepted and the flush timer stays armed.
     logger.isInitialized = false;
-    expect(() => logger.destroy()).not.toThrow();
+    const interceptedLog = console.log;
+    const timerBefore = logger.flushInterval;
+
+    logger.destroy();
+
+    expect(console.log).toBe(interceptedLog);
+    expect(logger.flushInterval).toBe(timerBefore);
+    expect(logger.isInitialized).toBe(false);
   });
 });

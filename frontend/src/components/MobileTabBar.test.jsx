@@ -1,258 +1,189 @@
 import { render, screen, fireEvent } from '@testing-library/react'
 import { describe, it, expect, vi } from 'vitest'
 import MobileTabBar from './MobileTabBar'
+import { TAB_KEYS } from '../utils/mobileTabs'
+
+// Theme tokens the component paints with, as jsdom serialises them.
+const ACTIVE_LEFT = 'rgb(0, 255, 136)'   // colors.primary
+const ACTIVE_RIGHT = 'rgb(255, 170, 0)'  // colors.secondary
+const INACTIVE = 'rgb(136, 136, 136)'    // colors.text.muted
 
 describe('MobileTabBar', () => {
-  it('renders CHARACTER and MAP tabs in exploration mode', () => {
-    render(<MobileTabBar activeTab="character" onTabChange={vi.fn()} mode="exploration" />)
-    expect(screen.getByText('CHARACTER')).toBeDefined()
-    expect(screen.getByText('MAP')).toBeDefined()
-  })
-
-  it('renders COMBAT and BATTLEFIELD tabs in combat mode', () => {
-    render(<MobileTabBar activeTab="character" onTabChange={vi.fn()} mode="combat" />)
-    expect(screen.getByText('COMBAT')).toBeDefined()
-    expect(screen.getByText('BATTLEFIELD')).toBeDefined()
-  })
-
-  it('calls onTabChange("character") when character tab is clicked', () => {
+  const renderBar = (props = {}) => {
     const onTabChange = vi.fn()
-    render(<MobileTabBar activeTab="map" onTabChange={onTabChange} mode="exploration" />)
-    fireEvent.click(screen.getByText('CHARACTER'))
-    expect(onTabChange).toHaveBeenCalledWith('character')
+    const utils = render(
+      <MobileTabBar
+        activeTab={TAB_KEYS.left}
+        onTabChange={onTabChange}
+        mode="exploration"
+        {...props}
+      />
+    )
+    return { ...utils, onTabChange }
+  }
+
+  /** The two tab buttons, left slot first. */
+  const tabs = () => screen.getAllByRole('button')
+
+  /** How a tab is painted: an active tab takes its accent for text AND top rule. */
+  const paint = (button) => ({
+    color: button.style.color,
+    borderTop: button.style.borderTop,
   })
 
-  it('calls onTabChange("map") when map tab is clicked', () => {
-    const onTabChange = vi.fn()
-    render(<MobileTabBar activeTab="character" onTabChange={onTabChange} mode="exploration" />)
-    fireEvent.click(screen.getByText('MAP'))
-    expect(onTabChange).toHaveBeenCalledWith('map')
-  })
+  describe('labels', () => {
+    it('labels the two panel slots CHARACTER / MAP in exploration', () => {
+      renderBar({ mode: 'exploration' })
 
-  it('renders both emoji icons', () => {
-    render(<MobileTabBar activeTab="character" onTabChange={vi.fn()} mode="exploration" />)
-    expect(screen.getByText('🧝')).toBeDefined()
-    expect(screen.getByText('🗺️')).toBeDefined()
-  })
-
-  describe('Exploration Mode', () => {
-    it('renders character and map tabs in exploration', () => {
-      render(<MobileTabBar activeTab="character" onTabChange={vi.fn()} mode="exploration" />)
-      expect(screen.getByText('CHARACTER')).toBeDefined()
-      expect(screen.getByText('MAP')).toBeDefined()
+      expect(tabs().map((b) => b.textContent)).toEqual(['🧝CHARACTER', '🗺️MAP'])
     })
 
-    it('highlights active character tab', () => {
-      render(<MobileTabBar activeTab="character" onTabChange={vi.fn()} mode="exploration" />)
-      const characterBtn = screen.getByText('CHARACTER')
-      expect(characterBtn).toBeDefined()
+    it('relabels the same two slots COMBAT / BATTLEFIELD in combat', () => {
+      renderBar({ mode: 'combat' })
+
+      // Same icons, same slot order — only the words change.
+      expect(tabs().map((b) => b.textContent)).toEqual(['🧝COMBAT', '🗺️BATTLEFIELD'])
     })
 
-    it('highlights active map tab', () => {
-      render(<MobileTabBar activeTab="map" onTabChange={vi.fn()} mode="exploration" />)
-      const mapBtn = screen.getByText('MAP')
-      expect(mapBtn).toBeDefined()
-    })
+    it('treats any non-exploration mode as combat for labelling purposes', () => {
+      // `mode` is a free-form string from GamePage; only 'exploration' is special.
+      renderBar({ mode: 'unknown' })
 
-    it('shows icons for both tabs', () => {
-      render(<MobileTabBar activeTab="character" onTabChange={vi.fn()} mode="exploration" />)
-      expect(screen.getByText('🧝')).toBeDefined()
-      expect(screen.getByText('🗺️')).toBeDefined()
-    })
-  })
-
-  describe('Combat Mode', () => {
-    it('renders combat and battlefield tabs in combat', () => {
-      render(<MobileTabBar activeTab="combat" onTabChange={vi.fn()} mode="combat" />)
-      expect(screen.getByText('COMBAT')).toBeDefined()
-      expect(screen.getByText('BATTLEFIELD')).toBeDefined()
-    })
-
-    it('highlights active combat tab', () => {
-      render(<MobileTabBar activeTab="combat" onTabChange={vi.fn()} mode="combat" />)
-      const combatBtn = screen.getByText('COMBAT')
-      expect(combatBtn).toBeDefined()
-    })
-
-    it('highlights active battlefield tab', () => {
-      render(<MobileTabBar activeTab="battlefield" onTabChange={vi.fn()} mode="combat" />)
-      const battlefieldBtn = screen.getByText('BATTLEFIELD')
-      expect(battlefieldBtn).toBeDefined()
+      expect(tabs().map((b) => b.textContent)).toEqual(['🧝COMBAT', '🗺️BATTLEFIELD'])
     })
   })
 
-  describe('Tab Change Callbacks', () => {
-    it('calls onTabChange with correct tab name from exploration', () => {
-      const onTabChange = vi.fn()
-      render(<MobileTabBar activeTab="character" onTabChange={onTabChange} mode="exploration" />)
-      fireEvent.click(screen.getByText('MAP'))
-      expect(onTabChange).toHaveBeenCalledWith('map')
+  describe('tab keys (regression: the mid-combat blank screen)', () => {
+    // These used to emit 'combat'/'battlefield'. GamePage's panelWrap() only
+    // compares against TAB_KEYS.left/right, so those keys matched NEITHER panel
+    // slot, hid both, and left the player staring at a blank screen mid-fight.
+    it.each([
+      ['exploration', 'CHARACTER', 'MAP'],
+      ['combat', 'COMBAT', 'BATTLEFIELD'],
+    ])('emits the panel-slot keys, not mode-specific ones, in %s mode', (mode, leftLabel, rightLabel) => {
+      const { onTabChange } = renderBar({ mode, activeTab: null })
+
+      fireEvent.click(screen.getByText(leftLabel))
+      fireEvent.click(screen.getByText(rightLabel))
+
+      expect(onTabChange.mock.calls.map((c) => c[0])).toEqual([TAB_KEYS.left, TAB_KEYS.right])
     })
 
-    it('calls onTabChange when switching back to character', () => {
-      const onTabChange = vi.fn()
-      render(<MobileTabBar activeTab="map" onTabChange={onTabChange} mode="exploration" />)
-      fireEvent.click(screen.getByText('CHARACTER'))
-      expect(onTabChange).toHaveBeenCalledWith('character')
-    })
-
-    // Regression: these two used to assert 'combat'/'battlefield'. GamePage's
-    // panelWrap() only ever compares against 'character'/'map', so those keys
-    // hid both panels and blanked the screen mid-fight. The tab keys address
-    // panel slots; only the labels are mode-specific.
-    it('emits the left panel key from the COMBAT tab', () => {
-      const onTabChange = vi.fn()
-      render(<MobileTabBar activeTab="map" onTabChange={onTabChange} mode="combat" />)
-      fireEvent.click(screen.getByText('COMBAT'))
-      expect(onTabChange).toHaveBeenCalledWith('character')
-    })
-
-    it('emits the right panel key from the BATTLEFIELD tab', () => {
-      const onTabChange = vi.fn()
-      render(<MobileTabBar activeTab="character" onTabChange={onTabChange} mode="combat" />)
-      fireEvent.click(screen.getByText('BATTLEFIELD'))
-      expect(onTabChange).toHaveBeenCalledWith('map')
-    })
-
-    it('emits the same key space in both modes', () => {
+    it('emits the identical key space across a mode switch', () => {
       const onTabChange = vi.fn()
       const { rerender } = render(
-        <MobileTabBar activeTab="character" onTabChange={onTabChange} mode="exploration" />
+        <MobileTabBar activeTab={TAB_KEYS.left} onTabChange={onTabChange} mode="exploration" />
       )
       fireEvent.click(screen.getByText('MAP'))
-      rerender(<MobileTabBar activeTab="character" onTabChange={onTabChange} mode="combat" />)
+
+      rerender(<MobileTabBar activeTab={TAB_KEYS.left} onTabChange={onTabChange} mode="combat" />)
       fireEvent.click(screen.getByText('BATTLEFIELD'))
 
-      const emitted = onTabChange.mock.calls.map((c) => c[0])
-      expect(emitted).toEqual(['map', 'map'])
+      expect(onTabChange.mock.calls.map((c) => c[0])).toEqual([TAB_KEYS.right, TAB_KEYS.right])
     })
 
-    it('marks the tab active in combat using the panel keys', () => {
-      // The old keys also meant neither tab ever highlighted during combat.
-      const { rerender } = render(
-        <MobileTabBar activeTab="character" onTabChange={vi.fn()} mode="combat" />
-      )
-      const combatTab = screen.getByText('COMBAT').closest('button')
-      const activeColor = combatTab.style.color
+    it('re-emits the active tab key when the active tab is clicked again', () => {
+      // Not a no-op guard: the component always reports the click, and GamePage
+      // setting the state it already holds is a cheap no-op render.
+      const { onTabChange } = renderBar({ activeTab: TAB_KEYS.left })
 
-      rerender(<MobileTabBar activeTab="map" onTabChange={vi.fn()} mode="combat" />)
-      expect(screen.getByText('COMBAT').closest('button').style.color).not.toBe(activeColor)
-    })
-
-    it('does not call onTabChange when clicking active tab', () => {
-      const onTabChange = vi.fn()
-      render(<MobileTabBar activeTab="character" onTabChange={onTabChange} mode="exploration" />)
       fireEvent.click(screen.getByText('CHARACTER'))
+
       expect(onTabChange).toHaveBeenCalledTimes(1)
+      expect(onTabChange).toHaveBeenCalledWith(TAB_KEYS.left)
     })
 
-    it('handles rapid tab switching', () => {
-      const onTabChange = vi.fn()
-      render(<MobileTabBar activeTab="character" onTabChange={onTabChange} mode="exploration" />)
+    it('reports every click in a rapid switch, in order', () => {
+      const { onTabChange } = renderBar()
 
       fireEvent.click(screen.getByText('MAP'))
       fireEvent.click(screen.getByText('CHARACTER'))
       fireEvent.click(screen.getByText('MAP'))
 
-      expect(onTabChange).toHaveBeenCalledTimes(3)
+      expect(onTabChange.mock.calls.map((c) => c[0])).toEqual([
+        TAB_KEYS.right, TAB_KEYS.left, TAB_KEYS.right,
+      ])
     })
   })
 
-  describe('Mode Switching', () => {
-    it('switches from exploration to combat', () => {
-      const { rerender } = render(<MobileTabBar activeTab="character" onTabChange={vi.fn()} mode="exploration" />)
-      expect(screen.getByText('CHARACTER')).toBeDefined()
+  describe('active-tab highlighting', () => {
+    it('accents the left tab and mutes the right when the left slot is active', () => {
+      renderBar({ activeTab: TAB_KEYS.left })
+      const [left, right] = tabs()
 
-      rerender(<MobileTabBar activeTab="combat" onTabChange={vi.fn()} mode="combat" />)
-      expect(screen.getByText('COMBAT')).toBeDefined()
+      expect(paint(left)).toEqual({ color: ACTIVE_LEFT, borderTop: `3px solid ${ACTIVE_LEFT}` })
+      expect(paint(right)).toEqual({ color: INACTIVE, borderTop: '3px solid transparent' })
     })
 
-    it('switches from combat to exploration', () => {
-      const { rerender } = render(<MobileTabBar activeTab="combat" onTabChange={vi.fn()} mode="combat" />)
-      expect(screen.getByText('COMBAT')).toBeDefined()
+    it('accents the right tab and mutes the left when the right slot is active', () => {
+      renderBar({ activeTab: TAB_KEYS.right })
+      const [left, right] = tabs()
 
-      rerender(<MobileTabBar activeTab="character" onTabChange={vi.fn()} mode="exploration" />)
-      expect(screen.getByText('CHARACTER')).toBeDefined()
+      expect(paint(left)).toEqual({ color: INACTIVE, borderTop: '3px solid transparent' })
+      expect(paint(right)).toEqual({ color: ACTIVE_RIGHT, borderTop: `3px solid ${ACTIVE_RIGHT}` })
     })
 
-    it('maintains tab state when switching modes', () => {
-      const onTabChange = vi.fn()
-      const { rerender } = render(<MobileTabBar activeTab="character" onTabChange={onTabChange} mode="exploration" />)
+    it('highlights in combat mode too, using the same panel keys', () => {
+      // The old mode-specific keys also meant NEITHER tab ever highlighted
+      // during combat — the bar looked dead for the whole fight.
+      renderBar({ mode: 'combat', activeTab: TAB_KEYS.right })
 
-      rerender(<MobileTabBar activeTab="combat" onTabChange={onTabChange} mode="combat" />)
-
-      expect(screen.getByText('COMBAT')).toBeDefined()
-    })
-  })
-
-  describe('Visual Styling', () => {
-    it('renders tab bar container', () => {
-      const { container } = render(<MobileTabBar activeTab="character" onTabChange={vi.fn()} mode="exploration" />)
-      expect(container.firstChild).toBeDefined()
+      expect(screen.getByText('BATTLEFIELD').closest('button').style.color).toBe(ACTIVE_RIGHT)
+      expect(screen.getByText('COMBAT').closest('button').style.color).toBe(INACTIVE)
     })
 
-    it('has proper tab button styling', () => {
-      render(<MobileTabBar activeTab="character" onTabChange={vi.fn()} mode="exploration" />)
-      const buttons = screen.getAllByRole('button')
-      expect(buttons.length).toBeGreaterThanOrEqual(2)
-    })
-  })
+    it.each([
+      ['undefined', undefined],
+      ['null', null],
+      ['an unrecognised key', 'battlefield'],
+    ])('mutes both tabs when activeTab is %s', (_label, activeTab) => {
+      renderBar({ activeTab })
 
-  describe('Edge Cases', () => {
-    it('handles undefined activeTab', () => {
-      expect(() => {
-        render(<MobileTabBar activeTab={undefined} onTabChange={vi.fn()} mode="exploration" />)
-      }).not.toThrow()
+      tabs().forEach((b) =>
+        expect(paint(b)).toEqual({ color: INACTIVE, borderTop: '3px solid transparent' })
+      )
     })
 
-    it('handles null activeTab', () => {
-      expect(() => {
-        render(<MobileTabBar activeTab={null} onTabChange={vi.fn()} mode="exploration" />)
-      }).not.toThrow()
-    })
+    it('repaints when activeTab changes without remounting', () => {
+      const { rerender } = renderBar({ activeTab: TAB_KEYS.left })
+      const [left] = tabs()
+      expect(left.style.color).toBe(ACTIVE_LEFT)
 
-    it('handles unknown mode gracefully', () => {
-      expect(() => {
-        render(<MobileTabBar activeTab="character" onTabChange={vi.fn()} mode="unknown" />)
-      }).not.toThrow()
-    })
+      rerender(<MobileTabBar activeTab={TAB_KEYS.right} onTabChange={vi.fn()} mode="exploration" />)
 
-    it('handles multiple rapid re-renders', () => {
-      const { rerender } = render(<MobileTabBar activeTab="character" onTabChange={vi.fn()} mode="exploration" />)
-
-      for (let i = 0; i < 5; i++) {
-        rerender(<MobileTabBar activeTab={i % 2 === 0 ? "character" : "map"} onTabChange={vi.fn()} mode="exploration" />)
-      }
-
-      expect(screen.getByText('CHARACTER')).toBeDefined()
+      // Same node, new paint — React reuses the button rather than remounting.
+      expect(tabs()[0]).toBe(left)
+      expect(left.style.color).toBe(INACTIVE)
     })
   })
 
-  describe('Keyboard Interaction', () => {
-    it('handles tab key navigation', () => {
-      render(<MobileTabBar activeTab="character" onTabChange={vi.fn()} mode="exploration" />)
-      const buttons = screen.getAllByRole('button')
-      expect(buttons.length).toBeGreaterThanOrEqual(2)
+  describe('layout', () => {
+    it('pins the bar to the bottom above every panel, with safe-area padding', () => {
+      const { container } = renderBar()
+      const bar = container.firstChild
+
+      // A tab bar that scrolls away or sits under a dialog is unusable on
+      // mobile, so the positioning is part of the contract.
+      expect(bar.style.position).toBe('fixed')
+      expect(bar.style.bottom).toBe('0px')
+      expect(bar.style.zIndex).toBe('1000')
+      expect(bar.style.height).toBe('56px')
+      // NOTE: the `paddingBottom: env(safe-area-inset-bottom)` on this element
+      // is deliberately not asserted — jsdom drops env() from both
+      // CSSStyleDeclaration and the serialised style attribute, so any
+      // assertion about it would only ever prove jsdom's limitation.
+      // Exactly two equal-width slots.
+      expect(tabs()).toHaveLength(2)
+      tabs().forEach((b) => expect(b.style.flex).toBe('1 1 0%'))
     })
 
-    it('buttons respond to keyboard focus', () => {
-      render(<MobileTabBar activeTab="character" onTabChange={vi.fn()} mode="exploration" />)
-      const buttons = screen.getAllByRole('button')
-      expect(buttons[0]).toBeDefined()
-    })
-  })
+    it('gives each tab a touch-friendly hit target with no tap highlight', () => {
+      renderBar()
 
-  describe('Accessibility', () => {
-    it('renders buttons with proper labels', () => {
-      render(<MobileTabBar activeTab="character" onTabChange={vi.fn()} mode="exploration" />)
-      expect(screen.getByText('CHARACTER')).toBeDefined()
-      expect(screen.getByText('MAP')).toBeDefined()
-    })
-
-    it('has proper button structure for screen readers', () => {
-      render(<MobileTabBar activeTab="character" onTabChange={vi.fn()} mode="exploration" />)
-      const buttons = screen.queryAllByRole('button')
-      expect(buttons.length).toBeGreaterThanOrEqual(2)
+      tabs().forEach((b) => {
+        expect(b.style.touchAction).toBe('manipulation')
+        expect(b.style.webkitTapHighlightColor).toBe('transparent')
+      })
     })
   })
 })

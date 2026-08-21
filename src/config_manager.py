@@ -220,7 +220,7 @@ class ConfigManager:
             return self.config
 
         try:
-            self.parser.read(self.config_file, encoding="utf-8")
+            self.parser.read(self.config_file, encoding="utf-8-sig")
         except (configparser.Error, UnicodeDecodeError, OSError, ValueError):
             # Malformed/unreadable INI (bad encoding, duplicate headers,
             # missing section headers, etc.): the parser may hold a partial,

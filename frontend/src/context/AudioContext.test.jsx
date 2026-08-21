@@ -7,10 +7,15 @@ import React from 'react';
 
 // Mock Audio constructor
 class MockAudio {
-    constructor() {
+    // The real HTMLAudioElement takes the source URL as a constructor argument,
+    // and playSFX/playSting rely on that form (`new Audio(path)`). The mock used
+    // to drop it and hardcode `src = ''`, so no test could ever prove an SFX
+    // loaded the right file — every assertion about which sound plays was
+    // unprovable by construction.
+    constructor(src = '') {
         this.play = vi.fn().mockResolvedValue();
         this.pause = vi.fn();
-        this.src = '';
+        this.src = src;
         this.volume = 1;
         this.loop = false;
         this.currentTime = 0;
@@ -54,14 +59,49 @@ describe('AudioContext', () => {
     });
 
     it('plays and stops BGM', () => {
+        // This test had NO assertions at all — it clicked both buttons and
+        // ended. Every line of playBGM/stopBGM could have been deleted and it
+        // would still have passed. It now pins what those two actually do to
+        // the shared <audio> element: load the track, start it, and on stop
+        // pause it and clear the current-track state.
         render(
             <AudioProvider>
                 <TestComponent />
             </AudioProvider>
         );
+        const bgmElement = global.__audioInstances[0];
 
         fireEvent.click(screen.getByText('Play BGM'));
+        // BGM_MAP resolves the logical track name ('adventure') to a titled
+        // file under sounds/bgm/, so assert the path actually loaded rather
+        // than the lookup key.
+        expect(bgmElement.src).toContain('sounds/bgm/');
+        expect(bgmElement.src).toContain('Virtue Quest.mp3');
+        expect(bgmElement.play).toHaveBeenCalledTimes(1);
+
         fireEvent.click(screen.getByText('Stop BGM'));
+        expect(bgmElement.pause).toHaveBeenCalledTimes(1);
+
+        // currentBGM was reset, so re-playing the same track is not swallowed
+        // by playBGM's `if (currentBGMRef.current === trackName) return` guard.
+        fireEvent.click(screen.getByText('Play BGM'));
+        expect(bgmElement.play).toHaveBeenCalledTimes(2);
+    });
+
+    it('ignores a request to play the track that is already playing', () => {
+        // The early-return guard is what stops a re-render from restarting the
+        // map theme from the top on every poll.
+        render(
+            <AudioProvider>
+                <TestComponent />
+            </AudioProvider>
+        );
+        const bgmElement = global.__audioInstances[0];
+
+        fireEvent.click(screen.getByText('Play BGM'));
+        fireEvent.click(screen.getByText('Play BGM'));
+
+        expect(bgmElement.play).toHaveBeenCalledTimes(1);
     });
 
     it('playBGM reference stays stable after switching tracks (regression: battle BGM override bug)', () => {
@@ -115,7 +155,10 @@ describe('AudioContext', () => {
         );
 
         expect(screen.getByTestId('music-volume').textContent).toBe('0.5');
-        expect(warnSpy).toHaveBeenCalled();
+        expect(screen.getByTestId('sfx-volume').textContent).toBe('0.5');
+        // Naming the message and the payload: a bare toHaveBeenCalled() passed
+        // even when the warning came from an unrelated code path.
+        expect(warnSpy).toHaveBeenCalledWith('Failed to load audio preferences:', expect.any(SyntaxError));
         warnSpy.mockRestore();
     });
 
@@ -143,9 +186,15 @@ describe('AudioContext', () => {
         const { result } = renderHook(() => useAudio(), { wrapper });
 
         act(() => { result.current.playBGM('battle'); });
-        const audioInstance = result.current;
+        const bgmElement = global.__audioInstances[0];
+        const timeAfterFirstPlay = bgmElement.currentTime;
         act(() => { result.current.playBGM('battle'); });
 
+        // The old assertion (`currentBGM === 'battle'`) held even if the second
+        // call restarted the track from 0 — which is the actual bug the guard
+        // exists to prevent, since GamePage re-runs its BGM effect on every poll.
+        expect(bgmElement.play).toHaveBeenCalledTimes(1);
+        expect(bgmElement.currentTime).toBe(timeAfterFirstPlay);
         expect(result.current.currentBGM).toBe('battle');
     });
 
@@ -284,8 +333,14 @@ describe('AudioContext', () => {
         const { result } = renderHook(() => useAudio(), { wrapper });
 
         act(() => { result.current.playBGM('custom_track'); });
+        // Pin the whole filename, not "some element mentions it": a fallback
+        // that built `bgm_custom_track` without the `.wav` extension, or under
+        // the wrong directory, would 404 in the browser and still pass a
+        // substring check.
         const instance = global.__audioInstances.find(a => a.src.includes('bgm_custom_track'));
         expect(instance).toBeDefined();
+        expect(instance.src).toMatch(/\/assets\/sounds\/bgm_custom_track\.wav$/);
+        expect(instance.play).toHaveBeenCalledTimes(1);
     });
 
     it('builds a fallback path for a sting not in BGM_MAP', () => {
@@ -295,15 +350,32 @@ describe('AudioContext', () => {
         act(() => { result.current.playSting('custom_sting'); });
         const instance = global.__audioInstances.find(a => a.src.includes('bgm_custom_sting'));
         expect(instance).toBeDefined();
+        expect(instance.src).toMatch(/\/assets\/sounds\/bgm_custom_sting\.wav$/);
+        // A sting is one-shot: it must clear `loop` on the shared element.
+        expect(instance.loop).toBe(false);
     });
 
     it('mutes SFX volume when isSfxMuted is set', () => {
         const wrapper = ({ children }) => <AudioProvider>{children}</AudioProvider>;
         const { result } = renderHook(() => useAudio(), { wrapper });
 
+        // The old assertion was `isSfxMuted === true` — i.e. it re-read the
+        // state it had just set, and would have passed with the mute flag
+        // ignored by playSFX entirely. What matters is the element's volume.
         act(() => { result.current.setIsSfxMuted(true); });
         act(() => { result.current.playSFX('click'); });
-        expect(result.current.isSfxMuted).toBe(true);
+        const muted = global.__audioInstances[global.__audioInstances.length - 1];
+        expect(muted.src).toContain('sounds/sfx/click.wav');
+        expect(muted.volume).toBe(0);
+        expect(muted.play).toHaveBeenCalledTimes(1);
+
+        // Unmuting restores the configured sfxVolume on the NEXT cue.
+        act(() => { result.current.setIsSfxMuted(false); });
+        act(() => { result.current.setSfxVolume(0.3); });
+        act(() => { result.current.playSFX('click'); });
+        const unmuted = global.__audioInstances[global.__audioInstances.length - 1];
+        expect(unmuted).not.toBe(muted);
+        expect(unmuted.volume).toBe(0.3);
     });
 
     it('updates music and sfx volume via setters', () => {
@@ -345,7 +417,14 @@ describe('AudioContext', () => {
         global.Audio = originalAudio;
     });
 
-    it('removes an SFX instance from the active set once playback ends', () => {
+    it('wires an onended cleanup handler onto each SFX instance', () => {
+        // NOTE: `activeSFXRef` is a WRITE-ONLY Set — playSFX adds to it and
+        // onended/the play-failure path delete from it, but nothing in
+        // AudioContext.jsx ever READS it, so "was it removed?" has no
+        // observable consequence to assert. (Reported: same shape as the
+        // retired write-only hov_local_autosave blob.) What IS assertable is
+        // that the handler is installed on the right instance and is safe to
+        // fire more than once, which is what a browser can do on seek/replay.
         const wrapper = ({ children }) => <AudioProvider>{children}</AudioProvider>;
         const { result } = renderHook(() => useAudio(), { wrapper });
 
@@ -353,7 +432,11 @@ describe('AudioContext', () => {
         const sfxInstance = global.__audioInstances[global.__audioInstances.length - 1];
 
         expect(typeof sfxInstance.onended).toBe('function');
-        expect(() => sfxInstance.onended()).not.toThrow();
+        expect(sfxInstance.src).toContain('sounds/sfx/click.wav');
+        sfxInstance.onended();
+        sfxInstance.onended();
+        // Double-firing must not resurrect playback or raise.
+        expect(sfxInstance.play).toHaveBeenCalledTimes(1);
     });
 
     it('defaults SFX playbackRate to 1x with pitch preserved', () => {
@@ -442,14 +525,29 @@ describe('AudioContext', () => {
         expect(result.current.currentBGM).toBeNull();
         expect(result.current.combatSpeed).toBe(1);
 
-        expect(() => result.current.playBGM('adventure')).not.toThrow();
-        expect(() => result.current.stopBGM()).not.toThrow();
-        expect(() => result.current.playSFX('click')).not.toThrow();
-        expect(() => result.current.playSting('memory_flash')).not.toThrow();
-        expect(() => result.current.setMusicVolume(0.2)).not.toThrow();
-        expect(() => result.current.setSfxVolume(0.2)).not.toThrow();
-        expect(() => result.current.setIsMusicMuted(true)).not.toThrow();
-        expect(() => result.current.setIsSfxMuted(true)).not.toThrow();
-        expect(() => result.current.setCombatSpeed(2)).not.toThrow();
+        // These are no-ops, so "doesn't throw" was the whole assertion — but a
+        // no-op that silently constructs an <audio> element, or that mutates
+        // the context it was told not to, is exactly the leak this default
+        // exists to prevent. Assert both halves.
+        global.__audioInstances = [];
+        act(() => {
+            result.current.playBGM('adventure');
+            result.current.stopBGM();
+            result.current.playSFX('click');
+            result.current.playSting('memory_flash');
+            result.current.setMusicVolume(0.2);
+            result.current.setSfxVolume(0.2);
+            result.current.setIsMusicMuted(true);
+            result.current.setIsSfxMuted(true);
+            result.current.setCombatSpeed(2);
+        });
+
+        expect(global.__audioInstances).toHaveLength(0);
+        expect(result.current.musicVolume).toBe(0.5);
+        expect(result.current.sfxVolume).toBe(0.5);
+        expect(result.current.isMusicMuted).toBe(false);
+        expect(result.current.isSfxMuted).toBe(false);
+        expect(result.current.combatSpeed).toBe(1);
+        expect(result.current.currentBGM).toBeNull();
     });
 });

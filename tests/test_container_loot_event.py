@@ -71,11 +71,15 @@ class TestLootEventLogic:
         player, _ = _make_player_on_tile(container)
         event = LootEvent("loot", player, None, container)
 
+        first, second = (i.name for i in container.inventory)
+
         result = event.process(user_input="0")
 
         assert result["success"] is True
-        assert len(container.inventory) == 1
-        assert len(player.inventory) == 1
+        # Index 0 must move *that* item, not simply "an" item: a loop that
+        # always popped the last entry would satisfy a bare length check.
+        assert [i.name for i in player.inventory] == [first]
+        assert [i.name for i in container.inventory] == [second]
         # Single item taken: event stays open for further choices.
         assert event.completed is False
         assert event.needs_input is True
@@ -85,10 +89,12 @@ class TestLootEventLogic:
         player, _ = _make_player_on_tile(container)
         event = LootEvent("loot", player, None, container)
 
+        expected = [i.name for i in container.inventory]
+
         event.process(user_input="all")
 
         assert container.inventory == []
-        assert len(player.inventory) == 3
+        assert [i.name for i in player.inventory] == expected
         assert event.completed is True
         assert event.needs_input is False
 
@@ -192,6 +198,11 @@ class TestLootRoundTrip:
 
         result = service.process_event_input(player, event_id, "all", session_data)
 
-        assert result.get("success", True) is not False
-        assert len(player.inventory) == 2
+        # ``result.get("success", True) is not False`` also passed when the key
+        # was missing entirely -- i.e. when the event never ran.
+        assert result["success"] is True
+        assert result["needs_input"] is False
+        assert [i.name for i in player.inventory] == ["Restorative", "Antidote"]
+        assert all(name in result["output_text"]
+                   for name in ("Restorative", "Antidote"))
         assert container.inventory == []

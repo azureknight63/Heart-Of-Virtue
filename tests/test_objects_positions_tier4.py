@@ -28,12 +28,14 @@ Focus areas:
 20. GeminateGeode examine (1254)
 21. positions.py: All comprehensive edge cases
 
-NOTE: Skipped due to test framework isolation issues (6 failures when run with full suite).
-Coverage requirements already met. Tests pass in isolation. To be revisited.
+NOTE (historical): this file once carried a blanket ``pytestmark =
+pytest.mark.skip`` reading "test framework isolation issues". The real cause was
+a test that rebound ``type(container).locked`` to a PropertyMock and never
+restored it, poisoning six later tests. That leak is fixed (see
+TestContainerStartOpenProperty below) and the file runs normally.
 """
 
 import pytest
-pytestmark = pytest.mark.skip(reason="Test framework isolation issues - 6 failures. Coverage met.")
 import math
 import random
 import sys
@@ -61,6 +63,8 @@ from src.objects import (
 )
 
 # Import positions
+from src.narration import capture_narration
+import src.states as states
 from src.positions import (
     Direction,
     CombatPosition,
@@ -154,19 +158,36 @@ class TestTileDescriptionWordWrapping:
         assert len(lines) > 1  # Must wrap
 
 
+def narration_pairs(messages):
+    """(text, color) for every narration message, colour defaulting to None."""
+    return [(m["text"], m.get("color")) for m in messages]
+
+
 class TestWallInscriptionEdgeCases:
     """Test WallInscription edge cases (line 218)."""
 
-    def test_wall_inscription_read_with_no_text(self):
-        """Test read() when text is None (line 218)."""
+    def test_wall_inscription_read_with_no_text_falls_back_to_description(self):
+        """An unreadable inscription narrates its description and nothing else.
+
+        The no-text branch deliberately skips the "begins reading..." preamble,
+        ``print_slow`` and the ``await_input`` pause -- there is no body to
+        pace through.
+        """
         player = Mock()
         player.name = "Jean"
-        tile = Mock()
-        inscription = WallInscription(player, tile, text=None)
+        inscription = WallInscription(player, Mock(), text=None)
 
-        with patch("src.objects.functions.await_input"):
+        with (
+            patch("src.objects.functions.print_slow") as mock_slow,
+            patch("src.objects.functions.await_input") as mock_await,
+            capture_narration() as messages,
+        ):
             inscription.read()
-        # Should print description instead of text
+
+        assert narration_pairs(messages) == [(inscription.description, None)]
+        assert "too worn to be decipherable" in inscription.description
+        mock_slow.assert_not_called()
+        mock_await.assert_not_called()
 
     def test_wall_inscription_read_player_without_name(self):
         """Test read() when player has no name attribute."""
@@ -193,19 +214,40 @@ class TestWallInscriptionEdgeCases:
 class TestContainerStartOpenProperty:
     """Test Container.start_open property (lines 256, 270-272)."""
 
-    def test_container_start_open_setter_true_with_exception(self):
-        """Test start_open setter handling exception during locked assignment."""
-        player = Mock()
-        tile = Mock()
-        container = Container(player=player, tile=tile)
+    def test_container_start_open_swallows_a_failing_locked_assignment(self):
+        """start_open=True still opens the container when ``locked`` refuses to be set.
 
-        # Make locked assignment raise exception
-        with patch.object(container, '__setattr__', side_effect=Exception("test")):
-            # Should not raise
-            try:
-                container.start_open = True
-            except Exception:
-                pass  # Exception is caught
+        The setter guards ``self.locked = False`` with try/except so a container
+        being rebuilt from serialized data can't blow up mid-restore. A local
+        subclass provides the raising setter -- rebinding ``locked`` on
+        ``Container`` itself is what poisoned six other tests in this file
+        historically.
+        """
+
+        class LockedRejectingContainer(Container):
+            _reject_locked = False  # flipped on per-instance, after __init__
+
+            @property
+            def locked(self):
+                return self.__dict__.get("_locked", False)
+
+            @locked.setter
+            def locked(self, value):
+                if self._reject_locked:
+                    raise RuntimeError("locked is read-only on this container")
+                self.__dict__["_locked"] = value
+
+        container = LockedRejectingContainer(player=Mock(), tile=Mock(), locked=True)
+        container._reject_locked = True
+        assert container.state == "closed"
+
+        container.start_open = True  # must not propagate the RuntimeError
+
+        assert container.start_open is True
+        assert container.state == "opened"
+        # The unlock genuinely failed and was swallowed rather than silently
+        # succeeding, so the flag is still set.
+        assert container.locked is True
 
     def test_container_start_open_setter_false(self):
         """Test start_open = False."""
@@ -236,19 +278,40 @@ class TestContainerStartOpenProperty:
         assert container.locked is False
 
     def test_container_start_open_setter_explicit_exception(self):
-        """Test start_open setter when locked.setter raises Exception."""
+        """A raising `locked` setter must not stop start_open from taking effect.
+
+        This previously did `type(container).locked = PropertyMock(...)`, which
+        rebinds the attribute on the **Container class itself** and never puts it
+        back -- every later test that touched `.locked` then raised "Lock error".
+        That leak is what the module's blanket skip ("test framework isolation
+        issues - 6 failures") was hiding; scoping the patch fixes all six.
+
+        The body was also `try: ... except Exception: pass`, which asserted
+        nothing and could not fail. The setter's real contract is that it
+        swallows the error from `self.locked = False` while still committing
+        `_start_open` and `state`, so that is what is asserted now.
+        """
         player = Mock()
         tile = Mock()
         container = Container(player=player, tile=tile)
 
-        # Modify locked to raise an exception when set
-        type(container).locked = PropertyMock(side_effect=Exception("Lock error"))
-
-        # This should catch the exception and continue
-        try:
+        # `locked` lives on the instance, not the class, so the raising
+        # descriptor has to be *created* on the class -- and create=True is
+        # exactly what guarantees patch removes it again on exit.
+        assert not hasattr(Container, "locked")
+        with patch.object(
+            Container,
+            "locked",
+            new_callable=PropertyMock,
+            side_effect=Exception("Lock error"),
+            create=True,
+        ):
             container.start_open = True
-        except Exception:
-            pass  # Exception is caught and silently handled
+
+        assert container._start_open is True
+        assert container.state == Container._POSSIBLE_STATES[1]
+        # Restored, so no later test inherits a raising `locked`.
+        assert not hasattr(Container, "locked")
 
 
 class TestContainerInitException:
@@ -286,18 +349,24 @@ class TestContainerProcessEvents:
 class TestContainerTakeAllImportError:
     """Test Container.take_all ImportError fallback (lines 446-447, 450-451)."""
 
-    def test_container_take_all_empty_inventory(self):
-        """Test that take_all handles empty inventory."""
+    def test_container_take_all_opens_a_closed_container_then_reports_it_empty(self):
+        """take_all on a closed, empty container opens it and says so.
+
+        Two behaviours in one path: the implicit ``open()`` (state transition)
+        and the early return before any transfer.
+        """
         player = Mock()
         player.inventory = []
-        tile = Mock()
+        container = Container(player=player, tile=Mock(), inventory=[])
+        assert container.state == "closed"
 
-        container = Container(player=player, tile=tile, inventory=[])
-        container.state = "opened"
-
-        # Should print that it's empty
-        with patch("builtins.print"):
+        with capture_narration() as messages:
             container.take_all(player)
+
+        texts = [m["text"] for m in messages]
+        assert container.state == "opened"
+        assert texts[-1] == "The container is already empty."
+        assert player.inventory == []
 
 
 class TestContainerStackItems:
@@ -367,18 +436,28 @@ class TestShelfKeywordRemoval:
 class TestShrineParamsHandling:
     """Test Shrine params handling (lines 674-688)."""
 
-    def test_shrine_pray_with_missing_prayer_msg(self):
-        """Test pray() when player has no prayer_msg attribute."""
+    def test_shrine_pray_with_missing_prayer_msg_uses_the_default(self):
+        """A player with no ``prayer_msg`` still gets a prayer narrated.
+
+        ``pray`` reads ``getattr(player, "prayer_msg", ["Jean prays silently."])``;
+        ``Mock(spec=[])`` has no such attribute, so this is the fallback branch.
+        A plain ``Mock()`` would auto-create the attribute and never reach it.
+        """
         player = Mock(spec=[])  # No prayer_msg
-        tile = Mock()
+        shrine = Shrine(player=player, tile=Mock())
 
-        shrine = Shrine(player=player, tile=tile)
+        with (
+            patch("src.objects.random.randint", return_value=0),
+            patch("src.objects.functions.await_input") as mock_await,
+            capture_narration() as messages,
+        ):
+            shrine.pray(player)
 
-        with patch("src.objects.time.sleep"):
-            with patch("src.objects.random.randint", return_value=0):
-                with patch("src.objects.functions.await_input"):
-                    shrine.pray(player)
-        # Should use default message
+        assert narration_pairs(messages) == [
+            ("Jean kneels down and begins to pray for intercession.", None),
+            ("Jean prays silently.", None),
+        ]
+        mock_await.assert_called_once()
 
     def test_shrine_init_with_single_event_param(self):
         """Test Shrine.__init__ with event param."""
@@ -395,21 +474,35 @@ class TestShrineParamsHandling:
                 shrine = Shrine(player=player, tile=tile, params=params)
         assert shrine.event == event1
 
-    def test_shrine_pray_with_no_event(self):
-        """Test pray with no event attached."""
+    def test_shrine_pray_with_no_event_is_repeatable(self):
+        """An eventless shrine can be prayed at indefinitely.
+
+        Contrast with the event case, where ``pray`` consumes ``self.event``
+        after one use -- there is nothing to consume here, so the second prayer
+        must narrate identically.
+        """
         player = Mock()
         player.prayer_msg = ["A prayer message"]
-        tile = Mock()
+        shrine = Shrine(player=player, tile=Mock())
+        assert shrine.event is None  # default
 
-        shrine = Shrine(player=player, tile=tile)
-        # shrine.event is None by default
+        expected = [
+            ("Jean kneels down and begins to pray for intercession.", None),
+            ("A prayer message", None),
+        ]
+        with (
+            patch("src.objects.random.randint", return_value=0),
+            patch("src.objects.functions.await_input") as mock_await,
+        ):
+            with capture_narration() as first:
+                shrine.pray(player)
+            with capture_narration() as second:
+                shrine.pray(player)
 
-        with patch("src.objects.time.sleep"):
-            with patch("src.objects.random.randint", return_value=0):
-                with patch("src.objects.functions.await_input"):
-                    shrine.pray(player)
-
-        # Should complete without error
+        assert narration_pairs(first) == expected
+        assert narration_pairs(second) == expected
+        assert shrine.event is None
+        assert mock_await.call_count == 2
 
 
 class TestHealingSpringParams:
@@ -449,55 +542,71 @@ class TestHealingSpringParams:
         assert player.hp == 100
         assert spring.event is None
 
-    def test_healing_spring_clean_static(self):
-        """Test that clean() can be called as static-like."""
+    def test_healing_spring_clean_applies_the_clean_state(self):
+        """clean() is a @staticmethod: callable off the class, and it buffs the player."""
         player = Mock()
-        HealingSpring.clean(player)  # Can be called on class
+
+        with capture_narration() as messages:
+            HealingSpring.clean(player)
+
+        assert narration_pairs(messages) == [
+            (
+                "Jean summarily begins washing himself in the cool water of "
+                "the spring.",
+                None,
+            ),
+            (
+                "Jean closes his eyes for a moment, enjoying the feeling of "
+                "simple cleanliness.",
+                None,
+            ),
+            ("Jean now has Clean status!", "green"),
+        ]
+        player.apply_state.assert_called_once()
+        applied = player.apply_state.call_args[0][0]
+        assert isinstance(applied, states.Clean)
 
 
 class TestPassagewayArticleGeneration:
     """Test Passageway article generation (lines 844, 846)."""
 
-    def test_passageway_enter_with_possessive_name(self):
-        """Test that possessive names (with ') don't get 'the'."""
+    @pytest.mark.parametrize(
+        "name, expected_phrase",
+        [
+            # Possessives are proper nouns -- no article, casing preserved.
+            ("Jambo's Tent", "Jambo's Tent"),
+            # A leading "The" is stripped so it is not doubled, rest preserved.
+            ("The Secret Door", "the Secret Door"),
+            # Generic noun phrases get a lowercased "the ".
+            ("Archive Door", "the archive door"),
+        ],
+    )
+    def test_passageway_enter_builds_the_right_article_phrase(
+        self, name, expected_phrase
+    ):
+        """The narrated phrase, and the teleport that follows it, both happen."""
         player = Mock()
-        player.drop_merchandise_items = Mock()
-        tile = Mock()
-        tile.objects = [Mock()]
-
         passageway = Passageway(
             player=player,
-            tile=tile,
-            name="Jambo's Tent",
+            tile=Mock(),
+            name=name,
             teleport_map="test_map",
-            teleport_tile=(0, 0)
+            teleport_tile=(0, 0),
         )
 
-        with patch("src.objects.time.sleep"):
-            with patch("src.objects.functions.await_input"):
-                passageway.enter(player)
-        # Article should be "Jambo's Tent" not "the Jambo's Tent"
+        with (
+            patch("src.objects.functions.await_input") as mock_await,
+            capture_narration() as messages,
+        ):
+            passageway.enter(player)
 
-    def test_passageway_enter_with_the_name(self):
-        """Test that names starting with 'The' are normalized."""
-        player = Mock()
-        player.drop_merchandise_items = Mock()
-        tile = Mock()
-        tile.objects = [Mock()]
-
-        passageway = Passageway(
-            player=player,
-            tile=tile,
-            name="The Secret Door",
-            teleport_map="test_map",
-            teleport_tile=(0, 0)
-        )
-
-        with patch("src.objects.time.sleep"):
-            with patch("src.objects.functions.await_input"):
-                with patch.object(player, "teleport"):
-                    passageway.enter(player)
-        # Should be "the Secret Door" (lowercase)
+        assert narration_pairs(messages) == [
+            (f"Jean steps through {expected_phrase}...", None)
+        ]
+        # Merchandise is dropped before the transition, and the teleport fires.
+        player.drop_merchandise_items.assert_called_once_with()
+        player.teleport.assert_called_once_with("test_map", (0, 0))
+        mock_await.assert_called_once()
 
 
 class TestMarketBellRepeatEvent:
@@ -571,39 +680,62 @@ class TestFountainRepeatEvent:
 
         assert fountain.event == event
 
-    def test_fountain_drink_no_event(self):
-        """Test drink() with no event."""
-        player = Mock()
-        tile = Mock()
+    def test_fountain_use_is_a_real_alias_for_drink(self):
+        """use() routes through the real drink(), not just a same-named stub."""
+        fountain = Fountain(player=Mock(), tile=Mock())
 
-        fountain = Fountain(player=player, tile=tile)
+        with (
+            patch("src.objects.functions.await_input") as mock_await,
+            capture_narration() as messages,
+        ):
+            fountain.use()
 
-        with patch("src.objects.time.sleep"):
-            with patch("src.objects.functions.await_input"):
-                fountain.drink()
-        # Should not crash
+        assert narration_pairs(messages) == [
+            ("Jean cups some water from the fountain and takes a cool sip.", "cyan"),
+        ]
+        assert fountain.event is None
+        mock_await.assert_called_once()
 
-    def test_fountain_listen(self):
-        """Test listen() action."""
-        player = Mock()
-        tile = Mock()
+    def test_fountain_listen_narrates_the_water_and_changes_nothing(self):
+        """listen() is ambience only: no event consumed, distinct from drink()."""
+        event = Mock()
+        fountain = Fountain(player=Mock(), tile=Mock(), event=event)
 
-        fountain = Fountain(player=player, tile=tile)
-
-        with patch("src.objects.functions.await_input"):
+        with (
+            patch("src.objects.functions.await_input") as mock_await,
+            capture_narration() as messages,
+        ):
             fountain.listen()
-        # Should call await_input
 
-    def test_fountain_admire(self):
-        """Test admire() action."""
-        player = Mock()
-        tile = Mock()
+        assert narration_pairs(messages) == [
+            (
+                "Jean closes his eyes a moment, listening to the gentle "
+                "splash of water.",
+                None,
+            ),
+        ]
+        # Only drink() may fire the attached event.
+        event.process.assert_not_called()
+        assert fountain.event is event
+        mock_await.assert_called_once()
 
-        fountain = Fountain(player=player, tile=tile)
+    def test_fountain_admire_narrates_the_craftsmanship_and_changes_nothing(self):
+        """admire() is ambience only, and says something different from listen()."""
+        event = Mock()
+        fountain = Fountain(player=Mock(), tile=Mock(), event=event)
 
-        with patch("src.objects.functions.await_input"):
+        with (
+            patch("src.objects.functions.await_input") as mock_await,
+            capture_narration() as messages,
+        ):
             fountain.admire()
-        # Should call await_input
+
+        assert narration_pairs(messages) == [
+            ("The craftsmanship of the fountain is simple but pleasant.", None),
+        ]
+        event.process.assert_not_called()
+        assert fountain.event is event
+        mock_await.assert_called_once()
 
 
 class TestNoticeBoardEvent:
@@ -625,32 +757,52 @@ class TestNoticeBoardEvent:
 
         assert board._read_once is False  # Not set for repeat
 
-    def test_notice_board_read_with_event_second_read(self):
-        """Test event doesn't process on second read if not repeat."""
-        player = Mock()
-        tile = Mock()
+    def test_notice_board_read_with_event_second_read_does_not_reprocess(self):
+        """Once the latch is set, a non-repeat event never fires again.
 
+        The notes are still re-read every time -- only the event is one-shot.
+        """
         event = Mock()
         event.repeat = False
 
-        board = NoticeBoard(player=player, tile=tile, event=event)
-        board._read_once = True
+        board = NoticeBoard(player=Mock(), tile=Mock(), event=event)
+        board._read_once = True  # simulate an earlier read
 
-        with patch("src.objects.functions.await_input"):
+        with (
+            patch("src.objects.functions.await_input") as mock_await,
+            capture_narration() as messages,
+        ):
             board.read()
-        # Event should not process again
 
-    def test_notice_board_use_alias(self):
-        """Test use() alias for read()."""
-        player = Mock()
-        tile = Mock()
+        event.process.assert_not_called()
+        assert board._read_once is True
+        assert board.event is event  # not cleared, just latched out
+        texts = [m["text"] for m in messages]
+        assert texts == ["Jean scans the various notes:"] + [
+            f"  - {note}" for note in board.notes
+        ]
+        mock_await.assert_called_once()
 
-        board = NoticeBoard(player=player, tile=tile)
+    def test_notice_board_use_is_a_real_alias_for_read(self):
+        """use() drives the real read(): the notes actually reach the player.
 
-        with patch.object(board, "read") as mock_read:
-            with patch("src.objects.functions.await_input"):
-                board.use()
-        # read() is called via use()
+        Asserting on the narration rather than on a patched ``read`` proves the
+        alias is wired to the working method, not merely to something named
+        ``read``.
+        """
+        board = NoticeBoard(player=Mock(), tile=Mock(), notes=["Only note."])
+
+        with (
+            patch("src.objects.functions.await_input") as mock_await,
+            capture_narration() as messages,
+        ):
+            board.use()
+
+        assert [m["text"] for m in messages] == [
+            "Jean scans the various notes:",
+            "  - Only note.",
+        ]
+        mock_await.assert_called_once()
 
 
 class TestPrayerCandleRackUse:
@@ -672,16 +824,33 @@ class TestPrayerCandleRackUse:
 class TestStreetLanternInspect:
     """Test StreetLantern.inspect (line 1126)."""
 
-    def test_street_lantern_inspect(self):
-        """Test inspect() action."""
-        player = Mock()
-        tile = Mock()
+    def test_street_lantern_inspect_tracks_state_changes(self):
+        """inspect() reports the *current* state, not the constructed one.
 
-        lantern = StreetLantern(player=player, tile=tile, lit=True)
+        The description is rebuilt by ``_update_description`` on every toggle,
+        so a lantern built dark and then lit must inspect as "lit".
+        """
+        lantern = StreetLantern(player=Mock(), tile=Mock(), lit=False)
 
         with patch("src.objects.functions.await_input"):
-            lantern.inspect()
-        # Should print description and call await_input
+            with capture_narration() as before:
+                lantern.inspect()
+            lantern.light()
+            with capture_narration() as after_light:
+                lantern.inspect()
+            lantern.douse()
+            with capture_narration() as after_douse:
+                lantern.inspect()
+
+        assert narration_pairs(before) == [
+            ("An iron street lantern stands here. It is dark.", None)
+        ]
+        assert narration_pairs(after_light) == [
+            ("An iron street lantern stands here. It is lit.", None)
+        ]
+        assert narration_pairs(after_douse) == [
+            ("An iron street lantern stands here. It is dark.", None)
+        ]
 
 
 class TestMarketGongRepeat:
@@ -707,15 +876,17 @@ class TestMarketGongRepeat:
 class TestGeminateGeodeExamine:
     """Test GeminateGeode.examine (line 1254)."""
 
-    def test_geode_examine(self):
-        """Test examine() action."""
-        player = Mock()
-        tile = Mock()
+    def test_geode_examine_narrates_the_ritual_colour_sequence(self):
+        """examine() emits the description, which is the puzzle's only in-game hint."""
+        geode = GeminateGeode(player=Mock(), tile=Mock())
 
-        geode = GeminateGeode(player=player, tile=tile)
+        with capture_narration() as messages:
+            geode.examine()
 
-        geode.examine()
-        # Should print description
+        assert narration_pairs(messages) == [(geode.description, None)]
+        # The description is load-bearing: it is where the solve order comes from.
+        assert "blue, amber, grey" in geode.description
+        assert "Three shallow depressions" in geode.description
 
 
 # ============================================================================

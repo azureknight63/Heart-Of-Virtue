@@ -1,7 +1,5 @@
 """
 
-import pytest
-pytestmark = pytest.mark.skip(reason="Tier 4 advanced tests - coverage requirements already met")
 100% coverage tests for story effects and flavor modules.
 
 Targets:
@@ -29,40 +27,86 @@ import time
 
 
 class TestMemoryBorder(unittest.TestCase):
-    """Test memory_border helper function."""
+    """Test memory_border helper function.
+
+    These previously patched ``src.story.effects.cprint`` and asserted it was
+    called. The terminal-mode teardown repointed this code onto the narration
+    sink, so ``cprint`` is no longer the function memory_border calls -- the
+    tests were pinning a symbol the code had stopped using.
+
+    They also read the colour positionally (``call.args[1] == "magenta"``).
+    ``narrate(*parts, color=None, ...)`` joins its positional args like print,
+    so a positional colour would silently become part of the border *text*;
+    the colour is only ever a keyword. Asserting the kwarg is what catches that.
+    """
+
+    BORDER = "\u2550" * 79
+
+    def _narrate_calls(self, style, **extra_patches):
+        from src.story import effects
+
+        with patch("src.story.effects.narrate") as mock_narrate, patch(
+            "src.story.effects.animations.animate_to_main_screen"
+        ):
+            effects.memory_border(style)
+            return mock_narrate.call_args_list
+
+    def _chrome_lines(self, calls):
+        """Every emitted line, with the kwargs it was tagged with."""
+        return [
+            (call.args[0], call.kwargs)
+            for call in calls
+            if call.args and call.args[0]
+        ]
 
     def test_memory_border_top_style(self):
-        """Test memory_border with 'top' style."""
-        from src.story import effects
-
-        with patch("builtins.print") as mock_print, patch(
-            "src.story.effects.cprint"
-        ) as mock_cprint, patch("src.story.effects.animations.animate_to_main_screen"):
-            effects.memory_border("top")
-            # Should call animate and print borders with magenta color
-            mock_cprint.assert_called()
-            args = mock_cprint.call_args_list
-            # Check for magenta color in calls
-            magenta_calls = [a for a in args if len(a[0]) > 1 and a[0][1] == "magenta"]
-            self.assertTrue(len(magenta_calls) > 0)
+        lines = self._chrome_lines(self._narrate_calls("top"))
+        texts = [text for text, _ in lines]
+        self.assertIn(self.BORDER, texts)
+        self.assertTrue(
+            any("A MEMORY STIRS" in t for t in texts),
+            f"no banner emitted: {texts}",
+        )
+        # Colour is a keyword, and every chrome line carries the tag that makes
+        # the web client drop it in favour of its own Memory Flash frame.
+        for text, kwargs in lines:
+            self.assertEqual(kwargs.get("color"), "magenta", text)
+            self.assertEqual(kwargs.get("mtype"), "memory_chrome", text)
 
     def test_memory_border_bottom_style(self):
-        """Test memory_border with 'bottom' style."""
+        lines = self._chrome_lines(self._narrate_calls("bottom"))
+        texts = [text for text, _ in lines]
+        self.assertIn(self.BORDER, texts)
+        self.assertTrue(
+            any("THE MEMORY FADES" in t for t in texts),
+            f"no closing banner emitted: {texts}",
+        )
+        for text, kwargs in lines:
+            self.assertEqual(kwargs.get("color"), "magenta", text)
+            self.assertEqual(kwargs.get("mtype"), "memory_chrome", text)
+
+    def test_memory_border_other_style_is_a_bare_rule(self):
+        """An unrecognised style emits the rule alone -- no banner text."""
+        lines = self._chrome_lines(self._narrate_calls("middle"))
+        self.assertEqual([text for text, _ in lines], [self.BORDER])
+        self.assertEqual(lines[0][1].get("color"), "magenta")
+        self.assertEqual(lines[0][1].get("mtype"), "memory_chrome")
+
+    def test_top_style_plays_the_flash_animation(self):
+        """Only the opening border triggers the animation."""
         from src.story import effects
 
-        with patch("builtins.print") as mock_print, patch(
-            "src.story.effects.cprint"
-        ) as mock_cprint:
+        with patch("src.story.effects.narrate"), patch(
+            "src.story.effects.animations.animate_to_main_screen"
+        ) as mock_anim:
+            effects.memory_border("top")
+            mock_anim.assert_called_once_with("memory_flash")
+
+        with patch("src.story.effects.narrate"), patch(
+            "src.story.effects.animations.animate_to_main_screen"
+        ) as mock_anim:
             effects.memory_border("bottom")
-            mock_cprint.assert_called()
-
-    def test_memory_border_other_style(self):
-        """Test memory_border with other style."""
-        from src.story import effects
-
-        with patch("src.story.effects.cprint") as mock_cprint:
-            effects.memory_border("middle")
-            mock_cprint.assert_called()
+            mock_anim.assert_not_called()
 
 
 class TestMemoryFlash(unittest.TestCase):
@@ -536,11 +580,25 @@ class TestShrine(unittest.TestCase):
             mock_pass.assert_called_once()
 
     def test_shrine_process_is_noop(self):
-        """Test Shrine.process does nothing."""
+        """The generic Shrine has no effect of its own.
+
+        Shrine exists only so subclasses (StMichael, ...) can override
+        process(); the base must return None and leave the player, the tile
+        and its own state exactly as it found them. A base class that quietly
+        did something would fire on every shrine in the game.
+        """
         from src.story.effects import Shrine
 
         event = Shrine(self.player, self.tile)
-        event.process()  # Should not raise
+        player_calls = list(self.player.mock_calls)
+        tile_calls = list(self.tile.mock_calls)
+        before = dict(vars(event))
+
+        self.assertIsNone(event.process())
+
+        self.assertEqual(list(self.player.mock_calls), player_calls)
+        self.assertEqual(list(self.tile.mock_calls), tile_calls)
+        self.assertEqual(vars(event), before)
 
 
 class TestStMichael(unittest.TestCase):
@@ -691,12 +749,29 @@ class TestNPCSpawnerEvent(unittest.TestCase):
         """Test NPCSpawnerEvent with coordinate override."""
         from src.story.effects import NPCSpawnerEvent
 
+        # `tile.map` must be a real mapping. The previous version left it a bare
+        # Mock and only stubbed __getitem__, so `coord in tile.map` fell back to
+        # the legacy iteration protocol: Python called __getitem__(0), (1), (2)
+        # ... forever, because the Mock returned a tile for every index and never
+        # raised IndexError. That infinite loop grew until the process was
+        # OOM-killed, which is why this whole file sat in pytest.ini's ignore
+        # list. In production `tile.map` is a dict keyed by coordinate.
         target_tile = Mock()
-        self.tile.map.__getitem__ = Mock(return_value=target_tile)
+        self.tile.map = {(5, 5): target_tile}
         event = NPCSpawnerEvent(
             self.player, self.tile, params=["Slime", 1, (5, 5)]
         )
         self.assertEqual(event.spawn_tile, target_tile)
+
+    def test_npc_spawner_init_coordinate_miss_falls_back_to_current_tile(self):
+        """A coordinate absent from the map leaves the spawner on its own tile."""
+        from src.story.effects import NPCSpawnerEvent
+
+        self.tile.map = {(1, 1): Mock()}
+        event = NPCSpawnerEvent(
+            self.player, self.tile, params=["Slime", 1, (5, 5)]
+        )
+        self.assertIs(event.spawn_tile, self.tile)
 
     def test_npc_spawner_resolve_class_name_string(self):
         """Test _resolve_npc_class_name with string."""
@@ -1133,9 +1208,17 @@ class TestMaybeCombatFlavor(unittest.TestCase):
 
         with patch("src.story.gorran_flavor.random.random", return_value=0.1), patch(
             "builtins.print"
-        ), patch("src.story.gorran_flavor.colored", return_value=""):
+        ), patch("src.story.gorran_flavor.narrate") as mock_narrate:
             result = gorran_flavor.maybe_combat_flavor(self.player, 1, 0)
-        self.assertEqual(result, 4)  # Should return cooldown
+        self.assertEqual(result, 4)
+        mock_narrate.assert_called()  # Should return cooldown
+        # Returning the cooldown only proves a number came back. The point of
+        # the call is that Gorran actually says something, in his colour.
+        mock_narrate.assert_called()
+        self.assertTrue(
+            any(c.kwargs.get("color") == "yellow" for c in mock_narrate.call_args_list),
+            mock_narrate.call_args_list,
+        )
 
     def test_combat_flavor_gorran_hurt_triggers(self):
         """Test maybe_combat_flavor triggers when Gorran is hurt."""
@@ -1149,9 +1232,10 @@ class TestMaybeCombatFlavor(unittest.TestCase):
 
         with patch("src.story.gorran_flavor.random.random", return_value=0.1), patch(
             "builtins.print"
-        ), patch("src.story.gorran_flavor.colored", return_value=""):
+        ), patch("src.story.gorran_flavor.narrate") as mock_narrate:
             result = gorran_flavor.maybe_combat_flavor(self.player, 1, 0)
         self.assertEqual(result, 4)
+        mock_narrate.assert_called()
 
     def test_combat_flavor_exception_handling(self):
         """Test maybe_combat_flavor handles exceptions gracefully."""
@@ -1177,7 +1261,7 @@ class TestMaybeCombatFlavor(unittest.TestCase):
 
         with patch("src.story.gorran_flavor.random.random", return_value=0.1), patch(
             "builtins.print"
-        ), patch("src.story.gorran_flavor.colored", return_value=""):
+        ), patch("src.story.gorran_flavor.narrate") as mock_narrate:
             gorran_flavor.maybe_combat_flavor(self.player, 1, 0)
 
         # Should have set _prev_hp_for_flavor
@@ -1194,7 +1278,7 @@ class TestMaybeCombatFlavor(unittest.TestCase):
 
         with patch("src.story.gorran_flavor.random.random", return_value=0.1), patch(
             "builtins.print"
-        ), patch("src.story.gorran_flavor.colored", return_value=""):
+        ), patch("src.story.gorran_flavor.narrate") as mock_narrate:
             result = gorran_flavor.maybe_combat_flavor(self.player, 1, 0)
         # Should still return cooldown
         self.assertEqual(result, 4)
@@ -1213,21 +1297,59 @@ class TestMaybeExploreFlavor(unittest.TestCase):
         self.player.combat_list_allies = [self.player]
 
     def test_explore_flavor_skip_dialog(self):
-        """Test maybe_explore_flavor returns early when skip_dialog is True."""
+        """skip_dialog short-circuits before Gorran is even looked for.
+
+        Every other gate is deliberately satisfied -- Gorran is in the party,
+        the cooldown has elapsed and the random roll passes -- so the only
+        thing that can keep the line unspoken is the skip_dialog check.
+        """
         from src.story import gorran_flavor
 
+        gorran = Mock()
+        gorran.name = "Gorran"
+        self.player.combat_list_allies = [self.player, gorran]
+        self.player.universe.story = {"gorran_explore_last_tick": "0"}
         self.player.skip_dialog = True
-        with patch("src.story.gorran_flavor._find_gorran"):
-            gorran_flavor.maybe_explore_flavor(self.player)
-        # Should not find gorran when skip_dialog
+
+        with patch.object(
+            gorran_flavor, "_find_gorran", return_value=gorran
+        ) as mock_find, patch.object(
+            gorran_flavor.random, "random", return_value=0.0
+        ), patch.object(
+            gorran_flavor, "narrate"
+        ) as mock_narrate:
+            self.assertIsNone(gorran_flavor.maybe_explore_flavor(self.player))
+
+        mock_find.assert_not_called()
+        mock_narrate.assert_not_called()
+        self.assertEqual(
+            self.player.universe.story, {"gorran_explore_last_tick": "0"}
+        )
 
     def test_explore_flavor_no_gorran(self):
-        """Test maybe_explore_flavor returns when no Gorran."""
+        """No Gorran in the party means no Gorran line, and no bookkeeping.
+
+        The cooldown and the random roll are both set to pass, so an absent
+        Gorran is the only reason nothing is said. The cooldown key must also
+        stay unwritten -- consuming the cooldown for a line nobody spoke would
+        silently mute the next real one.
+        """
         from src.story import gorran_flavor
 
-        self.player.combat_list_allies = [self.player]
-        gorran_flavor.maybe_explore_flavor(self.player)
-        # Should return without error
+        bystander = Mock()
+        bystander.name = "Votha Krr"
+        self.player.combat_list_allies = [self.player, bystander]
+        self.player.universe.story = {}
+
+        self.assertIsNone(gorran_flavor._find_gorran(self.player))
+
+        with patch.object(
+            gorran_flavor.random, "random", return_value=0.0
+        ), patch.object(gorran_flavor, "narrate") as mock_narrate:
+            self.assertIsNone(gorran_flavor.maybe_explore_flavor(self.player))
+
+        mock_narrate.assert_not_called()
+        self.assertEqual(self.player.universe.story, {})
 
     def test_explore_flavor_cooldown_not_elapsed(self):
         """Test maybe_explore_flavor respects cooldown."""
@@ -1254,7 +1376,7 @@ class TestMaybeExploreFlavor(unittest.TestCase):
 
         with patch("src.story.gorran_flavor.random.random", return_value=0.1), patch(
             "builtins.print"
-        ), patch("src.story.gorran_flavor.colored", return_value=""):
+        ), patch("src.story.gorran_flavor.narrate") as mock_narrate:
             gorran_flavor.maybe_explore_flavor(self.player)
         # Should have updated story
         self.assertIn("gorran_explore_last_tick", self.player.universe.story)
@@ -1273,8 +1395,14 @@ class TestMaybeExploreFlavor(unittest.TestCase):
         # Should not change story when skipped by random
         self.assertEqual(self.player.universe.story["gorran_explore_last_tick"], "90")
 
-    def test_explore_flavor_invalid_last_tick(self):
-        """Test maybe_explore_flavor handles invalid last_tick."""
+    def test_explore_flavor_invalid_last_tick_is_swallowed_as_a_warning(self):
+        """A corrupt cooldown value must not crash exploration.
+
+        int("invalid") raises inside the try block, so there is no -999
+        fallback: the line is skipped, the corrupt value is left untouched
+        (not silently "repaired"), and the failure is logged rather than
+        propagated into the movement loop.
+        """
         from src.story import gorran_flavor
 
         self.player.universe.story = {"gorran_explore_last_tick": "invalid"}
@@ -1282,23 +1410,47 @@ class TestMaybeExploreFlavor(unittest.TestCase):
         gorran.name = "Gorran"
         self.player.combat_list_allies = [self.player, gorran]
 
-        # Should handle gracefully and use -999 as fallback
-        with patch("src.story.gorran_flavor.random.random", return_value=0.1), patch(
-            "builtins.print"
-        ), patch("src.story.gorran_flavor.colored", return_value=""):
-            gorran_flavor.maybe_explore_flavor(self.player)
+        with patch.object(
+            gorran_flavor.random, "random", return_value=0.0
+        ), patch.object(gorran_flavor, "narrate") as mock_narrate, patch.object(
+            gorran_flavor.logging, "warning"
+        ) as mock_warning:
+            self.assertIsNone(gorran_flavor.maybe_explore_flavor(self.player))
+
+        mock_narrate.assert_not_called()
+        self.assertEqual(
+            self.player.universe.story, {"gorran_explore_last_tick": "invalid"}
+        )
+        self.assertEqual(mock_warning.call_count, 1)
+        logged = mock_warning.call_args.args
+        self.assertEqual(logged[0], "gorran_flavor explore: %s")
+        self.assertIsInstance(logged[1], ValueError)
 
     def test_explore_flavor_exception_handling(self):
-        """Test maybe_explore_flavor handles exceptions gracefully."""
+        """An exploding story dict is contained, not propagated.
+
+        maybe_explore_flavor is called from the movement path, so anything it
+        raises would abort the player's move. The error must be logged and
+        swallowed, and nothing may be narrated.
+        """
         from src.story import gorran_flavor
 
         gorran = Mock()
         gorran.name = "Gorran"
         self.player.combat_list_allies = [self.player, gorran]
-        self.player.universe.story = Mock(side_effect=Exception("Test error"))
+        boom = RuntimeError("Test error")
+        story = MagicMock()
+        story.get.side_effect = boom
+        self.player.universe.story = story
 
-        gorran_flavor.maybe_explore_flavor(self.player)
-        # Should not raise
+        with patch.object(gorran_flavor, "narrate") as mock_narrate, patch.object(
+            gorran_flavor.logging, "warning"
+        ) as mock_warning:
+            self.assertIsNone(gorran_flavor.maybe_explore_flavor(self.player))
+
+        mock_narrate.assert_not_called()
+        story.__setitem__.assert_not_called()
+        mock_warning.assert_called_once_with("gorran_flavor explore: %s", boom)
 
 
 class TestGorranFlavorStageProgression(unittest.TestCase):

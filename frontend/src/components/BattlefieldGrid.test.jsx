@@ -3,6 +3,7 @@ import { render, screen, fireEvent, act, cleanup } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import BattlefieldGrid from './BattlefieldGrid';
 import { getAnimationDuration } from '../utils/animationConfigs';
+import { CATEGORY_GROUPS, MOVE_CATEGORY_COLOR, MOVE_CATEGORY_GLOW } from '../utils/categories';
 import { setFlag, resetFlags } from '../utils/featureFlags';
 
 const { mockPlaySFX } = vi.hoisted(() => ({ mockPlaySFX: vi.fn() }));
@@ -21,7 +22,12 @@ describe('BattlefieldGrid', () => {
             max_hp: 100,
             fatigue: 0,
             max_fatigue: 100,
-            position: { x: 6, y: 6, facing: 0 },
+            // CombatantSerializer._serialize_position emits `pos.facing.name`
+            // — a cardinal string, never degrees. The fixture used to send
+            // 0/180, which meant every test here exercised the numeric branch
+            // production never reaches, leaving the live FACING_MAP lookup
+            // covered by two edge-case tests only.
+            position: { x: 6, y: 6, facing: 'N' },
             current_move: { category: 'Attack' }
         },
         enemies: [
@@ -30,7 +36,7 @@ describe('BattlefieldGrid', () => {
                 name: 'Goblin',
                 hp: 50,
                 max_hp: 50,
-                position: { x: 8, y: 6, facing: 180 },
+                position: { x: 8, y: 6, facing: 'S' },
                 current_move: { category: 'Maneuver' }
             }
         ]
@@ -692,36 +698,90 @@ describe('BattlefieldGrid', () => {
         expect(screen.queryByText('D')).toBeNull();
     });
 
-    it('renders different move categories with correct styles', () => {
+    // The token that carries a combatant's pending-move border/glow.
+    const tokenFor = (letter) => screen.getByText(letter).closest('[style*="border-color"]');
+    const rgb = (hex) => {
+        const n = parseInt(hex.slice(1), 16);
+        return `rgb(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255})`;
+    };
+
+    // Every category the engine can put in `current_move` — taken from
+    // CATEGORY_GROUPS so a new engine category cannot slip past unstyled.
+    const ENGINE_CATEGORIES = Object.values(CATEGORY_GROUPS).flat();
+
+    it.each(ENGINE_CATEGORIES.map((c) => [c]))(
+        'borders a token telegraphing a %s move in that category\'s colour',
+        (category) => {
+            // The old test used 'Attack', 'Special' and 'Supernatural' —
+            // NONE of which the engine emits — and then asserted only that the
+            // three markers were `toBeDefined()`, with a comment conceding it
+            // could not check the styles it was named for. So the mapping it
+            // claimed to prove went entirely unexercised, exactly as the
+            // CooldownTray fixtures did.
+            render(
+                <BattlefieldGrid
+                    combat={{
+                        ...mockCombat,
+                        player: { ...mockCombat.player, current_move: { category } },
+                    }}
+                    tab="overview"
+                    zoom={1}
+                />
+            );
+            const token = tokenFor('J');
+            expect(token.style.borderColor).toBe(rgb(MOVE_CATEGORY_COLOR[category]));
+            expect(token.style.getPropertyValue('--pending-glow')).toBe(MOVE_CATEGORY_GLOW[category]);
+            expect(token.className).toContain('battlefield-pending-glow');
+        }
+    );
+
+    it('renders several combatants telegraphing different categories at once', () => {
         const multiMoveCombat = {
-            player: { ...mockCombat.player, current_move: { category: 'Special' } },
+            player: { ...mockCombat.player, current_move: { category: 'Mastery' } },
             enemies: [
-                { ...mockCombat.enemies[0], current_move: { category: 'Supernatural' } },
-                { name: 'Orc', hp: 100, max_hp: 100, position: { x: 5, y: 5 }, current_move: { category: 'Miscellaneous' } }
-            ]
+                { ...mockCombat.enemies[0], current_move: { category: 'Defensive' } },
+                {
+                    name: 'Orc', hp: 100, max_hp: 100, position: { x: 5, y: 5, facing: 'S' },
+                    current_move: { category: 'Miscellaneous' },
+                },
+            ],
         };
         render(<BattlefieldGrid combat={multiMoveCombat} tab="overview" zoom={1} />);
 
-        // We can't easily check box-shadow styles in JSDOM sometimes, 
-        // but we can check if the components render without crashing.
-        expect(screen.getByText('J')).toBeDefined();
-        expect(screen.getByText('G')).toBeDefined();
-        expect(screen.getByText('O')).toBeDefined();
+        // Each token takes its OWN category's colour — a shared/leaked style
+        // would have gone unnoticed under the old presence-only assertions.
+        expect(tokenFor('J').style.borderColor).toBe(rgb(MOVE_CATEGORY_COLOR.Mastery));
+        expect(tokenFor('G').style.borderColor).toBe(rgb(MOVE_CATEGORY_COLOR.Defensive));
+        expect(tokenFor('O').style.borderColor).toBe(rgb(MOVE_CATEGORY_COLOR.Miscellaneous));
     });
 
-    it('handles hover enter/leave events on combatant tokens without error', () => {
-        // Smoke test: verify mouseEnter/mouseLeave events are wired up and
-        // do not throw. Detailed reticle rendering relies on Tailwind JIT which
-        // is not processed in JSDOM; functional hover state is covered by the
-        // select and Escape tests below.
-        render(<BattlefieldGrid combat={mockCombat} tab="overview" zoom={1} />);
+    /** The rotating hover reticle mounts only while a token is hovered. */
+    const reticles = (container) => container.querySelectorAll('.absolute.inset-\\[-12px\\]');
 
-        const jeanToken = screen.getByText('J');
-        const entityWrapper = jeanToken.closest('[style*="cursor"]');
-        expect(entityWrapper).not.toBeNull();
+    it('mounts the hover reticle on the hovered token only, and removes it on leave', () => {
+        // The old version fired mouseEnter/mouseLeave and asserted only
+        // `.not.toThrow()`, excusing itself with "reticle rendering relies on
+        // Tailwind JIT". It does not: `isHovered && <div>` mounts a real SVG
+        // node that jsdom renders, so the whole hover contract was assertable
+        // and simply unasserted — every hover handler could have been deleted.
+        const { container } = render(<BattlefieldGrid combat={mockCombat} tab="overview" zoom={1} />);
+        const entityWrapper = screen.getByText('J').closest('[style*="cursor"]');
+        const enemyWrapper = screen.getByText('G').closest('[style*="cursor"]');
 
-        expect(() => fireEvent.mouseEnter(entityWrapper)).not.toThrow();
-        expect(() => fireEvent.mouseLeave(entityWrapper)).not.toThrow();
+        expect(reticles(container)).toHaveLength(0);
+
+        fireEvent.mouseEnter(entityWrapper);
+        expect(reticles(container)).toHaveLength(1);
+        expect(entityWrapper.contains(reticles(container)[0])).toBe(true);
+        expect(enemyWrapper.contains(reticles(container)[0])).toBe(false);
+
+        // Moving to another token moves the reticle rather than adding one.
+        fireEvent.mouseEnter(enemyWrapper);
+        expect(reticles(container)).toHaveLength(1);
+        expect(enemyWrapper.contains(reticles(container)[0])).toBe(true);
+
+        fireEvent.mouseLeave(enemyWrapper);
+        expect(reticles(container)).toHaveLength(0);
     });
 
     it('shows the move name and preparation stage in the hover tooltip', () => {
@@ -1191,6 +1251,18 @@ describe('BattlefieldGrid', () => {
             expect(container.querySelector('[style*="scale(1)"]')).not.toBeNull();
         });
 
+        it('passes a numeric facing straight through as degrees', () => {
+            // The legacy branch: no serializer sends this today, but the
+            // component still accepts it, so it needs its own case now that the
+            // shared fixture uses the real cardinal-string shape.
+            const degreesCombat = {
+                ...mockCombat,
+                player: { ...mockCombat.player, position: { x: 6, y: 6, facing: 135 } },
+            };
+            const { container } = render(<BattlefieldGrid combat={degreesCombat} tab="overview" zoom={1} />);
+            expect(container.querySelector('[style*="rotate(135deg)"]')).not.toBeNull();
+        });
+
         it('resolves a cardinal string facing to a rotation angle', () => {
             const cardinalCombat = {
                 ...mockCombat,
@@ -1214,7 +1286,9 @@ describe('BattlefieldGrid', () => {
         const statusWrapper = document.querySelector('.absolute.bottom-full');
         expect(statusWrapper).not.toBeNull();
 
-        // Dimmed until hovered, so a field of tokens isn't a wall of icons.
+        // The whole point of the handler is the opacity swap: icons sit at 0.35
+        // so they do not fight the token for attention, and rise to 1 when the
+        // player reaches for them. `.not.toThrow()` proved neither value.
         expect(statusWrapper.style.opacity).toBe('0.35');
         fireEvent.mouseEnter(statusWrapper);
         expect(statusWrapper.style.opacity).toBe('1');
@@ -1417,6 +1491,19 @@ describe('BattlefieldGrid', () => {
         // jsdom reports a zero-sized box, and the pan clamp is a fraction of
         // that box — so without a real rect every pan clamps to zero and the
         // gesture assertions below would pass vacuously.
+        /** Current transform on the pan layer.
+         *
+         * renderPannableGrid also returns `panLayer` directly, but the
+         * combat_id tests below re-render between assertions, so they resolve
+         * the layer from the container each time rather than holding a stale
+         * node reference. The pan layer is the only div carrying a
+         * `translate(...px...)`.
+         */
+        const panTransform = (container) =>
+            [...container.querySelectorAll('div')]
+                .map((d) => d.style.transform)
+                .find((t) => t && t.startsWith('translate(') && t.includes('px'));
+
         const renderPannableGrid = (props = {}) => {
             const result = render(<BattlefieldGrid combat={mockCombat} tab="overview" zoom={1} {...props} />);
             const gridEl = result.container.firstChild;
@@ -1496,13 +1583,94 @@ describe('BattlefieldGrid', () => {
         });
 
         it('ignores multi-touch gestures and secondary mouse buttons', () => {
-            const { container } = render(<BattlefieldGrid combat={mockCombat} tab="overview" zoom={1} />);
-            const gridEl = container.firstChild;
+            const { container, gridEl } = renderPannableGrid();
+            const atRest = 'translate(0.0px, 0.0px)';
 
-            expect(() => fireEvent.touchStart(gridEl, { touches: [{ clientX: 0, clientY: 0 }, { clientX: 10, clientY: 10 }] })).not.toThrow();
-            expect(() => fireEvent.mouseDown(gridEl, { button: 2, clientX: 0, clientY: 0 })).not.toThrow();
-            expect(() => fireEvent.mouseMove(window, { clientX: 5, clientY: 5 })).not.toThrow();
-            expect(() => fireEvent.mouseUp(window)).not.toThrow();
+            // A two-finger gesture (pinch/zoom) must not be treated as a pan.
+            fireEvent.touchStart(gridEl, {
+                touches: [{ clientX: 0, clientY: 0 }, { clientX: 10, clientY: 10 }],
+            });
+            fireEvent.touchMove(gridEl, {
+                touches: [{ clientX: 50, clientY: 50 }, { clientX: 60, clientY: 60 }],
+            });
+            expect(panTransform(container)).toBe(atRest);
+
+            // Right-click drag must not pan either (it opens a context menu).
+            fireEvent.mouseDown(gridEl, { button: 2, clientX: 0, clientY: 0 });
+            fireEvent.mouseMove(window, { clientX: 50, clientY: 50 });
+            expect(panTransform(container)).toBe(atRest);
+            fireEvent.mouseUp(window);
+        });
+
+        // `combat_id` identifies a FIGHT, not a call: it survives a reinit
+        // (wave transition / reinforcement spawn — still the same fight) and
+        // changes only when a genuinely new combat starts. The camera reset is
+        // keyed on it, so both halves have to hold.
+        describe('pan reset keyed on combat_id', () => {
+            const panTo = (container, gridEl) => {
+                fireEvent.mouseDown(gridEl, { button: 0, clientX: 100, clientY: 100 });
+                fireEvent.mouseMove(window, { clientX: 60, clientY: 80 });
+                fireEvent.mouseUp(window);
+                expect(panTransform(container)).toBe('translate(-40.0px, -20.0px)');
+            };
+
+            it('keeps the pan across a reinit that reuses the same combat_id', () => {
+                const { container, gridEl, rerender } = renderPannableGrid({
+                    combatId: 'fight-0001',
+                    combatActive: true,
+                });
+                panTo(container, gridEl);
+
+                // A wave transition: new enemies, SAME fight, same combat_id.
+                rerender(
+                    <BattlefieldGrid
+                        combat={{ ...mockCombat, enemies: [...mockCombat.enemies] }}
+                        tab="overview"
+                        zoom={1}
+                        combatId="fight-0001"
+                        combatActive
+                    />
+                );
+                expect(panTransform(container)).toBe('translate(-40.0px, -20.0px)');
+            });
+
+            it('recentres the camera when a genuinely new fight starts', () => {
+                const { container, gridEl, rerender } = renderPannableGrid({
+                    combatId: 'fight-0001',
+                    combatActive: true,
+                });
+                panTo(container, gridEl);
+
+                rerender(
+                    <BattlefieldGrid
+                        combat={mockCombat}
+                        tab="overview"
+                        zoom={1}
+                        combatId="fight-0002"
+                        combatActive
+                    />
+                );
+                expect(panTransform(container)).toBe('translate(0.0px, 0.0px)');
+            });
+
+            it('recentres the camera when combat ends', () => {
+                const { container, gridEl, rerender } = renderPannableGrid({
+                    combatId: 'fight-0001',
+                    combatActive: true,
+                });
+                panTo(container, gridEl);
+
+                rerender(
+                    <BattlefieldGrid
+                        combat={mockCombat}
+                        tab="overview"
+                        zoom={1}
+                        combatId="fight-0001"
+                        combatActive={false}
+                    />
+                );
+                expect(panTransform(container)).toBe('translate(0.0px, 0.0px)');
+            });
         });
     });
 
@@ -1515,31 +1683,78 @@ describe('BattlefieldGrid', () => {
             vi.useRealTimers();
         });
 
+        // contentDivRef — the one div marked `will-change: transform` — receives
+        // the per-frame sub-cell camera offset as a percent translate. Selecting
+        // it by that marker rather than by "any percent translate" matters:
+        // every combatant token is positioned with a percent translate too.
+        // A cleared camera leaves the empty string, not a missing node.
+        const cameraTransform = (container) => {
+            const el = [...container.querySelectorAll('div')].find(
+                (d) => d.style.willChange === 'transform'
+            );
+            expect(el).toBeDefined();
+            return el.style.transform;
+        };
+
+        const movePlayerTo = (x, y) => ({
+            ...mockCombat,
+            player: { ...mockCombat.player, position: { x, y, facing: 'N' } },
+        });
+
         it('animates the camera toward the player when they move within the viewport', () => {
-            const { rerender, unmount } = render(<BattlefieldGrid combat={mockCombat} tab="overview" zoom={1} />);
-            const movedCombat = { ...mockCombat, player: { ...mockCombat.player, position: { x: 7, y: 6, facing: 0 } } };
+            const { container, rerender, unmount } = render(
+                <BattlefieldGrid combat={mockCombat} tab="overview" zoom={1} />
+            );
+            // At rest the camera sits on its snap cell, so there is no sub-cell offset.
+            expect(cameraTransform(container)).toBe('');
 
-            expect(() => {
-                rerender(<BattlefieldGrid combat={movedCombat} tab="overview" zoom={1} />);
-                act(() => vi.advanceTimersByTime(500));
-            }).not.toThrow();
+            rerender(<BattlefieldGrid combat={movePlayerTo(7, 6)} tab="overview" zoom={1} />);
+            // One frame in, the camera is mid-lerp: a real fractional offset,
+            // not the cleared/absent transform a snap would leave.
+            act(() => vi.advanceTimersByTime(20));
+            const midFlight = cameraTransform(container);
+            expect(midFlight).toMatch(/^translate\(-?\d+\.\d+%, -?\d+\.\d+%\)$/);
+            expect(midFlight).not.toBe('translate(0.000%, 0.000%)');
 
+            // Still animating a few frames later — a one-frame blip that then
+            // stalled would satisfy the mid-flight check alone.
+            act(() => vi.advanceTimersByTime(200));
+            expect(cameraTransform(container)).not.toBe('');
+            // (The residual is measured against the camera's CURRENT snap cell,
+            // so it is not monotonic — it flips as the camera crosses a cell
+            // boundary. Only the convergence below is a safe invariant.)
+
+            // The offset is cleared outright once the lerp converges.
+            act(() => vi.advanceTimersByTime(3000));
+            expect(cameraTransform(container)).toBe('');
             unmount();
         });
 
         it('snaps the camera immediately on a jump larger than the viewport radius', () => {
-            const { rerender } = render(<BattlefieldGrid combat={mockCombat} tab="overview" zoom={1} />);
-            const jumpedCombat = { ...mockCombat, player: { ...mockCombat.player, position: { x: 40, y: 40, facing: 0 } } };
+            const { container, rerender } = render(
+                <BattlefieldGrid combat={mockCombat} tab="overview" zoom={1} />
+            );
+            rerender(<BattlefieldGrid combat={movePlayerTo(40, 40)} tab="overview" zoom={1} />);
 
-            expect(() => {
-                rerender(<BattlefieldGrid combat={jumpedCombat} tab="overview" zoom={1} />);
-                act(() => vi.advanceTimersByTime(50));
-            }).not.toThrow();
+            // No frames advanced: a teleport must land on the new cell in the
+            // same commit rather than lerping across 34 cells of empty grid.
+            expect(cameraTransform(container)).toBe('');
+            act(() => vi.advanceTimersByTime(50));
+            expect(cameraTransform(container)).toBe('');
         });
 
         it('clears the camera transform when switching into full-map zoom', () => {
-            const { rerender } = render(<BattlefieldGrid combat={mockCombat} tab="overview" zoom={1} />);
-            expect(() => rerender(<BattlefieldGrid combat={mockCombat} tab="overview" zoom="full" />)).not.toThrow();
+            const { container, rerender } = render(
+                <BattlefieldGrid combat={mockCombat} tab="overview" zoom={1} />
+            );
+            // Get a real sub-cell offset on screen first, so "cleared" is a
+            // state change rather than the value it already had.
+            rerender(<BattlefieldGrid combat={movePlayerTo(7, 6)} tab="overview" zoom={1} />);
+            act(() => vi.advanceTimersByTime(20));
+            expect(cameraTransform(container)).not.toBe('');
+
+            rerender(<BattlefieldGrid combat={movePlayerTo(7, 6)} tab="overview" zoom="full" />);
+            expect(cameraTransform(container)).toBe('');
         });
     });
 });

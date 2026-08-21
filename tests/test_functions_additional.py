@@ -103,16 +103,16 @@ def test_refresh_stat_bonuses_items_and_states():
     assert player.finesse == 13
     assert player.resistance['fire'] == 1.5  # base 1.0 + 0.5
     assert player.status_resistance['generic'] == 0.25  # clamped >=0
-    # Max fatigue increased by 25%
-    assert player.maxfatigue > player.maxfatigue_base
+    # Jean under half capacity gets a flat +25% max fatigue.
+    assert player.maxfatigue == int(player.maxfatigue_base * 1.25) == 25
 
-    # Overweight penalty path
-    player.weight_current = player.weight_tolerance + 2  # overweight by 2
-    pre_penalty_base = player.maxfatigue_base
+    # Overweight penalty path: 10 max-fatigue per pound over tolerance, floored
+    # at 0 rather than allowed to go negative. Pinned exactly -- `>= 0` and
+    # `<= base + 10` were both satisfied by *any* penalty, including none.
+    player.weight_current = player.weight_tolerance + 2  # overweight by 2 lbs
     functions.refresh_stat_bonuses(player)
-    # After overweight penalty maxfatigue not negative
-    assert player.maxfatigue >= 0
-    assert player.maxfatigue <= pre_penalty_base + 10  # sanity bound
+
+    assert player.maxfatigue == 0
 
 
 def test_refresh_stat_bonuses_applies_real_disoriented_state():
@@ -294,9 +294,13 @@ def test_instantiate_event_variants():
 # ---------- stack_inv_items already covered elsewhere but add edge case ----------
 
 def test_stack_inv_items_non_stackables_graceful():
-    target = types.SimpleNamespace(inventory=[object(), object()])
-    # Should not raise
+    """Items with no `count` attribute are left alone, not merged or dropped."""
+    a, b = object(), object()
+    target = types.SimpleNamespace(inventory=[a, b])
+
     functions.stack_inv_items(target)
+
+    assert target.inventory == [a, b]
 
 
 def test_print_slow(capsys):

@@ -224,9 +224,16 @@ class TestSlash:
              patch("src.moves._dagger.cprint"), \
              patch("src.moves._dagger.colored", side_effect=lambda t, *a, **k: t):
             move.execute(user)
-        assert user.combat_position.facing is not None
 
-    def test_execute_parry_blocks(self, monkeypatch):
+        # The target sits due east of the user, so the turn must land on E.
+        # The old assertion was `facing is not None`, which was already true
+        # before execute ran (CombatPosition defaults to Direction.N) and so
+        # would have held even if the turn branch were deleted outright.
+        assert user.combat_position.facing is positions.Direction.E
+
+    def test_execute_parry_deals_no_damage_and_staggers_the_user(
+        self, monkeypatch
+    ):
         user = _make_user()
         tgt = _make_target(finesse=0)
         user.combat_proximity = {tgt: 2}
@@ -234,32 +241,44 @@ class TestSlash:
         move.target = tgt
         move.power = 40
         move.base_damage_type = "slashing"
+        hp_before = tgt.hp
+        recovery_before = move.stage_beat[2]
 
         monkeypatch.setattr(random, "randint", lambda a, b: 0)
         monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
         with patch("src.moves._dagger.functions.check_parry", return_value=True), \
-             patch.object(move, "parry") as mock_parry, \
              patch("src.moves._dagger.cprint"), \
              patch("src.moves._dagger.colored", side_effect=lambda t, *a, **k: t):
             move.execute(user)
-        mock_parry.assert_called_once()
 
-    def test_execute_miss(self, monkeypatch):
+        # A parry converts a landed hit into zero damage and adds 10
+        # beats of stagger to the attacker's recovery stage. The old
+        # version stubbed out parry() and asserted only that it was
+        # called, so neither effect was ever checked.
+        assert tgt.hp == hp_before
+        assert move.stage_beat[2] == recovery_before + 10
+
+    def test_execute_miss_leaves_the_target_untouched(self, monkeypatch):
         user = _make_user()
         tgt = _make_target()
         move = Slash(user)
         move.target = tgt
         move.power = 5
         move.base_damage_type = "slashing"
+        hp_before = tgt.hp
 
         monkeypatch.setattr(random, "randint", lambda a, b: 100)
         monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
         with patch("src.moves._dagger.functions.check_parry", return_value=False), \
-             patch.object(move, "miss") as mock_miss, \
              patch("src.moves._dagger.cprint"), \
              patch("src.moves._dagger.colored", side_effect=lambda t, *a, **k: t):
             move.execute(user)
-        mock_miss.assert_called_once()
+
+        # A miss must withhold damage entirely. The old version
+        # stubbed miss() out and asserted only that it was called,
+        # so a move that damaged the target *and* reported a miss
+        # would have passed.
+        assert tgt.hp == hp_before
 
 
 # ---------------------------------------------------------------------------
@@ -337,14 +356,20 @@ class TestFeintAndPivot:
         move.evaluate()
         assert move.power == user.strength * 0.4
 
-    def test_prep_with_target(self):
-        user = _make_user()
-        tgt = _make_target()
+    def test_prep_names_both_combatants_in_its_warning(self):
+        user = _make_user(name="Jean")
+        tgt = _make_target(name="Slime")
         move = FeintAndPivot(user)
         move.target = tgt
+
         with patch("src.moves._dagger.cprint") as mock_cprint:
             move.prep(user)
-        mock_cprint.assert_called_once()
+
+        # The prep line is the defender's only tell that a pivot is coming, so
+        # pin the text rather than just the call count.
+        mock_cprint.assert_called_once_with(
+            "Jean prepares to feint and pivot around Slime...", "yellow"
+        )
 
     def test_prep_no_target(self):
         user = _make_user()
@@ -549,15 +574,48 @@ class TestBackstab:
         with patch("src.moves._dagger.positions.angle_to_target", side_effect=Exception("boom")):
             assert move._positional_modifier() == 1.0
 
-    def test_positional_modifier_computed(self):
+    def test_positional_modifier_rewards_a_rear_attack(self):
+        """A strike into the target's back is worth 1.4x, not merely "a float".
+
+        ``assert isinstance(mod, float)`` was satisfied by the 1.0 no-op
+        fallback, so a ``_positional_modifier`` that silently lost the whole
+        flanking bonus would have passed.
+        """
         user = _make_user()
         user.combat_position = positions.CombatPosition(x=1, y=1)
         tgt = _make_target()
+        # Target at (2, 1) facing W is looking straight back at the user, so
+        # the attack comes in at 180 degrees -- a full rear attack.
         tgt.combat_position = positions.CombatPosition(x=2, y=1, facing=positions.Direction.W)
         move = Backstab(user)
         move.target = tgt
-        mod = move._positional_modifier()
-        assert isinstance(mod, float)
+
+        assert move._positional_modifier() == 1.4
+
+    def test_positional_modifier_penalises_a_head_on_attack(self):
+        user = _make_user()
+        user.combat_position = positions.CombatPosition(x=1, y=1)
+        tgt = _make_target()
+        # Target at (2, 1) facing E has its back to the user, so the attack
+        # arrives in its front quarter (angle_diff 0) -- a *defended* angle
+        # worth 0.85x, not a neutral 1.0.
+        tgt.combat_position = positions.CombatPosition(x=2, y=1, facing=positions.Direction.E)
+        move = Backstab(user)
+        move.target = tgt
+
+        assert move._positional_modifier() == 0.85
+
+    def test_positional_modifier_falls_back_to_neutral_without_coordinates(self):
+        user = _make_user()
+        user.combat_position = None
+        tgt = _make_target()
+        tgt.combat_position = None
+        move = Backstab(user)
+        move.target = tgt
+
+        # Legacy proximity-only combat has no angles, so the modifier must be
+        # a true no-op rather than silently applying a front-quarter penalty.
+        assert move._positional_modifier() == 1.0
 
     def test_execute_flank_bonus_damage_message(self, monkeypatch):
         """mod > 1.0 branch prints the blind-side message."""
@@ -636,7 +694,9 @@ class TestBackstab:
             move.execute(user)
         assert tgt.hp < 100
 
-    def test_execute_parry_blocks(self, monkeypatch):
+    def test_execute_parry_deals_no_damage_and_staggers_the_user(
+        self, monkeypatch
+    ):
         user = _make_user()
         tgt = _make_target(finesse=0)
         user.combat_proximity = {tgt: 2}
@@ -645,16 +705,23 @@ class TestBackstab:
         move.power = 40
         move.base_damage_type = "piercing"
         user.fatigue = 100
+        hp_before = tgt.hp
+        recovery_before = move.stage_beat[2]
 
         monkeypatch.setattr(random, "randint", lambda a, b: 0)
         monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
         with patch("src.moves._dagger.functions.check_parry", return_value=True), \
-             patch.object(move, "parry") as mock_parry, \
              patch("src.moves._dagger.cprint"):
             move.execute(user)
-        mock_parry.assert_called_once()
 
-    def test_execute_miss(self, monkeypatch):
+        # A parry converts a landed hit into zero damage and adds 10
+        # beats of stagger to the attacker's recovery stage. The old
+        # version stubbed out parry() and asserted only that it was
+        # called, so neither effect was ever checked.
+        assert tgt.hp == hp_before
+        assert move.stage_beat[2] == recovery_before + 10
+
+    def test_execute_miss_leaves_the_target_untouched(self, monkeypatch):
         user = _make_user()
         tgt = _make_target()
         move = Backstab(user)
@@ -662,14 +729,19 @@ class TestBackstab:
         move.power = 5
         move.base_damage_type = "piercing"
         user.fatigue = 100
+        hp_before = tgt.hp
 
         monkeypatch.setattr(random, "randint", lambda a, b: 100)
         monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
         with patch("src.moves._dagger.functions.check_parry", return_value=False), \
-             patch.object(move, "miss") as mock_miss, \
              patch("src.moves._dagger.cprint"):
             move.execute(user)
-        mock_miss.assert_called_once()
+
+        # A miss must withhold damage entirely. The old version
+        # stubbed miss() out and asserted only that it was called,
+        # so a move that damaged the target *and* reported a miss
+        # would have passed.
+        assert tgt.hp == hp_before
 
     def test_execute_fatigue_floored_at_zero(self, monkeypatch):
         user = _make_user()

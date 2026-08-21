@@ -183,18 +183,24 @@ def test_place_item_no_matching_container():
     assert item not in cont_misc.inventory
 
 
-@pytest.mark.skip(reason="Mocking inspect.getmembers is complex due to module import timing")
 def test_fill_remaining_stock_basic(monkeypatch):
+    """With no containers, _fill_remaining_stock fills the merchant's own
+    inventory to exactly stock_count with freshly spawned merchandise."""
     m, room, _ = make_merchant(stock_count=3)
+
     # Force candidate list to only Restorative to guarantee spawn success
-    import inspect as inspect_mod
     def fake_getmembers(module, predicate):
-        import sys
-        Restorative = sys.modules['src.items'].Restorative
         return [("Restorative", Restorative)]
-    # Patch inspect.getmembers globally
-    monkeypatch.setattr(inspect_mod, 'getmembers', fake_getmembers)
-    monkeypatch.setattr('random.uniform', lambda a,b: a)
+
+    monkeypatch.setattr('inspect.getmembers', fake_getmembers)
+    monkeypatch.setattr('random.uniform', lambda a, b: a)
+    m._fill_remaining_stock([])
+    assert len(m.inventory) == 3
+    assert all(type(it).__name__ == 'Restorative' for it in m.inventory)
+    assert all(it.merchandise is True for it in m.inventory)
+    # every stocked item carries a base_value so _apply_value_conditions can work
+    assert all(hasattr(it, 'base_value') for it in m.inventory)
+    # already-full merchant is a no-op, not an over-fill
     m._fill_remaining_stock([])
     assert len(m.inventory) == 3
 
@@ -249,21 +255,35 @@ def test_update_shop_conditions_value_applies(monkeypatch):
     assert r.value == r.base_value * 2
 
 
-@pytest.mark.skip(reason="Mocking inspect.getmembers is complex due to module import timing")
-def test_update_shop_conditions_availability_weight(monkeypatch):
-    m, room, _ = make_merchant(stock_count=2, specialties=[Restorative])
-    m.shop_conditions['availability'] = [RestockWeightBoostCondition(weight_multiplier=5.0, target_class=Restorative)]
-    import inspect as inspect_mod
+@pytest.mark.parametrize("boosted,expected", [(True, 'Restorative'), (False, 'Shortsword')])
+def test_restock_weight_boost_condition_shifts_the_draw(monkeypatch, boosted, expected):
+    """A RestockWeightBoostCondition must actually re-weight the restock draw.
+
+    Two candidates in a fixed order, Shortsword then Restorative, each base
+    weight 1. The weighted draw is made deterministic by pinning
+    random.uniform(0, total) to exactly half of the running total:
+      - unboosted: weights {Shortsword: 1, Restorative: 1}, total 2, r = 1.0
+        -> the accumulator hits 1.0 on Shortsword first, so Shortsword wins.
+      - boosted x5: weights {Shortsword: 1, Restorative: 5}, total 6, r = 3.0
+        -> Shortsword's accumulator (1.0) is below r, so Restorative wins.
+    A condition that silently failed to adjust the weight map would yield
+    Shortsword in both cases and fail the boosted parametrisation.
+    """
+    m, room, _ = make_merchant(stock_count=4)
+    if boosted:
+        m.shop_conditions['availability'] = [
+            RestockWeightBoostCondition(weight_multiplier=5.0, target_class=Restorative)
+        ]
+
     def fake_getmembers(module, predicate):
-        import sys
-        Restorative = sys.modules['src.items'].Restorative
-        return [("Restorative", Restorative)]
-    # Patch inspect.getmembers globally
-    monkeypatch.setattr(inspect_mod, 'getmembers', fake_getmembers)
-    monkeypatch.setattr('random.uniform', lambda a,b: a)
+        return [("Shortsword", Shortsword), ("Restorative", Restorative)]
+
+    monkeypatch.setattr('inspect.getmembers', fake_getmembers)
+    monkeypatch.setattr('random.uniform', lambda a, b: (a + b) / 2.0)
     m._fill_remaining_stock([])
-    # Use type name comparison to avoid module identity issues
-    assert any(type(it).__name__ == 'Restorative' for it in m.inventory)
+
+    assert len(m.inventory) == 4
+    assert {type(it).__name__ for it in m.inventory} == {expected}
 
 
 def test_update_goods_orchestration(monkeypatch):
