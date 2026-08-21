@@ -4,7 +4,7 @@ Text-based adventure RPG (retro terminal aesthetic) following the crusader Jean 
 
 **The Python engine is the source of truth.** `src/api/` adapts engine state to JSON; it never reimplements game logic. Engine output flows through the narration sink (`src/narration.py`) as structured `{text, color, type}` messages — nothing scrapes stdout.
 
-Deep, path-specific guidance lives in `.claude/rules/*.md` and loads automatically when you touch matching files (API layer, combat engine, frontend, story/content, saves, testing, audio). Project skills in `.claude/skills/` self-describe — invoke them instead of re-deriving their workflows (table at the end).
+Deep, path-specific guidance lives in `.claude/rules/*.md` and loads automatically when you touch matching files (API layer, combat engine, frontend, story/content, saves, testing, audio, LLM prompts). Project skills in `.claude/skills/` self-describe — invoke them instead of re-deriving their workflows (table at the end).
 
 ## Design pillars — the decision filter
 

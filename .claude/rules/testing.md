@@ -17,6 +17,7 @@ paths:
 ## Running
 - `python -m pytest -q` — never bare `pytest`. `pytest.ini` excludes `tests/api`, `tests/broken`, `tests/uat`, `tests/integration`, `.claude`, plus ignore-globs for root-level `debug_*/check_*/find_*/reproduce_*/verify_*/uat_*/manual_*.py` and a few named tier-4 files. CI (`ci.yml`) runs `python -m pytest -q -n auto` and `flake8 --extend-ignore=E501 src/`; `test-coverage.yml` enforces backend ≥85% / frontend ≥95%.
 - Review-rule unit tests run separately: `python -m pytest .claude/skills/_shared/review_rules/test_code_review_rules.py -v` (and `test_code_scrubber_rules.py`).
+- Live-provider tests: `HOV_LIVE_LLM=1 python -m pytest tests/integration/ -q` (excluded from the default run). **Do not gate them on `MYNX_LLM_ENABLED`/`NPC_CHAT_LLM_PROVIDER`** — `tests/conftest.py` pins those to `0`/`none` suite-wide, so such a module skips itself unconditionally (which is how `test_tactical_advisor_live.py` stayed inert for its whole existence). `tests/integration/conftest.py`'s `live_env` restores the real `.env` provider for one module and puts the pins back, including clearing `NpcChatLLMAdapter._instances` (which `reset_class_state()` does not touch and production populates via `get_instance`/`prewarm`). See `.claude/rules/llm-prompts.md` before editing a prompt.
 - No pre-commit hook is installed (worktrees share `../.git/hooks`, which holds only samples). Optional local hook: a `pre-commit` script that runs `python -m pytest -q --tb=line || exit 1`.
 
 ## Where tests go
