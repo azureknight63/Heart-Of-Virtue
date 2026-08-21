@@ -672,3 +672,56 @@ def _restore_os_environ():
     if os.environ != snapshot:
         os.environ.clear()
         os.environ.update(snapshot)
+
+
+# ---------------------------------------------------------------------------
+# Narration sink helpers
+#
+# The terminal-mode teardown moved engine output onto the narration sink
+# (src/narration.py): `narrate`/`cprint` push structured
+# ``{text, color, type}`` messages into a context-local buffer, and fall back to
+# stdout only when no capture is active.
+#
+# This matters for tests. `patch("builtins.print")` still *appears* to work --
+# with no capture installed, narrate() does reach print -- but it hands you
+# `call('hello')` and nothing else: the ``color`` and ``type`` fields are
+# discarded on the way out. Those are precisely the fields the web client
+# consumes, and the ones contracts like ``mtype="memory_chrome"`` depend on. So
+# a print-patching test can suppress output but cannot assert what matters, and
+# it silently records nothing at all if a capture happens to be active.
+#
+# Prefer these helpers over patching print.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def narrated():
+    """Run ``fn`` with the narration sink captured; return the messages.
+
+    Usage::
+
+        def test_x(narrated):
+            messages = narrated(lambda: obj.use(player))
+            assert ("Some text", "green") in narration_pairs(messages)
+    """
+    from src.narration import capture_narration
+
+    def _run(fn, *args, **kwargs):
+        with capture_narration() as messages:
+            fn(*args, **kwargs)
+        return list(messages)
+
+    return _run
+
+
+@pytest.fixture
+def narration_pairs():
+    """Reduce captured messages to ``[(text, color), ...]`` for readable asserts.
+
+    Keeps the colour, which is the half `patch("builtins.print")` throws away.
+    """
+
+    def _pairs(messages):
+        return [(m.get("text"), m.get("color")) for m in messages]
+
+    return _pairs

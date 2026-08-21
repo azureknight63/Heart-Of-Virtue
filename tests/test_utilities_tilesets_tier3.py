@@ -142,39 +142,55 @@ class TestMapTileAvailableActions:
 class TestMapTileEvaluateEvents:
     """Test MapTile evaluate_events method."""
 
-    def test_evaluate_events_no_events(self):
-        """Test evaluate_events with no events."""
+    def test_evaluate_events_no_events_is_a_pure_noop(self):
+        """With an empty event list, evaluate_events must touch nothing.
+
+        Not merely "does not raise": a tile with no events must not reach into
+        the universe or the map, and must not invent entries in its own lists.
+        """
         universe = Mock()
         current_map = Mock()
         tile = __import__("src.tiles", fromlist=["MapTile"]).MapTile(
             universe, current_map, 0, 0
         )
-        tile.evaluate_events()  # Should not raise
+        assert tile.events_here == []
 
-    def test_evaluate_events_processes_all_events(self):
-        """Test evaluate_events processes all events."""
-        universe = Mock()
-        current_map = Mock()
-        tile = __import__("src.tiles", fromlist=["MapTile"]).MapTile(
-            universe, current_map, 0, 0
-        )
+        assert tile.evaluate_events() is None
 
-        # Mock regular event and spawner event
-        regular_event = Mock()
-        regular_event.check_conditions = Mock()
+        assert tile.events_here == []
+        assert tile.npcs_here == []
+        assert tile.items_here == []
+        assert universe.mock_calls == []
+        assert current_map.mock_calls == []
 
-        spawner_event = Mock()
-        spawner_event.check_conditions = Mock()
+    def test_evaluate_events_runs_spawners_before_other_events(self):
+        """Every event is checked, and NPCSpawnerEvents go first.
 
-        tile.events_here = [regular_event, spawner_event]
-
-        # Mock the isinstance check in evaluate_events
+        The ordering is the whole point of the two-pass loop: a combat event
+        that ran before its spawner would evaluate against an empty tile. The
+        spawner is listed *last* here so passing cannot be an artefact of the
+        list order.
+        """
         from src.story.effects import NPCSpawnerEvent
 
+        universe = Mock()
+        current_map = Mock()
+        tile = __import__("src.tiles", fromlist=["MapTile"]).MapTile(
+            universe, current_map, 0, 0
+        )
+
+        order = []
+        regular_event = Mock()
+        regular_event.check_conditions.side_effect = lambda: order.append("regular")
+        spawner_event = Mock(spec=NPCSpawnerEvent)
+        spawner_event.check_conditions.side_effect = lambda: order.append("spawner")
+
+        tile.events_here = [regular_event, spawner_event]
         tile.evaluate_events()
-        # Both should be checked
-        assert regular_event.check_conditions.called
-        assert spawner_event.check_conditions.called
+
+        assert order == ["spawner", "regular"]
+        assert regular_event.check_conditions.call_count == 1
+        assert spawner_event.check_conditions.call_count == 1
 
 
 class TestMapTileSpawnNPC:

@@ -13,6 +13,30 @@ import pytest
 import src.save_format as sf
 
 
+def assert_all_json_primitive(node, path="$"):
+    """Assert every leaf of ``node`` is a JSON primitive, naming the offender.
+
+    ``json.dumps`` alone is a weak proof: it happily coerces a tuple into a
+    list and an ``IntEnum`` into an int, so a non-primitive can slip through
+    and come back as something else on load. This walks the tree instead.
+    """
+    if isinstance(node, dict):
+        for key, value in node.items():
+            assert isinstance(key, str), f"non-string key at {path}: {key!r}"
+            assert_all_json_primitive(value, f"{path}.{key}")
+    elif isinstance(node, list):
+        for index, value in enumerate(node):
+            assert_all_json_primitive(value, f"{path}[{index}]")
+    else:
+        assert type(node) in (str, int, float, bool, type(None)), (
+            f"non-primitive {type(node).__name__} at {path}: {node!r}"
+        )
+        if isinstance(node, str):
+            # A stringified engine object ("<src.items.Gold object at 0x...>")
+            # is JSON-legal but is not a save — catch it here.
+            assert not node.startswith("<"), f"object repr leaked at {path}: {node!r}"
+
+
 class FakeItem:
     def __init__(self, name, type_="consumable", count=None):
         self.name = name
@@ -82,9 +106,13 @@ def test_player_to_data_captures_subset():
 
 
 def test_player_to_data_is_json_serializable():
+    """The payload must survive a real dumps/loads round trip byte-identically."""
     data = sf.player_to_data(FakePlayer())
-    # Must not raise -- everything is primitive.
-    json.dumps(data)
+
+    text = json.dumps(data)
+    assert json.loads(text) == data
+
+    assert_all_json_primitive(data)
 
 
 def test_player_to_data_handles_object_map():
@@ -292,8 +320,10 @@ def test_real_player_inventory_and_moves_are_captured_by_name(make_world):
     names = [entry["name"] for entry in data["player"]["inventory"]]
     assert names == [getattr(i, "name") for i in player.inventory]
     assert data["player"]["known_moves"] == [m.name for m in player.known_moves]
-    # Everything must be primitive -- json.dumps on a real player is the proof.
-    json.dumps(data)
+    assert names and data["player"]["known_moves"], "real player produced an empty snapshot"
+    # Everything must be primitive, all the way down, and survive a round trip.
+    assert_all_json_primitive(data)
+    assert json.loads(json.dumps(data)) == data
 
 
 def test_gold_sums_every_gold_stack_in_the_inventory(make_world):

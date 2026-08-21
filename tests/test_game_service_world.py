@@ -16,6 +16,8 @@ exit direction vectors, the humanized tile name, the ``"map:x,y"`` exploration k
 and the error dicts returned on the two failure paths.
 """
 
+import copy
+
 import pytest
 
 from src.events import Event
@@ -354,9 +356,27 @@ class TestPersistTileState:
         assert stored is not tile.block_exit
 
     def test_none_session_is_noop(self, game_service, tile):
-        tile.block_exit = []
-        # Should not raise when there's no session to persist to.
+        """No session to persist to -> nothing written, tile left alone."""
+        tile.block_exit = ["north"]
+
         game_service.persist_tile_state(None, tile)
+
+        assert tile.block_exit == ["north"]
+
+    @pytest.mark.parametrize("bogus", [[], "not a dict", 7, ("a", "b")])
+    def test_non_dict_session_is_refused(self, game_service, tile, bogus):
+        """The guard is ``isinstance(dict)``, not merely ``is not None``.
+
+        A malformed session payload must be ignored rather than blowing up on
+        ``session_data["tile_modifications"]`` inside the store helper.
+        """
+        tile.block_exit = ["north"]
+        before = copy.deepcopy(bogus)
+
+        game_service.persist_tile_state(bogus, tile)
+
+        assert bogus == before
+        assert tile.block_exit == ["north"]
 
     def test_none_tile_is_noop(self, game_service):
         session_data = {}

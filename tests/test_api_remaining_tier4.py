@@ -37,6 +37,8 @@ coverage that already exists:
   test here now uses ``live_world()``, which assembles the same graph by hand.
 """
 
+import copy
+
 import pytest
 
 from src.api.services.game_service import GameService
@@ -279,8 +281,28 @@ class TestTileModificationRoundTrip:
 
         assert tile.objects_here == [spawned]
 
-    def test_apply_tile_modifications_tolerates_a_missing_tile(self, gs):
-        gs.apply_tile_modifications(None, {"tile_modifications": {"0,0": {}}})
+    def test_apply_tile_modifications_tolerates_a_missing_tile(self, gs, player):
+        """A ``None`` tile returns before anything is read or written.
+
+        The guard has to sit above ``capture_tile_object_baseline`` — the
+        comparison below pins that, since a real tile *does* get a baseline
+        stamped into the same session_data.
+        """
+        session_data = {"tile_modifications": {"0,0": {"block_exit": ["north"]}}}
+        untouched = copy.deepcopy(session_data)
+
+        gs.apply_tile_modifications(None, session_data)
+
+        assert session_data == untouched
+
+        # Same call with a real tile is *not* inert: it stamps the baseline.
+        tile = player.current_room
+        tile.objects_here.append(
+            objects.Object("Crate", "A crate.", tile=tile, player=player)
+        )
+        gs.apply_tile_modifications(tile, session_data)
+        assert session_data["tile_modifications"]["0,0"]["objects_baseline"] == ["Crate"]
+        assert tile.block_exit == ["north"]
 
     def test_apply_tile_modifications_ignores_another_tiles_entry(self, gs, player):
         tile = player.current_room

@@ -64,6 +64,20 @@ from src.positions import (
     get_combat_scenario,
 )
 
+from src.narration import capture_narration
+from src.player import Player
+
+
+def narration_pairs(messages):
+    """(text, color) for every narration message, colour defaulting to None.
+
+    Engine objects emit through ``src.narration`` (CLAUDE.md, "Terminal-mode
+    removal"), so asserting on this is asserting on what the web client
+    actually receives -- unlike ``patch("builtins.print")``, which the engine
+    only reaches when no capture is installed.
+    """
+    return [(m["text"], m.get("color")) for m in messages]
+
 
 # ============================================================================
 # OBJECTS.PY TESTS
@@ -596,17 +610,29 @@ class TestShrine:
         assert shrine.event is None
         assert "pray" in shrine.keywords
 
-    def test_shrine_pray_no_event(self):
-        """Test praying at shrine with no event."""
+    @pytest.mark.parametrize("index", [0, 1, 2])
+    def test_shrine_pray_narrates_the_randomly_indexed_prayer(self, index):
+        """The rolled index selects from the player's own ``prayer_msg`` list.
+
+        Parametrising the forced roll over every index proves the message is
+        looked up rather than being a fixed first-entry (or hardcoded) line.
+        """
         player = Mock()
-        player.prayer_msg = ["Amen."]
-        tile = Mock()
-        shrine = Shrine(player, tile)
-        with patch("builtins.print"):
-            with patch("time.sleep"):
-                with patch("src.objects.cprint"):
-                    with patch("src.objects.functions.await_input"):
-                        shrine.pray(player)
+        player.prayer_msg = ["First prayer.", "Second prayer.", "Third prayer."]
+        shrine = Shrine(player, Mock())
+        with (
+            patch("src.objects.random.randint", return_value=index),
+            patch("src.objects.functions.await_input") as mock_await,
+            capture_narration() as messages,
+        ):
+            shrine.pray(player)
+
+        assert narration_pairs(messages) == [
+            ("Jean kneels down and begins to pray for intercession.", None),
+            (player.prayer_msg[index], None),
+        ]
+        assert shrine.event is None
+        mock_await.assert_called_once()
 
     def test_shrine_pray_with_event(self):
         """Test praying at shrine with event."""
@@ -764,16 +790,27 @@ class TestMarketBell:
         assert "ring" in bell.keywords
         assert "use" in bell.keywords
 
-    def test_market_bell_ring_no_event(self):
-        """Test ringing bell with no event."""
-        player = Mock()
-        tile = Mock()
-        bell = MarketBell(player, tile)
-        with patch("src.objects.cprint"):
-            with patch("time.sleep"):
-                with patch("builtins.print"):
-                    with patch("src.objects.functions.await_input"):
-                        bell.ring()
+    def test_market_bell_ring_no_event_is_repeatable(self):
+        """An eventless bell keeps chiming: no one-shot latch, no event appears."""
+        expected = [
+            ("Jean reaches up and rings the bell.", "cyan"),
+            (
+                "A clear, bright tone rings through the arcade, briefly "
+                "carrying above the market din.",
+                None,
+            ),
+        ]
+        bell = MarketBell(Mock(), Mock())
+        with patch("src.objects.functions.await_input") as mock_await:
+            with capture_narration() as first:
+                bell.ring()
+            with capture_narration() as second:
+                bell.ring()
+
+        assert narration_pairs(first) == expected
+        assert narration_pairs(second) == expected
+        assert bell.event is None
+        assert mock_await.call_count == 2
 
     def test_market_bell_ring_with_event(self):
         """Test ringing bell with event."""
@@ -812,15 +849,27 @@ class TestFountain:
         assert "listen" in fountain.keywords
         assert "admire" in fountain.keywords
 
-    def test_fountain_drink_no_event(self):
-        """Test drinking from fountain with no event."""
-        player = Mock()
-        tile = Mock()
-        fountain = Fountain(player, tile)
-        with patch("src.objects.cprint"):
-            with patch("time.sleep"):
-                with patch("src.objects.functions.await_input"):
-                    fountain.drink()
+    def test_fountain_drink_no_event_is_purely_cosmetic(self):
+        """Despite the "minor refresh" docstring, drinking changes no player state.
+
+        Uses a real Player so the claim is about the engine's actual stats
+        rather than a Mock's auto-attributes.
+        """
+        player = Player()
+        hp_before, fatigue_before = player.hp, player.fatigue
+        fountain = Fountain(player, Mock())
+        with (
+            patch("src.objects.functions.await_input") as mock_await,
+            capture_narration() as messages,
+        ):
+            fountain.drink()
+
+        assert narration_pairs(messages) == [
+            ("Jean cups some water from the fountain and takes a cool sip.", "cyan"),
+        ]
+        assert (player.hp, player.fatigue) == (hp_before, fatigue_before)
+        assert fountain.event is None
+        mock_await.assert_called_once()
 
     def test_fountain_drink_with_event(self):
         """Test drinking from fountain with event."""
@@ -1676,14 +1725,21 @@ class TestStreetLantern:
             lantern.extinguish()
             mock_douse.assert_called_once()
 
-    def test_street_lantern_inspect(self):
-        """Test inspect() method."""
-        player = Mock()
-        tile = Mock()
-        lantern = StreetLantern(player, tile, lit=True)
-        with patch("builtins.print"):
-            with patch("src.objects.functions.await_input"):
-                lantern.inspect()
+    @pytest.mark.parametrize("lit, state_word", [(True, "lit"), (False, "dark")])
+    def test_street_lantern_inspect_reports_the_current_state(self, lit, state_word):
+        """inspect() narrates the state-derived description and changes nothing."""
+        lantern = StreetLantern(Mock(), Mock(), lit=lit)
+        with (
+            patch("src.objects.functions.await_input") as mock_await,
+            capture_narration() as messages,
+        ):
+            lantern.inspect()
+
+        assert narration_pairs(messages) == [
+            (f"An iron street lantern stands here. It is {state_word}.", None),
+        ]
+        assert lantern.lit is lit  # inspecting must not toggle the flame
+        mock_await.assert_called_once()
 
     def test_street_lantern_with_event(self):
         """Test lantern with event when lighting."""
@@ -1717,14 +1773,22 @@ class TestNoticeBoard:
         board = NoticeBoard(player, tile, notes=custom_notes)
         assert board.notes == custom_notes
 
-    def test_notice_board_read(self):
-        """Test reading notice board."""
-        player = Mock()
-        tile = Mock()
-        board = NoticeBoard(player, tile)
-        with patch("builtins.print"):
-            with patch("src.objects.functions.await_input"):
-                board.read()
+    def test_notice_board_read_enumerates_every_note(self):
+        """read() emits a header then one indented line per note, in order."""
+        board = NoticeBoard(Mock(), Mock())
+        with (
+            patch("src.objects.functions.await_input") as mock_await,
+            capture_narration() as messages,
+        ):
+            board.read()
+
+        texts = [m["text"] for m in messages]
+        assert texts[0] == "Jean scans the various notes:"
+        assert texts[1:] == [f"  - {note}" for note in board.notes]
+        assert len(board.notes) == 5  # the default board ships five notices
+        # No event attached, so the one-shot latch must stay untouched.
+        assert board._read_once is False
+        mock_await.assert_called_once()
 
     def test_notice_board_read_with_event(self):
         """Test reading notice board with event."""
@@ -1791,15 +1855,26 @@ class TestPrayerCandleRack:
                 rack.light()
         assert rack.lit_candles == 20
 
-    def test_prayer_candle_rack_pray(self):
-        """Test praying at candle rack."""
-        player = Mock()
-        tile = Mock()
-        rack = PrayerCandleRack(player, tile)
-        with patch("builtins.print"):
-            with patch("time.sleep"):
-                with patch("src.objects.functions.await_input"):
-                    rack.pray()
+    @pytest.mark.parametrize("lit_candles", [0, 7, 20])
+    def test_prayer_candle_rack_pray_is_independent_of_lit_count(self, lit_candles):
+        """Praying works at any candle count and never lights one itself."""
+        rack = PrayerCandleRack(Mock(), Mock(), lit_candles=lit_candles)
+        with (
+            patch("src.objects.functions.await_input") as mock_await,
+            capture_narration() as messages,
+        ):
+            rack.pray()
+
+        assert narration_pairs(messages) == [
+            ("Jean bows his head silently before the little flames.", None),
+            (
+                "A strange feeling fills his chest, as if there's a tune he "
+                "can't quite remember.",
+                None,
+            ),
+        ]
+        assert rack.lit_candles == lit_candles
+        mock_await.assert_called_once()
 
     def test_prayer_candle_rack_pray_with_event(self):
         """Test praying with event."""
@@ -1834,16 +1909,30 @@ class TestMarketGong:
         assert gong.name == "Market Gong"
         assert "strike" in gong.keywords
 
-    def test_market_gong_strike(self):
-        """Test striking the gong."""
-        player = Mock()
-        tile = Mock()
-        gong = MarketGong(player, tile)
-        with patch("src.objects.cprint"):
-            with patch("builtins.print"):
-                with patch("time.sleep"):
-                    with patch("src.objects.functions.await_input"):
-                        gong.strike()
+    @pytest.mark.parametrize("verb", ["strike", "hit", "bang", "use"])
+    def test_market_gong_every_verb_produces_the_same_three_beats(self, verb):
+        """hit/bang/use are real aliases: each drives the full strike sequence."""
+        gong = MarketGong(Mock(), Mock())
+        with (
+            patch("src.objects.functions.await_input") as mock_await,
+            capture_narration() as messages,
+        ):
+            getattr(gong, verb)()
+
+        assert narration_pairs(messages) == [
+            (
+                "Jean swings the mallet into the gong with a resonant BOOOONG...",
+                "cyan",
+            ),
+            ("The deep tone rolls outward and slowly fades.", None),
+            (
+                "Some nearby shoppers glance over, momentarily distracted. "
+                "More than a few wear a confused expression.",
+                None,
+            ),
+        ]
+        assert gong.event is None
+        mock_await.assert_called_once()
 
     def test_market_gong_strike_with_event(self):
         """Test striking with event."""
@@ -2073,6 +2162,16 @@ class TestPassagewayShopping:
         assert passage not in tile.objects_here
 
 
+
+def _fragment(cls_name):
+    """A stand-in inventory item whose class name is what the geode matches on.
+
+    ``GeminateGeode`` identifies fragments via ``item.__class__.__name__``, so a
+    real distinct class per name is what the production lookup actually sees.
+    """
+    return type(cls_name, (), {})()
+
+
 class TestGeminateGeode:
     """Test suite for GeminateGeode class."""
 
@@ -2104,36 +2203,81 @@ class TestGeminateGeode:
         geode.player = player
         assert geode._has_ingredient("AzuriteGem") is True
 
-    def test_geode_place_missing_ingredients(self):
-        """Test placing without all ingredients."""
+    @pytest.mark.parametrize(
+        "held, expected_missing",
+        [
+            ([], "Azure Crystal, Amber Stone, Pale Grey Fragment"),
+            (["AmberStone"], "Azure Crystal, Pale Grey Fragment"),
+            (["AzuriteGem", "AmberStone"], "Pale Grey Fragment"),
+        ],
+    )
+    def test_geode_place_names_exactly_the_missing_fragments(
+        self, held, expected_missing
+    ):
+        """The refusal lists the fragments Jean lacks, in ritual order.
+
+        Parametrising over partial holdings proves the list is computed from
+        inventory rather than being a fixed all-three string.
+        """
         player = Mock()
-        player.inventory = []
+        player.inventory = [_fragment(cls_name) for cls_name in held]
         tile = Mock()
+        tile.objects_here = []
         geode = GeminateGeode(player, tile)
+        tile.objects_here.append(geode)
         geode.player = player
-        with patch("builtins.print"):
+
+        with capture_narration() as messages:
             geode.place(player)
 
-    def test_geode_place_with_all_ingredients(self):
-        """Test placing with all ingredients."""
+        assert [m["text"] for m in messages] == [
+            f"The depressions wait. Jean is missing: {expected_missing}.",
+            "The ritual carving in the Atrium showed the sequence clearly.",
+        ]
+        # The puzzle stays unsolved: no reward, no fragments consumed, and the
+        # geode is still on the tile.
+        tile.spawn_item.assert_not_called()
+        assert len(player.inventory) == len(held)
+        assert geode in tile.objects_here
+
+    def test_geode_place_with_all_ingredients_solves_and_consumes_itself(self):
+        """The full solve: reward spawned, three fragments consumed, geode gone."""
+        bystander = _fragment("Rock")  # an unrelated item that must survive
         player = Mock()
-        item1 = Mock()
-        item1.__class__.__name__ = "AzuriteGem"
-        item2 = Mock()
-        item2.__class__.__name__ = "AmberStone"
-        item3 = Mock()
-        item3.__class__.__name__ = "PaleGreyFragment"
-        player.inventory = [item1, item2, item3]
+        player.inventory = [
+            _fragment("AzuriteGem"),
+            _fragment("AmberStone"),
+            bystander,
+            _fragment("PaleGreyFragment"),
+        ]
         tile = Mock()
-        tile.objects_here = [Mock()]
+        tile.objects_here = []
         tile.spawn_item = Mock()
         geode = GeminateGeode(player, tile)
+        tile.objects_here.append(geode)
         geode.player = player
         geode.tile = tile
-        with patch("builtins.print"):
-            with patch("time.sleep"):
-                with patch("src.objects.functions.await_input"):
-                    geode.place(player)
+
+        with (
+            patch("src.objects.functions.await_input") as mock_await,
+            capture_narration() as messages,
+        ):
+            geode.place(player)
+
+        texts = [m["text"] for m in messages]
+        assert len(texts) == 5
+        assert texts[0].endswith(
+            "Jean places the blue crystal in the first depression. "
+            "The vein above it pulses."
+        )
+        assert "the geode cracks open" in texts[3]
+        # Reward spawned exactly once, by class name.
+        tile.spawn_item.assert_called_once_with("EnchantedGolemitePauldron")
+        # Only the three ritual fragments are consumed.
+        assert player.inventory == [bystander]
+        # One-use puzzle: the geode removes itself from the tile.
+        assert geode not in tile.objects_here
+        mock_await.assert_called_once()
 
     def test_geode_insert_alias(self):
         """Test insert() aliases place()."""

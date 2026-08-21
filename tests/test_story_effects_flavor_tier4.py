@@ -580,11 +580,25 @@ class TestShrine(unittest.TestCase):
             mock_pass.assert_called_once()
 
     def test_shrine_process_is_noop(self):
-        """Test Shrine.process does nothing."""
+        """The generic Shrine has no effect of its own.
+
+        Shrine exists only so subclasses (StMichael, ...) can override
+        process(); the base must return None and leave the player, the tile
+        and its own state exactly as it found them. A base class that quietly
+        did something would fire on every shrine in the game.
+        """
         from src.story.effects import Shrine
 
         event = Shrine(self.player, self.tile)
-        event.process()  # Should not raise
+        player_calls = list(self.player.mock_calls)
+        tile_calls = list(self.tile.mock_calls)
+        before = dict(vars(event))
+
+        self.assertIsNone(event.process())
+
+        self.assertEqual(list(self.player.mock_calls), player_calls)
+        self.assertEqual(list(self.tile.mock_calls), tile_calls)
+        self.assertEqual(vars(event), before)
 
 
 class TestStMichael(unittest.TestCase):
@@ -1283,21 +1297,59 @@ class TestMaybeExploreFlavor(unittest.TestCase):
         self.player.combat_list_allies = [self.player]
 
     def test_explore_flavor_skip_dialog(self):
-        """Test maybe_explore_flavor returns early when skip_dialog is True."""
+        """skip_dialog short-circuits before Gorran is even looked for.
+
+        Every other gate is deliberately satisfied -- Gorran is in the party,
+        the cooldown has elapsed and the random roll passes -- so the only
+        thing that can keep the line unspoken is the skip_dialog check.
+        """
         from src.story import gorran_flavor
 
+        gorran = Mock()
+        gorran.name = "Gorran"
+        self.player.combat_list_allies = [self.player, gorran]
+        self.player.universe.story = {"gorran_explore_last_tick": "0"}
         self.player.skip_dialog = True
-        with patch("src.story.gorran_flavor._find_gorran"):
-            gorran_flavor.maybe_explore_flavor(self.player)
-        # Should not find gorran when skip_dialog
+
+        with patch.object(
+            gorran_flavor, "_find_gorran", return_value=gorran
+        ) as mock_find, patch.object(
+            gorran_flavor.random, "random", return_value=0.0
+        ), patch.object(
+            gorran_flavor, "narrate"
+        ) as mock_narrate:
+            self.assertIsNone(gorran_flavor.maybe_explore_flavor(self.player))
+
+        mock_find.assert_not_called()
+        mock_narrate.assert_not_called()
+        self.assertEqual(
+            self.player.universe.story, {"gorran_explore_last_tick": "0"}
+        )
 
     def test_explore_flavor_no_gorran(self):
-        """Test maybe_explore_flavor returns when no Gorran."""
+        """No Gorran in the party means no Gorran line, and no bookkeeping.
+
+        The cooldown and the random roll are both set to pass, so an absent
+        Gorran is the only reason nothing is said. The cooldown key must also
+        stay unwritten -- consuming the cooldown for a line nobody spoke would
+        silently mute the next real one.
+        """
         from src.story import gorran_flavor
 
-        self.player.combat_list_allies = [self.player]
-        gorran_flavor.maybe_explore_flavor(self.player)
-        # Should return without error
+        bystander = Mock()
+        bystander.name = "Votha Krr"
+        self.player.combat_list_allies = [self.player, bystander]
+        self.player.universe.story = {}
+
+        self.assertIsNone(gorran_flavor._find_gorran(self.player))
+
+        with patch.object(
+            gorran_flavor.random, "random", return_value=0.0
+        ), patch.object(gorran_flavor, "narrate") as mock_narrate:
+            self.assertIsNone(gorran_flavor.maybe_explore_flavor(self.player))
+
+        mock_narrate.assert_not_called()
+        self.assertEqual(self.player.universe.story, {})
 
     def test_explore_flavor_cooldown_not_elapsed(self):
         """Test maybe_explore_flavor respects cooldown."""
@@ -1343,8 +1395,14 @@ class TestMaybeExploreFlavor(unittest.TestCase):
         # Should not change story when skipped by random
         self.assertEqual(self.player.universe.story["gorran_explore_last_tick"], "90")
 
-    def test_explore_flavor_invalid_last_tick(self):
-        """Test maybe_explore_flavor handles invalid last_tick."""
+    def test_explore_flavor_invalid_last_tick_is_swallowed_as_a_warning(self):
+        """A corrupt cooldown value must not crash exploration.
+
+        int("invalid") raises inside the try block, so there is no -999
+        fallback: the line is skipped, the corrupt value is left untouched
+        (not silently "repaired"), and the failure is logged rather than
+        propagated into the movement loop.
+        """
         from src.story import gorran_flavor
 
         self.player.universe.story = {"gorran_explore_last_tick": "invalid"}
@@ -1352,23 +1410,47 @@ class TestMaybeExploreFlavor(unittest.TestCase):
         gorran.name = "Gorran"
         self.player.combat_list_allies = [self.player, gorran]
 
-        # Should handle gracefully and use -999 as fallback
-        with patch("src.story.gorran_flavor.random.random", return_value=0.1), patch(
-            "builtins.print"
-        ), patch("src.story.gorran_flavor.narrate") as mock_narrate:
-            gorran_flavor.maybe_explore_flavor(self.player)
+        with patch.object(
+            gorran_flavor.random, "random", return_value=0.0
+        ), patch.object(gorran_flavor, "narrate") as mock_narrate, patch.object(
+            gorran_flavor.logging, "warning"
+        ) as mock_warning:
+            self.assertIsNone(gorran_flavor.maybe_explore_flavor(self.player))
+
+        mock_narrate.assert_not_called()
+        self.assertEqual(
+            self.player.universe.story, {"gorran_explore_last_tick": "invalid"}
+        )
+        self.assertEqual(mock_warning.call_count, 1)
+        logged = mock_warning.call_args.args
+        self.assertEqual(logged[0], "gorran_flavor explore: %s")
+        self.assertIsInstance(logged[1], ValueError)
 
     def test_explore_flavor_exception_handling(self):
-        """Test maybe_explore_flavor handles exceptions gracefully."""
+        """An exploding story dict is contained, not propagated.
+
+        maybe_explore_flavor is called from the movement path, so anything it
+        raises would abort the player's move. The error must be logged and
+        swallowed, and nothing may be narrated.
+        """
         from src.story import gorran_flavor
 
         gorran = Mock()
         gorran.name = "Gorran"
         self.player.combat_list_allies = [self.player, gorran]
-        self.player.universe.story = Mock(side_effect=Exception("Test error"))
+        boom = RuntimeError("Test error")
+        story = MagicMock()
+        story.get.side_effect = boom
+        self.player.universe.story = story
 
-        gorran_flavor.maybe_explore_flavor(self.player)
-        # Should not raise
+        with patch.object(gorran_flavor, "narrate") as mock_narrate, patch.object(
+            gorran_flavor.logging, "warning"
+        ) as mock_warning:
+            self.assertIsNone(gorran_flavor.maybe_explore_flavor(self.player))
+
+        mock_narrate.assert_not_called()
+        story.__setitem__.assert_not_called()
+        mock_warning.assert_called_once_with("gorran_flavor explore: %s", boom)
 
 
 class TestGorranFlavorStageProgression(unittest.TestCase):

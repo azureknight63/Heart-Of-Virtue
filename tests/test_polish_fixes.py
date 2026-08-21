@@ -3,6 +3,8 @@ Test suite for polish fixes: item stacking, text cleanup, and wall switch events
 Covers backend functionality for combat loot stacking and event timing.
 """
 
+import copy
+
 import pytest
 from src.functions import stack_items_list
 from src.items import Gold, Consumable
@@ -107,16 +109,56 @@ class TestStackItemsList:
         assert len(items) == 1
         assert items[0].count == 150
 
-    def test_none_input(self):
-        """stack_items_list should handle None safely."""
-        # Should not raise; None is not a list
-        stack_items_list(None)
+    @pytest.mark.parametrize(
+        "value",
+        [
+            None,
+            "not a list",       # a str is iterable AND every char has .count
+            42,                 # len() would raise if the guard were dropped
+            {},
+            {"a": 1, "b": 2},   # len >= 2, so only the isinstance check saves it
+            ("Gold", "Gold"),   # a tuple is iterable but not a list
+        ],
+    )
+    def test_non_list_input_is_left_untouched(self, value):
+        """The guard is ``isinstance(list)``, not ``is not None``.
 
-    def test_non_list_input(self):
-        """stack_items_list should handle non-list inputs safely."""
-        stack_items_list("not a list")
-        stack_items_list(42)
-        stack_items_list({})
+        Every value here would reach the grouping loop under a looser guard and
+        blow up: ``str`` characters expose ``.count`` but no ``.name``, ``42``
+        has no ``len()``, and the two-key dict clears the ``len < 2`` check.
+        """
+        before = copy.deepcopy(value)
+
+        assert stack_items_list(value) is None
+
+        assert value == before
+
+    def test_short_list_is_left_untouched(self):
+        """Fewer than two entries: nothing to collapse, and no grammar rewrite."""
+        empty = []
+        assert stack_items_list(empty) is None
+        assert empty == []
+
+        single = [Gold(7)]
+        assert stack_items_list(single) is None
+        assert len(single) == 1
+        assert single[0].count == 7
+
+    def test_unstackable_items_without_count_are_preserved(self):
+        """Items lacking ``count`` are skipped, not dropped from the list."""
+        class _NoCount:
+            name = "Rock"
+
+        rock_a, rock_b = _NoCount(), _NoCount()
+        items = [rock_a, Gold(5), rock_b, Gold(15)]
+
+        stack_items_list(items)
+
+        assert rock_a in items and rock_b in items
+        gold = [i for i in items if isinstance(i, Gold)]
+        assert len(gold) == 1
+        assert gold[0].count == 20
+        assert len(items) == 3
 
 
 class TestWallSwitchEventDelays:

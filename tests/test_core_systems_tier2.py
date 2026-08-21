@@ -263,11 +263,21 @@ class TestCombatantStateManagement:
         state2.process.assert_called_once_with(fake_player)
         state3.process.assert_called_once_with(fake_player)
 
-    def test_cycle_states_handles_empty_list(self, fake_player):
-        """cycle_states() handles empty state list gracefully."""
-        fake_player.states = []
-        # Should not raise
-        Combatant.cycle_states(fake_player)
+    def test_cycle_states_with_no_states_touches_nothing(self, fake_player):
+        """With no active states, cycle_states must be a pure no-op.
+
+        Stronger than "does not raise": nothing may be called on the combatant
+        (no stat refresh, no state list rebuild) when there is nothing to
+        process, and the list itself must survive as the same object.
+        """
+        original_list = []
+        fake_player.states = original_list
+
+        assert Combatant.cycle_states(fake_player) is None
+
+        assert fake_player.states is original_list
+        assert fake_player.states == []
+        assert fake_player.mock_calls == []
 
     def test_cycle_states_uses_snapshot(self, fake_player):
         """cycle_states() iterates over snapshot to handle state removal."""
@@ -328,21 +338,26 @@ class TestStateBaseClass:
         assert state.statustype == "poison"
         assert state.persistent is True
 
-    def test_state_effect_does_nothing_by_default(self, fake_player):
-        """State.effect() default implementation does nothing."""
-        state = State("TestState", fake_player)
-        # Should not raise
-        state.effect(fake_player)
+    @pytest.mark.parametrize("hook", ["effect", "on_application", "on_removal"])
+    def test_base_state_lifecycle_hooks_are_inert(self, fake_player, hook):
+        """The three State hooks are subclass extension points only.
 
-    def test_state_on_application_does_nothing_by_default(self, fake_player):
-        """State.on_application() default implementation does nothing."""
-        state = State("TestState", fake_player)
-        state.on_application(fake_player)
+        The base implementations must return None *and* leave the target
+        completely alone -- any call the base class made on the target would
+        show up in ``mock_calls`` and fire for every state in the game.
+        """
+        state = State("TestState", fake_player, beats_max=4, steps_max=7)
+        before = dict(vars(state))
 
-    def test_state_on_removal_does_nothing_by_default(self, fake_player):
-        """State.on_removal() default implementation does nothing."""
-        state = State("TestState", fake_player)
-        state.on_removal(fake_player)
+        assert getattr(state, hook)(fake_player) is None
+
+        assert fake_player.mock_calls == []
+        assert fake_player.hp == 100
+        assert fake_player.states == []
+        # The hook must not quietly age the state either.
+        assert vars(state) == before
+        assert state.beats_left == 4
+        assert state.steps_left == 7
 
     def test_state_process_combat_reduces_beats_left(self, fake_player):
         """State.process() reduces beats_left when in combat."""
@@ -1141,12 +1156,31 @@ class TestEdgeCases:
         # Behavior depends on implementation
         assert state.beats_max == -1
 
-    def test_empty_combat_proximity(self, fake_player, fake_npc):
-        """Handle combat with no proximity data."""
-        fake_player.combat_list = [fake_npc]
-        fake_player.combat_proximity = {}
+    def test_empty_combat_proximity_makes_an_arc_move_unviable(
+        self, fake_player, fake_npc
+    ):
+        """An empty proximity map means "nobody in reach", not a crash.
 
-        # Should handle gracefully
+        Sweep hits everything in its arc, so it asks proximity directly. With
+        no entries there is nothing to hit and it must report unviable; the
+        same setup with a hostile at distance 1 must report viable, so this
+        cannot pass by being false for some unrelated reason.
+        """
+        fake_player.eq_weapon = Mock()
+        fake_player.eq_weapon.subtype = "Polearm"
+        fake_player.eq_weapon.damage = 10
+        fake_player.eq_weapon.wpnrange = (0, 6)
+        fake_player.combat_list = [fake_npc]
+
+        fake_player.combat_proximity = {}
+        assert Sweep(fake_player).viable() is False
+
+        fake_player.combat_proximity = {fake_npc: 1}
+        assert Sweep(fake_player).viable() is True
+
+        # ...and an enemy beyond the arc is out of reach again.
+        fake_player.combat_proximity = {fake_npc: 999}
+        assert Sweep(fake_player).viable() is False
 
 
 class TestStateCompounding:

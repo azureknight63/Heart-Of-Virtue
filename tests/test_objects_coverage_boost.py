@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 import pytest
+from src.narration import capture_narration
 from src.player import Player
 import src.objects as objects
 
@@ -46,11 +47,14 @@ def _narrated(callable_, *args, **kwargs):
     only falls back to ``print`` when no capture is installed (CLAUDE.md,
     "Terminal-mode removal").
     """
-    from src.narration import capture_narration
-
     with capture_narration() as messages:
         callable_(*args, **kwargs)
     return [m["text"] for m in messages]
+
+
+def _pairs(messages):
+    """(text, color) for each narration message, colour defaulting to None."""
+    return [(m["text"], m.get("color")) for m in messages]
 
 
 # ---------------------------------------------------------------------------
@@ -118,18 +122,25 @@ class TestWallInscription:
             wi.read()
         mock_print.assert_called_once()
 
-    def test_read_with_text(self):
-        """Lines 214-220: read() with text prints it."""
+    def test_read_with_text_emits_preamble_then_the_inscription_body(self):
+        """read() with text narrates the cyan preamble, then the text itself."""
         p = _player()
         tile = _mock_tile()
         wi = objects.WallInscription(player=p, tile=tile, text="Sacred inscription.")
         with (
-            patch("builtins.print"),
-            patch("src.functions.print_slow"),
-            patch("src.functions.await_input"),
-            patch("src.objects.cprint"),
+            patch("src.functions.await_input") as mock_await,
+            capture_narration() as messages,
         ):
             wi.read()
+
+        # Order matters: the preamble frames the body that follows it.
+        assert [(m["text"], m.get("color")) for m in messages] == [
+            ("Jean begins reading...", "cyan"),
+            ("Sacred inscription.", None),
+        ]
+        # The default description must NOT leak out when real text exists.
+        assert wi.description not in [m["text"] for m in messages]
+        mock_await.assert_called_once()
 
     def test_read_player_with_name(self):
         """Line 215-216: read() with player.name uses player name."""
@@ -381,19 +392,28 @@ class TestShrine:
         assert shrine.name == "Shrine"
         assert "pray" in shrine.keywords
 
-    def test_pray_no_event(self):
-        """Lines 696-708: pray without event."""
+    def test_pray_no_event_narrates_a_prayer_drawn_from_the_player(self):
+        """Without an event, pray() still narrates and draws from player.prayer_msg."""
         p = _player()
+        # A single-entry list makes random.randint(0, 0) deterministic, and
+        # distinguishes the player's list from the "Jean prays silently."
+        # fallback the implementation uses when prayer_msg is absent.
         p.prayer_msg = ["Jean prays."]
         tile = _mock_tile()
         shrine = objects.Shrine(player=p, tile=tile)
         shrine.event = None
         with (
-            patch("time.sleep"),
-            patch("builtins.print"),
-            patch("src.functions.await_input"),
+            patch("src.functions.await_input") as mock_await,
+            capture_narration() as messages,
         ):
             shrine.pray(p)
+
+        assert _pairs(messages) == [
+            ("Jean kneels down and begins to pray for intercession.", None),
+            ("Jean prays.", None),
+        ]
+        assert shrine.event is None
+        mock_await.assert_called_once()
 
     def test_pray_with_event(self):
         """Lines 704-707: pray with event processes it then clears."""
@@ -592,18 +612,27 @@ class TestPassageway:
 
 
 class TestMarketBell:
-    def test_ring_no_event(self):
-        """Lines 898-915: ring without event prints message."""
+    def test_ring_no_event_narrates_the_chime_and_touches_nothing_else(self):
+        """A bell with no event still gives the player its two-line cue."""
         p = _player()
         tile = _mock_tile()
         bell = objects.MarketBell(player=p, tile=tile)
         with (
-            patch("src.objects.cprint"),
-            patch("time.sleep"),
-            patch("builtins.print"),
-            patch("src.functions.await_input"),
+            patch("src.functions.await_input") as mock_await,
+            capture_narration() as messages,
         ):
             bell.ring()
+
+        assert _pairs(messages) == [
+            ("Jean reaches up and rings the bell.", "cyan"),
+            (
+                "A clear, bright tone rings through the arcade, briefly "
+                "carrying above the market din.",
+                None,
+            ),
+        ]
+        assert bell.event is None
+        mock_await.assert_called_once()
 
     def test_ring_with_event(self):
         """Line 905-912: ring with event processes it."""
@@ -645,17 +674,22 @@ class TestMarketBell:
 
 
 class TestFountain:
-    def test_drink_no_event(self):
-        """Lines 942-953: drink without event."""
+    def test_drink_no_event_narrates_the_sip_only(self):
+        """An eventless fountain emits exactly the sip line -- nothing more."""
         p = _player()
         tile = _mock_tile()
         fountain = objects.Fountain(player=p, tile=tile)
         with (
-            patch("src.objects.cprint"),
-            patch("time.sleep"),
-            patch("src.functions.await_input"),
+            patch("src.functions.await_input") as mock_await,
+            capture_narration() as messages,
         ):
             fountain.drink()
+
+        assert _pairs(messages) == [
+            ("Jean cups some water from the fountain and takes a cool sip.", "cyan"),
+        ]
+        assert fountain.event is None
+        mock_await.assert_called_once()
 
     def test_drink_with_event(self):
         """Lines 948-952: drink with event processes it."""
@@ -830,17 +864,28 @@ class TestPrayerCandleRack:
         assert rack.lit_candles == 20
         assert texts == ["All the candles are already lit."]
 
-    def test_pray_no_event(self):
-        """Lines 1121-1132: pray without event prints message."""
+    def test_pray_no_event_narrates_both_beats_and_leaves_candles_alone(self):
+        """Praying is not lighting: the lit-candle count must not change."""
         p = _player()
         tile = _mock_tile()
-        rack = objects.PrayerCandleRack(player=p, tile=tile)
+        rack = objects.PrayerCandleRack(player=p, tile=tile, lit_candles=3)
         with (
-            patch("builtins.print"),
-            patch("time.sleep"),
-            patch("src.functions.await_input"),
+            patch("src.functions.await_input") as mock_await,
+            capture_narration() as messages,
         ):
             rack.pray()
+
+        assert _pairs(messages) == [
+            ("Jean bows his head silently before the little flames.", None),
+            (
+                "A strange feeling fills his chest, as if there's a tune he "
+                "can't quite remember.",
+                None,
+            ),
+        ]
+        assert rack.lit_candles == 3
+        assert rack.event is None
+        mock_await.assert_called_once()
 
     def test_pray_with_event(self):
         """Lines 1128-1131: pray with event processes and clears it."""
@@ -865,18 +910,28 @@ class TestPrayerCandleRack:
 
 
 class TestMarketGong:
-    def test_strike_no_event(self):
-        """Lines 1154-1170: strike without event."""
+    def test_strike_no_event_narrates_all_three_beats(self):
+        """The gong's cue is three ordered beats: swing, roll, bystanders."""
         p = _player()
         tile = _mock_tile()
         gong = objects.MarketGong(player=p, tile=tile)
         with (
-            patch("src.objects.cprint"),
-            patch("time.sleep"),
-            patch("builtins.print"),
-            patch("src.functions.await_input"),
+            patch("src.functions.await_input") as mock_await,
+            capture_narration() as messages,
         ):
             gong.strike()
+
+        assert _pairs(messages) == [
+            ("Jean swings the mallet into the gong with a resonant BOOOONG...", "cyan"),
+            ("The deep tone rolls outward and slowly fades.", None),
+            (
+                "Some nearby shoppers glance over, momentarily distracted. "
+                "More than a few wear a confused expression.",
+                None,
+            ),
+        ]
+        assert gong.event is None
+        mock_await.assert_called_once()
 
     def test_strike_with_event(self):
         """Lines 1165-1169: strike with event processes it."""

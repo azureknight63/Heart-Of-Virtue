@@ -18,6 +18,7 @@ ROOT = Path(__file__).resolve().parent.parent
 import pytest
 from unittest.mock import Mock, MagicMock, patch
 from src.moves import QuickSwap  # type: ignore
+from src.narration import capture_narration  # type: ignore
 from src.positions import CombatPosition, Direction  # type: ignore
 
 
@@ -258,11 +259,38 @@ class TestExecuteMethod:
         assert mock_ally.combat_position.x == 25
 
     def test_execute_fails_gracefully_no_allies(self, quickswap_move, mock_player):
-        """Execute should fail gracefully when no allies available."""
+        """No allies: narrate the failure, leave the board untouched, don't raise."""
         mock_player.combat_list_allies = []
+        mock_player.combat_position = CombatPosition(x=25, y=25, facing=Direction.N)
+        mock_player.combat_proximity = {}
 
-        # This should not raise exception, just print error message
-        quickswap_move.execute(mock_player)
+        with capture_narration() as messages:
+            quickswap_move.execute(mock_player)
+
+        assert [m["text"] for m in messages] == [
+            "Jean couldn't find an ally to swap with!"
+        ]
+        # The move is a no-op, not a half-applied swap.
+        assert (mock_player.combat_position.x, mock_player.combat_position.y) == (25, 25)
+        assert mock_player.combat_position.facing is Direction.N
+        assert mock_player.combat_proximity == {}
+
+    def test_execute_raises_when_the_selected_ally_walked_out_of_range(
+        self, quickswap_move, mock_player, mock_ally
+    ):
+        """An explicitly-chosen target that is no longer nearby is a hard error.
+
+        Silently swapping with someone else instead would teleport Jean to a
+        square the player never picked.
+        """
+        quickswap_move.target = mock_ally
+        mock_ally.combat_position = CombatPosition(x=40, y=40, facing=Direction.E)
+        mock_player.combat_list_allies = [mock_ally]
+
+        with pytest.raises(ValueError, match="no longer within swapping range"):
+            quickswap_move.execute(mock_player)
+
+        assert (mock_player.combat_position.x, mock_player.combat_position.y) == (25, 25)
 
 
 class TestEdgeCases:
