@@ -1,7 +1,8 @@
 """Flask application factory and initialization."""
 
-import os
 import configparser
+import logging
+import os
 from pathlib import Path
 from flask import Flask
 from flask_cors import CORS
@@ -9,6 +10,35 @@ from flask_socketio import SocketIO
 from src.api.config import DevelopmentConfig, combat_socket_streaming_enabled
 from src.api.services import SessionManager, GameService
 import src.universe as universe_module
+
+
+def _configure_logging() -> None:
+    """Configure application logging from environment variables.
+
+    Supported env vars:
+      LOG_LEVEL   - Python log level name, e.g. DEBUG, INFO, WARNING.
+                    Defaults to WARNING so normal runs stay quiet.
+      LOG_FILE    - Optional file path to also write logs to.
+    """
+    level_name = os.environ.get("LOG_LEVEL", "WARNING").upper()
+    level = getattr(logging, level_name, logging.WARNING)
+    handlers: list[logging.Handler] = [logging.StreamHandler()]
+    log_file = os.environ.get("LOG_FILE")
+    if log_file:
+        try:
+            Path(log_file).parent.mkdir(parents=True, exist_ok=True)
+            handlers.append(logging.FileHandler(log_file, encoding="utf-8"))
+        except Exception:
+            pass
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s %(levelname)s %(name)s %(message)s",
+        handlers=handlers,
+        force=True,
+    )
+
+
+_configure_logging()
 
 
 def _apply_proxy_fix(app):

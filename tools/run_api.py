@@ -49,6 +49,13 @@ def main():
     if args.config:
         os.environ["CONFIG_FILE"] = args.config
         print(f"[run_api] Using config file from command line: {args.config}")
+
+    # Reload .env after any CLI overrides so project env settings
+    # (e.g. MYNX_LLM_MODEL, OPENROUTER_*) are guaranteed to be present.
+    env_path = ROOT / ".env"
+    if env_path.exists():
+        load_dotenv(env_path, override=True)
+
     # Determine environment
     env = os.environ.get("FLASK_ENV", "development").lower()
 
