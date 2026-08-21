@@ -10,7 +10,7 @@ Attributes expected on the host class (set before or during __init__):
     self.name                str
     self.charisma            int
     self.wisdom              int (used for loquacity recovery calculation)
-    self.keywords            list[str] (will have "chat" added if missing)
+    self.keywords            list[str] (must already include "talk")
 
 Optional setup (for story NPCs only):
     self._chat_config_path   str | None (path to character JSON config)
@@ -40,17 +40,41 @@ _AI_DIR = Path(__file__).resolve().parent.parent.parent / "ai"
 _HUMAN_NPC_DIR = _AI_DIR / "npc" / "human"
 _WORLD_FACTS_PATH = _HUMAN_NPC_DIR / "world_facts.json"
 
-# Modern slang / anachronism blocklist (regex pattern)
+# Modern slang / anachronism blocklist (regex pattern). Note: "you know?" ends
+# in a non-word char, so it must sit OUTSIDE the trailing \b group — inside it,
+# \b after "?" only matches when a word character follows, which made that
+# alternative dead at end-of-sentence (its only realistic position).
 _SLANG_PATTERN = re.compile(
-    r"\b(okay|hey there|yeah|yep|nope|cool|awesome|literally|basically|"
-    r"gonna|wanna|gotta|no worries|you know\?|guns?|bombs?|bullets?|internet)\b",
+    r"\b(?:okay|hey there|yeah|yep|nope|awesome|literally|basically|"
+    r"gonna|wanna|gotta|no worries|guns?|bombs?|bullets?|internet)\b"
+    r"|\byou know\?"
+    # "cool" is period-correct as a temperature/temperament word ("the cool
+    # water", "a cool head"); only the bare interjection — sentence-final or
+    # followed by a comma — is slang.
+    r"|\bcool(?=\s*(?:[,.!?]|$))",
     re.IGNORECASE,
 )
 
-# Jean-dialogue guard: reject if NPC text describes Jean speaking
+# Jean-dialogue guard: reject if NPC text writes Jean's dialogue or narrates
+# Jean speaking (past OR present tense — models narrate in both).
 _JEAN_DIALOG_PATTERN = re.compile(
-    r"jean\s+(said|replied|asked|told)\b|jean:\s*[\"']", re.IGNORECASE
+    r"\bjean\s+(said|says|replied|replies|asked|asks|answered|answers|"
+    r"told|tells)\b|jean:\s*",
+    re.IGNORECASE,
 )
+
+# Roleplay action asides: models frequently put stage directions inside the
+# spoken line as *asterisk actions* ("*nods slowly* Fine.") even though
+# npc_flavor is the designated home for physical beats. These are extracted
+# and relocated, never shown verbatim.
+_BOLD_MD_PATTERN = re.compile(r"\*\*([^*]+)\*\*")
+_ACTION_ASIDE_PATTERN = re.compile(r"\*([^*\n]{2,160})\*")
+
+# Sentence splitter that KEEPS each sentence's own terminator ("Stay back!"
+# stays an exclamation; "What do you want?" stays a question; "Well... maybe."
+# keeps its ellipsis). Splitting on [.!?] and re-joining with ". " — the old
+# approach — flattened every ! and ? in NPC dialogue into a period.
+_SENTENCE_PATTERN = re.compile(r"[^.!?]+[.!?]*")
 
 # Capitalized token finder (for invented proper noun scan)
 _CAP_TOKEN_PATTERN = re.compile(r"\b([A-Z][A-Za-z\-]{2,})\b")
@@ -227,11 +251,13 @@ class ConversationalNPCMixin:
         self.loquacity_threshold: int = 0
         self.loquacity_recovery: int = 2
 
-        # Add "chat" to keywords if not present
+        # "talk" is already present on every host class's base keywords
+        # (Friend, Merchant); it alone opens the LLM chat panel client-side,
+        # so we deliberately do not also add "chat" as a second, redundant
+        # button (see chat()/InteractPanel.jsx — both keywords routed to the
+        # same panel, which meant NPCs showed two buttons for one action).
         if not hasattr(self, "keywords"):
             self.keywords = []
-        if "chat" not in self.keywords:
-            self.keywords.append("chat")
 
     # Sentinel distinguishing "load failed" from "not yet attempted"
     _ADAPTER_FAILED = object()
@@ -632,130 +658,363 @@ class ConversationalNPCMixin:
 
         return intersection / union if union > 0 else 0.0
 
-    def _qc_npc_text(self, text: str, history: List[Dict[str, Any]]) -> Optional[str]:
-        """Apply QC pipeline. Return cleaned text or None."""
-        original = text
-        # Step 1: Strip and garbage check (see _has_real_npc_text/_MIN_NPC_TEXT_LEN)
-        text = text.strip()
-        if not _has_real_npc_text(text):
-            logger.debug("_qc_npc_text rejected: no real text after strip. original=%r", original)
-            return None
+    # ------------------------------------------------------------------
+    # NPC-text QC pipeline
+    # ------------------------------------------------------------------
 
-        # Step 2: Truncate at sentence boundary if too long
-        if len(text) > 300:
-            # Find last sentence boundary before 300
-            boundary_pos = -1
-            for i in range(299, -1, -1):
-                if text[i] in ".!?":
-                    boundary_pos = i + 1
-                    break
+    @staticmethod
+    def _cleanup_removed_spans(text: str) -> str:
+        """Repair the holes left by removing a span from a sentence.
 
-            if boundary_pos > 0:
-                text = text[:boundary_pos].strip()
-            else:
-                text = text[:300].strip()
+        Collapses whitespace, closes gaps before punctuation, deduplicates
+        commas, and strips orphan leading/trailing punctuation — so removing
+        "cool" from "that's cool, okay" yields "that's" rather than
+        "that's  , ".
+        """
+        text = re.sub(r"\s+", " ", text)
+        text = re.sub(r"\s+([,.!?;:])", r"\1", text)
+        text = re.sub(r"([,;:])(?:\s*\1)+", r"\1", text)
+        text = re.sub(r"^[\s,;:.!?]+", "", text)
+        text = re.sub(r"[\s,;:]+$", "", text)
+        return text.strip()
 
-        # Step 3: Reject if Jean-dialogue pattern found
-        if _JEAN_DIALOG_PATTERN.search(text):
-            logger.debug("_qc_npc_text rejected: Jean-dialogue pattern. text=%r", text)
-            return None
-
-        # Step 4: Invented proper noun scan
-        world_nouns = set(
-            (self._chat_world_facts or {}).get("allowed_proper_nouns", [])
+    @staticmethod
+    def _capitalize_sentence_starts(text: str) -> str:
+        return re.sub(
+            r"(^|[.!?]\s+)([a-z])",
+            lambda m: m.group(1) + m.group(2).upper(),
+            text,
         )
-        world_nouns.update([self.name, "Jean", "Gorran"])
+
+    def _extract_action_asides(self, text: str) -> tuple:
+        """Pull *asterisk action* stage directions out of spoken text.
+
+        Returns (text_without_asides, aside_text). Markdown bold markers are
+        unwrapped (the words stay), single-asterisk spans at a sentence
+        boundary (start of text, after terminal punctuation, or end of text)
+        are stage directions and are extracted for relocation into npc_flavor,
+        single-asterisk spans embedded mid-sentence are markdown emphasis and
+        are unwrapped in place ("I would *never* sell" keeps "never"), and
+        stray markers are dropped.
+        """
+        if "*" not in text:
+            return text, ""
+        text = _BOLD_MD_PATTERN.sub(r"\1", text)
+        asides: List[str] = []
+
+        def _classify(match: "re.Match") -> str:
+            before = text[: match.start()].rstrip()
+            after = text[match.end():].lstrip()
+            at_boundary = (
+                not before or before[-1] in ".!?\"'" or not after
+            )
+            if at_boundary:
+                inner = match.group(1).strip()
+                if inner:
+                    asides.append(inner)
+                return " "
+            return match.group(1)
+
+        text = _ACTION_ASIDE_PATTERN.sub(_classify, text)
+        text = text.replace("*", " ")
+        return self._cleanup_removed_spans(text), " ".join(asides)
+
+    def _allowed_noun_tokens(self) -> set:
+        """Lowercased single-word tokens the proper-noun scan must not touch.
+
+        Multi-word allowlist entries ("Echoing Caves", "Pillar Readers") are
+        split into their component tokens — the scan matches token-by-token, so
+        checking tokens against the full-string allowlist rejected every word
+        of a legitimate multi-word name ("the Echoing Caves" used to come out
+        as "the they they"). Also includes this NPC's own name and, for
+        generics, the generated given_name — an NPC must be able to say its
+        own name.
+        """
+        tokens: set = set()
+        sources: List[str] = list(
+            (getattr(self, "_chat_world_facts", None) or {}).get(
+                "allowed_proper_nouns", []
+            )
+        )
+        sources.extend(["Jean", "Gorran", str(getattr(self, "name", "") or "")])
+        personality = getattr(self, "_chat_personality", None) or {}
+        given = personality.get("given_name")
+        if given:
+            sources.append(str(given))
+        for noun in sources:
+            for part in str(noun).replace("-", " ").split():
+                tokens.add(part.lower())
+        return tokens
+
+    @staticmethod
+    def _is_allowed_noun(low: str, allowed: set) -> bool:
+        """Token-level allowlist check with light inflection tolerance.
+
+        Accepts exact matches, singular/plural variants (Golemite/Golemites),
+        and adjectival extensions of an allowed stem of 5+ chars
+        (Grondia -> Grondian).
+        """
+        if low in allowed:
+            return True
+        if low.endswith("s") and low[:-1] in allowed:
+            return True
+        if low + "s" in allowed:
+            return True
+        return any(len(a) >= 5 and low.startswith(a) for a in allowed)
+
+    def _find_invented_nouns(self, text: str) -> Dict[str, str]:
+        """Map each invented proper noun in ``text`` to its safe replacement.
+
+        Skips allowed nouns, common English capitalized words, and tokens that
+        merely begin a sentence. Replacements are grammatical in both subject
+        and object position: "someone" for people/groups, "that place" for
+        place-shaped endings ("he met they" was the old failure mode).
+        """
+        allowed = self._allowed_noun_tokens()
 
         def _is_sentence_initial(match_start: int) -> bool:
-            """True if the token begins a sentence (start of text or after . ! ?)."""
             j = match_start - 1
             while j >= 0 and text[j].isspace():
                 j -= 1
             return j < 0 or text[j] in ".!?\"'"
 
-        # Collect invented-noun replacements first so positions stay valid while
-        # scanning. Skip world-allowed nouns, common English words, and any token
-        # that merely starts a sentence (ordinary capitalization, not a proper noun).
+        def _is_known(low: str) -> bool:
+            return low in _COMMON_CAP_WORDS or self._is_allowed_noun(low, allowed)
+
         replacements: Dict[str, str] = {}
         for match in _CAP_TOKEN_PATTERN.finditer(text):
             token = match.group(1)
-            if token in world_nouns or token in replacements:
+            if token in replacements:
                 continue
-            if token.lower() in _COMMON_CAP_WORDS:
+            # Hyphenated tokens: a descriptive compound ("East-bank") has a
+            # known first part and a lowercase remainder; an invented compound
+            # ("Kel-Thar") capitalizes its parts. Plain tokens just need to
+            # be known.
+            raw_parts = [p for p in token.split("-") if p]
+            if len(raw_parts) > 1:
+                if _is_known(raw_parts[0].lower()) and all(
+                    p == p.lower() for p in raw_parts[1:]
+                ):
+                    continue
+            if all(_is_known(p.lower()) for p in raw_parts):
                 continue
             if _is_sentence_initial(match.start()):
                 continue
-            # Heuristic: -ia, -on, -or endings read as places; else a person/group.
             replacements[token] = (
-                "that place" if token.endswith(("ia", "on", "or")) else "they"
+                "that place" if token.endswith(("ia", "on", "or")) else "someone"
             )
-        for token, repl in replacements.items():
-            text = re.sub(r"\b" + re.escape(token) + r"\b", repl, text)
+        return replacements
+
+    def _qc_npc_text(
+        self, text: str, history: List[Dict[str, Any]], allow_rewrite: bool = True
+    ) -> Optional[str]:
+        """Apply QC pipeline. Return cleaned text or None.
+
+        Compatibility wrapper over ``_qc_npc_text_ex`` (which also reports the
+        rejection reason and any extracted action aside).
+        """
+        cleaned, _reason, _aside = self._qc_npc_text_ex(
+            text, history, allow_rewrite=allow_rewrite
+        )
+        return cleaned
+
+    def _qc_npc_text_ex(
+        self, text: str, history: List[Dict[str, Any]], allow_rewrite: bool = True
+    ) -> tuple:
+        """QC pipeline core. Returns (cleaned_text_or_None, reason, action_aside).
+
+        Policy (per design decision): content violations — invented proper
+        nouns, modern slang, prohibited phrases — REJECT the line when
+        ``allow_rewrite`` is False so the caller can retry with guidance, and
+        are repaired in place on the final attempt so a good line is never
+        discarded over one word. Structural problems (Jean-dialogue, repetition,
+        empty text) always reject; mechanical normalization (length caps,
+        punctuation) always applies.
+        """
+        original = text
+        # Step 1: extract roleplay *action* asides, then strip / garbage check
+        text, aside = self._extract_action_asides(text.strip())
+        text = text.strip()
+        if not _has_real_npc_text(text):
+            logger.debug("_qc_npc_text rejected: no real text after strip. original=%r", original)
+            return None, "the reply had no spoken text", aside
+        if aside and text[0].islower():
+            # The spoken line started after a leading aside ("*shrugs* fine.")
+            text = text[0].upper() + text[1:]
+
+        # Step 2: Truncate at sentence boundary if too long
+        if len(text) > 300:
+            boundary_pos = -1
+            for i in range(299, -1, -1):
+                if text[i] in ".!?":
+                    boundary_pos = i + 1
+                    break
+            text = text[:boundary_pos].strip() if boundary_pos > 0 else text[:300].strip()
+
+        # Step 3: Reject if Jean-dialogue pattern found (always a rejection —
+        # the NPC must never speak for Jean, and there is no safe rewrite)
+        if _JEAN_DIALOG_PATTERN.search(text):
+            logger.debug("_qc_npc_text rejected: Jean-dialogue pattern. text=%r", text)
+            return None, "it wrote Jean's dialogue or narrated Jean speaking", aside
+
+        # Step 4: Invented proper noun scan
+        replacements = self._find_invented_nouns(text)
+        rewrote = False
+        if replacements:
+            if not allow_rewrite:
+                logger.debug("_qc_npc_text rejected: invented nouns %s. text=%r", sorted(replacements), text)
+                return (
+                    None,
+                    "it used names not in the allowed list: "
+                    + ", ".join(sorted(replacements)),
+                    aside,
+                )
+            for token, repl in replacements.items():
+                text = re.sub(r"\b" + re.escape(token) + r"\b", repl, text)
+            rewrote = True
 
         # Step 5: Slang filter
-        text = _SLANG_PATTERN.sub("", text).strip()
-        if not _has_real_npc_text(text):
-            logger.debug("_qc_npc_text rejected: no real text after slang filter. text=%r", text)
-            return None
+        if _SLANG_PATTERN.search(text):
+            if not allow_rewrite:
+                logger.debug("_qc_npc_text rejected: slang. text=%r", text)
+                return None, "it used modern slang or anachronistic wording", aside
+            text = self._cleanup_removed_spans(_SLANG_PATTERN.sub(" ", text))
+            rewrote = True
+            if not _has_real_npc_text(text):
+                logger.debug("_qc_npc_text rejected: no real text after slang filter. text=%r", text)
+                return None, "nothing remained after removing slang", aside
 
-        # Step 6: Prohibited phrases (story chars only, patterns pre-compiled in _init_chat_attrs)
+        # Step 6: Prohibited phrases (story chars only, patterns pre-compiled
+        # in _init_chat_attrs). Removed cleanly — the old "[...]" placeholder
+        # was a visible artifact in player-facing dialogue.
         for pattern in self._prohibited_patterns:
-            text = pattern.sub("[...]", text)
+            if pattern.search(text):
+                if not allow_rewrite:
+                    logger.debug("_qc_npc_text rejected: prohibited phrase. text=%r", text)
+                    return None, "it used a phrase this character must never say", aside
+                text = self._cleanup_removed_spans(pattern.sub(" ", text))
+                rewrote = True
+        if not _has_real_npc_text(text):
+            logger.debug("_qc_npc_text rejected: no real text after prohibited filter. text=%r", text)
+            return None, "nothing remained after removing prohibited phrasing", aside
 
         # Step 7: Repetition guard — caller's retry loop handles the second attempt
         for prior in history[-8:]:
             prior_npc = prior.get("npc", "")
             if prior_npc and self._jaccard(text, prior_npc) > 0.7:
                 logger.debug("_qc_npc_text rejected: repetition guard. jaccard=%.2f text=%r prior=%r", self._jaccard(text, prior_npc), text, prior_npc)
-                return None
+                return None, "it repeated a line already said earlier in this conversation", aside
 
-        # Step 8: Terminal punctuation
+        # Step 8: Sentence cap (keep first 3 sentences, preserving each
+        # sentence's own terminator) + terminal punctuation
+        sentences = [s.strip() for s in _SENTENCE_PATTERN.findall(text) if s.strip()]
+        text = " ".join(sentences[:3])
         if text and text[-1] not in ".!?":
             text += "."
 
-        # Step 9: Sentence cap (keep first 3 sentences)
-        sentences = [s.strip() for s in re.split(r"[.!?]", text) if s.strip()]
-        text = ". ".join(sentences[:3])
-        if text and text[-1] not in ".!?":
-            text += "."
+        # Step 9: If substitutions ran, repair capitalization at sentence starts
+        if rewrote:
+            text = self._capitalize_sentence_starts(text)
 
         logger.debug("_qc_npc_text passed. cleaned_chars=%s original_chars=%s", len(text), len(original))
-        return text
+        return text, None, aside
+
+    def _qc_flavor_text(self, flavor: str) -> str:
+        """Rewrite-only QC for npc_flavor. Returns cleaned flavor or "".
+
+        Flavor is decorative — it is never worth failing a whole turn over, so
+        this never rejects: invented nouns are substituted, slang removed,
+        markers stripped, and anything left unusable simply drops the flavor.
+        """
+        if not flavor:
+            return ""
+        flavor = _BOLD_MD_PATTERN.sub(r"\1", str(flavor)).replace("*", " ").strip()
+        for token, repl in self._find_invented_nouns(flavor).items():
+            flavor = re.sub(r"\b" + re.escape(token) + r"\b", repl, flavor)
+        flavor = self._cleanup_removed_spans(_SLANG_PATTERN.sub(" ", flavor))
+        if not _has_real_npc_text(flavor):
+            return ""
+        flavor = flavor[:200].strip()
+        if flavor[-1] not in ".!?":
+            flavor += "."
+        if flavor[0].islower():
+            flavor = flavor[0].upper() + flavor[1:]
+        return flavor
 
     def _qc_jean_options(self, options: Any) -> Optional[List[Dict[str, str]]]:
-        """QC Jean dialogue options. Return cleaned list or None."""
-        if not isinstance(options, list) or len(options) < 3:
+        """QC Jean dialogue options. Return the salvageable subset, or None.
+
+        Per design decision this salvages rather than rejecting wholesale: each
+        option is validated independently, near-duplicates drop only the later
+        member of the pair, and the caller tops the set back up to three from
+        the fallback pool. One malformed option no longer throws away two good,
+        context-aware ones.
+        """
+        if not isinstance(options, list) or not options:
             return None
 
-        # Extract and validate first 3 items
+        expected_tones = ["direct", "guarded", "open"]
         validated = []
         for i, opt in enumerate(options[:3]):
             if not isinstance(opt, dict) or "text" not in opt:
-                return None
+                continue
 
             text = str(opt.get("text", "")).strip()
-            if not (5 <= len(text) <= 120):
-                return None
+            if not (5 <= len(text) <= 160):
+                continue
 
             # No meta-speech
             if re.search(
                 r"\[Option|\bAs Jean\b|I don.t know what to say", text, re.IGNORECASE
             ):
-                return None
+                continue
 
-            tone = str(opt.get("tone", ["direct", "guarded", "open"][i])).lower()
+            tone = str(opt.get("tone", expected_tones[i % 3])).lower()
             if tone not in ("direct", "guarded", "open"):
-                tone = ["direct", "guarded", "open"][i]
+                tone = expected_tones[i % 3]
 
             validated.append({"tone": tone, "text": text})
 
-        # Dedup check
-        for i in range(len(validated)):
-            for j in range(i + 1, len(validated)):
-                if self._jaccard(validated[i]["text"], validated[j]["text"]) > 0.6:
-                    return None
+        # Dedup: keep the earlier of any too-similar pair
+        deduped: List[Dict[str, str]] = []
+        for opt in validated:
+            if all(
+                self._jaccard(opt["text"], kept["text"]) <= 0.6 for kept in deduped
+            ):
+                deduped.append(opt)
 
-        return validated
+        return deduped or None
+
+    def _top_up_jean_options(
+        self, options: List[Dict[str, str]]
+    ) -> List[Dict[str, str]]:
+        """Fill a partial option set up to three from the fallback pool.
+
+        Prefers pool entries whose tone is not already covered, skips any that
+        read too close to a kept option, and pads unconditionally as a last
+        resort so the player always sees three choices.
+        """
+        options = [dict(o) for o in options[:3]]
+        if len(options) >= 3:
+            return options
+        pool = self._get_fallback_jean_options()
+        used_tones = {o["tone"] for o in options}
+        for fb in pool:
+            if len(options) >= 3:
+                break
+            if fb["tone"] in used_tones:
+                continue
+            if any(self._jaccard(fb["text"], o["text"]) > 0.6 for o in options):
+                continue
+            options.append(dict(fb))
+            used_tones.add(fb["tone"])
+        for fb in pool:
+            if len(options) >= 3:
+                break
+            if any(fb["text"] == o["text"] for o in options):
+                continue
+            options.append(dict(fb))
+        return options
 
     def _generate_turn(
         self, adapter, system: str, is_opening: bool, jean_text: Optional[str]
@@ -818,29 +1077,54 @@ class ConversationalNPCMixin:
     ) -> Optional[Dict[str, Any]]:
         """Produce a QC'd NPC turn, or None if the caller should fall back.
 
-        Allows up to two attempts regardless of adapter shape. A single QC
-        rejection (most commonly the repetition guard in ``_qc_npc_text``)
-        used to drop the combined single-call path straight to the static
-        deterministic fallback line, which is what made NPCs appear to repeat
-        themselves verbatim turn after turn. A second attempt costs one extra
-        round trip only on the QC-failure path — successful calls are still a
-        single round trip — and is worth it to avoid the repeated-fallback
-        experience.
+        Attempt 1 runs QC in strict mode: content violations (invented nouns,
+        slang, prohibited phrases) reject the line, and the retry carries the
+        rejection reason back to the model as corrective guidance — resending
+        the identical prompt at the same temperature mostly reproduced the same
+        violation. The final attempt runs QC in rewrite mode so a usable line
+        is salvaged in place rather than dropping to the deterministic
+        fallback. Successful calls are still a single round trip.
+
+        Roleplay *action asides* extracted from the spoken text are relocated
+        into npc_flavor (the designated home for physical beats) when the model
+        did not supply flavor of its own; flavor then gets its own rewrite-only
+        QC pass.
         """
         if not llm_available or adapter is None:
             logger.debug("_run_npc_turn skipped: llm_available=%s adapter=%s", llm_available, adapter is not None)
             return None
         max_attempts = 2
+        reject_reason: Optional[str] = None
         for attempt in range(1, max_attempts + 1):
             logger.info("_run_npc_turn attempt=%s/%s is_opening=%s", attempt, max_attempts, is_opening)
-            turn = self._generate_turn(adapter, system, is_opening, jean_text)
+            sys_prompt = system
+            if reject_reason:
+                sys_prompt = (
+                    system
+                    + "\n\n[RETRY GUIDANCE] Your previous reply was rejected by "
+                    "quality control because " + reject_reason + ". Write a "
+                    "fresh reply that avoids this problem."
+                )
+            turn = self._generate_turn(adapter, sys_prompt, is_opening, jean_text)
             if turn and turn.get("npc_text"):
-                cleaned = self._qc_npc_text(turn["npc_text"], self._chat_history)
+                cleaned, reason, aside = self._qc_npc_text_ex(
+                    turn["npc_text"],
+                    self._chat_history,
+                    allow_rewrite=(attempt == max_attempts),
+                )
                 if cleaned:
                     logger.info("_run_npc_turn QC passed on attempt=%s/%s", attempt, max_attempts)
                     turn["npc_text"] = cleaned
+                    flavor = turn.get("npc_flavor") or ""
+                    if not flavor and aside:
+                        flavor = aside
+                    turn["npc_flavor"] = self._qc_flavor_text(flavor)
                     return turn
-                logger.warning("_run_npc_turn QC rejected npc_text on attempt=%s/%s text=%r", attempt, max_attempts, turn.get("npc_text"))
+                reject_reason = reason or "it was unusable"
+                logger.warning(
+                    "_run_npc_turn QC rejected npc_text on attempt=%s/%s reason=%s text=%r",
+                    attempt, max_attempts, reject_reason, turn.get("npc_text"),
+                )
             else:
                 logger.warning("_run_npc_turn generate_turn returned no npc_text on attempt=%s/%s", attempt, max_attempts)
         logger.error("_run_npc_turn exhausted attempts=%s; caller should use deterministic fallback.", max_attempts)
@@ -858,7 +1142,7 @@ class ConversationalNPCMixin:
         combined = adapter is not None and hasattr(adapter, "generate_turn")
         if turn is not None and combined:
             options = self._qc_jean_options(turn.get("raw_options") or [])
-            return options or self._get_fallback_jean_options()
+            return self._top_up_jean_options(options or [])
         if turn is not None and adapter is not None:
             voice = (self._chat_char_config or {}).get("voice_summary") or (
                 self._chat_personality or {}
@@ -869,7 +1153,7 @@ class ConversationalNPCMixin:
             if raw:
                 options = self._qc_jean_options(raw)
                 if options:
-                    return options
+                    return self._top_up_jean_options(options)
         return self._get_fallback_jean_options()
 
     def chat(self, player):
@@ -1233,7 +1517,13 @@ class ConversationalNPCMixin:
         return "Nothing to say right now."
 
     def _get_fallback_jean_options(self) -> List[Dict[str, str]]:
-        """Return fallback Jean options, cycling through pool."""
-        pool = _JEAN_FALLBACK_POOL[self._chat_fallback_idx % len(_JEAN_FALLBACK_POOL)]
-        self._chat_fallback_idx += 1
-        return pool
+        """Return fallback Jean options, cycling through pool.
+
+        Returns copies (not the shared module-level dicts) so callers can
+        never mutate the pool, and tolerates minimal test doubles that skip
+        _init_chat_attrs (same rationale as _next_from_pool).
+        """
+        idx = getattr(self, "_chat_fallback_idx", 0)
+        pool = _JEAN_FALLBACK_POOL[idx % len(_JEAN_FALLBACK_POOL)]
+        self._chat_fallback_idx = idx + 1
+        return [dict(o) for o in pool]

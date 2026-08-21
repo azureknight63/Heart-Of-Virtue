@@ -59,10 +59,10 @@ class TestInitChatAttrs:
         assert npc._chat_npc_key is None
         assert npc._chat_adapter is None
         assert npc._chat_fallback_idx == 0
-        assert "chat" in npc.keywords
+        assert "chat" not in npc.keywords
 
-    def test_init_chat_attrs_chat_keyword_already_exists(self):
-        """Test that 'chat' keyword isn't duplicated."""
+    def test_init_chat_attrs_chat_keyword_not_duplicated_if_present(self):
+        """Test that a pre-existing 'chat' keyword is left alone, not duplicated."""
         class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
@@ -86,7 +86,7 @@ class TestInitChatAttrs:
 
         npc = TestNPC()
         assert hasattr(npc, "keywords")
-        assert "chat" in npc.keywords
+        assert npc.keywords == []
 
     def test_init_chat_attrs_with_config_path(self):
         """Test initialization with character config path."""
@@ -1221,13 +1221,17 @@ class TestQCJeanOptions:
         assert result is None
 
     def test_qc_jean_options_less_than_3(self):
-        """Test QC rejects less than 3 options."""
+        """Salvage policy: fewer than 3 valid options are kept as-is — the
+        caller (_top_up_jean_options) fills the set back up to three."""
         class TestNPC(ConversationalNPCMixin):
             pass
 
         npc = TestNPC()
-        result = npc._qc_jean_options([{"text": "Option 1"}, {"text": "Option 2"}])
-        assert result is None
+        result = npc._qc_jean_options(
+            [{"text": "Option one here"}, {"text": "Something different"}]
+        )
+        assert result is not None
+        assert len(result) == 2
 
     def test_qc_jean_options_valid(self):
         """Test QC passes valid options."""
@@ -1245,46 +1249,51 @@ class TestQCJeanOptions:
         assert len(result) == 3
 
     def test_qc_jean_options_missing_text(self):
-        """Test QC rejects option without text."""
+        """Salvage policy: an option without text is dropped, not the whole set."""
         class TestNPC(ConversationalNPCMixin):
             pass
 
         npc = TestNPC()
         options = [
             {"tone": "open"},
-            {"text": "Option 2"},
-            {"text": "Option 3"},
+            {"text": "Tell me about the road"},
+            {"text": "Where were you headed"},
         ]
         result = npc._qc_jean_options(options)
-        assert result is None
+        assert result is not None
+        assert len(result) == 2
 
     def test_qc_jean_options_invalid_length(self):
-        """Test QC rejects text outside 5-120 range."""
+        """Salvage policy: an out-of-bounds option is dropped, others kept."""
         class TestNPC(ConversationalNPCMixin):
             pass
 
         npc = TestNPC()
         options = [
-            {"text": "x"},  # Too short
-            {"text": "Option 2"},
-            {"text": "Option 3"},
+            {"text": "x"},  # Too short — dropped
+            {"text": "Tell me about the road"},
+            {"text": "Where were you headed"},
         ]
         result = npc._qc_jean_options(options)
-        assert result is None
+        assert result is not None
+        assert len(result) == 2
+        assert all(len(o["text"]) >= 5 for o in result)
 
     def test_qc_jean_options_rejects_meta_speech(self):
-        """Test QC rejects meta-speech."""
+        """Salvage policy: a meta-speech option is dropped, others kept."""
         class TestNPC(ConversationalNPCMixin):
             pass
 
         npc = TestNPC()
         options = [
             {"text": "[Option 1] Choose wisely"},
-            {"text": "Option 2 normal text"},
-            {"text": "Option 3 normal text"},
+            {"text": "What brought you out here"},
+            {"text": "I should keep moving soon"},
         ]
         result = npc._qc_jean_options(options)
-        assert result is None
+        assert result is not None
+        assert len(result) == 2
+        assert all("[Option" not in o["text"] for o in result)
 
     def test_qc_jean_options_dedup(self):
         """Test QC rejects duplicate options."""

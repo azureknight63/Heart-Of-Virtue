@@ -113,6 +113,58 @@ class TestJSONToolsExtractTextContent:
         assert _JSONTools.extract_text_content(blocks) == "structured\nplain string"
 
 
+class TestJSONToolsExtractMessageText:
+    """extract_message_text() is the single normalization point every call
+    site routes an OpenRouter/Ollama message through before JSON parsing."""
+
+    def test_plain_string_content_used_directly(self):
+        assert _JSONTools.extract_message_text({"content": "hello world"}) == "hello world"
+
+    def test_non_dict_message_returns_none(self):
+        assert _JSONTools.extract_message_text(None) is None
+        assert _JSONTools.extract_message_text("not a dict") is None
+
+    def test_list_block_content_skips_thinking_blocks(self):
+        message = {"content": [
+            {"type": "thinking", "thinking": "pondering..."},
+            {"type": "text", "text": "the answer"},
+        ]}
+        assert _JSONTools.extract_message_text(message) == "the answer"
+
+    def test_content_with_think_tags_gets_stripped(self):
+        message = {"content": "<think>reasoning here</think>{\"a\": 1}"}
+        assert _JSONTools.extract_message_text(message) == '{"a": 1}'
+
+    def test_text_field_used_when_content_missing(self):
+        assert _JSONTools.extract_message_text({"text": "from text field"}) == "from text field"
+
+    def test_empty_content_falls_back_to_reasoning_string(self):
+        message = {"content": None, "reasoning": "the chain of thought"}
+        assert _JSONTools.extract_message_text(message) == "the chain of thought"
+
+    def test_empty_content_falls_back_to_ollama_thinking_field(self):
+        message = {"content": "", "thinking": "ollama reasoning trace"}
+        assert _JSONTools.extract_message_text(message) == "ollama reasoning trace"
+
+    def test_empty_content_falls_back_to_reasoning_details_array(self):
+        message = {
+            "content": None,
+            "reasoning_details": [
+                {"type": "reasoning.text", "text": "part one"},
+                {"type": "reasoning.text", "text": "part two"},
+            ],
+        }
+        assert _JSONTools.extract_message_text(message) == "part one\npart two"
+
+    def test_content_present_takes_priority_over_reasoning(self):
+        message = {"content": "the real answer", "reasoning": "some unrelated chain of thought"}
+        assert _JSONTools.extract_message_text(message) == "the real answer"
+
+    def test_all_fields_empty_returns_none(self):
+        assert _JSONTools.extract_message_text({"content": None, "reasoning": ""}) is None
+        assert _JSONTools.extract_message_text({}) is None
+
+
 # ---------------------------------------------------------------------------
 # GenericLLMClient — construction / provider selection
 # ---------------------------------------------------------------------------
@@ -313,20 +365,43 @@ class TestIsFreeTextModel:
 
 
 class TestRankModels:
-    def test_priority_models_ranked_first(self):
+    def test_benchmarked_models_ranked_before_unbenchmarked(self):
         models = [
-            {"id": "b/model", "pricing": {"prompt": "0", "completion": "0"}, "created": 100},
-            {"id": "a/priority", "pricing": {"prompt": "0", "completion": "0"}, "created": 50},
+            {"id": "no-bench", "pricing": {"prompt": "0", "completion": "0"}, "created": 100},
+            {
+                "id": "has-bench",
+                "pricing": {"prompt": "0", "completion": "0"},
+                "created": 1,
+                "benchmarks": {"artificial_analysis": {"intelligence_index": 10.0}},
+            },
         ]
-        ranked = GenericLLMClient._rank_models(models, priority_ids={"a/priority"})
-        assert ranked[0] == "a/priority"
+        ranked = GenericLLMClient._rank_models(models)
+        assert ranked[0] == "has-bench"
 
-    def test_newest_first_when_no_priority(self):
+    def test_highest_intelligence_index_first(self):
+        models = [
+            {
+                "id": "dumber",
+                "pricing": {"prompt": "0", "completion": "0"},
+                "created": 1,
+                "benchmarks": {"artificial_analysis": {"intelligence_index": 20.0}},
+            },
+            {
+                "id": "smarter",
+                "pricing": {"prompt": "0", "completion": "0"},
+                "created": 1,
+                "benchmarks": {"artificial_analysis": {"intelligence_index": 52.6}},
+            },
+        ]
+        ranked = GenericLLMClient._rank_models(models)
+        assert ranked == ["smarter", "dumber"]
+
+    def test_newest_first_when_neither_benchmarked(self):
         models = [
             {"id": "old", "pricing": {"prompt": "0", "completion": "0"}, "created": 10},
             {"id": "new", "pricing": {"prompt": "0", "completion": "0"}, "created": 100},
         ]
-        ranked = GenericLLMClient._rank_models(models, priority_ids=set())
+        ranked = GenericLLMClient._rank_models(models)
         assert ranked == ["new", "old"]
 
     def test_smallest_context_length_tiebreak(self):
@@ -334,7 +409,7 @@ class TestRankModels:
             {"id": "big", "pricing": {"prompt": "0", "completion": "0"}, "created": 1, "context_length": 100000},
             {"id": "small", "pricing": {"prompt": "0", "completion": "0"}, "created": 1, "context_length": 4096},
         ]
-        ranked = GenericLLMClient._rank_models(models, priority_ids=set())
+        ranked = GenericLLMClient._rank_models(models)
         assert ranked == ["small", "big"]
 
     def test_dedup_by_id(self):
@@ -342,41 +417,37 @@ class TestRankModels:
             {"id": "dup", "pricing": {"prompt": "0", "completion": "0"}, "created": 1},
             {"id": "dup", "pricing": {"prompt": "0", "completion": "0"}, "created": 2},
         ]
-        ranked = GenericLLMClient._rank_models(models, priority_ids=set())
+        ranked = GenericLLMClient._rank_models(models)
         assert ranked == ["dup"]
 
     def test_non_free_models_excluded(self):
         models = [
             {"id": "paid", "pricing": {"prompt": "0.5", "completion": "0"}, "created": 1},
         ]
-        assert GenericLLMClient._rank_models(models, priority_ids=set()) == []
+        assert GenericLLMClient._rank_models(models) == []
 
     def test_missing_id_skipped(self):
         models = [{"pricing": {"prompt": "0", "completion": "0"}}]
-        assert GenericLLMClient._rank_models(models, priority_ids=set()) == []
+        assert GenericLLMClient._rank_models(models) == []
 
 
 class TestFetchAndRankModels:
-    def test_success_merges_priority_and_all(self, monkeypatch):
-        priority_resp = MagicMock()
-        priority_resp.json.return_value = {"data": [{"id": "priority/one", "pricing": {"prompt": "0", "completion": "0"}, "created": 5}]}
-        priority_resp.raise_for_status = MagicMock()
-        all_resp = MagicMock()
-        all_resp.json.return_value = {"data": [
-            {"id": "priority/one", "pricing": {"prompt": "0", "completion": "0"}, "created": 5},
-            {"id": "other/two", "pricing": {"prompt": "0", "completion": "0"}, "created": 1},
+    def test_success_fetches_and_ranks(self, monkeypatch):
+        resp = MagicMock()
+        resp.json.return_value = {"data": [
+            {"id": "dumber/one", "pricing": {"prompt": "0", "completion": "0"}, "created": 5,
+             "benchmarks": {"artificial_analysis": {"intelligence_index": 10.0}}},
+            {"id": "smarter/two", "pricing": {"prompt": "0", "completion": "0"}, "created": 1,
+             "benchmarks": {"artificial_analysis": {"intelligence_index": 50.0}}},
         ]}
-        all_resp.raise_for_status = MagicMock()
+        resp.raise_for_status = MagicMock()
 
-        def fake_get(url, headers=None, timeout=None):
-            if "category=" in url:
-                return priority_resp
-            return all_resp
-
-        with patch("requests.get", side_effect=fake_get):
+        with patch("requests.get", return_value=resp) as mock_get:
             ranked = GenericLLMClient._fetch_and_rank_models("fake-key")
-        assert ranked[0] == "priority/one"
-        assert "other/two" in ranked
+        assert ranked == ["smarter/two", "dumber/one"]
+        # Server-side free-tier filter is requested to cut payload size.
+        called_url = mock_get.call_args.args[0]
+        assert "max_price=0" in called_url
 
         # Verify the disk cache got written as a side effect.
         cached = GenericLLMClient._read_disk_cache()
@@ -398,21 +469,6 @@ class TestFetchAndRankModels:
         with patch("requests.get", return_value=resp):
             with pytest.raises(RuntimeError, match="No suitable free text-only models"):
                 GenericLLMClient._fetch_and_rank_models("fake-key")
-
-    def test_priority_fetch_failure_still_succeeds_via_all(self):
-        call_count = {"n": 0}
-
-        def fake_get(url, headers=None, timeout=None):
-            if "category=" in url:
-                raise Exception("category endpoint down")
-            resp = MagicMock()
-            resp.json.return_value = {"data": [{"id": "ok/model", "pricing": {"prompt": "0", "completion": "0"}, "created": 1}]}
-            resp.raise_for_status = MagicMock()
-            return resp
-
-        with patch("requests.get", side_effect=fake_get):
-            ranked = GenericLLMClient._fetch_and_rank_models("fake-key")
-        assert ranked == ["ok/model"]
 
 
 # ---------------------------------------------------------------------------
@@ -889,7 +945,7 @@ class TestGeneratePlain:
             result = client.generate_plain("sys", "user")
         assert result == "groom"
 
-    def test_json_code_fence_but_unparseable_falls_through_to_str(self, monkeypatch):
+    def test_json_code_fence_but_unparseable_salvages_plain_text(self, monkeypatch):
         monkeypatch.setenv("MYNX_LLM_ENABLED", "1")
         monkeypatch.setenv("MYNX_LLM_PROVIDER", "ollama")
         monkeypatch.setenv("MYNX_LLM_MODEL", "m")
@@ -898,7 +954,9 @@ class TestGeneratePlain:
         raw = "```json\nnot actually json```"
         with patch.object(client, "_ollama_chat", return_value=raw):
             result = client.generate_plain("sys", "user")
-        assert result == raw
+        # Raw JSON/fence markers must never leak to the player; the fence-
+        # stripped plain text is salvaged instead.
+        assert result == "not actually json"
 
     def test_plain_text_passthrough(self, monkeypatch):
         monkeypatch.setenv("MYNX_LLM_ENABLED", "1")
@@ -1238,9 +1296,9 @@ class TestOpenrouterChatSingle:
             client = GenericLLMClient()
         return client
 
-    def _fake_sdk_success(self, content):
+    def _fake_sdk_success(self, content, reasoning=None):
         completion = MagicMock()
-        completion.choices = [MagicMock(message=MagicMock(content=content))]
+        completion.choices = [MagicMock(message=MagicMock(content=content, reasoning=reasoning))]
         sdk = MagicMock()
         sdk.chat.completions.create.return_value = completion
         return sdk
@@ -1268,6 +1326,17 @@ class TestOpenrouterChatSingle:
              patch("requests.post", return_value=http_resp):
             result = client._openrouter_chat_single("model/x", "sys", "user", structured=False)
         assert result == "http fallback"
+
+    def test_sdk_empty_content_uses_reasoning_fallback(self, monkeypatch):
+        """A reasoning model that burns its budget before finishing leaves
+        content empty but reasoning populated on the SDK message object too
+        (not just the raw HTTP JSON path) — the SDK branch must fall back
+        to it the same way _openrouter_chat_single's HTTP branch does."""
+        client = self._client(monkeypatch)
+        sdk = self._fake_sdk_success(None, reasoning="reasoning text")
+        with patch.object(client, "_get_sdk_client", return_value=sdk):
+            result = client._openrouter_chat_single("model/x", "sys", "user", structured=False)
+        assert result == "reasoning text"
 
     def test_sdk_exception_falls_through_to_http(self, monkeypatch):
         client = self._client(monkeypatch)

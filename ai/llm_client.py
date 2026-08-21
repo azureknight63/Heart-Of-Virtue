@@ -1,6 +1,7 @@
 import json
 import os
 import logging
+import re
 import threading
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
@@ -22,15 +23,87 @@ _CACHE_TTL_SECONDS = 24 * 60 * 60  # 24 hours
 
 logger = logging.getLogger(__name__)
 
+# Reasoning-control parameters, per provider.
+#
+# Most of the strong free-tier models are now reasoning models (gpt-oss,
+# Qwen3, DeepSeek-R1 distills). Their chain-of-thought is billed as
+# *completion* tokens and spends the same max_tokens budget as the answer,
+# so a 160-token JSON reply behind a 600-token cap can die before it emits
+# a single character. That failure is the 'empty after stripping thinking
+# tokens' warning further down this file.
+#
+# OpenRouter: effort='low' is the floor that is universally accepted --
+# effort='none' is rejected with HTTP 400 'Reasoning is mandatory for this
+# endpoint and cannot be disabled' by a meaningful slice of the free
+# catalogue (stealth/ox-alpha, liquid/lfm-2.5-2.6b:free, ...), which takes
+# those models out entirely. exclude=True does not save tokens -- it only
+# keeps chain-of-thought out of the content field so the JSON parser sees
+# a clean payload. Endpoints that reject the block wholesale are handled by
+# the retry in _post_chat_completion below.
+# Groq/Cerebras: reasoning_effort is gpt-oss-only and bottoms out at 'low'
+# (Qwen3 accepts 'none'). Groq additionally requires reasoning_format to be
+# 'hidden' or 'parsed' whenever JSON output is requested.
+_REASONING_PARAMS: Dict[str, Dict[str, Any]] = {
+    "openrouter": {"reasoning": {"effort": "low", "exclude": True}},
+    "groq": {"reasoning_effort": "low", "reasoning_format": "hidden"},
+    "cerebras": {"reasoning_effort": "low"},
+}
+
+
+def _post_chat_completion(url, payload, headers, timeout):
+    """POST a chat completion, retrying once without reasoning params on 400.
+
+    Some endpoints reject the reasoning block instead of ignoring it (the
+    observed case is "Reasoning is mandatory for this endpoint and cannot be
+    disabled"). Dropping the block and retrying costs one extra round trip
+    on those models and keeps them usable, rather than failing them over to
+    the next candidate for a parameter the caller does not actually need.
+    """
+    resp = requests.post(url, json=payload, headers=headers, timeout=timeout)
+    if resp.status_code == 400 and any(k in payload for k in _REASONING_KEYS):
+        body = (resp.text or "")[:300]
+        if "reason" in body.lower():
+            retry = {k: v for k, v in payload.items() if k not in _REASONING_KEYS}
+            logger.info(
+                "Endpoint rejected reasoning params for %s; retrying without them: %s",
+                payload.get("model"), body,
+            )
+            resp = requests.post(url, json=retry, headers=headers, timeout=timeout)
+    return resp
+
+
+_REASONING_KEYS = frozenset(
+    k for params in _REASONING_PARAMS.values() for k in params
+)
+
+
+def _reasoning_params(provider: str) -> Dict[str, Any]:
+    """Params that keep chain-of-thought out of the completion budget.
+
+    Returns an empty dict for providers with no such control (e.g. ollama),
+    so callers can splat it unconditionally.
+    """
+    return dict(_REASONING_PARAMS.get(provider, {}))
+
 class _JSONTools:
     @staticmethod
-    def try_parse_json(s: str) -> Optional[Dict[str, Any]]:
+    def strip_code_fences(s: str) -> str:
+        """Remove markdown code fences around a response.
+
+        Handles an opening fence with or without a language tag, content on
+        the same line as either fence, and any stray fence-only lines.
+        """
         s = s.strip()
-        # Quick guard: trim code fences if present
-        if s.startswith("```"):
-            # remove first fence line
-            s = "\n".join(line for line in s.splitlines() if not line.strip().startswith("```") )
-            s = s.strip()
+        if not s.startswith("```"):
+            return s
+        s = re.sub(r"^```[A-Za-z0-9_-]*[ \t]*\n?", "", s)
+        s = re.sub(r"\n?```\s*$", "", s)
+        s = "\n".join(line for line in s.splitlines() if line.strip() != "```")
+        return s.strip()
+
+    @staticmethod
+    def try_parse_json(s: str) -> Optional[Dict[str, Any]]:
+        s = _JSONTools.strip_code_fences(s)
         # Attempt direct parse
         try:
             return json.loads(s)
@@ -44,7 +117,57 @@ class _JSONTools:
             try:
                 return json.loads(frag)
             except Exception:
-                return None
+                pass
+        # Last resort: the response may be a JSON object cut off mid-generation
+        # (max_tokens exhausted) — salvage the complete leading fields.
+        return _JSONTools._repair_truncated_json(s)
+
+    @staticmethod
+    def _repair_truncated_json(s: str) -> Optional[Dict[str, Any]]:
+        """Best-effort salvage of a JSON object cut off mid-generation.
+
+        A response truncated by the token cap has no closing brace, so both the
+        direct parse and the ``{...}`` extraction fail and the entire payload —
+        including fields that arrived intact — used to be discarded. This closes
+        an unterminated string, drops a trailing partial member, appends the
+        missing closers, and retries; on failure it chops back to the previous
+        comma and tries again a few times.
+        """
+        start = s.find("{")
+        if start == -1:
+            return None
+        candidate = s[start:]
+        for _ in range(6):
+            stack: List[str] = []
+            in_str = False
+            esc = False
+            for ch in candidate:
+                if in_str:
+                    if esc:
+                        esc = False
+                    elif ch == "\\":
+                        esc = True
+                    elif ch == '"':
+                        in_str = False
+                elif ch == '"':
+                    in_str = True
+                elif ch in "{[":
+                    stack.append(ch)
+                elif ch in "}]" and stack:
+                    stack.pop()
+            attempt = candidate + ('"' if in_str else "")
+            attempt = re.sub(r"[,\s]+$", "", attempt)
+            attempt = re.sub(r'"[^"]*"\s*:\s*$', "", attempt)  # dangling key
+            attempt = re.sub(r"[,\s]+$", "", attempt)
+            attempt += "".join("}" if c == "{" else "]" for c in reversed(stack))
+            try:
+                parsed = json.loads(attempt)
+                return parsed if isinstance(parsed, dict) else None
+            except Exception:
+                cut = candidate.rfind(",")
+                if cut <= 0:
+                    return None
+                candidate = candidate[:cut]
         return None
 
     @staticmethod
@@ -72,27 +195,71 @@ class _JSONTools:
         return str(content) if content else None
 
     @staticmethod
+    def extract_message_text(message: Optional[dict]) -> Optional[str]:
+        """Normalize one chat-completion message into plain response text.
+
+        Different providers (and Ollama itself) shape "the answer" differently:
+        a plain string ``content``, a list of content blocks mixing thinking
+        and text, or — when a reasoning model burns its token budget before
+        finishing — an empty ``content`` with the chain-of-thought sitting in
+        a separate field instead (``reasoning`` / ``reasoning_details`` on
+        OpenRouter, ``thinking`` on Ollama). This is the single place that
+        reconciles those shapes into one string (or None) before any caller
+        hands it to ``try_parse_json``, so the parser always sees the same
+        normalized input regardless of which model answered.
+        """
+        if not isinstance(message, dict):
+            return None
+
+        text = _JSONTools.extract_text_content(message.get("content"))
+        if not text:
+            # Some completion-style responses use "text" instead of "content".
+            text = _JSONTools.extract_text_content(message.get("text"))
+        if text and text.strip():
+            return _JSONTools._strip_thinking_tokens(text)
+
+        # content was empty/null — the model likely spent its budget on
+        # reasoning without producing a final answer. Chain-of-thought is not
+        # the answer, but on some free models it's the only thing that comes
+        # back, so treat it as a last resort rather than giving up outright.
+        for key in ("reasoning", "thinking"):
+            fallback = message.get(key)
+            if isinstance(fallback, str) and fallback.strip():
+                return _JSONTools._strip_thinking_tokens(fallback)
+
+        details = message.get("reasoning_details")
+        if isinstance(details, list):
+            parts = [
+                str(d["text"]) for d in details
+                if isinstance(d, dict) and d.get("text")
+            ]
+            if parts:
+                return _JSONTools._strip_thinking_tokens("\n".join(parts))
+
+        return None
+
+    @staticmethod
     def _strip_thinking_tokens(text: str) -> str:
         """Strip chain-of-thought tokens from models that wrap reasoning in XML-like tags.
 
         Handles:
-          - ``...`` blocks anywhere in the text
-          - Trailing/leading ``...`` sections around the real answer
-          - Any ``<think>`` opener without a closing tag (drops everything to end)
+          - ``<think>...</think>`` / ``<thinking>...</thinking>`` blocks anywhere
+          - Any unmatched ``<think>`` opener, wherever it appears — everything
+            from the opener to the end is chain-of-thought the model never
+            closed (token budget ran out), so it is dropped rather than leaked
         """
-        import re
+        # Drop any matched thinking blocks, including multiline
+        text = re.sub(
+            r"<think(?:ing)?>.*?</think(?:ing)?>", "", text,
+            flags=re.DOTALL | re.IGNORECASE,
+        )
 
-        # Drop any ``...`` blocks, including multiline
-        text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
-
-        # Drop an unmatched opening `` at the start — models sometimes emit
-        # reasoning first and never close the tag before returning JSON.
-        if text.startswith("<think>"):
-            close = text.find("</think>")
-            if close == -1:
-                # Never closed; drop the entire response to avoid leaking reasoning
-                # into JSON parsing. Return empty so the caller can fallback.
-                return ""
+        # Any opener still present is unmatched; drop from there to the end so
+        # reasoning never leaks into JSON parsing or player-visible text. (An
+        # opener at position 0 therefore yields "" and the caller falls back.)
+        m = re.search(r"<think(?:ing)?>", text, flags=re.IGNORECASE)
+        if m:
+            text = text[: m.start()]
 
         # Collapse residual blank lines
         text = re.sub(r"\n{3,}", "\n\n", text)
@@ -278,10 +445,18 @@ class GenericLLMClient:
     def _rank_models(cls, all_models: List[dict]) -> List[str]:
         """Filter to free text-only models, deduplicate, rank, and return IDs.
 
-        Ranking axes:
-          1. Recency (newer created timestamp = more maintained / better instruction following)
-          2. Context window size (smallest = fastest / lightest per request)
-          3. Stable alphabetical tiebreaker
+        Ranking axes (in priority order):
+          1. Benchmarked first — a model OpenRouter has scored via Artificial
+             Analysis outranks one it hasn't, since a real capability signal
+             beats a guess.
+          2. Intelligence index, highest first — this is the "smartest" signal
+             the OpenRouter /models response embeds per model
+             (``benchmarks.artificial_analysis.intelligence_index``); see
+             https://openrouter.ai/docs/api/api-reference/models/list-all-models-and-their-properties.
+          3. Context window size, smallest first — a rough proxy for a
+             lighter/faster model when two are otherwise tied on intelligence
+             (also the only axis available for the un-benchmarked group).
+          4. Recency, then a stable alphabetical tiebreaker.
         """
         seen: set = set()
         eligible = []
@@ -294,16 +469,25 @@ class GenericLLMClient:
             seen.add(mid)
             eligible.append(m)
 
-        eligible.sort(key=lambda m: (
-            -(m.get("created") or 0),               # 1. newest first
-            m.get("context_length") or float("inf"), # 2. smallest context first
-            m["id"],                                 # 3. stable tiebreaker
-        ))
+        def sort_key(m: dict):
+            intelligence = ((m.get("benchmarks") or {}).get("artificial_analysis") or {}).get(
+                "intelligence_index"
+            )
+            has_benchmark = isinstance(intelligence, (int, float))
+            return (
+                0 if has_benchmark else 1,                     # 1. benchmarked first
+                -float(intelligence) if has_benchmark else 0.0,  # 2. smartest first
+                m.get("context_length") or float("inf"),         # 3. smallest context first
+                -(m.get("created") or 0),                         # 4. newest first
+                m["id"],                                          # 5. stable tiebreaker
+            )
+
+        eligible.sort(key=sort_key)
         return [m["id"] for m in eligible]
 
     @classmethod
     def _fetch_and_rank_models(cls, api_key: str) -> List[str]:
-        """Fetch all free OpenRouter models, filter to text-capable, rank, cache."""
+        """Fetch free OpenRouter models, filter to text-capable, rank, cache."""
         headers = {
             "Authorization": f"Bearer {api_key}",
             "HTTP-Referer": os.getenv("OPENROUTER_SITE", ""),
@@ -315,13 +499,15 @@ class GenericLLMClient:
             r.raise_for_status()
             return r.json().get("data", [])
 
-        # Fetch all models. The free-text filter and recency-based ranking below
-        # automatically prefer capable, maintained models regardless of category tag.
+        # `max_price=0` filters server-side to free-tier models (cuts the ~400
+        # model catalog down to a couple dozen); _is_free_text_model below is
+        # kept as a belt-and-suspenders re-check plus the output-modality filter,
+        # which this query param doesn't cover.
         all_raw: List[dict] = []
         errors: List[str] = []
 
         try:
-            all_raw.extend(fetch("https://openrouter.ai/api/v1/models"))
+            all_raw.extend(fetch("https://openrouter.ai/api/v1/models?max_price=0&limit=1000"))
         except Exception as e:
             errors.append(str(e))
 
@@ -560,14 +746,31 @@ class GenericLLMClient:
                 return None
 
             # If the model ignored our 'plain-text' request and returned JSON anyway,
-            # try to extract the 'description' field.
-            if isinstance(res, str) and (res.strip().startswith("{") or "```json" in res.lower()):
+            # try to extract the 'description' field. Never hand raw JSON or code
+            # fences to the caller — that leaks straight into player-visible text.
+            if isinstance(res, str) and (
+                res.strip().startswith(("{", "```")) or "```json" in res.lower()
+            ):
                 obj = _JSONTools.try_parse_json(res)
                 if isinstance(obj, dict):
                     desc = obj.get("description") or obj.get("action") or obj.get("text")
+                    if not desc:
+                        # Unknown key names — salvage the first string value.
+                        desc = next(
+                            (v for v in obj.values() if isinstance(v, str) and v.strip()),
+                            None,
+                        )
                     if desc:
                         logger.info("generate_plain extracted plain text from JSON wrapper. model=%s", self.model)
                         return _JSONTools.sanitize_text(str(desc))
+                # Unparseable JSON-ish response: if what's left after fence
+                # stripping reads as plain text, salvage it; otherwise give up.
+                stripped = _JSONTools.strip_code_fences(res)
+                if stripped and not stripped.lstrip().startswith("{"):
+                    logger.info("generate_plain salvaged fence-stripped plain text. model=%s", self.model)
+                    return _JSONTools.sanitize_text(stripped)
+                logger.warning("generate_plain unusable JSON-like response; returning None. model=%s", self.model)
+                return None
 
             logger.info("generate_plain succeeded. model=%s result_type=%s result_chars=%s", self.model, type(res).__name__, len(str(res)))
             return str(res)
@@ -788,12 +991,19 @@ class GenericLLMClient:
                         {"role": "user", "content": user_prompt},
                     ],
                     extra_headers=extra_headers or None,
+                    extra_body=_reasoning_params(self.provider) or None,
                     temperature=0.2,
                     top_p=0.9,
                     max_tokens=1024 if structured else 256,
                 )
 
-                content = getattr(completion.choices[0].message, "content", None)
+                msg_obj = completion.choices[0].message
+                msg_dict = {
+                    "content": getattr(msg_obj, "content", None),
+                    "reasoning": getattr(msg_obj, "reasoning", None),
+                    "reasoning_details": getattr(msg_obj, "reasoning_details", None),
+                }
+                content = _JSONTools.extract_message_text(msg_dict)
 
                 if content:
                     logger.info("SDK request for %s SUCCEEDED. Content length: %s", model_id, len(str(content)))
@@ -835,14 +1045,15 @@ class GenericLLMClient:
                 "temperature": 0.2,
                 "top_p": 0.9,
                 "max_tokens": 1024 if structured else 256,
+                **_reasoning_params(self.provider),
             }
 
             logger.debug("_openrouter_chat_single HTTP fallback model=%s timeout=%s", model_id, timeout)
-            resp = requests.post(
+            resp = _post_chat_completion(
                 "https://openrouter.ai/api/v1/chat/completions",
-                json=payload,
-                headers=http_headers,
-                timeout=timeout,
+                payload,
+                http_headers,
+                timeout,
             )
 
             if resp.status_code == 429:
@@ -868,13 +1079,11 @@ class GenericLLMClient:
                     first = choices[0]
                     if isinstance(first, dict):
                         msg = first.get("message")
-                        if isinstance(msg, dict):
-                            # extract_text_content strips thinking blocks from thinking-mode models
-                            content = _JSONTools.extract_text_content(msg.get("content")) or msg.get("reasoning")
+                        content = _JSONTools.extract_message_text(msg) if isinstance(msg, dict) else None
                         if not content:
-                            content = _JSONTools.extract_text_content(
-                                first.get("text") or first.get("content")
-                            ) or first.get("reasoning")
+                            # Some providers put the payload directly on the
+                            # choice instead of nesting it under "message".
+                            content = _JSONTools.extract_message_text(first)
 
             if content:
                 logger.info("HTTP request for %s SUCCEEDED. Content length: %s", model_id, len(str(content)))
@@ -1154,7 +1363,7 @@ class NpcChatLLMAdapter(GenericLLMClient):
             f"Do NOT invent locations, factions, or creatures not in: {allowed}."
         )
         temp = float(os.getenv("NPC_CHAT_TEMP_PERSONALITY", "0.7"))
-        raw = self._call_llm(system, user, max_tokens=256, temperature=temp)
+        raw = self._call_llm(system, user, max_tokens=400, temperature=temp)
         if not raw:
             return None
         parsed = _JSONTools.try_parse_json(raw)
@@ -1209,7 +1418,7 @@ class NpcChatLLMAdapter(GenericLLMClient):
         )
 
         temp = float(os.getenv("NPC_CHAT_TEMP_NPC", "0.65"))
-        raw = self._call_llm(system_prompt, user, max_tokens=300, temperature=temp)
+        raw = self._call_llm(system_prompt, user, max_tokens=500, temperature=temp)
         if not raw:
             logger.warning("generate_npc_turn LLM returned no raw response. is_opening=%s", is_opening)
             return None
@@ -1313,9 +1522,12 @@ class NpcChatLLMAdapter(GenericLLMClient):
 
         temp = float(os.getenv("NPC_CHAT_TEMP_TURN", "0.7"))
         # The reply is 1-3 sentences plus three short options (~150-250 tokens in
-        # practice); a tight cap keeps typical latency low so the 6s ceiling only
-        # ever bites on a genuinely stuck call.
-        raw = self._call_llm(system_prompt, user, max_tokens=300, temperature=temp)
+        # practice). The cap carries headroom above that: a 300-token cap sat
+        # right on the typical payload size and routinely truncated the JSON
+        # mid-string on wordier models, losing the whole turn. Latency at this
+        # size is dominated by network, not decode length, and truncated tails
+        # are additionally salvaged by _JSONTools._repair_truncated_json.
+        raw = self._call_llm(system_prompt, user, max_tokens=800, temperature=temp)
         if not raw:
             logger.warning("generate_turn LLM returned no raw response. is_opening=%s", is_opening)
             return None
@@ -1411,15 +1623,13 @@ class NpcChatLLMAdapter(GenericLLMClient):
         )
 
         temp = float(os.getenv("NPC_CHAT_TEMP_OPTIONS", "0.8"))
-        raw = self._call_llm(system, user, max_tokens=300, temperature=temp)
+        raw = self._call_llm(system, user, max_tokens=500, temperature=temp)
         if not raw:
             logger.warning("generate_jean_options LLM returned no raw response.")
             return None
         logger.debug("generate_jean_options raw response chars=%s raw=%r", len(raw), raw[:500])
         # Try parsing as list
-        raw = raw.strip()
-        if raw.startswith("```"):
-            raw = "\n".join(l for l in raw.splitlines() if not l.strip().startswith("```")).strip()
+        raw = _JSONTools.strip_code_fences(raw)
         try:
             parsed = json.loads(raw)
         except Exception:
@@ -1531,7 +1741,7 @@ class NpcChatLLMAdapter(GenericLLMClient):
             )
             r.raise_for_status()
             data = r.json()
-            return data.get("message", {}).get("content", "").strip() or None
+            return _JSONTools.extract_message_text(data.get("message"))
         except Exception as e:
             logger.warning(f"NpcChatLLMAdapter Ollama error: {e}")
             return None
@@ -1598,14 +1808,15 @@ class NpcChatLLMAdapter(GenericLLMClient):
                 "max_tokens": max_tokens,
                 "temperature": temperature,
                 "top_p": 0.9,
+                **_reasoning_params(self.provider),
             }
             logger.info("NpcChatLLMAdapter._call_openrouter attempting model_id=%s attempt=%s/3", model_id, attempts)
             try:
-                response = requests.post(
+                response = _post_chat_completion(
                     "https://openrouter.ai/api/v1/chat/completions",
-                    json=payload,
-                    headers=headers,
-                    timeout=self._round_timeout(),
+                    payload,
+                    headers,
+                    self._round_timeout(),
                 )
                 if getattr(response, "status_code", None) == 429:
                     logger.warning("NpcChatLLMAdapter._call_openrouter 429 rate limit model=%s", model_id)
@@ -1616,16 +1827,10 @@ class NpcChatLLMAdapter(GenericLLMClient):
                 choices = data.get("choices") if isinstance(data, dict) else None
                 first = choices[0] if isinstance(choices, list) and choices else None
                 message = first.get("message") if isinstance(first, dict) else None
-                content = (
-                    _JSONTools.extract_text_content(message.get("content"))
-                    if isinstance(message, dict)
-                    else None
-                )
-                if not content and isinstance(message, dict):
-                    content = _JSONTools.extract_text_content(message.get("reasoning"))
+                content = _JSONTools.extract_message_text(message)
                 if content:
                     logger.info("NpcChatLLMAdapter._call_openrouter succeeded model=%s result_chars=%s", model_id, len(content))
-                    return str(content).strip() or None
+                    return content
                 logger.warning("NpcChatLLMAdapter._call_openrouter no content from model=%s", model_id)
             except Exception as e:
                 logger.warning("NpcChatLLMAdapter._call_openrouter model %s failed: %s", model_id, e)
