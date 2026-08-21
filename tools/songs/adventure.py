@@ -3,7 +3,7 @@ from ..audio_engine.core import generate_tone, generate_chord, mix_layers, gener
 
 class AdventureSong(Song):
     def __init__(self):
-        super().__init__("Adventure Theme", "bgm_adventure.wav")
+        super().__init__("Adventure Theme", "bgm/Virtue Quest.wav")
 
     def render(self, tempo_scale=1.0, pitch_shift=0) -> bytes:
         # Modifiers

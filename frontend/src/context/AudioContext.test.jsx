@@ -264,7 +264,7 @@ describe('AudioContext', () => {
         act(() => { result.current.setIsMusicMuted(true); });
         act(() => { result.current.playBGM('battle'); });
 
-        const bgmInstance = global.__audioInstances.find(a => a.src.includes('bgm_battle'));
+        const bgmInstance = global.__audioInstances.find(a => a.src.includes('Crossing Blades.mp3'));
         expect(bgmInstance.volume).toBe(0);
     });
 

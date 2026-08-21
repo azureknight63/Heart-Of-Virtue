@@ -3,7 +3,7 @@ from ..audio_engine.core import generate_tone, generate_chord, mix_layers, gener
 
 class BattleSong(Song):
     def __init__(self):
-        super().__init__("Battle Theme", "bgm_battle.wav")
+        super().__init__("Crossing Blades", "bgm/Crossing Blades.wav")
 
     def render(self, tempo_scale=1.0, pitch_shift=0) -> bytes:
         def d(dur): return dur / tempo_scale

@@ -55,8 +55,8 @@ const getAssetPath = (path) => {
 };
 
 const BGM_MAP = {
-    'adventure': getAssetPath('/assets/sounds/bgm_adventure.wav'),
-    'battle': getAssetPath('/assets/sounds/bgm_battle.mp3'),
+    'adventure': getAssetPath('/assets/sounds/bgm/Virtue Quest.mp3'),
+    'battle': getAssetPath('/assets/sounds/bgm/Crossing Blades.mp3'),
     'dark_grotto': getAssetPath('/assets/sounds/dark_grotto.mp3'),
     'dungeon': getAssetPath('/assets/sounds/bgm_dungeon.mp3'),
     'eastern_descent': getAssetPath('/assets/sounds/bgm_eastern_descent.mp3'),
