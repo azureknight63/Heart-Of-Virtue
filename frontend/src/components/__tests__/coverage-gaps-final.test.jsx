@@ -193,19 +193,19 @@ describe('CombatLog', () => {
     expect(panel.style.height).toBe('400px')
   })
 
-  it('tolerates a missing log prop, rendering an empty body under the header', () => {
+  it('shows the placeholder when the log prop is absent', () => {
     // `.not.toThrow()` alone passed for a component that rendered nothing at
     // all. Pin what actually happens instead.
     //
-    // NOTE the asymmetry: `log={[]}` shows "Combat started...", but an ABSENT
-    // log shows nothing, because the guard is `log?.length === 0` and
-    // `undefined === 0` is false. Harmless today — LeftPanel is the only call
-    // site and always passes an array — but if a second caller ever omits it,
-    // the panel goes blank rather than showing the placeholder.
+    // This previously asserted the opposite — that an absent log rendered a
+    // blank body — because the guard was `log?.length === 0` and
+    // `undefined === 0` is false, so the placeholder was suppressed. That
+    // asymmetry against `log={[]}` was the defect, not the contract; the guard
+    // now keys off the entries actually rendered, so both cases agree.
     const { container } = render(<CombatLog />)
     expect(screen.getByText('Combat Log')).toBeInTheDocument()
-    expect(screen.queryByText('Combat started...')).toBeNull()
-    expect(container.querySelector('div[style*="overflow-y: auto"]').children).toHaveLength(0)
+    expect(screen.getByText('Combat started...')).toBeInTheDocument()
+    expect(container.querySelector('div[style*="overflow-y: auto"]').children).toHaveLength(1)
   })
 
   it('auto-scrolls to the newest entry when the log grows', () => {

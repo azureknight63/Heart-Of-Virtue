@@ -79,6 +79,91 @@ describe('InteractPanel', () => {
     vi.clearAllMocks();
   });
 
+  describe('local object-state patch after an interaction', () => {
+    // A locked chest whose keywords change once it is unlocked. The server row
+    // in `location` is deliberately left stale, exactly as it is in play: the
+    // interact response patches the panel locally so the new action appears
+    // without waiting for a refetch round trip.
+    const lockedChestLocation = {
+      name: 'Vault',
+      npcs: [],
+      items: [],
+      objects: [
+        {
+          id: 'chest1',
+          name: 'Iron Chest',
+          description: 'A heavy iron chest.',
+          keywords: ['Unlock', 'Examine'],
+          state: 'locked',
+          locked: true,
+        },
+      ],
+    };
+
+    it('keeps the patched keywords instead of reverting to the stale room row', async () => {
+      // The whole point of onObjectStateUpdate: after Unlock succeeds, the panel
+      // must offer "Open" immediately. The location-sync effect lists
+      // selectedTarget in its deps, so patching selectedTarget re-runs it while
+      // `location` still holds the pre-unlock row -- if that effect overwrites
+      // the patch, the button silently reverts to "Unlock" forever.
+      apiEndpoints.world.interact.mockResolvedValue({
+        data: {
+          success: true,
+          output: 'The lock clicks open.',
+          object_state: {
+            keywords: ['Open', 'Examine'],
+            state: 'unlocked',
+            locked: false,
+          },
+        },
+      });
+
+      render(<InteractPanel location={lockedChestLocation} onClose={mockOnClose} />);
+      fireEvent.click(screen.getAllByText(/Iron Chest/i)[0]);
+      fireEvent.click(await screen.findByRole('button', { name: /Unlock/i }));
+
+      // The patched action must appear and survive the sync effect re-running.
+      expect(await screen.findByRole('button', { name: /^Open$/i })).toBeDefined();
+      await waitFor(() => {
+        expect(screen.queryByRole('button', { name: /Unlock/i })).toBeNull();
+      });
+    });
+
+    it('still syncs a genuinely updated room row into the selected target', async () => {
+      // The complement: suppressing the revert must not disable real syncing.
+      // A changed description arriving from the server must still reach the panel.
+      const { rerender, container } = render(
+        <InteractPanel location={lockedChestLocation} onClose={mockOnClose} />
+      );
+      fireEvent.click(screen.getAllByText(/Iron Chest/i)[0]);
+      // renderTextWithLinks splits the description across elements, so assert
+      // on the container's text rather than a single node.
+      await waitFor(() => {
+        expect(container.textContent).toContain('A heavy iron chest.');
+      });
+
+      rerender(
+        <InteractPanel
+          location={{
+            ...lockedChestLocation,
+            objects: [
+              {
+                ...lockedChestLocation.objects[0],
+                description: 'The iron chest now stands open.',
+                state: 'opened',
+              },
+            ],
+          }}
+          onClose={mockOnClose}
+        />
+      );
+
+      await waitFor(() => {
+        expect(container.textContent).toContain('The iron chest now stands open.');
+      });
+    });
+  });
+
   it('lists every npc, object and ground item in the room as a target', () => {
     const { container } = render(<InteractPanel location={mockLocation} onClose={mockOnClose} />);
 
