@@ -50,7 +50,17 @@ _REASONING_PARAMS: Dict[str, Dict[str, Any]] = {
 }
 
 
-def _post_chat_completion(url, payload, headers, timeout):
+_REASONING_KEYS = frozenset(
+    k for params in _REASONING_PARAMS.values() for k in params
+)
+
+
+def _post_chat_completion(
+    url: str,
+    payload: Dict[str, Any],
+    headers: Dict[str, str],
+    timeout: float,
+) -> Any:
     """POST a chat completion, retrying once without reasoning params on 400.
 
     Some endpoints reject the reasoning block instead of ignoring it (the
@@ -59,10 +69,15 @@ def _post_chat_completion(url, payload, headers, timeout):
     on those models and keeps them usable, rather than failing them over to
     the next candidate for a parameter the caller does not actually need.
     """
+    if requests is None:
+        raise RuntimeError("requests is not installed; cannot reach the provider")
     resp = requests.post(url, json=payload, headers=headers, timeout=timeout)
     if resp.status_code == 400 and any(k in payload for k in _REASONING_KEYS):
         body = (resp.text or "")[:300]
-        if "reason" in body.lower():
+        # Match "reasoning", not "reason": the latter appears in unrelated
+        # 400 bodies ("reason: invalid model"), and retrying those buys a
+        # second identical failure at full timeout on the combat path.
+        if "reasoning" in body.lower():
             retry = {k: v for k, v in payload.items() if k not in _REASONING_KEYS}
             logger.info(
                 "Endpoint rejected reasoning params for %s; retrying without them: %s",
@@ -70,11 +85,6 @@ def _post_chat_completion(url, payload, headers, timeout):
             )
             resp = requests.post(url, json=retry, headers=headers, timeout=timeout)
     return resp
-
-
-_REASONING_KEYS = frozenset(
-    k for params in _REASONING_PARAMS.values() for k in params
-)
 
 
 def _reasoning_params(provider: str) -> Dict[str, Any]:
@@ -1028,7 +1038,6 @@ class GenericLLMClient:
 
         # Direct HTTP fallback
         try:
-            import requests
             http_headers = {
                 "Authorization": f"Bearer {self._openrouter_api_key}",
                 "Content-Type": "application/json",
@@ -1493,31 +1502,26 @@ class NpcChatLLMAdapter(GenericLLMClient):
             '"reputation_delta": 0, "loquacity_delta": -8, '
             '"jean_options": [{"tone": "direct", "text": "..."}, '
             '{"tone": "guarded", "text": "..."}, {"tone": "open", "text": "..."}]}\n\n'
-            "npc_text is the spoken words only. npc_flavor is optional third-person "
-            "physical or environmental flavor for the same beat (for example, "
-            "'She studies the dust before answering'). Keep it separate from the "
-            "spoken line and return an empty string when there is no flavor.\n"
-            "conversation_quality reflects how the NPC felt about this exchange:\n"
-            "positive=enjoyed/interested, neutral=tolerated, negative=annoyed/offended, "
-            "offensive=deeply offended.\n"
-            "reputation_delta is a small integer from -5 to +5 for how much this exchange "
-            "shifts the NPC's opinion of Jean, in character. 0 for an unremarkable exchange; "
-            "reserve the extremes for genuinely memorable moments.\n"
-            "loquacity_delta is a signed integer for how the NPC's willingness to keep "
-            "talking changed. Conversation costs energy, so it is USUALLY NEGATIVE "
-            "(-3 to -12). Use a small POSITIVE value (up to +8) ONLY when Jean raises "
-            "something this NPC genuinely finds interesting or cares about. Use -25 to -35 "
-            "if Jean is deeply offensive.\n"
-            "For the opening line set reputation_delta and loquacity_delta to 0.\n"
-            "The three jean_options are Jean's possible replies (he/him, a cautious, "
-            "measured traveler): direct=brief and to the point, guarded=deflects or keeps "
-            "distance, open=engages with warmth or curiosity. Each 8-20 words. Ground every "
-            "option in the specific thing the NPC just said and in the conversation history "
-            "above — react to concrete details, don't default to generic pleasantries. "
-            "Jean's knowledge is strictly bounded by the JEAN'S KNOWN CONTEXT block and the "
-            "WORLD facts in the system prompt, plus this conversation: never let him "
-            "reference people, places, events, or revelations outside that scope, and no "
-            "option may echo a line from the history above."
+            # Field-per-line rather than prose: this block is static and re-sent
+            # every round. Every range and rule below is load-bearing and covered
+            # by tests/integration/test_npc_chat_live.py -- re-run it after edits.
+            "npc_text: spoken words only.\n"
+            "npc_flavor: optional third-person physical or environmental beat "
+            "('She studies the dust before answering'); \"\" if none.\n"
+            "conversation_quality: how the NPC felt — positive=enjoyed, neutral=tolerated, "
+            "negative=annoyed, offensive=deeply offended.\n"
+            "reputation_delta: -5..+5, how far this exchange shifts the NPC's opinion of "
+            "Jean. 0 for unremarkable; extremes only for memorable moments.\n"
+            "loquacity_delta: change in willingness to keep talking. Usually negative "
+            "(-3..-12); up to +8 only when Jean raises something this NPC genuinely cares "
+            "about; -25..-35 if Jean is deeply offensive.\n"
+            "On an opening line set both deltas to 0.\n"
+            "jean_options: Jean's three replies (he/him, cautious and measured). "
+            "direct=brief and to the point; guarded=deflects or keeps distance; open=warm "
+            "or curious. 8-20 words each. Ground each one in the specific thing the NPC "
+            "just said and in the history — concrete details, not pleasantries. Never echo "
+            "a history line, and never reference anything outside JEAN'S KNOWN CONTEXT, "
+            "the WORLD facts, and this conversation."
         )
 
         temp = float(os.getenv("NPC_CHAT_TEMP_TURN", "0.7"))

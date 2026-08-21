@@ -7,11 +7,12 @@ standard pytest run. Run them explicitly:
     python -m pytest tests/integration/test_tactical_advisor_live.py -v
 
 Prerequisites — at least one of:
-  1. Ollama running locally (MYNX_LLM_ENABLED=1 MYNX_LLM_PROVIDER=ollama)
-  2. OpenRouter API key  (MYNX_LLM_ENABLED=1 MYNX_LLM_PROVIDER=openrouter
-                          OPENROUTER_API_KEY=sk-...)
+    HOV_LIVE_LLM=1 python -m pytest tests/integration/test_tactical_advisor_live.py -v
 
-If neither is configured the tests are skipped (not failed).
+HOV_LIVE_LLM=1 is the opt-in; the provider is read from .env by the live_env
+fixture in conftest.py. Gating on MYNX_LLM_ENABLED instead (as this module
+used to) can never work: tests/conftest.py pins that variable to 0 for the
+whole suite, so the module skipped itself unconditionally.
 
 What these tests validate
 ─────────────────────────
@@ -31,11 +32,8 @@ import time
 import pytest
 
 # ---------------------------------------------------------------------------
-# Skip entire module if LLM is not configured
+# Skip entire module unless live LLM calls are explicitly opted into
 # ---------------------------------------------------------------------------
-
-def _llm_enabled() -> bool:
-    return os.getenv("MYNX_LLM_ENABLED", "0") in ("1", "true", "True")
 
 
 def _make_client():
@@ -47,10 +45,16 @@ def _make_client():
     return client
 
 
-# All tests in this module are skipped if LLM is not configured/reachable.
+# Opt-in gate. Duplicated (rather than imported from conftest) because
+# tests/integration has no __init__.py, so a relative import fails at
+# collection; a two-line env read is not worth adding a package for.
+def _live_llm_enabled() -> bool:
+    return os.getenv("HOV_LIVE_LLM", "0") in ("1", "true", "True")
+
+
 pytestmark = pytest.mark.skipif(
-    not _llm_enabled(),
-    reason="MYNX_LLM_ENABLED not set — skipping live LLM integration tests",
+    not _live_llm_enabled(),
+    reason="set HOV_LIVE_LLM=1 to run live LLM integration tests",
 )
 
 
