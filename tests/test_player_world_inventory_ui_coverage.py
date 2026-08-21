@@ -153,11 +153,38 @@ class TestInventoryCoverage:
         assert "x5" in all_printed
 
     def test_drop_merchandise_items_no_tile(self):
-        """drop_merchandise_items with no current_room does nothing."""
+        """Off-map (no tile at the player's coordinates), the guard returns
+        before touching the inventory. The old body had no assertion at all,
+        so an implementation that dropped every merchandise item into the void
+        would have passed."""
+        from src.narration import capture_narration
+
         p = _make_player()
+        merch = MagicMock()
+        merch.merchandise = True
+        merch.name = "Sword"
+        p.inventory = [merch]
+
         with patch("src.player._inventory.tile_exists", return_value=None):
-            # Should not raise
+            with capture_narration() as messages:
+                p.drop_merchandise_items()
+
+        assert p.inventory == [merch]
+        assert messages == []
+
+    def test_drop_merchandise_items_survives_a_broken_map_lookup(self):
+        """``tile_exists`` raising is caught and treated as "no tile"."""
+        p = _make_player()
+        merch = MagicMock()
+        merch.merchandise = True
+        p.inventory = [merch]
+
+        with patch(
+            "src.player._inventory.tile_exists", side_effect=RuntimeError("bad map")
+        ):
             p.drop_merchandise_items()
+
+        assert p.inventory == [merch]
 
     def test_drop_merchandise_items_drops_merchandise(self):
         p = _make_player()

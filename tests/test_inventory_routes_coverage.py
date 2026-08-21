@@ -857,8 +857,46 @@ class TestGetItemAndIndex:
         from src.api.routes.inventory import get_item_and_index
 
         player = _make_player(items=[])
-        found, idx = get_item_and_index(player, item_id="9999999")
-        assert found is None
+        # The index half of the tuple matters: callers do
+        # `item, idx = get_item_and_index(...)` and then index the inventory
+        # with `idx`, so a miss that returned (None, 0) would delete the
+        # wrong item. `found is None` alone never checked it.
+        assert get_item_and_index(player, item_id="9999999") == (None, None)
+
+    def test_item_id_miss_does_not_fall_through_to_index(self):
+        """An `item_id` that matches nothing returns immediately.
+
+        If the id branch fell through to the index branch, a stale item id
+        from a client whose inventory has since changed would silently act on
+        whatever now sits at that position.
+        """
+        from src.api.routes.inventory import get_item_and_index
+
+        item = _make_item()
+        player = _make_player(items=[item])
+        assert get_item_and_index(player, item_id="9999999", item_index=0) == (
+            None,
+            None,
+        )
+
+    def test_finds_an_item_on_a_real_player_via_the_inventory_attribute(self):
+        """The engine ``Player`` has no ``inventory_list`` at all.
+
+        Every other test in this class sets ``inventory_list`` on a mock, so
+        they all exercise the alias branch and none of them exercise the one
+        that actually runs in production. Pinned against a real Player.
+        """
+        from src.api.routes.inventory import get_item_and_index
+        from src.player import Player
+
+        player = Player()
+        assert not hasattr(player, "inventory_list")
+        target = player.inventory[2]
+
+        found, idx = get_item_and_index(player, item_id=str(id(target)))
+        assert found is target
+        assert idx == 2
+        assert get_item_and_index(player, item_index=2) == (target, 2)
 
     def test_find_by_index(self):
         from src.api.routes.inventory import get_item_and_index
@@ -869,19 +907,22 @@ class TestGetItemAndIndex:
         assert found is item
         assert idx == 0
 
-    def test_index_out_of_range(self):
+    @pytest.mark.parametrize("bad_index", [5, -1, 1])
+    def test_index_out_of_range(self, bad_index):
         from src.api.routes.inventory import get_item_and_index
 
-        player = _make_player(items=[])
-        found, idx = get_item_and_index(player, item_index=5)
-        assert found is None
+        player = _make_player(items=[_make_item()])
+        # -1 must be rejected rather than silently wrapping to the last item,
+        # which `0 <= item_index` is what guards against.
+        assert get_item_and_index(player, item_index=bad_index) == (None, None)
 
     def test_no_params_returns_none(self):
         from src.api.routes.inventory import get_item_and_index
 
-        player = _make_player(items=[])
-        found, idx = get_item_and_index(player)
-        assert found is None
+        player = _make_player(items=[_make_item()])
+        # A non-empty inventory: with neither selector supplied the helper
+        # must decline rather than default to index 0.
+        assert get_item_and_index(player) == (None, None)
 
     def test_falls_back_to_inventory_attr(self):
         from src.api.routes.inventory import get_item_and_index
@@ -915,8 +956,22 @@ class TestResolveAllyTarget:
 
         player = _make_player()
         player.combat_list_allies = [player]
-        result = _resolve_ally_target(player, "ally_99999")
-        assert result is None
+        assert _resolve_ally_target(player, "ally_99999") is None
+
+    def test_jean_is_not_resolvable_as_an_ally_target(self):
+        """`combat_list_allies` contains Jean himself.
+
+        Resolving his own id through the ally path would let a "use item on
+        ally" request take the ally branch for the player, bypassing whatever
+        self-targeting handling the caller does.
+        """
+        from src.api.routes.inventory import _resolve_ally_target
+
+        player = _make_player()
+        ally = MagicMock()
+        player.combat_list_allies = [player, ally]
+        assert _resolve_ally_target(player, f"ally_{id(player)}") is None
+        assert _resolve_ally_target(player, f"ally_{id(ally)}") is ally
 
     def test_strips_ally_prefix(self):
         from src.api.routes.inventory import _resolve_ally_target
@@ -1096,7 +1151,11 @@ class TestDatabaseClass:
         original_url = os.environ.get("TURSO_DATABASE_URL")
         try:
             os.environ.pop("TURSO_DATABASE_URL", None)
-            with pytest.raises((ValueError, Exception)):
+            # `pytest.raises((ValueError, Exception))` is just
+            # `pytest.raises(Exception)` -- it would have been satisfied by an
+            # AttributeError from a typo elsewhere in get_client, i.e. by the
+            # method being broken rather than by it validating configuration.
+            with pytest.raises(ValueError, match="TURSO_DATABASE_URL is not set"):
                 db.get_client()
         finally:
             if original_url:
@@ -1122,6 +1181,14 @@ class TestDatabaseClass:
                 mock_create.return_value = mock_client
                 client = db.get_client()
             assert client is mock_client
+            # The credentials must actually be forwarded: a client built
+            # without auth_token would authenticate as nobody and every query
+            # would fail at runtime, not here.
+            mock_create.assert_called_once_with(
+                "libsql://test.example.com", auth_token="test-token"
+            )
+            # ...and it is cached on the singleton for reuse.
+            assert db._client is mock_client
         finally:
             db._client = None
 
@@ -1154,6 +1221,10 @@ class TestDatabaseClass:
                 mock_create.return_value = new_client
                 result = db.get_client()
             assert result is new_client
+            # The stale client must be replaced, not merely bypassed --
+            # keeping it cached would leak its aiohttp session (issue #406).
+            assert db._client is new_client
+            assert db._client is not mock_client
         finally:
             db._client = None
 
@@ -1165,8 +1236,21 @@ class TestDatabaseClass:
         mock_client = AsyncMock()
         mock_client.execute = AsyncMock(return_value="rows")
         with patch.object(db, "get_client", return_value=mock_client):
-            result = await db.execute("SELECT 1")
+            result = await db.execute("SELECT ?", ["jean"])
         assert result == "rows"
+        # Params must be forwarded, or every parameterized query in the app
+        # silently becomes an unbound one.
+        mock_client.execute.assert_awaited_once_with("SELECT ?", ["jean"])
+
+    @pytest.mark.asyncio
+    async def test_execute_defaults_params_to_none(self):
+        from src.api.db import Database
+
+        db = Database()
+        mock_client = AsyncMock()
+        with patch.object(db, "get_client", return_value=mock_client):
+            await db.execute("SELECT 1")
+        mock_client.execute.assert_awaited_once_with("SELECT 1", None)
 
     @pytest.mark.asyncio
     async def test_batch_delegates_to_client(self):
@@ -1178,6 +1262,7 @@ class TestDatabaseClass:
         with patch.object(db, "get_client", return_value=mock_client):
             result = await db.batch(["stmt1", "stmt2"])
         assert result == ["r1", "r2"]
+        mock_client.batch.assert_awaited_once_with(["stmt1", "stmt2"])
 
     @pytest.mark.asyncio
     async def test_close_clears_client(self):
@@ -1188,12 +1273,26 @@ class TestDatabaseClass:
         mock_client.close = AsyncMock()
         db._client = mock_client
         await db.close()
+        # Both halves matter: dropping the reference without awaiting close()
+        # leaks the aiohttp session, and awaiting close() without dropping the
+        # reference hands the next caller a closed client.
+        mock_client.close.assert_awaited_once_with()
         assert db._client is None
 
     @pytest.mark.asyncio
     async def test_close_when_no_client_noop(self):
+        """Idempotent close: the second call must not construct a client.
+
+        This test previously had no assertion at all -- it passed as long as
+        `close()` did not raise, which would also be true of an
+        implementation that called `get_client()` first (opening a *new*
+        connection in order to close it).
+        """
         from src.api.db import Database
 
         db = Database()
         db._client = None
-        await db.close()  # Should not raise
+        with patch.object(Database, "get_client") as mock_get:
+            await db.close()
+        mock_get.assert_not_called()
+        assert db._client is None

@@ -156,11 +156,18 @@ class TestNPCAIDecisionMaking:
     """Test AI decision making: action selection, retreat logic, ability choice."""
 
     def test_npc_select_move_returns_move(self):
-        """Test that select_move() assigns a move to current_move."""
+        """``select_move`` must assign an affordable move drawn from the NPC's
+        own kit. ``is not None`` alone was satisfied by the ``NpcRest`` hard
+        fallback — i.e. by the Slime failing to choose anything."""
         npc = Slime()
         npc.fatigue = 100
+
         npc.select_move()
+
         assert npc.current_move is not None
+        assert npc.current_move.fatigue_cost <= npc.fatigue
+        assert npc.current_move.name in {m.name for m in npc.known_moves}
+        assert npc.current_move.user is npc
 
     def test_npc_select_move_respects_fatigue_cost(self):
         """Test that NPC won't select moves that exceed fatigue."""
@@ -271,9 +278,15 @@ class TestNPCCombatBehavior:
         npc.in_combat = True
         npc.fatigue = 100
         npc.hp = 2  # Very low health
+
         npc.select_move()
-        # NPC should still be able to select a move
-        assert npc.current_move is not None
+
+        # Near death changes nothing about affordability or move ownership —
+        # the Slime has no morale/flee branch. Pin that rather than "not None",
+        # which a broken selector returning NpcRest forever also satisfies.
+        assert npc.current_move.fatigue_cost <= npc.fatigue
+        assert npc.current_move.name in {m.name for m in npc.known_moves}
+        assert npc.hp == 2 and npc.is_alive()
 
     def test_slime_has_multiple_moves(self):
         """Test that Slime NPC has multiple move options."""
@@ -503,22 +516,42 @@ class TestNPCMixinIntegration:
         assert 'poison' in npc.status_resistance
 
     def test_npc_combat_mixin_select_move(self):
-        """Test NPCCombatMixin select_move functionality."""
+        """``select_move`` is contributed by ``NPCCombatMixin``, not defined on
+        ``Slime`` — assert the inheritance, which is what this test is named
+        for, alongside a real outcome."""
+        from src.npc._combat import NPCCombatMixin
+
         npc = Slime()
         npc.fatigue = 100
+        assert type(npc).select_move is NPCCombatMixin.select_move
+
         npc.select_move()
-        assert npc.current_move is not None
+
+        assert npc.current_move.name in {m.name for m in npc.known_moves}
+        assert npc.current_move.fatigue_cost <= npc.fatigue
 
     def test_npc_loot_mixin_has_loot(self):
-        """Test that NPC has loot from NPCLootMixin."""
+        """``hasattr(npc, "loot")`` passed on ``loot = None``. A Slime's drop
+        table is real content: pin its shape and its keys."""
         npc = Slime()
-        assert hasattr(npc, 'loot')
 
-    def test_friend_overwrites_keywords(self):
-        """Test that Friend class intends to set keywords.
-        Note: In the current implementation, Friend.__init__ sets self.keywords = ["talk"]
-        before calling super().__init__(), but NPC.__init__ overwrites it with [].
-        This test checks the actual behavior (keywords is empty after init).
+        assert set(npc.loot) == {
+            "Gold", "Restorative", "Draught", "Equipment_0_1", "SlimeFlask"
+        }
+        assert npc.loot["Gold"] == {"chance": 50, "qty": "r25-50"}
+        assert all(
+            0 < entry["chance"] <= 100 for entry in npc.loot.values()
+        ), "a drop with chance <= 0 can never fire; > 100 is a typo"
+
+    def test_friend_keeps_its_talk_keyword_after_npc_init(self):
+        """``Friend.__init__`` sets ``keywords = ["talk"]``; ``NPC.__init__``
+        must not clobber it, or every friendly NPC loses its TALK affordance in
+        the web UI.
+
+        The previous version of this test asserted only ``isinstance(
+        friend.keywords, list)`` and carried a docstring claiming the keyword
+        *was* overwritten to ``[]`` — stale by two behaviours: the engine keeps
+        it, and the assertion could not have detected either outcome.
         """
         friend = Friend(
             name="TestFriend",
@@ -527,8 +560,8 @@ class TestNPCMixinIntegration:
             aggro=False,
             exp_award=0,
         )
-        # Actual behavior: keywords gets overwritten to [] by NPC.__init__
-        assert isinstance(friend.keywords, list)
+
+        assert friend.keywords == ["talk"]
 
     def test_mynx_disables_combat(self):
         """Test that Mynx disables combat participation."""

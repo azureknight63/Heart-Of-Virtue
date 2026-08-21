@@ -200,13 +200,40 @@ class TestErrorHandler:
         assert data["success"] is False
         assert "Internal server error" in data["error"]
 
-    def test_register_error_handlers_returns_none(self):
-        """register_error_handlers should not raise."""
+    def test_register_error_handlers_installs_handlers_on_the_app(self):
+        """The function's job is the side effect, not the return value.
+
+        Asserting ``result is None`` passed for a body of ``pass``. What
+        callers depend on is that a bare Flask app comes back answering 404
+        and 500 with the JSON envelope the frontend parses, instead of
+        Werkzeug's HTML error page (which would make every client-side
+        ``response.json()`` throw).
+        """
         from src.api.handlers.error_handler import register_error_handlers
 
         a = Flask(__name__)
-        result = register_error_handlers(a)
-        assert result is None
+        a.config["TESTING"] = False
+
+        @a.route("/boom")
+        def boom():
+            raise RuntimeError("kaboom")
+
+        assert not a.error_handler_spec.get(None)
+        register_error_handlers(a)
+        assert a.error_handler_spec.get(None)
+
+        client = a.test_client()
+        missing = client.get("/no-such-route")
+        assert missing.status_code == 404
+        assert missing.get_json()["success"] is False
+
+        crashed = client.get("/boom")
+        assert crashed.status_code == 500
+        body = crashed.get_json()
+        assert body["success"] is False
+        assert "Internal server error" in body["error"]
+        # The raised text must not reach the client.
+        assert "kaboom" not in crashed.data.decode()
 
 
 # ===========================================================================
@@ -495,18 +522,38 @@ class TestFeedbackHelpers:
         sid = "session_rate_test_999"
         # Clear any previous state
         self._feedback_limiter.clear(sid)
-        for _ in range(10):
-            self._is_rate_limited(sid)
+        for i in range(10):
+            # Assert the transition, not just the end state: an off-by-one
+            # that blocked at the 9th submission would still satisfy a lone
+            # "the 11th is limited" assertion.
+            assert self._is_rate_limited(sid) is False, f"blocked early at call {i}"
         assert self._is_rate_limited(sid) is True
+
+    def test_rate_limit_is_scoped_to_one_session(self):
+        """The key is the session id; one player's quota must not throttle
+        another's."""
+        noisy, quiet = "rate_noisy_session", "rate_quiet_session"
+        self._feedback_limiter.clear(noisy)
+        self._feedback_limiter.clear(quiet)
+        for _ in range(11):
+            self._is_rate_limited(noisy)
+        assert self._is_rate_limited(noisy) is True
+        assert self._is_rate_limited(quiet) is False
 
     def test_create_github_issue_no_token(self):
         import os
 
         with patch.dict(os.environ, {}, clear=True):
             os.environ.pop("GITHUB_TOKEN", None)
-            url, err = self._create_github_issue("Title", "Body", ["bug"])
+            with patch("src.api.routes.feedback.requests.post") as mock_post:
+                url, err = self._create_github_issue("Title", "Body", ["bug"])
+
         assert url is None
-        assert err is not None
+        assert err == "Feedback service is not configured on this server."
+        # The unconfigured branch must short-circuit before any outbound
+        # request -- `err is not None` alone would also pass for a version
+        # that POSTed with an empty Bearer token first.
+        mock_post.assert_not_called()
 
     def test_create_github_issue_request_exception(self):
         import os
@@ -521,17 +568,54 @@ class TestFeedbackHelpers:
         assert url is None
         assert "Could not reach GitHub" in err
 
-    def test_create_github_issue_api_error(self):
+    @pytest.mark.parametrize("status", [400, 401, 403, 422, 500])
+    def test_create_github_issue_api_error(self, status):
         import os
 
         mock_resp = MagicMock()
-        mock_resp.status_code = 422
+        mock_resp.status_code = status
 
-        with patch.dict(os.environ, {"GITHUB_TOKEN": "fake_token"}):
+        with patch.dict(os.environ, {"GITHUB_TOKEN": "s3cret-token"}):
             with patch("src.api.routes.feedback.requests.post", return_value=mock_resp):
                 url, err = self._create_github_issue("Title", "Body", ["bug"])
+
         assert url is None
-        assert err is not None
+        assert err == "GitHub rejected the submission. Please try again later."
+        # A 401/403 from GitHub means *our* token is bad; the message the
+        # player sees must not carry it, nor the upstream status.
+        assert "s3cret-token" not in err
+        assert str(status) not in err
+        # The body is not read on a non-201, so a GitHub error payload
+        # cannot be relayed to the player either.
+        mock_resp.json.assert_not_called()
+
+    def test_create_github_issue_sends_the_token_and_payload(self):
+        """The happy path's request itself, which nothing asserted before.
+
+        A wrong header name or a payload missing `labels` would leave the
+        issue untriaged, and both are invisible if the test only checks the
+        returned URL.
+        """
+        import os
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 201
+        mock_resp.json.return_value = {"html_url": "https://github.com/issues/7"}
+
+        with patch.dict(os.environ, {"GITHUB_TOKEN": "s3cret-token"}):
+            with patch(
+                "src.api.routes.feedback.requests.post", return_value=mock_resp
+            ) as mock_post:
+                url, err = self._create_github_issue("T", "B", ["bug", "player"])
+
+        assert (url, err) == ("https://github.com/issues/7", None)
+        _, kwargs = mock_post.call_args
+        assert kwargs["json"] == {"title": "T", "body": "B", "labels": ["bug", "player"]}
+        assert kwargs["headers"]["Authorization"] == "Bearer s3cret-token"
+        assert kwargs["headers"]["Accept"] == "application/vnd.github+json"
+        # A missing timeout would hang a player's feedback submission on a
+        # stalled GitHub connection until the worker itself timed out.
+        assert kwargs["timeout"] == 5
 
     def test_create_github_issue_success(self):
         import os
@@ -1432,20 +1516,36 @@ class TestSavesRoutesAuthGuards:
         assert rv.get_json()["success"] is False
 
     def test_list_saves_no_db_user(self, client):
-        """Saves list for guests (no db_user_id) returns empty list."""
+        """Saves list for a test/guest session (no db_user_id) is empty, 200.
+
+        The old ``in (200, 401, 500)`` accepted the 401 an auth failure gives
+        and the 500 an unhandled exception gives, so it could not distinguish
+        "took the guest branch" from "never got there at all". Assert the
+        exact envelope, and that the DB was never consulted.
+        """
         c, app = client
         # Simulate guest session without db_user_id
         del app._test_session.db_user_id
         rv = c.get("/api/saves", headers=AUTH_HEADER)
-        # should return 200 with empty saves (guest path)
-        assert rv.status_code in (200, 401, 500)
+
+        assert rv.status_code == 200
+        assert rv.get_json() == {"success": True, "saves": []}
+        app._test_gs.list_saves.assert_not_called()
 
     def test_create_save_no_db_user(self, client):
-        """Cloud saves require a registered account."""
+        """Cloud saves require a registered account — exactly 403, no write."""
         c, app = client
         del app._test_session.db_user_id
         rv = c.post("/api/saves", json={"name": "Save 1"}, headers=AUTH_HEADER)
-        assert rv.status_code in (403, 401, 500)
+
+        assert rv.status_code == 403
+        assert rv.get_json() == {
+            "success": False,
+            "error": "Cloud saves require a registered account.",
+        }
+        # The gate must run before save_game, or a guest could still write a
+        # row (with a null owner) and have it counted against the save limit.
+        app._test_gs.save_game.assert_not_called()
 
 
 # ===========================================================================

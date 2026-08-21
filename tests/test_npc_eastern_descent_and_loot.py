@@ -28,8 +28,21 @@ class TestNomadCamper:
 
         return NomadCamper()
 
-    def test_instantiation(self, npc):
-        assert npc is not None
+    def test_is_a_chat_capable_non_combatant_friend(self, npc):
+        """The camp NPCs are ``ConversationalNPCMixin`` + ``Friend``: the mixin
+        is what makes ``chat_open``/``chat_respond`` reachable from the API, and
+        ``Friend`` is what keeps them out of the hostile roster. Asserting the
+        MRO pins both — a class that quietly lost either would still have a
+        name, a description and an ``hp``."""
+        from src.npc._base import Friend
+        from src.npc._chat_llm import ConversationalNPCMixin
+        from src.combatant import Combatant
+
+        assert isinstance(npc, ConversationalNPCMixin)
+        assert isinstance(npc, Friend)
+        # Shared resistance/status logic lives on Combatant, never duplicated.
+        assert isinstance(npc, Combatant)
+        assert callable(npc.chat_open) and callable(npc.chat_respond)
 
     def test_name(self, npc):
         assert npc.name == "Nomad"
@@ -56,21 +69,31 @@ class TestNomadCamper:
     def test_talk_lines_not_empty(self, npc):
         assert len(npc._TALK_LINES) > 0
 
-    def test_talk_prints_a_line(self, npc, capsys):
-        player = SimpleNamespace()
-        npc.talk(player)
-        captured = capsys.readouterr()
-        # Any non-empty output is acceptable; the method calls print()
-        assert len(captured.out) > 0
+    def test_talk_emits_exactly_one_verbatim_talk_line(self, npc):
+        """Previously asserted only ``len(captured.out) > 0`` (any byte at all)
+        and a 30-character prefix match. Through the narration sink the emitted
+        text is exact, so assert set membership and the one-message count —
+        a ``talk()`` that narrated twice, or narrated an f-string it built
+        itself, now fails."""
+        from src.narration import capture_narration
 
-    def test_talk_output_is_one_of_the_talk_lines(self, npc, capsys):
-        player = SimpleNamespace()
-        npc.talk(player)
-        captured = capsys.readouterr()
-        output = captured.out.strip()
-        assert any(
-            line[:30] in output for line in npc._TALK_LINES
-        ), "talk() output not in _TALK_LINES"
+        with capture_narration() as messages:
+            npc.talk(SimpleNamespace())
+
+        assert len(messages) == 1
+        assert messages[0]["text"] in npc._TALK_LINES
+
+    def test_talk_varies_across_calls(self, npc, seeded):
+        """The whole point of ``_TALK_LINES`` being a list is that repeat TALKs
+        do not read as a canned response."""
+        from src.narration import capture_narration
+
+        with seeded(1234), capture_narration() as messages:
+            for _ in range(30):
+                npc.talk(SimpleNamespace())
+
+        assert len(messages) == 30
+        assert len({m["text"] for m in messages}) > 1
 
     def test_description_nonempty(self, npc):
         assert len(npc.description) > 10
@@ -78,10 +101,14 @@ class TestNomadCamper:
     def test_maxhp_positive(self, npc):
         assert npc.maxhp > 0
 
-    def test_has_known_moves(self, npc):
-        # known_moves may be [] if moves module failed to load in test isolation,
-        # but the attribute must exist
-        assert hasattr(npc, "known_moves")
+    def test_known_moves_are_idle_only(self, npc):
+        """``_init_idle_moves`` is what stops a non-combatant camp NPC from
+        arriving with an attack. The old test asserted only ``hasattr`` — it
+        passed just as happily on an empty list or on a full attack kit."""
+        import src.moves as moves
+
+        assert [type(m).__name__ for m in npc.known_moves] == ["NpcIdle"]
+        assert all(isinstance(m, moves.Move) for m in npc.known_moves)
 
 
 # ===========================================================================
@@ -96,8 +123,14 @@ class TestNomadScout:
 
         return NomadScout()
 
-    def test_instantiation(self, npc):
-        assert npc is not None
+    def test_scout_awareness_is_the_camp_high_water_mark(self, npc):
+        """The scout exists to be the one who notices things: his awareness
+        must beat every other camp NPC, not merely be non-None."""
+        from src.npc._eastern_descent import NomadCamper, NomadTrader
+
+        assert npc.awareness == 17
+        assert npc.awareness > NomadCamper().awareness
+        assert npc.awareness > NomadTrader().awareness
 
     def test_name(self, npc):
         assert npc.name == "Nomad Scout"
@@ -120,9 +153,14 @@ class TestNomadScout:
     def test_talk_lines_not_empty(self, npc):
         assert len(npc._TALK_LINES) > 0
 
-    def test_talk_prints(self, npc, capsys):
-        npc.talk(SimpleNamespace())
-        assert len(capsys.readouterr().out) > 0
+    def test_talk_emits_exactly_one_verbatim_talk_line(self, npc):
+        from src.narration import capture_narration
+
+        with capture_narration() as messages:
+            npc.talk(SimpleNamespace())
+
+        assert len(messages) == 1
+        assert messages[0]["text"] in npc._TALK_LINES
 
     def test_description_references_camp_edge(self, npc):
         assert (
@@ -145,8 +183,12 @@ class TestNomadTrader:
 
         return NomadTrader()
 
-    def test_instantiation(self, npc):
-        assert npc is not None
+    def test_trader_is_the_most_charismatic_camp_npc(self, npc):
+        from src.npc._eastern_descent import NomadCamper, NomadScout
+
+        assert npc.charisma == 13
+        assert NomadCamper().charisma == 10
+        assert NomadScout().charisma == 10
 
     def test_name(self, npc):
         assert npc.name == "Nomad Trader"
@@ -164,12 +206,14 @@ class TestNomadTrader:
     def test_talk_lines_not_empty(self, npc):
         assert len(npc._TALK_LINES) > 0
 
-    def test_talk_prints(self, npc, capsys):
-        npc.talk(SimpleNamespace())
-        assert len(capsys.readouterr().out) > 0
+    def test_talk_emits_exactly_one_verbatim_talk_line(self, npc):
+        from src.narration import capture_narration
 
-    def test_has_charisma(self, npc):
-        assert hasattr(npc, "charisma") and npc.charisma > 0
+        with capture_narration() as messages:
+            npc.talk(SimpleNamespace())
+
+        assert len(messages) == 1
+        assert messages[0]["text"] in npc._TALK_LINES
 
     def test_description_references_goods(self, npc):
         assert "bundle" in npc.description.lower() or "goods" in npc.description.lower()

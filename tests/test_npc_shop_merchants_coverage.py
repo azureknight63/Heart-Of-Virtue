@@ -202,120 +202,322 @@ def test_place_item_no_acceptable_containers():
     
     assert m._place_item(Shortsword(), [cont]) is False
 
-def test_fill_remaining_stock_edge_cases():
+# ---------------------------------------------------------------------------
+# _fill_remaining_stock — restock guards and failure isolation
+#
+# The three tests replaced here (``..._edge_cases``, ``test_weighted_choice_
+# edge_cases``, ``..._eligible_containers_and_failures``) contained **no
+# assertion at all**: each one walked ``_fill_remaining_stock`` through a
+# sequence of exception-swallowing branches and ended. They executed the lines
+# — which is why they existed — but they could not distinguish "the branch was
+# handled" from "the branch silently dropped every item on the floor", and a
+# ``_fill_remaining_stock`` rewritten as ``def _fill_remaining_stock(self, c):
+# return`` would have passed all three.
+#
+# Each guard now asserts the state that guard exists to protect.
+# ---------------------------------------------------------------------------
+
+
+def test_restock_without_a_room_stocks_nothing():
+    """Guard 1: ``if not self.current_room: return``. There is nowhere to spawn
+    items from, so the inventory must be left empty rather than half-built."""
     m = MockMerchant()
-    
-    # 1. No current room
-    m._fill_remaining_stock([]) # should return immediately
-    
+    m.current_room = None
+    m.stock_count = 5
+
+    m._fill_remaining_stock([])
+
+    assert m.inventory == []
+
+
+def test_restock_stops_once_the_merchant_and_containers_are_full():
+    """Guard 2: ``all_full()``. A merchant with ``stock_count == 0`` has no
+    slots; a zero-capacity container has none either, so nothing spawns."""
+    m = MockMerchant()
     room = FakeRoom()
     m.current_room = room
-    
-    # 2. Container slots remaining check with stock_count <= 0
+    m.stock_count = 0
     cont = Container(name="Box", merchant=m)
     cont.stock_count = 0
-    
-    # 3. all_full returns True
-    m.stock_count = 0
-    m._fill_remaining_stock([cont]) # should return immediately
-    
-    # 4. unique_factories raises Exception
-    m.stock_count = 5
-    import src.items as items_module
-    orig_factories = getattr(items_module, 'unique_item_factories', None)
-    if hasattr(items_module, 'unique_item_factories'):
-        del items_module.unique_item_factories
-        
-    try:
-        # Patch inspect.getmembers to raise Exception for one candidate
-        import inspect
-        orig_getmembers = inspect.getmembers
-        def faulty_getmembers(*args, **kwargs):
-            return [("Shortsword", Shortsword), ("Faulty", "not_a_class")]
-        with patch('inspect.getmembers', faulty_getmembers):
-            # This will cover line 413-414, 438-439
-            m._fill_remaining_stock([])
-    finally:
-        if orig_factories is not None:
-            items_module.unique_item_factories = orig_factories
-            
-    # 5. Specialties list with invalid/exception prone entry
-    m.specialties = ["invalid_specialty_not_a_class"] # issubclass on string will raise TypeError
-    # Should handle exception and continue
+
+    m._fill_remaining_stock([cont])
+
+    assert m.inventory == []
+    assert cont.inventory == []
+    assert room.spawned == []
+
+
+def test_restock_fills_the_merchant_to_exactly_its_stock_count():
+    """The happy path none of the three original tests covered: the loop must
+    terminate at the cap, not under- or over-fill it."""
+    m = MockMerchant()
+    room = FakeRoom()
+    m.current_room = room
+    m.stock_count = 4
+    m.inventory = []
+
     m._fill_remaining_stock([])
-    
-    # 6. RestockWeightBoostCondition raising exception during weight adjustment
+
+    assert len(m.inventory) == 4
+    assert all(isinstance(i, Item) for i in m.inventory)
+    assert all(i.merchandise for i in m.inventory)
+    # Everything placed is removed from the room floor.
+    assert room.items_here == []
+
+
+def test_restock_never_stocks_a_disallowed_class():
+    """``disallowed_classes`` is the guard that keeps Gold, Relic and the bare
+    equipment base classes out of shop stock — a Relic on a shelf would sell
+    for nothing and break a story item."""
+    from src.items import Gold, Relic
+
+    m = MockMerchant()
+    room = FakeRoom()
+    m.current_room = room
+    m.stock_count = 30
+    m.inventory = []
+
+    m._fill_remaining_stock([])
+
+    banned = {Gold, Relic, Consumable, Item}
+    assert not [i for i in m.inventory if type(i) in banned]
+
+
+def test_a_missing_unique_item_registry_does_not_stop_the_restock():
+    """``items.unique_item_factories`` missing raises inside the ``try``; the
+    fallback is an empty exclusion set, not an aborted restock."""
+    import src.items as items_module
+
+    m = MockMerchant()
+    room = FakeRoom()
+    m.current_room = room
+    m.stock_count = 3
+
+    saved = getattr(items_module, "unique_item_factories", None)
+    if hasattr(items_module, "unique_item_factories"):
+        del items_module.unique_item_factories
+    try:
+        m._fill_remaining_stock([])
+    finally:
+        if saved is not None:
+            items_module.unique_item_factories = saved
+
+    assert len(m.inventory) == 3
+
+
+def test_a_non_class_member_of_the_items_module_is_skipped_not_fatal():
+    m = MockMerchant()
+    room = FakeRoom()
+    m.current_room = room
+    m.stock_count = 2
+
+    with patch("inspect.getmembers", lambda *a, **k: [
+        ("Shortsword", Shortsword), ("Faulty", "not_a_class")
+    ]):
+        m._fill_remaining_stock([])
+
+    assert len(m.inventory) == 2
+    assert all(isinstance(i, Shortsword) for i in m.inventory)
+
+
+def test_no_candidate_classes_at_all_means_no_stock_and_no_crash():
+    m = MockMerchant()
+    room = FakeRoom()
+    m.current_room = room
+    m.stock_count = 3
+
+    with patch("inspect.getmembers", lambda *a, **k: []):
+        m._fill_remaining_stock([])
+
+    assert m.inventory == []
+    assert room.spawned == []
+
+
+def test_a_junk_specialty_entry_is_ignored_without_losing_the_restock():
+    """``issubclass("string", Item)`` raises TypeError inside the specialty
+    loop. The entry is skipped; stocking continues at base weight."""
+    m = MockMerchant()
+    room = FakeRoom()
+    m.current_room = room
+    m.stock_count = 2
+    m.specialties = ["invalid_specialty_not_a_class"]
+
+    m._fill_remaining_stock([])
+
+    assert len(m.inventory) == 2
+
+
+def test_a_specialty_class_is_weighted_three_times_a_plain_candidate():
+    """The documented 3x specialty weight — previously unasserted anywhere."""
+    m = MockMerchant()
+    room = FakeRoom()
+    m.current_room = room
+    m.stock_count = 1
+    m.specialties = [Shortsword]
+
+    captured = {}
+
+    def capture_uniform(low, high):
+        captured["total"] = high
+        return 0.0
+
+    with patch("inspect.getmembers", lambda *a, **k: [
+        ("Shortsword", Shortsword), ("Restorative", Restorative)
+    ]):
+        with patch("random.uniform", capture_uniform):
+            m._fill_remaining_stock([])
+
+    # Shortsword (specialty, 3.0) + Restorative (plain, 1.0)
+    assert captured["total"] == 4.0
+
+
+def test_a_condition_that_raises_while_reweighting_is_skipped():
+    """A broken shop condition must not deprive the merchant of stock."""
     class FaultyCondition:
         def adjust_restock_weights(self, weight_map):
-            raise Exception("Weight adjustment failed")
-            
+            raise RuntimeError("Weight adjustment failed")
+
+    m = MockMerchant()
+    room = FakeRoom()
+    m.current_room = room
+    m.stock_count = 3
     m.shop_conditions = {"availability": [FaultyCondition()]}
-    # Should handle exception and continue
+
     m._fill_remaining_stock([])
-    
-    # 7. No candidates or weight map is empty
-    with patch('inspect.getmembers', lambda *args: []):
-        m._fill_remaining_stock([])
 
-def test_weighted_choice_edge_cases():
+    assert len(m.inventory) == 3
+
+
+def test_a_condition_that_zeroes_every_weight_stops_the_restock_cleanly():
+    """``weight_map`` filtered to ``w > 0`` and then empty -> early return."""
+    class ZeroingCondition:
+        def adjust_restock_weights(self, weight_map):
+            for cls in list(weight_map):
+                weight_map[cls] = 0.0
+
     m = MockMerchant()
     room = FakeRoom()
     m.current_room = room
-    m.stock_count = 1
-    
-    # Set up weight map that sums to <= 0 or fails to choice
-    # We can mock random.uniform to return a value higher than total
-    with patch('random.uniform', return_value=9999.0):
-        # We need candidates to exist
-        m._fill_remaining_stock([])
-        # If it returns None due to r > total, it exits weighted_choice loop
+    m.stock_count = 3
+    m.shop_conditions = {"availability": [ZeroingCondition()]}
 
-def test_fill_remaining_stock_eligible_containers_and_failures(monkeypatch):
+    m._fill_remaining_stock([])
+
+    assert m.inventory == []
+
+
+def test_a_roll_past_the_end_of_the_weight_map_ends_the_loop():
+    """``weighted_choice`` returns None when the roll exceeds the accumulated
+    total; the loop must ``break`` rather than spin to the 1000 safety cap."""
     m = MockMerchant()
     room = FakeRoom()
     m.current_room = room
-    m.stock_count = 1
-    
-    # Container with allowed_item_types raising Exception when checked
+    m.stock_count = 5
+
+    with patch("random.uniform", return_value=9999.0) as roll:
+        m._fill_remaining_stock([])
+
+    assert m.inventory == []
+    assert roll.call_count == 1
+
+
+def test_a_container_whose_allowed_types_are_junk_is_skipped_for_the_merchant():
+    """``isinstance(item, object())`` raises TypeError. The container is
+    treated as ineligible and the item goes to the merchant instead of being
+    lost."""
+    m = MockMerchant()
+    room = FakeRoom()
+    m.current_room = room
+    m.stock_count = 2
     cont = Container(name="Cabinet", merchant=m)
     cont.stock_count = 5
-    cont.allowed_item_types = [object()] # isinstance(item, object()) will raise TypeError
-    
-    m._fill_remaining_stock([cont])
-    
-    # Spawn item raising Exception
-    orig_spawn = room.spawn_item
-    def faulty_spawn(*args, **kwargs):
-        raise Exception("Failed to spawn")
-    room.spawn_item = faulty_spawn
-    
-    m._fill_remaining_stock([])
-    room.spawn_item = orig_spawn
+    cont.allowed_item_types = [object()]
 
-    # Trigger line 511-512 by spawning an item where getattr/setattr value raises Exception
+    m._fill_remaining_stock([cont])
+
+    assert cont.inventory == []
+    assert len(m.inventory) == 2
+
+
+def test_items_route_into_an_eligible_container_ahead_of_the_merchant():
+    """The placement preference the container guard above is the negative of."""
+    m = MockMerchant()
+    room = FakeRoom()
+    m.current_room = room
+    m.stock_count = 5
+    cont = Container(name="Cabinet", merchant=m)
+    cont.stock_count = 3
+    cont.allowed_item_types = [Shortsword]
+
+    with patch("inspect.getmembers", lambda *a, **k: [("Shortsword", Shortsword)]):
+        m._fill_remaining_stock([cont])
+
+    assert len(cont.inventory) == 3
+    assert all(isinstance(i, Shortsword) for i in cont.inventory)
+
+
+def test_a_room_that_cannot_spawn_stocks_nothing_and_does_not_hang():
+    """``spawn_item`` raising is caught per-iteration; with every spawn failing
+    the loop must still terminate (via the 1000-iteration safety cap) and leave
+    the inventory empty rather than partially populated."""
+    m = MockMerchant()
+    room = FakeRoom()
+
+    def faulty_spawn(*args, **kwargs):
+        raise RuntimeError("Failed to spawn")
+
+    room.spawn_item = faulty_spawn
+    m.current_room = room
+    m.stock_count = 2
+
+    m._fill_remaining_stock([])
+
+    assert m.inventory == []
+
+
+def test_an_item_whose_value_raises_is_still_stocked_without_a_base_value(monkeypatch):
+    """``setattr(spawned, "base_value", spawned.value)`` raises for an item
+    with a broken ``value`` property. The item must still reach the shelf —
+    ``_apply_value_conditions`` separately tolerates a missing base_value."""
     import src.items as items_module
+
     class BadItem(Item):
-        def __init__(self, **kwargs):
-            super().__init__(**kwargs)
-        @property
-        def value(self):
+        def __init__(self, merchandise=False):
+            super().__init__(
+                name="Bad Item",
+                description="An item whose value cannot be read.",
+                value=1,
+                maintype="Misc",
+                subtype="Misc",
+                discovery_message="a broken thing.",
+                merchandise=merchandise,
+            )
+            # Shadow the instance attribute the base class just set with a
+            # property that raises, and drop base_value so the setattr path runs.
+            type(self).value = property(BadItem._raise_value)
+            if hasattr(self, "base_value"):
+                del self.base_value
+
+        @staticmethod
+        def _raise_value(self):
             raise AttributeError("Value not accessible")
-    
-    # Register BadItem
-    monkeypatch.setattr(items_module, 'BadItem', BadItem, raising=False)
-    
-    # Re-setup mock candidates to only return BadItem
-    def fake_getmembers(module, predicate):
-        return [("BadItem", BadItem)]
-    monkeypatch.setattr('inspect.getmembers', fake_getmembers)
-    
-    # Reset room spawned and set merchant to allow spawning
-    room.spawned = []
+
+    monkeypatch.setattr(items_module, "BadItem", BadItem, raising=False)
+    monkeypatch.setattr("inspect.getmembers", lambda *a, **k: [("BadItem", BadItem)])
+
+    m = MockMerchant()
+    room = FakeRoom()
+    room.spawn_item = lambda item_type, **kw: BadItem(merchandise=kw.get("merchandise", False))
+    m.current_room = room
     m.stock_count = 1
     m.inventory = []
-    
-    # This will spawn BadItem, and try to get/set base_value, throwing Exception and catching it
+
     m._fill_remaining_stock([])
+
+    assert len(m.inventory) == 1
+    assert isinstance(m.inventory[0], BadItem)
+    assert not hasattr(m.inventory[0], "base_value")
+
 
 def test_apply_value_conditions_edge_cases():
     m = MockMerchant()

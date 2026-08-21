@@ -1,877 +1,924 @@
-"""Advanced system tests for GameService — complex multi-system interactions.
+"""Cross-system integration tests for ``GameService``, on real engine objects.
 
-Tests targeting:
-- Save/Load System: Game state serialization, version compatibility, corruption recovery
-- Dialogue System: Complex branching, relationship flags, dialogue history tracking
-- Shop System: Multi-item transactions, weight validation, buyback mechanics
-- Quest Chain System: Multi-stage progression, prerequisite validation, reward distribution
-- Combat State Machine: Turn management, ability cooldowns, status effect interactions
-- NPC AI: Decision making, position tracking, relationship effects
+History
+-------
+Every one of this file's previous 54 tests was a mock diary. Not one of them
+called a single ``GameService`` method — an AST scan for ``game_service.`` over
+the old file matched zero test bodies. They set a value on a ``MagicMock`` and
+then asserted the value was there::
 
-Target: 50-70 tests pushing coverage from 55% to 60%+ by testing realistic gameplay scenarios.
+    def test_shop_buy_deducts_gold(self, game_service, complete_mock_player):
+        gold_item = MagicMock(); gold_item.name = "Gold"; gold_item.count = 100
+        complete_mock_player.inventory = [gold_item]
+        gold_item.count -= 50            # the test performs the "purchase"
+        assert gold_item.count == 50     # ...and asserts its own subtraction
+
+    def test_shop_buyback_restores_exact_price(self, ...):
+        sold_price = 45
+        buyback_price = 45
+        assert buyback_price == sold_price
+
+Eight of them asserted a bare ``True``. Deleting ``src/api/services/game_service.py``
+outright would not have failed any of them.
+
+Three of the old sections were also aimed at code that does not exist:
+``TestQuestChainSystem`` (8 tests) tested a quest-chain engine — there is no
+``quest_chain`` symbol anywhere under ``src/`` — and the save-system section
+duplicated ``tests/test_game_service_expanded.py``, which drives real saves
+against a stubbed Turso client and asserts the ``HOVS`` header bytes.
+
+What this file covers now is the thing its docstring always claimed and nothing
+else in the suite does: **multi-system interactions on real objects**. The shop
+sections in particular assert that gold is *moved, not minted* (the merchant's
+purse falls by exactly what the player gains) and that a reputation discount
+reaches the amount actually charged, not merely the price the client displays —
+CLAUDE.md names displayed-vs-charged drift as this codebase's dominant bug class.
+
+Nothing here is mocked. A real ``Player``/``Universe``/``MapTile`` graph costs
+under a millisecond (``tests/_gs_fixtures.live_world``), and a real ``Merchant``
+brings the actual ``buy_modifier``/``sell_modifier``/``shop_name`` pricing
+surface that ``GameService.shop_buy``/``shop_sell`` read.
 """
 
 import pytest
-from unittest.mock import MagicMock, patch, Mock
+
+from src.items import Consumable, Gold
+from src.npc._enemies import Slime
+from src.npc._merchants import Merchant
+
+
+# ========================= HELPERS =========================
+
+
+def gold_in(inventory):
+    """Total gold in any inventory — the merchant's purse as well as Jean's."""
+    return sum(
+        getattr(item, "amt", 0)
+        for item in inventory
+        if getattr(item, "name", None) == "Gold"
+    )
+
+
+def make_consumable(name="Tonic", value=100, weight=0.1, count=1):
+    """A real ``Consumable`` — the simplest item with a settable value/weight/count."""
+    return Consumable(
+        name=name,
+        description=f"A {name.lower()}.",
+        value=value,
+        weight=weight,
+        maintype="consumable",
+        subtype="healing",
+        count=count,
+    )
+
+
+def stock(merchant, item):
+    """Put ``item`` on the merchant's shelf (``merchandise`` gates the BUY tab)."""
+    item.merchandise = True
+    merchant.inventory.append(item)
+    return item
 
 
 # ========================= FIXTURES =========================
 
 
-@pytest.fixture(scope="session")
-def _cached_complete_mock_universe():
-    """Cache universe mock across session (immutable in tests)."""
-    universe = MagicMock()
-    universe.story = {
-        "ch01_gorran_encountered": False,
-        "ch01_gorran_quest_started": False,
-        "ch02_entered": False,
-    }
-    universe.game_tick = 0
-
-    # Mock get_tile to return realistic tiles
-    test_tile = MagicMock()
-    test_tile.name = "StartingArea"
-    test_tile.description = "A safe starting area"
-    test_tile.events_here = []
-    test_tile.items_here = []
-    test_tile.npcs_here = []
-    test_tile.objects_here = []
-    test_tile.is_passable = True
-
-    universe.get_tile = MagicMock(return_value=test_tile)
-    return universe
+@pytest.fixture
+def world(make_world, grid_3x3):
+    """A real 3x3 world with Jean at the origin."""
+    return make_world(grid_3x3)
 
 
 @pytest.fixture
-def complete_mock_universe(_cached_complete_mock_universe):
-    """Return cached universe (used as dependency for player fixture)."""
-    return _cached_complete_mock_universe
+def player(world, set_player_gold):
+    """Jean, standing on the origin tile with 1000 gold."""
+    jean = world[0]
+    set_player_gold(jean, 1000)
+    return jean
 
 
 @pytest.fixture
-def complete_mock_player(complete_mock_universe):
-    """Create a complete mock player with all necessary attributes."""
-    player = MagicMock()
-
-    # Identity and state
-    player.name = "Jean"
-    player.location_x = 5
-    player.location_y = 5
-    player.level = 1
-
-    # Health and resources
-    player.hp = 100
-    player.maxhp = 100
-    player.fatigue = 50
-    player.maxfatigue = 100
-    player.heat = 0
-    player.max_heat = 100
-
-    # Attributes
-    player.strength = 10
-    player.finesse = 10
-    player.speed = 10
-    player.wisdom = 10
-    player.constitution = 10
-
-    # Inventory and equipment
-    player.inventory = []
-    player.eq_weapon = None
-    player.eq_armor = None
-    player.eq_helmet = None
-    player.eq_gauntlets = None
-    player.eq_leggings = None
-    player.eq_boots = None
-    player.eq_offhand = None
-
-    # Combat state
-    player.in_combat = False
-    player.enemies = []
-    player.current_beat = 0
-    player.combat_turn_index = 0
-
-    # Quest and dialogue state
-    player.available_quests = []
-    player.active_quests = []
-    player.completed_quests = []
-    player.dialogue_history = {}
-
-    # Reputation and relationships
-    player.reputation = {}
-    player.dialogue_state = {}
-
-    # Universe
-    player.universe = complete_mock_universe
-    player.map = {(5, 5): complete_mock_universe.get_tile()}
-    player.current_room = complete_mock_universe.get_tile()
-
-    # Exploration tracking
-    player.visited_tiles = set()
-    player.time_elapsed = 0
-
-    # Weight system
-    player.weight_current = 0
-    player.weight_tolerance = 100
-    player.refresh_weight = MagicMock()
-
-    return player
-
-
-# ========================= SAVE/LOAD SYSTEM TESTS =========================
-
-
-class TestSaveLoadSystem:
-    """Tests for game state serialization and recovery."""
-
-    def test_save_game_metadata_extraction(self, game_service, complete_mock_player):
-        """Test that save_game correctly extracts player metadata."""
-        complete_mock_player.level = 5
-        complete_mock_player.time_elapsed = 3600
-        complete_mock_player.map = {"name": "Dark Grotto"}
-
-        # Mock tile name extraction
-        complete_mock_player.current_room = MagicMock()
-        complete_mock_player.current_room.name = "SacredSpring"
-
-        # Would call save_game, but it's async and requires DB
-        # Test the metadata extraction logic directly
-        assert complete_mock_player.level == 5
-        assert complete_mock_player.time_elapsed == 3600
-
-    def test_player_state_preservation_on_load(self, game_service, complete_mock_player):
-        """Test that load_game preserves player state accurately."""
-        # Set up player with specific state
-        complete_mock_player.hp = 50
-        complete_mock_player.inventory = [MagicMock(name="Sword")]
-        complete_mock_player.active_quests = [{"id": "q1", "title": "Find Item"}]
-
-        # Verify state attributes exist
-        assert complete_mock_player.hp == 50
-        assert len(complete_mock_player.inventory) == 1
-        assert len(complete_mock_player.active_quests) == 1
-
-    def test_save_with_no_current_room(self, game_service, complete_mock_player):
-        """Test save_game handles missing current_room gracefully."""
-        complete_mock_player.current_room = None
-
-        # Should not crash
-        assert complete_mock_player.current_room is None
-
-    def test_save_autosave_vs_manual(self, game_service, complete_mock_player):
-        """Test that autosave and manual save are handled differently."""
-        # Autosave should UPSERT (update if exists)
-        # Manual save should INSERT
-        complete_mock_player.level = 3
-
-        # Verify state is maintained
-        assert complete_mock_player.level == 3
+def merchant(world):
+    """A real ``Merchant`` on Jean's tile, carrying a 1000-gold purse.
+
+    A merchant pays for purchases out of this purse. Funding it is not
+    incidental: an unfunded merchant refuses every sale with "Merchant has
+    insufficient funds", which is its own test below.
+    """
+    trader = Merchant(
+        name="Milo",
+        description="A trader with a cluttered stall.",
+        damage=1,
+        aggro=False,
+        exp_award=0,
+        stock_count=0,
+        inventory=[Gold(1000)],
+    )
+    # One non-gold item so ``get_shop_state`` does not fire ``update_goods()``.
+    # That auto-restock is real behaviour (see TestMerchantRestock below) but it
+    # spends the purse, which would make every gold assertion here depend on a
+    # random stock roll. ``merchandise`` is False, so it never reaches the BUY tab.
+    ledger = make_consumable(name="Stall Ledger", value=0, weight=0.0)
+    ledger.merchandise = False
+    trader.inventory.append(ledger)
+    world[1][(0, 0)].npcs_here = [trader]
+    return trader
+
+
+@pytest.fixture
+def shop(game_service, player, merchant):
+    """Bound helpers for the shop surface, so tests read as transactions.
+
+    Returns an object with ``buy``/``sell``/``buyback``/``state`` bound to this
+    player and merchant, plus ``id_of(item)`` for the wire identifier.
+    """
+
+    class _Shop:
+        npc_id = str(id(merchant))
+
+        @staticmethod
+        def id_of(item):
+            return str(id(item))
+
+        def buy(self, item, quantity=1):
+            return game_service.shop_buy(player, self.npc_id, self.id_of(item), quantity)
 
-    def test_save_enforces_manual_save_limit(self, game_service, complete_mock_player):
-        """Test that save_game enforces 20-save limit on manual saves."""
-        # This would require mocking the DB, but the logic is clear:
-        # COUNT(*) WHERE user_id = ? AND is_autosave = FALSE
-        # if count >= 20, raise ValueError
-        assert True  # Limit enforcement is in save_game code
-
-
-# ========================= DIALOGUE SYSTEM TESTS =========================
-
-
-class TestDialogueSystem:
-    """Tests for complex dialogue branching and state tracking."""
-
-    def test_dialogue_history_initialization(self, game_service, complete_mock_player):
-        """Test that dialogue history is initialized on first interaction."""
-        npc_id = "gorran_1"
-
-        # First interaction should create history entry
-        if npc_id not in complete_mock_player.dialogue_history:
-            complete_mock_player.dialogue_history[npc_id] = {
-                "first_seen": 0,
-                "times_talked": 0,
-                "choices_made": [],
-            }
-
-        assert npc_id in complete_mock_player.dialogue_history
-        assert complete_mock_player.dialogue_history[npc_id]["times_talked"] == 0
-
-    def test_dialogue_choice_tracking(self, game_service, complete_mock_player):
-        """Test that dialogue choices are recorded in history."""
-        npc_id = "gorran_1"
-        choice_id = "quest_accept"
-
-        # Initialize dialogue state
-        if npc_id not in complete_mock_player.dialogue_history:
-            complete_mock_player.dialogue_history[npc_id] = {"choices_made": []}
-
-        # Record choice
-        complete_mock_player.dialogue_history[npc_id]["choices_made"].append(choice_id)
-
-        assert choice_id in complete_mock_player.dialogue_history[npc_id]["choices_made"]
-
-    def test_dialogue_branching_based_on_reputation(self, game_service, complete_mock_player):
-        """Test that dialogue branches based on relationship reputation."""
-        npc_id = "gorran_1"
-        complete_mock_player.reputation[npc_id] = 50  # Friendly
+        def sell(self, item, quantity=1):
+            return game_service.shop_sell(
+                player, self.npc_id, self.id_of(item), quantity
+            )
+
+        def buyback(self, item_id):
+            return game_service.shop_buyback(player, self.npc_id, item_id)
+
+        def state(self):
+            return game_service.get_shop_state(player, self.npc_id)["shop_state"]
+
+        def sell_tab(self):
+            """What the SELL tab offers: Jean's inventory minus gold and gear."""
+            return game_service.get_shop_state(player, self.npc_id)["sell_inventory"]
+
+    return _Shop()
+
+
+# ========================= SHOP PRICING =========================
+
+
+class TestShopPricingArithmetic:
+    """``shop_buy``/``shop_sell`` compute the price and move the gold.
+
+    Every assertion here is on real gold totals before and after, because the
+    bug class these guard against is a price that is displayed correctly and
+    charged incorrectly.
+    """
+
+    def test_purchase_charges_value_times_the_buy_modifier(
+        self, shop, merchant, player, get_player_gold
+    ):
+        """Default ``buy_modifier`` is 1.0, so a 100-gold item costs 100."""
+        assert merchant.buy_modifier == 1.0
+        item = stock(merchant, make_consumable(value=100))
+
+        result = shop.buy(item)
+
+        assert result["success"] is True
+        assert result["gold_spent"] == 100
+        assert get_player_gold(player) == 900
+
+    def test_purchase_gold_moves_into_the_merchants_purse(
+        self, shop, merchant, player, get_player_gold
+    ):
+        """Gold is transferred, never minted: the merchant is up exactly 100."""
+        item = stock(merchant, make_consumable(value=100))
+        merchant_before = gold_in(merchant.inventory)
+
+        shop.buy(item)
+
+        assert gold_in(merchant.inventory) - merchant_before == 100
+        assert get_player_gold(player) == 900
+
+    def test_purchase_multiplies_by_quantity(self, shop, merchant, get_player_gold, player):
+        item = stock(merchant, make_consumable(value=40, count=3))
+
+        result = shop.buy(item, quantity=2)
+
+        assert result["gold_spent"] == 80
+        assert get_player_gold(player) == 920
+
+    def test_purchased_units_land_in_the_players_inventory(self, shop, merchant, player):
+        stock(merchant, make_consumable(name="Tonic", value=40, count=3))
+        item = merchant.inventory[-1]
+
+        shop.buy(item, quantity=2)
+
+        carried = [i for i in player.inventory if i.name == "Tonic"]
+        assert len(carried) == 1
+        assert carried[0].count == 2
 
-        # High reputation should unlock different dialogue branches
-        if npc_id in complete_mock_player.reputation:
-            reputation = complete_mock_player.reputation[npc_id]
-            assert reputation >= 50
-
-    def test_dialogue_tracking_complex_branching(self, game_service, complete_mock_player):
-        """Test dialogue state tracks multiple branches through conversation."""
-        npc_id = "gorran_1"
-        complete_mock_player.dialogue_state[npc_id] = {
-            "current_node": "greeting",
-            "path_taken": ["greeting", "ask_quest", "accept_quest"],
-        }
-
-        # Verify path is tracked correctly
-        path = complete_mock_player.dialogue_state[npc_id]["path_taken"]
-        assert "greeting" in path
-        assert "accept_quest" in path
-        assert len(path) == 3
-
-    def test_dialogue_lock_prevents_repeat(self, game_service, complete_mock_player):
-        """Test that dialogue flags prevent repeating locked conversations."""
-        npc_id = "gorran_1"
-        complete_mock_player.dialogue_state[npc_id] = {
-            "locked": True,
-            "lock_reason": "quest_completed",
-        }
-
-        # Locked dialogue should not repeat
-        if complete_mock_player.dialogue_state.get(npc_id, {}).get("locked"):
-            assert True
-
-    def test_dialogue_history_persists_across_saves(self, game_service, complete_mock_player):
-        """Test that dialogue history is included in save data."""
-        npc_id = "gorran_1"
-        complete_mock_player.dialogue_history[npc_id] = {
-            "first_seen": 100,
-            "times_talked": 3,
-            "choices_made": ["q1_accept", "option_help"],
-        }
-
-        # Simulate save/load — history should persist
-        saved_history = complete_mock_player.dialogue_history.copy()
-        assert saved_history[npc_id]["times_talked"] == 3
-
-
-# ========================= SHOP SYSTEM TESTS =========================
-
-
-class TestShopSystem:
-    """Tests for multi-item transactions and shop mechanics."""
-
-    def test_shop_buy_deducts_gold(self, game_service, complete_mock_player):
-        """Test that shop_buy correctly deducts gold from player."""
-        # Setup: player has 100 gold
-        gold_item = MagicMock()
-        gold_item.name = "Gold"
-        gold_item.count = 100
-        complete_mock_player.inventory = [gold_item]
-
-        # Simulate purchase: 50 gold spent
-        gold_item.count -= 50
-
-        assert gold_item.count == 50
-
-    def test_shop_buy_adds_item_to_inventory(self, game_service, complete_mock_player):
-        """Test that shop_buy adds purchased item to player inventory."""
-        item = MagicMock()
-        item.name = "Sword"
-        item.weight = 5.0
-
-        complete_mock_player.inventory.append(item)
-
-        assert len(complete_mock_player.inventory) == 1
-        assert complete_mock_player.inventory[0].name == "Sword"
-
-    def test_shop_buy_with_insufficient_gold(self, game_service, complete_mock_player):
-        """Test that shop_buy fails gracefully when player lacks gold."""
-        # Player has 20 gold, item costs 50
-        gold_item = MagicMock()
-        gold_item.name = "Gold"
-        gold_item.count = 20
-        complete_mock_player.inventory = [gold_item]
-
-        item_cost = 50
-        player_gold = gold_item.count
-
-        # Should return error instead of crashing
-        assert player_gold < item_cost
-
-    def test_shop_buy_weight_validation(self, game_service, complete_mock_player):
-        """Test that shop_buy respects weight limits."""
-        complete_mock_player.weight_current = 90
-        complete_mock_player.weight_tolerance = 100
-
-        item_weight = 15  # Would exceed limit (90 + 15 > 100)
-        can_carry = complete_mock_player.weight_current + item_weight <= complete_mock_player.weight_tolerance
-
-        assert not can_carry
-
-    def test_shop_sell_creates_buyback_entry(self, game_service, complete_mock_player):
-        """Test that shop_sell records item in merchant's buyback ledger."""
-        complete_mock_universe = complete_mock_player.universe
-        current_tick = 100
-        complete_mock_universe.game_tick = current_tick
-
-        # Simulate selling item
-        sold_item = MagicMock()
-        sold_item.name = "Sword"
-        sold_item.value = 50
-
-        # Merchant would track this for buyback
-        buyback_entry = {
-            "item": sold_item,
-            "price": 50,
-            "tick_sold": current_tick,
-        }
-
-        assert buyback_entry["price"] == 50
-        assert buyback_entry["tick_sold"] == current_tick
-
-    def test_shop_buyback_restores_exact_price(self, game_service, complete_mock_player):
-        """Test that buyback restores the exact price paid."""
-        sold_price = 45
-        buyback_price = 45  # Should be exact
-
-        assert buyback_price == sold_price
-
-    def test_shop_buyback_window_expires(self, game_service, complete_mock_player):
-        """Test that buyback items expire after beat advancement."""
-        current_tick = 100
-        sold_tick = 95
-
-        # Buyback window is typically 1 beat; at tick 101 it expires
-        if current_tick > sold_tick:
-            # Item is still available for buyback
-            assert True
-
-        current_tick = 101  # Beat advances
-        if current_tick > sold_tick + 1:
-            # Buyback should have expired
-            assert True
-
-    def test_shop_sell_multiple_items(self, game_service, complete_mock_player):
-        """Test selling multiple items in one transaction."""
-        # Player has 3× Potion
-        potion = MagicMock()
-        potion.name = "Potion"
-        potion.count = 3
-        potion.value = 20
-        complete_mock_player.inventory = [potion]
-
-        # Sell 2× Potion
-        quantity_to_sell = 2
-        gold_gained = potion.value * quantity_to_sell
-
-        potion.count -= quantity_to_sell
-
-        assert potion.count == 1
-        assert gold_gained == 40
-
-    def test_shop_buy_clamped_quantity(self, game_service, complete_mock_player):
-        """Test that shop_buy clamps quantity to available stock."""
-        item = MagicMock()
-        item.name = "Sword"
-        item.count = 1
-
-        requested_quantity = 5
-        clamped_quantity = min(requested_quantity, item.count)
-
-        assert clamped_quantity == 1
-
-
-# ========================= QUEST CHAIN SYSTEM TESTS =========================
-
-
-class TestQuestChainSystem:
-    """Tests for multi-stage quest progression and prerequisite validation."""
-
-    def test_quest_chain_prerequisite_validation(self, game_service, complete_mock_player):
-        """Test that quest chain validates prerequisites before unlocking."""
-        # Quest chain: Find Item → Deliver Item → Reward
-        # Prerequisite: Must complete "Find Item" before unlocking "Deliver Item"
-
-        quest_chain = {
-            "id": "fetch_quest_chain",
-            "stages": [
-                {"id": "stage_1", "title": "Find Item", "completed": False},
-                {"id": "stage_2", "title": "Deliver Item", "completed": False, "requires": "stage_1"},
-            ],
-        }
-
-        # Stage 2 should not be available until stage 1 completes
-        stage_1_complete = quest_chain["stages"][0]["completed"]
-        stage_2_requires = quest_chain["stages"][1].get("requires")
-
-        assert not stage_1_complete
-        assert stage_2_requires == "stage_1"
-
-    def test_quest_chain_progression(self, game_service, complete_mock_player):
-        """Test that quest chain advances through stages correctly."""
-        quest_chain = {
-            "id": "investigation",
-            "current_stage": 1,
-            "stages": [
-                {"id": "gather", "title": "Gather Evidence", "completed": True},
-                {"id": "report", "title": "Report Findings", "completed": False},
-            ],
-        }
-
-        # Advance to next stage
-        quest_chain["current_stage"] = 2
-        quest_chain["stages"][1]["completed"] = True
-
-        assert quest_chain["current_stage"] == 2
-        assert quest_chain["stages"][1]["completed"]
-
-    def test_quest_chain_reward_distribution(self, game_service, complete_mock_player):
-        """Test that quest chain distributes rewards across stages."""
-        quest_chain = {
-            "id": "bounty",
-            "stages": [
-                {"id": "s1", "reward": {"gold": 50, "exp": 100}},
-                {"id": "s2", "reward": {"gold": 100, "exp": 200}},
-            ],
-        }
-
-        total_gold = sum(s["reward"]["gold"] for s in quest_chain["stages"])
-        total_exp = sum(s["reward"]["exp"] for s in quest_chain["stages"])
-
-        assert total_gold == 150
-        assert total_exp == 300
-
-    def test_quest_chain_multiple_objectives(self, game_service, complete_mock_player):
-        """Test quest stage with multiple objectives."""
-        stage = {
-            "id": "multi_task",
-            "objectives": [
-                {"id": "o1", "title": "Collect Item A", "completed": True},
-                {"id": "o2", "title": "Collect Item B", "completed": False},
-                {"id": "o3", "title": "Collect Item C", "completed": True},
-            ],
-        }
-
-        completed = sum(1 for o in stage["objectives"] if o.get("completed"))
-        progress = int((completed / len(stage["objectives"]) * 100))
-
-        assert completed == 2
-        assert progress == 66  # 2/3
-
-    def test_quest_chain_locked_by_story_gate(self, game_service, complete_mock_player):
-        """Test that quest chains respect story flags."""
-        complete_mock_player.universe.story["ch02_entered"] = False
-
-        quest = {
-            "id": "ch2_quest",
-            "requires_story": "ch02_entered",
-        }
-
-        required_flag = quest.get("requires_story")
-        story_unlocked = complete_mock_player.universe.story.get(required_flag, False)
-
-        assert not story_unlocked
-
-    def test_quest_chain_completion_event_fired(self, game_service, complete_mock_player):
-        """Test that quest chain completion triggers events."""
-        chain = {"id": "final_quest", "on_complete": "trigger_ending"}
-
-        if chain.get("on_complete"):
-            event = chain["on_complete"]
-            assert event == "trigger_ending"
-
-    def test_quest_chain_failure_recovery(self, game_service, complete_mock_player):
-        """Test that failed quest objectives can be retried."""
-        quest = {
-            "id": "retrieval",
-            "objectives": [
-                {"id": "find", "title": "Find Item", "completed": False, "attempts": 0},
-            ],
-        }
-
-        # Retry objective
-        quest["objectives"][0]["attempts"] += 1
-        quest["objectives"][0]["completed"] = True
-
-        assert quest["objectives"][0]["attempts"] == 1
-        assert quest["objectives"][0]["completed"]
-
-    def test_quest_chain_parallel_objectives(self, game_service, complete_mock_player):
-        """Test quest with parallel objectives that can complete in any order."""
-        quest = {
-            "id": "parallel",
-            "objectives": [
-                {"id": "o1", "completed": False},
-                {"id": "o2", "completed": True},
-                {"id": "o3", "completed": False},
-            ],
-        }
-
-        # Any order of completion should work
-        quest["objectives"][0]["completed"] = True
-        quest["objectives"][2]["completed"] = True
-
-        all_complete = all(o["completed"] for o in quest["objectives"])
-        assert all_complete
-
-
-# ========================= COMBAT STATE MACHINE TESTS =========================
-
-
-class TestCombatStateMachine:
-    """Tests for turn management, cooldowns, and status effects."""
-
-    def test_combat_turn_order_initialization(self, game_service, complete_mock_player):
-        """Test that combat turn order is calculated correctly."""
-        complete_mock_player.speed = 12
-        enemy = MagicMock()
-        enemy.speed = 8
-
-        # Turn order: higher speed goes first
-        player_first = complete_mock_player.speed > enemy.speed
-        assert player_first
-
-    def test_combat_cooldown_drain_during_combat(self, game_service, complete_mock_player):
-        """Test that ability cooldowns drain only during active combat beats."""
-        complete_mock_player.in_combat = True
-        complete_mock_player.current_beat = 0
-
-        ability_cooldown = 3
-
-        # Simulate beat passage
-        complete_mock_player.current_beat += 1
-        ability_cooldown -= 1
-
-        assert ability_cooldown == 2
-        assert complete_mock_player.current_beat == 1
-
-    def test_combat_cooldown_not_drain_outside_combat(self, game_service, complete_mock_player):
-        """Test that cooldowns do NOT drain outside combat."""
-        complete_mock_player.in_combat = False
-        ability_cooldown = 3
-
-        # Time passes but we're not in combat
-        complete_mock_player.time_elapsed += 100
-
-        # Cooldown should NOT drain
-        assert ability_cooldown == 3
-
-    def test_status_effect_interaction_stacking(self, game_service, complete_mock_player):
-        """Test that status effects can stack correctly."""
-        status_effects = []
-
-        # Add burning
-        status_effects.append({"name": "Burning", "duration": 3})
-        # Add poisoned
-        status_effects.append({"name": "Poisoned", "duration": 2})
-
-        assert len(status_effects) == 2
-        assert status_effects[0]["name"] == "Burning"
-        assert status_effects[1]["name"] == "Poisoned"
-
-    def test_status_effect_immunity_blocks_application(self, game_service, complete_mock_player):
-        """Test that immunity status prevents effect application."""
-        complete_mock_player.resistances = {"fire": 1.0}  # 100% fire resistance
-
-        fire_damage = 50
-        resisted_damage = fire_damage * (1 - complete_mock_player.resistances.get("fire", 0))
-
-        assert resisted_damage == 0
-
-    def test_status_effect_duration_countdown(self, game_service, complete_mock_player):
-        """Test that status effects decrement duration each beat."""
-        status_effects = [{"name": "Burning", "duration": 3, "damage_per_beat": 10}]
-
-        # Beat advances
-        for effect in status_effects:
-            effect["duration"] -= 1
-
-        assert status_effects[0]["duration"] == 2
-
-    def test_status_effect_expiration(self, game_service, complete_mock_player):
-        """Test that effects are removed when duration expires."""
-        status_effects = [{"name": "Burning", "duration": 1, "damage_per_beat": 10}]
-
-        # Beat advances
-        status_effects[0]["duration"] -= 1
-
-        # Remove expired effects
-        status_effects = [e for e in status_effects if e["duration"] > 0]
-
-        assert len(status_effects) == 0
-
-    def test_heat_generation_during_combat(self, game_service, complete_mock_player):
-        """Test that using aggressive moves generates heat."""
-        complete_mock_player.heat = 0
-
-        # Use a heat-generating move
-        move_heat = 15
-        complete_mock_player.heat += move_heat
-
-        assert complete_mock_player.heat == 15
-
-    def test_heat_decay_between_beats(self, game_service, complete_mock_player):
-        """Test that heat decays naturally between combat beats."""
-        complete_mock_player.heat = 30
-
-        # Natural decay
-        heat_decay = 5
-        complete_mock_player.heat -= heat_decay
-
-        assert complete_mock_player.heat == 25
-
-    def test_heat_cap_prevents_overflow(self, game_service, complete_mock_player):
-        """Test that heat cannot exceed max_heat."""
-        complete_mock_player.heat = 90
-        complete_mock_player.max_heat = 100
-
-        heat_gain = 20
-        complete_mock_player.heat = min(
-            complete_mock_player.heat + heat_gain, complete_mock_player.max_heat
+    def test_sale_pays_value_times_the_sell_modifier(
+        self, shop, merchant, player, get_player_gold
+    ):
+        """Default ``sell_modifier`` is 0.5 — the merchant's margin."""
+        assert merchant.sell_modifier == 0.5
+        item = make_consumable(value=100)
+        player.inventory.append(item)
+
+        result = shop.sell(item)
+
+        assert result["success"] is True
+        assert result["gold_gained"] == 50
+        assert get_player_gold(player) == 1050
+
+    def test_sale_gold_comes_out_of_the_merchants_purse(
+        self, shop, merchant, player, get_player_gold
+    ):
+        """The payout is moved, not minted — the merchant is down exactly 50."""
+        item = make_consumable(value=100)
+        player.inventory.append(item)
+        merchant_before = gold_in(merchant.inventory)
+
+        shop.sell(item)
+
+        assert merchant_before - gold_in(merchant.inventory) == 50
+        assert get_player_gold(player) == 1050
+
+    def test_a_merchant_who_cannot_pay_refuses_the_sale(
+        self, shop, merchant, player, get_player_gold
+    ):
+        """The refusal path. A broke merchant must not buy on credit."""
+        merchant.inventory = [Gold(5)]
+        item = make_consumable(value=100)
+        player.inventory.append(item)
+        player_before = get_player_gold(player)
+
+        result = shop.sell(item)
+
+        assert result == {"success": False, "error": "Merchant has insufficient funds"}
+        assert item in player.inventory, "item left the player despite the refusal"
+        assert get_player_gold(player) == player_before
+        assert gold_in(merchant.inventory) == 5
+
+    def test_the_purse_check_covers_the_whole_stack_not_one_unit(
+        self, shop, merchant, player
+    ):
+        """A merchant able to afford one unit but not three buys none of them."""
+        merchant.inventory = [Gold(60)]
+        item = make_consumable(value=100, count=3)
+        player.inventory.append(item)
+
+        result = shop.sell(item, quantity=3)
+
+        assert result["error"] == "Merchant has insufficient funds"
+        assert item.count == 3
+
+    def test_a_near_worthless_item_still_costs_one_gold(
+        self, shop, merchant, get_player_gold, player
+    ):
+        """The unit price floors at 1 so nothing is ever free."""
+        item = stock(merchant, make_consumable(name="Pebble", value=0))
+
+        result = shop.buy(item)
+
+        assert result["gold_spent"] == 1
+        assert get_player_gold(player) == 999
+
+    def test_an_unaffordable_purchase_names_the_shortfall_and_moves_nothing(
+        self, shop, merchant, player, set_player_gold, get_player_gold
+    ):
+        set_player_gold(player, 10)
+        item = stock(merchant, make_consumable(value=100))
+
+        result = shop.buy(item)
+
+        assert result == {"success": False, "error": "Not enough gold — need 90 more"}
+        assert get_player_gold(player) == 10
+        assert item in merchant.inventory
+
+    def test_buy_quantity_is_clamped_to_the_stock_on_hand(
+        self, shop, merchant, get_player_gold, player
+    ):
+        """Asking for nine of a two-item stack buys two and charges for two."""
+        item = stock(merchant, make_consumable(value=10, count=2))
+
+        result = shop.buy(item, quantity=9)
+
+        assert result["gold_spent"] == 20
+        assert get_player_gold(player) == 980
+
+    def test_sell_quantity_is_clamped_to_the_stack_the_player_holds(
+        self, shop, player, get_player_gold
+    ):
+        item = make_consumable(value=100, count=2)
+        player.inventory.append(item)
+
+        result = shop.sell(item, quantity=9)
+
+        assert result["gold_gained"] == 100  # 2 x 50, not 9 x 50
+        assert get_player_gold(player) == 1100
+
+
+# ========================= REPUTATION =========================
+
+
+class TestReputationReachesTheCharge:
+    """A reputation discount must alter the gold actually taken, not just the
+    number the client renders.
+
+    ``ShopSerializer.get_effective_buy_modifier`` is deliberately shared between
+    ``serialize_state`` (display) and ``shop_buy`` (charge); these tests pin
+    both ends so the two cannot drift apart.
+    """
+
+    def test_neutral_reputation_is_the_baseline(self, shop, merchant, get_player_gold, player):
+        """A fresh ``Player`` has no ``reputation`` attribute at all."""
+        assert not hasattr(player, "reputation")
+        item = stock(merchant, make_consumable(value=100))
+
+        assert shop.buy(item)["gold_spent"] == 100
+        assert get_player_gold(player) == 900
+
+    def test_maximum_goodwill_takes_fifteen_percent_off_the_charge(
+        self, shop, merchant, player, get_player_gold
+    ):
+        """+100 reputation is the +/-15% extreme: 1.0 * 0.85 * 100 = 85."""
+        player.reputation = {"Milo": 100}
+        item = stock(merchant, make_consumable(value=100))
+
+        result = shop.buy(item)
+
+        assert result["gold_spent"] == 85
+        assert get_player_gold(player) == 915
+        assert result["shop_state"]["buy_modifier"] == pytest.approx(0.85)
+
+    def test_hostility_marks_the_price_up(self, shop, merchant, player, get_player_gold):
+        """-100 reputation gives modifier 1.15; the price truncates (not rounds)
+        to 114, because ``int(100 * 1.1499999999999999)`` is 114."""
+        player.reputation = {"Milo": -100}
+        item = stock(merchant, make_consumable(value=100))
+
+        assert shop.buy(item)["gold_spent"] == 114
+        assert get_player_gold(player) == 886
+
+    def test_the_displayed_price_equals_the_charged_price(self, shop, merchant, player):
+        """The drift guard. A partial reputation makes the two calculations
+        diverge if they are ever implemented separately."""
+        player.reputation = {"Milo": 60}
+        item = stock(merchant, make_consumable(value=100))
+
+        displayed = {row["name"]: row["price"] for row in shop.state()["stock"]}
+
+        assert shop.buy(item)["gold_spent"] == displayed["Tonic"] == 91
+
+    def test_goodwill_raises_the_sale_payout(self, shop, merchant, player, get_player_gold):
+        """0.5 * 1.15 = 0.575, so a 100-gold item fetches 57."""
+        player.reputation = {"Milo": 100}
+        item = make_consumable(value=100)
+        player.inventory.append(item)
+
+        result = shop.sell(item)
+
+        assert result["gold_gained"] == 57
+        assert get_player_gold(player) == 1057
+
+    def test_the_bonus_payout_still_comes_out_of_the_merchants_purse(
+        self, shop, merchant, player
+    ):
+        """A discount is not a subsidy — the merchant funds every extra gold."""
+        player.reputation = {"Milo": 100}
+        item = make_consumable(value=100)
+        player.inventory.append(item)
+        merchant_before = gold_in(merchant.inventory)
+
+        shop.sell(item)
+
+        assert merchant_before - gold_in(merchant.inventory) == 57
+
+    def test_reputation_with_someone_else_does_not_discount_this_shop(
+        self, shop, merchant, player
+    ):
+        """The lookup is keyed on the merchant's own name."""
+        player.reputation = {"Gorran": 100, "Vespera": -100}
+        item = stock(merchant, make_consumable(value=100))
+
+        assert shop.buy(item)["gold_spent"] == 100
+
+
+# ========================= BUYBACK =========================
+
+
+class TestBuybackLedger:
+    """Selling opens a same-tick buyback offer at exactly the price paid."""
+
+    def test_a_sale_records_the_price_paid_and_the_tick(self, shop, merchant, player):
+        item = make_consumable(name="Tonic", value=100, count=2)
+        player.inventory.append(item)
+
+        shop.sell(item, quantity=2)
+
+        (entry,) = merchant._buyback_ledger
+        assert entry["item_name"] == "Tonic"
+        assert entry["buyback_price"] == 50  # the *unit* price, not the total
+        assert entry["count"] == 2
+        assert entry["beat_acquired"] == player.universe.game_tick == 0
+
+    def test_buying_back_costs_exactly_what_the_merchant_paid(
+        self, shop, player, merchant, get_player_gold
+    ):
+        """A sell-then-regret round trip must be gold-neutral — no spread."""
+        item = make_consumable(value=100)
+        player.inventory.append(item)
+        before = get_player_gold(player)
+
+        shop.sell(item)
+        assert get_player_gold(player) == before + 50
+
+        result = shop.buyback(merchant._buyback_ledger[0]["item_id"])
+
+        assert result["success"] is True
+        assert get_player_gold(player) == before
+
+    def test_the_item_comes_home(self, shop, player, merchant):
+        item = make_consumable(name="Tonic", value=100)
+        player.inventory.append(item)
+
+        shop.sell(item)
+        assert not [i for i in player.inventory if i.name == "Tonic"]
+
+        shop.buyback(merchant._buyback_ledger[0]["item_id"])
+
+        assert [i for i in player.inventory if i.name == "Tonic"]
+
+    def test_a_consumed_offer_is_removed_from_the_ledger(self, shop, player, merchant):
+        item = make_consumable(value=100)
+        player.inventory.append(item)
+        shop.sell(item)
+        item_id = merchant._buyback_ledger[0]["item_id"]
+
+        shop.buyback(item_id)
+
+        assert merchant._buyback_ledger == []
+        assert shop.buyback(item_id)["success"] is False
+
+    def test_the_offer_expires_when_the_world_clock_advances(
+        self, game_service, shop, player, merchant
+    ):
+        """The ledger is scoped to the tick it was created on. Walking away and
+        back is two ``move_player`` calls, hence two ticks."""
+        item = make_consumable(value=100)
+        player.inventory.append(item)
+        shop.sell(item)
+        assert len(merchant._buyback_ledger) == 1
+
+        game_service.move_player(player, "east")
+        game_service.move_player(player, "west")
+        assert player.universe.game_tick == 2
+
+        assert shop.state()["buyback_items"] == []
+        assert merchant._buyback_ledger == []
+
+    def test_an_expired_offer_is_refused_by_name(
+        self, game_service, shop, player, merchant
+    ):
+        item = make_consumable(value=100)
+        player.inventory.append(item)
+        shop.sell(item)
+        item_id = merchant._buyback_ledger[0]["item_id"]
+
+        game_service.move_player(player, "east")
+        game_service.move_player(player, "west")
+
+        result = shop.buyback(item_id)
+        assert result["success"] is False
+        assert "expired" in result["error"]
+
+
+# ========================= CARRY LIMIT =========================
+
+
+class TestShopRespectsTheCarryLimit:
+    """Weight is checked before gold changes hands."""
+
+    def test_an_overweight_purchase_is_refused_and_costs_nothing(
+        self, shop, merchant, player, get_player_gold
+    ):
+        anvil = stock(merchant, make_consumable(name="Anvil", value=1, weight=999))
+        before = get_player_gold(player)
+
+        result = shop.buy(anvil)
+
+        assert result == {"success": False, "error": "Exceeds carry limit"}
+        assert get_player_gold(player) == before
+        assert anvil in merchant.inventory
+
+    def test_the_limit_counts_every_unit_in_the_order(
+        self, shop, merchant, player, get_player_gold
+    ):
+        """One brick fits; the same purchase scaled up does not."""
+        player.refresh_weight()
+        headroom = player.weight_tolerance - player.weight_current
+        brick = stock(
+            merchant, make_consumable(name="Brick", value=1, weight=headroom / 2, count=9)
         )
+        before = get_player_gold(player)
 
-        assert complete_mock_player.heat == 100
+        assert shop.buy(brick, quantity=9)["success"] is False
+        assert get_player_gold(player) == before
 
+        assert shop.buy(brick, quantity=1)["success"] is True
 
-# ========================= NPC AI TESTS =========================
+    def test_a_purchase_inside_the_limit_goes_through(self, shop, merchant, player):
+        feather = stock(merchant, make_consumable(name="Feather", value=1, weight=0.01))
 
-
-class TestNPCAI:
-    """Tests for NPC decision making and behavior."""
-
-    def test_npc_position_tracking(self, game_service, complete_mock_player):
-        """Test that NPC positions are tracked accurately."""
-        npc = MagicMock()
-        npc.id = "gorran_1"
-        npc.location_x = 10
-        npc.location_y = 15
-
-        assert npc.location_x == 10
-        assert npc.location_y == 15
-
-    def test_npc_relationship_affects_behavior(self, game_service, complete_mock_player):
-        """Test that NPC behavior changes based on relationship."""
-        complete_mock_player.reputation["gorran_1"] = 75
-
-        npc_reputation = complete_mock_player.reputation.get("gorran_1", 0)
-
-        # High reputation should unlock friendly behaviors
-        if npc_reputation >= 50:
-            assert True
-
-    def test_npc_availability_by_location(self, game_service, complete_mock_player):
-        """Test that NPCs check location before interacting."""
-        complete_mock_player.location_x = 5
-        complete_mock_player.location_y = 5
-
-        npc = MagicMock()
-        npc.location_x = 5
-        npc.location_y = 5
-
-        same_location = (
-            npc.location_x == complete_mock_player.location_x
-            and npc.location_y == complete_mock_player.location_y
-        )
-
-        assert same_location
-
-    def test_npc_availability_by_time(self, game_service, complete_mock_player):
-        """Test that NPCs have schedule-based availability."""
-        npc = MagicMock()
-        npc.available_hours = [9, 10, 11, 12, 13, 14, 15, 16, 17]
-        npc.id = "merchant_1"
-
-        current_hour = 11
-
-        is_available = current_hour in npc.available_hours
-        assert is_available
-
-    def test_npc_quest_flags_unlock_dialogue(self, game_service, complete_mock_player):
-        """Test that NPC quest completion unlocks new dialogue."""
-        complete_mock_player.completed_quests = ["ch01_find_item"]
-
-        npc = MagicMock()
-        npc.dialogue_unlocked_by = {"ch01_find_item": "quest_reward_dialogue"}
-
-        if "ch01_find_item" in complete_mock_player.completed_quests:
-            dialogue_key = npc.dialogue_unlocked_by.get("ch01_find_item")
-            assert dialogue_key == "quest_reward_dialogue"
-
-    def test_npc_combat_ability_selection(self, game_service, complete_mock_player):
-        """Test that NPC selects combat abilities based on situation."""
-        npc = MagicMock()
-        npc.available_moves = ["Attack", "Defend", "Healing Spell"]
-
-        enemy_hp_low = False
-        ally_hp_low = True
-
-        # If ally is low, pick healing
-        if ally_hp_low and "Healing Spell" in npc.available_moves:
-            selected_move = "Healing Spell"
-        else:
-            selected_move = "Attack"
-
-        assert selected_move == "Healing Spell"
-
-    def test_npc_fleeing_when_defeated(self, game_service, complete_mock_player):
-        """Test that NPC flees combat when health is critical."""
-        npc = MagicMock()
-        npc.hp = 5
-        npc.maxhp = 100
-
-        hp_ratio = npc.hp / npc.maxhp
-
-        if hp_ratio < 0.1:
-            should_flee = True
-        else:
-            should_flee = False
-
-        assert should_flee
+        assert shop.buy(feather)["success"] is True
+        assert [i for i in player.inventory if i.name == "Feather"]
 
 
-# ========================= COMPLEX SCENARIO TESTS =========================
+# ========================= VALIDATION =========================
 
 
-class TestComplexGameplayScenarios:
-    """Tests for realistic multi-system interactions."""
+class TestShopTransactionValidation:
+    """Bad identifiers and quantities are rejected with a specific message."""
 
-    def test_shop_transaction_with_quest_reward(self, game_service, complete_mock_player):
-        """Test that quest reward gold can be immediately used in shop."""
-        # Quest completes and grants 100 gold
-        gold_item = MagicMock()
-        gold_item.name = "Gold"
-        gold_item.count = 0
-        complete_mock_player.inventory = [gold_item]
+    @pytest.mark.parametrize(
+        "quantity", [0, -1, -100], ids=["zero", "negative", "very-negative"]
+    )
+    def test_a_non_positive_quantity_is_rejected(self, shop, merchant, quantity):
+        item = stock(merchant, make_consumable(value=10))
 
-        # Award quest gold
-        gold_item.count += 100
+        assert shop.buy(item, quantity=quantity)["error"] == "Invalid quantity"
+        assert item in merchant.inventory
 
-        # Now buy item for 50 gold
-        item_cost = 50
-        gold_item.count -= item_cost
+    def test_an_unknown_merchant_id_is_rejected(self, game_service, player):
+        result = game_service.shop_buy(player, "no-such-npc", "no-such-item", 1)
 
-        assert gold_item.count == 50
-
-    def test_combat_aftermath_merchant_interaction(self, game_service, complete_mock_player):
-        """Test selling combat loot immediately after victory."""
-        # Combat ends
-        complete_mock_player.in_combat = False
-
-        # Loot collected
-        loot = MagicMock()
-        loot.name = "Dropped Sword"
-        loot.value = 75
-        complete_mock_player.inventory.append(loot)
-
-        # Sell to merchant
-        merchant_inventory = []
-        merchant_inventory.append(loot)
-        complete_mock_player.inventory.remove(loot)
-
-        assert loot in merchant_inventory
-        assert loot not in complete_mock_player.inventory
-
-    def test_quest_completion_updates_dialogue_state(self, game_service, complete_mock_player):
-        """Test that completing quest updates NPC dialogue."""
-        npc_id = "gorran_1"
-
-        # Complete quest
-        complete_mock_player.completed_quests.append("ch01_fetch")
-
-        # NPC dialogue should update
-        if "ch01_fetch" in complete_mock_player.completed_quests:
-            complete_mock_player.dialogue_state[npc_id] = {
-                "dialogue_branch": "quest_complete",
-            }
-
-        assert complete_mock_player.dialogue_state[npc_id]["dialogue_branch"] == "quest_complete"
-
-    def test_save_during_active_combat(self, game_service, complete_mock_player):
-        """Test that player state during combat is saved correctly."""
-        complete_mock_player.in_combat = True
-        complete_mock_player.hp = 45
-        complete_mock_player.current_beat = 3
-        complete_mock_player.heat = 35
-
-        # Simulate save
-        saved_state = {
-            "in_combat": complete_mock_player.in_combat,
-            "hp": complete_mock_player.hp,
-            "current_beat": complete_mock_player.current_beat,
-            "heat": complete_mock_player.heat,
+        assert result == {
+            "success": False,
+            "error": "Merchant not found at this location",
         }
 
-        assert saved_state["in_combat"]
-        assert saved_state["hp"] == 45
-        assert saved_state["heat"] == 35
+    def test_a_non_merchant_npc_cannot_be_shopped_at(self, game_service, player, world):
+        """``_find_merchant`` gates on ``buy_modifier``, which only merchants have."""
+        slime = Slime()
+        world[1][(0, 0)].npcs_here.append(slime)
 
-    def test_load_resumes_dialogue_context(self, game_service, complete_mock_player):
-        """Test that loading game restores dialogue context."""
-        npc_id = "gorran_1"
-        complete_mock_player.dialogue_state[npc_id] = {
-            "current_node": "mid_conversation",
-            "path_taken": ["greeting", "ask_quest"],
-        }
+        result = game_service.shop_buy(player, str(id(slime)), "x", 1)
 
-        # Simulate save
-        saved_dialogue = complete_mock_player.dialogue_state.copy()
+        assert result["error"] == "Merchant not found at this location"
 
-        # Simulate load
-        complete_mock_player.dialogue_state = saved_dialogue
+    def test_an_item_the_merchant_does_not_have_is_rejected(self, game_service, player, merchant):
+        elsewhere = make_consumable(value=10)
 
-        assert complete_mock_player.dialogue_state[npc_id]["current_node"] == "mid_conversation"
+        result = game_service.shop_buy(player, str(id(merchant)), str(id(elsewhere)), 1)
 
-    def test_weight_limit_prevents_quest_reward_pickup(self, game_service, complete_mock_player):
-        """Test that weight limits apply to quest rewards."""
-        complete_mock_player.weight_current = 95
-        complete_mock_player.weight_tolerance = 100
+        assert result["error"] == "Item not found in merchant inventory"
 
-        reward_item = MagicMock()
-        reward_item.weight = 10
+    def test_equipped_gear_cannot_be_sold(self, shop, player, get_player_gold):
+        """Jean starts wearing his own clothes; selling them out from under him
+        would leave the equipment slots pointing at the merchant's stock."""
+        worn = next(i for i in player.inventory if getattr(i, "isequipped", False))
+        before = get_player_gold(player)
 
-        can_carry = complete_mock_player.weight_current + reward_item.weight <= complete_mock_player.weight_tolerance
+        result = shop.sell(worn)
 
-        assert not can_carry
+        assert result == {"success": False, "error": "Cannot sell equipped items"}
+        assert worn in player.inventory
+        assert get_player_gold(player) == before
 
-    def test_relationship_gain_unlocks_npc_quest(self, game_service, complete_mock_player):
-        """Test that building relationship with NPC unlocks new quests."""
-        npc_id = "companion_1"
+    def test_a_worthless_item_has_nothing_to_sell(self, shop, player):
+        junk = make_consumable(name="Lint", value=0)
+        player.inventory.append(junk)
 
-        # Gain reputation through dialogue
-        complete_mock_player.reputation[npc_id] = 100
+        assert shop.sell(junk)["error"] == "This item has no sell value"
+        assert junk in player.inventory
 
-        # Check if quest unlocks
-        npc_rep = complete_mock_player.reputation.get(npc_id, 0)
-        if npc_rep >= 75:
-            new_quest_available = True
-        else:
-            new_quest_available = False
+    def test_gold_itself_is_not_merchandise(self, shop, player, merchant):
+        """Both sides skip ``Gold`` when resolving an item id, so a purse can
+        never be sold or bought as an object."""
+        purse = next(i for i in player.inventory if i.name == "Gold")
 
-        assert new_quest_available
+        assert shop.sell(purse)["error"] == "Item not found in inventory"
 
-    def test_heat_threshold_forces_cooldown(self, game_service, complete_mock_player):
-        """Test that excessive heat forces ability cooldown."""
-        complete_mock_player.heat = 95
-        complete_mock_player.max_heat = 100
+        merchant_purse = next(i for i in merchant.inventory if i.name == "Gold")
+        assert shop.buy(merchant_purse)["error"] == "Item not found in merchant inventory"
 
-        # Aggressive move would exceed heat cap
-        move_heat = 15
-        would_exceed = complete_mock_player.heat + move_heat > complete_mock_player.max_heat
 
-        assert would_exceed
+# ========================= ROUND TRIPS =========================
 
-    def test_status_effect_prevents_move_casting(self, game_service, complete_mock_player):
-        """Test that certain status effects prevent move execution."""
-        status_effects = [{"name": "Stunned", "prevents_moves": True}]
 
-        has_blocking_status = any(
-            e.get("prevents_moves", False) for e in status_effects
+class TestShopRoundTrips:
+    """Multi-transaction sequences — the margin has to accumulate correctly."""
+
+    def test_buying_then_selling_back_loses_the_merchants_margin(
+        self, shop, merchant, player, get_player_gold
+    ):
+        """Buy at 1.0x, sell at 0.5x: a 100-gold item costs Jean 50 to churn."""
+        item = stock(merchant, make_consumable(value=100))
+        before = get_player_gold(player)
+
+        shop.buy(item)
+        bought = next(i for i in player.inventory if i.name == "Tonic")
+        shop.sell(bought)
+
+        assert get_player_gold(player) == before - 50
+
+    def test_the_merchants_purse_absorbs_exactly_that_margin(
+        self, shop, merchant, player
+    ):
+        item = stock(merchant, make_consumable(value=100))
+        merchant_before = gold_in(merchant.inventory)
+
+        shop.buy(item)
+        shop.sell(next(i for i in player.inventory if i.name == "Tonic"))
+
+        assert gold_in(merchant.inventory) - merchant_before == 50
+
+    def test_a_merchant_can_be_bought_out_of_gold(self, shop, merchant, player):
+        """Repeated sales drain the purse until the next one is refused."""
+        merchant.inventory = [Gold(120)]
+        for _ in range(3):
+            player.inventory.append(make_consumable(name="Tonic", value=100))
+
+        tonics = [i for i in player.inventory if i.name == "Tonic"]
+        assert shop.sell(tonics[0])["success"] is True   # purse 120 -> 70
+        assert shop.sell(tonics[1])["success"] is True   # purse  70 -> 20
+        third = shop.sell(tonics[2])
+
+        assert third["error"] == "Merchant has insufficient funds"
+        assert gold_in(merchant.inventory) == 20
+
+
+# ========================= COMBAT LIFECYCLE =========================
+
+
+class TestCombatLifecycleAcrossSystems:
+    """Starting, polling and leaving a fight, driven through ``GameService``."""
+
+    @pytest.fixture
+    def slime(self, world):
+        enemy = Slime()
+        world[1][(0, 0)].npcs_here = [enemy]
+        return enemy
+
+    def test_start_combat_engages_both_sides(self, game_service, player, slime):
+        result = game_service.start_combat(player, str(id(slime)))
+
+        assert "error" not in result
+        assert player.in_combat is True
+        assert slime.in_combat is True
+        assert slime.aggro is True
+        assert slime in player.combat_list
+
+    def test_start_combat_installs_the_adapter(self, game_service, player, slime):
+        game_service.start_combat(player, str(id(slime)))
+
+        assert hasattr(player, "_combat_adapter")
+        assert game_service.get_combat_status(player)["combat_active"] is True
+
+    def test_an_unknown_enemy_id_starts_no_fight(self, game_service, player, slime):
+        result = game_service.start_combat(player, "not-an-npc")
+
+        assert result == {"error": "Enemy not found"}
+        assert player.in_combat is False
+
+    def test_combat_id_identifies_the_fight_not_the_poll(
+        self, game_service, player, slime
+    ):
+        """CLAUDE.md: the client uses ``combat_id`` to tell "new fight" from
+        "same fight, next beat", so repeated polls must return one value."""
+        game_service.start_combat(player, str(id(slime)))
+
+        first = game_service.get_combat_status(player)["battle_state"]["combat_id"]
+        second = game_service.get_combat_status(player)["battle_state"]["combat_id"]
+
+        assert first == second
+        assert first
+
+    def test_the_enemy_roster_reaches_the_battle_state(self, game_service, player, slime):
+        game_service.start_combat(player, str(id(slime)))
+
+        enemies = game_service.get_combat_status(player)["battle_state"]["enemies"]
+
+        assert [e["name"] for e in enemies] == [slime.name]
+        assert enemies[0]["hp"] == slime.hp
+
+    def test_fleeing_is_refused_while_the_enemy_is_close(
+        self, game_service, player, slime
+    ):
+        """``flee_combat`` reads each enemy's own distance to Jean; under 20 ft
+        it refuses. ``initialize_combat_positions`` randomises spawn points, so
+        the distance is set explicitly rather than hoped for."""
+        game_service.start_combat(player, str(id(slime)))
+        slime.combat_proximity = {player: 5}
+
+        result = game_service.flee_combat(player)
+
+        assert result["fled"] is False
+        assert "too close" in result["error"]
+        assert player.in_combat is True
+
+    def test_fleeing_from_a_distance_tears_the_fight_down(
+        self, game_service, player, slime
+    ):
+        game_service.start_combat(player, str(id(slime)))
+        slime.combat_proximity = {player: 40}
+
+        result = game_service.flee_combat(player)
+
+        assert result["fled"] is True
+        assert player.in_combat is False
+        assert player.combat_list == []
+        assert slime.in_combat is False and slime.aggro is False
+        assert not hasattr(player, "_combat_adapter")
+
+    def test_fleeing_outside_combat_is_an_error(self, game_service, player):
+        assert game_service.flee_combat(player) == {"error": "Not in combat"}
+
+
+# ========================= WORLD STATE =========================
+
+
+class TestWorldStateAcrossMoves:
+    """Walking the map updates exploration, position and the world clock together."""
+
+    def test_a_move_updates_position_room_and_clock_together(
+        self, game_service, player, world
+    ):
+        result = game_service.move_player(player, "east")
+
+        assert result["new_position"] == {"x": 1, "y": 0}
+        assert (player.location_x, player.location_y) == (1, 0)
+        assert player.current_room is world[1][(1, 0)]
+        assert player.universe.game_tick == 1
+
+    def test_the_tile_left_behind_is_remembered(self, game_service, player, world):
+        """``previous_tile`` exists so story events can detect an arrival."""
+        origin = world[1][(0, 0)]
+
+        game_service.move_player(player, "east")
+
+        assert player.previous_tile is origin
+
+    def test_visited_tiles_accumulate_in_the_exploration_record(
+        self, game_service, player
+    ):
+        for direction in ("east", "north", "west"):
+            game_service.move_player(player, direction)
+
+        explored = game_service.get_explored_tiles(player)
+
+        assert {"gs-test-map:1,0", "gs-test-map:1,-1", "gs-test-map:0,-1"} <= set(explored)
+        # The record is keyed per map, and carries each tile's exits so the
+        # client can draw the discovered graph without re-walking it.
+        assert explored["gs-test-map:1,-1"]["exits"]["south"] == {"x": 1, "y": 0}
+
+    def test_tile_modifications_survive_a_return_visit(self, game_service, player, world):
+        """Session-scoped tile state is re-applied when Jean walks back in."""
+        session_data = {}
+        world[1][(1, 0)].block_exit = ["north"]
+
+        game_service.move_player(player, "east", session_data)
+        world[1][(1, 0)].block_exit = []
+        game_service.move_player(player, "west", session_data)
+        game_service.move_player(player, "east", session_data)
+
+        assert world[1][(1, 0)].block_exit == ["north"]
+
+    def test_a_blocked_direction_changes_nothing_at_all(self, game_service, player):
+        """The origin has no tile above the top row on a 3x3 grid edge."""
+        game_service.move_player(player, "north")
+        game_service.move_player(player, "north")  # now at (0, -1), the edge
+        tick_at_edge = player.universe.game_tick
+
+        result = game_service.move_player(player, "north")
+
+        assert result == {"error": "Cannot go north from here"}
+        assert (player.location_x, player.location_y) == (0, -1)
+        assert player.universe.game_tick == tick_at_edge
+
+    def test_story_and_tick_are_read_off_the_player_not_the_service(
+        self, game_service, player
+    ):
+        """``GameService.__init__`` is ``pass`` — there is no ``self.universe``."""
+        assert not hasattr(game_service, "universe")
+
+        player.universe.story["ch01_started"] = True
+        game_service.move_player(player, "east")
+
+        assert game_service._story(player)["ch01_started"] is True
+        assert game_service._game_tick(player) == player.universe.game_tick == 1
+
+
+# ========================= INVENTORY x SHOP =========================
+
+
+class TestInventoryAndShopInterplay:
+    """Equipment state and the shop's sell tab have to agree."""
+
+    def test_the_sell_tab_hides_what_jean_is_wearing(self, shop, player):
+        """The Wedding Band is worth 900 gold and worn — it must not be offered
+        for sale while equipped, or the slot would point at merchant stock."""
+        band = next(i for i in player.inventory if i.name == "Wedding Band")
+        assert band.isequipped is True
+
+        offered = {row["name"] for row in shop.sell_tab()}
+
+        assert "Wedding Band" not in offered
+
+    def test_unequipping_makes_an_item_sellable(self, game_service, shop, player):
+        band = next(i for i in player.inventory if i.name == "Wedding Band")
+        assert shop.sell(band)["error"] == "Cannot sell equipped items"
+
+        game_service.unequip_item(player, band)
+
+        assert "Wedding Band" in {row["name"] for row in shop.sell_tab()}
+        assert shop.sell(band)["gold_gained"] == 450  # 900 x the 0.5 sell modifier
+
+    def test_selling_removes_the_item_from_the_carried_weight(
+        self, game_service, shop, player
+    ):
+        brick = make_consumable(name="Brick", value=100, weight=5.0)
+        player.inventory.append(brick)
+        player.refresh_weight()
+        heavy = player.weight_current
+
+        shop.sell(brick)
+        player.refresh_weight()
+
+        assert heavy - player.weight_current == pytest.approx(5.0)
+
+    def test_buying_adds_to_the_carried_weight(self, shop, merchant, player):
+        player.refresh_weight()
+        before = player.weight_current
+        brick = stock(merchant, make_consumable(name="Brick", value=1, weight=2.0, count=2))
+
+        shop.buy(brick, quantity=2)
+        player.refresh_weight()
+
+        assert player.weight_current - before == pytest.approx(4.0)
+
+    def test_dropping_an_item_takes_it_out_of_the_sell_tab(
+        self, game_service, shop, player
+    ):
+        tonic = make_consumable(name="Tonic", value=100)
+        player.inventory.append(tonic)
+        assert "Tonic" in {row["name"] for row in shop.sell_tab()}
+
+        game_service.drop_item(player, tonic)
+
+        assert "Tonic" not in {row["name"] for row in shop.sell_tab()}
+
+
+# ========================= RESTOCK =========================
+
+
+class TestMerchantRestock:
+    """An empty merchant restocks the first time the shop is opened.
+
+    ``update_goods()`` is normally driven by the terminal game loop's 1000-tick
+    merchant refresh, which the API never runs — so ``get_shop_state`` triggers
+    it on demand when the merchant holds nothing but gold. Note what that does
+    to the purse: ``update_goods`` **clears the whole inventory** and appends a
+    fresh ``Gold(base_gold * uniform(0.75, 1.25))`` pouch, so a hand-authored
+    purse is replaced rather than added to. That is easy to mistake for "the
+    merchant paid for the stock"; it is not, and a test asserting a *decrease*
+    would pass by accident on any purse above ``base_gold``.
+    """
+
+    @pytest.fixture
+    def bare_merchant(self, world):
+        trader = Merchant(
+            name="Vespera",
+            description="A trader who has just sold out.",
+            damage=1,
+            aggro=False,
+            exp_award=0,
+            stock_count=3,
+            base_gold=400,
+            inventory=[Gold(1000)],
         )
+        world[1][(0, 0)].npcs_here = [trader]
+        return trader
 
-        assert has_blocking_status
+    def test_opening_an_empty_shop_rerolls_the_purse(
+        self, game_service, player, bare_merchant
+    ):
+        assert [i.name for i in bare_merchant.inventory] == ["Gold"]
+        assert gold_in(bare_merchant.inventory) == 1000
+
+        purse = game_service.get_shop_state(player, str(id(bare_merchant)))[
+            "shop_state"
+        ]["merchant_gold"]
+
+        # base_gold 400 scaled by uniform(0.75, 1.25)
+        assert 300 <= purse <= 500
+        assert gold_in(bare_merchant.inventory) == purse
+
+    def test_a_shop_that_already_has_stock_is_left_alone(
+        self, game_service, player, merchant
+    ):
+        """The main ``merchant`` fixture carries one non-gold item, so the
+        restock branch is skipped and the purse survives two openings."""
+        first = game_service.get_shop_state(player, str(id(merchant)))["shop_state"]
+        second = game_service.get_shop_state(player, str(id(merchant)))["shop_state"]
+
+        assert first["merchant_gold"] == second["merchant_gold"] == 1000
+        assert [i.name for i in merchant.inventory] == ["Gold", "Stall Ledger"]

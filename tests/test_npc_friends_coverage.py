@@ -147,15 +147,22 @@ class TestGronditeConclaveElderTalk:
         out = capsys.readouterr().out
         assert len(out) > 0
 
-    def test_talk_with_no_universe_does_not_crash(self):
+    def test_talk_with_no_universe_still_narrates_dialogue(self):
+        """The old body had no assertion at all — "does not crash" was implicit.
+        A ``talk`` that silently returned nothing would have passed, leaving
+        the player staring at an empty dialogue box."""
         from src.npc._friends import GronditeConclaveElder
+        from src.narration import capture_narration
 
         elder = GronditeConclaveElder()
         player = Mock()
         player.universe = None
 
-        with patch("time.sleep"), patch("builtins.print"):
+        with patch("time.sleep"), capture_narration() as messages:
             elder.talk(player)
+
+        assert messages, "talk() emitted nothing without a universe"
+        assert all(m["text"].strip() for m in messages)
 
     def test_conclave_elder_instantiation(self):
         from src.npc._friends import GronditeConclaveElder
@@ -294,14 +301,46 @@ class TestMaraSelectMove:
         return mara
 
     def test_select_move_bow_mode(self):
+        """At 15 tiles Mara must pick from her real, viable move set — not just
+        "something non-None". The old assertion was satisfied by the
+        ``NpcRest`` hard fallback, i.e. by her doing nothing at all."""
         mara = self._make_mara_with_enemy(15)
+
         mara.select_move()
-        assert mara.current_move is not None
+
+        assert mara.current_move in mara.known_moves
+        assert mara.current_move.viable()
+        assert mara.current_move.fatigue_cost <= mara.fatigue
 
     def test_select_move_dagger_mode(self):
         mara = self._make_mara_with_enemy(1)
+
         mara.select_move()
-        assert mara.current_move is not None
+
+        assert mara.current_move in mara.known_moves
+        assert mara.current_move.viable()
+
+    def test_bow_and_dagger_stance_retune_the_same_attack_object(self):
+        """One ``NPC_Attack`` instance is retuned in place per beat; a second
+        instance would leave the stale range live on the previous one."""
+        mara = self._make_mara_with_enemy(15)
+        attack_ids = set()
+
+        mara.select_move()
+        attack = next(m for m in mara.known_moves if m.name == "NPC_Attack")
+        attack_ids.add(id(attack))
+        bow_range = attack.mvrange
+
+        enemy = mara.player_ref.combat_list[0]
+        mara.combat_proximity = {enemy: 1}
+        mara.current_move = None
+        mara.select_move()
+        attack = next(m for m in mara.known_moves if m.name == "NPC_Attack")
+        attack_ids.add(id(attack))
+
+        assert len(attack_ids) == 1
+        assert attack.mvrange == mara.combat_range
+        assert bow_range != mara.combat_range
 
     def test_bow_mode_attack_is_viable_at_bow_range(self):
         """Issue #383: at bow distance Mara's only offensive move must become
@@ -331,38 +370,60 @@ class TestMaraSelectMove:
         attack = next(m for m in mara.known_moves if m.name == "NPC_Attack")
         assert attack.mvrange == mara.combat_range
 
-    def test_select_move_no_enemies(self):
+    def test_select_move_with_no_enemies_picks_a_non_offensive_move(self):
+        """"No crash is the assertion" was the entire previous test body. With
+        nothing to shoot at, Mara must not select an offensive move."""
         mara = self._make_mara()
-        # Suppress lazy ai_config init
         mara.ai_config = Mock()
         mara.ai_config.get_weighted_move_bonus = Mock(return_value=0)
-        mara.select_move()
-        # No crash is the assertion
 
-    def test_select_move_fatigue_rest_fallback(self):
+        mara.select_move()
+
+        assert mara.current_move is not None
+        assert getattr(mara.current_move, "category", "") != "Offensive"
+
+    def test_exhausted_mara_rests_rather_than_flailing(self):
+        """Zero fatigue means no move is affordable; the guard must produce a
+        ``NpcRest`` specifically — ``is not None`` was also satisfied by her
+        picking an unaffordable attack."""
+        import src.moves as moves
+
         mara = self._make_mara()
         mara.ai_config = Mock()
         mara.ai_config.get_weighted_move_bonus = Mock(return_value=0)
         mara.fatigue = 0
-        mara.select_move()
-        assert mara.current_move is not None
 
-    def test_select_move_with_ai_config(self):
+        mara.select_move()
+
+        assert isinstance(mara.current_move, moves.NpcRest)
+
+    def test_select_move_consults_the_ai_config_for_every_candidate(self):
+        """``assert mock.called`` proved one call for one unspecified move.
+        The bonus has to be requested for *each* candidate, or a per-encounter
+        difficulty tune silently applies to only part of her kit."""
         mara = self._make_mara()
         mock_config = Mock()
         mock_config.get_weighted_move_bonus = Mock(return_value=0)
         mara.ai_config = mock_config
-        mara.select_move()
-        assert mock_config.get_weighted_move_bonus.called
 
-    def test_select_move_ai_config_import_failure_ignored(self):
+        mara.select_move()
+
+        asked_about = {c.args[1] for c in mock_config.get_weighted_move_bonus.call_args_list}
+        assert asked_about == {m.name for m in mara.refresh_moves()}
+        assert all(c.args[0] is mara for c in mock_config.get_weighted_move_bonus.call_args_list)
+
+    def test_without_a_player_ref_the_lazy_ai_config_init_is_skipped(self):
         mara = self._make_mara()
         mara.ai_config = None
-        # Without player_ref, lazy init is skipped entirely
         if hasattr(mara, "player_ref"):
             del mara.player_ref
+
         mara.select_move()
-        assert mara.current_move is not None
+
+        # Skipped, not attempted-and-swallowed: ai_config stays None and she
+        # still reaches a real decision.
+        assert mara.ai_config is None
+        assert mara.current_move in mara.known_moves
 
     def test_select_move_hard_fallback(self):
         mara = self._make_mara()
@@ -378,7 +439,13 @@ class TestMaraSelectMove:
             mock_refresh.return_value = [non_viable]
             mara.fatigue = 100
             mara.select_move()
-            assert mara.current_move is not None
+
+        # 20 rolls all land on a non-viable move; the hard fallback must be
+        # NpcRest specifically, not "anything non-None".
+        import src.moves as moves
+
+        assert isinstance(mara.current_move, moves.NpcRest)
+        assert mara.current_move.user is mara
 
     def test_mara_instantiation(self):
         from src.npc._friends import Mara
@@ -522,15 +589,20 @@ class TestMaraWoundedFlavorAndTalk:
 
 
 class TestMaraSelectMoveWeightBranches:
-    """Exercises the per-move weight-bonus branches in select_move().
+    """Pins the per-move weight bonuses in ``Mara.select_move()``.
 
-    Note: production Move classes name themselves e.g. "NPC_Attack" (see
-    src/moves/_npc.py), so the `elif move.name == "NpcAttack":` checks in
-    select_move() never actually match in real play (the string is missing
-    the underscore) -- this looks like a pre-existing bug, flagged in the
-    coverage report rather than fixed here. These tests use synthetic move
-    objects with the literal names select_move() checks for, so the branch
-    bodies themselves are still exercised and validated in isolation.
+    Every test in this class previously asserted only ``mara.current_move is
+    not None``. With a single candidate move in the pool that is true no matter
+    what weight the branch assigns — the assertion could not tell a +4 bonus
+    from a -2 penalty from no branch firing at all. Two of them
+    (``..._npc_attack_weight_bonus``) used the name ``"NpcAttack"``, which the
+    production code has not matched since the ``NPC_Attack`` rename, so they
+    were exercising the *absence* of the branch while claiming to test it.
+
+    The bonus is observable: ``select_move`` appends each move to
+    ``weighted_moves`` ``weight`` times and then rolls
+    ``random.randint(0, len(weighted_moves) - 1)``. Capturing that upper bound
+    reads the computed weight back out exactly.
     """
 
     def _make_mara(self):
@@ -553,6 +625,28 @@ class TestMaraSelectMoveWeightBranches:
         mv.viable = Mock(return_value=True)
         return mv
 
+    def _weight_of(self, mara, move_name, optimal_range, base_weight=5):
+        """Return the weight ``select_move`` computed for a lone candidate."""
+        move = self._fake_move(move_name, weight=base_weight)
+        rolls = []
+
+        def recording_randint(low, high):
+            rolls.append((low, high))
+            return 0
+
+        with patch.object(type(mara), "refresh_moves", return_value=[move]):
+            with patch.object(
+                type(mara), "_get_optimal_range_to_target", return_value=optimal_range
+            ):
+                with patch("src.npc._friends.random.randint", recording_randint):
+                    mara.select_move()
+
+        assert mara.current_move is move, "the lone viable move must be chosen"
+        assert rolls, "select_move never rolled — the weighted pool was empty"
+        low, high = rolls[0]
+        assert low == 0
+        return high + 1
+
     def _run_with_moves(self, mara, move_names, optimal_range):
         fake_moves = [self._fake_move(n) for n in move_names]
         with patch.object(type(mara), "refresh_moves", return_value=fake_moves):
@@ -561,35 +655,61 @@ class TestMaraSelectMoveWeightBranches:
             ):
                 mara.select_move()
 
-    def test_flanking_maneuver_weight_bonus(self):
+    @pytest.mark.parametrize(
+        "move_name,optimal_range,expected_delta",
+        [
+            # Stance-independent tactical bonuses.
+            ("Dodge", None, +3),
+            ("Flanking Maneuver", None, +2),
+            ("Withdraw", None, 0),
+            # Bow stance: keep the distance, shoot from it.
+            ("Withdraw", "bow", +4),
+            ("Advance", "bow", -2),
+            ("NPC_Attack", "bow", +1),
+            ("Parry", "bow", -1),
+            ("Dodge", "bow", +3),
+            # Dagger stance: close, strike, parry.
+            ("Advance", "dagger", +3),
+            ("Withdraw", "dagger", +1),
+            ("NPC_Attack", "dagger", +3),
+            ("Parry", "dagger", +2),
+            ("Flanking Maneuver", "dagger", +2),
+        ],
+    )
+    def test_stance_weight_bonus(self, move_name, optimal_range, expected_delta):
         mara = self._make_mara()
-        self._run_with_moves(mara, ["Flanking Maneuver"], optimal_range=None)
-        assert mara.current_move is not None
 
-    def test_bow_mode_withdraw_weight_bonus(self):
-        mara = self._make_mara()
-        self._run_with_moves(mara, ["Withdraw"], optimal_range="bow")
-        assert mara.current_move is not None
+        assert self._weight_of(mara, move_name, optimal_range) == 5 + expected_delta
 
-    def test_bow_mode_npc_attack_weight_bonus(self):
+    def test_a_move_no_branch_matches_keeps_its_base_weight(self):
         mara = self._make_mara()
-        self._run_with_moves(mara, ["NpcAttack"], optimal_range="bow")
-        assert mara.current_move is not None
 
-    def test_dagger_mode_advance_weight_bonus(self):
-        mara = self._make_mara()
-        self._run_with_moves(mara, ["Advance"], optimal_range="dagger")
-        assert mara.current_move is not None
+        assert self._weight_of(mara, "Bull Charge", "bow") == 5
 
-    def test_dagger_mode_withdraw_weight_bonus(self):
+    def test_the_legacy_npcattack_spelling_no_longer_earns_a_bonus(self):
+        """Guards the ``NpcAttack`` -> ``NPC_Attack`` rename in
+        ``src/moves/_npc.py``. If the production string ever regresses to the
+        old spelling, ``test_stance_weight_bonus[NPC_Attack-dagger-3]`` goes
+        red and this one stays green — between them the direction of the drift
+        is unambiguous."""
         mara = self._make_mara()
-        self._run_with_moves(mara, ["Withdraw"], optimal_range="dagger")
-        assert mara.current_move is not None
 
-    def test_dagger_mode_npc_attack_weight_bonus(self):
+        assert self._weight_of(mara, "NpcAttack", "dagger") == 5
+
+    def test_weight_is_floored_at_one_so_a_penalised_move_stays_reachable(self):
+        """``weight = max(1, weight)``: an Advance penalised in bow stance must
+        never drop out of the pool entirely, or Mara could deadlock at range
+        with nothing to close with."""
         mara = self._make_mara()
-        self._run_with_moves(mara, ["NpcAttack"], optimal_range="dagger")
-        assert mara.current_move is not None
+
+        assert self._weight_of(mara, "Advance", "bow", base_weight=1) == 1
+
+    def test_ai_config_bonus_stacks_on_top_of_the_stance_bonus(self):
+        mara = self._make_mara()
+        mara.ai_config.get_weighted_move_bonus = Mock(return_value=7)
+
+        assert self._weight_of(mara, "Withdraw", "bow") == 5 + 4 + 7
+        mara.ai_config.get_weighted_move_bonus.assert_called_with(mara, "Withdraw")
 
     def test_no_weighted_moves_returns_early(self):
         mara = self._make_mara()
@@ -610,7 +730,8 @@ class TestMaraSelectMoveWeightBranches:
         from src.npc_ai_config import NPCAIConfig
 
         assert isinstance(mara.ai_config, NPCAIConfig)
-        assert mara.current_move is not None
+        assert mara.ai_config.player is mara.player_ref
+        assert mara.current_move in mara.known_moves
 
     def test_ai_config_import_error_is_swallowed(self):
         """When player_ref is set but `npc_ai_config` can't be imported, the
@@ -630,8 +751,11 @@ class TestMaraSelectMoveWeightBranches:
 
         with patch("builtins.__import__", side_effect=fake_import):
             mara.select_move()
+
         assert mara.ai_config is None
-        assert mara.current_move is not None
+        # Silent recovery: she still fights, just without config bonuses.
+        assert mara.current_move in mara.known_moves
+        assert mara.current_move.viable()
 
 
 # ---------------------------------------------------------------------------

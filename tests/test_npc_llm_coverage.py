@@ -134,8 +134,15 @@ class TestLoadPlayerAdvisor:
         assert "character_name" in result
 
     def test_loads_from_json_file(self, tmp_path):
-        m = _make_mynx()
-        # Create fake ai/player/jean.json at the real project root (discovered via Path)
+        """Reads ``<root>/ai/player/jean.json`` and memoises it.
+
+        The previous version of this test built an elaborate tower of
+        ``MagicMock`` ``Path`` objects and a patched ``builtins.open``, wrote a
+        temp ``jean.json`` — and none of it took effect: the loader read the
+        *real* ``ai/player/jean.json`` from the repo. Because the assertion was
+        ``isinstance(result, dict)``, that went unnoticed. Patching ``Path``
+        with a real ``pathlib.Path`` root does what the mocks were trying to.
+        """
         jean_data = {
             "character_name": "Jean",
             "pronouns": {
@@ -145,36 +152,54 @@ class TestLoadPlayerAdvisor:
             },
             "system_prompt_snippet": "Jean is the player.",
         }
-        # Use a fully-mocked Path that returns a fake jean_path pointing to a real file
-        jean_file = tmp_path / "jean.json"
-        jean_file.write_text(json.dumps(jean_data), encoding="utf-8")
+        jean_path = tmp_path / "ai" / "player" / "jean.json"
+        jean_path.parent.mkdir(parents=True)
+        jean_path.write_text(json.dumps(jean_data), encoding="utf-8")
 
-        jean_path_mock = MagicMock()
-        jean_path_mock.exists.return_value = True
-        jean_path_mock.__str__ = lambda self: str(jean_file)
-        jean_path_mock.__fspath__ = lambda self: str(jean_file)
+        m = _make_mynx()
+        # _load_player_advisor does Path(__file__).resolve().parent x3
+        fake_module_file = tmp_path / "src" / "npc" / "_llm.py"
+        fake_module_file.parent.mkdir(parents=True)
+        fake_module_file.touch()
 
-        # Patch open() to return our json file when the mock path is opened
-        import builtins
+        with patch("src.npc._llm.Path", return_value=fake_module_file):
+            result = m._load_player_advisor()
 
-        real_open = builtins.open
+        assert result == jean_data
+        assert m._jean_advisor is result
 
-        def patched_open(path, *args, **kwargs):
-            # Intercept opens of the mock path object
-            if path is jean_path_mock:
-                return real_open(str(jean_file), *args, **kwargs)
-            return real_open(path, *args, **kwargs)
+    def test_second_call_does_not_touch_the_filesystem_again(self, tmp_path):
+        """Memoisation is the only thing keeping a per-chat-turn disk read out
+        of the request path."""
+        jean_path = tmp_path / "ai" / "player" / "jean.json"
+        jean_path.parent.mkdir(parents=True)
+        jean_path.write_text('{"character_name": "Jean"}', encoding="utf-8")
+        fake_module_file = tmp_path / "src" / "npc" / "_llm.py"
+        fake_module_file.parent.mkdir(parents=True)
+        fake_module_file.touch()
 
-        root_mock = MagicMock()
-        root_mock.__truediv__ = MagicMock(return_value=jean_path_mock)
+        m = _make_mynx()
+        with patch("src.npc._llm.Path", return_value=fake_module_file) as path_mock:
+            first = m._load_player_advisor()
+            second = m._load_player_advisor()
 
-        path_inst_mock = MagicMock()
-        path_inst_mock.resolve.return_value.parent.parent.parent = root_mock
+        assert first is second
+        assert path_mock.call_count == 1
 
-        with patch("src.npc._llm.Path", return_value=path_inst_mock):
-            with patch("builtins.open", side_effect=patched_open):
-                result = m._load_player_advisor()
-        assert isinstance(result, dict)
+    def test_the_advisor_shipped_in_the_repo_is_the_one_production_loads(self):
+        """Pins the real file, not a fixture: the pronoun keys
+        ``_enforce_pronouns_and_names`` reads (``subject``/``object``/
+        ``possessive_adjective``) must actually be present, or every Jean
+        sentence silently falls back to he/him/his defaults."""
+        m = _make_mynx()
+
+        advisor = m._load_player_advisor()
+
+        assert advisor["character_name"] == "Jean"
+        assert advisor["pronouns"]["subject"] == "he"
+        assert advisor["pronouns"]["object"] == "him"
+        assert advisor["pronouns"]["possessive_adjective"] == "his"
+        assert advisor["system_prompt_snippet"].strip() != ""
 
     def test_exception_returns_fallback(self):
         m = _make_mynx()
@@ -410,20 +435,24 @@ class TestSanitizeMynxLlmText:
         result = m._sanitize_mynx_llm_text(text, set())
         assert "  " not in result
 
-    def test_exception_returns_original(self):
+    def test_exception_returns_the_text_unchanged(self):
+        """``pronouns`` missing entirely raises inside the sanitiser; the
+        contract is silent recovery returning the *original* text verbatim, not
+        merely "some string" (the old assertion), and certainly not ``None`` —
+        a ``None`` here would blank the mynx's line in the chat panel."""
         m = _make_mynx()
-        # Delete pronouns to force an exception in poss_adj calculation path
         del m.pronouns
-        # Should not raise; returns original text
-        result = m._sanitize_mynx_llm_text("Whisper purrs.", set())
-        assert isinstance(result, str)
 
-    def test_no_pronouns_attribute_uses_defaults(self):
+        assert m._sanitize_mynx_llm_text("Whisper purrs.", set()) == "Whisper purrs."
+
+    def test_empty_pronouns_dict_falls_back_to_it_its_without_mangling_names(self):
         m = _make_mynx()
-        m.pronouns = {}  # empty dict => fallback to defaults
-        text = "Whisper and Jean walk together."
-        result = m._sanitize_mynx_llm_text(text, {"Jean"})
-        assert isinstance(result, str)
+        m.pronouns = {}
+
+        result = m._sanitize_mynx_llm_text("Whisper and Jean walk together.", {"Jean"})
+
+        # Both allowed names survive; no pronoun substitution fires.
+        assert result == "Whisper and Jean walk together."
 
 
 # ---------------------------------------------------------------------------
@@ -449,7 +478,10 @@ class TestEnforcePronouns:
         assert "Jean" in result
         assert "Whisper" in result
 
-    def test_jean_sentence_uses_jean_pronouns(self):
+    def test_lowercase_jean_sentence_uses_jeans_pronouns(self):
+        """A sentence naming Jean has its gendered pronouns rewritten to the
+        advisor's pronoun set. The old test asserted only ``isinstance(result,
+        str)``, so it passed no matter what came out."""
         m = _make_mynx()
         m._jean_advisor = {
             "pronouns": {
@@ -458,10 +490,38 @@ class TestEnforcePronouns:
                 "possessive_adjective": "her",
             }
         }
-        text = "Jean sat down. She opened her pack."
-        result = m._enforce_pronouns_and_names(text, set())
-        # "She" should stay as jean's subject pronoun (she)
-        assert isinstance(result, str)
+
+        result = m._enforce_pronouns_and_names("Jean opened his pack.", set())
+
+        assert result == "Jean opened her pack."
+
+    def test_sentence_initial_pronoun_is_eaten_by_the_name_regex(self):
+        """CHARACTERIZATION OF A KNOWN DEFECT — see the report accompanying this
+        change. ``_re_disallowed_name_token`` is ``\b([A-Z][A-Za-z-]+)('s)?\b``,
+        which matches capitalised *pronouns* ("She", "He", "Her") as if they
+        were invented creature names, so they are replaced with the mynx's
+        pronoun before the sentence-aware pass can classify them. The docstring
+        on ``_enforce_pronouns_and_names`` promises the opposite ("sentences
+        referencing Jean use Jean's pronouns").
+
+        Pinned exactly so the day the stop-word fix lands, this test goes red
+        and has to be updated deliberately rather than silently drifting.
+        """
+        m = _make_mynx()
+        m._jean_advisor = {
+            "pronouns": {
+                "subject": "she",
+                "object": "her",
+                "possessive_adjective": "her",
+            }
+        }
+
+        result = m._enforce_pronouns_and_names(
+            "Jean sat down. She opened her pack.", set()
+        )
+
+        # Desired: "Jean sat down. She opened her pack."
+        assert result == "Jean sat down. it opened them pack."
 
     def test_mynx_sentence_uses_mynx_pronouns(self):
         m = _make_mynx()
@@ -470,11 +530,16 @@ class TestEnforcePronouns:
         # "his" → "its" (mynx's pronoun)
         assert "his" not in result or "its" in result
 
-    def test_neutral_sentence_uses_they(self):
+    def test_neutral_sentence_lowercase_pronouns_become_they_them_their(self):
+        """The neutral branch of ``map_token``: no Jean, no mynx in the
+        sentence, so gendered pronouns collapse to they/them/their."""
         m = _make_mynx()
-        text = "Someone walked by. He looked tired."
-        result = m._enforce_pronouns_and_names(text, set())
-        assert isinstance(result, str)
+
+        result = m._enforce_pronouns_and_names(
+            "the guard walked by. the guard gripped his spear.", set()
+        )
+
+        assert result == "the guard walked by. the guard gripped their spear."
 
     def test_exception_returns_original(self):
         m = _make_mynx()
@@ -483,12 +548,24 @@ class TestEnforcePronouns:
             result = m._enforce_pronouns_and_names("some text", set())
         assert result == "some text"
 
-    def test_no_pronouns_attribute_fallback(self):
+    def test_empty_pronouns_dict_leaves_allowed_names_alone(self):
         m = _make_mynx()
         m.pronouns = {}
-        text = "Whisper watches Jean."
-        result = m._enforce_pronouns_and_names(text, {"Jean"})
-        assert isinstance(result, str)
+
+        result = m._enforce_pronouns_and_names("Whisper watches Jean.", {"Jean"})
+
+        assert result == "Whisper watches Jean."
+
+    def test_empty_pronouns_dict_still_defaults_the_mynx_to_it(self):
+        """With ``pronouns`` empty, ``pron_mynx`` must default to "it" — that
+        default is the only thing standing between a config gap and the
+        sanitiser emitting the literal word ``None``."""
+        m = _make_mynx()
+        m.pronouns = {}
+
+        result = m._enforce_pronouns_and_names("Fluffy watches Jean.", {"Jean"})
+
+        assert result == "it watches Jean."
 
 
 # ---------------------------------------------------------------------------
@@ -617,9 +694,11 @@ class TestGatherEnvironmentLists:
         room.objects_here = []
         room.npcs_here = []
         m.current_room = room
-        # Should not raise
-        env_str, _ = m._gather_environment_lists()
-        assert isinstance(env_str, str)
+        # Silent recovery: an unusable room contributes nothing to the prompt
+        # rather than propagating and killing the chat turn.
+        env_str, leftover = m._gather_environment_lists()
+        assert env_str == ""
+        assert leftover == set()
 
 
 # ---------------------------------------------------------------------------
@@ -688,17 +767,26 @@ class TestBuildPronounGuidance:
         result = m._build_pronoun_guidance("he/him/his.", "")
         assert "Jean is a knight." not in result
 
-    def test_no_pronouns_uses_defaults(self):
+    def test_no_pronouns_uses_the_it_its_default(self):
         m = _make_mynx()
         m.pronouns = {}
-        result = m._build_pronoun_guidance("", "")
-        assert isinstance(result, str)
 
-    def test_exception_returns_fallback(self):
+        assert m._build_pronoun_guidance("", "") == (
+            "For the mynx use: it/its. For any other nearby NPCs, prefer using "
+            "their NAME; if a pronoun is needed, use they/them/their."
+        )
+
+    def test_exception_returns_the_static_fallback_guidance(self):
+        """A non-string ``jean_pronoun_line`` raises on ``.strip()``. The
+        fallback must still be usable prompt text — the old assertion
+        (``isinstance(result, str)``) would have passed on ``""``, which would
+        have silently stripped all pronoun guidance from the prompt."""
         m = _make_mynx()
-        # The try: block calls jean_pronoun_line.strip() — pass a non-string to cause TypeError
-        result = m._build_pronoun_guidance(object(), "")
-        assert isinstance(result, str)
+
+        assert m._build_pronoun_guidance(object(), "") == (
+            "Use Jean and Mynx pronouns consistently; prefer names for others "
+            "or they/them."
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -734,17 +822,42 @@ class TestBuildLlmContext:
         result = m._build_llm_context({"Jean"}, "pet", "", "")
         assert "dungeon" in result
 
-    def test_without_room_returns_context(self):
+    def test_without_room_the_context_carries_no_location_clause(self):
         m = _make_mynx()
         m.current_room = None
-        result = m._build_llm_context({"Jean"}, "play", "", "")
-        assert isinstance(result, str)
 
-    def test_debug_mode_still_returns_string(self, capsys):
+        result = m._build_llm_context({"Jean"}, "play", "", "")
+
+        assert "You are in" not in result
+        assert "Player action/intent: 'play'." in result
+        # The bare "." room placeholder must not leave a double space seam.
+        assert "  " not in result
+
+    def test_debug_mode_narrates_the_assembled_context(self):
+        """The whole value of MYNX_LLM_DEBUG is seeing the prompt that was
+        actually built. Assert the narration fires and echoes the context,
+        not merely that a string came back."""
+        from src.narration import capture_narration
+
         m = _make_mynx()
         with patch.dict(os.environ, {"MYNX_LLM_DEBUG": "1"}):
-            result = m._build_llm_context({"Jean"}, "pet", "", "")
-        assert isinstance(result, str)
+            with capture_narration() as messages:
+                result = m._build_llm_context({"Jean"}, "pet", "", "")
+
+        assert len(messages) == 1
+        assert messages[0]["text"] == (
+            f"[MYNX_LLM_DEBUG] Built context ({len(result)} chars): {result[:4000]}"
+        )
+
+    def test_debug_off_narrates_nothing(self):
+        from src.narration import capture_narration
+
+        m = _make_mynx()
+        with patch.dict(os.environ, {"MYNX_LLM_DEBUG": "0"}):
+            with capture_narration() as messages:
+                m._build_llm_context({"Jean"}, "pet", "", "")
+
+        assert messages == []
 
     def test_empty_prompt_uses_interact(self):
         m = _make_mynx()
@@ -887,83 +1000,139 @@ class TestInteractWithPlayerFallback:
                 player=MagicMock(), prompt=prompt, structured=structured
             )
 
-    def test_pet_returns_string(self):
-        result = self._call("pet")
-        assert isinstance(result, str)
-        assert "Whisper" in result
+    # ── Prompt → canned-reaction routing ──────────────────────────────────
+    #
+    # Eighteen near-identical tests here previously asserted only
+    # ``isinstance(result, str)`` / ``isinstance(result, dict)``. Every one of
+    # them would have passed against ``def interact_with_player(...): return
+    # ""`` — none pinned which reaction the prompt actually routes to, that the
+    # plain and structured return paths agree, that the mynx's name is
+    # interpolated, or that anything was narrated to the player.
+    #
+    # The parametrised cases below pin the routing table itself; the
+    # invariants that hold for *every* prompt are asserted once, in
+    # ``_assert_fallback_invariants``.
 
-    def test_pet_structured_returns_dict(self):
-        result = self._call("pet", structured=True)
-        assert isinstance(result, dict)
-        assert result.get("action") == "groom"
+    ROUTES = [
+        ("pet", "groom", "Jean reaches out to pet the mynx."),
+        ("stroke", "groom", "Jean reaches out to pet the mynx."),
+        ("scritch", "groom", "Jean reaches out to pet the mynx."),
+        ("PET", "groom", "Jean reaches out to pet the mynx."),
+        ("  pet  ", "groom", "Jean reaches out to pet the mynx."),
+        ("feed", "take_food", "Jean offers a morsel of food to the mynx."),
+        ("offer food", "take_food", "Jean offers a morsel of food to the mynx."),
+        ("give food", "take_food", "Jean offers a morsel of food to the mynx."),
+        ("play", "play", "Jean tries to play with the mynx."),
+        ("toy", "play", "Jean tries to play with the mynx."),
+        ("tease", "play", "Jean tries to play with the mynx."),
+        ("wave", "investigate", "Jean wave."),
+        ("", "investigate", "Jean interacts with the mynx."),
+        (None, "investigate", "Jean interacts with the mynx."),
+    ]
 
-    def test_stroke_is_same_as_pet(self):
-        result = self._call("stroke")
-        assert isinstance(result, str)
+    def _assert_fallback_invariants(self, text, expected_action, expected_action_line,
+                                    messages, prompt):
+        """Invariants every deterministic fallback reaction must satisfy."""
+        stored = self.m._llm_last_response
+        # 1. The prompt routed to the right canned reaction bucket.
+        assert stored["action"] == expected_action
+        # 2. Plain and structured paths return the *same* description — the
+        #    chat panel and the animation layer must not disagree.
+        assert text == stored["description"]
+        # 3. The mynx refers to itself by name, not a hardcoded "the mynx".
+        assert text.startswith("Whisper ")
+        # 4. Structured payload is complete: the API serializer reads all five.
+        assert set(stored) == {
+            "action", "intensity", "description", "duration_seconds", "audible"
+        }
+        assert isinstance(stored["duration_seconds"], int)
+        assert stored["intensity"] in ("gentle", "low", "medium", "high")
+        # 5. Both halves of the exchange reached the player: Jean's action
+        #    first, then the mynx's reaction, in that order.
+        assert [m["text"] for m in messages] == [expected_action_line, text]
+        # 6. History records the *normalised* prompt against the reply, so the
+        #    next turn's prompt can reference it.
+        assert self.m._llm_history == [
+            {"prompt": (prompt or "").strip().lower(), "response": text}
+        ]
 
-    def test_scritch_is_same_as_pet(self):
-        result = self._call("scritch")
-        assert isinstance(result, str)
+    @pytest.mark.parametrize("prompt,action,action_line", ROUTES)
+    def test_prompt_routes_to_its_canned_reaction(self, prompt, action, action_line):
+        from src.narration import capture_narration
 
-    def test_feed_returns_string(self):
-        result = self._call("feed")
-        assert isinstance(result, str)
+        with capture_narration() as messages:
+            text = self._call(prompt)
 
-    def test_offer_food_returns_string(self):
-        result = self._call("offer food")
-        assert isinstance(result, str)
+        self._assert_fallback_invariants(text, action, action_line, messages, prompt)
 
-    def test_feed_structured_returns_dict(self):
-        result = self._call("feed", structured=True)
-        assert isinstance(result, dict)
-        assert result.get("action") == "take_food"
+    @pytest.mark.parametrize("prompt,action,action_line", ROUTES)
+    def test_structured_mode_returns_the_payload_and_narrates_only_jean(
+        self, prompt, action, action_line
+    ):
+        """``structured=True`` returns the dict *and deliberately does not
+        narrate the reaction* — the web client renders it from the payload.
+        Only Jean's action line is narrated."""
+        from src.narration import capture_narration
 
-    def test_play_returns_string(self):
-        result = self._call("play")
-        assert isinstance(result, str)
+        with capture_narration() as messages:
+            result = self._call(prompt, structured=True)
 
-    def test_toy_returns_string(self):
-        result = self._call("toy")
-        assert isinstance(result, str)
+        assert result is self.m._llm_last_response
+        assert result["action"] == action
+        assert [m["text"] for m in messages] == [action_line]
 
-    def test_tease_returns_string(self):
-        result = self._call("tease")
-        assert isinstance(result, str)
+    def test_play_with_an_item_names_the_item_in_jeans_action_line(self):
+        """CHARACTERIZATION OF A KNOWN DEFECT — see the report accompanying this
+        change. ``interact_with_player`` special-cases ``"play with <item>"``
+        when composing *Jean's* action line, but the reaction branch below it
+        tests only ``p in ("play", "toy", "tease")``. So playing with a named
+        item narrates "Jean plays with the mynx using rope." and then gets the
+        generic ``investigate`` idle reaction instead of the ``play`` one.
+        """
+        from src.narration import capture_narration
 
-    def test_play_structured_returns_dict(self):
-        result = self._call("play", structured=True)
-        assert isinstance(result, dict)
-        assert result.get("action") == "play"
+        with capture_narration() as messages:
+            text = self._call("play with rope")
 
-    def test_unknown_prompt_returns_string(self):
-        result = self._call("wave")
-        assert isinstance(result, str)
+        assert messages[0]["text"] == "Jean plays with the mynx using rope."
+        # Desired: "play". Actual:
+        assert self.m._llm_last_response["action"] == "investigate"
+        assert messages[1]["text"] == text
 
-    def test_unknown_prompt_structured_returns_dict(self):
-        result = self._call("wave", structured=True)
-        assert isinstance(result, dict)
-        assert result.get("action") == "investigate"
-
-    def test_empty_prompt_uses_generic(self):
-        result = self._call("")
-        assert isinstance(result, str)
-
-    def test_play_with_item_in_prompt(self):
-        result = self._call("play with rope")
-        assert isinstance(result, str)
-
-    def test_interact_updates_last_response(self):
+    def test_repeated_interactions_accumulate_history_in_order(self):
         self._call("pet")
-        assert self.m._llm_last_response is not None
+        self._call("feed")
 
-    def test_interact_appends_history(self):
-        self._call("pet")
-        assert len(self.m._llm_history) >= 1
+        assert [h["prompt"] for h in self.m._llm_history] == ["pet", "feed"]
+        assert all(h["response"].startswith("Whisper ") for h in self.m._llm_history)
 
-    def test_zero_delay_env(self):
-        with patch.dict(os.environ, {"MYNX_FALLBACK_DELAY": "0"}):
-            result = self.m.interact_with_player(player=MagicMock(), prompt="pet")
-        assert isinstance(result, str)
+    def test_reactions_vary_across_repeat_prompts(self, seeded):
+        """Four variations exist per bucket precisely so repeat PETs do not
+        read as a canned response."""
+        with seeded(20260821):
+            replies = {self._call("pet") for _ in range(40)}
+
+        assert len(replies) == 4
+
+    def test_fallback_delay_defaults_to_one_and_a_half_seconds(self):
+        """conftest pins ``MYNX_FALLBACK_DELAY=0`` suite-wide, so the default
+        has to be exercised by removing the variable."""
+        with patch("time.sleep") as mock_sleep:
+            with patch.dict(os.environ, {}, clear=False):
+                os.environ.pop("MYNX_FALLBACK_DELAY", None)
+                self.m.interact_with_player(player=MagicMock(), prompt="pet")
+
+        mock_sleep.assert_called_once_with(1.5)
+
+    def test_zero_delay_env_skips_the_sleep_entirely(self):
+        """``MYNX_FALLBACK_DELAY=0`` is what keeps the API responsive; the old
+        test patched nothing and asserted ``isinstance(result, str)``, so it
+        would have passed while still sleeping."""
+        with patch("time.sleep") as mock_sleep:
+            with patch.dict(os.environ, {"MYNX_FALLBACK_DELAY": "0"}):
+                self.m.interact_with_player(player=MagicMock(), prompt="pet")
+
+        mock_sleep.assert_not_called()
 
     def test_invalid_delay_env_uses_default(self):
         with patch("time.sleep") as mock_sleep:
@@ -972,31 +1141,83 @@ class TestInteractWithPlayerFallback:
         # sleep called with fallback 1.5
         mock_sleep.assert_called_once_with(1.5)
 
-    def test_room_npc_roster_built(self):
+    def test_structured_mode_never_sleeps(self):
+        """The delay is a terminal-era pacing beat; the structured path returns
+        before it, so an API caller is never held up."""
+        with patch("time.sleep") as mock_sleep:
+            with patch.dict(os.environ, {"MYNX_FALLBACK_DELAY": "1.5"}):
+                self.m.interact_with_player(
+                    player=MagicMock(), prompt="pet", structured=True
+                )
+
+        mock_sleep.assert_not_called()
+
+    def test_room_roster_includes_present_npcs_and_always_the_mynx(self):
+        """The roster is the allow-list of names the LLM may use. It is built
+        from ``current_room.npcs_here`` and must always contain the mynx
+        itself. The old test built the same room and then asserted only
+        ``isinstance(result, str)``, never looking at the roster at all."""
         room = MagicMock()
-        npc = MagicMock()
-        npc.name = "Guard"
-        room.npcs_here = [npc]
+        guard, kaelen = MagicMock(), MagicMock()
+        guard.name = "Guard"
+        kaelen.name = "Kaelen"
+        room.npcs_here = [guard, kaelen]
         self.m.current_room = room
-        with patch("time.sleep"):
-            result = self.m.interact_with_player(player=MagicMock(), prompt="pet")
-        assert isinstance(result, str)
 
-    def test_action_print_exception_handled(self):
-        """If the action print() raises, interact_with_player still executes the rest."""
-        call_count = [0]
-        real_print = __builtins__["print"] if isinstance(__builtins__, dict) else print
+        captured = {}
 
-        def selective_print(s, *a, **kw):
-            call_count[0] += 1
-            if call_count[0] == 1:
+        def record(roster_set, *args):
+            captured["roster"] = roster_set
+            return ""
+
+        with patch.object(self.m, "_build_llm_context", side_effect=record):
+            with patch.object(self.m, "_get_llm_adapter", return_value=MagicMock()):
+                with patch("time.sleep"):
+                    self.m.interact_with_player(player=MagicMock(), prompt="pet")
+
+        assert captured["roster"] == {"Guard", "Kaelen", "Whisper"}
+
+    def test_a_room_whose_npc_list_explodes_does_not_break_the_turn(self):
+        """"Prefer silent recovery over crashing the game loop" — a broken room
+        must still yield a normal reaction."""
+        class _ExplodingRoom:
+            @property
+            def npcs_here(self):
+                raise RuntimeError("room is corrupt")
+
+        self.m.current_room = _ExplodingRoom()
+
+        text = self._call("pet")
+
+        assert self.m._llm_last_response["action"] == "groom"
+        assert text.startswith("Whisper ")
+
+    def test_a_narration_failure_does_not_abort_the_reaction(self):
+        """``narrate`` for Jean's action line is wrapped in try/except; if the
+        sink raises (a UnicodeEncodeError on a Windows console, historically),
+        the mynx must still react. The old version patched ``builtins.print``,
+        which the narration sink no longer routes through, so it exercised
+        nothing."""
+        calls = []
+        real_narrate = __import__(
+            "src.npc._llm", fromlist=["narrate"]
+        ).narrate
+
+        def flaky_narrate(*args, **kwargs):
+            calls.append(args)
+            if len(calls) == 1:
                 raise UnicodeEncodeError("utf-8", "", 0, 1, "encode error")
-            real_print(s, *a, **kw)
+            return real_narrate(*args, **kwargs)
 
-        with patch("builtins.print", side_effect=selective_print):
+        with patch("src.npc._llm.narrate", side_effect=flaky_narrate):
             with patch("time.sleep"):
-                result = self.m.interact_with_player(player=MagicMock(), prompt="pet")
-        assert isinstance(result, str)
+                result = self.m.interact_with_player(
+                    player=MagicMock(), prompt="pet"
+                )
+
+        assert len(calls) == 2
+        assert self.m._llm_last_response["action"] == "groom"
+        assert result == self.m._llm_last_response["description"]
 
 
 # ---------------------------------------------------------------------------
@@ -1291,12 +1512,20 @@ class TestBuildHistoryBlockException:
 
 
 class TestBuildLlmContextDebugException:
-    def test_debug_narrate_exception_is_swallowed(self):
+    def test_a_broken_narration_sink_still_yields_the_full_context(self):
+        """Debug logging must never cost the caller its prompt. Asserting
+        ``isinstance(result, str)`` (the old assertion) would also have passed
+        on ``""`` — an empty prompt sent to the LLM."""
         m = _make_mynx()
+        with patch.dict(os.environ, {"MYNX_LLM_DEBUG": "0"}):
+            expected = m._build_llm_context(set(), "pet", "", "")
+
         with patch.dict(os.environ, {"MYNX_LLM_DEBUG": "1"}):
             with patch("src.npc._llm.narrate", side_effect=RuntimeError("boom")):
                 result = m._build_llm_context(set(), "pet", "", "")
-        assert isinstance(result, str)
+
+        assert result == expected
+        assert "Player action/intent: 'pet'." in result
 
 
 class TestCheckAndCorrectMynxTextException:
@@ -1308,7 +1537,7 @@ class TestCheckAndCorrectMynxTextException:
 
 
 class TestInteractWithPlayerRosterException:
-    def test_roster_building_exception_is_swallowed(self):
+    def test_roster_building_exception_still_produces_the_pet_reaction(self):
         m = _make_mynx()
 
         class _BadRoom:
@@ -1319,7 +1548,10 @@ class TestInteractWithPlayerRosterException:
         m.current_room = _BadRoom()
         with patch("time.sleep"):
             result = m.interact_with_player(player=MagicMock(), prompt="pet")
-        assert isinstance(result, str)
+
+        assert m._llm_last_response["action"] == "groom"
+        assert result == m._llm_last_response["description"]
+        assert m._llm_history == [{"prompt": "pet", "response": result}]
 
 
 class TestInteractWithPlayerAdapterEnabled:
@@ -1338,9 +1570,48 @@ class TestInteractWithPlayerAdapterEnabled:
             result = self.m.interact_with_player(
                 player=MagicMock(), prompt="pet", structured=True
             )
-        assert isinstance(result, dict)
-        assert "description" in result
+
+        assert result["description"] == "Whisper tilts its head at Jean."
         assert self.m._llm_last_response is result
+        assert self.m._llm_history == [
+            {"prompt": "pet", "response": "Whisper tilts its head at Jean."}
+        ]
+
+    def test_the_prompt_sent_to_the_adapter_carries_persona_roster_and_action(self):
+        """The single most important thing about an LLM call is what was
+        actually asked. Nothing in this file previously inspected the assembled
+        context at all — every adapter test asserted only the shape of the
+        canned reply, which proves that ``MagicMock`` returns what you set."""
+        adapter = MagicMock()
+        adapter.generate_plain.return_value = "Whisper leans in close to Jean."
+        self.m._llm_adapter = adapter
+
+        room = MagicMock()
+        room.description = "a dripping mineral pool chamber"
+        room.items_here = []
+        room.objects_here = []
+        guard = MagicMock()
+        guard.name = "Guard"
+        room.npcs_here = [guard]
+        self.m.current_room = room
+        self.m._llm_history = [{"prompt": "feed", "response": "Whisper ate."}]
+
+        with patch("time.sleep"):
+            self.m.interact_with_player(player=MagicMock(), prompt="pet")
+
+        context = adapter.generate_plain.call_args.kwargs["context"]
+        # Persona: who the actor is and that it never targets itself.
+        assert "The mynx's proper name is Whisper." in context
+        assert "Whisper is the ACTOR, never its own target." in context
+        # Roster: the allow-list of names, Jean always included.
+        assert "Allowed entity names you may reference (no others): Guard, Jean, Whisper." in context
+        # World state: the room the mynx is standing in.
+        assert "You are in a dripping mineral pool chamber." in context
+        # The player's actual action.
+        assert "Player action/intent: 'pet'." in context
+        # Conversation history, so the reply can avoid repeating itself.
+        assert "feed" in context and "Whisper ate." in context
+        assert "be novel relative to the above history" in context
 
     def test_structured_missing_description_key_falls_back(self):
         adapter = MagicMock()
@@ -1369,6 +1640,11 @@ class TestInteractWithPlayerAdapterEnabled:
         assert result.get("action") == "groom"
 
     def test_structured_with_debug_narrates_raw_description(self):
+        """Named "narrates raw description" but asserted only
+        ``isinstance(result, dict)`` — it never checked that anything was
+        narrated, let alone the raw text."""
+        from src.narration import capture_narration
+
         adapter = MagicMock()
         adapter.generate_structured.return_value = {
             "description": "Whisper chirps happily."
@@ -1376,73 +1652,179 @@ class TestInteractWithPlayerAdapterEnabled:
         self.m._llm_adapter = adapter
         with patch.dict(os.environ, {"MYNX_LLM_DEBUG": "1"}):
             with patch("time.sleep"):
-                result = self.m.interact_with_player(
-                    player=MagicMock(), prompt="pet", structured=True
-                )
-        assert isinstance(result, dict)
+                with capture_narration() as messages:
+                    result = self.m.interact_with_player(
+                        player=MagicMock(), prompt="pet", structured=True
+                    )
+
+        texts = [m["text"] for m in messages]
+        assert "[MYNX_LLM_DEBUG] Built context" in " ".join(texts)
+        assert (
+            "[MYNX_LLM_DEBUG] Raw structured description: Whisper chirps happily."
+            in texts
+        )
+        assert result["description"] == "Whisper chirps happily."
 
     def test_plain_text_valid_response_narrated(self):
+        from src.narration import capture_narration
+
         adapter = MagicMock()
         adapter.generate_plain.return_value = "Whisper leans in close to Jean."
         self.m._llm_adapter = adapter
         with patch("time.sleep"):
-            result = self.m.interact_with_player(
-                player=MagicMock(), prompt="pet", structured=False
-            )
-        assert isinstance(result, str)
-        assert self.m._llm_last_response["action"] == "narrate"
+            with capture_narration() as messages:
+                result = self.m.interact_with_player(
+                    player=MagicMock(), prompt="pet", structured=False
+                )
+
+        assert result == "Whisper leans in close to Jean."
+        assert self.m._llm_last_response == {
+            "action": "narrate",
+            "intensity": "low",
+            "description": "Whisper leans in close to Jean.",
+            "duration_seconds": 2,
+            "audible": "soft chitter",
+        }
+        assert [m["text"] for m in messages] == [
+            "Jean reaches out to pet the mynx.",
+            "Whisper leans in close to Jean.",
+        ]
+        assert self.m._llm_history == [
+            {"prompt": "pet", "response": "Whisper leans in close to Jean."}
+        ]
+
+    def test_the_adapter_never_sees_a_structured_call_in_plain_mode(self):
+        adapter = MagicMock()
+        adapter.generate_plain.return_value = "Whisper leans in close to Jean."
+        self.m._llm_adapter = adapter
+        with patch("time.sleep"):
+            self.m.interact_with_player(player=MagicMock(), prompt="pet")
+
+        adapter.generate_structured.assert_not_called()
+        assert adapter.generate_plain.call_count == 1
 
     def test_plain_text_with_debug_narrates_raw(self):
+        from src.narration import capture_narration
+
         adapter = MagicMock()
         adapter.generate_plain.return_value = "Whisper chitters."
         self.m._llm_adapter = adapter
         with patch.dict(os.environ, {"MYNX_LLM_DEBUG": "1"}):
             with patch("time.sleep"):
+                with capture_narration() as messages:
+                    result = self.m.interact_with_player(
+                        player=MagicMock(), prompt="pet", structured=False
+                    )
+
+        texts = [m["text"] for m in messages]
+        assert "[MYNX_LLM_DEBUG] Raw plain text: Whisper chitters." in texts
+        assert result == "Whisper chitters."
+
+    # ── Provider-failure fallbacks ────────────────────────────────────────
+    #
+    # Each of these previously asserted only ``isinstance(result, str)``, which
+    # cannot distinguish "the fallback fired correctly" from "the broken LLM
+    # text was passed through to the player". The shared helper asserts the
+    # deterministic ``groom`` reaction actually took over, that the bad LLM
+    # text is nowhere in the output, and that the player still got both halves
+    # of the exchange.
+
+    def _assert_fell_back_to_the_canned_pet_reaction(self, result, messages, bad_text=None):
+        assert self.m._llm_last_response["action"] == "groom"
+        assert result == self.m._llm_last_response["description"]
+        assert result.startswith("Whisper ")
+        if bad_text is not None:
+            assert bad_text not in result
+        narrated = [m["text"] for m in messages]
+        assert narrated[0] == "Jean reaches out to pet the mynx."
+        assert result in narrated
+        assert self.m._llm_history == [{"prompt": "pet", "response": result}]
+
+    @pytest.mark.parametrize(
+        "returned,bad_text",
+        [
+            (None, None),
+            (123, None),
+            ("", None),
+            ("zq.", "zq"),                     # under the 5-char floor
+            ("A" * 250 + ".", "A" * 250),      # over the 200-char ceiling
+            ('"Hello there," Whisper says.', "Hello there"),  # quoted speech
+        ],
+        ids=["none", "non_string", "empty", "too_short", "too_long", "quoted_speech"],
+    )
+    def test_malformed_provider_content_falls_back_without_reaching_the_player(
+        self, returned, bad_text
+    ):
+        from src.narration import capture_narration
+
+        adapter = MagicMock()
+        adapter.generate_plain.return_value = returned
+        self.m._llm_adapter = adapter
+        with patch("time.sleep"):
+            with capture_narration() as messages:
                 result = self.m.interact_with_player(
                     player=MagicMock(), prompt="pet", structured=False
                 )
-        assert isinstance(result, str)
 
-    def test_plain_text_non_string_falls_back(self):
+        self._assert_fell_back_to_the_canned_pet_reaction(result, messages, bad_text)
+
+    @pytest.mark.parametrize(
+        "error",
+        [
+            RuntimeError("network down"),
+            TimeoutError("provider timed out"),
+            ValueError("malformed json"),
+            KeyboardInterrupt,
+        ],
+        ids=["runtime", "timeout", "value", "keyboard_interrupt"],
+    )
+    def test_a_provider_that_raises_cannot_crash_the_game_loop(self, error):
+        """"Prefer silent recovery over crashing the game loop" — whatever the
+        provider throws, the player still gets a reaction.
+
+        ``KeyboardInterrupt`` is included deliberately: it does **not** inherit
+        from ``Exception``, so ``except Exception`` does not catch it. This
+        case pins that the interrupt propagates rather than being swallowed —
+        the one failure mode that must NOT be silent.
+        """
+        from src.narration import capture_narration
+
         adapter = MagicMock()
-        adapter.generate_plain.return_value = None
+        adapter.generate_plain.side_effect = error
         self.m._llm_adapter = adapter
-        with patch("time.sleep"):
-            result = self.m.interact_with_player(
-                player=MagicMock(), prompt="pet", structured=False
-            )
-        assert isinstance(result, str)
 
-    def test_plain_text_rejected_by_check_falls_back(self):
-        adapter = MagicMock()
-        adapter.generate_plain.return_value = "hi"  # too short (< 5 chars)
-        self.m._llm_adapter = adapter
-        with patch("time.sleep"):
-            result = self.m.interact_with_player(
-                player=MagicMock(), prompt="pet", structured=False
-            )
-        assert isinstance(result, str)
+        if error is KeyboardInterrupt:
+            with pytest.raises(KeyboardInterrupt):
+                with patch("time.sleep"):
+                    self.m.interact_with_player(player=MagicMock(), prompt="pet")
+            return
 
-    def test_generation_exception_falls_back(self):
-        adapter = MagicMock()
-        adapter.generate_plain.side_effect = RuntimeError("network down")
-        self.m._llm_adapter = adapter
         with patch("time.sleep"):
-            result = self.m.interact_with_player(
-                player=MagicMock(), prompt="pet", structured=False
-            )
-        assert isinstance(result, str)
+            with capture_narration() as messages:
+                result = self.m.interact_with_player(
+                    player=MagicMock(), prompt="pet", structured=False
+                )
 
-    def test_generation_exception_with_debug_narrates(self):
+        self._assert_fell_back_to_the_canned_pet_reaction(result, messages)
+
+    def test_generation_exception_with_debug_narrates_the_reason(self):
+        from src.narration import capture_narration
+
         adapter = MagicMock()
         adapter.generate_plain.side_effect = RuntimeError("network down")
         self.m._llm_adapter = adapter
         with patch.dict(os.environ, {"MYNX_LLM_DEBUG": "1"}):
             with patch("time.sleep"):
-                result = self.m.interact_with_player(
-                    player=MagicMock(), prompt="pet", structured=False
-                )
-        assert isinstance(result, str)
+                with capture_narration() as messages:
+                    result = self.m.interact_with_player(
+                        player=MagicMock(), prompt="pet", structured=False
+                    )
+
+        assert (
+            "[MYNX_LLM_DEBUG] Generation/validation error, falling back: network down"
+            in [m["text"] for m in messages]
+        )
+        self._assert_fell_back_to_the_canned_pet_reaction(result, messages)
 
 
 class TestInteractWithPlayerAdapterEnabledInnerExceptions:
@@ -1476,7 +1858,10 @@ class TestInteractWithPlayerAdapterEnabledInnerExceptions:
                     result = self.m.interact_with_player(
                         player=MagicMock(), prompt="pet", structured=True
                     )
-        assert isinstance(result, dict)
+
+        # The debug narration blew up; the LLM's answer still reached the caller.
+        assert result["description"] == "Whisper chirps happily."
+        assert self.m._llm_last_response is result
 
     def test_structured_append_history_exception_swallowed(self):
         adapter = MagicMock()
@@ -1491,8 +1876,11 @@ class TestInteractWithPlayerAdapterEnabledInnerExceptions:
                 result = self.m.interact_with_player(
                     player=MagicMock(), prompt="pet", structured=True
                 )
-        assert isinstance(result, dict)
-        assert "description" in result
+
+        # History bookkeeping failed; the reaction is unaffected and the
+        # history stays empty rather than half-written.
+        assert result["description"] == "Whisper chirps happily."
+        assert self.m._llm_history == []
 
     def test_plain_debug_narrate_raw_text_exception_swallowed(self):
         adapter = MagicMock()
@@ -1507,7 +1895,8 @@ class TestInteractWithPlayerAdapterEnabledInnerExceptions:
                     result = self.m.interact_with_player(
                         player=MagicMock(), prompt="pet", structured=False
                     )
-        assert isinstance(result, str)
+
+        assert result == "Whisper chitters."
 
     def test_plain_append_history_exception_swallowed(self):
         adapter = MagicMock()
@@ -1520,7 +1909,10 @@ class TestInteractWithPlayerAdapterEnabledInnerExceptions:
                 result = self.m.interact_with_player(
                     player=MagicMock(), prompt="pet", structured=False
                 )
-        assert isinstance(result, str)
+
+        assert result == "Whisper chitters happily today."
+        assert self.m._llm_last_response["action"] == "narrate"
+        assert self.m._llm_history == []
 
 
 class TestInteractWithPlayerHistoryAppendException:
@@ -1537,14 +1929,22 @@ class TestInteractWithPlayerHistoryAppendException:
         ):
             with patch("time.sleep"):
                 result = m.interact_with_player(player=MagicMock(), prompt="pet")
-        assert isinstance(result, str)
+
+        assert m._llm_last_response["action"] == "groom"
+        assert result == m._llm_last_response["description"]
+        assert m._llm_history == []
 
 
 class TestInteractWithPlayerSleepException:
     def test_sleep_exception_is_swallowed(self):
+        """A pacing delay that raises must not cost the player the reaction,
+        and must not truncate the return value."""
         m = _make_mynx()
         m._llm_adapter = None
-        with patch("src.npc._llm.time.sleep", side_effect=RuntimeError("boom")):
+        with patch("src.npc._llm.time.sleep", side_effect=RuntimeError("boom")) as sleeper:
             with patch.dict(os.environ, {"MYNX_FALLBACK_DELAY": "1.5"}):
                 result = m.interact_with_player(player=MagicMock(), prompt="pet")
-        assert isinstance(result, str)
+
+        sleeper.assert_called_once_with(1.5)
+        assert result == m._llm_last_response["description"]
+        assert m._llm_last_response["action"] == "groom"
