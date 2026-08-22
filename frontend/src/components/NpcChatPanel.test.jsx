@@ -1,6 +1,6 @@
 import React from 'react'
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, act, within } from '@testing-library/react'
 import NpcChatPanel from './NpcChatPanel'
 
 // Mock the npcChat API
@@ -23,14 +23,26 @@ vi.mock('./BaseDialog', () => ({
       onClick={onClose}
     >
       <h2>{title}</h2>
+      {/* Stands in for the real dialog's ✕. stopPropagation mirrors
+          BaseDialog's modal-content, so closing an inner dialog does not
+          also close the one behind it. */}
+      <button
+        data-testid="dialog-close"
+        onClick={(e) => {
+          e.stopPropagation()
+          onClose()
+        }}
+      >
+        dismiss
+      </button>
       {children}
     </div>
   ),
 }))
 
 vi.mock('./GameButton', () => ({
-  default: ({ children, onClick }) => (
-    <button onClick={onClick} data-testid="game-button">
+  default: ({ children, onClick, disabled }) => (
+    <button onClick={onClick} disabled={disabled} data-testid="game-button">
       {children}
     </button>
   ),
@@ -713,8 +725,12 @@ describe('NpcChatPanel', () => {
 
       // The optimistic line is rolled back on failure, so the retry re-adds it
       // exactly once instead of stacking a second copy in the transcript.
-      const jeanLine = screen.getByText('Hi there')
-      expect(jeanLine).toBeInTheDocument()
+      fireEvent.click(screen.getByText(/view history/i))
+      const entries = within(screen.getByTestId('conversation-history')).getAllByTestId(
+        'transcript-entry'
+      )
+      expect(entries.map((entry) => entry.dataset.speaker)).toEqual(['Mynx', 'Jean', 'Mynx'])
+      expect(entries[1]).toHaveTextContent('Hi there')
     })
 
     it('clears the error and restores the dialogue options after a successful retry', async () => {
@@ -1019,6 +1035,131 @@ describe('NpcChatPanel', () => {
       } finally {
         vi.useRealTimers()
       }
+    })
+  })
+
+  describe('Conversation history', () => {
+    const respondWith = (text) =>
+      npcChat.respond.mockResolvedValue({
+        data: {
+          npc_response: text,
+          jean_options: [{ text: 'Go on', tone: 'open' }],
+          loquacity_current: 1,
+          loquacity_max: 5,
+          conversation_ended: false,
+          conversation_quality: 'positive',
+        },
+      })
+
+    const openAndAnswer = async () => {
+      render(<NpcChatPanel npcId={mockNpcId} npcName={mockNpcName} onClose={mockOnClose} />)
+      await waitFor(() => expect(screen.getByText('Hi there')).toBeInTheDocument())
+      fireEvent.click(screen.getByText('Hi there'))
+      await waitFor(() => expect(npcChat.respond).toHaveBeenCalled())
+    }
+
+    it('shows no preceding line on the opening beat', async () => {
+      render(<NpcChatPanel npcId={mockNpcId} npcName={mockNpcName} onClose={mockOnClose} />)
+
+      await waitFor(() => expect(screen.getByTestId('conversation-stage')).toBeInTheDocument())
+      expect(screen.queryByTestId('npc-chat-previous-line')).not.toBeInTheDocument()
+    })
+
+    it("keeps Jean's line on screen above the NPC's reply", async () => {
+      respondWith('Coin first.')
+      await openAndAnswer()
+
+      const previous = await screen.findByTestId('npc-chat-previous-line')
+      expect(previous).toHaveTextContent('Hi there')
+      expect(within(previous).getByText('Jean')).toBeInTheDocument()
+      expect(within(previous).getByRole('img')).toHaveAttribute('alt', 'Jean (neutral)')
+
+      // The newest line still belongs to the stage, not the recap strip.
+      expect(previous).not.toHaveTextContent('Coin first.')
+      await waitFor(() =>
+        expect(screen.getByTestId('conversation-stage')).toHaveTextContent('Coin first.')
+      )
+    })
+
+    it('opens the full transcript, with a portrait thumbnail per turn', async () => {
+      respondWith('Coin first.')
+      await openAndAnswer()
+      await screen.findByTestId('npc-chat-previous-line')
+
+      expect(screen.queryByTestId('conversation-history')).not.toBeInTheDocument()
+      fireEvent.click(screen.getByText(/view history/i))
+
+      const history = screen.getByTestId('conversation-history')
+      const entries = within(history).getAllByTestId('transcript-entry')
+      expect(entries).toHaveLength(3)
+      expect(entries[0]).toHaveTextContent('Well, well, what do we have here?')
+      expect(entries[1]).toHaveTextContent('Hi there')
+      expect(entries[2]).toHaveTextContent('Coin first.')
+      expect(within(entries[0]).getByRole('img')).toHaveAttribute('alt', 'Mynx the Swift (neutral)')
+      expect(within(entries[1]).getByRole('img')).toHaveAttribute('alt', 'Jean (neutral)')
+      expect(screen.getByTestId('conversation-history-count')).toHaveTextContent('3 turns')
+    })
+
+    it('locks the dialogue options while the transcript is open', async () => {
+      render(<NpcChatPanel npcId={mockNpcId} npcName={mockNpcName} onClose={mockOnClose} />)
+      await waitFor(() => expect(screen.getByText('Hi there')).toBeInTheDocument())
+
+      fireEvent.click(screen.getByText(/view history/i))
+
+      // The transcript covers the panel, but nothing makes the options behind it
+      // inert — a stray Enter would otherwise spend a turn the player never saw.
+      expect(screen.getByText('Hi there').closest('button')).toBeDisabled()
+      fireEvent.click(screen.getByText('Hi there'))
+      expect(npcChat.respond).not.toHaveBeenCalled()
+    })
+
+    it('suspends the end-of-conversation auto-close while the transcript is open', async () => {
+      vi.useFakeTimers()
+      try {
+        npcChat.respond.mockResolvedValue({
+          data: {
+            npc_response: 'Farewell.',
+            jean_options: [],
+            loquacity_current: 0,
+            loquacity_max: 5,
+            conversation_ended: true,
+          },
+        })
+
+        render(<NpcChatPanel npcId={mockNpcId} npcName={mockNpcName} onClose={mockOnClose} />)
+        await act(async () => {})
+        fireEvent.click(screen.getByText('Hi there'))
+        await act(async () => {})
+        mockOnClose.mockClear()
+
+        fireEvent.click(screen.getByText(/view history/i))
+        // The BaseDialog mock closes on any bubbled click (the real one stops
+        // propagation at modal-content); ignore that and assert on the timer.
+        mockOnClose.mockClear()
+        await act(async () => {
+          vi.advanceTimersByTime(5000)
+        })
+
+        // Still reading: the panel must not close underneath the transcript.
+        expect(mockOnClose).not.toHaveBeenCalled()
+        expect(screen.getByTestId('conversation-history')).toBeInTheDocument()
+
+        // Dismissing the transcript resumes the close it suspended.
+        const closers = screen.getAllByTestId('dialog-close')
+        fireEvent.click(closers[closers.length - 1])
+        expect(mockOnClose).toHaveBeenCalledTimes(1)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('titles the history with the NPC display name', async () => {
+      render(<NpcChatPanel npcId={mockNpcId} npcName={mockNpcName} onClose={mockOnClose} />)
+      await waitFor(() => expect(screen.getByTestId('conversation-stage')).toBeInTheDocument())
+
+      fireEvent.click(screen.getByText(/view history/i))
+
+      expect(screen.getByText('Mynx the Swift — Conversation')).toBeInTheDocument()
     })
   })
 })

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react'
 import useTypewriter from '../hooks/useTypewriter'
+import PortraitImage from './PortraitImage'
 import { colors, spacing, fonts } from '../styles/theme'
-import { portraitUrl, handlePortraitError, speakerSlug, normalizeEmotion } from '../utils/portraits'
 
 // A fading exit with no author-supplied span ghosts for one extra beat before
 // leaving. Span 1 would drop the member on the exit beat itself — visually
@@ -134,20 +134,6 @@ function Portrait({ member, isSpeaker, wide = false }) {
     const opacity = member.opacity * baseOpacity
     const wrapperRef = useRef(null)
     useEnterFade(wrapperRef, member.entering && member.enterTransition === 'fade', opacity)
-    const imgRef = useRef(null)
-
-    // Keep the same <img> node across emotion changes instead of keying on
-    // emotion (which forced a full unmount/remount and flickered every beat
-    // a speaker's emotion changed). handlePortraitError tracks fallback
-    // progress via dataset.fallback on the node, so it must be cleared here
-    // whenever we swap to a new emotion's src — otherwise a stale
-    // 'placeholder'/'neutral' flag from a previous emotion's failed load
-    // wrongly short-circuits the fallback chain for the new one.
-    useEffect(() => {
-        if (imgRef.current) {
-            delete imgRef.current.dataset.fallback
-        }
-    }, [member.id, member.emotion])
 
     return (
         <div
@@ -162,14 +148,10 @@ function Portrait({ member, isSpeaker, wide = false }) {
                 transform: isSpeaker ? 'scale(1)' : 'scale(0.9)',
             }}
         >
-            <img
-                ref={imgRef}
-                src={portraitUrl(member.id, member.emotion)}
-                data-speaker-slug={speakerSlug(member.id)}
-                data-emotion={normalizeEmotion(member.emotion)}
-                onError={handlePortraitError}
-                alt={`${member.name} (${member.emotion})`}
-                draggable={false}
+            <PortraitImage
+                speaker={member.id}
+                name={member.name}
+                emotion={member.emotion}
                 style={{
                     width: wide ? 'clamp(130px, 12vw, 185px)' : '130px',
                     height: 'auto',
@@ -243,10 +225,13 @@ function ConversationStage({
     // beatIndex/completedRef must reset whenever a new segments array arrives
     // — otherwise the stage resumes at a stale index and onComplete (gated by
     // completedRef) never fires again for the new conversation.
+    // Keyed on the array itself, never on its length: consecutive stages of one
+    // event are often the same length, and a length-keyed reset leaves the stage
+    // parked on the previous stage's last beat with onComplete already spent.
     useEffect(() => {
         setBeatIndex(followTail ? Math.max(0, segments.length - 1) : 0)
         completedRef.current = false
-    }, [segments.length, followTail])
+    }, [segments, followTail])
 
     const advance = useCallback(() => {
         if (!isComplete) {

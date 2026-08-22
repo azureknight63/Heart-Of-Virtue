@@ -1,3 +1,4 @@
+import { useId } from 'react'
 import { colors, spacing } from '../styles/theme'
 
 /**
@@ -19,6 +20,11 @@ export default function BaseDialog({
     containerCentered = false, // If true, positions relative to parent container instead of viewport
     allowInternalScroll = true, // If false, the children container won't have overflowY: auto
 }) {
+    // Unique per dialog instance: the NPC chat transcript stacks a second
+    // BaseDialog on top of the panel, and a hardcoded id made the inner dialog
+    // announce the outer one's title.
+    const titleId = useId()
+
     const isDanger = variant === 'danger'
     const isWarning = variant === 'warning'
 
@@ -52,7 +58,7 @@ export default function BaseDialog({
                 className={`modal-content ${contentClassName}`}
                 role="dialog"
                 aria-modal="true"
-                aria-labelledby={title ? "base-dialog-title" : undefined}
+                aria-labelledby={title ? titleId : undefined}
                 style={{
                     maxWidth,
                     minWidth,
@@ -83,7 +89,7 @@ export default function BaseDialog({
                     >
                         {title && (
                             <div
-                                id="base-dialog-title"
+                                id={titleId}
                                 style={{
                                     fontSize: '20px',
                                     fontWeight: 'bold',

@@ -249,7 +249,30 @@ describe('BaseDialog', () => {
       )
       const dialog = container.querySelector('[aria-labelledby]')
       expect(dialog).toBeInTheDocument()
-      expect(dialog).toHaveAttribute('aria-labelledby', 'base-dialog-title')
+      const labelId = dialog.getAttribute('aria-labelledby')
+      // useId() emits colons, which are legal in an id but not in a CSS
+      // selector — look the element up by id, not by querySelector.
+      expect(document.getElementById(labelId)).toHaveTextContent('Test Title')
+    })
+
+    it('gives each stacked dialog its own title id', () => {
+      // A dialog opened from inside another dialog (the NPC chat transcript)
+      // mounts both at once; a hardcoded id made the inner one announce the
+      // outer one's title.
+      const { container } = render(
+        <BaseDialog title="Outer" onClose={mockOnClose}>
+          <BaseDialog title="Inner" onClose={mockOnClose}>
+            <p>Content</p>
+          </BaseDialog>
+        </BaseDialog>
+      )
+
+      const [outer, inner] = Array.from(container.querySelectorAll('[aria-modal="true"]'))
+      const outerLabel = outer.getAttribute('aria-labelledby')
+      const innerLabel = inner.getAttribute('aria-labelledby')
+      expect(outerLabel).not.toBe(innerLabel)
+      expect(document.getElementById(outerLabel)).toHaveTextContent('Outer')
+      expect(document.getElementById(innerLabel)).toHaveTextContent('Inner')
     })
   })
 })

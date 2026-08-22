@@ -3,6 +3,8 @@ import npcChat from '../api/npcChat'
 import BaseDialog from './BaseDialog'
 import GameButton from './GameButton'
 import ConversationStage from './ConversationStage'
+import ConversationHistoryDialog from './ConversationHistoryDialog'
+import { TranscriptEntry } from './ConversationTranscript'
 import ScrollFadeIndicator from './ScrollFadeIndicator'
 import useScrollIndicators from '../hooks/useScrollIndicators'
 import { colors, spacing, fonts } from '../styles/theme'
@@ -64,6 +66,7 @@ export default function NpcChatPanel({ npcId, npcName, onClose }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [relationship, setRelationship] = useState(null)
+  const [historyOpen, setHistoryOpen] = useState(false)
   const retryFnRef = useRef(null)
   // Guards async setState calls (open/respond) from firing after unmount, and
   // lets the "conversation ended" auto-close timer be cancelled on unmount.
@@ -200,6 +203,19 @@ export default function NpcChatPanel({ npcId, npcName, onClose }) {
     }
   }
 
+  // Opening the transcript suspends the "conversation ended" auto-close: the
+  // player is reading the log, and the panel closing out from under them takes
+  // it with it. Dismissing the transcript resumes the close it suspended.
+  const handleOpenHistory = () => {
+    clearTimeout(endTimeoutRef.current)
+    setHistoryOpen(true)
+  }
+
+  const handleCloseHistory = () => {
+    setHistoryOpen(false)
+    if (phase === 'ended') onClose()
+  }
+
   const handleEndConversation = async () => {
     if (!npcKey) return
 
@@ -223,6 +239,17 @@ export default function NpcChatPanel({ npcId, npcName, onClose }) {
 
   const loquacityPercentage =
     loquacity.max > 0 ? (loquacity.current / loquacity.max) * 100 : 0
+
+  // The stage only ever shows the newest beat (`followTail`), which used to
+  // make Jean's own line vanish the moment the NPC answered it. The recap
+  // strip keeps the turn immediately before the current one on screen so the
+  // reply always has its question next to it; everything older lives in the
+  // history dialog.
+  const cast = conversationCast || npcCast(npcId, displayName)
+  const previousSegment =
+    conversationSegments.length > 1
+      ? conversationSegments[conversationSegments.length - 2]
+      : null
 
   // Color the relationship badge by attitude
   const getRelationshipColor = () => {
@@ -291,6 +318,26 @@ export default function NpcChatPanel({ npcId, npcName, onClose }) {
         </div>
       )}
 
+      {/* Recap of the turn just before the one on stage — the question an answer
+          is answering, kept in the same visual language as the history dialog. */}
+      {previousSegment && (
+        <div data-testid="npc-chat-previous-line" style={{ marginBottom: spacing.sm }}>
+          <div
+            style={{
+              color: colors.text.dim,
+              fontFamily: fonts.main,
+              fontSize: '10px',
+              letterSpacing: '1px',
+              textTransform: 'uppercase',
+              marginBottom: spacing.xs,
+            }}
+          >
+            Previously
+          </div>
+          <TranscriptEntry segment={previousSegment} cast={cast} variant="compact" />
+        </div>
+      )}
+
       {/* Portrait-backed conversation stage. The stage uses the same renderer as
           authored event conversations, so spoken lines, flavor text, portraits,
           and reactions have one consistent visual language. */}
@@ -301,7 +348,7 @@ export default function NpcChatPanel({ npcId, npcName, onClose }) {
         {conversationSegments.length > 0 ? (
           <ConversationStage
             segments={conversationSegments}
-            conversation={{ cast: conversationCast || npcCast(npcId, displayName) }}
+            conversation={{ cast }}
             speed={20}
             interactive={false}
             showAdvanceHint={false}
@@ -413,7 +460,10 @@ export default function NpcChatPanel({ npcId, npcName, onClose }) {
               variant="secondary"
               size="medium"
               onClick={() => handleOptionClick(option)}
-              disabled={loading}
+              // Nothing makes the panel inert while the transcript is stacked
+              // over it, so the options behind it are disabled explicitly —
+              // otherwise a stray Enter spends a turn the player never read.
+              disabled={loading || historyOpen}
               style={{
                 width: '100%',
                 justifyContent: 'flex-start',
@@ -435,20 +485,40 @@ export default function NpcChatPanel({ npcId, npcName, onClose }) {
         </div>
       )}
 
-      {/* End Conversation Button */}
-      {phase !== 'ended' && (
+      {/* Transcript + End Conversation */}
+      <div style={{ display: 'flex', gap: spacing.md, flexWrap: 'wrap' }}>
         <GameButton
           variant="secondary"
           size="medium"
-          onClick={handleEndConversation}
-          disabled={loading || phase === 'opening'}
-          style={{
-            width: '100%',
-            opacity: 0.7,
-          }}
+          onClick={handleOpenHistory}
+          disabled={historyOpen}
+          style={{ flex: '1 1 180px' }}
         >
-          End Conversation
+          View History
         </GameButton>
+        {phase !== 'ended' && (
+          <GameButton
+            variant="secondary"
+            size="medium"
+            onClick={handleEndConversation}
+            disabled={loading || phase === 'opening' || historyOpen}
+            style={{
+              flex: '2 1 220px',
+              opacity: 0.7,
+            }}
+          >
+            End Conversation
+          </GameButton>
+        )}
+      </div>
+
+      {historyOpen && (
+        <ConversationHistoryDialog
+          title={`${displayName} — Conversation`}
+          segments={conversationSegments}
+          cast={cast}
+          onClose={handleCloseHistory}
+        />
       )}
 
       {/* Auto-close on conversation end */}

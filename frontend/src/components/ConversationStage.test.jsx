@@ -517,6 +517,44 @@ describe('ConversationStage rendering', () => {
         expect(onComplete).toHaveBeenCalledTimes(2)
     })
 
+    it('resets when the next stage happens to have the same number of beats', () => {
+        // The reset must key on the segments array itself, not its length: two
+        // consecutive stages of an authored event can easily be the same length,
+        // and keying on length left the stage parked on the previous stage's
+        // last beat with onComplete already spent — a soft-lock, because
+        // EventDialog's Continue button never reappears.
+        const stageOne = [
+            { text: 'Stage one, beat one.', speaker: 'Jean', emotion: 'neutral', in_conversation: true },
+            { text: 'Stage one, beat two.', speaker: 'Jean', emotion: 'neutral', in_conversation: true },
+        ]
+        const stageTwo = [
+            { text: 'Stage two, beat one.', speaker: 'Jean', emotion: 'neutral', in_conversation: true },
+            { text: 'Stage two, beat two.', speaker: 'Jean', emotion: 'neutral', in_conversation: true },
+        ]
+        const onComplete = vi.fn()
+        const { rerender } = render(
+            <ConversationStage segments={stageOne} conversation={{ cast: CAST }} onComplete={onComplete} />
+        )
+        const stage = screen.getByTestId('conversation-stage')
+
+        act(() => vi.advanceTimersByTime(3000))
+        act(() => fireEvent.click(stage)) // beat one -> beat two
+        act(() => vi.advanceTimersByTime(3000))
+        act(() => fireEvent.click(stage)) // last beat -> onComplete
+        expect(onComplete).toHaveBeenCalledTimes(1)
+
+        rerender(
+            <ConversationStage segments={stageTwo} conversation={{ cast: CAST }} onComplete={onComplete} />
+        )
+        act(() => vi.advanceTimersByTime(3000))
+        expect(screen.getByText(/Stage two, beat one/i)).toBeDefined()
+
+        act(() => fireEvent.click(stage))
+        act(() => vi.advanceTimersByTime(3000))
+        act(() => fireEvent.click(stage))
+        expect(onComplete).toHaveBeenCalledTimes(2)
+    })
+
     // The wrapper <div> around the <img> carries the composed portrait opacity.
     const portraitOpacity = (name) => Number(screen.getByAltText(new RegExp(name, 'i')).parentElement.style.opacity)
 
