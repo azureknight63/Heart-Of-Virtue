@@ -182,6 +182,31 @@ class TestSendDigest:
         assert GenericLLMClient.provider_saturation()["providers"]["groq"]["requests"] == 0
 
 
+class _FakeThreading:
+    """Stand-in for the threading module.
+
+    Patching ``digest.threading.Thread`` would mutate the real threading module
+    process-wide for the duration of the test; swapping the module reference the
+    code actually looks through keeps the blast radius inside this test.
+    """
+
+    def __init__(self, record=None, thread_cls=None):
+        self._record = record
+        self._thread_cls = thread_cls
+
+    def Thread(self, **kwargs):
+        if self._record is not None:
+            self._record.append(kwargs)
+        if self._thread_cls is not None:
+            return self._thread_cls(**kwargs)
+        return _NullThread()
+
+
+class _NullThread:
+    def start(self):
+        pass
+
+
 class TestDigestScheduler:
     """The digest is worthless if nothing ever fires it."""
 
@@ -194,7 +219,7 @@ class TestDigestScheduler:
     def test_no_webhook_means_no_thread(self, monkeypatch):
         started = []
         monkeypatch.delenv("HOV_ANALYTICS_WEBHOOK_URL", raising=False)
-        monkeypatch.setattr(digest.threading, "Thread", lambda **kw: started.append(kw))
+        monkeypatch.setattr(digest, "threading", _FakeThreading(started))
         assert digest.start_digest_scheduler() is False
         assert started == []
 
@@ -202,7 +227,7 @@ class TestDigestScheduler:
         started = []
         monkeypatch.setenv("HOV_ANALYTICS_WEBHOOK_URL", "https://discord.test/h")
         monkeypatch.setenv("HOV_ANALYTICS_INTERVAL_HOURS", "0")
-        monkeypatch.setattr(digest.threading, "Thread", lambda **kw: started.append(kw))
+        monkeypatch.setattr(digest, "threading", _FakeThreading(started))
         assert digest.start_digest_scheduler() is False
         assert started == []
 
@@ -218,7 +243,7 @@ class TestDigestScheduler:
 
         monkeypatch.setenv("HOV_ANALYTICS_WEBHOOK_URL", "https://discord.test/h")
         monkeypatch.delenv("HOV_ANALYTICS_INTERVAL_HOURS", raising=False)
-        monkeypatch.setattr(digest.threading, "Thread", _T)
+        monkeypatch.setattr(digest, "threading", _FakeThreading(thread_cls=_T))
         assert digest.start_digest_scheduler() is True
         assert made["daemon"] is True
         assert made["started"] is True
@@ -234,15 +259,201 @@ class TestDigestScheduler:
                 pass
 
         monkeypatch.setenv("HOV_ANALYTICS_WEBHOOK_URL", "https://discord.test/h")
-        monkeypatch.setattr(digest.threading, "Thread", _T)
+        monkeypatch.setattr(digest, "threading", _FakeThreading(thread_cls=_T))
         digest.start_digest_scheduler()
         digest.start_digest_scheduler()
         assert len(count) == 1
 
     def test_bad_interval_falls_back_to_the_default(self, monkeypatch):
         monkeypatch.setenv("HOV_ANALYTICS_INTERVAL_HOURS", "not-a-number")
-        assert digest._interval_seconds() == 24 * 3600
+        assert digest._baseline_interval_seconds() == 168 * 3600
 
-    def test_interval_is_configurable(self, monkeypatch):
-        monkeypatch.setenv("HOV_ANALYTICS_INTERVAL_HOURS", "6")
-        assert digest._interval_seconds() == 6 * 3600
+
+class TestAdaptiveCadence:
+    """Weekly normally; hourly while the chain is running out of headroom.
+
+    total_saturation is the *least* saturated reporting provider, so crossing
+    the alert threshold means even the best-off provider is that far spent —
+    i.e. the whole chain is close to silent, which is exactly when a weekly
+    digest arrives too late to act on.
+    """
+
+    def setup_method(self):
+        GenericLLMClient.reset_class_state()
+
+    def teardown_method(self):
+        GenericLLMClient.reset_class_state()
+
+    def _saturate(self, provider, limit, remaining):
+        GenericLLMClient._record_provider_usage(
+            provider,
+            _HeaderResp(
+                {
+                    "x-ratelimit-limit": str(limit),
+                    "x-ratelimit-remaining": str(remaining),
+                }
+            ),
+        )
+
+    def test_baseline_is_weekly(self, monkeypatch):
+        monkeypatch.delenv("HOV_ANALYTICS_INTERVAL_HOURS", raising=False)
+        assert digest._baseline_interval_seconds() == 168 * 3600
+
+    def test_alert_cadence_is_hourly(self, monkeypatch):
+        monkeypatch.delenv("HOV_ANALYTICS_ALERT_INTERVAL_HOURS", raising=False)
+        assert digest._alert_interval_seconds() == 3600
+
+    def test_threshold_defaults_to_75_percent(self, monkeypatch):
+        monkeypatch.delenv("HOV_ANALYTICS_ALERT_THRESHOLD", raising=False)
+        assert digest._alert_threshold() == 0.75
+
+    def test_both_cadences_are_configurable(self, monkeypatch):
+        monkeypatch.setenv("HOV_ANALYTICS_INTERVAL_HOURS", "72")
+        monkeypatch.setenv("HOV_ANALYTICS_ALERT_INTERVAL_HOURS", "0.5")
+        assert digest._baseline_interval_seconds() == 72 * 3600
+        assert digest._alert_interval_seconds() == 1800
+
+    def test_no_alert_with_headroom(self):
+        self._saturate("groq", 100, 90)  # 10% used
+        assert digest._should_alert() is False
+
+    def test_alert_once_past_the_threshold(self):
+        self._saturate("groq", 100, 20)  # 80% used
+        assert digest._should_alert() is True
+
+    def test_threshold_is_inclusive(self):
+        self._saturate("groq", 100, 25)  # exactly 75%
+        assert digest._should_alert() is True
+
+    def test_a_single_spare_provider_keeps_the_alert_off(self):
+        """Headroom anywhere means the chain is fine, however bad the rest are."""
+        self._saturate("openrouter", 50, 0)  # exhausted
+        self._saturate("groq", 100, 95)  # 5% used
+        assert digest._should_alert() is False
+
+    def test_no_reported_limits_means_no_alert(self):
+        GenericLLMClient._record_provider_usage("groq", _HeaderResp({}))
+        assert digest._should_alert() is False
+
+    def test_required_interval_switches_with_saturation(self):
+        self._saturate("groq", 100, 90)
+        assert digest._required_interval_seconds() == 168 * 3600
+        self._saturate("groq", 100, 5)
+        assert digest._required_interval_seconds() == 3600
+
+    def test_send_is_not_due_before_the_interval(self):
+        self._saturate("groq", 100, 90)
+        assert digest._send_due(3600) is False
+
+    def test_send_is_due_after_the_interval(self):
+        self._saturate("groq", 100, 90)
+        assert digest._send_due(168 * 3600) is True
+
+    def test_rising_saturation_makes_a_pending_wait_due_immediately(self):
+        """Two days into a weekly wait, crossing 75% should fire now."""
+        two_days = 48 * 3600
+        self._saturate("groq", 100, 90)
+        assert digest._send_due(two_days) is False
+        self._saturate("groq", 100, 10)  # 90% used
+        assert digest._send_due(two_days) is True
+
+
+class TestAlertDigestIsMarked:
+    def setup_method(self):
+        GenericLLMClient.reset_class_state()
+
+    def teardown_method(self):
+        GenericLLMClient.reset_class_state()
+
+    def test_routine_digest_is_not_flagged(self):
+        embed = digest.build_digest(GenericLLMClient.usage_snapshot(), alert=False)
+        assert "Low headroom" not in str(embed)
+        assert embed["color"] == digest.EMBED_COLOR
+
+    def test_alert_digest_says_why_it_arrived(self):
+        embed = digest.build_digest(GenericLLMClient.usage_snapshot(), alert=True)
+        assert "headroom" in str(embed).lower()
+        assert embed["color"] == digest.ALERT_COLOR
+
+    def test_send_digest_marks_the_alert(self, monkeypatch):
+        sent = {}
+
+        def fake_post(url, json=None, headers=None, timeout=None):
+            sent["json"] = json
+            return _Resp()
+
+        GenericLLMClient._record_provider_usage(
+            "groq", _HeaderResp({"x-ratelimit-limit": "100", "x-ratelimit-remaining": "5"})
+        )
+        monkeypatch.setenv("HOV_ANALYTICS_WEBHOOK_URL", "https://discord.test/h")
+        monkeypatch.setattr(digest.requests, "post", fake_post)
+        digest.send_digest()
+        assert sent["json"]["embeds"][0]["color"] == digest.ALERT_COLOR
+
+
+class TestRetryBackoff:
+    """A Discord blip must not cost a full cadence of silence."""
+
+    def setup_method(self):
+        GenericLLMClient.reset_class_state()
+
+    def teardown_method(self):
+        GenericLLMClient.reset_class_state()
+
+    def test_success_starts_the_next_window_from_zero(self):
+        assert digest._elapsed_after_attempt(True) == 0.0
+
+    def test_failure_resumes_close_to_due(self):
+        resumed = digest._elapsed_after_attempt(False)
+        assert resumed == 168 * 3600 - digest.SEND_RETRY_BACKOFF_SECONDS
+        # i.e. the retry lands one backoff from now, not one week.
+        assert digest._send_due(resumed + digest.SEND_RETRY_BACKOFF_SECONDS) is True
+        assert digest._send_due(resumed) is False
+
+    def test_failure_during_an_alert_retries_within_the_alert_cadence(self):
+        GenericLLMClient._record_provider_usage(
+            "groq",
+            _HeaderResp({"x-ratelimit-limit": "100", "x-ratelimit-remaining": "5"}),
+        )
+        resumed = digest._elapsed_after_attempt(False)
+        assert resumed == 3600 - digest.SEND_RETRY_BACKOFF_SECONDS
+
+    def test_backoff_never_goes_negative(self, monkeypatch):
+        monkeypatch.setenv("HOV_ANALYTICS_ALERT_INTERVAL_HOURS", "0.01")
+        GenericLLMClient._record_provider_usage(
+            "groq",
+            _HeaderResp({"x-ratelimit-limit": "100", "x-ratelimit-remaining": "5"}),
+        )
+        assert digest._elapsed_after_attempt(False) == 0.0
+
+
+class TestThresholdIsForgiving:
+    """The digest prints a percentage, so someone will write one here."""
+
+    def test_percentage_form_is_understood(self, monkeypatch):
+        monkeypatch.setenv("HOV_ANALYTICS_ALERT_THRESHOLD", "75")
+        assert digest._alert_threshold() == 0.75
+
+    def test_fraction_form_still_works(self, monkeypatch):
+        monkeypatch.setenv("HOV_ANALYTICS_ALERT_THRESHOLD", "0.6")
+        assert digest._alert_threshold() == 0.6
+
+    def test_out_of_range_is_clamped(self, monkeypatch):
+        monkeypatch.setenv("HOV_ANALYTICS_ALERT_THRESHOLD", "-5")
+        assert digest._alert_threshold() == 0.0
+
+    def test_alert_still_fires_with_the_percentage_form(self, monkeypatch):
+        monkeypatch.setenv("HOV_ANALYTICS_ALERT_THRESHOLD", "75")
+        GenericLLMClient._record_provider_usage(
+            "groq",
+            _HeaderResp({"x-ratelimit-limit": "100", "x-ratelimit-remaining": "10"}),
+        )
+        assert digest._should_alert() is True
+        GenericLLMClient.reset_class_state()
+
+
+class TestAlertBannerMatchesConfig:
+    def test_banner_quotes_the_configured_cadence(self, monkeypatch):
+        monkeypatch.setenv("HOV_ANALYTICS_ALERT_INTERVAL_HOURS", "3")
+        embed = digest.build_digest(GenericLLMClient.usage_snapshot(), alert=True)
+        assert "3.0h" in embed["description"]
