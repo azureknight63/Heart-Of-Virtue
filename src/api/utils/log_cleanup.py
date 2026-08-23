@@ -50,6 +50,11 @@ class LogCleanupManager:
         self.retention_days = retention_days
         self.max_size_bytes = max_size_mb * 1024 * 1024
 
+    def _log_files(self):
+        """All managed log files: current .jsonl plus pre-migration .log."""
+        for pattern in ("*.jsonl", "*.log"):
+            yield from self.logs_dir.glob(pattern)
+
     def cleanup_old_logs(self):
         """
         Remove log files older than the retention period.
@@ -70,7 +75,7 @@ class LogCleanupManager:
         errors = []
 
         try:
-            for log_file in self.logs_dir.glob("*.log"):
+            for log_file in self._log_files():
                 try:
                     # Get file modification time
                     file_mtime = datetime.fromtimestamp(log_file.stat().st_mtime)
@@ -127,7 +132,7 @@ class LogCleanupManager:
             log_files = []
             total_size = 0
 
-            for log_file in self.logs_dir.glob("*.log"):
+            for log_file in self._log_files():
                 try:
                     stat = log_file.stat()
                     log_files.append(
@@ -215,7 +220,7 @@ class LogCleanupManager:
                 "newest_file": None,
             }
 
-        log_files = list(self.logs_dir.glob("*.log"))
+        log_files = list(self._log_files())
 
         if not log_files:
             return {

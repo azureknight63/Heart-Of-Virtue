@@ -32,20 +32,29 @@ Default settings (configurable in `src/api/routes/logs.py`):
 
 ## Log File Format
 
-Log files are stored with the naming convention:
-```
-YYYY-MM-DD_session_TIMESTAMP_RANDOMID.log
-```
+Both streams write JSONL — one JSON envelope per line, sharing the schema
+defined in `src/api/structured_log.py`:
 
-Each log entry follows this format:
-```
-[TIMESTAMP] [LEVEL] [URL] MESSAGE
-```
+- Browser logs: `logs/browser/YYYY-MM-DD_bucketNN.jsonl` (session ids hash
+  into a bounded bucket set)
+- Backend logs: `logs/backend/YYYY-MM-DD.jsonl` (written when `LOG_JSONL_DIR`
+  is set; `tools/run_api.py` sets it by default)
+
+Envelope fields: `ts` (ISO-8601 UTC, Z suffix), `src` (`be`/`fe`), `lvl`
+(`debug|info|warning|error`), `event` (dot-separated name; `console` for
+intercepted console output, `log` for plain backend logger calls), plus
+optional `session`, `url`, `msg`, `data` (structured payload), and `n`
+(repeat count for collapsed duplicates).
 
 Example:
+```json
+{"ts":"2026-08-22T16:13:23.901Z","src":"fe","lvl":"debug","event":"event.enqueue","session":"session_123_abc","data":{"name":"Passage_Camp Entrance","needsInput":true}}
 ```
-[2025-11-27T18:41:11.123Z] [ERROR] [http://localhost:3000/game] Failed to fetch combat status
-```
+
+View the merged, condensed stream with `python tools/logcat.py` (`--tail` to
+follow live, `--json` for raw machine-readable output). Pre-migration
+bracket-format `.log` files are still readable by logcat and still covered
+by cleanup until they age out.
 
 ## API Endpoints
 

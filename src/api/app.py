@@ -8,7 +8,12 @@ from flask_cors import CORS
 from flask_socketio import SocketIO
 from src.api.config import DevelopmentConfig, combat_socket_streaming_enabled
 from src.api.services import SessionManager, GameService
+from src.api.structured_log import configure_logging, init_request_logging
 import src.universe as universe_module
+
+# Env-driven (LOG_LEVEL / LOG_FILE / LOG_JSONL_DIR); safe under pytest — it
+# only replaces handlers it installed itself. See src/api/structured_log.py.
+configure_logging()
 
 
 def _apply_proxy_fix(app):
@@ -64,6 +69,9 @@ def create_app(config_class=None):
     # thus the login rate-limit key) reflects the real client. Off by default —
     # see _apply_proxy_fix (issue #409).
     _apply_proxy_fix(app)
+
+    # One canonical http.request log line per request (structured_log.py)
+    init_request_logging(app)
 
     # Initialize CORS - with explicit support for all methods
     CORS(
@@ -225,14 +233,12 @@ def create_app(config_class=None):
                             if "equip" in item.interactions:
                                 item.interactions.remove("equip")
                             # Special handling for weapons
-                            if (
-                                hasattr(item, "maintype")
-                                and item.maintype == "Weapon"
-                            ):
+                            if hasattr(item, "maintype") and item.maintype == "Weapon":
                                 test_player.eq_weapon = item
 
                 # Refresh stat bonuses after equipping all items
                 import src.functions as functions
+
                 functions.refresh_stat_bonuses(test_player)
 
             # Create a get_tile wrapper for accessing tiles from the player's current map only

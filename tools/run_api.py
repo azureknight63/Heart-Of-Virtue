@@ -27,6 +27,10 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+# Dev server default: capture the structured JSONL debug stream for
+# tools/logcat.py. Opt out with LOG_JSONL_DIR="" (empty disables).
+os.environ.setdefault("LOG_JSONL_DIR", str(ROOT / "logs" / "backend"))
+
 from src.api.app import create_app  # noqa: E402
 from src.api.config import DevelopmentConfig, TestingConfig, ProductionConfig  # noqa: E402
 

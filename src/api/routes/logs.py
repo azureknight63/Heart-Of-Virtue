@@ -9,6 +9,7 @@ import os
 import re
 import zlib
 from pathlib import Path
+from src.api.structured_log import BROWSER_LEVEL_MAP, to_compact_json, utc_iso_z
 from src.api.utils.log_cleanup import LogCleanupManager
 
 logs_bp = Blueprint("logs", __name__)
@@ -17,11 +18,17 @@ logs_bp = Blueprint("logs", __name__)
 # The frontend logger posts here without auth (incl. via sendBeacon), so the
 # route cannot be gated — instead we bound what a single request can write and
 # how many distinct files a hostile client can create (issue #429).
-MAX_LOGS_PER_REQUEST = 500       # max log entries accepted per request
-MAX_MESSAGE_LENGTH = 4000        # per-message truncation (matches npc_chat)
-MAX_FIELD_LENGTH = 2048          # cap on url and other free-text fields
-MAX_SHORT_FIELD_LENGTH = 64      # cap on timestamp/level
-SESSION_ID_BUCKETS = 64          # bound distinct session log files per day
+MAX_LOGS_PER_REQUEST = 500  # max log entries accepted per request
+MAX_MESSAGE_LENGTH = 4000  # per-message truncation (matches npc_chat)
+MAX_FIELD_LENGTH = 2048  # cap on url and other free-text fields
+MAX_SHORT_FIELD_LENGTH = 64  # cap on timestamp/level
+MAX_EVENT_LENGTH = 64  # cap on structured event names
+MAX_REPEAT_COUNT = 100000  # clamp on the client-side collapse counter
+SESSION_ID_BUCKETS = 64  # bound distinct session log files per day
+
+# Structured event names are dot-separated lowercase slugs; anything else
+# collapses to underscores so a hostile name can't smuggle odd characters.
+_EVENT_CHARS = re.compile(r"[^a-z0-9._-]")
 
 # Control chars (incl. CR/LF) are stripped from every client-supplied field
 # before it is written into a log line, so a hostile payload can't inject a
@@ -32,6 +39,65 @@ _LOG_CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f]")
 def _sanitize_log_field(value):
     """Collapse control characters in a log field to single spaces."""
     return _LOG_CONTROL_CHARS.sub(" ", value)
+
+
+def _entry_to_envelope(log_entry, session_id):
+    """Convert one client log entry into the shared JSONL envelope.
+
+    Every field is client-supplied and hostile until proven otherwise:
+    strings are control-stripped and capped, the event name is slugged, the
+    data payload is size-bounded, and the repeat counter is clamped. The
+    envelope is serialized with json.dumps, so a payload can never forge
+    additional log lines (CWE-117) — newlines are escaped by encoding.
+    """
+    # Fallback matches the client's toISOString() (UTC, Z suffix) so logcat's
+    # chronological merge never mixes naive local time into the feed. Built
+    # only when the client omitted the timestamp — the closed BROWSER_LEVEL_MAP
+    # likewise makes any sanitize/cap ceremony on the level a no-op: hostile
+    # input simply isn't a key and collapses to "info".
+    raw_ts = log_entry.get("timestamp")
+    envelope = {
+        "ts": (
+            _sanitize_log_field(str(raw_ts)[:MAX_SHORT_FIELD_LENGTH])
+            if raw_ts is not None
+            else utc_iso_z()
+        ),
+        "src": "fe",
+        "lvl": BROWSER_LEVEL_MAP.get(
+            str(log_entry.get("level", "LOG")).strip().lower(), "info"
+        ),
+        "event": _EVENT_CHARS.sub("_", str(log_entry.get("event", "console")).lower())[
+            :MAX_EVENT_LENGTH
+        ]
+        or "console",
+        "session": session_id,
+    }
+
+    url = _sanitize_log_field(str(log_entry.get("url", ""))[:MAX_FIELD_LENGTH])
+    if url:
+        envelope["url"] = url
+
+    message = _sanitize_log_field(
+        str(log_entry.get("message", ""))[:MAX_MESSAGE_LENGTH]
+    )
+    if message:
+        envelope["msg"] = message
+
+    data = log_entry.get("data")
+    if isinstance(data, dict) and data:
+        serialized = to_compact_json(data)
+        if len(serialized) > MAX_MESSAGE_LENGTH:
+            data = {"_truncated": True, "size": len(serialized)}
+        envelope["data"] = data
+
+    try:
+        repeat = int(log_entry.get("n", 1))
+    except (TypeError, ValueError):
+        repeat = 1
+    if repeat > 1:
+        envelope["n"] = min(repeat, MAX_REPEAT_COUNT)
+
+    return envelope
 
 
 def _require_testing():
@@ -59,7 +125,7 @@ cleanup_manager = LogCleanupManager(LOGS_DIR, retention_days=7, max_size_mb=100)
 @logs_bp.route("/browser", methods=["POST"])
 def receive_browser_logs():
     """
-    Receive browser logs from the frontend and write them to a file
+    Receive browser logs from the frontend and write them as JSONL
 
     Expected payload:
     {
@@ -69,11 +135,16 @@ def receive_browser_logs():
                 "level": "LOG|ERROR|WARN|INFO|DEBUG",
                 "message": "log message",
                 "url": "http://localhost:3000/",
-                "userAgent": "Mozilla/5.0..."
+                "event": "event.enqueue",       // optional structured name
+                "data": {"name": "..."},        // optional structured payload
+                "n": 2                           // optional repeat count
             }
         ],
         "session_id": "session_1234567890_abc123"
     }
+
+    Each entry becomes one line of the shared JSONL envelope schema (see
+    src/api/structured_log.py) in logs/browser/<date>_bucket<NN>.jsonl.
     """
     try:
         data = request.get_json(silent=True)
@@ -115,10 +186,10 @@ def receive_browser_logs():
 
         # Create a bucketed log file for today.
         today = datetime.now().strftime("%Y-%m-%d")
-        log_filename = f"{today}_bucket{bucket:02d}.log"
+        log_filename = f"{today}_bucket{bucket:02d}.jsonl"
         log_filepath = LOGS_DIR / log_filename
 
-        # Append logs to the file, bounding every free-text field so no single
+        # Append one envelope per line, bounding every field so no single
         # oversized entry can blow up disk usage.
         with open(log_filepath, "a", encoding="utf-8") as f:
             for log_entry in logs:
@@ -126,26 +197,8 @@ def receive_browser_logs():
                 # strings); skip them instead of raising.
                 if not isinstance(log_entry, dict):
                     continue
-                timestamp = _sanitize_log_field(
-                    str(log_entry.get("timestamp", datetime.now().isoformat()))[
-                        :MAX_SHORT_FIELD_LENGTH
-                    ]
-                )
-                level = _sanitize_log_field(
-                    str(log_entry.get("level", "LOG"))[:MAX_SHORT_FIELD_LENGTH]
-                )
-                message = _sanitize_log_field(
-                    str(log_entry.get("message", ""))[:MAX_MESSAGE_LENGTH]
-                )
-                url = _sanitize_log_field(
-                    str(log_entry.get("url", ""))[:MAX_FIELD_LENGTH]
-                )
-
-                # Format: [TIMESTAMP] [LEVEL] [SESSION] [URL] MESSAGE
-                log_line = (
-                    f"[{timestamp}] [{level}] [{session_id}] [{url}] {message}\n"
-                )
-                f.write(log_line)
+                envelope = _entry_to_envelope(log_entry, session_id)
+                f.write(to_compact_json(envelope) + "\n")
 
         # Perform automatic cleanup after writing logs
         # This runs silently in the background
@@ -181,7 +234,11 @@ def list_browser_log_files():
         log_files = []
 
         if LOGS_DIR.exists():
-            for log_file in sorted(LOGS_DIR.glob("*.log"), reverse=True):
+            # Both current .jsonl files and pre-migration .log files
+            found = [
+                p for pattern in ("*.jsonl", "*.log") for p in LOGS_DIR.glob(pattern)
+            ]
+            for log_file in sorted(found, key=lambda p: p.name, reverse=True):
                 stat = log_file.stat()
                 log_files.append(
                     {
@@ -267,9 +324,7 @@ def cleanup_logs():
             retention_days = cleanup_manager.retention_days
         try:
             max_size_mb = float(
-                data.get(
-                    "max_size_mb", cleanup_manager.max_size_bytes / (1024 * 1024)
-                )
+                data.get("max_size_mb", cleanup_manager.max_size_bytes / (1024 * 1024))
             )
         except (TypeError, ValueError):
             max_size_mb = cleanup_manager.max_size_bytes / (1024 * 1024)

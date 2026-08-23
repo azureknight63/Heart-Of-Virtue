@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import apiClient from '../api/client'
 import { COMBAT_INIT_EVENT_ID } from '../utils/eventIds'
+import logger from '../utils/logger'
 
 // Constants
 // Constants - Optimized for test environment if detected
@@ -27,7 +28,7 @@ async function fetchWithRetry(fetchFn, maxAttempts = MAX_RETRY_ATTEMPTS) {
                 // Exponential backoff: wait longer between each retry
                 const delay = RETRY_DELAY_MS * Math.pow(2, attempt)
                 await new Promise(resolve => setTimeout(resolve, delay))
-                console.log(`[DEBUG] Retrying fetch (attempt ${attempt + 2}/${maxAttempts + 1})`)
+                logger.event('fetch.retry', { attempt: attempt + 2, max: maxAttempts + 1 })
             }
         }
     }
@@ -89,8 +90,12 @@ export function useEventManager({
      * @param {Array} events - Array of event objects to add to queue
      */
     const handleEventsTriggered = useCallback((events) => {
-        console.log('[DEBUG] handleEventsTriggered called with:', events)
         if (events && events.length > 0) {
+            // Names only — logging the full event objects buried the stream
+            logger.event('event.received', {
+                count: events.length,
+                names: events.map(e => e.name)
+            })
             // Filter events that have output text or need input to display
             const displayableEvents = events.filter(
                 event => {
@@ -115,7 +120,7 @@ export function useEventManager({
                         (newEvent.id === current.id && newEvent.name === current.name)
                     )
                     if (isCurrent) {
-                        console.log(`[DEBUG] Skipping event already currently displayed: ${newEvent.name}`)
+                        logger.event('event.dedupe', { name: newEvent.name })
                     }
                     return !isCurrent
                 })
@@ -132,7 +137,7 @@ export function useEventManager({
 
                             if (existingIndex >= 0) {
                                 // Update existing event with new data (prefer needs_input=true)
-                                console.log(`[DEBUG] Updating existing event in queue: ${newEvent.name}`)
+                                logger.event('event.update', { name: newEvent.name })
 
                                 // CRITICAL: Preserve local delay value if we've already set it to 0
                                 const currentDelay = newQueue[existingIndex].delay
@@ -141,7 +146,11 @@ export function useEventManager({
                                     newQueue[existingIndex].delay = 0
                                 }
                             } else {
-                                console.log(`[DEBUG] Adding new event to queue: ${newEvent.name}`)
+                                logger.event('event.enqueue', {
+                                    name: newEvent.name,
+                                    type: newEvent.type,
+                                    needsInput: Boolean(newEvent.needs_input)
+                                })
                                 newQueue.push(newEvent)
                             }
                         })
@@ -160,7 +169,10 @@ export function useEventManager({
             })
 
             if (data.success && data.events && data.events.length > 0) {
-                console.log('[DEBUG] Recovered pending events from session:', data.events)
+                logger.event('event.recovered', {
+                    count: data.events.length,
+                    names: data.events.map(e => e.name)
+                })
                 handleEventsTriggered(data.events)
             }
         } catch (err) {
@@ -178,7 +190,9 @@ export function useEventManager({
      * Process event queue - show next event when ready
      */
     useEffect(() => {
-        console.log('[DEBUG] Event Queue Check:', {
+        // onChange: this effect fires on every dependency tick, but the
+        // state snapshot only matters when it actually changes
+        logger.eventOnChange('event.queue', {
             queueLength: eventQueue.length,
             hasCurrentEvent: !!currentEvent,
             isTyping: isInteractionTyping,
@@ -196,7 +210,10 @@ export function useEventManager({
 
             // Skip recently processed events to prevent immediate bounce
             if (nextEvent.event_id && processedEventIds.current.has(nextEvent.event_id)) {
-                console.log(`[DEBUG] Skipping recently processed event: ${nextEvent.name} (${nextEvent.event_id})`)
+                logger.event('event.skip_processed', {
+                    name: nextEvent.name,
+                    id: nextEvent.event_id
+                })
                 setEventQueue(prev => prev.slice(1))
                 return
             }
@@ -226,14 +243,18 @@ export function useEventManager({
             const shouldDelay = delayMode === 'both' || delayMode === mode
 
             if (shouldDelay && delayDuration > 0 && delayingEventIdRef.current !== nextEvent.event_id) {
-                console.log(`[DEBUG] Delaying event display for ${delayDuration}ms (${delayMode}):`, nextEvent.name)
+                logger.event('event.delay', {
+                    name: nextEvent.name,
+                    ms: delayDuration,
+                    mode: delayMode
+                })
 
                 // Track this event ID to prevent re-entering this block during delay
                 delayingEventIdRef.current = nextEvent.event_id
                 setIsInteractionDelayActive(true)
 
                 setTimeout(() => {
-                    console.log(`[DEBUG] Delay finished for:`, nextEvent.name)
+                    logger.event('event.delay_done', { name: nextEvent.name })
                     setIsInteractionDelayActive(false)
                     // Mark as having completed its specific delay so it doesn't trigger again
                     setEventQueue(prev => {
@@ -252,7 +273,13 @@ export function useEventManager({
                 return
             }
 
-            console.log('[DEBUG] Showing next event from queue:', nextEvent)
+            // Summary only — the full event object was ~2KB per line
+            logger.event('event.show', {
+                name: nextEvent.name,
+                type: nextEvent.type,
+                needsInput: Boolean(nextEvent.needs_input),
+                queue: eventQueue.length - 1
+            })
             if (isMemoryEvent && playBGM) {
                 playBGM('memory_flash')
             }
@@ -263,11 +290,9 @@ export function useEventManager({
                 delayingEventIdRef.current = null
             }
 
-            setEventQueue(prev => {
-                const newQueue = prev.slice(1)
-                console.log('[DEBUG] Updated queue after dequeue:', newQueue.length)
-                return newQueue
-            })
+            // No log here: event.show above already carries the queue depth,
+            // and StrictMode runs this updater twice (the old log double-fired)
+            setEventQueue(prev => prev.slice(1))
 
             // Add to history
             const text = nextEvent.output_text || nextEvent.message || nextEvent.description || ''
