@@ -178,11 +178,28 @@ class _JSONTools:
         return s.strip()
 
     @staticmethod
+    @staticmethod
+    def _keep_first_duplicate(pairs):
+        """object_pairs_hook that keeps the FIRST value for a repeated key.
+
+        json.loads keeps the last by default, which is exactly wrong for the way
+        models fail: they emit a good object, close it, then append a degenerate
+        afterthought. Observed live from a free model that produced three usable
+        jean_options and then a second, empty ``jean_options`` — last-wins turned
+        that into zero options, parsed cleanly, with nothing in the logs.
+        """
+        result: Dict[str, Any] = {}
+        for key, value in pairs:
+            if key not in result:
+                result[key] = value
+        return result
+
+    @staticmethod
     def try_parse_json(s: str) -> Optional[Dict[str, Any]]:
         s = _JSONTools.strip_code_fences(s)
         # Attempt direct parse
         try:
-            return json.loads(s)
+            return json.loads(s, object_pairs_hook=_JSONTools._keep_first_duplicate)
         except Exception:
             pass
         # Heuristic: extract the first {...} block
@@ -191,7 +208,9 @@ class _JSONTools:
         if start != -1 and end != -1 and start < end:
             frag = s[start : end + 1]
             try:
-                return json.loads(frag)
+                return json.loads(
+                    frag, object_pairs_hook=_JSONTools._keep_first_duplicate
+                )
             except Exception:
                 pass
         # Last resort: the response may be a JSON object cut off mid-generation
@@ -237,7 +256,9 @@ class _JSONTools:
             attempt = re.sub(r"[,\s]+$", "", attempt)
             attempt += "".join("}" if c == "{" else "]" for c in reversed(stack))
             try:
-                parsed = json.loads(attempt)
+                parsed = json.loads(
+                    attempt, object_pairs_hook=_JSONTools._keep_first_duplicate
+                )
                 return parsed if isinstance(parsed, dict) else None
             except Exception:
                 cut = candidate.rfind(",")

@@ -1124,5 +1124,44 @@ class TestChainSkipsSaturatedProviders:
         assert self._adapter()._provider_chain() == ["openrouter"]
 
 
+class TestDuplicateJsonKeys:
+    """A restated key must not silently erase the good value that came first.
+
+    Observed live from nvidia/nemotron-nano-9b-v2:free, which closed its object
+    and then appended a second, empty `jean_options`. json.loads keeps the LAST
+    duplicate, so three usable dialogue options became zero — parsed cleanly,
+    no warning, no strike against the model, and the player got pool filler.
+    """
+
+    def test_first_occurrence_wins(self):
+        raw = '{"npc_text": "Five copper.", "jean_options": [{"tone": "direct", "text": "Fine."}], "jean_options": []}'
+        parsed = llm._JSONTools.try_parse_json(raw)
+        assert parsed["jean_options"] == [{"tone": "direct", "text": "Fine."}]
+
+    def test_scalar_duplicates_also_keep_the_first(self):
+        parsed = llm._JSONTools.try_parse_json('{"npc_text": "Real line.", "npc_text": ""}')
+        assert parsed["npc_text"] == "Real line."
+
+    def test_the_observed_live_payload_survives(self):
+        raw = (
+            '{"npc_text":"I can help you find a guide.","jean_options":'
+            '[{"tone":"direct","text":"What is the cost?"},'
+            '{"tone":"guarded","text":"Who would you ask?"},'
+            '{"tone":"open","text":"Tell me about them."}]'
+            + "\n ,\n"
+            + '"jean_options":[]}'
+        )
+        parsed = llm._JSONTools.try_parse_json(raw)
+        assert parsed is not None
+        assert len(parsed["jean_options"]) == 3
+
+    def test_ordinary_json_is_unaffected(self):
+        parsed = llm._JSONTools.try_parse_json('{"a": 1, "b": [2, 3]}')
+        assert parsed == {"a": 1, "b": [2, 3]}
+
+    def test_nested_duplicates_are_handled(self):
+        parsed = llm._JSONTools.try_parse_json('{"outer": {"k": "keep", "k": "drop"}}')
+        assert parsed["outer"]["k"] == "keep"
+
 if __name__ == "__main__":  # pragma: no cover
     pytest.main([__file__])
