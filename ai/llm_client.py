@@ -3,7 +3,7 @@ import os
 import logging
 import re
 import threading
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 try:
     import requests
@@ -54,6 +54,41 @@ _REASONING_KEYS = frozenset(
     k for params in _REASONING_PARAMS.values() for k in params
 )
 
+# Benching periods for a model that answers HTTP 200 with output the caller
+# cannot parse. A first offence can be a one-off truncation, so it is short; a
+# repeat means the model structurally will not produce JSON for this prompt, so
+# it is parked for the rest of the day rather than re-tried every turn.
+_UNPARSEABLE_FIRST_PENALTY_MINUTES = 15
+_UNPARSEABLE_REPEAT_PENALTY_MINUTES = 720
+
+# OpenAI-compatible chat-completions providers usable as a fallback chain.
+# Each is keyed on its own credential: a provider whose key is absent is never
+# contacted, so adding one here costs nothing until the operator supplies a key.
+# Free-tier ceilings differ enough to be worth chaining (see
+# .claude/rules/llm-prompts.md): OpenRouter meters 50 requests/day account-wide,
+# Groq ~6k tokens/minute, Cerebras ~1M tokens/day in an 8k window — so a wall at
+# one is rarely a wall at the others.
+_OPENAI_COMPATIBLE_PROVIDERS = {
+    "openrouter": {
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "key_env": "OPENROUTER_API_KEY",
+        "model_env": "OPENROUTER_MODEL",
+        "default_model": "openrouter/free",
+    },
+    "groq": {
+        "url": "https://api.groq.com/openai/v1/chat/completions",
+        "key_env": "GROQ_API_KEY",
+        "model_env": "GROQ_MODEL",
+        "default_model": "llama-3.3-70b-versatile",
+    },
+    "cerebras": {
+        "url": "https://api.cerebras.ai/v1/chat/completions",
+        "key_env": "CEREBRAS_API_KEY",
+        "model_env": "CEREBRAS_MODEL",
+        "default_model": "llama-3.3-70b",
+    },
+}
+
 
 def _post_chat_completion(
     url: str,
@@ -61,30 +96,45 @@ def _post_chat_completion(
     headers: Dict[str, str],
     timeout: float,
 ) -> Any:
-    """POST a chat completion, retrying once without reasoning params on 400.
+    """POST a chat completion, retrying once without the params a 400 blames.
 
-    Some endpoints reject the reasoning block instead of ignoring it (the
-    observed case is "Reasoning is mandatory for this endpoint and cannot be
-    disabled"). Dropping the block and retrying costs one extra round trip
-    on those models and keeps them usable, rather than failing them over to
-    the next candidate for a parameter the caller does not actually need.
+    Two optional parameters are sent optimistically, and some endpoints reject
+    one instead of ignoring it:
+
+    * the reasoning block — "Reasoning is mandatory for this endpoint and cannot
+      be disabled";
+    * ``response_format`` — the catalogue's ``supported_parameters`` is the only
+      signal we have for it and can be stale for a given endpoint.
+
+    Dropping whichever the error body implicates and retrying costs one extra
+    round trip and keeps the model usable, rather than failing it over to the
+    next candidate for a parameter the caller does not actually need.
     """
     if requests is None:
         raise RuntimeError("requests is not installed; cannot reach the provider")
     resp = requests.post(url, json=payload, headers=headers, timeout=timeout)
-    if resp.status_code == 400 and any(k in payload for k in _REASONING_KEYS):
-        body = (resp.text or "")[:300]
-        # Match "reasoning", not "reason": the latter appears in unrelated
-        # 400 bodies ("reason: invalid model"), and retrying those buys a
-        # second identical failure at full timeout on the combat path.
-        if "reasoning" in body.lower():
-            retry = {k: v for k, v in payload.items() if k not in _REASONING_KEYS}
-            logger.info(
-                "Endpoint rejected reasoning params for %s; retrying without them: %s",
-                payload.get("model"), body,
-            )
-            resp = requests.post(url, json=retry, headers=headers, timeout=timeout)
-    return resp
+    if resp.status_code != 400:
+        return resp
+
+    body = (resp.text or "")[:300]
+    low = body.lower()
+    drop = set()
+    # Match "reasoning", not "reason": the latter appears in unrelated
+    # 400 bodies ("reason: invalid model"), and retrying those buys a
+    # second identical failure at full timeout on the combat path.
+    if "reasoning" in low:
+        drop |= {k for k in _REASONING_KEYS if k in payload}
+    if "response_format" in low and "response_format" in payload:
+        drop.add("response_format")
+    if not drop:
+        return resp
+
+    retry = {k: v for k, v in payload.items() if k not in drop}
+    logger.info(
+        "Endpoint rejected %s for %s; retrying without: %s",
+        sorted(drop), payload.get("model"), body,
+    )
+    return requests.post(url, json=retry, headers=headers, timeout=timeout)
 
 
 def _reasoning_params(provider: str) -> Dict[str, Any]:
@@ -324,6 +374,16 @@ class GenericLLMClient:
     _free_models_cache: List[str] = []
     # Maps model_id -> datetime at which the failure penalty expires.
     _failed_models: Dict[str, datetime] = {}
+
+    # Per-provider free-tier usage, so quota exhaustion is a number in the logs
+    # rather than a silent fall-through to canned dialogue.
+    _provider_usage: Dict[str, Dict[str, Any]] = {}
+
+    # Consecutive unparseable-response counts per model. Transport failures
+    # (429/404/timeout) already trigger rotation; a model that returns prose
+    # where JSON was demanded looks like a success to every layer below, so it
+    # needs its own strike count to escalate itself out of the pool.
+    _unparseable_strikes: Dict[str, int] = {}
     _discovery_done: bool = False
     # Lock protecting all mutations of _failed_models (called from multiple threads).
     _state_lock = threading.Lock()
@@ -369,6 +429,8 @@ class GenericLLMClient:
         with cls._state_lock:
             cls._free_models_cache = []
             cls._failed_models = {}
+            cls._unparseable_strikes = {}
+            cls._provider_usage = {}
             cls._discovery_done = False
         # Ensure the event is set so tests don't deadlock waiting on a discovery
         cls._discovery_event.set()
@@ -451,6 +513,45 @@ class GenericLLMClient:
             return False
         return True
 
+    @staticmethod
+    def _supports_structured_output(m: dict) -> bool:
+        """True if the model advertises a way to pin its output to JSON.
+
+        OpenRouter reports this per model in ``supported_parameters``:
+        ``response_format`` (JSON mode) and/or ``structured_outputs`` (schema).
+        A model advertising neither answers a JSON-only prompt in whatever
+        shape it likes — which is how a top-ranked free model came to narrate
+        its deliberation in plain content until the token budget ran out,
+        truncating mid-JSON on every single chat round.
+        """
+        params = m.get("supported_parameters")
+        if not isinstance(params, (list, tuple, set)):
+            return False
+        return any(p in ("response_format", "structured_outputs") for p in params)
+
+    @staticmethod
+    def _reasoning_burden(m: dict) -> int:
+        """How much completion budget this model spends deliberating: 0, 1 or 2.
+
+        0 = quiet unless asked, 1 = reasons by default, 2 = always reasons.
+        OpenRouter reports this per model in the ``reasoning`` block, and it is
+        the best available proxy for "will actually finish a short answer" —
+        there is no latency metric in the catalogue. It matters more than raw
+        intelligence for this workload: every consumer here wants ~160 tokens
+        of JSON, and a model that spends 675 tokens narrating its deliberation
+        first gets truncated mid-answer no matter how clever it is. Note that
+        ``reasoning: {"exclude": true}`` hides that narration but does not stop
+        it being generated, so it cannot substitute for this ordering.
+        """
+        info = m.get("reasoning")
+        if not isinstance(info, dict):
+            return 0
+        if info.get("mandatory"):
+            return 2
+        if info.get("default_enabled"):
+            return 1
+        return 0
+
     @classmethod
     def _rank_models(cls, all_models: List[dict]) -> List[str]:
         """Filter to free text-only models, deduplicate, rank, and return IDs.
@@ -485,14 +586,36 @@ class GenericLLMClient:
             )
             has_benchmark = isinstance(intelligence, (int, float))
             return (
-                0 if has_benchmark else 1,                     # 1. benchmarked first
-                -float(intelligence) if has_benchmark else 0.0,  # 2. smartest first
-                m.get("context_length") or float("inf"),         # 3. smallest context first
-                -(m.get("created") or 0),                         # 4. newest first
-                m["id"],                                          # 5. stable tiebreaker
+                cls._reasoning_burden(m),                        # 1. finishes the answer
+                0 if has_benchmark else 1,                       # 2. benchmarked first
+                -float(intelligence) if has_benchmark else 0.0,  # 3. smartest first
+                m.get("context_length") or float("inf"),         # 4. smallest context first
+                -(m.get("created") or 0),                         # 5. newest first
+                m["id"],                                          # 6. stable tiebreaker
             )
 
         eligible.sort(key=sort_key)
+
+        # Every consumer of this ranking parses its response as JSON, so a
+        # model that cannot be pinned to JSON output is the wrong primary
+        # however well it scores on the axes above. Degrade to the unfiltered
+        # ranking rather than to nothing: the free catalogue shrinks without
+        # warning (all four STABLE_FREE_FALLBACKS have already been retired),
+        # and a mute game is worse than a chatty model.
+        capable = [m for m in eligible if cls._supports_structured_output(m)]
+        if capable:
+            if len(capable) < len(eligible):
+                logger.info(
+                    "Dropped %d free model(s) without structured-output support; %d remain.",
+                    len(eligible) - len(capable), len(capable),
+                )
+            eligible = capable
+        elif eligible:
+            logger.warning(
+                "No free model advertises structured output; falling back to the "
+                "unfiltered ranking (%d models). Expect JSON parse failures.",
+                len(eligible),
+            )
         return [m["id"] for m in eligible]
 
     @classmethod
@@ -1131,12 +1254,248 @@ class GenericLLMClient:
         shortened. This prevents a generic 10-minute caller penalty from clobbering
         a deliberate 2-minute 429 penalty set by the inner request method.
         """
+        GenericLLMClient._bench_model(model_id, duration_minutes)
+
+    @classmethod
+    def _bench_model(cls, model_id: str, duration_minutes: int) -> None:
+        """Take a model out of rotation for a while, never shortening a penalty."""
         with GenericLLMClient._state_lock:
             new_expiry = datetime.now() + timedelta(minutes=duration_minutes)
             existing = GenericLLMClient._failed_models.get(model_id)
             if existing is None or new_expiry > existing:
                 GenericLLMClient._failed_models[model_id] = new_expiry
                 logger.debug(f"Model {model_id} marked as failed until {new_expiry.strftime('%H:%M:%S')}")
+
+    @classmethod
+    def _penalize_unparseable(cls, model_id: Optional[str]) -> None:
+        """Bench a model that answered 200 with output the caller cannot parse.
+
+        Without this, such a model stays primary forever: nothing below the
+        parse site can tell prose from JSON, so every call "succeeds", every
+        caller gets None, and the game falls through to its deterministic pools
+        silently — which is exactly how NPC chat ran on canned dialogue while
+        the provider reported healthy.
+        """
+        if not model_id:
+            return
+        with cls._state_lock:
+            strikes = cls._unparseable_strikes.get(model_id, 0) + 1
+            cls._unparseable_strikes[model_id] = strikes
+        minutes = (
+            _UNPARSEABLE_FIRST_PENALTY_MINUTES
+            if strikes == 1
+            else _UNPARSEABLE_REPEAT_PENALTY_MINUTES
+        )
+        logger.warning(
+            "Model %s returned unparseable output (strike %d); benching it for %d minutes.",
+            model_id, strikes, minutes,
+        )
+        cls._bench_model(model_id, minutes)
+
+    @classmethod
+    def _note_parse_success(cls, model_id: Optional[str]) -> None:
+        """Clear a model's strike count after it produces usable output."""
+        if not model_id:
+            return
+        with cls._state_lock:
+            cls._unparseable_strikes.pop(model_id, None)
+
+    # ------------------------------------------------------------------
+    # Free-tier saturation analytics
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _read_rate_limit_headers(response: Any) -> Dict[str, Any]:
+        """Extract limit/remaining from a response, whatever dialect it speaks.
+
+        Providers disagree on both the header names and the unit they meter:
+        OpenRouter reports requests as ``X-RateLimit-Limit``/``-Remaining``,
+        Groq splits requests and tokens into ``-requests``/``-tokens`` suffixes,
+        Cerebras does likewise. The worst dimension is the one that matters —
+        plenty of tokens is no help once the request count is spent — so the
+        highest saturation across the reported pairs wins.
+        """
+        headers = getattr(response, "headers", None)
+        if not headers:
+            return {}
+        try:
+            low = {str(k).lower(): v for k, v in dict(headers).items()}
+        except Exception:  # a header mapping that will not coerce
+            return {}
+
+        pairs = (
+            ("x-ratelimit-limit-requests", "x-ratelimit-remaining-requests", "requests"),
+            ("x-ratelimit-limit-tokens", "x-ratelimit-remaining-tokens", "tokens"),
+            ("x-ratelimit-limit", "x-ratelimit-remaining", "requests"),
+        )
+        best: Dict[str, Any] = {}
+        for limit_key, remaining_key, dimension in pairs:
+            if limit_key not in low or remaining_key not in low:
+                continue
+            try:
+                limit = float(low[limit_key])
+                remaining = float(low[remaining_key])
+            except (TypeError, ValueError):
+                continue
+            if limit <= 0:
+                continue
+            saturation = max(0.0, min(1.0, (limit - remaining) / limit))
+            if not best or saturation > best["saturation"]:
+                best = {
+                    "saturation": saturation,
+                    "limit": limit,
+                    "remaining": remaining,
+                    "dimension": dimension,
+                }
+        reset = low.get("x-ratelimit-reset")
+        if best and reset:
+            best["reset"] = reset
+        return best
+
+    @classmethod
+    def _record_provider_usage(
+        cls, provider: str, response: Any = None, outcome: str = "ok"
+    ) -> None:
+        """Fold one provider response into the running usage picture."""
+        if not provider:
+            return
+        with cls._state_lock:
+            stats = cls._provider_usage.setdefault(
+                provider,
+                {
+                    "requests": 0,
+                    "successes": 0,
+                    "rate_limited": 0,
+                    "errors": 0,
+                    "saturation": None,
+                    "limit": None,
+                    "remaining": None,
+                    "dimension": None,
+                    "reset": None,
+                    # True while "saturation" is a guess made from a headerless
+                    # 429 rather than a figure the provider actually reported.
+                    "saturation_inferred": False,
+                },
+            )
+            stats["requests"] += 1
+            if outcome == "ok":
+                stats["successes"] += 1
+            elif outcome == "rate_limited":
+                stats["rate_limited"] += 1
+            else:
+                stats["errors"] += 1
+
+            parsed = cls._read_rate_limit_headers(response)
+            if parsed:
+                stats["saturation"] = parsed["saturation"]
+                stats["saturation_inferred"] = False
+                stats["limit"] = parsed["limit"]
+                stats["remaining"] = parsed["remaining"]
+                stats["dimension"] = parsed["dimension"]
+                if parsed.get("reset"):
+                    stats["reset"] = parsed["reset"]
+            elif outcome == "rate_limited" and stats["saturation"] is None:
+                # A 429 without usable headers still proves there is no headroom.
+                stats["saturation"] = 1.0
+                stats["saturation_inferred"] = True
+            elif outcome == "ok" and stats["saturation_inferred"]:
+                # The wall we guessed at is gone — this host just served a
+                # request. OpenRouter sends no rate-limit headers on chat
+                # completions, so without this the 1.0 from a single 429 would
+                # report the provider as exhausted for the life of the process,
+                # long past the daily reset.
+                stats["saturation"] = None
+                stats["saturation_inferred"] = False
+
+    @classmethod
+    def provider_saturation(cls) -> Dict[str, Any]:
+        """Snapshot of per-provider headroom plus one headline figure.
+
+        ``total_saturation`` is the *least* saturated provider that reported a
+        limit — the chain only needs one host with capacity, so that number
+        answers "can we still serve a call?" rather than "how much have we used
+        in aggregate", which would be meaningless across providers metering
+        different units. None when no provider reported a limit at all.
+        """
+        with cls._state_lock:
+            providers = {p: dict(s) for p, s in cls._provider_usage.items()}
+        known = [
+            s["saturation"] for s in providers.values() if s.get("saturation") is not None
+        ]
+        return {
+            "providers": providers,
+            "total_saturation": min(known) if known else None,
+            "providers_exhausted": sum(1 for s in known if s >= 1.0),
+            "providers_reporting": len(known),
+        }
+
+    @staticmethod
+    def _format_reset(raw: Any) -> str:
+        """Render a rate-limit reset value as something a human can act on.
+
+        Providers send this as epoch milliseconds (OpenRouter), epoch seconds,
+        or an already-human duration like "2m59s" (Groq). A bare
+        "1787443200000" in a log line tells the reader nothing, and the whole
+        point of this line is being read.
+        """
+        text = str(raw).strip()
+        if not text:
+            return ""
+        try:
+            value = float(text)
+        except (TypeError, ValueError):
+            return text  # already human ("2m59s")
+        if value > 1e11:  # milliseconds
+            value /= 1000.0
+        if value < 1e9:
+            # Too small to be an epoch (1e9 is 2001), so it is a seconds-until-
+            # reset duration. Rendering it as a timestamp would print 1970.
+            return "in %gs" % value
+        try:
+            return datetime.fromtimestamp(value, tz=timezone.utc).strftime(
+                "%Y-%m-%d %H:%MZ"
+            )
+        except (OverflowError, OSError, ValueError):
+            return text
+
+    @classmethod
+    def log_provider_saturation(cls) -> None:
+        """Emit the saturation picture as one INFO line, safe to call anywhere."""
+        snapshot = cls.provider_saturation()
+        providers = snapshot["providers"]
+        if not providers:
+            logger.info("[LLM SATURATION] no provider calls recorded yet.")
+            return
+        parts = []
+        for name, s in sorted(providers.items()):
+            if s.get("saturation") is None:
+                parts.append(
+                    "%s ?%% (%d req, %d 429, %d err)"
+                    % (name, s["requests"], s["rate_limited"], s["errors"])
+                )
+                continue
+            detail = ""
+            if s.get("limit") is not None:
+                detail = " (%g/%g %s left" % (
+                    s["remaining"], s["limit"], s.get("dimension") or "units",
+                )
+                detail += (
+                    ", resets %s)" % cls._format_reset(s["reset"])
+                    if s.get("reset")
+                    else ")"
+                )
+            parts.append("%s %.0f%%%s" % (name, s["saturation"] * 100, detail))
+        total = snapshot["total_saturation"]
+        headline = (
+            "effective %.0f%% saturated" % (total * 100) if total is not None else "effective unknown"
+        )
+        logger.info(
+            "[LLM SATURATION] %s | %s, %d/%d providers exhausted",
+            " | ".join(parts),
+            headline,
+            snapshot["providers_exhausted"],
+            snapshot["providers_reporting"],
+        )
 
 
 class MynxLLMAdapter(GenericLLMClient):
@@ -1377,8 +1736,8 @@ class NpcChatLLMAdapter(GenericLLMClient):
         raw = self._call_llm(system, user, max_tokens=400, temperature=temp)
         if not raw:
             return None
-        parsed = _JSONTools.try_parse_json(raw)
-        if not isinstance(parsed, dict):
+        parsed = self._parse_or_penalize(raw, "generate_personality")
+        if parsed is None:
             return None
         required = {"given_name", "voice", "knowledge", "attitude_to_strangers",
                     "speech_sample", "loquacity_base"}
@@ -1434,9 +1793,8 @@ class NpcChatLLMAdapter(GenericLLMClient):
             logger.warning("generate_npc_turn LLM returned no raw response. is_opening=%s", is_opening)
             return None
         logger.debug("generate_npc_turn raw response is_opening=%s chars=%s raw=%r", is_opening, len(raw), raw[:500])
-        parsed = _JSONTools.try_parse_json(raw)
-        if not isinstance(parsed, dict):
-            logger.warning("generate_npc_turn JSON parse failed. is_opening=%s raw_chars=%s", is_opening, len(raw))
+        parsed = self._parse_or_penalize(raw, "generate_npc_turn")
+        if parsed is None:
             return None
         if "npc_text" not in parsed or not isinstance(parsed["npc_text"], str):
             return None
@@ -1538,9 +1896,8 @@ class NpcChatLLMAdapter(GenericLLMClient):
             logger.warning("generate_turn LLM returned no raw response. is_opening=%s", is_opening)
             return None
         logger.debug("generate_turn raw response is_opening=%s chars=%s raw=%r", is_opening, len(raw), raw[:500])
-        parsed = _JSONTools.try_parse_json(raw)
-        if not isinstance(parsed, dict):
-            logger.warning("generate_turn JSON parse failed. is_opening=%s raw_chars=%s", is_opening, len(raw))
+        parsed = self._parse_or_penalize(raw, "generate_turn")
+        if parsed is None:
             return None
         if "npc_text" not in parsed or not isinstance(parsed["npc_text"], str):
             return None
@@ -1636,9 +1993,8 @@ class NpcChatLLMAdapter(GenericLLMClient):
         if not raw:
             logger.warning("revise_turn LLM returned no raw response.")
             return None
-        parsed = _JSONTools.try_parse_json(raw)
-        if not isinstance(parsed, dict):
-            logger.warning("revise_turn JSON parse failed. raw_chars=%s", len(raw))
+        parsed = self._parse_or_penalize(raw, "revise_turn")
+        if parsed is None:
             return None
 
         result: Dict[str, Any] = {}
@@ -1697,8 +2053,8 @@ class NpcChatLLMAdapter(GenericLLMClient):
             f"NPC: {npc_name} — {npc_voice_summary}\n"
             f'{npc_name} just said: "{last_npc_line}"\n\n'
             f"Jean's recent lines (avoid repeating these): {history_hint}\n\n"
-            "Generate exactly 3 Jean response options. Return this JSON array:\n"
-            '[{"tone": "direct", "text": "..."}, {"tone": "guarded", "text": "..."}, {"tone": "open", "text": "..."}]\n\n'
+            "Generate exactly 3 Jean response options. Return this JSON object:\n"
+            '{"options": [{"tone": "direct", "text": "..."}, {"tone": "guarded", "text": "..."}, {"tone": "open", "text": "..."}]}\n\n'
             "Rules:\n"
             "- direct: brief, factual, Jean gets to the point\n"
             "- guarded: Jean deflects, doesn't commit, or keeps his distance\n"
@@ -1714,20 +2070,32 @@ class NpcChatLLMAdapter(GenericLLMClient):
             logger.warning("generate_jean_options LLM returned no raw response.")
             return None
         logger.debug("generate_jean_options raw response chars=%s raw=%r", len(raw), raw[:500])
-        # Try parsing as list
+        # Accept either shape. The chat payload asks for JSON mode
+        # (``response_format: {"type": "json_object"}``), which forbids a
+        # top-level array, so a model that honours it wraps the options in an
+        # object; a model that ignores it still answers with the bare array
+        # this prompt used to ask for.
         raw = _JSONTools.strip_code_fences(raw)
+        parsed = None
         try:
             parsed = json.loads(raw)
         except Exception:
-            start = raw.find("[")
-            end = raw.rfind("]")
-            if start != -1 and end != -1:
-                try:
-                    parsed = json.loads(raw[start:end + 1])
-                except Exception:
-                    return None
-            else:
+            for open_ch, close_ch in (("[", "]"), ("{", "}")):
+                start = raw.find(open_ch)
+                end = raw.rfind(close_ch)
+                if start != -1 and end > start:
+                    try:
+                        parsed = json.loads(raw[start:end + 1])
+                        break
+                    except Exception:
+                        continue
+            if parsed is None:
                 return None
+        if isinstance(parsed, dict):
+            # e.g. {"options": [...]} — take the first list the wrapper holds.
+            parsed = next(
+                (v for v in parsed.values() if isinstance(v, list)), None
+            )
         if not isinstance(parsed, list) or len(parsed) < 3:
             return None
         result = []
@@ -1776,30 +2144,159 @@ class NpcChatLLMAdapter(GenericLLMClient):
         if not self.enabled:
             logger.warning("NpcChatLLMAdapter._call_llm aborted: adapter disabled.")
             return None
-        try:
-            if self.provider == "ollama":
-                res = self._call_ollama(system_prompt, user_prompt, max_tokens, temperature)
-            elif self.provider == "openrouter":
-                res = self._call_openrouter(system_prompt, user_prompt, max_tokens, temperature)
-            else:
-                logger.error("NpcChatLLMAdapter._call_llm unknown provider=%s", self.provider)
-                return None
+
+        chain = self._provider_chain()
+        logger.info("NpcChatLLMAdapter._call_llm provider chain=%s", chain)
+        for provider in chain:
+            try:
+                if provider == "ollama":
+                    res = self._call_ollama(system_prompt, user_prompt, max_tokens, temperature)
+                elif provider == "openrouter":
+                    res = self._call_openrouter(system_prompt, user_prompt, max_tokens, temperature)
+                elif provider in _OPENAI_COMPATIBLE_PROVIDERS:
+                    res = self._call_openai_compatible(
+                        provider, system_prompt, user_prompt, max_tokens, temperature
+                    )
+                else:
+                    logger.error("NpcChatLLMAdapter._call_llm unknown provider=%s", provider)
+                    continue
+            except Exception as e:
+                # One provider blowing up must not cost the remaining ones their
+                # turn — the whole point of the chain is surviving a bad host.
+                logger.error(
+                    "NpcChatLLMAdapter._call_llm exception provider=%s error=%s",
+                    provider, e, exc_info=True,
+                )
+                continue
+
             if res is None:
-                logger.warning("NpcChatLLMAdapter._call_llm returned None. provider=%s model=%s", self.provider, self.model)
-            else:
-                # Strip chain-of-thought tokens before the caller parses JSON.
-                stripped = _JSONTools._strip_thinking_tokens(str(res))
-                if stripped != res:
-                    logger.debug("NpcChatLLMAdapter._call_llm stripped thinking tokens. provider=%s model=%s before_chars=%s after_chars=%s", self.provider, self.model, len(res), len(stripped))
-                if not stripped:
-                    logger.warning("NpcChatLLMAdapter._call_llm empty after stripping thinking tokens. provider=%s model=%s", self.provider, self.model)
-                    return None
-                logger.info("NpcChatLLMAdapter._call_llm succeeded. provider=%s model=%s result_chars=%s", self.provider, self.model, len(stripped))
-                return stripped
-            return res
-        except Exception as e:
-            logger.error("NpcChatLLMAdapter._call_llm exception provider=%s model=%s error=%s", self.provider, self.model, e, exc_info=True)
+                logger.warning(
+                    "NpcChatLLMAdapter._call_llm no response from provider=%s; trying next.",
+                    provider,
+                )
+                continue
+
+            # Strip chain-of-thought tokens before the caller parses JSON.
+            stripped = _JSONTools._strip_thinking_tokens(str(res))
+            if not stripped:
+                logger.warning(
+                    "NpcChatLLMAdapter._call_llm empty after stripping thinking tokens. provider=%s",
+                    provider,
+                )
+                continue
+            logger.info(
+                "NpcChatLLMAdapter._call_llm succeeded. provider=%s result_chars=%s",
+                provider, len(stripped),
+            )
+            GenericLLMClient.log_provider_saturation()
+            return stripped
+
+        logger.error("NpcChatLLMAdapter._call_llm exhausted every provider in %s.", chain)
+        GenericLLMClient.log_provider_saturation()
+        return None
+
+    def _provider_chain(self) -> List[str]:
+        """Providers to try, in order, for one logical call.
+
+        The configured provider leads; every other OpenAI-compatible provider
+        whose credential is actually present follows, then a local Ollama when
+        one is configured. A provider with no key is never contacted, so this
+        list is empty of anything the operator has not set up.
+
+        This exists because a quota wall is per-host: OpenRouter's free tier is
+        50 requests/day account-wide, and when it is spent every model there
+        429s at once. With a flat single-provider dispatch that meant canned
+        dialogue until UTC midnight, even with other free tiers sitting unused.
+        """
+        chain: List[str] = []
+        if self.provider:
+            chain.append(self.provider)
+        for name, cfg in _OPENAI_COMPATIBLE_PROVIDERS.items():
+            if name in chain:
+                continue
+            if os.getenv(cfg["key_env"], "").strip():
+                chain.append(name)
+        if "ollama" not in chain and os.getenv("OLLAMA_BASE_URL", "").strip():
+            chain.append("ollama")
+        return chain
+
+    def _call_openai_compatible(
+        self,
+        provider: str,
+        system_prompt: str,
+        user_prompt: str,
+        max_tokens: int,
+        temperature: float,
+    ) -> Optional[str]:
+        """POST to any OpenAI-compatible chat-completions host in the registry.
+
+        Groq and Cerebras both speak this dialect, and their per-provider
+        reasoning quirks were already captured in ``_REASONING_PARAMS`` long
+        before a call path existed for them. Returns None on a missing key, a
+        rate limit, or an unusable body, so the caller simply moves down the
+        chain.
+        """
+        cfg = _OPENAI_COMPATIBLE_PROVIDERS.get(provider)
+        if not cfg:
             return None
+        api_key = os.getenv(cfg["key_env"], "").strip()
+        if not api_key:
+            logger.debug("Provider %s skipped: no %s set.", provider, cfg["key_env"])
+            return None
+
+        model = os.getenv(cfg["model_env"], "").strip() or cfg["default_model"]
+        # Same namespacing as _last_served_model below, so a bench applied by
+        # _penalize_unparseable actually takes this host out of the chain
+        # instead of being an entry nothing ever reads.
+        served_id = f"{provider}:{model}"
+        if self._is_model_failed(served_id):
+            logger.debug("Provider %s skipped: model %s is benched.", provider, model)
+            return None
+
+        payload = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "top_p": 0.9,
+            "response_format": {"type": "json_object"},
+            **_reasoning_params(provider),
+        }
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+        logger.info("_call_openai_compatible provider=%s model=%s", provider, model)
+        response = _post_chat_completion(
+            cfg["url"], payload, headers, self._round_timeout()
+        )
+        if getattr(response, "status_code", None) == 429:
+            GenericLLMClient._record_provider_usage(provider, response, "rate_limited")
+            logger.warning("Provider %s rate-limited (429) for model=%s.", provider, model)
+            return None
+        try:
+            response.raise_for_status()
+        except Exception:
+            GenericLLMClient._record_provider_usage(provider, response, "error")
+            raise
+        data = response.json()
+        choices = data.get("choices") if isinstance(data, dict) else None
+        first = choices[0] if isinstance(choices, list) and choices else None
+        content = _JSONTools.extract_message_text(
+            first.get("message") if isinstance(first, dict) else None
+        )
+        if not content:
+            GenericLLMClient._record_provider_usage(provider, response, "error")
+            logger.warning("Provider %s returned no content for model=%s.", provider, model)
+            return None
+        GenericLLMClient._record_provider_usage(provider, response, "ok")
+        # Namespaced so a penalty lands on this provider's model, not a
+        # same-named model on another host.
+        self._last_served_model = served_id
+        return content
 
     def _call_ollama(
         self, system: str, user: str, max_tokens: int, temperature: float
@@ -1827,7 +2324,13 @@ class NpcChatLLMAdapter(GenericLLMClient):
             )
             r.raise_for_status()
             data = r.json()
-            return _JSONTools.extract_message_text(data.get("message"))
+            content = _JSONTools.extract_message_text(data.get("message"))
+            if content:
+                # Attribute the answer to this host. Without it, a stale
+                # _last_served_model from an earlier provider in the chain
+                # would take the parse-failure penalty for Ollama's output.
+                self._last_served_model = f"ollama:{self.model}"
+            return content
         except Exception as e:
             logger.warning(f"NpcChatLLMAdapter Ollama error: {e}")
             return None
@@ -1894,9 +2397,16 @@ class NpcChatLLMAdapter(GenericLLMClient):
                 "max_tokens": max_tokens,
                 "temperature": temperature,
                 "top_p": 0.9,
+                # Every caller of this method parses the reply as JSON, so ask
+                # the API to enforce that rather than trusting the prompt to.
+                # A model whose advertised support turns out to be stale gets
+                # one 400 and an automatic retry without it, in
+                # _post_chat_completion.
+                "response_format": {"type": "json_object"},
                 **_reasoning_params(self.provider),
             }
             logger.info("NpcChatLLMAdapter._call_openrouter attempting model_id=%s attempt=%s/3", model_id, attempts)
+            response = None
             try:
                 response = _post_chat_completion(
                     "https://openrouter.ai/api/v1/chat/completions",
@@ -1905,6 +2415,9 @@ class NpcChatLLMAdapter(GenericLLMClient):
                     self._round_timeout(),
                 )
                 if getattr(response, "status_code", None) == 429:
+                    GenericLLMClient._record_provider_usage(
+                        "openrouter", response, "rate_limited"
+                    )
                     logger.warning("NpcChatLLMAdapter._call_openrouter 429 rate limit model=%s", model_id)
                     self._mark_model_failed(model_id, duration_minutes=2)
                     continue
@@ -1915,11 +2428,20 @@ class NpcChatLLMAdapter(GenericLLMClient):
                 message = first.get("message") if isinstance(first, dict) else None
                 content = _JSONTools.extract_message_text(message)
                 if content:
+                    GenericLLMClient._record_provider_usage("openrouter", response, "ok")
                     logger.info("NpcChatLLMAdapter._call_openrouter succeeded model=%s result_chars=%s", model_id, len(content))
+                    # Remember who actually answered: rotation means it is
+                    # often not self.model, and the parse-failure penalty
+                    # must land on the model that produced the bad output.
+                    self._last_served_model = model_id
                     return content
                 logger.warning("NpcChatLLMAdapter._call_openrouter no content from model=%s", model_id)
             except Exception as e:
                 logger.warning("NpcChatLLMAdapter._call_openrouter model %s failed: %s", model_id, e)
+            # Everything that reaches here failed. Count it, or the saturation
+            # line reports openrouter with 0 errors while every call 404s on a
+            # retired :free slug.
+            GenericLLMClient._record_provider_usage("openrouter", response, "error")
             self._mark_model_failed(model_id)
 
         logger.error("NpcChatLLMAdapter._call_openrouter exhausted all models. primary=%s attempts=%s", primary, attempts)
@@ -1932,6 +2454,28 @@ class NpcChatLLMAdapter(GenericLLMClient):
         if GenericLLMClient._free_models_cache:
             return GenericLLMClient._free_models_cache[0]
         return self.STABLE_FREE_FALLBACKS[0]
+
+    def _parse_or_penalize(self, raw: Optional[str], label: str) -> Optional[Dict[str, Any]]:
+        """Parse a JSON reply, benching the model that served it if it will not.
+
+        Every method on this adapter demands JSON. A model that answers with
+        prose instead is not a transient failure the retry loop can ride out —
+        it has to leave the rotation, or every later turn pays the same cost and
+        the player gets canned dialogue with nothing in the log but a parse
+        warning.
+        """
+        # getattr for both: minimal test doubles and any caller that skips
+        # __init__ still need a parse path that does not raise.
+        served = getattr(self, "_last_served_model", None) or getattr(self, "model", None)
+        parsed = _JSONTools.try_parse_json(raw or "")
+        if isinstance(parsed, dict):
+            GenericLLMClient._note_parse_success(served)
+            return parsed
+        logger.warning(
+            "%s JSON parse failed. model=%s raw_chars=%s", label, served, len(raw or "")
+        )
+        GenericLLMClient._penalize_unparseable(served)
+        return None
 
     @staticmethod
     def _wrap_player_text(text: Optional[str]) -> str:
