@@ -76,6 +76,17 @@ def get_current_room():
         except Exception:
             pass
 
+        # Start the provider-usage digest alongside the prewarm. Idempotent and
+        # a no-op unless a webhook is configured, so calling it on every world
+        # load is safe; this is simply the earliest point at which the process
+        # is known to be serving a real session.
+        try:
+            from ai.provider_digest import start_digest_scheduler
+
+            start_digest_scheduler()
+        except Exception:
+            pass
+
         return jsonify({"success": True, "room": room}), 200
 
     except Exception:

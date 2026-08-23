@@ -18,6 +18,8 @@ Two changes under test:
    has, for a model whose advertised capability turns out to be stale.
 """
 
+from datetime import datetime, timedelta, timezone
+
 import pytest
 
 import ai.llm_client as llm
@@ -959,6 +961,167 @@ class TestInferredSaturationDoesNotStick:
         assert GenericLLMClient.provider_saturation()["providers"]["groq"][
             "saturation"
         ] == pytest.approx(0.8)
+
+
+# ---------------------------------------------------------------------------
+# Pre-emptive cutoff: stop dialling a provider that is already spent
+# ---------------------------------------------------------------------------
+
+
+class TestSaturationCutoff:
+    """Don't spend a round trip discovering a wall we were already told about.
+
+    Every provider reports its remaining headroom in the headers of the calls we
+    already make, so a provider at or past the cutoff is skipped outright until
+    its reset passes. There is nothing to poll: OpenRouter's /api/v1/key reports
+    dollar credit, which stays at zero on a free tier no matter how much of the
+    50/day request cap is spent, so response headers are the only real signal.
+    """
+
+    def setup_method(self):
+        GenericLLMClient.reset_class_state()
+
+    def teardown_method(self):
+        GenericLLMClient.reset_class_state()
+
+    def _seen(self, provider, limit, remaining, reset=None):
+        headers = {
+            "x-ratelimit-limit": str(limit),
+            "x-ratelimit-remaining": str(remaining),
+        }
+        if reset is not None:
+            headers["x-ratelimit-reset"] = str(reset)
+        GenericLLMClient._record_provider_usage("x", None)  # noise
+        GenericLLMClient._record_provider_usage(provider, _HeaderResp(headers=headers))
+
+    def test_provider_with_headroom_is_available(self):
+        self._seen("groq", 100, 50)
+        assert GenericLLMClient._provider_available("groq") is True
+
+    def test_provider_at_the_cutoff_is_skipped(self):
+        self._seen("openrouter", 50, 5)  # 90% saturated
+        assert GenericLLMClient._provider_available("openrouter") is False
+
+    def test_exhausted_provider_is_skipped(self):
+        self._seen("openrouter", 50, 0)
+        assert GenericLLMClient._provider_available("openrouter") is False
+
+    def test_unknown_provider_is_available(self):
+        assert GenericLLMClient._provider_available("never-called") is True
+
+    def test_cutoff_is_configurable(self, monkeypatch):
+        self._seen("groq", 100, 20)  # 80% saturated
+        assert GenericLLMClient._provider_available("groq") is True
+        monkeypatch.setenv("LLM_SATURATION_CUTOFF", "0.75")
+        assert GenericLLMClient._provider_available("groq") is False
+
+    def test_availability_returns_after_the_reset_passes(self):
+        past = datetime.now(timezone.utc) - timedelta(minutes=5)
+        self._seen("openrouter", 50, 0, reset=int(past.timestamp() * 1000))
+        assert GenericLLMClient._provider_available("openrouter") is True
+
+    def test_still_blocked_before_the_reset(self):
+        future = datetime.now(timezone.utc) + timedelta(hours=3)
+        self._seen("openrouter", 50, 0, reset=int(future.timestamp() * 1000))
+        assert GenericLLMClient._provider_available("openrouter") is False
+
+    def test_a_duration_reset_is_honoured_rather_than_the_hour_cooldown(self):
+        """Groq meters per minute and says so in words: "2m59s"."""
+        GenericLLMClient._record_provider_usage(
+            "groq",
+            _HeaderResp(
+                headers={
+                    "x-ratelimit-limit-tokens": "6000",
+                    "x-ratelimit-remaining-tokens": "400",
+                    "x-ratelimit-reset-tokens": "2m59s",
+                }
+            ),
+        )
+        reset_at = GenericLLMClient._provider_usage["groq"]["reset_at"]
+        assert reset_at is not None
+        ahead = (reset_at - datetime.now(timezone.utc)).total_seconds()
+        assert 170 < ahead <= 180  # three minutes, not the blind hour
+        assert GenericLLMClient._provider_available("groq") is False
+
+        # Once the provider's own window has passed, so has the block.
+        with GenericLLMClient._state_lock:
+            GenericLLMClient._provider_usage["groq"]["reset_at"] = datetime.now(
+                timezone.utc
+            ) - timedelta(seconds=1)
+        assert GenericLLMClient._provider_available("groq") is True
+
+    def test_a_headerless_429_clears_an_expired_reset(self):
+        """A stale reset must not answer for a refusal happening right now."""
+        past = datetime.now(timezone.utc) - timedelta(minutes=1)
+        self._seen("openrouter", 50, 0, reset=int(past.timestamp() * 1000))
+        assert GenericLLMClient._provider_available("openrouter") is True
+
+        GenericLLMClient._record_provider_usage(
+            "openrouter", _HeaderResp(429), "rate_limited"
+        )
+        assert GenericLLMClient._provider_usage["openrouter"]["reset_at"] is None
+        assert GenericLLMClient._provider_available("openrouter") is False
+
+    def test_a_guessed_saturation_gets_a_pause_not_a_bench(self):
+        """A headerless 429 is a guess; it must not bench a host for an hour."""
+        GenericLLMClient._record_provider_usage(
+            "openrouter", _HeaderResp(429), "rate_limited"
+        )
+        assert GenericLLMClient._provider_available("openrouter") is False
+        with GenericLLMClient._state_lock:
+            GenericLLMClient._provider_usage["openrouter"]["observed_at"] = (
+                datetime.now(timezone.utc) - timedelta(minutes=6)
+            )
+        assert GenericLLMClient._provider_available("openrouter") is True
+
+    def test_saturated_without_a_reset_uses_a_cooldown(self):
+        self._seen("groq", 100, 0)
+        assert GenericLLMClient._provider_available("groq") is False
+        # Age the observation past the blind cooldown.
+        with GenericLLMClient._state_lock:
+            GenericLLMClient._provider_usage["groq"]["observed_at"] = (
+                datetime.now(timezone.utc) - timedelta(hours=2)
+            )
+        assert GenericLLMClient._provider_available("groq") is True
+
+
+class TestChainSkipsSaturatedProviders:
+    def setup_method(self):
+        GenericLLMClient.reset_class_state()
+
+    def teardown_method(self):
+        GenericLLMClient.reset_class_state()
+
+    def _adapter(self):
+        a = NpcChatLLMAdapter.__new__(NpcChatLLMAdapter)
+        a.enabled = True
+        a.provider = "openrouter"
+        a.model = "m"
+        a._openrouter_api_key = "or-key"
+        a._openrouter_site = ""
+        a._openrouter_site_title = ""
+        return a
+
+    def test_spent_provider_drops_out_of_the_chain(self, monkeypatch):
+        monkeypatch.setenv("GROQ_API_KEY", "g")
+        monkeypatch.delenv("CEREBRAS_API_KEY", raising=False)
+        monkeypatch.delenv("OLLAMA_BASE_URL", raising=False)
+        GenericLLMClient._record_provider_usage(
+            "openrouter",
+            _HeaderResp(headers={"x-ratelimit-limit": "50", "x-ratelimit-remaining": "0"}),
+        )
+        assert self._adapter()._provider_chain() == ["groq"]
+
+    def test_chain_is_not_emptied_when_everything_is_spent(self, monkeypatch):
+        """A spent chain still tries: a stale reading must not mute the game."""
+        monkeypatch.delenv("GROQ_API_KEY", raising=False)
+        monkeypatch.delenv("CEREBRAS_API_KEY", raising=False)
+        monkeypatch.delenv("OLLAMA_BASE_URL", raising=False)
+        GenericLLMClient._record_provider_usage(
+            "openrouter",
+            _HeaderResp(headers={"x-ratelimit-limit": "50", "x-ratelimit-remaining": "0"}),
+        )
+        assert self._adapter()._provider_chain() == ["openrouter"]
 
 
 if __name__ == "__main__":  # pragma: no cover

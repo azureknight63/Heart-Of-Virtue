@@ -58,6 +58,22 @@ _REASONING_KEYS = frozenset(
 # cannot parse. A first offence can be a one-off truncation, so it is short; a
 # repeat means the model structurally will not produce JSON for this prompt, so
 # it is parked for the rest of the day rather than re-tried every turn.
+# How long a provider that reported no headroom, but no reset time, is left
+# alone before being tried again. Long enough to stop hammering a spent quota,
+# short enough that one stale reading cannot bench it for a whole session.
+_SATURATION_BLIND_COOLDOWN_MINUTES = 60
+
+# A saturation figure guessed from a headerless 429 is worth far less than one
+# a provider reported, so it earns a pause rather than a bench: long enough to
+# ride out a per-minute bucket, short enough that the provider is dialled again
+# soon and can clear the guess by simply answering.
+_INFERRED_SATURATION_COOLDOWN_MINUTES = 5
+
+# Providers that meter per minute report their reset as a duration rather than
+# an instant: Groq sends "2m59s", Cerebras "59.56s", some send "500ms".
+_DURATION_RE = re.compile(r"(\d+(?:\.\d+)?)\s*(ms|s|m|h|d)", re.IGNORECASE)
+_DURATION_UNITS = {"ms": 0.001, "s": 1.0, "m": 60.0, "h": 3600.0, "d": 86400.0}
+
 _UNPARSEABLE_FIRST_PENALTY_MINUTES = 15
 _UNPARSEABLE_REPEAT_PENALTY_MINUTES = 720
 
@@ -379,6 +395,9 @@ class GenericLLMClient:
     # rather than a silent fall-through to canned dialogue.
     _provider_usage: Dict[str, Dict[str, Any]] = {}
 
+    # Start of the current analytics window (see snapshot_and_reset).
+    _usage_window_start: datetime = datetime.now(timezone.utc)
+
     # Consecutive unparseable-response counts per model. Transport failures
     # (429/404/timeout) already trigger rotation; a model that returns prose
     # where JSON was demanded looks like a success to every layer below, so it
@@ -431,6 +450,7 @@ class GenericLLMClient:
             cls._failed_models = {}
             cls._unparseable_strikes = {}
             cls._provider_usage = {}
+            cls._usage_window_start = datetime.now(timezone.utc)
             cls._discovery_done = False
         # Ensure the event is set so tests don't deadlock waiting on a discovery
         cls._discovery_event.set()
@@ -1347,9 +1367,15 @@ class GenericLLMClient:
                     "remaining": remaining,
                     "dimension": dimension,
                 }
-        reset = low.get("x-ratelimit-reset")
-        if best and reset:
-            best["reset"] = reset
+        if best:
+            # Groq and Cerebras suffix the reset header the same way they
+            # suffix the limit pair, so the reset that belongs to the winning
+            # dimension is the one to keep; the bare form is OpenRouter's.
+            reset = low.get(
+                "x-ratelimit-reset-%s" % best["dimension"]
+            ) or low.get("x-ratelimit-reset")
+            if reset:
+                best["reset"] = reset
         return best
 
     @classmethod
@@ -1375,6 +1401,11 @@ class GenericLLMClient:
                     # True while "saturation" is a guess made from a headerless
                     # 429 rather than a figure the provider actually reported.
                     "saturation_inferred": False,
+                    # When the provider says its window reopens, and when we
+                    # last heard from it — the two inputs to the pre-emptive
+                    # skip in _provider_available.
+                    "reset_at": None,
+                    "observed_at": None,
                 },
             )
             stats["requests"] += 1
@@ -1385,8 +1416,10 @@ class GenericLLMClient:
             else:
                 stats["errors"] += 1
 
+            stats["observed_at"] = datetime.now(timezone.utc)
             parsed = cls._read_rate_limit_headers(response)
             if parsed:
+                stats["reset_at"] = cls._parse_reset_at(parsed.get("reset"))
                 stats["saturation"] = parsed["saturation"]
                 stats["saturation_inferred"] = False
                 stats["limit"] = parsed["limit"]
@@ -1394,10 +1427,20 @@ class GenericLLMClient:
                 stats["dimension"] = parsed["dimension"]
                 if parsed.get("reset"):
                     stats["reset"] = parsed["reset"]
-            elif outcome == "rate_limited" and stats["saturation"] is None:
-                # A 429 without usable headers still proves there is no headroom.
-                stats["saturation"] = 1.0
-                stats["saturation_inferred"] = True
+            elif outcome == "rate_limited":
+                # No usable headers this time, so any reset instant we are
+                # still holding is stale: it has told us nothing about *this*
+                # refusal. Clearing it hands the decision to the cooldown,
+                # which is anchored to observed_at and therefore always fresh.
+                # Left in place, an already-expired reset would keep
+                # _provider_available answering True for a provider that is
+                # visibly refusing us.
+                stats["reset_at"] = None
+                if stats["saturation"] is None:
+                    # A 429 without usable headers still proves there is no
+                    # headroom.
+                    stats["saturation"] = 1.0
+                    stats["saturation_inferred"] = True
             elif outcome == "ok" and stats["saturation_inferred"]:
                 # The wall we guessed at is gone — this host just served a
                 # request. OpenRouter sends no rate-limit headers on chat
@@ -1406,6 +1449,99 @@ class GenericLLMClient:
                 # long past the daily reset.
                 stats["saturation"] = None
                 stats["saturation_inferred"] = False
+                stats["reset_at"] = None
+
+    @staticmethod
+    def _parse_duration_seconds(text: str) -> Optional[float]:
+        """Total seconds in a "1h2m59.5s"-style duration, or None."""
+        matches = _DURATION_RE.findall(text)
+        if not matches:
+            return None
+        try:
+            return sum(
+                float(amount) * _DURATION_UNITS[unit.lower()]
+                for amount, unit in matches
+            )
+        except (TypeError, ValueError, KeyError):
+            return None
+
+    @classmethod
+    def _parse_reset_at(cls, raw: Any) -> Optional[datetime]:
+        """Turn a rate-limit reset header into an absolute UTC instant.
+
+        Accepts epoch milliseconds (OpenRouter), epoch seconds, a plain
+        seconds-from-now count, and the human-duration form Groq and Cerebras
+        send ("2m59s", "500ms"). The duration form matters most of the three:
+        it is how the per-minute buckets report themselves, and reading it as
+        "no idea" would swap a three-minute pause for the hour-long blind
+        cooldown. Returns None only for something genuinely unreadable.
+        """
+        if raw in (None, ""):
+            return None
+        text = str(raw).strip()
+        now = datetime.now(timezone.utc)
+        try:
+            value = float(text)
+        except (TypeError, ValueError):
+            seconds = cls._parse_duration_seconds(text)
+            return None if seconds is None else now + timedelta(seconds=seconds)
+        try:
+            if value > 1e11:  # epoch milliseconds
+                return datetime.fromtimestamp(value / 1000.0, tz=timezone.utc)
+            if value > 1e9:  # epoch seconds
+                return datetime.fromtimestamp(value, tz=timezone.utc)
+            return now + timedelta(seconds=value)  # seconds from now
+        except (OverflowError, OSError, ValueError):
+            return None
+
+    @classmethod
+    def _saturation_cutoff(cls) -> float:
+        """Saturation at or above which a provider is skipped, default 0.90."""
+        try:
+            return float(os.getenv("LLM_SATURATION_CUTOFF", "0.90"))
+        except (TypeError, ValueError):
+            return 0.90
+
+    @classmethod
+    def _provider_available(cls, provider: str) -> bool:
+        """False when a provider is known to be spent and not yet reset.
+
+        Skipping it costs nothing; dialling it costs a full round trip to be
+        told what its own headers already said. The block lifts at the reset
+        instant the provider reported, or — when it reported none — after a
+        blind cooldown, so one stale reading can never bench a provider
+        permanently.
+        """
+        with cls._state_lock:
+            stats = dict(cls._provider_usage.get(provider) or {})
+        saturation = stats.get("saturation")
+        if saturation is None or saturation < cls._saturation_cutoff():
+            return True
+
+        now = datetime.now(timezone.utc)
+        observed_at = stats.get("observed_at")
+
+        if stats.get("saturation_inferred"):
+            # This 1.0 is a guess made from a headerless 429, not a figure the
+            # provider stood behind, and the guess is often a per-minute bucket
+            # rather than a spent day. Benching for the full cooldown would
+            # also strand it: _record_provider_usage clears the guess when the
+            # host next answers, and it cannot answer a call we never place.
+            if isinstance(observed_at, datetime):
+                return now - observed_at >= timedelta(
+                    minutes=_INFERRED_SATURATION_COOLDOWN_MINUTES
+                )
+            return True
+
+        reset_at = stats.get("reset_at")
+        if isinstance(reset_at, datetime):
+            return now >= reset_at
+
+        if isinstance(observed_at, datetime):
+            return now - observed_at >= timedelta(
+                minutes=_SATURATION_BLIND_COOLDOWN_MINUTES
+            )
+        return True
 
     @classmethod
     def provider_saturation(cls) -> Dict[str, Any]:
@@ -1419,6 +1555,11 @@ class GenericLLMClient:
         """
         with cls._state_lock:
             providers = {p: dict(s) for p, s in cls._provider_usage.items()}
+        return cls._summarise_usage(providers)
+
+    @staticmethod
+    def _summarise_usage(providers: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
+        """Headline figures over an already-copied per-provider mapping."""
         known = [
             s["saturation"] for s in providers.values() if s.get("saturation") is not None
         ]
@@ -1457,6 +1598,56 @@ class GenericLLMClient:
             )
         except (OverflowError, OSError, ValueError):
             return text
+
+    @classmethod
+    def snapshot_and_reset(cls) -> Dict[str, Any]:
+        """Return the usage picture and start a fresh counting window.
+
+        Counters (requests, successes, rate limits, errors) describe a window
+        and are zeroed. Saturation, limits and reset times describe *now* — the
+        headroom a provider has at this instant — so they survive, otherwise
+        every digest would report "unknown" until the next call landed.
+        """
+        with cls._state_lock:
+            # Copy and zero under one acquisition: a call recorded between a
+            # released snapshot and a re-acquired reset would be counted into
+            # neither window.
+            providers = {p: dict(s) for p, s in cls._provider_usage.items()}
+            window_start = cls._usage_window_start
+            cls._reset_usage_window_locked()
+        snapshot = cls._summarise_usage(providers)
+        snapshot["window_start"] = window_start
+        return snapshot
+
+    @classmethod
+    def usage_snapshot(cls) -> Dict[str, Any]:
+        """The same picture as ``snapshot_and_reset`` without ending the window.
+
+        For callers that must know the post landed before they are willing to
+        throw the counters away.
+        """
+        with cls._state_lock:
+            providers = {p: dict(s) for p, s in cls._provider_usage.items()}
+            window_start = cls._usage_window_start
+        snapshot = cls._summarise_usage(providers)
+        snapshot["window_start"] = window_start
+        return snapshot
+
+    @classmethod
+    def reset_usage_window(cls) -> None:
+        """Zero the per-window counters and start a new window."""
+        with cls._state_lock:
+            cls._reset_usage_window_locked()
+
+    @classmethod
+    def _reset_usage_window_locked(cls) -> None:
+        """Zero the window counters. Caller must hold ``_state_lock``."""
+        for stats in cls._provider_usage.values():
+            stats["requests"] = 0
+            stats["successes"] = 0
+            stats["rate_limited"] = 0
+            stats["errors"] = 0
+        cls._usage_window_start = datetime.now(timezone.utc)
 
     @classmethod
     def log_provider_saturation(cls) -> None:
@@ -2218,7 +2409,16 @@ class NpcChatLLMAdapter(GenericLLMClient):
                 chain.append(name)
         if "ollama" not in chain and os.getenv("OLLAMA_BASE_URL", "").strip():
             chain.append("ollama")
-        return chain
+
+        # Drop providers already known to be spent — but never return nothing:
+        # a stale or misread limit must degrade to "try anyway", not to silence.
+        available = [p for p in chain if GenericLLMClient._provider_available(p)]
+        if available and len(available) < len(chain):
+            logger.info(
+                "Skipping saturated provider(s): %s",
+                [p for p in chain if p not in available],
+            )
+        return available or chain
 
     def _call_openai_compatible(
         self,
