@@ -2,6 +2,7 @@
 
 import configparser
 import logging
+import logging.handlers
 import os
 from pathlib import Path
 from flask import Flask
@@ -12,33 +13,56 @@ from src.api.services import SessionManager, GameService
 import src.universe as universe_module
 
 
-def _configure_logging() -> None:
+# Level names only — getattr(logging, name) would happily resolve any module
+# attribute (LOG_LEVEL=BASIC_FORMAT raised at import; NOTSET meant "log
+# everything").
+_LOG_LEVELS = {
+    "CRITICAL": logging.CRITICAL,
+    "ERROR": logging.ERROR,
+    "WARNING": logging.WARNING,
+    "INFO": logging.INFO,
+    "DEBUG": logging.DEBUG,
+}
+
+
+def _configure_logging():
     """Configure application logging from environment variables.
+
+    Called from create_app() rather than at import time: basicConfig(force=True)
+    replaces every handler on the root logger, which is not something importing
+    this module should do to the host process.
 
     Supported env vars:
       LOG_LEVEL   - Python log level name, e.g. DEBUG, INFO, WARNING.
                     Defaults to WARNING so normal runs stay quiet.
-      LOG_FILE    - Optional file path to also write logs to.
+      LOG_FILE    - Optional file path to also write logs to (rotated at 5 MB,
+                    three backups, so DEBUG runs cannot grow without bound).
     """
     level_name = os.environ.get("LOG_LEVEL", "WARNING").upper()
-    level = getattr(logging, level_name, logging.WARNING)
-    handlers: list[logging.Handler] = [logging.StreamHandler()]
+    level = _LOG_LEVELS.get(level_name, logging.WARNING)
+    handlers = [logging.StreamHandler()]
     log_file = os.environ.get("LOG_FILE")
     if log_file:
         try:
             Path(log_file).parent.mkdir(parents=True, exist_ok=True)
-            handlers.append(logging.FileHandler(log_file, encoding="utf-8"))
-        except Exception:
-            pass
+            handlers.append(
+                logging.handlers.RotatingFileHandler(
+                    log_file,
+                    encoding="utf-8",
+                    maxBytes=5 * 1024 * 1024,
+                    backupCount=3,
+                )
+            )
+        except Exception as exc:
+            logging.getLogger(__name__).warning(
+                "Could not attach LOG_FILE handler %s: %s", log_file, exc
+            )
     logging.basicConfig(
         level=level,
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
         handlers=handlers,
         force=True,
     )
-
-
-_configure_logging()
 
 
 def _apply_proxy_fix(app):
@@ -83,6 +107,7 @@ def create_app(config_class=None):
     Returns:
         Configured Flask app instance
     """
+    _configure_logging()
     if config_class is None:
         config_class = DevelopmentConfig
 

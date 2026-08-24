@@ -50,11 +50,21 @@ def main():
         os.environ["CONFIG_FILE"] = args.config
         print(f"[run_api] Using config file from command line: {args.config}")
 
-    # Reload .env after any CLI overrides so project env settings
-    # (e.g. MYNX_LLM_MODEL, OPENROUTER_*) are guaranteed to be present.
+    # Reload .env so project env settings (e.g. MYNX_LLM_MODEL, OPENROUTER_*)
+    # are guaranteed to be present — but never let the file beat something the
+    # operator set explicitly. override=True alone silently discarded both the
+    # CLI config argument (the .env pins CONFIG_FILE) and an exported
+    # FLASK_ENV, so `FLASK_ENV=production python tools/run_api.py` booted
+    # TestingConfig with the debug blueprint registered.
     env_path = ROOT / ".env"
     if env_path.exists():
+        explicit = {
+            key: os.environ[key]
+            for key in ("CONFIG_FILE", "FLASK_ENV")
+            if key in os.environ
+        }
         load_dotenv(env_path, override=True)
+        os.environ.update(explicit)
 
     # Determine environment
     env = os.environ.get("FLASK_ENV", "development").lower()
