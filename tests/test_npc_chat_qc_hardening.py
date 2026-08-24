@@ -155,7 +155,15 @@ class TestRewriteCleanup:
         assert "slang" in reason
 
     def test_hyphenated_allowed_token_survives(self):
-        npc = _npc(allowed_nouns=["Badlands"])
+        # A hyphenated ALLOWLIST entry is split on "-" by _allowed_noun_tokens;
+        # both halves must license the compound (a descriptive compound like
+        # "East-bank" is separately covered by the _COMMON_CAP_WORDS rule).
+        npc = _npc(allowed_nouns=["Kel-Thar"])
+        result = npc._qc_npc_text("We crossed below Kel-Thar before dawn.", [])
+        assert "Kel-Thar" in result
+
+    def test_descriptive_compound_survives_without_allowlist(self):
+        npc = _npc()
         result = npc._qc_npc_text("We camped on the East-bank side of the river.", [])
         assert "East-bank" in result
 
@@ -263,8 +271,6 @@ class TestActionAsides:
 
     def test_run_npc_turn_relocates_aside_into_empty_flavor(self):
         class FakeAdapter:
-            enabled = True
-
             def generate_turn(self, system, history, is_opening=False, jean_text=None):
                 return {
                     "npc_text": "*studies the horizon* Storm's coming.",
@@ -287,8 +293,6 @@ class TestActionAsides:
 
     def test_model_supplied_flavor_takes_priority_over_aside(self):
         class FakeAdapter:
-            enabled = True
-
             def generate_turn(self, system, history, is_opening=False, jean_text=None):
                 return {
                     "npc_text": "*sighs* So be it.",
@@ -317,8 +321,6 @@ class TestRetryGuidance:
         calls = []
 
         class FakeAdapter:
-            enabled = True
-
             def generate_turn(self, system, history, is_opening=False, jean_text=None):
                 calls.append(system)
                 if len(calls) == 1:
@@ -348,8 +350,6 @@ class TestRetryGuidance:
 
     def test_final_attempt_rewrites_instead_of_falling_back(self):
         class FakeAdapter:
-            enabled = True
-
             def generate_turn(self, system, history, is_opening=False, jean_text=None):
                 # Both attempts return the same invented-noun line.
                 return {
@@ -483,6 +483,9 @@ class TestGeneratePlainNoJsonLeak:
         monkeypatch.setenv("MYNX_LLM_ENABLED", "1")
         monkeypatch.setenv("MYNX_LLM_PROVIDER", "ollama")
         monkeypatch.setenv("MYNX_LLM_MODEL", "m")
+        # Fail fast if a future edit lets a real request slip past the
+        # _ollama_chat patch: nothing listens on this port.
+        monkeypatch.setenv("OLLAMA_BASE_URL", "http://127.0.0.1:9")
         client = GenericLLMClient()
         client._available = True
         return client, mock_patch.object(client, "_ollama_chat", return_value=raw)
@@ -509,3 +512,65 @@ class TestGeneratePlainNoJsonLeak:
         with patcher:
             result = client.generate_plain("sys", "user")
         assert result == "The mynx yawns."
+
+
+# ---------------------------------------------------------------------------
+# Scrub regressions — span cleanup, capitalization, asides, sentence cap
+# ---------------------------------------------------------------------------
+
+
+class TestCleanupRegressions:
+    def test_sentence_final_removal_leaves_no_orphan_comma(self):
+        # Removing a sentence-final span used to leave "It's fine,."
+        npc = _npc()
+        result = npc._qc_npc_text("It's fine, cool.", [])
+        assert result == "It's fine."
+
+    def test_cleanup_drops_comma_glued_to_terminator(self):
+        assert (
+            ConversationalNPCMixin._cleanup_removed_spans("I will go, okay,.")
+            == "I will go, okay."
+        )
+
+    def test_cleanup_keeps_leading_ellipsis(self):
+        assert ConversationalNPCMixin._cleanup_removed_spans("...fine.") == "...fine."
+
+    def test_capitalization_skips_ellipsis(self):
+        assert (
+            ConversationalNPCMixin._capitalize_sentence_starts(
+                "well... maybe you're right. so it goes."
+            )
+            == "Well... maybe you're right. So it goes."
+        )
+
+    def test_consecutive_asides_are_both_extracted(self):
+        npc = _npc()
+        cleaned, aside = npc._extract_action_asides("*nods* *smiles* Fine.")
+        assert cleaned == "Fine."
+        assert aside == "nods smiles"
+
+    def test_trailing_quote_gains_no_stray_period(self):
+        npc = _npc()
+        result = npc._qc_npc_text('He called it "the long road."', [])
+        assert result == 'He called it "the long road."'
+
+    def test_leading_ellipsis_survives_the_sentence_cap(self):
+        npc = _npc()
+        result = npc._qc_npc_text("...fine. Have it your way.", [])
+        assert result.startswith("...fine.")
+
+
+class TestFlavorQCDirect:
+    def test_flavor_is_capitalized_and_terminated(self):
+        npc = _npc()
+        assert npc._qc_flavor_text("studies the horizon") == "Studies the horizon."
+
+    def test_flavor_substitutes_invented_nouns(self):
+        npc = _npc()
+        result = npc._qc_flavor_text("Watches Xanthor pass by.")
+        assert "Xanthor" not in result
+        assert result != ""
+
+    def test_unusable_flavor_drops_to_empty(self):
+        npc = _npc()
+        assert npc._qc_flavor_text("???") == ""
