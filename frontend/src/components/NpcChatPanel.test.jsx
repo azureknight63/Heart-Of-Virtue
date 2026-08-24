@@ -48,10 +48,6 @@ vi.mock('./GameButton', () => ({
   ),
 }))
 
-vi.mock('./TypewriterOutput', () => ({
-  default: ({ text }) => <div data-testid="typewriter">{text}</div>,
-}))
-
 import npcChat from '../api/npcChat'
 
 describe('NpcChatPanel', () => {

@@ -414,7 +414,6 @@ export default function NpcChatPanel({ npcId, npcName, onClose }) {
         )}
       </div>
 
-
       {/* Error State */}
       {error && (
         <div

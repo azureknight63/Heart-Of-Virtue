@@ -51,7 +51,6 @@ export default function ConversationHistoryDialog({
                 <ConversationTranscript
                     segments={segments}
                     cast={cast}
-                    emptyText="Nothing has been said yet."
                 />
             </div>
         </BaseDialog>
