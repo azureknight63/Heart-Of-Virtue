@@ -26,9 +26,12 @@ Usage:
     python tools/measure_llm_tokens.py --outputs    # + realistic completions
     python tools/measure_llm_tokens.py --dump       # + full prompts to disk
     python tools/measure_llm_tokens.py --json out.json
+
+Note: tiktoken downloads the o200k_base BPE file over the network on first
+use and caches it afterward (TIKTOKEN_CACHE_DIR overrides the location) —
+the measurement itself makes no LLM calls and spends no quota.
 """
 
-import importlib.util
 import json
 import logging
 import os
@@ -36,7 +39,6 @@ import sys
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO)
-sys.path.insert(0, os.path.join(REPO, "src"))
 
 try:
     import tiktoken
@@ -78,13 +80,12 @@ def record(path, call, system, user, max_tokens, note=""):
 
 
 # ---------------------------------------------------------------------------
-# Load ai/llm_client.py the same way the game does (by path, not by package)
+# Import ai/llm_client.py as the canonical package module. Loading it by path
+# under a bare "llm_client" key created a SECOND module object the moment
+# `from ai.combat_strategist import ...` (below) pulled in `ai.llm_client` —
+# the exact mutually-unaware-copies bug issue #380 fixed in the engine.
 # ---------------------------------------------------------------------------
-_spec = importlib.util.spec_from_file_location(
-    "llm_client", os.path.join(REPO, "ai", "llm_client.py"))
-llm = importlib.util.module_from_spec(_spec)
-sys.modules["llm_client"] = llm
-_spec.loader.exec_module(llm)
+import ai.llm_client as llm  # noqa: E402
 
 from src.npc._chat_llm import ConversationalNPCMixin  # noqa: E402
 
@@ -128,6 +129,10 @@ CAPTURED = {}
 
 
 def _capture(self, system_prompt, user_prompt, max_tokens=512, temperature=0.7):
+    # clear() first so a generate_* path that returns before reaching
+    # _call_llm makes cap() raise KeyError instead of silently re-reporting
+    # the previous call's numbers.
+    CAPTURED.clear()
     CAPTURED.update(sys=system_prompt, user=user_prompt, max_tokens=max_tokens)
     return None
 
