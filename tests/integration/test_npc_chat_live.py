@@ -4,9 +4,10 @@ Characterization tests for the NPC chat prompts against a real LLM provider.
 These tests make actual network calls and are EXCLUDED from the standard
 pytest run. Run them explicitly:
 
-    python -m pytest tests/integration/test_npc_chat_live.py -v
-
     HOV_LIVE_LLM=1 python -m pytest tests/integration/test_npc_chat_live.py -v
+
+(Without HOV_LIVE_LLM=1 the same command collects and SKIPS every test —
+a green run proves nothing.)
 
 HOV_LIVE_LLM=1 is the opt-in; the provider itself is read from .env by the
 live_env fixture in conftest.py (which also undoes the default suite's
@@ -53,10 +54,16 @@ def _live_llm_enabled() -> bool:
     return os.getenv("HOV_LIVE_LLM", "0") in ("1", "true", "True")
 
 
-pytestmark = pytest.mark.skipif(
-    not _live_llm_enabled(),
-    reason="set HOV_LIVE_LLM=1 to run live NPC chat tests",
-)
+# real_sleep: the suite-wide autouse fixture no-ops time.sleep, which would
+# silently collapse _retry's widening backoff into a hammer against a
+# rate-limited free tier.
+pytestmark = [
+    pytest.mark.real_sleep,
+    pytest.mark.skipif(
+        not _live_llm_enabled(),
+        reason="set HOV_LIVE_LLM=1 to run live NPC chat tests",
+    ),
+]
 
 TONES = ["direct", "guarded", "open"]
 QUALITIES = {"positive", "neutral", "negative", "offensive"}
@@ -315,3 +322,135 @@ class TestPersonalityGeneration:
     def test_speech_sample_is_a_line_not_a_description(self, personality):
         sample = str(personality["speech_sample"])
         assert 4 <= len(sample.split()) <= 30, "Odd speech_sample: %r" % sample
+
+
+# ---------------------------------------------------------------------------
+# State-implication guard — against a real model, not crafted strings
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def guard_npc():
+    """A real story NPC wired for the guard, not just for prompt building."""
+    from src.npc._chat_llm import ConversationalNPCMixin
+
+    class _NPC(ConversationalNPCMixin):
+        pass
+
+    npc = _NPC()
+    npc._chat_config_path = CHAT_CONFIG
+    npc._init_chat_attrs()
+    return npc
+
+
+def _guarded(npc, adapter, system_prompt, turn):
+    return npc._guard_turn(
+        adapter,
+        system_prompt,
+        turn.get("npc_text", ""),
+        turn.get("npc_flavor", "") or "",
+        [dict(o) for o in (turn.get("jean_options") or [])],
+    )
+
+
+@pytest.fixture(scope="module")
+def guarded_normal(guard_npc, adapter, system_prompt, normal):
+    """One guard pass over the ``normal`` turn, shared by every assertion.
+
+    Module-scoped on purpose: a tripped guard spends a real revise_turn call,
+    and the free tier is 50 requests a day for the whole account. Per-test
+    guarding burned four of those to answer one question.
+    """
+    return _guarded(guard_npc, adapter, system_prompt, normal)
+
+
+@pytest.fixture(scope="module")
+def guarded_offensive(guard_npc, adapter, system_prompt, offensive):
+    return _guarded(guard_npc, adapter, system_prompt, offensive)
+
+
+class TestStateImplicationGuard:
+    """Nothing said in a chat reaches the engine, so nothing may imply it did.
+
+    The unit suite proves the tripwire fires on strings we wrote. This proves
+    the whole path holds on strings a real free-tier model wrote, including the
+    escalation call, against a prompt deliberately fishing for an offer:
+    ``normal`` asks "I can pay for a guide, if you know anyone willing."
+    """
+
+    def test_guarded_reply_implies_no_state_change(self, guard_npc, guarded_normal):
+        from src.npc import _chat_guard as guard
+
+        text, _flavor, _options = guarded_normal
+        assert text.strip(), "guard returned an empty reply"
+        flags = guard.scan_npc_text(text, guard_npc._guard_allowed_topics())
+        assert flags == [], "state implication survived the guard: %r -> %s" % (
+            text,
+            [(f.category, f.match) for f in flags],
+        )
+
+    def test_guarded_options_solicit_nothing(self, guard_npc, guarded_normal):
+        from src.npc import _chat_guard as guard
+
+        _text, _flavor, options = guarded_normal
+        assert len(options) == 3, "guard did not return three options: %r" % options
+        for opt in options:
+            flags = guard.scan_option_text(
+                opt["text"], guard_npc._guard_allowed_topics()
+            )
+            assert flags == [], "soliciting option survived: %r -> %s" % (
+                opt["text"],
+                [(f.category, f.match) for f in flags],
+            )
+
+    def test_guarded_flavor_is_clean(self, guard_npc, guarded_normal):
+        from src.npc import _chat_guard as guard
+
+        _text, flavor, _options = guarded_normal
+        if flavor:
+            assert guard.scan_npc_text(flavor, guard_npc._guard_allowed_topics()) == []
+
+    def test_offensive_turn_is_also_guarded(self, guard_npc, guarded_offensive):
+        """A hostile exchange must not become an excuse to offer something."""
+        from src.npc import _chat_guard as guard
+
+        text, _flavor, _options = guarded_offensive
+        assert guard.scan_npc_text(text, guard_npc._guard_allowed_topics()) == []
+
+    def test_prevention_rule_reaches_the_model(self, system_prompt):
+        """The prompt-side half of the guard is actually in the live prompt."""
+        low = system_prompt.lower()
+        assert "give" in low and "promise" in low
+        assert "cannot see" in low
+
+
+class TestProviderAnalyticsAreLive:
+    """The saturation figures must come from real provider headers."""
+
+    def test_usage_was_recorded_for_the_serving_provider(self, adapter, normal):
+        from ai.llm_client import GenericLLMClient
+
+        snapshot = GenericLLMClient.provider_saturation()
+        providers = snapshot["providers"]
+        assert providers, "no provider usage recorded across the live calls"
+        assert any(s.get("requests", 0) > 0 for s in providers.values())
+
+    def test_a_reported_limit_is_a_sane_fraction(self, adapter, normal):
+        from ai.llm_client import GenericLLMClient
+
+        snapshot = GenericLLMClient.provider_saturation()
+        for name, stats in snapshot["providers"].items():
+            saturation = stats.get("saturation")
+            if saturation is None:
+                continue
+            assert 0.0 <= saturation <= 1.0, "%s reported %r" % (name, saturation)
+            assert stats.get("limit") is None or stats["limit"] > 0
+
+    def test_digest_builds_from_live_numbers(self, adapter, normal):
+        import ai.provider_digest as digest
+        from ai.llm_client import GenericLLMClient
+
+        embed = digest.build_digest(GenericLLMClient.usage_snapshot())
+        assert embed["fields"]
+        blob = str(embed)
+        assert "No provider calls recorded" not in blob

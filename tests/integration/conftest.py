@@ -56,10 +56,6 @@ def live_env():
 
     cfg = dotenv_values()
     saved = {k: os.environ.get(k) for k in _LIVE_KEYS}
-    for key in _LIVE_KEYS:
-        value = cfg.get(key)
-        if value:
-            os.environ[key] = value
 
     # Discovery and the failed-model penalties are class-level and process-wide.
     # Clear them on the way in so a prior module's failures do not poison this
@@ -78,8 +74,16 @@ def live_env():
         with NpcChatLLMAdapter._instances_lock:
             NpcChatLLMAdapter._instances.clear()
 
-    _reset()
+    # Everything from the first os.environ write onward sits inside the
+    # try/finally: if the mutation loop or the entry _reset() raises, the
+    # finally still restores the saved env, so a live-enabled configuration
+    # (real API key included) can never leak into later test modules.
     try:
+        for key in _LIVE_KEYS:
+            value = cfg.get(key)
+            if value:
+                os.environ[key] = value
+        _reset()
         yield
     finally:
         for key, value in saved.items():

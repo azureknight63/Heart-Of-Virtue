@@ -207,6 +207,16 @@ class TestNoFalsePositives:
             "There's stew in the pot. There usually is.",
             "The Pillar Readers came through last winter, measuring stones.",
             "I've no love for the Conclave, but they keep records.",
+            # _OFFER without a leading  matched word tails under
+            # IGNORECASE ("will" contains "ill", "druid" contains "id").
+            "The ferry will take you across.",
+            "This path will lead you to the caves.",
+            "Prayer will bring you peace.",
+            "Time will mend it.",
+            "Rest will heal you.",
+            # Imperative-handover idioms with no object transfer.
+            "Keep that in mind.",
+            "I take it you have come about the ferry.",
         ],
     )
     def test_clean_lines_are_not_flagged(self, line):
@@ -349,7 +359,7 @@ class TestGuardTurn:
             _opts("Why stay?", "Go on.", "And then?"),
         )
         guidance = adapter.calls[0]["guidance"]
-        assert guard.CATEGORY_TRANSACTION in guidance or "give" in guidance.lower()
+        assert guard.CATEGORY_TRANSACTION in guidance
 
     def test_revision_that_is_still_dirty_falls_back_to_the_hedge(self):
         npc = _npc()
@@ -365,6 +375,8 @@ class TestGuardTurn:
         )
         assert guard.scan_npc_text(text) == []
         assert "knife" not in text
+        # ONE escalation even when the revision comes back still dirty.
+        assert len(adapter.calls) == 1
 
     def test_adapter_failure_falls_back_to_the_hedge(self):
         npc = _npc()
@@ -377,6 +389,8 @@ class TestGuardTurn:
             _opts("Why stay?", "Go on.", "And then?"),
         )
         assert guard.scan_npc_text(text) == []
+        # ONE escalation even when the reviser raises.
+        assert len(adapter.calls) == 1
 
     def test_adapter_without_revise_turn_uses_the_hedge(self):
         npc = _npc()
@@ -461,7 +475,7 @@ class TestPromptPrevention:
         prompt = npc._build_system_prompt(object())
         low = prompt.lower()
         assert "give" in low and "promise" in low
-        assert re.search(r"cannot see|can't see|do not describe jean", low)
+        assert "cannot see" in low
 
 # ---------------------------------------------------------------------------
 # Adapter — the escalation call itself
@@ -594,7 +608,9 @@ def _wired_npc(adapter):
 
 class _Player:
     universe = None
-    reputation = {}
+
+    def __init__(self):
+        self.reputation = {}
 
 
 class TestChatPathWiring:
@@ -960,3 +976,92 @@ class TestFlavorOnlyFlagDoesNotEscalate:
             _opts("Why stay?", "Go on.", "And then?"),
         )
         assert len(adapter.calls) == 1
+
+
+# ---------------------------------------------------------------------------
+# Scrub regressions — whitelist limits, hedge fidelity, reviser hardening
+# ---------------------------------------------------------------------------
+
+
+class TestWhitelistNeverExcusesTransactions:
+    def test_whitelisted_topic_does_not_license_a_handover(self):
+        # The module docstring's own example: a knowledge_scope entry must
+        # never excuse "I'll give you a knife for the crossing".
+        topics = {"the ferry crossing", "crossing", "ferry"}
+        assert guard.scan_npc_text(
+            "I'll give you a knife for the crossing.", topics
+        ) != []
+
+    def test_whitelisted_topic_does_not_license_a_rendezvous(self):
+        topics = {"the ferry crossing", "crossing"}
+        assert guard.scan_npc_text(
+            "Meet me at the crossing at dawn.", topics
+        ) != []
+
+
+class TestMultiwordTopicWholeWord:
+    def test_phrase_topic_does_not_excuse_a_substring(self):
+        # "river cut" must not excuse "driver cutlass".
+        line = "I could teach you about the driver cutlass trick."
+        assert guard.scan_npc_text(line, ["river cut"]) != []
+
+    def test_phrase_topic_still_excuses_the_phrase(self):
+        line = "I could teach you the river cut."
+        assert guard.scan_npc_text(line, ["river cut"]) == []
+
+
+class TestHedgePreservesLegitimateRepeats:
+    def test_repeated_clean_sentence_survives_hedging(self):
+        text = "No. No. Here, take this blade."
+        flags = guard.scan_npc_text(text)
+        assert guard.hedge_npc_text(text, flags) == (
+            "No. No. That's not mine to give."
+        )
+
+
+class TestReviserReturnHardening:
+    def test_non_dict_revision_falls_back_to_the_hedge(self):
+        class WeirdAdapter(_Adapter):
+            def revise_turn(self, system_prompt, npc_text, jean_options, guidance):
+                self.calls.append({"guidance": guidance})
+                return "not a dict at all"
+
+        npc = _npc()
+        adapter = WeirdAdapter()
+        text, _flavor, options = npc._guard_turn(
+            adapter,
+            "SYSTEM",
+            "Here, take this blade.",
+            "",
+            _opts("Why stay?", "Go on.", "And then?"),
+        )
+        assert guard.scan_npc_text(text) == []
+        assert len(options) == 3
+
+
+class TestGuardedOptionsSalvageOriginals:
+    def test_clean_originals_survive_a_partial_revision(self):
+        # One soliciting option trips the guard; the reviser returns a single
+        # clean replacement. The two clean ORIGINAL options are context-aware
+        # and must survive alongside it instead of generic pool fillers.
+        npc = _npc()
+        adapter = _Adapter(
+            revision={
+                "npc_text": "The river takes what it takes.",
+                "jean_options": [
+                    {"tone": "direct", "text": "What does the river take?"}
+                ],
+            }
+        )
+        options = _opts(
+            "Will you give me your blade?",
+            "Tell me about the river's moods.",
+            "Who else works this bank with you?",
+        )
+        _text, _flavor, rebuilt = npc._guard_turn(
+            adapter, "SYSTEM", "Here, take this blade.", "", options
+        )
+        texts = [o["text"] for o in rebuilt]
+        assert len(rebuilt) == 3
+        assert "Tell me about the river's moods." in texts
+        assert "Who else works this bank with you?" in texts

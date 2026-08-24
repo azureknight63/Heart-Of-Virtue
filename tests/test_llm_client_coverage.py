@@ -18,6 +18,7 @@ from datetime import datetime, timedelta
 from unittest.mock import MagicMock, patch
 
 import pytest
+import requests
 
 import ai.llm_client as llm_client
 from ai.llm_client import (
@@ -2100,7 +2101,12 @@ class TestCallOpenrouter:
         adapter._openrouter_site_title = None
         GenericLLMClient._free_models_cache = ["working/model:free"]
 
+        # A real 404 raises from raise_for_status(); a bare MagicMock would
+        # no-op there and exercise the wrong ("no content") branch.
         unavailable = MagicMock(status_code=404, text="model unavailable")
+        unavailable.raise_for_status.side_effect = requests.exceptions.HTTPError(
+            "404 Client Error: Not Found"
+        )
         thinking_only = MagicMock(
             status_code=200,
             text="",
@@ -2144,6 +2150,9 @@ class TestCallOpenrouter:
         GenericLLMClient._free_models_cache = []
 
         unavailable = MagicMock(status_code=404, text="model unavailable")
+        unavailable.raise_for_status.side_effect = requests.exceptions.HTTPError(
+            "404 Client Error: Not Found"
+        )
         working = MagicMock(
             status_code=200,
             text="",
@@ -2157,6 +2166,9 @@ class TestCallOpenrouter:
         logs = caplog.text
         assert "primary=stale/model:free" in logs
         assert "attempting model_id=stale/model:free" in logs
+        # the "errors" half of this test's name: the failing model's except
+        # branch must actually log before the fallback succeeds
+        assert "model stale/model:free failed" in logs
         assert "succeeded model=" in logs
 
 

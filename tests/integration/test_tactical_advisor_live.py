@@ -4,10 +4,10 @@ Integration tests for CombatStrategist against a real LLM provider.
 These tests make actual network/process calls and are EXCLUDED from the
 standard pytest run. Run them explicitly:
 
-    python -m pytest tests/integration/test_tactical_advisor_live.py -v
-
-Prerequisites — at least one of:
     HOV_LIVE_LLM=1 python -m pytest tests/integration/test_tactical_advisor_live.py -v
+
+(Without HOV_LIVE_LLM=1 the same command collects and SKIPS every test —
+a green run proves nothing.)
 
 HOV_LIVE_LLM=1 is the opt-in; the provider is read from .env by the live_env
 fixture in conftest.py. Gating on MYNX_LLM_ENABLED instead (as this module
@@ -31,11 +31,6 @@ import os
 import time
 import pytest
 
-# ---------------------------------------------------------------------------
-# Skip entire module unless live LLM calls are explicitly opted into
-# ---------------------------------------------------------------------------
-
-
 def _make_client():
     """Return a GenericLLMClient. Returns None if unavailable."""
     from ai.llm_client import GenericLLMClient
@@ -52,10 +47,14 @@ def _live_llm_enabled() -> bool:
     return os.getenv("HOV_LIVE_LLM", "0") in ("1", "true", "True")
 
 
-pytestmark = pytest.mark.skipif(
+# Skip the whole module unless live LLM calls are explicitly opted into.
+# real_sleep: the suite-wide autouse fixture no-ops time.sleep, which would
+# collapse _get's retry pause against a rate-limited free tier.
+pytestmark = [pytest.mark.real_sleep]
+pytestmark.append(pytest.mark.skipif(
     not _live_llm_enabled(),
     reason="set HOV_LIVE_LLM=1 to run live LLM integration tests",
-)
+))
 
 
 # ---------------------------------------------------------------------------
