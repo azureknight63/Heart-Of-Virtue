@@ -38,7 +38,7 @@
     "Jean", "Gorran", "Mara", "Devet", "Liss", "Kaelen", "Vespera",
     "Aurelion", "Grondia", "Badlands", "Wailing Badlands", "Echoing Caves",
     "Golemites", "Pillar Readers", "Conclave", "Grondites",
-    "Iron", "Oath"
+    "Iron", "Oath", "Nomad", "Camp", "Nomad Camp"
   ],
   "prohibited_inventions": [
     "Do NOT invent new place names not on the allowed list.",

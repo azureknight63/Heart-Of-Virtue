@@ -19,7 +19,7 @@ Derived from `docs/lore/`, `src/resources/outline.md`, and the map-design princi
 
 ## Stack
 
-Python 3.11 engine · Flask 3.1 + Flask-SocketIO API · React 18 + Vite + Tailwind (+ react-three-fiber battlefield) · LibSQL/Turso · pytest / Vitest · black (88) + flake8 (`--extend-ignore=E501`) · OpenRouter/OpenAI/Anthropic for NPC chat and Mynx ambient behaviour (`MYNX_LLM_ENABLED`; see `.env.example`).
+Python 3.11 engine · Flask 3.1 + Flask-SocketIO API · React 18 + Vite + Tailwind (+ react-three-fiber battlefield) · LibSQL/Turso · pytest / Vitest · black (88) + flake8 (`--extend-ignore=E501`) · OpenRouter/Groq/Cerebras/Ollama for NPC chat and Mynx ambient behaviour (`MYNX_LLM_ENABLED`; see `.env.example`).
 
 ## Layout — only the non-obvious parts
 
@@ -131,9 +131,13 @@ Balance or behaviour changes need rung 2 or 3, not just rung 1.
 | ≤ 1000 changed lines | `code-review` | Inline, single pass, current conversation |
 | > 1000 changed lines | `code-scrubber` | Chunked, 5 dimension subagents per chunk, dispatched as a background Agent |
 
+> The `Code Scrubber` **agent** (`.claude/agents/`) declares VSCode-namespaced tools (`vscode/`, `execute/`, `edit/editFiles`) and refuses to spawn outside the IDE — "zero tools". In a CLI session, review a large diff by scoping `code-review` to file subsets instead.
+
 Both grade DRY, Clean Code, Optimization, Maintainability, Security, AI-Friendliness, plus the Heart of Virtue-specific **Architecture** (the rules above — gating) and **Correctness** (graded, reported). Dimension tables, the ≥80 confidence filter, and grading rules live in the two `SKILL.md` files — don't duplicate them here. Non-trivial changes iterate until every gating dimension is A; don't suggest `/commit` before that. If a dimension can't reach A without a user decision, stop and ask. Trivial changes (config, comments): confirm N/A or A and move on.
 
 ## Session workflow
+
+Worktrees can host concurrent sessions: run `git status` before committing, stage only files that are cleanly yours, and never `git stash`.
 
 The goal is to ship and maintain a complete game — housekeeping is part of the work. At the end of a meaningful task, suggest what applies: the review gate; `/commit` for changes worth preserving; `/revise-claude-md` when the session revealed something not yet in CLAUDE.md or `.claude/rules/`; confirm the suite is green (the tests already exist from the red-green cycle); flag newly relevant items from `~/.claude/projects/.../pending-improvements.md`. Use judgment — a two-line fix doesn't need a debrief.
 
