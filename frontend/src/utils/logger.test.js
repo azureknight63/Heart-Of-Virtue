@@ -346,6 +346,24 @@ describe('BrowserLogger', () => {
       expect(logger.logQueue).toHaveLength(2);
     });
 
+    it('a circular event payload does not block subsequent log delivery', async () => {
+      logger.init();
+      vi.spyOn(logger.originalConsole, 'debug').mockImplementation(() => {});
+      const circular = {};
+      circular.self = circular;
+      logger.event('weird.event', circular);
+      await logger.flush();
+      logger.log('info', 'unrelated log');
+      await logger.flush();
+      // Without the serializability guard, JSON.stringify(payload) throws on
+      // every flush and the poisoned entry re-queues forever.
+      const bodies = global.fetch.mock.calls.map(([, init]) => JSON.parse(init.body));
+      expect(bodies.some((b) => b.logs.some((l) => l.message === 'unrelated log'))).toBe(true);
+      expect(
+        bodies.some((b) => b.logs.some((l) => l.data && l.data._unserializable))
+      ).toBe(true);
+    });
+
     it('ships event, data, and n fields to the backend', async () => {
       logger.init();
       logger.event('event.dedupe', { name: 'X' });

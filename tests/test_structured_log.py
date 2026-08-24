@@ -326,3 +326,82 @@ class TestRequestLogging:
         with app.test_client() as c:
             c.options("/api/thing")
         assert lines == []
+
+    def test_path_control_characters_are_stripped(self, app_and_lines):
+        # request.path is attacker-chosen; a crafted path must not smuggle
+        # terminal escape sequences into the stream logcat renders.
+        app, lines = app_and_lines
+        with app.test_client() as c:
+            c.get("/api/thing\x1b[31mevil\x07")
+        env = self._events(lines)[0]
+        assert "\x1b" not in json.dumps(env)
+        assert "\x07" not in json.dumps(env)
+
+    def test_handled_500_logs_exactly_once(self, app_and_lines):
+        # after_request logs it; the teardown backstop must not double-log
+        app, lines = app_and_lines
+        with app.test_client() as c:
+            c.get("/api/broken")
+        assert len(self._events(lines)) == 1
+
+
+class TestCrashLogging:
+    def test_unhandled_exception_still_logs_in_propagating_mode(self):
+        # In debug mode Flask re-raises before after_request runs, so the
+        # canonical line would vanish for exactly the crashes a debug log
+        # exists to capture. The teardown hook backstops it.
+        app = Flask(__name__)
+        app.config["PROPAGATE_EXCEPTIONS"] = True
+
+        @app.route("/api/crash")
+        def crash():
+            raise RuntimeError("kaput in debug")
+
+        capture = _ListHandler()
+        http_logger = logging.getLogger("hov.http")
+        http_logger.addHandler(capture)
+        http_logger.setLevel(logging.DEBUG)
+        http_logger.propagate = False
+        init_request_logging(app)
+        try:
+            with pytest.raises(RuntimeError):
+                with app.test_client() as c:
+                    c.get("/api/crash")
+        finally:
+            http_logger.removeHandler(capture)
+
+        events = [json.loads(line) for line in capture.lines]
+        assert len(events) == 1
+        env = events[0]
+        assert env["lvl"] == "error"
+        assert env["data"]["status"] == 500
+        assert "RuntimeError" in env["data"]["error"]
+        assert "kaput in debug" in env["data"]["error"]
+
+
+class TestConfigureLoggingLogFile:
+    def test_log_file_writes_plain_text(self, tmp_path):
+        logger = _fresh_logger()
+        logger.handlers = []
+        path = tmp_path / "app.log"
+        configure_logging(
+            env={"LOG_LEVEL": "INFO", "LOG_FILE": str(path)}, logger=logger
+        )
+        logger.info("hello plain file")
+        for handler in logger.handlers:
+            handler.close()
+        assert "hello plain file" in path.read_text(encoding="utf-8")
+
+    def test_log_file_oserror_is_swallowed(self, tmp_path, monkeypatch):
+        logger = _fresh_logger()
+        logger.handlers = []
+        monkeypatch.setattr(
+            logging,
+            "FileHandler",
+            lambda *a, **k: (_ for _ in ()).throw(OSError("nope")),
+        )
+        # Must not raise — a bad LOG_FILE path degrades, never crashes the app
+        configure_logging(
+            env={"LOG_LEVEL": "INFO", "LOG_FILE": str(tmp_path / "x.log")},
+            logger=logger,
+        )

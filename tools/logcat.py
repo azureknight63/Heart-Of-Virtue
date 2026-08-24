@@ -60,6 +60,12 @@ _SINCE_MULT = {"": 1, "s": 1, "m": 60, "h": 3600, "d": 86400}
 MSG_CAP = 300
 VALUE_CAP = 80
 
+# Rendered log content is attacker-influenced (unauthenticated browser POSTs,
+# arbitrary request paths). Strip C0 controls + ESC + DEL at the render sink
+# so no envelope field can inject terminal escape sequences, regardless of
+# which writer produced the line. The --json path is safe (json.dumps escapes).
+_CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f]")
+
 
 # --------------------------------------------------------------------------
 # Parsing
@@ -231,7 +237,7 @@ def _stdout_supports_unicode():
 
 def short_session(session):
     """Last five characters — enough to tell sessions apart at a glance."""
-    return str(session or "")[-5:]
+    return _CONTROL_CHARS.sub(" ", str(session or ""))[-5:]
 
 
 def _session_color(session):
@@ -239,7 +245,7 @@ def _session_color(session):
 
 
 def _truncate(text, cap):
-    text = str(text)
+    text = _CONTROL_CHARS.sub(" ", str(text))
     return text if len(text) <= cap else text[: cap - 1] + "~"
 
 
@@ -252,10 +258,10 @@ def format_entry(entry, color=True, unicode_ok=None):
 
     ts = entry_ts(entry)
     clock = f"{ts:%H:%M:%S}.{ts.microsecond // 10000:02d}" if ts else "--:--:--.--"
-    src = str(entry.get("src", "??"))[:2]
+    src = _truncate(entry.get("src", "??"), 2)
     lvl = entry.get("lvl", "info")
     glyph = glyphs.get(lvl, glyphs["info"])
-    event = str(entry.get("event") or "?")
+    event = _truncate(entry.get("event") or "?", 64)
 
     parts = []
     msg = entry.get("msg")
@@ -264,7 +270,8 @@ def format_entry(entry, color=True, unicode_ok=None):
     data = entry.get("data")
     if isinstance(data, dict):
         parts.extend(
-            f"{key}={_truncate(value, VALUE_CAP)}" for key, value in data.items()
+            f"{_truncate(key, VALUE_CAP)}={_truncate(value, VALUE_CAP)}"
+            for key, value in data.items()
         )
     details = " ".join(parts)
 

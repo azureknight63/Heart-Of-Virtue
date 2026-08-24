@@ -9,6 +9,10 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# Current .jsonl files plus pre-migration .log files. Shared with
+# routes/logs.py's listing route so the two can't drift.
+LOG_FILE_PATTERNS = ("*.jsonl", "*.log")
+
 
 class LogCleanupManager:
     """Manages cleanup of old browser log files."""
@@ -52,7 +56,7 @@ class LogCleanupManager:
 
     def _log_files(self):
         """All managed log files: current .jsonl plus pre-migration .log."""
-        for pattern in ("*.jsonl", "*.log"):
+        for pattern in LOG_FILE_PATTERNS:
             yield from self.logs_dir.glob(pattern)
 
     def cleanup_old_logs(self):

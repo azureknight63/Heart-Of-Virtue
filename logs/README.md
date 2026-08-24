@@ -66,16 +66,21 @@ Receives browser logs from the frontend and triggers automatic cleanup.
 {
   "logs": [
     {
-      "timestamp": "2025-11-27T18:41:11.123Z",
+      "timestamp": "2026-08-22T18:41:11.123Z",
       "level": "ERROR",
       "message": "Error message",
       "url": "http://localhost:3000/",
-      "userAgent": "Mozilla/5.0..."
+      "event": "event.enqueue",
+      "data": {"name": "Passage_Camp Entrance"},
+      "n": 2
     }
   ],
   "session_id": "session_1234567890_abc123"
 }
 ```
+
+`event`, `data`, and `n` are optional: structured events ship `event` + `data`
+with no `message`; intercepted console output ships `message` with no `data`.
 
 ### GET /api/logs/browser/files
 Lists all available browser log files.
@@ -85,9 +90,9 @@ Lists all available browser log files.
 {
   "files": [
     {
-      "filename": "2025-11-27_session_1234567890_abc123.log",
+      "filename": "2026-08-22_bucket14.jsonl",
       "size": 12345,
-      "modified": "2025-11-27T18:41:11.123Z"
+      "modified": "2026-08-22T18:41:11.123Z"
     }
   ]
 }
@@ -99,8 +104,8 @@ Retrieves the contents of a specific log file.
 **Response:**
 ```json
 {
-  "filename": "2025-11-27_session_1234567890_abc123.log",
-  "content": "[2025-11-27T18:41:11.123Z] [ERROR] [http://localhost:3000/] Error message\n..."
+  "filename": "2026-08-22_bucket14.jsonl",
+  "content": "{\"ts\":\"2026-08-22T18:41:11.123Z\",\"src\":\"fe\",\"lvl\":\"error\",\"event\":\"console\",\"session\":\"session_123\",\"msg\":\"Error message\"}\n..."
 }
 ```
 
@@ -110,7 +115,7 @@ Deletes a specific browser log file.
 **Response:**
 ```json
 {
-  "message": "Successfully deleted 2025-11-27_session_1234567890_abc123.log",
+  "message": "Successfully deleted 2026-08-22_bucket14.jsonl",
   "deleted_size": 12345
 }
 ```
@@ -155,12 +160,12 @@ Get statistics about browser log files and cleanup configuration.
     "total_files": 10,
     "total_size_mb": 5.2,
     "oldest_file": {
-      "name": "2025-11-20_session_123.log",
-      "date": "2025-11-20T10:30:00"
+      "name": "2026-08-16_bucket03.jsonl",
+      "date": "2026-08-16T10:30:00"
     },
     "newest_file": {
-      "name": "2025-11-27_session_456.log",
-      "date": "2025-11-27T18:41:11"
+      "name": "2026-08-22_bucket14.jsonl",
+      "date": "2026-08-22T18:41:11"
     }
   },
   "cleanup_config": {

@@ -29,6 +29,7 @@ Environment variables (read by configure_logging):
 import json
 import logging
 import os
+import re
 import time
 import uuid
 import zlib
@@ -46,6 +47,10 @@ _PLAIN_FORMAT = "%(asctime)s %(levelname)s %(name)s %(message)s"
 # Requests that would only log the act of logging (or monitor polling).
 _REQUEST_LOG_SKIP_PREFIXES = ("/api/logs/browser",)
 _REQUEST_LOG_SKIP_PATHS = frozenset({"/health"})
+
+# Control characters stripped from attacker-influenced fields (request paths)
+# before they enter the stream — logcat renders envelope content to a terminal.
+_CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f]")
 
 # Libraries whose DEBUG output would drown the JSONL stream once the logger
 # level drops to DEBUG for capture.
@@ -143,6 +148,9 @@ class DateStampedJsonlHandler(logging.Handler):
                 self._stream = self._open_stream(path)
                 self._current_path = path
             self._stream.write(self.format(record) + "\n")
+            # Per-record flush is deliberate: logcat --tail depends on lines
+            # appearing immediately, and this handler only runs on the dev
+            # server (LOG_JSONL_DIR). Buffer/queue it if that ever changes.
             self._stream.flush()
         except Exception:
             self.handleError(record)
@@ -237,6 +245,39 @@ def _session_fingerprint(auth_header):
     return f"{zlib.crc32(token.encode('utf-8')) & 0xFFFF:04x}"
 
 
+def _should_skip_request_log():
+    return (
+        request.method == "OPTIONS"
+        or request.path in _REQUEST_LOG_SKIP_PATHS
+        or request.path.startswith(_REQUEST_LOG_SKIP_PREFIXES)
+    )
+
+
+def _request_data(status):
+    """The canonical http.request payload for the current request.
+
+    ``request.path`` is attacker-chosen (any URL can be requested) — strip
+    control characters so a crafted path can't smuggle terminal escape
+    sequences into the JSONL stream that logcat renders.
+    """
+    start = getattr(g, "hov_req_start", None)
+    data = {
+        "method": request.method,
+        "path": _CONTROL_CHARS.sub(" ", request.path)[:512],
+        "status": status,
+        "dur_ms": (
+            round((time.perf_counter() - start) * 1000, 1)
+            if start is not None
+            else None
+        ),
+        "request_id": getattr(g, "hov_request_id", None),
+    }
+    session = _session_fingerprint(request.headers.get("Authorization", ""))
+    if session:
+        data["session"] = session
+    return data
+
+
 def init_request_logging(app):
     """Attach one canonical ``http.request`` log line per request.
 
@@ -244,44 +285,44 @@ def init_request_logging(app):
     fingerprint in a single structured record, replacing scattered per-route
     debug logging. 5xx responses log at ERROR; everything else at INFO
     (expected 4xx like the combat-status 401 poll would otherwise drown the
-    console).
+    console). Unhandled exceptions in debug mode re-raise before
+    after_request runs, so a teardown hook backstops those — a crash is
+    exactly what a debug log must not lose.
     """
 
     @app.before_request
     def _hov_request_start():
         g.hov_req_start = time.perf_counter()
         g.hov_request_id = uuid.uuid4().hex[:8]
+        g.hov_request_logged = False
 
     @app.after_request
     def _hov_request_line(response):
         try:
-            if (
-                request.method == "OPTIONS"
-                or request.path in _REQUEST_LOG_SKIP_PATHS
-                or request.path.startswith(_REQUEST_LOG_SKIP_PREFIXES)
-            ):
+            if _should_skip_request_log():
                 return response
-            start = getattr(g, "hov_req_start", None)
-            dur_ms = (
-                round((time.perf_counter() - start) * 1000, 1)
-                if start is not None
-                else None
-            )
-            data = {
-                "method": request.method,
-                "path": request.path,
-                "status": response.status_code,
-                "dur_ms": dur_ms,
-                "request_id": getattr(g, "hov_request_id", None),
-            }
-            session = _session_fingerprint(request.headers.get("Authorization", ""))
-            if session:
-                data["session"] = session
+            data = _request_data(response.status_code)
             level = logging.ERROR if response.status_code >= 500 else logging.INFO
             log_event("http.request", level=level, logger="hov.http", **data)
+            g.hov_request_logged = True
         except Exception:
             # A logging failure must never break the request itself.
             pass
         return response
+
+    @app.teardown_request
+    def _hov_request_crash(exc):
+        try:
+            if (
+                exc is None
+                or getattr(g, "hov_request_logged", False)
+                or _should_skip_request_log()
+            ):
+                return
+            data = _request_data(500)
+            data["error"] = f"{type(exc).__name__}: {exc}"
+            log_event("http.request", level=logging.ERROR, logger="hov.http", **data)
+        except Exception:
+            pass
 
     return app

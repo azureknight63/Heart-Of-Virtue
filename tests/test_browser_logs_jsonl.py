@@ -140,6 +140,29 @@ class TestJsonlWrites:
         assert env["data"].get("_truncated") is True
         assert "y" * 100 not in json.dumps(env)
 
+    def test_data_control_characters_are_stripped(self, client, tmp_path):
+        # data keys/values reach logcat's terminal renderer parsed (not
+        # JSON-escaped) — an unauthenticated client must not be able to
+        # store live ESC sequences in them.
+        _post_logs(
+            client,
+            tmp_path,
+            [
+                {
+                    "event": "evil",
+                    "data": {
+                        "k\x1b[31m": "v\x1b[0m",
+                        "nested": {"a": "bell\x07", "list": ["\x1b]0;t\x07"]},
+                    },
+                    "message": "m",
+                }
+            ],
+        )
+        (env,) = _written_envelopes(tmp_path)
+        flat = json.dumps(env["data"])
+        assert "\\u001b" not in flat and "\x1b" not in flat
+        assert "\\u0007" not in flat and "\x07" not in flat
+
     def test_non_dict_data_is_dropped(self, client, tmp_path):
         _post_logs(
             client,

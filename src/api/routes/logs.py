@@ -10,7 +10,7 @@ import re
 import zlib
 from pathlib import Path
 from src.api.structured_log import BROWSER_LEVEL_MAP, to_compact_json, utc_iso_z
-from src.api.utils.log_cleanup import LogCleanupManager
+from src.api.utils.log_cleanup import LOG_FILE_PATTERNS, LogCleanupManager
 
 logs_bp = Blueprint("logs", __name__)
 
@@ -21,7 +21,7 @@ logs_bp = Blueprint("logs", __name__)
 MAX_LOGS_PER_REQUEST = 500  # max log entries accepted per request
 MAX_MESSAGE_LENGTH = 4000  # per-message truncation (matches npc_chat)
 MAX_FIELD_LENGTH = 2048  # cap on url and other free-text fields
-MAX_SHORT_FIELD_LENGTH = 64  # cap on timestamp/level
+MAX_SHORT_FIELD_LENGTH = 64  # cap on timestamp and data keys
 MAX_EVENT_LENGTH = 64  # cap on structured event names
 MAX_REPEAT_COUNT = 100000  # clamp on the client-side collapse counter
 SESSION_ID_BUCKETS = 64  # bound distinct session log files per day
@@ -39,6 +39,35 @@ _LOG_CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f]")
 def _sanitize_log_field(value):
     """Collapse control characters in a log field to single spaces."""
     return _LOG_CONTROL_CHARS.sub(" ", value)
+
+
+# Bound recursion on adversarially nested data payloads; the serialized
+# size cap bounds breadth.
+_MAX_DATA_DEPTH = 8
+
+
+def _sanitize_data(value, depth=0):
+    """Strip control characters from every string inside a data payload.
+
+    The JSON file encoding escapes control bytes, but consumers that parse
+    and re-render the payload (tools/logcat.py's terminal view) would
+    otherwise receive live ESC sequences from an unauthenticated client —
+    sanitize keys and values at the source too, not just at the sink.
+    """
+    if depth >= _MAX_DATA_DEPTH:
+        return "..."
+    if isinstance(value, dict):
+        return {
+            _sanitize_log_field(str(k))[:MAX_SHORT_FIELD_LENGTH]: _sanitize_data(
+                v, depth + 1
+            )
+            for k, v in value.items()
+        }
+    if isinstance(value, list):
+        return [_sanitize_data(v, depth + 1) for v in value]
+    if isinstance(value, str):
+        return _sanitize_log_field(value)
+    return value
 
 
 def _entry_to_envelope(log_entry, session_id):
@@ -85,6 +114,7 @@ def _entry_to_envelope(log_entry, session_id):
 
     data = log_entry.get("data")
     if isinstance(data, dict) and data:
+        data = _sanitize_data(data)
         serialized = to_compact_json(data)
         if len(serialized) > MAX_MESSAGE_LENGTH:
             data = {"_truncated": True, "size": len(serialized)}
@@ -235,9 +265,7 @@ def list_browser_log_files():
 
         if LOGS_DIR.exists():
             # Both current .jsonl files and pre-migration .log files
-            found = [
-                p for pattern in ("*.jsonl", "*.log") for p in LOGS_DIR.glob(pattern)
-            ]
+            found = [p for pattern in LOG_FILE_PATTERNS for p in LOGS_DIR.glob(pattern)]
             for log_file in sorted(found, key=lambda p: p.name, reverse=True):
                 stat = log_file.stat()
                 log_files.append(

@@ -205,6 +205,23 @@ class TestFormatting:
         line = logcat.format_entry({}, color=False)
         assert isinstance(line, str)
 
+    def test_format_entry_strips_terminal_escapes(self, logcat):
+        # Envelope content is attacker-influenced (unauthenticated browser
+        # POSTs, arbitrary request paths); rendering must never emit live
+        # control bytes to the developer's terminal.
+        entry = {
+            "ts": "2026-08-22T16:13:23.901Z",
+            "src": "fe\x1b",
+            "lvl": "error",
+            "event": "evil\x1b[31m",
+            "session": "sess\x07ion",
+            "msg": "msg\x1b]0;pwned\x07",
+            "data": {"k\x1b[0m": "v\x1b[31mred"},
+        }
+        line = logcat.format_entry(entry, color=False)
+        assert "\x1b" not in line
+        assert "\x07" not in line
+
     def test_short_session_stable_suffix(self, logcat):
         assert logcat.short_session("session_178_692d4kc87") == "4kc87"
         assert logcat.short_session("") == ""
