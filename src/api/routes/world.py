@@ -1,6 +1,7 @@
 """World navigation routes."""
 
 import logging
+import threading
 
 from flask import Blueprint, request, jsonify
 
@@ -66,15 +67,23 @@ def get_current_room():
 
         # Eagerly prewarm the NPC chat LLM adapter on the first successful
         # world load so OpenRouter discovery/validation doesn't run on the
-        # first chat request and add latency there.
+        # first chat request and add latency there. The warm-up itself does
+        # network discovery/validation and prewarm() holds the class-wide
+        # _instances_lock throughout, so it runs on a daemon thread — inline
+        # it would stall this response AND every concurrent chat request for
+        # the duration (gunicorn runs a single worker).
         try:
             from ai.llm_client import NpcChatLLMAdapter
 
             if not NpcChatLLMAdapter.is_prewarmed():
                 _log.info("Triggering NPC chat LLM prewarm after map load...")
-                NpcChatLLMAdapter.prewarm()
+                threading.Thread(
+                    target=NpcChatLLMAdapter.prewarm,
+                    name="npc-chat-prewarm",
+                    daemon=True,
+                ).start()
         except Exception:
-            pass
+            _log.debug("NPC chat prewarm trigger failed", exc_info=True)
 
         # Start the provider-usage digest alongside the prewarm. Idempotent and
         # a no-op unless a webhook is configured, so calling it on every world
@@ -85,7 +94,7 @@ def get_current_room():
 
             start_digest_scheduler()
         except Exception:
-            pass
+            _log.debug("Provider digest scheduler start failed", exc_info=True)
 
         return jsonify({"success": True, "room": room}), 200
 
