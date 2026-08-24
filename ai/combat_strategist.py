@@ -118,7 +118,8 @@ class CombatStrategist:
         # Kept deliberately terse: this block is static and re-sent on every
         # combat turn, so prose here is paid for once per beat forever. Trimming
         # it from 795 to 490 tokens preserved all nine priorities, every
-        # threshold and the output contract.
+        # threshold the model needs statically, and the output contract (the
+        # 2.0x BLAZING band moved to the runtime heat label and alert block).
         #
         # Do not trim the "between the two it is baseline" clause or the fatigue
         # framing above the priorities. An earlier pass cut both as redundant --
@@ -133,7 +134,7 @@ class CombatStrategist:
             "state and suggest the best moves. Weigh everything given: attributes, consumables, "
             "status effects, and the combat log's narrative flow.\n\n"
 
-            "HEAT is Jean's damage multiplier (0.5×–10×); the context labels the current band. "
+            "HEAT is Jean's damage/XP multiplier (0.5×–10×); the context labels the current band. "
             "Above 1.2×, favor offense and protect the streak — a miss drops heat ×0.85. "
             "Below 0.8×, land cheap hits to rebuild before committing to expensive moves. "
             "Between the two it is baseline: offense and defense trade evenly, so act on "
