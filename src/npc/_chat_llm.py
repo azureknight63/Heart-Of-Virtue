@@ -204,6 +204,7 @@ _TOPIC_STOPWORDS = frozenset(
         "wait",
         "want",
         "will",
+        "work",
         # Jean is the listener, never a subject the guard should excuse
         "jean",
     }
@@ -772,14 +773,26 @@ class ConversationalNPCMixin:
         text = re.sub(r"\s+", " ", text)
         text = re.sub(r"\s+([,.!?;:])", r"\1", text)
         text = re.sub(r"([,;:])(?:\s*\1)+", r"\1", text)
-        text = re.sub(r"^[\s,;:.!?]+", "", text)
+        # A removed sentence-final span leaves its comma glued to the
+        # terminator ("It's fine, cool." -> "It's fine,."): drop it.
+        text = re.sub(r"[,;:]+(?=[.!?])", "", text)
+        # Strip leading separators — but a leading ellipsis is intentional
+        # hesitation ("...fine."), not an orphan, so keep it.
+        text = re.sub(r"^[\s,;:]+", "", text)
+        if not text.startswith("..."):
+            text = re.sub(r"^[.!?]+[\s,;:]*", "", text)
         text = re.sub(r"[\s,;:]+$", "", text)
         return text.strip()
 
     @staticmethod
     def _capitalize_sentence_starts(text: str) -> str:
+        """Upper-case the first letter at text start or after `.`/`!`/`?`.
+
+        The lookbehind keeps an ellipsis from counting as a sentence end, so
+        "Well... maybe." is not rewritten to "Well... Maybe.".
+        """
         return re.sub(
-            r"(^|[.!?]\s+)([a-z])",
+            r"(^|(?<!\.\.)[.!?]\s+)([a-z])",
             lambda m: m.group(1) + m.group(2).upper(),
             text,
         )
@@ -803,8 +816,11 @@ class ConversationalNPCMixin:
         def _classify(match: "re.Match") -> str:
             before = text[: match.start()].rstrip()
             after = text[match.end():].lstrip()
+            # "*" counts as a boundary so consecutive asides ("*nods*
+            # *smiles* Fine.") are both extracted — the second one sees the
+            # first's not-yet-substituted "*" as its left neighbour.
             at_boundary = (
-                not before or before[-1] in ".!?\"'" or not after
+                not before or before[-1] in ".!?\"'*" or not after
             )
             if at_boundary:
                 inner = match.group(1).strip()
@@ -1004,10 +1020,27 @@ class ConversationalNPCMixin:
                 return None, "it repeated a line already said earlier in this conversation", aside
 
         # Step 8: Sentence cap (keep first 3 sentences, preserving each
-        # sentence's own terminator) + terminal punctuation
-        sentences = [s.strip() for s in _SENTENCE_PATTERN.findall(text) if s.strip()]
+        # sentence's own terminator) + terminal punctuation. A fragment with
+        # no alphanumeric content (a closing quote split off by the sentence
+        # regex) belongs to the previous sentence, not the cap count —
+        # otherwise 'He called it "the long road."' gains a stray period.
+        sentences: List[str] = []
+        for raw_sentence in _SENTENCE_PATTERN.findall(text):
+            piece = raw_sentence.strip()
+            if not piece:
+                continue
+            if sentences and not any(ch.isalnum() for ch in piece):
+                sentences[-1] += piece
+                continue
+            sentences.append(piece)
+        # The sentence regex can't capture a leading ellipsis (it requires a
+        # non-terminator first), so re-attach intentional hesitation.
+        if sentences and text.lstrip().startswith("..."):
+            sentences[0] = "..." + sentences[0]
         text = " ".join(sentences[:3])
-        if text and text[-1] not in ".!?":
+        # Terminal punctuation — looking through a closing quote so
+        # '... road."' does not gain a stray period after the quote.
+        if text and text.rstrip("\"'”’")[-1:] not in (".", "!", "?", ""):
             text += "."
 
         # Step 9: If substitutions ran, repair capitalization at sentence starts
@@ -1161,11 +1194,14 @@ class ConversationalNPCMixin:
             )
             return None
         try:
-            return adapter.revise_turn(
+            revision = adapter.revise_turn(
                 system, npc_text, options, _chat_guard.guidance_for(flags)
             )
+            # A nonconforming adapter returning a truthy non-dict would crash
+            # the caller's .get() outside any guard — treat it as no revision.
+            return revision if isinstance(revision, dict) else None
         except Exception as e:  # provider errors must never cost the player a turn
-            logger.warning("_guard_turn revise_turn failed: %s", e)
+            logger.warning("_request_guard_revision revise_turn failed: %s", e)
             return None
 
     def _guard_turn(
@@ -1278,10 +1314,15 @@ class ConversationalNPCMixin:
                 if _chat_guard.scan_option_text(opt["text"], topics):
                     continue
                 rebuilt.append(dict(opt))
-        if not rebuilt:
-            rebuilt = [
-                dict(opt) for opt, flags in zip(options, option_flags) if not flags
-            ]
+        # Salvage policy: clean ORIGINAL options are context-aware and beat
+        # generic pool fillers — keep them alongside any clean revised ones
+        # (skipping near-duplicates) rather than all-or-nothing replacement.
+        for opt, flags in zip(options, option_flags):
+            if flags:
+                continue
+            if any(self._jaccard(opt["text"], kept["text"]) > 0.6 for kept in rebuilt):
+                continue
+            rebuilt.append(dict(opt))
         return self._top_up_jean_options(rebuilt)
 
     def _generate_turn(
@@ -1299,45 +1340,48 @@ class ConversationalNPCMixin:
         options list, or None when the adapter produces options via a separate
         call). Returns None on failure.
         """
-        if hasattr(adapter, "generate_turn"):
-            if is_opening:
-                res = adapter.generate_turn(system, self._chat_history, is_opening=True)
-            else:
-                res = adapter.generate_turn(
-                    system, self._chat_history, is_opening=False, jean_text=jean_text
-                )
-            if not res or not res.get("npc_text"):
-                logger.warning("_generate_turn combined adapter returned no npc_text. is_opening=%s keys=%s", is_opening, sorted((res or {}).keys()))
-                return None
-            logger.info("_generate_turn combined adapter succeeded. is_opening=%s npc_text_chars=%s", is_opening, len(res.get("npc_text") or ""))
-            return {
-                "npc_text": res.get("npc_text"),
-                "npc_flavor": res.get("npc_flavor", "") or "",
-                "conversation_quality": res.get("conversation_quality", "neutral"),
-                "reputation_delta": res.get("reputation_delta", 0),
-                "loquacity_delta": res.get("loquacity_delta"),
-                "raw_options": res.get("jean_options"),
-            }
-
-        # Legacy two-call adapter (kept for compatibility with older adapters).
-        logger.info("_generate_turn using legacy two-call adapter. is_opening=%s", is_opening)
-        if is_opening:
-            res = adapter.generate_npc_turn(system, self._chat_history, is_opening=True)
+        combined = hasattr(adapter, "generate_turn")
+        if combined:
+            method, label = adapter.generate_turn, "combined"
         else:
-            res = adapter.generate_npc_turn(
-                system, self._chat_history, is_opening=False, jean_text=jean_text
+            # Legacy two-call adapter (kept for compatibility with older adapters).
+            method, label = adapter.generate_npc_turn, "legacy"
+            logger.info(
+                "_generate_turn using legacy two-call adapter. is_opening=%s",
+                is_opening,
             )
+        if is_opening:
+            res = method(system, self._chat_history, is_opening=True)
+        else:
+            res = method(system, self._chat_history, is_opening=False, jean_text=jean_text)
         if not res or not res.get("npc_text"):
-            logger.warning("_generate_turn legacy adapter returned no npc_text. is_opening=%s", is_opening)
+            logger.warning(
+                "_generate_turn %s adapter returned no npc_text. is_opening=%s keys=%s",
+                label,
+                is_opening,
+                sorted((res or {}).keys()),
+            )
             return None
-        logger.info("_generate_turn legacy adapter succeeded. is_opening=%s npc_text_chars=%s", is_opening, len(res.get("npc_text") or ""))
+        logger.info(
+            "_generate_turn %s adapter succeeded. is_opening=%s npc_text_chars=%s",
+            label,
+            is_opening,
+            len(res.get("npc_text") or ""),
+        )
+        # Defence in depth: production adapters already coerce and clamp the
+        # delta, but a nonconforming value must not raise one frame later in
+        # chat_respond's arithmetic.
+        try:
+            reputation_delta = int(res.get("reputation_delta", 0))
+        except (TypeError, ValueError):
+            reputation_delta = 0
         return {
             "npc_text": res.get("npc_text"),
             "npc_flavor": res.get("npc_flavor", "") or "",
             "conversation_quality": res.get("conversation_quality", "neutral"),
-            "reputation_delta": res.get("reputation_delta", 0),
+            "reputation_delta": max(-5, min(5, reputation_delta)),
             "loquacity_delta": res.get("loquacity_delta"),
-            "raw_options": None,
+            "raw_options": res.get("jean_options") if combined else None,
         }
 
     def _run_npc_turn(
@@ -1359,7 +1403,7 @@ class ConversationalNPCMixin:
         QC pass.
         """
         if not llm_available or adapter is None:
-            logger.debug("_run_npc_turn skipped: llm_available=%s adapter=%s", llm_available, adapter is not None)
+            logger.debug("_run_npc_turn skipped: llm_available=%s has_adapter=%s", llm_available, adapter is not None)
             return None
         max_attempts = 2
         reject_reason: Optional[str] = None
@@ -1391,7 +1435,13 @@ class ConversationalNPCMixin:
                 reject_reason = reason or "it was unusable"
                 logger.warning(
                     "_run_npc_turn QC rejected npc_text on attempt=%s/%s reason=%s text=%r",
-                    attempt, max_attempts, reject_reason, turn.get("npc_text"),
+                    attempt,
+                    max_attempts,
+                    reject_reason,
+                    # WARNING is default-visible and LOG_FILE-persisted; the
+                    # full raw line (which can echo player text) stays on the
+                    # DEBUG records inside _qc_npc_text_ex.
+                    (turn.get("npc_text") or "")[:80],
                 )
             else:
                 logger.warning("_run_npc_turn generate_turn returned no npc_text on attempt=%s/%s", attempt, max_attempts)
@@ -1455,6 +1505,7 @@ class ConversationalNPCMixin:
                     "npc_key": npc_key,
                     "npc_name": self._display_name(),
                     "npc_opening": brush_off,
+                    "npc_flavor": "",
                     "jean_options": [],
                     "loquacity_current": self.loquacity_current,
                     "loquacity_max": self.loquacity_max,
@@ -1468,7 +1519,7 @@ class ConversationalNPCMixin:
             system = self._build_system_prompt(player)
             adapter = self._get_adapter()
             llm_available = adapter is not None and adapter.enabled
-            logger.info("chat_open start npc=%s llm_available=%s adapter=%s history_len=%s", self.name, llm_available, adapter is not None, len(self._chat_history))
+            logger.info("chat_open start npc=%s llm_available=%s has_adapter=%s history_len=%s", self.name, llm_available, adapter is not None, len(self._chat_history))
 
             # Generate the NPC opening (and, on a combined adapter, Jean's options
             # in the same call). Opening lines never drain loquacity.
@@ -1534,6 +1585,12 @@ class ConversationalNPCMixin:
     def chat_respond(self, player, jean_text: str, jean_tone: str) -> Dict[str, Any]:
         """Process Jean's response. Returns NPC reply + 3 new Jean options."""
         try:
+            # Bound the engine-side copy. The route caps the field at 4000
+            # chars, but persisted rows are replayed into every later prompt
+            # (last 8 rows), so an over-long line multiplies token spend for
+            # the rest of the conversation. 500 chars is generous next to the
+            # 300-char NPC lines and 160-char options.
+            jean_text = (jean_text or "")[:500]
             self._compute_loquacity(player)
             npc_key = self._get_npc_key(player)
             self._load_history_from_persistence(player)
@@ -1646,20 +1703,6 @@ class ConversationalNPCMixin:
             new_reputation = max(-100, min(100, old_reputation + reputation_delta))
             player.reputation[self.name] = new_reputation
 
-            # Persist exchange as a new row awaiting Jean's next line, mirroring
-            # chat_open's row shape ({npc: <this line>, jean: ""}) so next
-            # round's "fill jean into last entry" step (top of this method)
-            # updates it in place instead of falling into that step's own
-            # append-a-placeholder branch. Passing the real jean_text here
-            # (as this used to) made BOTH that fill step AND this persist call
-            # append a row every single round — every turn was saved twice,
-            # once as a bare {npc: "", jean: ...} placeholder and once
-            # complete. jean_text="" avoids that, and also keeps
-            # _format_history's per-row "NPC line, then Jean line" print order
-            # chronologically correct (Jean's reply prints right after the
-            # line it replied to, not attached to the line it *prompted*).
-            # conversation_count is bumped separately since it no longer rides
-            # on _save_exchange_to_persistence's own jean_text-truthy check.
             # Jean's options for the next round. Once loquacity is spent the
             # options are omitted so the NPC's own (lore- and context-aware) reply
             # stands as the graceful closing line, with nothing left to say back.
@@ -1685,6 +1728,20 @@ class ConversationalNPCMixin:
                     adapter, system, npc_response, npc_flavor, jean_options
                 )
 
+            # Persist exchange as a new row awaiting Jean's next line, mirroring
+            # chat_open's row shape ({npc: <this line>, jean: ""}) so next
+            # round's "fill jean into last entry" step (top of this method)
+            # updates it in place instead of falling into that step's own
+            # append-a-placeholder branch. Passing the real jean_text here
+            # (as this used to) made BOTH that fill step AND this persist call
+            # append a row every single round — every turn was saved twice,
+            # once as a bare {npc: "", jean: ...} placeholder and once
+            # complete. jean_text="" avoids that, and also keeps
+            # _format_history's per-row "NPC line, then Jean line" print order
+            # chronologically correct (Jean's reply prints right after the
+            # line it replied to, not attached to the line it *prompted*).
+            # conversation_count is bumped separately since it no longer rides
+            # on _save_exchange_to_persistence's own jean_text-truthy check.
             game_tick = getattr(getattr(player, "universe", None), "game_tick", 0) or 0
             chapter = self._get_chapter(player)
             self._save_exchange_to_persistence(
@@ -1708,7 +1765,7 @@ class ConversationalNPCMixin:
                 "reputation_delta": reputation_delta,
             }
         except Exception as e:
-            logger.error(f"ConversationalNPCMixin.chat_respond error: {e}")
+            logger.error("ConversationalNPCMixin.chat_respond error: %s", e, exc_info=True)
             return {"success": False, "error": str(e)}
 
     def loquacity_tick(self):

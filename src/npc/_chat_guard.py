@@ -43,6 +43,9 @@ CATEGORY_SOLICIT = "solicit"
 # topic is legitimate. Handing over goods and arranging meetings are never
 # excusable, however on-topic they are — otherwise a knowledge_scope entry like
 # "the ferry crossing" would license "I'll give you a knife for the crossing".
+# NOTE: no pattern emits subcategory "growth" today — the entry is reserved
+# for a future growth-flavoured pattern; growth talk is currently excused via
+# topic words on "teaching" flags.
 _EXCUSABLE_SUBCATEGORIES = frozenset({"teaching", "growth"})
 
 # The state_claim patterns are written in the second person because they exist
@@ -62,7 +65,10 @@ _WORD_PATTERN = re.compile(r"[a-z0-9']+")
 # First-person offer openers ("I'll", "let me", "shall I", ...). Written once
 # and interpolated so every offer pattern accepts the same set of contractions,
 # including the typographic apostrophe the models emit about half the time.
-_OFFER = r"(?:I(?:['’])?ll|I will|I can|I could|I(?:['’])?d|let me|shall I)"
+# The leading \b is load-bearing: without it, IGNORECASE lets "I'll"/"I'd"
+# match the tails of ordinary words ("will" contains "ill", "druid" contains
+# "id"), flagging lines like "The ferry will take you across." as offers.
+_OFFER = r"\b(?:I(?:['’])?ll|I will|I can|I could|I(?:['’])?d|let me|shall I)"
 # Up to two filler words between the opener and the verb ("I'll happily give").
 _GAP = r"(?:\w+\s+){0,2}?"
 
@@ -81,11 +87,14 @@ _NUMBERS = (
 # whitelist and the hedge, so they are part of the contract, not a comment.
 _PATTERNS: Dict[str, Sequence[Tuple[str, "re.Pattern"]]] = {
     CATEGORY_TRANSACTION: (
-        # "Here, take this blade." — imperative handover.
+        # "Here, take this blade." — imperative handover. The negative
+        # lookahead exempts idioms with no object transfer: "Keep that in
+        # mind.", "I take it you have come about the ferry."
         (
             "handover",
             re.compile(
-                r"\b(?:take|keep|have)\s+(?:this|these|that|those|it|them|my|mine)\b",
+                r"\b(?:take|keep|have)\s+(?:this|these|that|those|it|them|my|mine)\b"
+                r"(?!\s+(?:in\s+mind\b|you\b))",
                 re.IGNORECASE,
             ),
         ),
@@ -288,6 +297,12 @@ _GUIDANCE = {
     ),
 }
 
+# To add a category: define its CATEGORY_* constant, then give it a row in ALL
+# THREE tables above (_PATTERNS, _HEDGES, _GUIDANCE) — hedge_npc_text and
+# guidance_for index the latter two directly, so a missing row is a runtime
+# KeyError mid-turn. This assert makes the omission fail at import instead.
+assert set(_PATTERNS) == set(_HEDGES) == set(_GUIDANCE)
+
 
 class GuardFlag(NamedTuple):
     """One tripwire hit.
@@ -319,10 +334,11 @@ def _excused(flag: GuardFlag, allowed_topics: Set[str]) -> bool:
     for topic in allowed_topics:
         if not topic:
             continue
-        # Multi-word topics (move names like "river cut") can only be checked
-        # as a phrase; single tokens must match a whole word, not a substring.
+        # Multi-word topics (move names like "river cut") are checked as a
+        # whole-word phrase; single tokens must match a whole word. Bare
+        # substring containment let "river cut" excuse "the driver cutlass".
         if " " in topic:
-            if topic in low:
+            if re.search(r"\b" + re.escape(topic) + r"\b", low):
                 return True
         elif topic in words:
             return True
@@ -397,7 +413,9 @@ def hedge_npc_text(text: str, flags: Sequence[GuardFlag]) -> str:
         # ("We'll be here. '.") once the terminal-punctuation fixup ran.
         if not piece or not any(ch.isalnum() for ch in piece):
             continue
-        if out and out[-1] == piece:
+        # Collapse only repeated *hedges* — a legitimately repeated sentence
+        # ("No. No.") is the author's/model's cadence, not stutter.
+        if out and replacement is not None and out[-1] == piece:
             continue
         out.append(piece)
 

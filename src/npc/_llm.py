@@ -665,7 +665,13 @@ class MynxLLMMixin:
             context = self._build_llm_context(
                 roster_set, p, jean_pronoun_line, jean_snippet
             )
-            logger.info("Mynx interact start prompt=%s structured=%s adapter=%s model=%s", p, structured, type(adapter).__name__, getattr(adapter, "model", None))
+            logger.info(
+                "Mynx interact start prompt_chars=%s structured=%s adapter=%s model=%s",
+                len(p or ""),
+                structured,
+                type(adapter).__name__,
+                getattr(adapter, "model", None),
+            )
             try:
                 if structured:
                     result = adapter.generate_structured(context=context)
@@ -697,7 +703,7 @@ class MynxLLMMixin:
                             except Exception:
                                 pass
                             return result
-                        logger.warning("Mynx structured QA rejected result. prompt=%s", p)
+                        logger.warning("Mynx structured QA rejected result. prompt_chars=%s", len(p or ""))
                 else:
                     text_resp = adapter.generate_plain(context=context)
                     if isinstance(text_resp, str) and text_resp:
@@ -730,9 +736,9 @@ class MynxLLMMixin:
                                 pass
                             narrate(checked)
                             return checked
-                        logger.warning("Mynx plain QA rejected text. prompt=%s", p)
+                        logger.warning("Mynx plain QA rejected text. prompt_chars=%s", len(p or ""))
             except Exception as e:
-                logger.error("Mynx interact exception prompt=%s error=%s", p, e, exc_info=True)
+                logger.error("Mynx interact exception prompt_chars=%s error=%s", len(p or ""), e, exc_info=True)
                 if _debug:
                     try:
                         narrate(
