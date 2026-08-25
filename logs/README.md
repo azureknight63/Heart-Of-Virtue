@@ -2,6 +2,9 @@
 
 This directory contains browser console logs captured from the frontend application.
 
+See also: [IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md) for a build-log-style
+summary of what shipped and when.
+
 ## Overview
 
 The browser logging system automatically captures all console output (log, error, warn, info, debug) from the frontend and sends it to the backend for persistent storage.

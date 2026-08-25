@@ -174,6 +174,8 @@ You'll see the login page. Create a test account or use the auto-login if you're
 **Backend Logs**:
 - Watch the terminal where you ran `python tools/run_api.py`
 - Flask will print error tracebacks if the API fails
+- Or run `python tools/logcat.py --tail` in a third terminal for a merged,
+  colorized backend+browser JSONL log stream (see `logs/README.md`)
 
 **Flask Debug Mode**:
 - The server runs with `FLASK_DEBUG=true` (from .env)
