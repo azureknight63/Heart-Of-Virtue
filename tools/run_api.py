@@ -1,4 +1,3 @@
-
 """Entry point for running the Flask API server.
 
 Usage:
@@ -18,6 +17,7 @@ from pathlib import Path
 
 # Load .env file first
 from dotenv import load_dotenv
+
 load_dotenv()
 
 # Add project root to path. src/ is deliberately NOT added: every local import
@@ -28,8 +28,13 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 # Dev server default: capture the structured JSONL debug stream for
-# tools/logcat.py. Opt out with LOG_JSONL_DIR="" (empty disables).
-os.environ.setdefault("LOG_JSONL_DIR", str(ROOT / "logs" / "backend"))
+# tools/logcat.py. Opt out with LOG_JSONL_DIR="" (empty disables). Guarded
+# to non-production FLASK_ENV so a shared/copied .env can't silently turn on
+# per-request synchronous file writes and DEBUG-level capture in prod — the
+# same failure shape as the GITHUB_TOKEN-via-.env leak this project already
+# hit once (see tools/bug_hunt.py's explicit-clear fix for that incident).
+if os.environ.get("FLASK_ENV", "development").lower() != "production":
+    os.environ.setdefault("LOG_JSONL_DIR", str(ROOT / "logs" / "backend"))
 
 from src.api.app import create_app  # noqa: E402
 from src.api.config import DevelopmentConfig, TestingConfig, ProductionConfig  # noqa: E402
@@ -38,9 +43,7 @@ from src.api.config import DevelopmentConfig, TestingConfig, ProductionConfig  #
 def main():
     """Run the Flask API server."""
     # Allow an optional config file as a positional argument
-    parser = argparse.ArgumentParser(
-        description="Heart of Virtue Flask API server"
-    )
+    parser = argparse.ArgumentParser(description="Heart of Virtue Flask API server")
     parser.add_argument(
         "config",
         nargs="?",

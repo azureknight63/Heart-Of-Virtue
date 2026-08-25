@@ -163,6 +163,26 @@ class TestJsonlWrites:
         assert "\\u001b" not in flat and "\x1b" not in flat
         assert "\\u0007" not in flat and "\x07" not in flat
 
+    def test_wide_data_payload_is_bounded_not_just_deep(self, client, tmp_path):
+        # The depth cap alone doesn't bound a WIDE payload (one dict with
+        # thousands of short leaf strings) -- that shape is depth-1, so it
+        # used to sail through the sanitizer untouched, and only the
+        # serialized-SIZE check after the full walk discarded the work
+        # already done. Up to 500 entries/request x this cost is the DoS
+        # surface on an unauthenticated route (issue #429 lineage).
+        wide = {f"k{i}": f"v{i}" for i in range(5000)}
+        import time
+
+        start = time.monotonic()
+        rv = _post_logs(client, tmp_path, [{"event": "wide", "data": wide}])
+        elapsed = time.monotonic() - start
+        assert rv.status_code == 200
+        assert elapsed < 5.0
+        (env,) = _written_envelopes(tmp_path)
+        # Bounded well below the full 5000 keys, one way or another
+        # (per-key node budget truncation, or the size cap on the result).
+        assert len(json.dumps(env["data"])) < 20000
+
     def test_non_dict_data_is_dropped(self, client, tmp_path):
         _post_logs(
             client,

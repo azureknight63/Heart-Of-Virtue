@@ -377,6 +377,10 @@ class TestCrashLogging:
         assert env["data"]["status"] == 500
         assert "RuntimeError" in env["data"]["error"]
         assert "kaput in debug" in env["data"]["error"]
+        # The whole point of the backstop is crash visibility — losing
+        # the traceback would defeat that.
+        assert "Traceback" in env["data"]["trace"]
+        assert "raise RuntimeError" in env["data"]["trace"]
 
 
 class TestConfigureLoggingLogFile:
@@ -405,3 +409,42 @@ class TestConfigureLoggingLogFile:
             env={"LOG_LEVEL": "INFO", "LOG_FILE": str(tmp_path / "x.log")},
             logger=logger,
         )
+
+
+class TestJsonlDirRetention:
+    def test_configure_logging_prunes_old_backend_logs(self, tmp_path):
+        # logs/backend/*.jsonl otherwise has no retention at all: nothing
+        # else ever touches this directory (unlike the browser logs, which
+        # get pruned on every write). configure_logging must prune it too.
+        import os
+        import time
+
+        old = tmp_path / "2020-01-01.jsonl"
+        old.write_text("{}\n", encoding="utf-8")
+        stale = time.time() - 400 * 86400
+        os.utime(old, (stale, stale))
+        fresh = tmp_path / "fresh.jsonl"
+        fresh.write_text("{}\n", encoding="utf-8")
+
+        logger = _fresh_logger()
+        logger.handlers = []
+        configure_logging(env={"LOG_JSONL_DIR": str(tmp_path)}, logger=logger)
+        for h in logger.handlers:
+            h.close()
+
+        assert not old.exists()
+        assert fresh.exists()
+
+    def test_cleanup_failure_does_not_block_configure(self, tmp_path, monkeypatch):
+        from src.api import structured_log
+
+        def boom(*a, **k):
+            raise OSError("disk full")
+
+        monkeypatch.setattr(structured_log.LogCleanupManager, "cleanup", boom)
+        logger = _fresh_logger()
+        logger.handlers = []
+        # Must not raise — a cleanup failure must never block server startup
+        configure_logging(env={"LOG_JSONL_DIR": str(tmp_path)}, logger=logger)
+        for h in logger.handlers:
+            h.close()

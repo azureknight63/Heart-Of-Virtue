@@ -397,12 +397,18 @@ def run_tail(args):
                     continue
                 if size <= offsets.get(path, 0):
                     continue
-                with open(path, "r", encoding="utf-8", errors="replace") as f:
+                # Binary mode + byte offsets: seek()/tell() on a text-mode
+                # file are only well-defined at 0 or a value tell() itself
+                # returned, per the stdlib docs — offsets[path] here comes
+                # from os.stat().st_size (rescan) or a prior binary tell(),
+                # neither of which text mode guarantees honoring correctly.
+                with open(path, "rb") as f:
                     f.seek(offsets.get(path, 0))
                     chunk = f.read()
                     offsets[path] = f.tell()
                 parse = parser_for(path)
-                for line in chunk.splitlines():
+                text = chunk.decode("utf-8", errors="replace")
+                for line in text.splitlines():
                     env = parse(line)
                     if env is not None and matches(env, **filters):
                         fresh.append(env)

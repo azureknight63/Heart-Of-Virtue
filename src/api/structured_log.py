@@ -31,12 +31,15 @@ import logging
 import os
 import re
 import time
+import traceback
 import uuid
 import zlib
 from datetime import datetime, timezone
 from pathlib import Path
 
 from flask import g, request
+
+from src.api.utils.log_cleanup import LogCleanupManager
 
 # Marker attribute stamped on handlers this module installs, so reconfiguring
 # replaces only its own handlers and never a test runner's capture handlers.
@@ -221,6 +224,15 @@ def configure_logging(env=None, logger=None):
         logger.setLevel(logging.DEBUG)
         for name in _NOISY_LOGGERS:
             logging.getLogger(name).setLevel(max(level, logging.INFO))
+        # Prune old/oversized backend logs on every (re)configure — mirrors
+        # the browser log directory's retention (7 days / 100MB). Without
+        # this, logs/backend/*.jsonl grows forever: nothing else ever
+        # touches this directory. Best-effort — a prune failure must never
+        # block server startup.
+        try:
+            LogCleanupManager(jsonl_dir, retention_days=7, max_size_mb=100).cleanup()
+        except OSError:
+            pass
 
 
 def log_event(event, *, level=logging.INFO, logger="hov", **data):
@@ -321,6 +333,9 @@ def init_request_logging(app):
                 return
             data = _request_data(500)
             data["error"] = f"{type(exc).__name__}: {exc}"
+            data["trace"] = "".join(
+                traceback.format_exception(type(exc), exc, exc.__traceback__)
+            )
             log_event("http.request", level=logging.ERROR, logger="hov.http", **data)
         except Exception:
             pass

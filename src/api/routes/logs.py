@@ -41,12 +41,19 @@ def _sanitize_log_field(value):
     return _LOG_CONTROL_CHARS.sub(" ", value)
 
 
-# Bound recursion on adversarially nested data payloads; the serialized
-# size cap bounds breadth.
+# Bound recursion on adversarially nested (_MAX_DATA_DEPTH) or wide
+# (_MAX_DATA_NODES) data payloads. The serialized-size check in
+# _entry_to_envelope runs AFTER sanitization and only bounds the stored
+# output — it does nothing to cap the walk's own cost, so a single dict
+# with one key holding thousands of short strings previously did unbounded
+# work (up to 500x per request, once per MAX_LOGS_PER_REQUEST entry) before
+# that check ever ran. The node budget bounds total work regardless of
+# whether the adversarial shape is deep or wide.
 _MAX_DATA_DEPTH = 8
+_MAX_DATA_NODES = 500
 
 
-def _sanitize_data(value, depth=0):
+def _sanitize_data(value, depth=0, budget=None):
     """Strip control characters from every string inside a data payload.
 
     The JSON file encoding escapes control bytes, but consumers that parse
@@ -54,17 +61,29 @@ def _sanitize_data(value, depth=0):
     otherwise receive live ESC sequences from an unauthenticated client —
     sanitize keys and values at the source too, not just at the sink.
     """
-    if depth >= _MAX_DATA_DEPTH:
+    if budget is None:
+        budget = [_MAX_DATA_NODES]
+    if depth >= _MAX_DATA_DEPTH or budget[0] <= 0:
         return "..."
+    budget[0] -= 1
     if isinstance(value, dict):
-        return {
-            _sanitize_log_field(str(k))[:MAX_SHORT_FIELD_LENGTH]: _sanitize_data(
-                v, depth + 1
+        result = {}
+        for k, v in value.items():
+            if budget[0] <= 0:
+                result["..."] = "(truncated)"
+                break
+            result[_sanitize_log_field(str(k))[:MAX_SHORT_FIELD_LENGTH]] = (
+                _sanitize_data(v, depth + 1, budget)
             )
-            for k, v in value.items()
-        }
+        return result
     if isinstance(value, list):
-        return [_sanitize_data(v, depth + 1) for v in value]
+        result = []
+        for v in value:
+            if budget[0] <= 0:
+                result.append("...(truncated)")
+                break
+            result.append(_sanitize_data(v, depth + 1, budget))
+        return result
     if isinstance(value, str):
         return _sanitize_log_field(value)
     return value
