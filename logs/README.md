@@ -24,12 +24,17 @@ The system automatically cleans up old log files to prevent disk space issues:
 
 - **Retention Period**: Logs older than 7 days are automatically deleted
 - **Size Limit**: If total logs exceed 100MB, oldest files are deleted first
-- **Cleanup Trigger**: Runs automatically after each log write operation
+- **Cleanup Trigger**: Browser logs (`logs/browser/`) are pruned after every
+  `POST /api/logs/browser` write. Backend logs (`logs/backend/`) are pruned
+  once whenever `configure_logging()` runs (app startup) — not per write,
+  since the backend logger writes far more frequently than the browser
+  batches logs.
 - **Silent Operation**: Cleanup failures don't affect log writing
 
 ### Cleanup Configuration
 
-Default settings (configurable in `src/api/routes/logs.py`):
+Default settings (configurable in `src/api/routes/logs.py` for browser logs,
+`src/api/structured_log.py`'s `configure_logging()` for backend logs):
 - **Retention Days**: 7 days
 - **Max Total Size**: 100 MB
 
@@ -43,6 +48,13 @@ defined in `src/api/structured_log.py`:
 - Backend logs: `logs/backend/YYYY-MM-DD.jsonl` (written when `LOG_JSONL_DIR`
   is set; `tools/run_api.py` sets it by default)
 
+`configure_logging()` (`src/api/structured_log.py`) reads three env vars:
+`LOG_LEVEL` (console/plain-file level name, default `WARNING`), `LOG_FILE`
+(optional plain-text log file path, off by default), and `LOG_JSONL_DIR`
+(directory for the JSONL stream — setting it also drops the logger to
+`DEBUG` so the JSONL file captures everything while the console keeps
+`LOG_LEVEL`).
+
 Envelope fields: `ts` (ISO-8601 UTC, Z suffix), `src` (`be`/`fe`), `lvl`
 (`debug|info|warning|error`), `event` (dot-separated name; `console` for
 intercepted console output, `log` for plain backend logger calls), plus
@@ -55,9 +67,11 @@ Example:
 ```
 
 View the merged, condensed stream with `python tools/logcat.py` (`--tail` to
-follow live, `--json` for raw machine-readable output). Pre-migration
-bracket-format `.log` files are still readable by logcat and still covered
-by cleanup until they age out.
+follow live, `--json` for raw machine-readable output, `--errors` for
+`--level error`, `--session <id>` for one browser session, `--src be|fe`
+for one side only, `--grep <regex>`, `--since <window>`, `--limit N`).
+Pre-migration bracket-format `.log` files are still readable by logcat and
+still covered by cleanup until they age out.
 
 ## API Endpoints
 

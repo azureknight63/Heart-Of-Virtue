@@ -88,10 +88,13 @@ cd frontend && npm install && npm run dev
 
 # Live condensed debug feed — merges backend + browser JSONL logs
 python tools/logcat.py --tail    # --json (agents), --errors, --grep X, --since 5m
+                                  # --session <id>, --src be|fe, --level, --limit N
 ```
 
 Debug logging uses one JSONL envelope (schema authority: `src/api/structured_log.py`).
-`run_api.py` writes `logs/backend/<utc-date>.jsonl` (via `LOG_JSONL_DIR`); the browser
+`configure_logging()` also reads `LOG_LEVEL` (console/plain-file level, default WARNING)
+and `LOG_FILE` (optional plain-text log path) — see the module docstring for the full
+env var contract. `run_api.py` writes `logs/backend/<utc-date>.jsonl` (via `LOG_JSONL_DIR`); the browser
 console ships to `logs/browser/*.jsonl`. New frontend debug output goes through
 `logger.event(name, data)` / `logger.eventOnChange` (`utils/logger.js`), not bare
 `console.log` — structured events ship `{event, data}` with no message string.
@@ -830,8 +833,9 @@ For non-trivial changes, the agent should review the feedback and correct any is
 ## Session Workflow
 
 Git gotchas: `logs/` is gitignored as a directory, so the *tracked* `logs/README.md`
-needs `git add -f`. The repo root is a bare checkout — run git and `/commit` from
-inside a worktree (Alpha/Bravo/Charlie/Delta), never the root.
+and `logs/IMPLEMENTATION_SUMMARY.md` need `git add -f`. The repo root is a bare
+checkout — run git and `/commit` from inside a worktree (Alpha/Bravo/Charlie/Delta),
+never the root.
 
 At the end of every task, suggest the appropriate overhead steps before moving on. The goal is to ship and maintain a complete game — treat housekeeping as part of the work, not an afterthought.
 
