@@ -2,6 +2,16 @@
 
 All notable changes to Heart of Virtue will be documented in this file.
 
+## [0.2.0.0] - 2026-08-25
+
+### Added
+- **Structured JSONL debug logging**: Backend and browser console logs now write to a single, unified JSONL format (`logs/backend/*.jsonl`, `logs/browser/*.jsonl`) instead of separate free-text formats — every entry shares one envelope (timestamp, source, level, event name, session, message, structured data). Backend logging captures one canonical line per HTTP request (method, path, status, duration) plus a crash-visible traceback for unhandled exceptions. Old logs are pruned automatically (7-day retention, 100MB cap) on both log directories.
+- **`tools/logcat.py` — condensed live log viewer**: `python tools/logcat.py --tail` merges backend and browser logs chronologically into one colorized, readable stream — collapsing repeated lines, filtering by level/session/source, and supporting `--json` output for tooling. `start_servers.ps1` now opens it automatically alongside the API and frontend dev servers (opt out with `-NoLogcat`).
+- **`logger.event()` / `logger.eventOnChange()`**: The frontend logger gained a structured event API for emitting named debug events with payload data, replacing scattered `console.log('[DEBUG] ...')` calls. Repeated identical lines collapse into one entry with a repeat count instead of flooding the log.
+
+### Changed
+- **Browser error logging**: Errors and Axios failures now serialize into readable one-line summaries (e.g. `GET /combat/status -> 401`) instead of dumping the entire error object — previously this rendered as `{}` for native `Error` instances, since their properties aren't enumerable to JSON.stringify.
+
 ## [0.1.0.0] - 2026-04-30
 
 ### Added
