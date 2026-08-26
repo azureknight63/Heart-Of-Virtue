@@ -133,6 +133,17 @@ def _patched_auth():
                  return_value=(sm, session, player, None))
 
 
+@pytest.fixture(autouse=True)
+def _disable_chat_rate_limit(monkeypatch):
+    """This fuzz suite intentionally replays hundreds of requests per seed
+    against a single fixed session id (see ``_patched_auth``). It exercises
+    input handling, not the /open + /respond LLM-call rate limiter added in
+    npc_chat.py — leaving the limiter live would trip on fuzz volume alone
+    and mask the 400/500 assertions these tests actually care about.
+    """
+    monkeypatch.setattr("src.api.routes.npc_chat._chat_limiter", None)
+
+
 @pytest.mark.parametrize("seed", [1, 7, 1337])
 def test_route_input_fuzz_never_500(seed):
     rng = random.Random(seed)

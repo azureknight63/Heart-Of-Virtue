@@ -28,6 +28,7 @@ Instance attributes (set by _init_chat_attrs):
 import json
 import logging
 import re
+import zlib
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -71,11 +72,10 @@ _JEAN_DIALOG_PATTERN = re.compile(
 _BOLD_MD_PATTERN = re.compile(r"\*\*([^*]+)\*\*")
 _ACTION_ASIDE_PATTERN = re.compile(r"\*([^*\n]{2,160})\*")
 
-# Sentence splitter that KEEPS each sentence's own terminator ("Stay back!"
-# stays an exclamation; "What do you want?" stays a question; "Well... maybe."
-# keeps its ellipsis). Splitting on [.!?] and re-joining with ". " — the old
-# approach — flattened every ! and ? in NPC dialogue into a period.
-_SENTENCE_PATTERN = re.compile(r"[^.!?]+[.!?]*")
+# Sentence splitter — shared with _chat_guard, which owns the definition and
+# the terminator-preserving rationale comment. Aliased under this module's
+# existing name so its one call site (in _qc_npc_text_ex) stays untouched.
+_SENTENCE_PATTERN = _chat_guard._SENTENCE_PATTERN
 
 # Capitalized token finder (for invented proper noun scan)
 _CAP_TOKEN_PATTERN = re.compile(r"\b([A-Z][A-Za-z\-]{2,})\b")
@@ -116,6 +116,24 @@ def _has_real_npc_text(text: str) -> bool:
     punctuation/whitespace noise like "..." or "-")."""
     return len(text) >= _MIN_NPC_TEXT_LEN and bool(_HAS_ALNUM_PATTERN.search(text))
 
+
+# QC pipeline size/count/similarity thresholds, named so the numbers used in
+# _qc_npc_text_ex / _qc_flavor_text / _qc_jean_options / _top_up_jean_options
+# read as policy rather than unexplained literals scattered through the file.
+_MAX_NPC_TEXT_CHARS = 300  # NPC line truncation cap (_qc_npc_text_ex step 2)
+_MAX_OPTION_CHARS = 160  # Jean dialogue option length cap
+_MAX_FLAVOR_CHARS = 200  # npc_flavor truncation cap
+_JEAN_OPTION_COUNT = 3  # Jean is always offered exactly three options
+_OPTION_SIMILARITY_MAX = 0.6  # Jaccard ceiling before two options count as duplicates
+_NPC_REPEAT_SIMILARITY = 0.7  # Jaccard floor before an NPC line counts as a repeat
+
+# Meta-speech markers ("[Option 2]", "As Jean, I...") that mean the model
+# broke character while generating one of Jean's dialogue options. Hoisted to
+# module level (compiled once) rather than re-built on every option checked
+# in _qc_jean_options.
+_OPTION_META_PATTERN = re.compile(
+    r"\[Option|\bAs Jean\b|I don.t know what to say", re.IGNORECASE
+)
 
 # Fallback drain amounts keyed by conversation_quality — used only when the LLM
 # does not supply an explicit signed loquacity_delta (legacy adapter / fallback).
@@ -229,7 +247,8 @@ _JEAN_FALLBACK_POOL = [
     ],
 ]
 
-# Generic nomad fallbacks (selected via hash to ensure determinism)
+# Generic nomad fallbacks (selected via a stable crc32 digest, not the
+# built-in hash(), so the pick is deterministic across process restarts)
 _GENERIC_FALLBACKS = [
     {
         "given_name": "Ren",
@@ -543,10 +562,6 @@ class ConversationalNPCMixin:
         entry["loquacity_recovery"] = getattr(self, "loquacity_recovery", 2)
         entry["last_talked_tick"] = game_tick
 
-        # Only increment conversation count on full exchanges (with jean_text)
-        if jean_text:
-            entry["conversation_count"] = entry.get("conversation_count", 0) + 1
-
         # Store personality for generics
         if self._chat_personality:
             entry["personality"] = self._chat_personality
@@ -554,12 +569,15 @@ class ConversationalNPCMixin:
     def _bump_conversation_count(self, player) -> None:
         """Increment conversation_count for a completed respond round.
 
-        chat_respond persists its new row with jean_text="" (see the call
+        Both call sites of _save_exchange_to_persistence pass jean_text="" —
+        chat_open always has (there is no Jean line at the opening) and
+        chat_respond persists its new row with jean_text="" (see its call
         site) so the row shape matches chat_open's and next round's history
-        fill-in works correctly, which means _save_exchange_to_persistence's
-        own jean_text-truthy increment never fires for either caller anymore.
-        This does the increment explicitly instead, right after a call that
-        is guaranteed to have already created the persisted entry.
+        fill-in works correctly. A jean_text-truthy increment inside
+        _save_exchange_to_persistence itself would therefore never fire for
+        either caller, so this method is the single, explicit owner of the
+        counter, called right after a call that is guaranteed to have already
+        created the persisted entry.
         """
         hists = getattr(player, "npc_chat_histories", None)
         key = self._chat_npc_key
@@ -736,10 +754,12 @@ class ConversationalNPCMixin:
         if adapter and adapter.enabled:
             self._chat_personality = adapter.generate_personality(class_name)
 
-        # Fallback if LLM unavailable
+        # Fallback if LLM unavailable. crc32 (not the built-in hash()) because
+        # hash() is salted per process — the "deterministic" pick would
+        # otherwise change every restart.
         if not self._chat_personality:
             key = self._chat_npc_key or self.name
-            idx = hash(key) % len(_GENERIC_FALLBACKS)
+            idx = zlib.crc32(key.encode("utf-8")) % len(_GENERIC_FALLBACKS)
             self._chat_personality = _GENERIC_FALLBACKS[idx].copy()
 
     def _jaccard(self, text_a: str, text_b: str) -> float:
@@ -957,13 +977,17 @@ class ConversationalNPCMixin:
             text = text[0].upper() + text[1:]
 
         # Step 2: Truncate at sentence boundary if too long
-        if len(text) > 300:
+        if len(text) > _MAX_NPC_TEXT_CHARS:
             boundary_pos = -1
-            for i in range(299, -1, -1):
+            for i in range(_MAX_NPC_TEXT_CHARS - 1, -1, -1):
                 if text[i] in ".!?":
                     boundary_pos = i + 1
                     break
-            text = text[:boundary_pos].strip() if boundary_pos > 0 else text[:300].strip()
+            text = (
+                text[:boundary_pos].strip()
+                if boundary_pos > 0
+                else text[:_MAX_NPC_TEXT_CHARS].strip()
+            )
 
         # Step 3: Reject if Jean-dialogue pattern found (always a rejection —
         # the NPC must never speak for Jean, and there is no safe rewrite)
@@ -1015,7 +1039,7 @@ class ConversationalNPCMixin:
         # Step 7: Repetition guard — caller's retry loop handles the second attempt
         for prior in history[-8:]:
             prior_npc = prior.get("npc", "")
-            if prior_npc and self._jaccard(text, prior_npc) > 0.7:
+            if prior_npc and self._jaccard(text, prior_npc) > _NPC_REPEAT_SIMILARITY:
                 logger.debug("_qc_npc_text rejected: repetition guard. jaccard=%.2f text=%r prior=%r", self._jaccard(text, prior_npc), text, prior_npc)
                 return None, "it repeated a line already said earlier in this conversation", aside
 
@@ -1065,7 +1089,7 @@ class ConversationalNPCMixin:
         flavor = self._cleanup_removed_spans(_SLANG_PATTERN.sub(" ", flavor))
         if not _has_real_npc_text(flavor):
             return ""
-        flavor = flavor[:200].strip()
+        flavor = flavor[:_MAX_FLAVOR_CHARS].strip()
         if flavor[-1] not in ".!?":
             flavor += "."
         if flavor[0].islower():
@@ -1086,23 +1110,21 @@ class ConversationalNPCMixin:
 
         expected_tones = ["direct", "guarded", "open"]
         validated = []
-        for i, opt in enumerate(options[:3]):
+        for i, opt in enumerate(options[:_JEAN_OPTION_COUNT]):
             if not isinstance(opt, dict) or "text" not in opt:
                 continue
 
             text = str(opt.get("text", "")).strip()
-            if not (5 <= len(text) <= 160):
+            if not (5 <= len(text) <= _MAX_OPTION_CHARS):
                 continue
 
             # No meta-speech
-            if re.search(
-                r"\[Option|\bAs Jean\b|I don.t know what to say", text, re.IGNORECASE
-            ):
+            if _OPTION_META_PATTERN.search(text):
                 continue
 
-            tone = str(opt.get("tone", expected_tones[i % 3])).lower()
+            tone = str(opt.get("tone", expected_tones[i % _JEAN_OPTION_COUNT])).lower()
             if tone not in ("direct", "guarded", "open"):
-                tone = expected_tones[i % 3]
+                tone = expected_tones[i % _JEAN_OPTION_COUNT]
 
             validated.append({"tone": tone, "text": text})
 
@@ -1110,7 +1132,8 @@ class ConversationalNPCMixin:
         deduped: List[Dict[str, str]] = []
         for opt in validated:
             if all(
-                self._jaccard(opt["text"], kept["text"]) <= 0.6 for kept in deduped
+                self._jaccard(opt["text"], kept["text"]) <= _OPTION_SIMILARITY_MAX
+                for kept in deduped
             ):
                 deduped.append(opt)
 
@@ -1125,22 +1148,25 @@ class ConversationalNPCMixin:
         read too close to a kept option, and pads unconditionally as a last
         resort so the player always sees three choices.
         """
-        options = [dict(o) for o in options[:3]]
-        if len(options) >= 3:
+        options = [dict(o) for o in options[:_JEAN_OPTION_COUNT]]
+        if len(options) >= _JEAN_OPTION_COUNT:
             return options
         pool = self._get_fallback_jean_options()
         used_tones = {o["tone"] for o in options}
         for fb in pool:
-            if len(options) >= 3:
+            if len(options) >= _JEAN_OPTION_COUNT:
                 break
             if fb["tone"] in used_tones:
                 continue
-            if any(self._jaccard(fb["text"], o["text"]) > 0.6 for o in options):
+            if any(
+                self._jaccard(fb["text"], o["text"]) > _OPTION_SIMILARITY_MAX
+                for o in options
+            ):
                 continue
             options.append(dict(fb))
             used_tones.add(fb["tone"])
         for fb in pool:
-            if len(options) >= 3:
+            if len(options) >= _JEAN_OPTION_COUNT:
                 break
             if any(fb["text"] == o["text"] for o in options):
                 continue
@@ -1308,8 +1334,8 @@ class ConversationalNPCMixin:
         if isinstance(revised, list):
             # Same QC the generated options get (length caps, meta-speech
             # filter, tone defaulting, near-duplicate dedup) — the reviser's
-            # output has never seen it, and its own cap is 200 chars against
-            # _qc_jean_options' 160.
+            # output has never seen it, and its own cap is _MAX_FLAVOR_CHARS
+            # (200) against _qc_jean_options' _MAX_OPTION_CHARS (160).
             for opt in self._qc_jean_options(revised) or []:
                 if _chat_guard.scan_option_text(opt["text"], topics):
                     continue
@@ -1320,7 +1346,10 @@ class ConversationalNPCMixin:
         for opt, flags in zip(options, option_flags):
             if flags:
                 continue
-            if any(self._jaccard(opt["text"], kept["text"]) > 0.6 for kept in rebuilt):
+            if any(
+                self._jaccard(opt["text"], kept["text"]) > _OPTION_SIMILARITY_MAX
+                for kept in rebuilt
+            ):
                 continue
             rebuilt.append(dict(opt))
         return self._top_up_jean_options(rebuilt)
@@ -1579,8 +1608,10 @@ class ConversationalNPCMixin:
                 "reputation": getattr(player, "reputation", {}).get(self.name, 0),
             }
         except Exception as e:
+            # Detail stays server-side (the logger call above); the client
+            # never sees raw exception text, which can leak internals.
             logger.error("ConversationalNPCMixin.chat_open error: %s", e, exc_info=True)
-            return {"success": False, "error": str(e)}
+            return {"success": False, "error": "Conversation failed — try again."}
 
     def chat_respond(self, player, jean_text: str, jean_tone: str) -> Dict[str, Any]:
         """Process Jean's response. Returns NPC reply + 3 new Jean options."""
@@ -1740,8 +1771,9 @@ class ConversationalNPCMixin:
             # _format_history's per-row "NPC line, then Jean line" print order
             # chronologically correct (Jean's reply prints right after the
             # line it replied to, not attached to the line it *prompted*).
-            # conversation_count is bumped separately since it no longer rides
-            # on _save_exchange_to_persistence's own jean_text-truthy check.
+            # conversation_count is bumped separately (_bump_conversation_count,
+            # below) — _save_exchange_to_persistence has no counter logic of
+            # its own to ride on.
             game_tick = getattr(getattr(player, "universe", None), "game_tick", 0) or 0
             chapter = self._get_chapter(player)
             self._save_exchange_to_persistence(
@@ -1765,8 +1797,10 @@ class ConversationalNPCMixin:
                 "reputation_delta": reputation_delta,
             }
         except Exception as e:
+            # Detail stays server-side (the logger call above); the client
+            # never sees raw exception text, which can leak internals.
             logger.error("ConversationalNPCMixin.chat_respond error: %s", e, exc_info=True)
-            return {"success": False, "error": str(e)}
+            return {"success": False, "error": "Conversation failed — try again."}
 
     def loquacity_tick(self):
         """Recover loquacity each game beat (called outside active conversation)."""
@@ -1792,13 +1826,15 @@ class ConversationalNPCMixin:
             lines = self._chat_char_config.get("closing_lines_when_exhausted", [])
             if lines:
                 return lines[0]
-        # Generic fallback
-        idx = hash(self.name) % 3
+        # Generic fallback. crc32 (not the built-in hash()) because hash() is
+        # salted per process — the "deterministic" pick would otherwise
+        # change every restart.
         fallbacks = [
             "They're not in the mood to talk.",
             "A brief shake of the head.",
             "Not now.",
         ]
+        idx = zlib.crc32(self.name.encode("utf-8")) % len(fallbacks)
         return fallbacks[idx]
 
     def _next_from_pool(self, pool: List[str]) -> Optional[str]:

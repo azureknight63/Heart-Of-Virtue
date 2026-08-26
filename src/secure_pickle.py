@@ -32,6 +32,7 @@ legacy import only.
 
 import io
 import os
+import sys
 import struct
 import hashlib
 import pickle
@@ -178,7 +179,14 @@ def _public_module(obj):
     if not tail.startswith("_"):
         return module
     try:
-        if getattr(importlib.import_module(parent), obj.__name__, None) is obj:
+        # The parent of an already-imported submodule is already in
+        # sys.modules -- importlib.import_module() would just look it up
+        # there anyway, so check the cache directly and only pay for a real
+        # import on the (rare) miss.
+        parent_mod = sys.modules.get(parent)
+        if parent_mod is None:
+            parent_mod = importlib.import_module(parent)
+        if getattr(parent_mod, obj.__name__, None) is obj:
             return parent
     except Exception:  # pragma: no cover - defensive; parent may not import
         logger.debug("Allow-list: could not resolve public parent of %s", module)

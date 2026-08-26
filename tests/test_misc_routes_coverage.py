@@ -244,3 +244,158 @@ class TestNpcChat:
         with app.test_client() as c:
             rv = c.get("/npc-chat/history/ghost", headers=AUTH)
         assert rv.status_code == 400
+
+
+class TestNpcChatRateLimit:
+    """POST /npc-chat/open and /respond share one per-session rate limit
+    guarding the LLM-backed calls (each can drive up to ~3 provider calls
+    through the fallback chain against the operator's shared free-tier
+    quota). /end and /history never touch the LLM and are exempt.
+
+    The limiter (``npc_chat._chat_limiter``) is a module-level singleton
+    shared by every test in the process, so each test below uses its own
+    uniquely-named session id to avoid cross-test bucket collisions, and
+    clears that key when done.
+    """
+
+    @pytest.fixture
+    def limiter(self):
+        from src.api.routes.npc_chat import _chat_limiter
+
+        assert _chat_limiter is not None, (
+            "NPC_CHAT_RATE_LIMIT_PER_MINUTE must be at its nonzero default "
+            "for this test -- check the test environment."
+        )
+        return _chat_limiter
+
+    def _client_for(self, session_id):
+        from src.api.routes.npc_chat import npc_chat_bp
+
+        app = _app_for(
+            npc_chat_bp,
+            url_prefix="/npc-chat",
+            session=_make_session(session_id),
+        )
+        return app.test_client()
+
+    def test_under_limit_requests_all_succeed(self, limiter):
+        session_id = "rl_under_limit"
+        limiter.clear(session_id)
+        client = self._client_for(session_id)
+        try:
+            for i in range(limiter.limit - 1):
+                rv = client.post(
+                    "/npc-chat/open", json={"npc_id": "amelia"}, headers=AUTH
+                )
+                assert rv.status_code == 200, f"request {i} unexpectedly limited"
+        finally:
+            limiter.clear(session_id)
+
+    def test_over_limit_request_gets_429(self, limiter):
+        session_id = "rl_over_limit"
+        limiter.clear(session_id)
+        client = self._client_for(session_id)
+        try:
+            # Exhaust the budget alternating endpoints -- /open and /respond
+            # draw from the same per-session bucket.
+            for i in range(limiter.limit):
+                if i % 2 == 0:
+                    endpoint, payload = "/npc-chat/open", {"npc_id": "amelia"}
+                else:
+                    endpoint, payload = (
+                        "/npc-chat/respond",
+                        {"npc_key": "amelia", "jean_text": "hi"},
+                    )
+                rv = client.post(endpoint, json=payload, headers=AUTH)
+                assert rv.status_code == 200, f"request {i} unexpectedly limited"
+
+            rv = client.post(
+                "/npc-chat/open", json={"npc_id": "amelia"}, headers=AUTH
+            )
+            assert rv.status_code == 429
+            assert rv.get_json() == {
+                "success": False,
+                "error": "Slow down — too many messages.",
+            }
+        finally:
+            limiter.clear(session_id)
+
+    def test_rate_limit_is_per_session(self, limiter):
+        session_a = "rl_bucket_a"
+        session_b = "rl_bucket_b"
+        limiter.clear(session_a)
+        limiter.clear(session_b)
+        client_a = self._client_for(session_a)
+        client_b = self._client_for(session_b)
+        try:
+            for _ in range(limiter.limit):
+                rv = client_a.post(
+                    "/npc-chat/open", json={"npc_id": "amelia"}, headers=AUTH
+                )
+                assert rv.status_code == 200
+
+            # Session A is now exhausted...
+            rv = client_a.post(
+                "/npc-chat/open", json={"npc_id": "amelia"}, headers=AUTH
+            )
+            assert rv.status_code == 429
+
+            # ...but session B has never made a request, so it has its own
+            # untouched bucket.
+            rv = client_b.post(
+                "/npc-chat/open", json={"npc_id": "amelia"}, headers=AUTH
+            )
+            assert rv.status_code == 200
+        finally:
+            limiter.clear(session_a)
+            limiter.clear(session_b)
+
+    def test_end_and_history_are_not_rate_limited(self, limiter):
+        session_id = "rl_end_history_exempt"
+        limiter.clear(session_id)
+        client = self._client_for(session_id)
+        try:
+            # Comfortably above the /open+/respond ceiling -- must never trip
+            # since these two routes never call `_check_chat_rate_limit`.
+            for _ in range(limiter.limit + 5):
+                rv = client.post(
+                    "/npc-chat/end", json={"npc_key": "amelia"}, headers=AUTH
+                )
+                assert rv.status_code == 200
+            rv = client.get("/npc-chat/history/amelia", headers=AUTH)
+            assert rv.status_code == 200
+        finally:
+            limiter.clear(session_id)
+
+    def test_rate_limit_disabled_via_env_var(self):
+        """NPC_CHAT_RATE_LIMIT_PER_MINUTE=0 disables the limiter at import
+        time (``_chat_limiter`` is built once, at module import).
+
+        Runs in a subprocess: `src.api.routes.npc_chat` is a shared
+        singleton every other test in this process depends on, so mutating
+        its live state here (or reloading it) would leak into them.
+        """
+        import os
+        import subprocess
+        import sys
+        from pathlib import Path
+
+        env = os.environ.copy()
+        env["NPC_CHAT_RATE_LIMIT_PER_MINUTE"] = "0"
+        repo_root = Path(__file__).resolve().parent.parent
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                "import src.api.routes.npc_chat as m; "
+                "assert m._chat_limiter is None, m._chat_limiter; "
+                "print('CHAT_LIMITER_DISABLED_OK')",
+            ],
+            cwd=str(repo_root),
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert "CHAT_LIMITER_DISABLED_OK" in result.stdout

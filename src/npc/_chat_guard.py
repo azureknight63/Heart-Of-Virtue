@@ -56,11 +56,22 @@ _EXCUSABLE_SUBCATEGORIES = frozenset({"teaching", "growth"})
 # subcategories that stay wrong in either mouth are scanned on options.
 _OPTION_SKIP_SUBCATEGORIES = frozenset({"belongings", "condition", "deeds", "coin"})
 
+# Sentence splitter that KEEPS each sentence's own terminator ("Stay back!"
+# stays an exclamation; "What do you want?" stays a question; "Well... maybe."
+# keeps its ellipsis). Splitting on [.!?] and re-joining with ". " — the old
+# approach — flattened every ! and ? in NPC dialogue into a period. Shared
+# with _chat_llm (aliased there under the same name) since both modules need
+# the identical split.
 _SENTENCE_PATTERN = re.compile(r"[^.!?]+[.!?]*")
 
 # Topics are matched as whole words: substring containment let a four-letter
 # topic like "edge" excuse any sentence containing "knowledge".
 _WORD_PATTERN = re.compile(r"[a-z0-9']+")
+
+# Curly vs straight apostrophe: models emit both about equally, so every
+# pattern that needs a contraction interpolates this instead of hand-spelling
+# the alternation.
+_APO = r"(?:['’])?"
 
 # First-person offer openers ("I'll", "let me", "shall I", ...). Written once
 # and interpolated so every offer pattern accepts the same set of contractions,
@@ -68,7 +79,7 @@ _WORD_PATTERN = re.compile(r"[a-z0-9']+")
 # The leading \b is load-bearing: without it, IGNORECASE lets "I'll"/"I'd"
 # match the tails of ordinary words ("will" contains "ill", "druid" contains
 # "id"), flagging lines like "The ferry will take you across." as offers.
-_OFFER = r"\b(?:I(?:['’])?ll|I will|I can|I could|I(?:['’])?d|let me|shall I)"
+_OFFER = r"\b(?:I" + _APO + r"ll|I will|I can|I could|I" + _APO + r"d|let me|shall I)"
 # Up to two filler words between the opener and the verb ("I'll happily give").
 _GAP = r"(?:\w+\s+){0,2}?"
 
@@ -85,7 +96,7 @@ _NUMBERS = (
 
 # (subcategory, compiled pattern) per category. Subcategories drive both the
 # whitelist and the hedge, so they are part of the contract, not a comment.
-_PATTERNS: Dict[str, Sequence[Tuple[str, "re.Pattern"]]] = {
+_PATTERNS: Dict[str, Sequence[Tuple[str, re.Pattern]]] = {
     CATEGORY_TRANSACTION: (
         # "Here, take this blade." — imperative handover. The negative
         # lookahead exempts idioms with no object transfer: "Keep that in
@@ -158,31 +169,43 @@ _PATTERNS: Dict[str, Sequence[Tuple[str, "re.Pattern"]]] = {
         ),
     ),
     CATEGORY_STATE_CLAIM: (
-        ("belongings", re.compile(r"\byour\s+(?:\w+\s+){0,1}?(?:" + _POSSESSIONS + r")\b", re.IGNORECASE)),
         (
             "belongings",
             re.compile(
-                r"\b(?:that|those|the)\s+(?:\w+\s+){0,2}?(?:" + _POSSESSIONS + r")\s+"
-                r"(?:of yours|you carry|you(?:['’])?re carrying|you bear|"
-                r"you have|you(?:['’])?ve got)\b",
+                r"\byour\s+(?:\w+\s+){0,1}?(?:" + _POSSESSIONS + r")\b",
+                re.IGNORECASE,
+            ),
+        ),
+        (
+            "belongings",
+            re.compile(
+                r"\b(?:that|those|the)\s+" + _GAP + r"(?:" + _POSSESSIONS + r")\s+"
+                r"(?:of yours|you carry|you" + _APO + r"re carrying|you bear|"
+                r"you have|you" + _APO + r"ve got)\b",
                 re.IGNORECASE,
             ),
         ),
         (
             "condition",
             re.compile(
-                r"\byou(?:(?:['’])?re|\s+are)\s+(?:\w+\s+){0,1}?(?:wounded|"
+                r"\byou(?:" + _APO + r"re|\s+are)\s+(?:\w+\s+){0,1}?(?:wounded|"
                 r"bleeding|hurt|injured|carrying|hauling|wearing|armed|starving|"
                 r"out of|low on|short of)\b",
                 re.IGNORECASE,
             ),
         ),
-        ("coin", re.compile(r"\b(?:" + _NUMBERS + r")\s+(?:coins?|gold|silver|pieces?|marks?)\b", re.IGNORECASE)),
+        (
+            "coin",
+            re.compile(
+                r"\b(?:" + _NUMBERS + r")\s+(?:coins?|gold|silver|pieces?|marks?)\b",
+                re.IGNORECASE,
+            ),
+        ),
         (
             "deeds",
             re.compile(
                 r"\bsince you\s+(?:killed|slew|defeated|freed|saved|found|opened|burned|took)\b"
-                r"|\byou(?:['’])?ve\s+(?:killed|slain|defeated|freed|saved)\b",
+                r"|\byou" + _APO + r"ve\s+(?:killed|slain|defeated|freed|saved)\b",
                 re.IGNORECASE,
             ),
         ),
@@ -210,7 +233,7 @@ _PATTERNS: Dict[str, Sequence[Tuple[str, "re.Pattern"]]] = {
         (
             "promise",
             re.compile(
-                r"\bI(?:['’])?ll\s+(?:be\s+(?:waiting|here|around)\b|"
+                r"\bI" + _APO + r"ll\s+(?:be\s+(?:waiting|here|around)\b|"
                 r"wait\s+for\s+you\b|see\s+you\s+(?:then|again|tomorrow|at)\b|"
                 r"meet\s+you\b|find\s+you\b|"
                 r"(?:keep|hold|save|set\s+aside)\s+(?:it|one|that|them|this)\s+"
@@ -218,7 +241,13 @@ _PATTERNS: Dict[str, Sequence[Tuple[str, "re.Pattern"]]] = {
                 re.IGNORECASE,
             ),
         ),
-        ("deferral", re.compile(r"\bask\s+me\s+(?:again|when|once|after)\b", re.IGNORECASE)),
+        (
+            "deferral",
+            re.compile(
+                r"\bask\s+me\s+(?:again|when|once|after)\b",
+                re.IGNORECASE,
+            ),
+        ),
         (
             "deferral",
             re.compile(
@@ -232,13 +261,19 @@ _PATTERNS: Dict[str, Sequence[Tuple[str, "re.Pattern"]]] = {
         (
             "request",
             re.compile(
-                r"\b(?:will|can|could|would)\s+you\s+(?:\w+\s+){0,2}?(?:come|join|"
+                r"\b(?:will|can|could|would)\s+you\s+" + _GAP + r"(?:come|join|"
                 r"follow|guide|lead|take|give|lend|spare|sell|teach|show|help|"
                 r"carry|escort|mend|fix|forge)\b",
                 re.IGNORECASE,
             ),
         ),
-        ("request", re.compile(r"\b(?:come|travel|ride|walk|go)\s+with\s+me\b", re.IGNORECASE)),
+        (
+            "request",
+            re.compile(
+                r"\b(?:come|travel|ride|walk|go)\s+with\s+me\b",
+                re.IGNORECASE,
+            ),
+        ),
         (
             "request",
             re.compile(
@@ -249,7 +284,7 @@ _PATTERNS: Dict[str, Sequence[Tuple[str, "re.Pattern"]]] = {
         (
             "payment",
             re.compile(
-                r"\bI(?:['’])?ll\s+(?:pay|buy|trade)\b|\bI have coin\b",
+                r"\bI" + _APO + r"ll\s+(?:pay|buy|trade)\b|\bI have coin\b",
                 re.IGNORECASE,
             ),
         ),

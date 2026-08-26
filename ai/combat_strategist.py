@@ -113,7 +113,7 @@ class CombatStrategist:
     """Strategist that suggests tactical moves during combat using an LLM."""
 
     def __init__(self, client: Optional[GenericLLMClient] = None):
-        logger.info("DEBUG: Initializing CombatStrategist")
+        logger.debug("Initializing CombatStrategist")
         self.client = client or GenericLLMClient()
         # Kept deliberately terse: this block is static and re-sent on every
         # combat turn, so prose here is paid for once per beat forever. Trimming
@@ -173,7 +173,9 @@ class CombatStrategist:
 
     def get_suggestions(self, combat_context: Dict[str, Any], max_suggestions: int = 1) -> List[Dict[str, Any]]:
         """Fetch movement suggestions from the LLM or fallback to heuristics."""
-        logger.info(f"DEBUG: CombatStrategist.get_suggestions called (max: {max_suggestions})")
+        logger.debug(
+            "CombatStrategist.get_suggestions called (max: %s)", max_suggestions
+        )
 
         suggestions = []
         if self.client.available():
@@ -184,7 +186,11 @@ class CombatStrategist:
                     f"containing a list of exactly {max_suggestions} move objects."
                 )
 
-                logger.info(f"DEBUG: Requesting {max_suggestions} suggestions for {combat_context.get('player', {}).get('name')}")
+                logger.debug(
+                    "Requesting %s suggestions for %s",
+                    max_suggestions,
+                    combat_context.get("player", {}).get("name"),
+                )
                 raw_response = self.client.generate_structured(self.system_prompt, wrapped_prompt)
 
                 if isinstance(raw_response, dict):
@@ -203,16 +209,16 @@ class CombatStrategist:
                         suggestions.append(s)
 
             except Exception as e:
-                logger.error(f"DEBUG: Error in LLM suggestion flow: {e}", exc_info=True)
+                logger.error("Error in LLM suggestion flow: %s", e, exc_info=True)
 
         if not suggestions:
-            logger.info("DEBUG: Using heuristic fallback for combat suggestions.")
+            logger.debug("Using heuristic fallback for combat suggestions.")
             return self._get_fallback_suggestions(combat_context, max_suggestions)
 
         suggestions.sort(key=lambda x: x["score"], reverse=True)
         results = suggestions[:max_suggestions]
         self._ensure_target_ids(results, combat_context)
-        logger.info(f"DEBUG: CombatStrategist returning {len(results)} suggestions.")
+        logger.debug("CombatStrategist returning %s suggestions.", len(results))
         return results
 
     # ------------------------------------------------------------------
@@ -778,8 +784,9 @@ class CombatStrategist:
 
             if not viable_ids:
                 # Targeted move with nothing in range — cannot be suggested at all.
-                logger.info(
-                    f"DEBUG: Dropping suggestion for '{s.get('move_name')}' — no viable target in range"
+                logger.debug(
+                    "Dropping suggestion for '%s' — no viable target in range",
+                    s.get("move_name"),
                 )
                 continue
 
@@ -801,9 +808,10 @@ class CombatStrategist:
                         if dict_targets
                         else None
                     )
-                logger.info(
-                    f"DEBUG: Resolving target_id for '{s.get('move_name')}' to "
-                    f"in-range target {new_target_id}"
+                logger.debug(
+                    "Resolving target_id for '%s' to in-range target %s",
+                    s.get("move_name"),
+                    new_target_id,
                 )
                 s["target_id"] = new_target_id
 

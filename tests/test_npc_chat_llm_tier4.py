@@ -760,8 +760,14 @@ class TestSaveExchangeToPersistence:
         # Should keep only last 20
         assert len(player.npc_chat_histories["test_key"]["exchanges"]) == 20
 
-    def test_save_exchange_increments_conversation_count(self):
-        """Test conversation count incremented only for full exchanges."""
+    def test_save_exchange_does_not_bump_conversation_count(self):
+        """_save_exchange_to_persistence never touches conversation_count.
+
+        _bump_conversation_count is the single owner of the counter (both
+        chat_open and chat_respond persist rows with jean_text="", so a
+        jean_text-truthy increment here would never fire for either caller —
+        it was dead code and has been removed).
+        """
         class TestNPC(ConversationalNPCMixin):
             def __init__(self):
                 self.name = "TestNPC"
@@ -773,11 +779,13 @@ class TestSaveExchangeToPersistence:
         npc = TestNPC()
         player = MagicMock()
         player.npc_chat_histories = {}
-        # Save with jean_text
+        # Even with a non-empty jean_text, the count stays untouched.
         npc._save_exchange_to_persistence(player, "Hello", "Hi", 10, "1")
-        assert player.npc_chat_histories["test_key"]["conversation_count"] == 1
-        # Save without jean_text
+        assert player.npc_chat_histories["test_key"]["conversation_count"] == 0
         npc._save_exchange_to_persistence(player, "Hello again", "", 11, "1")
+        assert player.npc_chat_histories["test_key"]["conversation_count"] == 0
+        # Only _bump_conversation_count increments it.
+        npc._bump_conversation_count(player)
         assert player.npc_chat_histories["test_key"]["conversation_count"] == 1
 
     def test_save_exchange_stores_personality(self):
@@ -1429,6 +1437,27 @@ class TestChatOpen:
         assert result["success"] is False
         assert "error" in result
 
+    def test_chat_open_error_message_is_generic_not_raw_exception(self):
+        """A05: the client never sees raw internal exception text.
+
+        The exception detail belongs server-side (via logger.error's
+        exc_info=True); the client-facing error must be a fixed, generic
+        message so an internal exception string never leaks in a 400 body.
+        """
+        class BrokenNPC(ConversationalNPCMixin):
+            def __init__(self):
+                self.name = "BrokenNPC"
+
+            def _compute_loquacity(self, player):
+                raise ValueError("some sensitive internal detail: /etc/secret")
+
+        npc = BrokenNPC()
+        player = MagicMock()
+        result = npc.chat_open(player)
+        assert result["success"] is False
+        assert result["error"] == "Conversation failed — try again."
+        assert "sensitive internal detail" not in result["error"]
+
 
 class TestChatRespond:
     """Test chat_respond flow."""
@@ -1587,6 +1616,22 @@ class TestChatRespond:
         player = MagicMock()
         result = npc.chat_respond(player, "Hello", "direct")
         assert result["success"] is False
+
+    def test_chat_respond_error_message_is_generic_not_raw_exception(self):
+        """A05: the client never sees raw internal exception text (chat_respond)."""
+        class BrokenNPC(ConversationalNPCMixin):
+            def __init__(self):
+                self.name = "BrokenNPC"
+
+            def _compute_loquacity(self, player):
+                raise ValueError("some sensitive internal detail: /etc/secret")
+
+        npc = BrokenNPC()
+        player = MagicMock()
+        result = npc.chat_respond(player, "Hello", "direct")
+        assert result["success"] is False
+        assert result["error"] == "Conversation failed — try again."
+        assert "sensitive internal detail" not in result["error"]
 
 
 class TestLoquacityTick:

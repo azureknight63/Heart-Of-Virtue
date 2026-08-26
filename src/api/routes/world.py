@@ -88,11 +88,16 @@ def get_current_room():
         # Start the provider-usage digest alongside the prewarm. Idempotent and
         # a no-op unless a webhook is configured, so calling it on every world
         # load is safe; this is simply the earliest point at which the process
-        # is known to be serving a real session.
+        # is known to be serving a real session. Gated on TESTING the same way
+        # feedback.py's GitHub issue filing is: without it, every test-suite
+        # or bug-hunt-harness world load would start a real background thread
+        # that (once a webhook is configured) eventually posts real analytics
+        # to Discord.
         try:
-            from ai.provider_digest import start_digest_scheduler
+            if not current_app.config.get("TESTING"):
+                from ai.provider_digest import start_digest_scheduler
 
-            start_digest_scheduler()
+                start_digest_scheduler()
         except Exception:
             _log.debug("Provider digest scheduler start failed", exc_info=True)
 
